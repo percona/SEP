@@ -5,6 +5,9 @@
 # descrption: "This script checks for time drift between database servers and PMM server and detects running NTP implementation."
 # allow_extra_args: false
 # sudo: optional
+# service_type: generic
+# alerts:
+#   - TimeDrift
 # ---
 
 set -euo pipefail

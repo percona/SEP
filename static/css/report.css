@@ -1,0 +1,185 @@
+/* Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+/* Report plugin styles */
+
+.report-layout {
+    max-width: 80rem;
+    margin: 0 auto;
+}
+
+.report-header {
+    margin-bottom: 2rem;
+}
+
+.report-header h1 {
+    margin-bottom: 0.25rem;
+}
+
+.report-header .subtitle {
+    color: var(--text-secondary, #666);
+    margin: 0.15rem 0;
+    font-size: 0.95rem;
+}
+
+.report-intro {
+    margin-bottom: 2rem;
+    line-height: 1.6;
+}
+
+.report-form fieldset {
+    border: 0.1rem solid var(--border-color, #ddd);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.report-form legend {
+    font-weight: 600;
+    padding: 0 0.5rem;
+}
+
+.report-form .form-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.report-form .form-row label {
+    min-width: 4rem;
+    font-weight: 500;
+}
+
+.report-form .form-row select,
+.report-form .form-row input {
+    flex: 1;
+    max-width: 20rem;
+}
+
+.report-form .form-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+/* Report result */
+
+.report-toc {
+    border: 0.1rem solid var(--border-color, #ddd);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.report-toc h2 {
+    margin-top: 0;
+    font-size: 1.1rem;
+}
+
+.report-toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.report-toc a {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    text-decoration: none;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.report-toc a:hover {
+    background-color: var(--hover-bg, #eee);
+}
+
+.report-section {
+    border: 0.1rem solid var(--border-color, #ddd);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.report-section h2 {
+    margin-top: 0;
+    font-size: 1.4rem;
+    border-bottom: 0.1rem dotted var(--border-color, #ccc);
+    padding-bottom: 0.5rem;
+}
+
+.report-section h3 {
+    font-size: 1.1rem;
+    border-bottom: 0.1rem dotted var(--border-color, #eee);
+    padding-bottom: 0.3rem;
+}
+
+.report-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.report-grid dt {
+    font-weight: 500;
+}
+
+.report-section table {
+    width: 100%;
+    margin-bottom: 1.5rem;
+}
+
+.report-section caption {
+    text-align: left;
+    font-weight: 600;
+    font-size: 1rem;
+    padding-bottom: 0.5rem;
+}
+
+.report-section th,
+.report-section td {
+    text-align: left;
+    padding: 0.5rem;
+    vertical-align: top;
+}
+
+.report-section thead th {
+    background-color: var(--table-header-bg, #eee);
+    border-radius: 0.5rem;
+}
+
+.report-section th.status,
+.report-section td.status {
+    max-width: 5rem;
+    text-align: center;
+}
+
+.report-footer {
+    text-align: center;
+    padding: 1.5rem 0;
+    border-top: 0.1rem solid var(--border-color, #ddd);
+    margin-top: 2rem;
+}
+
+.report-footer p {
+    color: var(--text-secondary, #666);
+    font-size: 0.9rem;
+}

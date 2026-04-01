@@ -21,7 +21,13 @@ from markupsafe import Markup
 from pygments.lexers import TextLexer
 from pygments.util import ClassNotFound
 
-from app.sep.utils.jinja import syntax_highlight, syntax_highlight_css
+from app.sep.utils.jinja import (
+    backup_date,
+    convert_bytes,
+    syntax_highlight,
+    syntax_highlight_css,
+    timestamp_format,
+)
 
 
 @pytest.fixture
@@ -83,3 +89,114 @@ def test_syntax_highlight_with_unknown_language(mocker, random_json):
     get_lexer_mock.assert_called_once()
     highlight_mock.assert_called_once()
     assert isinstance(highlight_mock.call_args.args[1], TextLexer)
+
+
+def test_timestamp_format_zero():
+    """Test that epoch 0 formats to the Unix epoch date."""
+    assert timestamp_format(0) == "01 January 1970 at 00:00:00"
+
+
+def test_timestamp_format_known_date():
+    """Test a known epoch value produces the expected human-readable date."""
+    assert timestamp_format(1_700_000_000) == "14 November 2023 at 22:13:20"
+
+
+def test_timestamp_format_float():
+    """Test that a float epoch value is handled correctly."""
+    result = timestamp_format(1_700_000_000.5)
+    assert "14 November 2023" in result
+
+
+def test_timestamp_format_overflow_returns_str():
+    """Test that an overflowing value falls back to str() instead of raising."""
+    result = timestamp_format(10**18)
+    assert isinstance(result, str)
+
+
+def test_backup_date_epoch_ms():
+    """Test that an integer epoch-ms value is converted to a formatted date."""
+    result = backup_date(1_700_000_000_000)
+    assert result == "14 November 2023 at 22:13:20 UTC"
+
+
+def test_backup_date_zero():
+    """Test that epoch-ms 0 formats to the Unix epoch date."""
+    assert backup_date(0) == "01 January 1970 at 00:00:00 UTC"
+
+
+def test_backup_date_string_passthrough():
+    """Test that a pre-formatted string is returned as-is."""
+    assert (
+        backup_date("14 November 2023 at 22:13:20 UTC")
+        == "14 November 2023 at 22:13:20 UTC"
+    )
+
+
+def test_backup_date_arbitrary_string():
+    """Test that an arbitrary string is returned unchanged."""
+    assert backup_date("N/A") == "N/A"
+
+
+def test_backup_date_overflow_returns_str():
+    """Test that an overflowing epoch-ms falls back to str()."""
+    result = backup_date(10**18)
+    assert isinstance(result, str)
+
+
+def test_convert_bytes_zero():
+    """Test that 0 bytes converts to 0GB."""
+    assert convert_bytes("0") == "0GB"
+
+
+def test_convert_bytes_one_gib():
+    """Test that exactly 1 GiB in bytes converts to 1GB."""
+    assert convert_bytes(str(1024**3)) == "1GB"
+
+
+def test_convert_bytes_integer_input():
+    """Test that an integer input is accepted."""
+    assert convert_bytes(1024**3) == "1GB"
+
+
+def test_convert_bytes_float_input():
+    """Test that a float input is accepted."""
+    assert convert_bytes(float(1024**3)) == "1GB"
+
+
+def test_convert_bytes_unit_m():
+    """Test conversion to megabytes."""
+    assert convert_bytes(str(1024**2), unit="M") == "1MB"
+
+
+def test_convert_bytes_unit_k():
+    """Test conversion to kilobytes."""
+    assert convert_bytes(str(1024), unit="K") == "1KB"
+
+
+def test_convert_bytes_unit_t():
+    """Test conversion to terabytes."""
+    assert convert_bytes(str(1024**4), unit="T") == "1TB"
+
+
+def test_convert_bytes_non_numeric_returns_str():
+    """Test that a non-numeric string is returned unchanged."""
+    assert convert_bytes("not-a-number") == "not-a-number"
+
+
+def test_convert_bytes_none_returns_str():
+    """Test that None input is returned as its str() representation."""
+    assert convert_bytes(None) == "None"
+
+
+@pytest.mark.parametrize(
+    ("value", "unit", "expected"),
+    [
+        ("0", "G", "0GB"),
+        (str(500 * 1024**2), "G", "0GB"),
+        (str(int(1.5 * 1024**3)), "G", "2GB"),
+        (str(10 * 1024**3), "G", "10GB"),
+    ],
+)
+def test_convert_bytes_rounding(value, unit, expected):
+    """Test that convert_bytes rounds to the nearest integer."""
+    assert convert_bytes(value, unit=unit) == expected
