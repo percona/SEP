@@ -85,6 +85,10 @@ default:
         MODULE_NAME: alert_troubleshooting
         URI_PATH: /alert-troubleshooting
         CSS_CLASS: alert-troubleshooting
+      - NAME: Health Report
+        MODULE_NAME: report
+        URI_PATH: /report
+        CSS_CLASS: report
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null

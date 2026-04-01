@@ -27,6 +27,10 @@ _alerts_plugin_enabled = any(
     p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS
 )
 
+_report_plugin_enabled = any(
+    p.module_name.endswith(".report") for p in sep_settings.PLUGINS
+)
+
 SYSTEM_PERIODIC_TASKS = [
     SystemPeriodicTaskSchedule(
         schedule=snippets_settings.SYNC_INTERVAL,
