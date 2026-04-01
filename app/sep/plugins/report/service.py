@@ -26,10 +26,26 @@ from typing import Any
 from app.sep.clients.pmm import PMMRemoteAPI
 
 from .models import (
+    AdvisorCheck,
+    AdvisorFamily,
+    AdvisorSection,
     FailedCheck,
 )
 
 logger = logging.getLogger(__name__)
+
+SERVICE_NAMES: dict[str, str] = {
+    "agent": "Agent",
+    "backup": "Backup",
+    "external": "External",
+    "generic": "Generic",
+    "haproxy": "HAProxy",
+    "mongodb": "MongoDB",
+    "mysql": "MySQL",
+    "remote": "Remote",
+    "postgresql": "PostgreSQL",
+    "proxysql": "ProxySQL",
+}
 
 _PMM_SERVER_FILTER = {"pmm-server", "pmm-server-postgresql"}
 
@@ -124,6 +140,80 @@ async def _refresh_checks(
             logger.warning("Refresh timeout for check %s", raw["name"])
             issues.append(raw["name"])
     return issues
+
+
+async def collect_advisors(
+    pmm_api: PMMRemoteAPI,
+    active_service_types: set[str],
+    nodes: dict[str, dict[str, Any]],
+    services: dict[str, dict[str, Any]],
+    *,
+    refresh: bool = False,
+) -> AdvisorSection:
+    """Fetch advisor checks and failed results from PMM.
+
+    :param pmm_api: PMM API client.
+    :param active_service_types: Set of service type keys present in the inventory
+        (e.g. ``{"mysql", "mongodb"}``).
+    :param nodes: Mapping of ``node_id`` to node info dicts.
+    :param services: Mapping of ``service_id`` to service info dicts.
+    :param refresh: When ``True``, trigger a refresh of each check before
+        fetching failed results.
+    :return: Populated advisor section.
+    """
+    raw_checks = await pmm_api.get_advisor_checks()
+    refresh_issues = await _refresh_checks(pmm_api, raw_checks) if refresh else []
+    raw_failed = await pmm_api.get_failed_advisor_checks()
+    allowed = _build_allowed_check_prefixes(active_service_types)
+
+    families: dict[str, AdvisorFamily] = {}
+    checks: list[AdvisorCheck] = []
+
+    for raw in raw_checks:
+        if raw.get("disabled"):
+            continue
+        family = raw.get("family")
+        if family:
+            if family.split("_")[-1].lower() not in active_service_types:
+                continue
+        elif raw["name"].split("_")[0].lower() not in allowed:
+            continue
+
+        check = AdvisorCheck(
+            name=raw["name"],
+            description=raw.get("description", ""),
+            summary=raw.get("summary", ""),
+            family=family,
+        )
+        checks.append(check)
+
+        if family and family not in families:
+            display = SERVICE_NAMES.get(
+                family.split("_")[-1].lower(),
+                family.split("_")[-1].capitalize(),
+            )
+            families[family] = AdvisorFamily(family_key=family, display_name=display)
+        if family:
+            families[family].checks.append(check)
+
+    checks.sort(key=lambda c: c.name)
+    failed_by_name = _parse_failed_checks(raw_failed, nodes, services)
+
+    for fam in families.values():
+        fam.failed = {
+            k: v
+            for k, v in failed_by_name.items()
+            if any(c.name == k for c in fam.checks)
+        }
+
+    return AdvisorSection(
+        total_checks=len(checks),
+        total_failed=len(failed_by_name),
+        refresh_issues=refresh_issues,
+        families=list(families.values()),
+    )
+
+
 async def _fetch_base_inventory(
     pmm_api: PMMRemoteAPI,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], set[str]]:

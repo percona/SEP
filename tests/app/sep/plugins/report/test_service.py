@@ -27,6 +27,7 @@ from app.sep.plugins.report.service import (
     _interval_ms,
     _parse_failed_checks,
     _refresh_checks,
+    collect_advisors,
 )
 
 
@@ -284,6 +285,119 @@ class TestRefreshChecks:
     async def test_empty_list(self, pmm_api):
         """Assert empty input returns empty issues."""
         assert await _refresh_checks(pmm_api, []) == []
+
+
+# collect_advisors
+class TestCollectAdvisors:
+    """Test the ``collect_advisors`` collector."""
+
+    _ACTIVE_TYPES = {"mysql"}
+    _NODES = {"n1": {"name": "node-a"}}
+    _SERVICES = {"s1": {"name": "mysql-prod"}}
+
+    @pytest.mark.asyncio
+    async def test_counts_enabled_checks(self, pmm_api):
+        """Assert total_checks reflects only enabled, relevant checks."""
+        pmm_api.get_advisor_checks.return_value = [
+            {
+                "name": "mysql_check1",
+                "family": "ADVISOR_mysql",
+                "description": "d",
+                "summary": "s",
+            },
+            {"name": "mysql_check2", "family": "ADVISOR_mysql", "disabled": True},
+            {"name": "pg_check", "family": "ADVISOR_postgresql"},
+        ]
+        pmm_api.get_failed_advisor_checks.return_value = []
+        result = await collect_advisors(
+            pmm_api, self._ACTIVE_TYPES, self._NODES, self._SERVICES
+        )
+        assert result.total_checks == 1
+        assert result.total_failed == 0
+
+    @pytest.mark.asyncio
+    async def test_groups_checks_into_families(self, pmm_api):
+        """Assert checks are grouped by family key."""
+        pmm_api.get_advisor_checks.return_value = [
+            {"name": "mysql_c1", "family": "ADVISOR_mysql"},
+            {"name": "mysql_c2", "family": "ADVISOR_mysql"},
+        ]
+        pmm_api.get_failed_advisor_checks.return_value = []
+        result = await collect_advisors(
+            pmm_api, self._ACTIVE_TYPES, self._NODES, self._SERVICES
+        )
+        assert len(result.families) == 1
+        expected_checks_in_family = 2
+        assert len(result.families[0].checks) == expected_checks_in_family
+        assert result.families[0].display_name == "MySQL"
+
+    @pytest.mark.asyncio
+    async def test_assigns_failed_checks_to_families(self, pmm_api):
+        """Assert failed checks are matched to the correct family."""
+        pmm_api.get_advisor_checks.return_value = [
+            {"name": "mysql_c1", "family": "ADVISOR_mysql"},
+        ]
+        pmm_api.get_failed_advisor_checks.return_value = [
+            {
+                "check_name": "mysql_c1",
+                "labels": {"node_id": "n1"},
+                "severity": "SEVERITY_WARNING",
+            },
+        ]
+        result = await collect_advisors(
+            pmm_api, self._ACTIVE_TYPES, self._NODES, self._SERVICES
+        )
+        assert result.total_failed == 1
+        assert "mysql_c1" in result.families[0].failed
+
+    @pytest.mark.asyncio
+    async def test_filters_by_allowed_prefix_when_no_family(self, pmm_api):
+        """Assert checks without family are filtered by name prefix."""
+        pmm_api.get_advisor_checks.return_value = [
+            {"name": "mysql_standalone"},
+            {"name": "innodb_buffer"},
+            {"name": "pg_stat"},
+        ]
+        pmm_api.get_failed_advisor_checks.return_value = []
+        result = await collect_advisors(
+            pmm_api, self._ACTIVE_TYPES, self._NODES, self._SERVICES
+        )
+        expected_checks = 2
+        assert result.total_checks == expected_checks
+
+    @pytest.mark.asyncio
+    async def test_refresh_triggers_start_advisor_checks(self, pmm_api):
+        """Assert refresh=True triggers check refreshes."""
+        pmm_api.get_advisor_checks.return_value = [
+            {"name": "mysql_c1", "family": "ADVISOR_mysql"},
+        ]
+        pmm_api.get_failed_advisor_checks.return_value = []
+        result = await collect_advisors(
+            pmm_api, self._ACTIVE_TYPES, self._NODES, self._SERVICES, refresh=True
+        )
+        pmm_api.start_advisor_checks.assert_awaited_once()
+        assert result.refresh_issues == []
+
+    @pytest.mark.asyncio
+    async def test_no_refresh_by_default(self, pmm_api):
+        """Assert refresh is not triggered by default."""
+        pmm_api.get_advisor_checks.return_value = []
+        pmm_api.get_failed_advisor_checks.return_value = []
+        await collect_advisors(pmm_api, self._ACTIVE_TYPES, self._NODES, self._SERVICES)
+        pmm_api.start_advisor_checks.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_checks(self, pmm_api):
+        """Assert empty response yields zero-count section."""
+        pmm_api.get_advisor_checks.return_value = []
+        pmm_api.get_failed_advisor_checks.return_value = []
+        result = await collect_advisors(
+            pmm_api, self._ACTIVE_TYPES, self._NODES, self._SERVICES
+        )
+        assert result.total_checks == 0
+        assert result.families == []
+
+
 # _fetch_base_inventory
 class TestFetchBaseInventory:
     """Test the ``_fetch_base_inventory`` helper."""
