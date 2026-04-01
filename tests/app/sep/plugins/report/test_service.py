@@ -15,6 +15,8 @@
 
 """Define tests for the app.sep.plugins.report.service module."""
 
+from __future__ import annotations
+
 from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -38,6 +40,7 @@ from app.sep.plugins.report.service import (
     _parse_failed_checks,
     _refresh_checks,
     collect_advisors,
+    collect_alerts,
     collect_backups,
     collect_inventory,
     collect_storage,
@@ -1181,6 +1184,7 @@ class TestGenerateReport:
         assert "backups" not in collected
         assert "storage" not in collected
         assert "uptime" not in collected
+        assert "alerts" in collected
         assert "advisors" in collected
         assert "inventory" in collected
 
@@ -1230,3 +1234,19 @@ class TestGenerateReport:
         assert report.monitored.total_nodes == 0
         assert report.monitored.total_services == 0
 
+    @pytest.mark.asyncio
+    async def test_defaults_to_all_sections(self, pmm_api):
+        """Assert all REPORT_SECTIONS are collected when sections=None."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [{"g": []}, {"m": []}]
+        pmm_api.get_grafana_datasources.return_value = [
+            {"name": "Metrics", "id": 1, "uid": "u1"},
+        ]
+        with patch(
+            "app.sep.plugins.report.service._collect_section",
+            new_callable=AsyncMock,
+        ) as mock_collect:
+            await generate_report(pmm_api, sections=None)
+        collected = {c.args[0] for c in mock_collect.await_args_list}
+        expected_sections = 6
+        assert len(collected) == expected_sections

@@ -20,8 +20,12 @@ calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
 :mod:`~app.sep.plugins.report.models` objects.
 """
 
+from __future__ import annotations
+
 import logging
+import re
 import time
+from collections import OrderedDict
 from datetime import datetime, timedelta, UTC
 from typing import Any
 
@@ -31,6 +35,8 @@ from .models import (
     AdvisorCheck,
     AdvisorFamily,
     AdvisorSection,
+    AlertEntry,
+    AlertSection,
     BackupEntry,
     BackupSection,
     BackupStatus,
@@ -62,6 +68,20 @@ SERVICE_NAMES: dict[str, str] = {
     "postgresql": "PostgreSQL",
     "proxysql": "ProxySQL",
 }
+
+_ALERT_LABEL_KEYS = [
+    "alertname",
+    "environment",
+    "grafana_folder",
+    "node_id",
+    "node_name",
+    "service",
+    "service_id",
+    "service_type",
+    "severity",
+    "template_name",
+]
+_ALERT_PATTERN = re.compile(r"\{(.+)\}")
 
 _EXCLUDED_FS = "rootfs|selinuxfs|autofs|rpc_pipefs|tmpfs"
 _PMM_SERVER_FILTER = {"pmm-server", "pmm-server-postgresql"}
@@ -231,6 +251,79 @@ async def collect_advisors(
         total_failed=len(failed_by_name),
         refresh_issues=refresh_issues,
         families=list(families.values()),
+    )
+
+
+async def collect_alerts(
+    pmm_api: PMMRemoteAPI,
+    start_ts: int,
+    stop_ts: int,
+) -> AlertSection:
+    """Fetch alert annotations from Grafana and aggregate them.
+
+    :param pmm_api: PMM API client.
+    :param start_ts: Start of the report period (epoch ms).
+    :param stop_ts: End of the report period (epoch ms).
+    :return: Populated alert section.
+    """
+    raw = await pmm_api.get_grafana_annotations(from_ts=start_ts, to_ts=stop_ts)
+
+    alerts: list[AlertEntry] = []
+    per_service: dict[str, int] = {}
+    per_rule: dict[str, int] = {}
+    per_host: dict[str, int] = {}
+    daily: OrderedDict[str, int] = OrderedDict()
+    daily_per_host: OrderedDict[str, dict[str, int]] = OrderedDict()
+
+    for annotation in raw:
+        if annotation.get("newState") != "Alerting":
+            continue
+        matches = _ALERT_PATTERN.findall(annotation.get("text", ""))
+        if not matches:
+            continue
+        data: dict[str, Any] = dict.fromkeys(_ALERT_LABEL_KEYS, "")
+        data.update(
+            {
+                parts[0]: parts[1]
+                for parts in (pair.split("=") for pair in matches[0].split(", "))
+                if len(parts) == _MIN_FRAME_FIELDS and parts[0] in _ALERT_LABEL_KEYS
+            }
+        )
+        data["id"] = annotation.get("id", 0)
+        data["time"] = annotation.get("time", 0)
+        entry = AlertEntry(**data)
+        alerts.append(entry)
+
+        if not entry.node_name:
+            continue
+
+        rule = entry.alertname.rsplit("_", 1)[-1]
+        per_rule[rule] = per_rule.get(rule, 0) + 1
+        per_host[entry.node_name] = per_host.get(entry.node_name, 0) + 1
+
+        svc_key = entry.service_type or entry.service
+        if svc_key:
+            per_service[svc_key] = per_service.get(svc_key, 0) + 1
+
+        try:
+            day = time.strftime("%d %B %Y", time.gmtime(entry.time / 1000))
+            daily[day] = daily.get(day, 0) + 1
+            daily_per_host.setdefault(entry.node_name, {})
+            daily_per_host[entry.node_name][day] = (
+                daily_per_host[entry.node_name].get(day, 0) + 1
+            )
+        except (OverflowError, OSError):
+            logger.warning("Failed to format alert time %s", entry.time)
+
+    alerts.sort(key=lambda a: a.time, reverse=True)
+    return AlertSection(
+        total_alerts=len(alerts),
+        alerts_per_service=per_service,
+        alerts_per_rule=per_rule,
+        alerts_per_host=per_host,
+        alerts_daily=daily,
+        alerts_daily_per_host=daily_per_host,
+        alert_history=alerts,
     )
 
 
@@ -624,6 +717,9 @@ async def _collect_section(
             kwargs["nodes_raw"],
             kwargs["services_raw"],
             refresh=kwargs.get("refresh", False),
+        ),
+        "alerts": lambda: collect_alerts(
+            kwargs["pmm_api"], kwargs["start_ts"], kwargs["stop_ts"]
         ),
         "backups": lambda: collect_backups(
             kwargs["pmm_api"],
