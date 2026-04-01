@@ -20,7 +20,9 @@ calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
 :mod:`~app.sep.plugins.report.models` objects.
 """
 
+from app.sep.clients.pmm import PMMRemoteAPI
 
+_PMM_SERVER_FILTER = {"pmm-server", "pmm-server-postgresql"}
 
 def _find_labels(schema_fields: list[dict[str, Any]]) -> dict[str, Any]:
     """Extract PMM labels from Grafana frame schema fields."""
@@ -75,3 +77,45 @@ async def _refresh_checks(
             logger.warning("Refresh timeout for check %s", raw["name"])
             issues.append(raw["name"])
     return issues
+async def _fetch_base_inventory(
+    pmm_api: PMMRemoteAPI,
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], set[str]]:
+    """Fetch nodes and services from PMM, filtering out internal entries.
+
+    :return: Tuple of (nodes_raw, services_raw, active_service_types).
+    """
+    nodes_raw: dict[str, dict[str, Any]] = {}
+    services_raw: dict[str, dict[str, Any]] = {}
+    active_types: set[str] = set()
+
+    if await pmm_api.is_older_than_v3():
+        nodes_data = await pmm_api.post("/v1/inventory/Nodes/List", json={})
+    else:
+        nodes_data = await pmm_api.get("/v1/inventory/nodes")
+    for node_type, node_list in nodes_data.items():
+        for node in node_list:
+            nid = node.get("node_id", "")
+            nname = node.get("node_name", "")
+            if nid in _PMM_SERVER_FILTER or nname in _PMM_SERVER_FILTER:
+                continue
+            nodes_raw[nid] = {"name": nname, "type": node_type, "id": nid}
+
+    if await pmm_api.is_older_than_v3():
+        svc_data = await pmm_api.post("/v1/inventory/Services/List", json={})
+    else:
+        svc_data = await pmm_api.get("/v1/inventory/services")
+    for svc_type, svc_list in svc_data.items():
+        for svc in svc_list:
+            sid = svc.get("service_id", "")
+            sname = svc.get("service_name", "")
+            if sname in _PMM_SERVER_FILTER or svc.get("node_id") == "pmm-server":
+                continue
+            services_raw[sid] = {
+                "name": sname,
+                "type": svc_type,
+                "id": sid,
+                "node_id": svc.get("node_id", ""),
+            }
+            active_types.add(svc_type)
+
+    return nodes_raw, services_raw, active_types
