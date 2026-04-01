@@ -38,6 +38,7 @@ from .models import (
     FailedCheck,
     InventorySection,
     InventoryServiceEntry,
+    MonitoredSummary,
     REPORT_SECTIONS,
     ReportData,
     ReportMetadata,

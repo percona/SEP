@@ -1149,6 +1149,38 @@ class TestGenerateReport:
         assert report.refresh is True
 
     @pytest.mark.asyncio
+    async def test_monitored_summary_counts(self, pmm_api):
+        """Assert monitored summary reflects node and service counts."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [
+            {
+                "generic": [
+                    {"node_id": "n1", "node_name": "h1"},
+                    {"node_id": "n2", "node_name": "h2"},
+                ]
+            },
+            {
+                "mysql": [
+                    {"service_id": "s1", "service_name": "a", "node_id": "n1"},
+                    {"service_id": "s2", "service_name": "b", "node_id": "n2"},
+                ]
+            },
+        ]
+        pmm_api.get_grafana_datasources.return_value = [
+            {"name": "Metrics", "id": 1, "uid": "u1"},
+        ]
+        with patch(
+            "app.sep.plugins.report.service._collect_section",
+            new_callable=AsyncMock,
+        ):
+            report = await generate_report(pmm_api)
+        expected_nodes = 2
+        expected_services = 2
+        assert report.monitored.total_nodes == expected_nodes
+        assert report.monitored.total_services == expected_services
+        assert report.monitored.services_by_type == {"mysql": expected_services}
+
+    @pytest.mark.asyncio
     async def test_handles_inventory_fetch_failure(self, pmm_api):
         """Assert report is still generated when base inventory fetch fails."""
         pmm_api.is_older_than_v3.return_value = False
