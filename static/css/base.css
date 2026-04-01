@@ -1270,6 +1270,10 @@ button.list-item:focus-visible {
     content: "notifications";
 }
 
+.list-item.alert-troubleshooting .icon::before {
+    content: "troubleshoot";
+}
+
 /*=============================================*/
 /* Foundations for the sidebar type of layout */
 /*=============================================*/

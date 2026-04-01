@@ -44,6 +44,9 @@
 #    placeholder: e.g. /home/user/folder/; file.zip
 #    positional: true
 #    required: true
+# service_type: generic
+# alerts:
+#   - HighDiskUsage
 # ---
 
 usage() {

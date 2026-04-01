@@ -12,6 +12,9 @@
 #    description: Path to defaults-file
 # atw:
 #  - NATIVE_ASYNC_REPLICATION
+# service_type: mysql
+# alerts:
+#   - MySQLTablesWithoutPK
 # ---
 
 # Usage: ./mysql_tables_without_pk.sh [--defaults-file=path] [mysql_args...]
