@@ -24,6 +24,8 @@ from app.sep.plugins.report.service import (
     _build_allowed_check_prefixes,
     _fetch_base_inventory,
     _get_metrics_datasource,
+    _interval_ms,
+    _parse_failed_checks,
     _refresh_checks,
 )
 
@@ -109,6 +111,69 @@ class TestIntervalMs:
         """Assert ValueError for an unsupported time string."""
         with pytest.raises(ValueError, match="Unsupported time format"):
             _interval_ms("yesterday", "now")
+
+
+# _parse_failed_checks
+class TestParseFailedChecks:
+    """Test the ``_parse_failed_checks`` helper."""
+
+    _NODES = {"n1": {"name": "node-a"}}
+    _SERVICES = {"s1": {"name": "mysql-prod"}}
+
+    def test_groups_results_by_check_name(self):
+        """Assert results are grouped into lists keyed by check_name."""
+        raw = [
+            {
+                "check_name": "check_a",
+                "labels": {"node_id": "n1", "service_id": "s1"},
+                "severity": "SEVERITY_WARNING",
+            },
+            {
+                "check_name": "check_a",
+                "labels": {"node_id": "n1", "service_id": "s1"},
+                "severity": "SEVERITY_CRITICAL",
+            },
+            {
+                "check_name": "check_b",
+                "labels": {},
+            },
+        ]
+        result = _parse_failed_checks(raw, self._NODES, self._SERVICES)
+        expected_check_a_count = 2
+        assert len(result["check_a"]) == expected_check_a_count
+        assert len(result["check_b"]) == 1
+
+    def test_resolves_node_and_service_names(self):
+        """Assert node_name and service_name are resolved from lookup dicts."""
+        raw = [
+            {
+                "check_name": "c",
+                "labels": {"node_id": "n1", "service_id": "s1"},
+            },
+        ]
+        result = _parse_failed_checks(raw, self._NODES, self._SERVICES)
+        fc = result["c"][0]
+        assert fc.node_name == "node-a"
+        assert fc.service_name == "mysql-prod"
+
+    def test_handles_missing_node_and_service(self):
+        """Assert None when node_id/service_id are not in lookup dicts."""
+        raw = [
+            {
+                "check_name": "c",
+                "labels": {"node_id": "unknown", "service_id": "unknown"},
+            },
+        ]
+        result = _parse_failed_checks(raw, self._NODES, self._SERVICES)
+        fc = result["c"][0]
+        assert fc.node_name is None
+        assert fc.service_name is None
+
+    def test_returns_empty_dict_for_empty_input(self):
+        """Assert empty dict when no failed checks are provided."""
+        assert _parse_failed_checks([], {}, {}) == {}
+
+
 # _build_allowed_check_prefixes
 class TestBuildAllowedCheckPrefixes:
     """Test the ``_build_allowed_check_prefixes`` helper."""

@@ -25,6 +25,10 @@ from typing import Any
 
 from app.sep.clients.pmm import PMMRemoteAPI
 
+from .models import (
+    FailedCheck,
+)
+
 logger = logging.getLogger(__name__)
 
 _PMM_SERVER_FILTER = {"pmm-server", "pmm-server-postgresql"}
@@ -67,6 +71,34 @@ async def _get_metrics_datasource(
         if ds.get("name") == "Metrics":
             return ds["id"], ds["uid"]
     raise LookupError("Metrics datasource not found in Grafana")
+
+
+def _parse_failed_checks(
+    raw_failed: list[dict[str, Any]],
+    nodes: dict[str, dict[str, Any]],
+    services: dict[str, dict[str, Any]],
+) -> dict[str, list[FailedCheck]]:
+    """Parse raw failed check results into structured objects grouped by name."""
+    failed_by_name: dict[str, list[FailedCheck]] = {}
+    for result in raw_failed:
+        labels = result.get("labels", {})
+        node_info = nodes.get(labels.get("node_id", ""), {})
+        svc_info = services.get(labels.get("service_id", ""), {})
+        fc = FailedCheck(
+            name=result["check_name"],
+            description=result.get("description", ""),
+            summary=result.get("summary", ""),
+            severity=result.get("severity", "SEVERITY_WARNING"),
+            node_name=node_info.get("name"),
+            node_id=labels.get("node_id"),
+            service_name=svc_info.get("name"),
+            service_id=labels.get("service_id"),
+            read_more_url=result.get("read_more_url", ""),
+        )
+        failed_by_name.setdefault(fc.name, []).append(fc)
+    return failed_by_name
+
+
 def _build_allowed_check_prefixes(active_service_types: set[str]) -> set[str]:
     """Build the set of allowed check name prefixes from active service types."""
     extra: set[str] = set()
