@@ -12,6 +12,9 @@
 # atw:
 #  - NATIVE_ASYNC_REPLICATION
 #  - MULTI_SOURCE_REPLICATION
+# service_type: mysql
+# alerts:
+#   - MySQLReplicaLag
 # ---
 
 # Usage: ./mysql_replica_status.sh [--defaults-file=path] [mysql_args...]

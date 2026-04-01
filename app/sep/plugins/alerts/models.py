@@ -21,41 +21,7 @@ from typing import Annotated
 import yaml
 from pydantic import BaseModel, StringConstraints
 
-
-class ServiceType(StrEnum):
-    """Enumerate the supported service types for alert templates.
-
-    :cvar GENERIC: Generic service type.
-    :vartype GENERIC: str
-    :cvar MYSQL: MySQL service type.
-    :vartype MYSQL: str
-    :cvar MONGODB: MongoDB service type.
-    :vartype MONGODB: str
-    :cvar POSTGRESQL: PostgreSQL service type.
-    :vartype POSTGRESQL: str
-    """
-
-    GENERIC = "generic"
-    MYSQL = "mysql"
-    MONGODB = "mongodb"
-    POSTGRESQL = "postgresql"
-
-    @property
-    def label(self) -> str:
-        """Return the display label with correct product-name capitalization.
-
-        :return: The human-readable service type name.
-        :rtype: str
-        """
-        return _SERVICE_TYPE_LABELS[self.value]
-
-
-_SERVICE_TYPE_LABELS = {
-    "generic": "Generic",
-    "mysql": "MySQL",
-    "mongodb": "MongoDB",
-    "postgresql": "PostgreSQL",
-}
+from app.sep.models import AlertServiceType as ServiceType
 
 
 class AlertSeverity(StrEnum):
