@@ -1149,6 +1149,23 @@ class TestGenerateReport:
         assert report.refresh is True
 
     @pytest.mark.asyncio
+    async def test_sections_filter(self, pmm_api):
+        """Assert only requested sections are collected."""
+        pmm_api.is_older_than_v3.return_value = False
+        pmm_api.get.side_effect = [{"g": []}, {"m": []}]
+        pmm_api.get_grafana_datasources.return_value = [
+            {"name": "Metrics", "id": 1, "uid": "u1"},
+        ]
+        with patch(
+            "app.sep.plugins.report.service._collect_section",
+            new_callable=AsyncMock,
+        ) as mock_collect:
+            await generate_report(pmm_api, sections=["inventory", "uptime"])
+        collected = [c.args[0] for c in mock_collect.await_args_list]
+        assert "inventory" in collected
+        assert "uptime" in collected
+        assert "backups" not in collected
+
     async def test_monitored_summary_counts(self, pmm_api):
         """Assert monitored summary reflects node and service counts."""
         pmm_api.is_older_than_v3.return_value = False
