@@ -31,6 +31,7 @@ from .models import (
     AdvisorCheck,
     AdvisorFamily,
     AdvisorSection,
+    DiskUsageEntry,
     FailedCheck,
     InventorySection,
     InventoryServiceEntry,
@@ -38,6 +39,7 @@ from .models import (
     ReportData,
     ReportMetadata,
     ServiceStatus,
+    StorageSection,
     UptimeEntry,
     UptimeSection,
 )
@@ -57,6 +59,7 @@ SERVICE_NAMES: dict[str, str] = {
     "proxysql": "ProxySQL",
 }
 
+_EXCLUDED_FS = "rootfs|selinuxfs|autofs|rpc_pipefs|tmpfs"
 _PMM_SERVER_FILTER = {"pmm-server", "pmm-server-postgresql"}
 _MIN_FRAME_FIELDS = 2
 
@@ -101,6 +104,7 @@ async def _get_metrics_datasource(
     raise LookupError("Metrics datasource not found in Grafana")
 
 
+# Section collectors
 def _parse_failed_checks(
     raw_failed: list[dict[str, Any]],
     nodes: dict[str, dict[str, Any]],
@@ -224,6 +228,110 @@ async def collect_advisors(
         refresh_issues=refresh_issues,
         families=list(families.values()),
     )
+
+
+async def collect_storage(
+    pmm_api: PMMRemoteAPI,
+    node_ids: list[str],
+    since: str,
+    until: str,
+    ds_id: int,
+    ds_uid: str,
+) -> StorageSection:
+    """Fetch disk usage metrics from Prometheus via Grafana.
+
+    :param pmm_api: PMM API client.
+    :param node_ids: List of PMM node IDs to include.
+    :param since: Relative start time (e.g. ``now-7d``).
+    :param until: Relative end time (e.g. ``now``).
+    :param ds_id: Metrics datasource numeric ID.
+    :param ds_uid: Metrics datasource UID.
+    :return: Populated storage section.
+    """
+    if not node_ids:
+        return StorageSection()
+
+    node_filter = "|".join(node_ids)
+    expr_used = (
+        f"avg by (node_id, mountpoint) ("
+        f" (max_over_time(node_filesystem_size_bytes{{"
+        f'   node_id=~"{node_filter}", fstype!~"{_EXCLUDED_FS}"'
+        f"}}[1h])"
+        f"  or max_over_time(node_filesystem_size_bytes{{"
+        f'   node_id=~"{node_filter}", fstype!~"{_EXCLUDED_FS}"'
+        f"}}[5m])"
+        f" ) - "
+        f" (max_over_time(node_filesystem_free_bytes{{"
+        f'   node_id=~"{node_filter}", fstype!~"{_EXCLUDED_FS}"'
+        f"}}[1h])"
+        f"  or max_over_time(node_filesystem_free_bytes{{"
+        f'    node_id=~"{node_filter}", fstype!~"{_EXCLUDED_FS}"'
+        f"}}[5m])"
+        f" ))"
+    )
+    expr_total = (
+        f"max by (node_id, mountpoint) ( "
+        f"  node_filesystem_size_bytes{{"
+        f'   node_id=~"{node_filter}",'
+        f'    fstype!~"{_EXCLUDED_FS}"}}'
+        f")"
+    )
+
+    results = await pmm_api.query_grafana_datasource(
+        expressions=[expr_used, expr_total],
+        datasource_uid=ds_uid,
+        datasource_id=ds_id,
+        from_ts=since,
+        to_ts=until,
+        instant=False,
+        range_=True,
+    )
+
+    used_frames = results.get("A", {}).get("frames", [])
+    total_frames = results.get("B", {}).get("frames", [])
+    entries: list[DiskUsageEntry] = []
+
+    for i, frame in enumerate(used_frames):
+        fields = frame.get("schema", {}).get("fields", [])
+        if len(fields) < _MIN_FRAME_FIELDS:
+            continue
+        labels = fields[1].get("labels", {})
+        node_id = labels.get("node_id", "")
+        mountpoint = labels.get("mountpoint", "")
+        if not node_id or not mountpoint:
+            continue
+
+        values = frame.get("data", {}).get("values", [])
+        if len(values) < _MIN_FRAME_FIELDS:
+            continue
+
+        total_bytes = 0
+        if i < len(total_frames):
+            t_values = total_frames[i].get("data", {}).get("values", [])
+            if len(t_values) >= _MIN_FRAME_FIELDS and t_values[1]:
+                total_bytes = t_values[1][0]
+
+        used_values = values[1]
+        pct = (
+            round(used_values[-1] / total_bytes * 100)
+            if total_bytes and used_values
+            else 0
+        )
+
+        entries.append(
+            DiskUsageEntry(
+                node_name=node_id,
+                mountpoint=mountpoint,
+                capacity_bytes=int(total_bytes),
+                used_start_bytes=used_values[0] if used_values else 0,
+                used_end_bytes=used_values[-1] if used_values else 0,
+                used_peak_bytes=max(used_values) if used_values else 0,
+                usage_percentage=pct,
+            )
+        )
+
+    entries.sort(key=lambda e: e.usage_percentage, reverse=True)
+    return StorageSection(entries=entries)
 
 
 async def collect_uptime(
@@ -391,6 +499,14 @@ async def _collect_section(
             kwargs["nodes_raw"],
             kwargs["services_raw"],
             refresh=kwargs.get("refresh", False),
+        ),
+        "storage": lambda: collect_storage(
+            kwargs["pmm_api"],
+            sorted(kwargs["nodes_raw"].keys()),
+            kwargs["since"],
+            kwargs["until"],
+            kwargs["ds_id"],
+            kwargs["ds_uid"],
         ),
         "uptime": lambda: collect_uptime(
             kwargs["pmm_api"],

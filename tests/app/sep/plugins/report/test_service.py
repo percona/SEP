@@ -38,6 +38,7 @@ from app.sep.plugins.report.service import (
     _refresh_checks,
     collect_advisors,
     collect_inventory,
+    collect_storage,
     collect_uptime,
 )
 
@@ -407,6 +408,112 @@ class TestCollectAdvisors:
         )
         assert result.total_checks == 0
         assert result.families == []
+
+
+# collect_storage
+class TestCollectStorage:
+    """Test the ``collect_storage`` collector."""
+
+    _DS_ID = 42
+    _DS_UID = "metrics-uid"
+
+    def _make_used_frame(self, *, node_id="node-1", mountpoint="/", values=None):
+        if values is None:
+            values = [[100, 200, 300], [500_000, 600_000, 700_000]]
+        return {
+            "schema": {
+                "fields": [
+                    {"name": "Time"},
+                    {
+                        "name": "Value",
+                        "labels": {"node_id": node_id, "mountpoint": mountpoint},
+                    },
+                ],
+            },
+            "data": {"values": values},
+        }
+
+    def _make_total_frame(self, *, total_bytes=1_000_000):
+        return {
+            "schema": {"fields": [{"name": "Time"}, {"name": "Value"}]},
+            "data": {"values": [[100], [total_bytes]]},
+        }
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_for_no_node_ids(self, pmm_api):
+        """Assert empty StorageSection when no node IDs are provided."""
+        result = await collect_storage(
+            pmm_api, [], "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert result.entries == []
+        pmm_api.query_grafana_datasource.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_calculates_usage_percentage(self, pmm_api):
+        """Assert usage_percentage is correctly computed."""
+        total_bytes = 1_000_000
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {"frames": [self._make_used_frame()]},
+            "B": {"frames": [self._make_total_frame(total_bytes=total_bytes)]},
+        }
+        result = await collect_storage(
+            pmm_api, ["node-1"], "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert len(result.entries) == 1
+        expected_pct = 70
+        assert result.entries[0].usage_percentage == expected_pct
+
+    @pytest.mark.asyncio
+    async def test_entries_sorted_by_usage_descending(self, pmm_api):
+        """Assert entries are sorted by usage_percentage highest first."""
+        total = 1_000_000
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {
+                "frames": [
+                    self._make_used_frame(
+                        node_id="n1", mountpoint="/a", values=[[1], [300_000]]
+                    ),
+                    self._make_used_frame(
+                        node_id="n2", mountpoint="/b", values=[[1], [900_000]]
+                    ),
+                ],
+            },
+            "B": {
+                "frames": [
+                    self._make_total_frame(total_bytes=total),
+                    self._make_total_frame(total_bytes=total),
+                ],
+            },
+        }
+        result = await collect_storage(
+            pmm_api, ["n1", "n2"], "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert result.entries[0].usage_percentage > result.entries[1].usage_percentage
+
+    @pytest.mark.asyncio
+    async def test_skips_frames_without_node_id(self, pmm_api):
+        """Assert frames missing node_id label are skipped."""
+        frame = self._make_used_frame(node_id="")
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {"frames": [frame]},
+            "B": {"frames": []},
+        }
+        result = await collect_storage(
+            pmm_api, ["n1"], "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert result.entries == []
+
+    @pytest.mark.asyncio
+    async def test_zero_pct_when_no_total(self, pmm_api):
+        """Assert 0% usage when total_bytes is unavailable."""
+        pmm_api.query_grafana_datasource.return_value = {
+            "A": {"frames": [self._make_used_frame()]},
+            "B": {"frames": []},
+        }
+        result = await collect_storage(
+            pmm_api, ["node-1"], "now-7d", "now", self._DS_ID, self._DS_UID
+        )
+        assert result.entries[0].usage_percentage == 0
 
 
 # collect_uptime
