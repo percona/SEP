@@ -217,7 +217,7 @@ class ReportMetadata(BaseModel):
     generated_at: datetime
     report_week: str = ""
     report_interval: str = ""
-    organisation: str = ""
+    organization: str = ""
 
 
 REPORT_SECTIONS = (
