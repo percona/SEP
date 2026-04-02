@@ -213,6 +213,20 @@ def test_uvicorn_extra_reload_fields_default_to_empty_list(field_name: str):
     assert field_info.default == []
 
 
+@pytest.mark.parametrize(
+    ("field_name", "extra_values"),
+    [
+        ("UVICORN_EXTRA_RELOAD_DIRS", ["/extra/dir1", "/extra/dir2"]),
+        ("UVICORN_EXTRA_RELOAD_INCLUDES", ["*.toml", "*.yaml"]),
+        ("UVICORN_EXTRA_RELOAD_EXCLUDES", ["*.log", "*.tmp"]),
+    ],
+)
+def test_uvicorn_extra_reload_fields_accept_nonempty_lists(field_name, extra_values):
+    """Assert extra reload fields store non-empty values on ``BaseYamlAppSettings``."""
+    instance = BaseYamlAppSettings.model_construct(**{field_name: extra_values})
+    assert getattr(instance, field_name) == extra_values
+
+
 def test_settings_secret_key_is_secretstr():
     """Test that SECRET_KEY is a SecretStr instance and masked in repr."""
     from pydantic import SecretStr
