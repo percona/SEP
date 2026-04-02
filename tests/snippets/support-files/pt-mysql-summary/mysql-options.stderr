@@ -1,2 +1,2 @@
 ERROR 1049 \(42000\): Unknown database 'sql_mode=''"'
-\d\d\d\d(_\d\d){5} Cannot connect to MySQL.  Check that MySQL is running and that the options after -- are correct.
+\d\d\d\d(_\d\d){5} Cannot connect to MySQL.  Check that the options after -- are correct.
