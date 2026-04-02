@@ -365,6 +365,30 @@ class TestToFormField:
         assert isinstance(form_field, SelectElement)
 
 
+class TestGroupField:
+    """Test the group field on SnippetMetaParameter."""
+
+    def test_accepts_valid_string(self):
+        """Verify group field accepts a valid non-empty string."""
+        param = SnippetMetaParameter(name="host", group="Network")
+        assert param.group == "Network"
+
+    def test_defaults_to_none(self):
+        """Verify group field defaults to None when not provided."""
+        param = SnippetMetaParameter(name="host")
+        assert param.group is None
+
+    def test_rejects_empty_string(self):
+        """Verify group field rejects an empty string."""
+        with pytest.raises(ValidationError):
+            SnippetMetaParameter(name="host", group="")
+
+    def test_whitespace_only_accepted_as_nonempty(self):
+        """Verify group field accepts whitespace-only string (length > 0)."""
+        param = SnippetMetaParameter(name="host", group="   ")
+        assert param.group == "   "
+
+
 class TestConvertValidationErrors:
     """Test the convert_validation_errors static method."""
 
