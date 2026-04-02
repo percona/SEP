@@ -26,6 +26,7 @@ MUM_TASK_NAME_BY_ACTION = {
     "delete_user": "mum-user-delete",
     "list_roles": "mum-role-list",
     "create_role": "mum-role-create",
+    "update_role": "mum-role-update",
     "delete_role": "mum-role-delete",
 }
 MUM_TASK_NAMES = tuple(MUM_TASK_NAME_BY_ACTION.values())

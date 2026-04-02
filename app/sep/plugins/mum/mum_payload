@@ -237,6 +237,33 @@ def delete_role(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
     print(json_util.dumps({"ok": True, "result": result, "role": role_name, "db": db_name}))
 
 
+def update_role(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
+    """Update privileges and inherited roles for an existing custom MongoDB role.
+
+    Expected config keys:
+    - role (required): role name
+    - db (optional; defaults to 'admin'): database that owns the role
+    - privileges (optional): replacement list of {resource, actions} dicts
+    - inheritedRoles (optional): replacement list of role strings or {role, db} dicts
+    """
+    role_name = config.get("role")
+    if not role_name:
+        print(json_util.dumps({"ok": False, "error": "role name is required"}))
+        sys.exit(1)
+
+    db_name = config.get("db", "admin")
+    privileges = config.get("privileges", [])
+    inherited = normalize_roles(config.get("inheritedRoles", []), db_name)
+
+    target_db = db.client.get_database(db_name)
+    result = target_db.command({
+        "updateRole": role_name,
+        "privileges": privileges,
+        "roles": inherited,
+    })
+    print(json_util.dumps({"ok": True, "result": result, "role": role_name, "db": db_name}))
+
+
 def create_role(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
     """Create a custom MongoDB role.
 
@@ -282,6 +309,8 @@ def mum() -> None:
             list_roles(db)
         elif action == "delete_role":
             delete_role(db, config)
+        elif action == "update_role":
+            update_role(db, config)
         elif action == "create_role":
             create_role(db, config)
         elif action == "create_user":
