@@ -61,8 +61,12 @@ async def task_history_events_event_stream(
     request: Request,
     access_token: str,
 ) -> AsyncGenerator[str, None]:
-    """Yield incremental execution events for a task history."""
-    seen: set[str] = set()
+    """Yield incremental execution events for a task history.
+
+    The Tasks API returns events oldest-first; only the tail after the last emitted
+    index is processed each poll so cost stays bounded for long runs.
+    """
+    emitted_count = 0
     wait_interval = 2
     try:
         with tasks_client.auth(access_token) as tasks_api:
@@ -70,22 +74,20 @@ async def task_history_events_event_stream(
                 if await request.is_disconnected():
                     return
 
-                events = await tasks_api.get(f"/history/{task_history_id}/events") or []
-                for event in events:
-                    key = json.dumps(
-                        {
-                            "timestamp": event.get("timestamp"),
-                            "type": event.get("type"),
-                            "description": event.get("description"),
-                            "step": event.get("step"),
-                        },
-                        sort_keys=True,
-                        default=str,
+                raw_events = await tasks_api.get(f"/history/{task_history_id}/events")
+                events = raw_events if isinstance(raw_events, list) else []
+                if len(events) < emitted_count:
+                    logger.warning(
+                        "Execution events list shrank (task_history_id=%s): "
+                        "had %s emitted index, now len=%s; resetting cursor",
+                        task_history_id,
+                        emitted_count,
+                        len(events),
                     )
-                    if key in seen:
-                        continue
-                    seen.add(key)
+                    emitted_count = 0
+                for event in events[emitted_count:]:
                     yield f"data: {json.dumps(event, default=str)}\n\n"
+                emitted_count = len(events)
 
                 task_history = await tasks_api.get(f"/history/{task_history_id}")
                 if task_history["status"] != TaskHistoryStatusEnum.RUNNING:
