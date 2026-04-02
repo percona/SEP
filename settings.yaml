@@ -85,7 +85,7 @@ default:
         MODULE_NAME: alert_troubleshooting
         URI_PATH: /alert-troubleshooting
         CSS_CLASS: alert-troubleshooting
-      - NAME: Health Report
+      - NAME: Health & Security Report
         MODULE_NAME: report
         URI_PATH: /report
         CSS_CLASS: report
