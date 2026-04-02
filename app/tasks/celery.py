@@ -367,20 +367,11 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         task = await TaskManager.get_root_task(session, queue_item.task)
     if queue_item.is_running:
         executor = get_executor_for_task(task)
-        async with executor:
-            queue_item = await executor.sync_task_history(queue_item)
+        queue_item = await executor.sync_task_history(queue_item)
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
         return await TaskHistoryManager.save(
-            session,
-            queue_item,
-            flag_modified_fields=[
-                "execution_request",
-                "status",
-                "started_at",
-                "finished_at",
-                "sync_in_progress_started_at",
-            ],
+            session, queue_item, flag_modified_fields=["execution_request"]
         )
 
 

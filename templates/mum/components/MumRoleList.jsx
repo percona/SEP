@@ -11,12 +11,13 @@ import {
   TablePagination,
   TableRow,
   Toolbar,
+  Tooltip,
   Typography,
 } from "@mui/material";
 
 const ROWS_PER_PAGE = 10;
 
-const EXCLUDED_COLUMNS = new Set(["_id", "userId", "UserId"]);
+const EXCLUDED_COLUMNS = new Set(["isBuiltin", "_id"]);
 
 const getColumns = (rows) => {
   const cols = new Set();
@@ -28,29 +29,13 @@ const getColumns = (rows) => {
   return Array.from(cols);
 };
 
-const RoleChips = ({ roles }) => {
-  if (!Array.isArray(roles) || roles.length === 0) return <span>—</span>;
-  return (
-    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-      {roles.map((r, i) => (
-        <Chip
-          key={i}
-          label={r.db && r.db !== r.role ? `${r.role} @ ${r.db}` : r.role}
-          size="small"
-          variant="outlined"
-        />
-      ))}
-    </Box>
-  );
-};
-
-const MechanismChips = ({ mechanisms }) => {
-  if (!Array.isArray(mechanisms) || mechanisms.length === 0)
+const InheritedPrivilegesChips = ({ privileges }) => {
+  if (!Array.isArray(privileges) || privileges.length === 0)
     return <span>—</span>;
   return (
     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-      {mechanisms.map((m, i) => (
-        <Chip key={i} label={m} size="small" />
+      {privileges.map((p, i) => (
+        <Chip key={i} label={p.role || JSON.stringify(p)} size="small" variant="outlined" />
       ))}
     </Box>
   );
@@ -58,39 +43,34 @@ const MechanismChips = ({ mechanisms }) => {
 
 const formatCell = (col, value) => {
   if (value === null || value === undefined) return "";
-  if (col === "roles") return <RoleChips roles={value} />;
-  if (col === "mechanisms") return <MechanismChips mechanisms={value} />;
+  if (col === "inheritedRoles" || col === "roles")
+    return <InheritedPrivilegesChips privileges={value} />;
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 };
 
-const MumUserList = ({
-  usersData = [],
-  title = "Users Table",
+const MumRoleList = ({
+  rolesData = [],
   toolbarActions = null,
   renderRowActions = null,
-  emptyState = "No rows to display.",
+  emptyState = "No roles to display.",
 }) => {
-  const columns = useMemo(() => getColumns(usersData), [usersData]);
+  const columns = useMemo(() => getColumns(rolesData), [rolesData]);
   const showActions = typeof renderRowActions === "function";
   const [page, setPage] = useState(0);
 
-  useEffect(() => { setPage(0); }, [usersData]);
+  useEffect(() => { setPage(0); }, [rolesData]);
 
-  const pageRows = usersData.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
-
-  if (!usersData && !toolbarActions) {
-    return null;
-  }
+  const pageRows = rolesData.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
 
   return (
     <Paper elevation={1}>
       <Toolbar>
         <Typography variant="subtitle1" sx={{ flex: 1 }}>
-          {title}
+          Roles Table
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          {usersData.length ? `${usersData.length} users` : "No data yet"}
+          {rolesData.length ? `${rolesData.length} roles` : "No data yet"}
         </Typography>
         {toolbarActions && <Box sx={{ ml: 2 }}>{toolbarActions}</Box>}
       </Toolbar>
@@ -98,22 +78,18 @@ const MumUserList = ({
         <Table size="small">
           <TableHead>
             <TableRow>
-              {columns.length === 0 ? (
-                <TableCell>No columns</TableCell>
-              ) : (
-                <>
-                  {columns.map((col) => (
-                    <TableCell key={col}>{col}</TableCell>
-                  ))}
-                  {showActions && <TableCell key="__actions">actions</TableCell>}
-                </>
-              )}
+              {/* Always show a Type column first */}
+              <TableCell>Type</TableCell>
+              {columns.map((col) => (
+                <TableCell key={col}>{col}</TableCell>
+              ))}
+              {showActions && <TableCell>actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
-            {usersData.length === 0 ? (
+            {rolesData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={Math.max(columns.length + (showActions ? 1 : 0), 1)}>
+                <TableCell colSpan={Math.max(columns.length + (showActions ? 2 : 1), 1)}>
                   <Typography variant="body2" color="text.secondary">
                     {emptyState}
                   </Typography>
@@ -121,7 +97,27 @@ const MumUserList = ({
               </TableRow>
             ) : (
               pageRows.map((row, idx) => (
-                <TableRow key={idx} hover>
+                <TableRow
+                  key={idx}
+                  hover
+                  sx={row.isBuiltin ? { opacity: 0.75 } : undefined}
+                >
+                  <TableCell>
+                    <Tooltip
+                      title={
+                        row.isBuiltin
+                          ? "Built-in MongoDB role"
+                          : "Custom user-defined role"
+                      }
+                    >
+                      <Chip
+                        label={row.isBuiltin ? "built-in" : "custom"}
+                        size="small"
+                        color={row.isBuiltin ? "default" : "primary"}
+                        variant={row.isBuiltin ? "outlined" : "filled"}
+                      />
+                    </Tooltip>
+                  </TableCell>
                   {columns.map((col) => (
                     <TableCell key={col}>{formatCell(col, row?.[col])}</TableCell>
                   ))}
@@ -140,7 +136,7 @@ const MumUserList = ({
       </TableContainer>
       <TablePagination
         component="div"
-        count={usersData.length}
+        count={rolesData.length}
         page={page}
         rowsPerPage={ROWS_PER_PAGE}
         rowsPerPageOptions={[ROWS_PER_PAGE]}
@@ -150,4 +146,4 @@ const MumUserList = ({
   );
 };
 
-export default MumUserList;
+export default MumRoleList;

@@ -323,6 +323,62 @@ async def mum_list_users(
         )
 
 @router.post(
+    "/ui/list-roles",
+    dependencies=[IsAuthenticated],
+    response_class=JSONResponse,
+)
+@csrf_exempt
+async def mum_list_roles(
+    request: Request,  # noqa: ARG001
+    body: dict[str, Any],
+    tasks_api: TaskAPI,
+) -> JSONResponse:
+    """List MongoDB roles (built-in and custom) by executing the MUM list-roles task.
+    Expects JSON body with:
+    - target: executor host name (required)
+    """
+    logger.debug("Received list-roles request with body: %s", body)
+    target = body.get("target")
+    if not target:
+        return JSONResponse(
+            content={"detail": "'target' is required"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        config_obj: dict[str, Any] = {"action": "list_roles"}
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
+            tasks_api,
+            task_name=task_name,
+            target=target,
+            config=config_obj,
+        )
+        logger.info(
+            "Successfully executed list_roles for target '%s' (history ID: %s)",
+            target,
+            history.get("id"),
+        )
+        return JSONResponse(
+            content={"task": default_task, "history": history},
+            status_code=status.HTTP_201_CREATED,
+        )
+    except HTTPException as exc:  # type: ignore[name-defined]
+        logger.error(
+            "Failed to list roles for target '%s': %s (status: %s)",
+            target,
+            exc.detail,
+            exc.status_code,
+        )
+        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+    except Exception as exc:
+        logger.exception("Unexpected error while listing roles for target '%s'", target)
+        return JSONResponse(
+            content={"detail": f"Internal error: {str(exc)}"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post(
     "/ui/create-user",
     dependencies=[IsAuthenticated],
     response_class=JSONResponse,
@@ -527,6 +583,130 @@ async def mum_delete_user(
         )
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+
+@router.post(
+    "/ui/create-role",
+    dependencies=[IsAuthenticated],
+    response_class=JSONResponse,
+)
+@csrf_exempt
+async def mum_create_role(
+    request: Request,  # noqa: ARG001
+    body: dict[str, Any],
+    tasks_api: TaskAPI,
+) -> JSONResponse:
+    """Create a custom MongoDB role.
+
+    Expects JSON body with:
+    - target: executor host name (required)
+    - role: role name (required)
+    - db: database that owns the role (optional, defaults to 'admin')
+    - privileges: list of {resource, actions} dicts (optional)
+    - inheritedRoles: list of role strings or {role, db} dicts (optional)
+    """
+    target = body.get("target")
+    if not target:
+        return JSONResponse(
+            content={"detail": "'target' is required"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    role = body.get("role")
+    if not role:
+        return JSONResponse(
+            content={"detail": "'role' is required"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    db_name = body.get("db") or "admin"
+    privileges = body.get("privileges", [])
+    inherited_roles = body.get("inheritedRoles", [])
+
+    try:
+        config_obj: dict[str, Any] = {
+            "action": "create_role",
+            "role": role,
+            "db": db_name,
+            "privileges": privileges,
+            "inheritedRoles": inherited_roles,
+        }
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
+            tasks_api,
+            task_name=task_name,
+            target=target,
+            config=config_obj,
+        )
+        return JSONResponse(
+            content={"task": default_task, "history": history},
+            status_code=status.HTTP_201_CREATED,
+        )
+    except HTTPException as exc:  # type: ignore[name-defined]
+        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+    except Exception as exc:
+        logger.exception("Unexpected error while creating role for target '%s'", target)
+        return JSONResponse(
+            content={"detail": f"Internal error: {str(exc)}"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post(
+    "/ui/delete-role",
+    dependencies=[IsAuthenticated],
+    response_class=JSONResponse,
+)
+@csrf_exempt
+async def mum_delete_role(
+    request: Request,  # noqa: ARG001
+    body: dict[str, Any],
+    tasks_api: TaskAPI,
+) -> JSONResponse:
+    """Drop a custom MongoDB role.
+
+    Expects JSON body with:
+    - target: executor host name (required)
+    - role: role name (required)
+    - db: database that owns the role (optional, defaults to 'admin')
+    """
+    target = body.get("target")
+    if not target:
+        return JSONResponse(
+            content={"detail": "'target' is required"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    role = body.get("role")
+    if not role:
+        return JSONResponse(
+            content={"detail": "'role' is required"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    db_name = body.get("db") or "admin"
+
+    try:
+        config_obj: dict[str, Any] = {
+            "action": "delete_role",
+            "role": role,
+            "db": db_name,
+        }
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
+            tasks_api,
+            task_name=task_name,
+            target=target,
+            config=config_obj,
+        )
+        return JSONResponse(
+            content={"task": default_task, "history": history},
+            status_code=status.HTTP_201_CREATED,
+        )
+    except HTTPException as exc:  # type: ignore[name-defined]
+        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+    except Exception as exc:
+        logger.exception("Unexpected error while deleting role for target '%s'", target)
+        return JSONResponse(
+            content={"detail": f"Internal error: {str(exc)}"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
 
 @router.post(
     "/ui/usertask",
