@@ -94,13 +94,13 @@ EXTRA_ARGS_INPUT_NAME = "-extra_args-"
 EXTRA_ARGS_INPUT = TextInputElement(
     name=EXTRA_ARGS_INPUT_NAME,
     placeholder="e.g. --verbose",
-    title="Any extra args to pass to the snippet execution command",
+    description="Any extra args to pass to the snippet execution command",
     label="Extra Args",
 )
 SUDO_INPUT_NAME = "-sudo-"
 SUDO_INPUT = CheckboxInputElement(
     name=SUDO_INPUT_NAME,
-    title="Execute the snippet with sudo",
+    description="Execute the snippet with sudo",
     label="Use sudo",
     id="sudoCheckbox",
 )
@@ -131,7 +131,7 @@ def get_executor_hosts_fieldset(
             SelectElement(
                 children=options,
                 name=EXECUTOR_HOSTS_INPUT_NAME,
-                title="Select the hostname of the target system for snippet execution.",
+                description="Select the hostname of the target system for snippet execution.",
                 label="Select host",
                 required=True,
                 classes={"executorHostSelect"},
@@ -796,7 +796,7 @@ class BaseSnippet(BaseModel):
             groups.setdefault(None, []).append(
                 CheckboxInputElement(
                     name=SUDO_INPUT_NAME,
-                    title="Execute the snippet with sudo",
+                    description="Execute the snippet with sudo",
                     label="Use sudo",
                     id="sudoCheckbox",
                     checked=sudo_default,

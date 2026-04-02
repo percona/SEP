@@ -36,6 +36,10 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </script>
     <script src="{{ url_for('static', path='/js/snippets.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
+    {% if snippet.is_approved %}
+        <script src="{{ url_for('static', path='/js/info-tooltip.js') }}"
+                nonce="{{ request.state.csp_nonce }}"></script>
+    {% endif %}
     {% if history_tasks or running_tasks %}
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
@@ -162,6 +166,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 </span>
             {% endif %}
             {{ snippet.to_form(executor_hosts) | safe }}
+            <script nonce="{{ request.state.csp_nonce }}">
+                if (window.initInfoTooltips) {
+                    window.initInfoTooltips(document.getElementById('snippetExecuteForm'));
+                }
+            </script>
         </section>
     {% endif -%}
     {% if history_tasks %}

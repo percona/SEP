@@ -232,3 +232,54 @@ label:has(> input[type="checkbox"]:disabled)>.checkmark {
         opacity: .5
     }
 }
+
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    cursor: help;
+    margin-left: 0.25em;
+    vertical-align: middle;
+    color: var(--textSecondary, #666);
+    opacity: 0.25;
+    transition: opacity 0.15s ease;
+}
+
+.info-icon:hover,
+.info-icon:focus-visible {
+    opacity: 1;
+}
+
+.info-icon:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.info-icon .material-symbols-outlined {
+    font-size: 1.1rem;
+}
+
+.info-tooltip-floating {
+    position: fixed;
+    z-index: 2147483647;
+    min-width: 180px;
+    max-width: 200px;
+    padding: 0.5em 0.75em;
+    border-radius: 6px;
+    background: var(--surfaceElevation1, #fff);
+    color: var(--textPrimary, #333);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    border: 1px solid var(--lineDivider, #ddd);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    pointer-events: none;
+    white-space: normal;
+    word-wrap: break-word;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.info-tooltip-floating.visible {
+    opacity: 1;
+    visibility: visible;
+}
