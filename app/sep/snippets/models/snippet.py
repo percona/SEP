@@ -782,16 +782,18 @@ class BaseSnippet(BaseModel):
         ]
         parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
-        fields = []
+        groups = {}
         for param in parameters:
             try:
-                fields.append(param.to_form_field())
+                field = param.to_form_field()
             except ValidationError:
                 logger.warning("Invalid snippet parameter: %r", param, exc_info=True)
+                continue
+            groups.setdefault(param.group, []).append(field)
         if add_extra_args_field:
-            fields.append(EXTRA_ARGS_INPUT)
+            groups.setdefault(None, []).append(EXTRA_ARGS_INPUT)
         if add_sudo_field:
-            fields.append(
+            groups.setdefault(None, []).append(
                 CheckboxInputElement(
                     name=SUDO_INPUT_NAME,
                     title="Execute the snippet with sudo",
@@ -800,10 +802,13 @@ class BaseSnippet(BaseModel):
                     checked=sudo_default,
                 )
             )
-        logger.debug("Generated snippet form fields from params: %s", fields)
-        if fields:
+        for group_name, group_fields in groups.items():
+            legend = group_name if group_name is not None else "Parameters"
+            logger.debug(
+                "Generated snippet form fields for %r: %s", legend, group_fields
+            )
             fieldsets.append(
-                FieldsetElement(legend="Parameters", children=fields, disabled=disabled)
+                FieldsetElement(legend=legend, children=group_fields, disabled=disabled)
             )
         return FormElement(
             id="snippetExecuteForm",
