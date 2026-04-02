@@ -82,7 +82,7 @@ if __name__ == "__main__":
         ssl_keyfile=inventory_settings.SSL_KEYFILE,
         ssl_certfile=inventory_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
-        reload=True,
+        reload=inventory_settings.UVICORN_RELOAD,
         reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
         reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
         reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
