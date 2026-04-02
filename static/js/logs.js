@@ -277,18 +277,6 @@ $(document).ready(function() {
         }
     }
 
-    function shouldFetchExecutionEvents($logConsole) {
-        const status = String($logConsole.data('task-status') || '').toLowerCase();
-        const logsPresent = String($logConsole.data('logs-present')).toLowerCase() !== 'false';
-        return (
-            status === 'running' ||
-            status === 'failed' ||
-            status === 'lost' ||
-            status === 'stopped' ||
-            !logsPresent
-        );
-    }
-
     function getSelectedLogStepName($logConsole) {
         const $tab = $logConsole.find('.log-footer .log-step-tab.selected');
         if ($tab.length) {
@@ -411,7 +399,6 @@ $(document).ready(function() {
     }
 
     function fetchExecutionEventsIfNeeded($logConsole, taskId) {
-        if (!shouldFetchExecutionEvents($logConsole)) return;
         const status = String($logConsole.data('task-status') || '').toLowerCase();
         const isRunning = status === 'running';
         if (isRunning) {
