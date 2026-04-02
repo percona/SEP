@@ -13,12 +13,15 @@ import BuiltinRolesSelector from "./BuiltinRolesSelector";
 
 const DEFAULT_DB = "admin";
 
+// Preserve {role, db} objects from MongoDB; fall back to string for plain names.
 const parseRoles = (roles) =>
   Array.isArray(roles)
     ? roles
         .map((role) => {
           if (typeof role === "string") return role;
-          if (role && typeof role === "object") return role.role || role.name || null;
+          if (role && typeof role === "object" && (role.role || role.name)) {
+            return { role: role.role || role.name, db: role.db || "" };
+          }
           return null;
         })
         .filter(Boolean)
@@ -28,9 +31,11 @@ const EditUserButton = ({
   row,
   selectedTarget,
   builtinRoles,
+  rolesData = [],
   onSuccess,
   buttonProps = {},
 }) => {
+  const customRoles = rolesData.filter((r) => !r.isBuiltin && r.role);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -98,9 +103,9 @@ const EditUserButton = ({
       <Button size="small" variant="outlined" onClick={openDialog} {...buttonProps}>
         EDIT
       </Button>
-      <Dialog open={open} onClose={closeDialog} fullWidth maxWidth="sm">
+      <Dialog open={open} onClose={closeDialog} fullWidth maxWidth="md" scroll="paper" disableScrollLock>
         <DialogTitle>Edit MongoDB user</DialogTitle>
-        <DialogContent sx={{ display: "grid", gap: 2, pt: 2 }}>
+        <DialogContent dividers sx={{ display: "grid", gap: 2 }}>
           <TextField label="Username" value={username} disabled fullWidth />
           <TextField
             label="Password"
@@ -113,6 +118,7 @@ const EditUserButton = ({
           />
           <BuiltinRolesSelector
             builtinRoles={builtinRoles}
+            customRoles={customRoles}
             value={roles}
             onChange={setRoles}
             disabled={loading}

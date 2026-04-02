@@ -12,7 +12,7 @@ import {
 
 const DEFAULT_DB = "admin";
 
-const DeleteUserButton = ({
+const DeleteRoleButton = ({
   row,
   selectedTarget,
   onSuccess,
@@ -23,7 +23,7 @@ const DeleteUserButton = ({
   const [error, setError] = useState(null);
   const [confirmText, setConfirmText] = useState("");
 
-  const username = row?.user || row?.username || "";
+  const roleName = row?.role || row?.name || "";
   const dbName = row?.db || DEFAULT_DB;
 
   const handleOpen = () => {
@@ -41,22 +41,22 @@ const DeleteUserButton = ({
       setError("Select an executor host first.");
       return;
     }
-    if (confirmText !== username) {
-      setError(`Type to ${username} proceed.`);
+    if (confirmText !== roleName) {
+      setError(`Type "${roleName}" to proceed.`);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      await apiClient.post("/mum/ui/delete-user", {
+      await apiClient.post("/mum/ui/delete-role", {
         target: selectedTarget,
-        username,
-        db: dbName || DEFAULT_DB,
+        role: roleName,
+        db: dbName,
       });
       setOpen(false);
-      onSuccess?.({ username, db: dbName || DEFAULT_DB, target: selectedTarget });
+      onSuccess?.({ role: roleName, db: dbName, target: selectedTarget });
     } catch (e) {
-      setError(e?.response?.data?.detail || e?.message || "Failed to delete user");
+      setError(e?.response?.data?.detail || e?.message || "Failed to delete role");
     } finally {
       setLoading(false);
     }
@@ -74,14 +74,14 @@ const DeleteUserButton = ({
         DELETE
       </Button>
       <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xs" disableScrollLock>
-        <DialogTitle>Delete MongoDB user</DialogTitle>
+        <DialogTitle>Delete custom MongoDB role</DialogTitle>
         <DialogContent sx={{ display: "grid", gap: 2, pt: 2 }}>
           <Typography variant="body2">
-            You are about to delete user <strong>{username}</strong> from DB{" "}
-            <code>{dbName}</code>.
+            You are about to delete role <strong>{roleName}</strong> from DB{" "}
+            <code>{dbName}</code>. This cannot be undone.
           </Typography>
           <TextField
-            label={`Type ${username} to proceed`}
+            label={`Type ${roleName} to proceed`}
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
             disabled={loading}
@@ -106,4 +106,4 @@ const DeleteUserButton = ({
   );
 };
 
-export default DeleteUserButton;
+export default DeleteRoleButton;

@@ -12,6 +12,8 @@ import {
   Button,
   CircularProgress,
   Paper,
+  Tab,
+  Tabs,
   Toolbar,
   Typography,
 } from "@mui/material";
@@ -19,6 +21,9 @@ import AddDatabaseUserButton from "./AddDatabaseUserButton";
 import EditUserButton from "./EditUserButton";
 import DeleteUserButton from "./DeleteUserButton";
 import MumUserList from "./MumUserList";
+import MumRoleList from "./MumRoleList";
+import AddCustomRoleButton from "./AddCustomRoleButton";
+import DeleteRoleButton from "./DeleteRoleButton";
 
 // Build a MUI theme that mirrors CSS variables from base.css
 function buildMuiThemeFromCssVars() {
@@ -143,11 +148,21 @@ const Mum = () => {
   const [execution, setExecution] = useState(null);
   const [listBusyCount, setListBusyCount] = useState(0);
 
+  // Tab state: 0 = Users, 1 = Roles
+  const [activeTab, setActiveTab] = useState(0);
+
   // Output streaming state
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
   const [usersData, setUsersData] = useState([]);
   const [lastListTarget, setLastListTarget] = useState("");
+
+  // Roles streaming state
+  const [isRolesStreaming, setIsRolesStreaming] = useState(false);
+  const [rolesStreamError, setRolesStreamError] = useState(null);
+  const [rolesData, setRolesData] = useState([]);
+  const rolesStdoutBufferRef = useRef("");
+  const rolesEsRef = useRef(null);
   const builtinRoles = useMemo(
     () => [
       "read",
@@ -321,6 +336,105 @@ const Mum = () => {
     [stopStreaming]
   );
 
+  const streamListRoles = useCallback(
+    (historyId) => {
+      if (!historyId) {
+        setRolesStreamError("Missing execution history ID.");
+        return;
+      }
+      if (rolesEsRef.current) {
+        rolesEsRef.current.close();
+        rolesEsRef.current = null;
+      }
+      setRolesStreamError(null);
+      setIsRolesStreaming(true);
+      rolesStdoutBufferRef.current = "";
+
+      try {
+        const es = new EventSource(
+          `/stream-logs/${encodeURIComponent(historyId)}`
+        );
+        rolesEsRef.current = es;
+
+        const stopRoles = () => {
+          es.close();
+          rolesEsRef.current = null;
+          setIsRolesStreaming(false);
+        };
+
+        es.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            const { msg, type, step } = data || {};
+            if (
+              type === "stdout" &&
+              step === "run-script" &&
+              typeof msg === "string"
+            ) {
+              rolesStdoutBufferRef.current += msg;
+              const arr = extractJsonArray(rolesStdoutBufferRef.current);
+              if (Array.isArray(arr)) {
+                setRolesData(arr);
+                setRolesStreamError(null);
+                stopRoles();
+              }
+            }
+          } catch (_) {
+            // ignore non-JSON chunks
+          }
+        };
+
+        es.addEventListener("finish", () => {
+          stopRoles();
+          const arr = extractJsonArray(rolesStdoutBufferRef.current);
+          if (Array.isArray(arr)) {
+            setRolesData(arr);
+          } else {
+            setRolesStreamError("Could not parse output JSON.");
+          }
+        });
+
+        es.onerror = () => {
+          setRolesStreamError("Stream failed.");
+          stopRoles();
+        };
+      } catch (e) {
+        setRolesStreamError(String(e?.message || e));
+        setIsRolesStreaming(false);
+      }
+    },
+    []
+  );
+
+  const [rolesBusy, setRolesBusy] = useState(false);
+
+  const listRoles = useCallback(
+    async (targetOverride) => {
+      const target = targetOverride || selectedTarget;
+      if (!target) {
+        setError("Select an executor host first.");
+        return;
+      }
+      setRolesBusy(true);
+      setError(null);
+      setRolesStreamError(null);
+      setRolesData([]);
+      try {
+        const response = await apiClient.post(`/mum/ui/list-roles`, {
+          target,
+        });
+        streamListRoles(response.data?.history?.id);
+      } catch (err) {
+        const detail =
+          err?.response?.data?.detail || err?.message || "Failed to list roles";
+        setError(detail);
+      } finally {
+        setRolesBusy(false);
+      }
+    },
+    [selectedTarget, streamListRoles]
+  );
+
   const listUsers = useCallback(
     async (targetOverride) => {
       const target = targetOverride || selectedTarget;
@@ -333,6 +447,8 @@ const Mum = () => {
       setStreamError(null);
       setExecution(null);
       setUsersData([]);
+      // Fetch roles in parallel: pre-populates Roles tab and role selectors.
+      listRoles(target);
       try {
         const response = await apiClient.post(`/mum/ui/list-users`, {
           target,
@@ -348,15 +464,21 @@ const Mum = () => {
         setListBusyCount((count) => Math.max(count - 1, 0));
       }
     },
-    [selectedTarget, streamListUsers]
+    [selectedTarget, streamListUsers, listRoles]
   );
 
   const handleUserMutation = useCallback(
     (meta) => {
-      // Refresh list in the background after add/edit/delete succeeds.
       listUsers(meta?.target);
     },
     [listUsers]
+  );
+
+  const handleRoleMutation = useCallback(
+    (meta) => {
+      listRoles(meta?.target);
+    },
+    [listRoles]
   );
 
   const rowActionsEnabled =
@@ -369,6 +491,7 @@ const Mum = () => {
               row={row}
               selectedTarget={selectedTarget}
               builtinRoles={builtinRoles}
+              rolesData={rolesData}
               onSuccess={handleUserMutation}
             />
           )}
@@ -387,6 +510,7 @@ const Mum = () => {
     <AddDatabaseUserButton
       selectedTarget={selectedTarget}
       builtinRoles={builtinRoles}
+      rolesData={rolesData}
       onSuccess={handleUserMutation}
     />
   ) : null;
@@ -420,43 +544,105 @@ const Mum = () => {
             </label>
           </Box>
 
-          <Box
-            sx={{
-              display: "flex",
-              gap: 1,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
+          <Tabs
+            value={activeTab}
+            onChange={(_, val) => setActiveTab(val)}
+            sx={{ mb: 2 }}
           >
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={() => listUsers()}
-              disabled={listBusy || !selectedTarget}
-            >
-              {listBusy ? "Listing users…" : "List users"}
-            </Button>
-            {isStreaming && <CircularProgress size={20} />}
-          </Box>
+            <Tab label="Users" />
+            <Tab label="Roles" />
+          </Tabs>
+
+          {activeTab === 0 && (
+            <>
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 1,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => listUsers()}
+                  disabled={listBusy || !selectedTarget}
+                >
+                  {listBusy ? "Listing users…" : "List users"}
+                </Button>
+                {isStreaming && <CircularProgress size={20} />}
+              </Box>
+              {streamError && (
+                <Typography color="error" sx={{ mt: 1 }}>
+                  Output error: {streamError}
+                </Typography>
+              )}
+            </>
+          )}
+
+          {activeTab === 1 && (
+            <>
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 1,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => listRoles()}
+                  disabled={rolesBusy || !selectedTarget}
+                >
+                  {rolesBusy ? "Listing roles…" : "List roles"}
+                </Button>
+                {isRolesStreaming && <CircularProgress size={20} />}
+              </Box>
+              {rolesStreamError && (
+                <Typography color="error" sx={{ mt: 1 }}>
+                  Output error: {rolesStreamError}
+                </Typography>
+              )}
+            </>
+          )}
 
           {error && (
             <Typography color="error" sx={{ mt: 1 }}>
               Error: {error}
             </Typography>
           )}
-          {streamError && (
-            <Typography color="error" sx={{ mt: 1 }}>
-              Output error: {streamError}
-            </Typography>
-          )}
-
         </Paper>
 
-        {featureToggles.listUsers && (
+        {activeTab === 0 && featureToggles.listUsers && (
           <MumUserList
             usersData={usersData}
             toolbarActions={toolbarActions}
             renderRowActions={renderRowActions}
+          />
+        )}
+
+        {activeTab === 1 && (
+          <MumRoleList
+            rolesData={rolesData}
+            toolbarActions={
+              <AddCustomRoleButton
+                selectedTarget={selectedTarget}
+                rolesData={rolesData}
+                onSuccess={handleRoleMutation}
+              />
+            }
+            renderRowActions={(row) =>
+              row.isBuiltin ? null : (
+                <DeleteRoleButton
+                  row={row}
+                  selectedTarget={selectedTarget}
+                  onSuccess={handleRoleMutation}
+                />
+              )
+            }
           />
         )}
       </Box>
