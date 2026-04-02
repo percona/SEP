@@ -94,7 +94,6 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
 
   const set = (field) => (e) => {
     if (field === "resourceType") {
-      // Clear actions that don't belong to the new resource type.
       const newType = e.target.value;
       const validActions = allActionsForType(newType);
       const filteredActions = priv.actions.filter((a) => validActions.includes(a));
@@ -112,10 +111,12 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
         border: (t) => `1px solid ${t.palette.divider}`,
         borderRadius: 1,
         p: 2,
+        display: "grid",
+        gap: 1.5,
       }}
     >
-      {/* Header row */}
-      <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
+      {/* Header */}
+      <Box sx={{ display: "flex", alignItems: "center" }}>
         <Typography variant="caption" color="text.secondary" sx={{ flex: 1, fontWeight: 600 }}>
           Privilege #{index + 1}
         </Typography>
@@ -128,118 +129,108 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
         </Tooltip>
       </Box>
 
-      {/* Two-column layout: resource config left, actions right */}
-      <Box sx={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 2 }}>
+      {/* Resource type */}
+      <FormControl component="fieldset" disabled={disabled}>
+        <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Resource type</FormLabel>
+        <RadioGroup row value={priv.resourceType} onChange={set("resourceType")}>
+          <FormControlLabel value="collection" control={<Radio size="small" />} label="Collection / Database" disabled={disabled} />
+          <FormControlLabel value="cluster" control={<Radio size="small" />} label="Cluster" disabled={disabled} />
+        </RadioGroup>
+      </FormControl>
 
-        {/* Left: resource */}
-        <Box sx={{ display: "grid", gap: 1.5, alignContent: "start" }}>
-          <FormControl component="fieldset" disabled={disabled}>
-            <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Resource type</FormLabel>
-            <RadioGroup row value={priv.resourceType} onChange={set("resourceType")}>
-              <FormControlLabel value="collection" control={<Radio size="small" />} label="Collection / Database" disabled={disabled} />
-              <FormControlLabel value="cluster" control={<Radio size="small" />} label="Cluster" disabled={disabled} />
-            </RadioGroup>
-          </FormControl>
+      {/* Collection: database + collection fields in a row */}
+      {priv.resourceType === "collection" && (
+        <Box sx={{ display: "flex", gap: 2 }}>
+          <TextField
+            label="Database"
+            placeholder="empty = all databases"
+            size="small"
+            value={priv.resourceDb}
+            onChange={set("resourceDb")}
+            disabled={disabled}
+            fullWidth
+          />
+          <TextField
+            label="Collection"
+            placeholder="empty = all collections"
+            size="small"
+            value={priv.resourceCollection}
+            onChange={set("resourceCollection")}
+            disabled={disabled}
+            fullWidth
+          />
+        </Box>
+      )}
 
-          {priv.resourceType === "collection" && (
-            <>
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <TextField
-                  label="Database"
-                  placeholder="empty = all databases"
-                  size="small"
-                  value={priv.resourceDb}
-                  onChange={set("resourceDb")}
-                  disabled={disabled}
-                  fullWidth
-                />
-                <TextField
-                  label="Collection"
-                  placeholder="empty = all collections"
-                  size="small"
-                  value={priv.resourceCollection}
-                  onChange={set("resourceCollection")}
-                  disabled={disabled}
-                  fullWidth
-                />
-              </Box>
-              <Typography variant="caption" color="text.secondary">
-                Leave both empty to apply actions across all non-system collections in all databases.
+      <Typography variant="caption" color="text.secondary">
+        {priv.resourceType === "cluster"
+          ? "Cluster-level actions affect the entire system (replication, sharding, server config)."
+          : "Leave both fields empty to match all non-system collections across all databases."}
+      </Typography>
+
+      {/* Actions */}
+      <FormControl component="fieldset" fullWidth disabled={disabled}>
+        <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Actions</FormLabel>
+        <Box
+          sx={{
+            border: (t) => `1px solid ${t.palette.divider}`,
+            borderRadius: 1,
+            maxHeight: 260,
+            overflowY: "auto",
+            p: 1,
+          }}
+        >
+          {Object.entries(actionGroups).map(([group, actions]) => (
+            <Box key={group} sx={{ mb: 1 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                {group}
               </Typography>
-            </>
-          )}
-
-          {priv.resourceType === "cluster" && (
-            <Typography variant="caption" color="text.secondary">
-              Cluster-level actions affect the entire system (replication, sharding, server config).
-            </Typography>
-          )}
-
-          {/* Selected actions summary */}
-          {priv.actions.length > 0 && (
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                {priv.actions.length} action{priv.actions.length !== 1 ? "s" : ""} selected
-              </Typography>
-              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }}>
-                {priv.actions.map((a) => (
-                  <Chip
-                    key={a}
-                    label={a}
-                    size="small"
-                    onDelete={disabled ? undefined : () => toggleAction(a)}
+              <FormGroup
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                  columnGap: 0.5,
+                }}
+              >
+                {actions.map((action) => (
+                  <FormControlLabel
+                    key={action}
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={priv.actions.includes(action)}
+                        onChange={() => toggleAction(action)}
+                        disabled={disabled}
+                      />
+                    }
+                    label={<Typography variant="caption">{action}</Typography>}
                   />
                 ))}
-              </Box>
+              </FormGroup>
+              <Divider sx={{ mt: 0.5 }} />
             </Box>
-          )}
+          ))}
         </Box>
+      </FormControl>
 
-        {/* Right: action checkboxes */}
-        <FormControl component="fieldset" fullWidth disabled={disabled}>
-          <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Actions</FormLabel>
-          <Box
-            sx={{
-              border: (t) => `1px solid ${t.palette.divider}`,
-              borderRadius: 1,
-              maxHeight: 320,
-              overflowY: "auto",
-              p: 1,
-            }}
-          >
-            {Object.entries(actionGroups).map(([group, actions]) => (
-              <Box key={group} sx={{ mb: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  {group}
-                </Typography>
-                <FormGroup
-                  sx={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                    columnGap: 0.5,
-                  }}
-                >
-                  {actions.map((action) => (
-                    <FormControlLabel
-                      key={action}
-                      control={
-                        <Checkbox
-                          size="small"
-                          checked={priv.actions.includes(action)}
-                          onChange={() => toggleAction(action)}
-                          disabled={disabled}
-                        />
-                      }
-                      label={<Typography variant="caption">{action}</Typography>}
-                    />
-                  ))}
-                </FormGroup>
-                <Divider sx={{ mt: 0.5 }} />
-              </Box>
+      {/* Selected actions chips */}
+      {priv.actions.length > 0 && (
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            {priv.actions.length} action{priv.actions.length !== 1 ? "s" : ""} selected
+          </Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }}>
+            {priv.actions.map((a) => (
+              <Chip
+                key={a}
+                label={a}
+                size="small"
+                onDelete={disabled ? undefined : () => toggleAction(a)}
+              />
             ))}
           </Box>
-        </FormControl>
-      </Box>
+        </Box>
+      )}
     </Box>
   );
 };
@@ -399,7 +390,7 @@ const AddCustomRoleButton = ({
         + add custom role
       </Button>
 
-      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xl" scroll="paper" disableScrollLock PaperProps={{ sx: { width: "95vw", maxWidth: "95vw" } }}>
+      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md" scroll="paper" disableScrollLock>
         <DialogTitle>Create custom MongoDB role</DialogTitle>
         <DialogContent dividers sx={{ display: "grid", gap: 2.5 }}>
           {/* Basic info */}
