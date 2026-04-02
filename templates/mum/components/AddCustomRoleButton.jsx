@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import apiClient from "../../../ui/apiClient";
 import {
   Box,
@@ -132,9 +132,7 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled, roleDb }) =
       const newType = e.target.value;
       const validActions = allActionsForType(newType);
       const filteredActions = priv.actions.filter((a) => validActions.includes(a));
-      // When switching to collection on a non-admin role, lock db to roleDb.
-      const resourceDb = newType === "collection" && !isAdminRole ? roleDb : priv.resourceDb;
-      onChange(index, { ...priv, resourceType: newType, actions: filteredActions, resourceDb });
+      onChange(index, { ...priv, resourceType: newType, actions: filteredActions });
     } else {
       onChange(index, { ...priv, [field]: e.target.value });
     }
@@ -197,8 +195,8 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled, roleDb }) =
             label="Database"
             placeholder={isAdminRole ? "empty = all databases" : undefined}
             size="small"
-            value={priv.resourceDb}
-            onChange={set("resourceDb")}
+            value={isAdminRole ? priv.resourceDb : roleDb}
+            onChange={isAdminRole ? set("resourceDb") : undefined}
             disabled={disabled || !isAdminRole}
             helperText={!isAdminRole ? `Locked to role's database "${roleDb}"` : undefined}
             fullWidth
@@ -400,28 +398,6 @@ const AddCustomRoleButton = ({
   const handleOpen = () => { resetForm(); setOpen(true); };
   const handleClose = () => { if (!loading) setOpen(false); };
 
-  // When the role's owning DB changes away from 'admin', sanitize existing privileges:
-  // - force any cluster resource type to collection
-  // - lock resourceDb to the new db value
-  useEffect(() => {
-    if (db === "admin") return;
-    setPrivileges((prev) =>
-      prev.map((p) => {
-        const base =
-          p.resourceType === "cluster"
-            ? {
-                ...p,
-                resourceType: "collection",
-                actions: p.actions.filter((a) =>
-                  allActionsForType("collection").includes(a)
-                ),
-              }
-            : p;
-        return base.resourceDb !== db ? { ...base, resourceDb: db } : base;
-      })
-    );
-  }, [db]);
-
   const handlePrivilegeChange = useCallback((index, updated) => {
     setPrivileges((prev) => prev.map((p, i) => (i === index ? updated : p)));
   }, []);
@@ -430,18 +406,27 @@ const AddCustomRoleButton = ({
     setPrivileges((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleAddPrivilege = () =>
-    setPrivileges((prev) => [
-      ...prev,
-      { ...EMPTY_PRIVILEGE(), resourceDb: db === "admin" ? "" : db },
-    ]);
+  const handleAddPrivilege = () => setPrivileges((prev) => [...prev, EMPTY_PRIVILEGE()]);
 
   const handleSubmit = async () => {
     if (!selectedTarget) { setError("Select an executor host first."); return; }
     if (!roleName.trim()) { setError("Role name is required."); return; }
 
+    const effectiveDb = db || DEFAULT_DB;
+    const isAdmin = effectiveDb === "admin";
+
+    // Non-admin roles cannot have cluster resources.
+    if (!isAdmin && privileges.some((p) => p.resourceType === "cluster")) {
+      setError(`Cluster resources are only allowed for roles owned by the 'admin' database.`);
+      return;
+    }
+
+    // For non-admin roles, override resourceDb with the role's owning DB regardless
+    // of what may be stored in priv.resourceDb (avoids any stale intermediate state).
     const builtPrivileges = privileges.map((p) => ({
-      resource: buildResource(p),
+      resource: p.resourceType === "cluster"
+        ? { cluster: true }
+        : { db: isAdmin ? p.resourceDb : effectiveDb, collection: p.resourceCollection },
       actions: p.actions,
     }));
 
