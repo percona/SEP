@@ -102,7 +102,7 @@ def _append_exit_code_suffix(
     try:
         code_int = int(exit_code)
     except (TypeError, ValueError):
-        if str(exit_code) not in description:
+        if str(exit_code).lower() not in desc_lower:
             parts.append(f"(exit code {exit_code})")
         return
     if f"exit code {code_int}" not in desc_lower:
