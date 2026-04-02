@@ -32,9 +32,9 @@ _VALID_CORRELATION_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 class LogContextMiddleware(BaseHTTPMiddleware):
     """Set per-request context variables for log enrichment.
 
-    Generate a unique `request_id` for each request, read or generate a
-    `correlation_id` from the incoming `X-Correlation-ID` header, and set
-    the `endpoint` path. All context is cleared after the response is sent.
+    Generate a unique ``request_id`` for each request, read or generate a
+    ``correlation_id`` from the incoming ``X-Correlation-ID`` header, and set
+    the ``endpoint`` path. All context is cleared after the response is sent.
     """
 
     async def dispatch(

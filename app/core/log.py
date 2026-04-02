@@ -38,16 +38,16 @@ _CONTEXT_VARS: dict[str, ContextVar[str]] = {
 class ContextFilter(Filter):
     """Inject context variables into log records.
 
-    Read all registered `ContextVar` values and set them as attributes on the
-    `LogRecord`, defaulting to `"-"` when unset.
+    Read all registered ``ContextVar`` values and set them as attributes on the
+    ``LogRecord``, defaulting to ``"-"`` when unset.
     """
 
     def filter(self, record: LogRecord) -> bool:
-        """Enrich `record` with context variable attributes.
+        """Enrich ``record`` with context variable attributes.
 
         :param record: The log record to enrich.
         :type record: LogRecord
-        :return: Always `True` to allow the record through.
+        :return: Always ``True`` to allow the record through.
         :rtype: bool
         """
         for attr, var in _CONTEXT_VARS.items():
