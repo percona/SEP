@@ -28,7 +28,7 @@ from io import SEEK_END
 from os import PathLike
 from pathlib import Path
 from string import Template
-from typing import Annotated, Any, ClassVar, NamedTuple, Self
+from typing import Annotated, Any, ClassVar, NamedTuple, Self, TYPE_CHECKING
 
 import aiofiles
 import yaml
@@ -70,6 +70,9 @@ from app.sep.snippets.config import (
     snippets_settings,
     SnippetSudoOption,
 )
+
+if TYPE_CHECKING:
+    from aiofiles.threadpool.text import AsyncTextIOWrapper
 from app.sep.snippets.forms import (
     CheckboxInputElement,
     FieldsetElement,
@@ -138,18 +141,63 @@ def get_executor_hosts_fieldset(
 
 
 class FilePreview(NamedTuple):
-    """A preview of a snippet's content.
+    """A preview of a snippet's content with separated frontmatter.
 
-    :param content: A preview of the snippet's content, limited to a certain number of
-        characters and lines.
+    :param preamble: Lines before frontmatter (e.g. shebang).
+    :type preamble: str
+    :param frontmatter: Raw frontmatter including `# ---` delimiters.
+    :type frontmatter: str
+    :param content: Code body after frontmatter, limited by preview settings.
     :type content: str
     :param is_truncated: Whether the preview content is truncated (i.e., if the full
         content exceeds the preview limits).
     :type is_truncated: bool
     """
 
+    preamble: str
+    frontmatter: str
     content: str
     is_truncated: bool
+
+    @property
+    def preamble_line_count(self) -> int:
+        """Return the number of lines in the preamble.
+
+        :return: Line count, or 0 if preamble is empty.
+        :rtype: int
+        """
+        if not self.preamble:
+            return 0
+        return len(self.preamble.splitlines())
+
+    @property
+    def frontmatter_line_count(self) -> int:
+        """Return the number of lines in the frontmatter.
+
+        :return: Line count, or 0 if frontmatter is empty.
+        :rtype: int
+        """
+        if not self.frontmatter:
+            return 0
+        return len(self.frontmatter.splitlines())
+
+    @property
+    def code_linenostart(self) -> int:
+        """Return the starting line number for the code body.
+
+        :return: Line number where the code body starts (1-based).
+        :rtype: int
+        """
+        return self.preamble_line_count + self.frontmatter_line_count + 1
+
+    @property
+    def full_content(self) -> str:
+        """Return the complete preview content including preamble and frontmatter.
+
+        :return: Concatenation of preamble, frontmatter, and code body.
+        :rtype: str
+        """
+        return self.preamble + self.frontmatter + self.content
 
     @classmethod
     @validate_call
@@ -162,8 +210,8 @@ class FilePreview(NamedTuple):
     ) -> Self:
         """Create a FilePreview from a path.
 
-        This function reads the file in the specified `path` and generates a preview of
-        its content, limited to a certain number of characters and lines.
+        Read the file at `path`, split frontmatter from code body, and generate a
+        preview limited by character and line counts applied only to the code body.
 
         :param path: The file path to read for generating the preview.
         :type path: str | bytes | PathLike
@@ -177,6 +225,59 @@ class FilePreview(NamedTuple):
         """
         return await cls._from_path(path, max_chars, max_lines, **_kwargs)
 
+    @staticmethod
+    async def _parse_frontmatter(
+        f: "AsyncTextIOWrapper",
+        max_scan_lines: int,
+    ) -> tuple[list[str], list[str]]:
+        """Read lines from an open file and separate preamble from frontmatter.
+
+        Stop when the closing `# ---` delimiter is found, when a non-comment
+        line is encountered before any delimiter, at EOF, or after scanning
+        `max_scan_lines` lines without finding a closing delimiter.
+
+        :param f: An open async text file handle positioned at the start.
+        :type f: AsyncTextIOWrapper
+        :param max_scan_lines: Safety bound on lines to scan for frontmatter.
+        :type max_scan_lines: int
+        :return: A `(preamble_lines, frontmatter_lines)` pair.
+        :rtype: tuple[list[str], list[str]]
+        """
+        meta = snippets_settings.META
+        preamble_lines = []
+        frontmatter_lines = []
+        in_frontmatter = False
+        lines_scanned = 0
+
+        while lines_scanned < max_scan_lines:
+            line = await f.readline()
+            if not line:
+                break
+            lines_scanned += 1
+            if meta.STOP_SEARCH_PATTERN.match(line) and not in_frontmatter:
+                preamble_lines.append(line)
+                break
+            match = meta.LINE_PATTERN.match(line)
+            if not match:
+                (frontmatter_lines if in_frontmatter else preamble_lines).append(line)
+                continue
+            matched_content = match.groupdict().get("line", match.group(0))
+            if matched_content == meta.DELIMITER:
+                frontmatter_lines.append(line)
+                if in_frontmatter:
+                    break
+                in_frontmatter = True
+            elif in_frontmatter:
+                frontmatter_lines.append(line)
+            else:
+                preamble_lines.append(line)
+
+        if in_frontmatter and lines_scanned >= max_scan_lines:
+            preamble_lines = preamble_lines + frontmatter_lines
+            frontmatter_lines = []
+
+        return preamble_lines, frontmatter_lines
+
     @classmethod
     @alru_cache(ttl=_ONE_HOUR, maxsize=16)
     async def _from_path(
@@ -184,16 +285,36 @@ class FilePreview(NamedTuple):
     ) -> Self:
         logger.debug("Generating preview for file: %s", path)
         async with aiofiles.open(path) as f:
-            content = await f.readline()
-            line_number = 1
+            preamble_raw, frontmatter_raw = await cls._parse_frontmatter(f, max_lines)
+
+            if frontmatter_raw:
+                preamble_str = "".join(preamble_raw)
+                frontmatter_str = "".join(frontmatter_raw)
+                initial_content = ""
+            else:
+                preamble_str = ""
+                frontmatter_str = ""
+                initial_content = "".join(preamble_raw)
+
+            content = initial_content
+            line_number = content.count("\n")
             while len(content) < max_chars and line_number < max_lines:
-                content += await f.readline()
+                line = await f.readline()
+                if not line:
+                    break
+                content += line
                 line_number += 1
+
             preview_content = content[:max_chars]
             is_truncated = content != preview_content or await f.tell() < await f.seek(
                 0, SEEK_END
             )
-        return cls(content=preview_content, is_truncated=is_truncated)
+        return cls(
+            preamble=preamble_str,
+            frontmatter=frontmatter_str,
+            content=preview_content,
+            is_truncated=is_truncated,
+        )
 
 
 class BaseSnippetArgs(BaseModel):
@@ -661,16 +782,18 @@ class BaseSnippet(BaseModel):
         ]
         parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
-        fields = []
+        groups = {}
         for param in parameters:
             try:
-                fields.append(param.to_form_field())
+                field = param.to_form_field()
             except ValidationError:
                 logger.warning("Invalid snippet parameter: %r", param, exc_info=True)
+                continue
+            groups.setdefault(param.group, []).append(field)
         if add_extra_args_field:
-            fields.append(EXTRA_ARGS_INPUT)
+            groups.setdefault(None, []).append(EXTRA_ARGS_INPUT)
         if add_sudo_field:
-            fields.append(
+            groups.setdefault(None, []).append(
                 CheckboxInputElement(
                     name=SUDO_INPUT_NAME,
                     title="Execute the snippet with sudo",
@@ -679,10 +802,13 @@ class BaseSnippet(BaseModel):
                     checked=sudo_default,
                 )
             )
-        logger.debug("Generated snippet form fields from params: %s", fields)
-        if fields:
+        for group_name, group_fields in groups.items():
+            legend = group_name if group_name is not None else "Parameters"
+            logger.debug(
+                "Generated snippet form fields for %r: %s", legend, group_fields
+            )
             fieldsets.append(
-                FieldsetElement(legend="Parameters", children=fields, disabled=disabled)
+                FieldsetElement(legend=legend, children=group_fields, disabled=disabled)
             )
         return FormElement(
             id="snippetExecuteForm",
