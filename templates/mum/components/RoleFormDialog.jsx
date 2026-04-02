@@ -275,8 +275,10 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled, roleDb }) =
 };
 
 // ─── InheritedRolesSelector ───────────────────────────────────────────────────
-const InheritedRolesSelector = ({ rolesData, value, onChange, disabled }) => {
-  const customRoles = rolesData.filter((r) => !r.isBuiltin && r.role);
+const InheritedRolesSelector = ({ rolesData, value, onChange, disabled, excludeKey = null }) => {
+  const customRoles = rolesData.filter(
+    (r) => !r.isBuiltin && r.role && `${r.role}@${r.db}` !== excludeKey
+  );
   const selectedKeys = value.map((r) => `${r.role}@${r.db}`);
 
   const toggle = (r) => {
@@ -438,6 +440,7 @@ const RoleFormDialog = ({
           value={inheritedRoles}
           onChange={setInheritedRoles}
           disabled={loading}
+          excludeKey={editMode ? `${roleName}@${db || DEFAULT_DB}` : null}
         />
 
         {/* Privileges */}
