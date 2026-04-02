@@ -119,15 +119,15 @@ async def validate_chain_task_names(
     chain_task_names: list[str],
     parent_task: Task,
 ) -> None:
-    """Validate that all chain task names exist, no cycles are present, and targets match.
+    """Validate that all chain task names exist, no cycles are present, and owners/targets match.
 
     :param session: The async database session.
     :type session: AsyncSession
     :param chain_task_names: Ordered list of task names to chain.
     :type chain_task_names: list[str]
-    :param parent_task: The parent task (to prevent cycles and enforce target matching).
+    :param parent_task: The parent task (to prevent cycles and enforce owner/target matching).
     :type parent_task: Task
-    :raises HTTPBadRequestException: If a cycle is detected or a target mismatch is found.
+    :raises HTTPBadRequestException: If a cycle, owner mismatch, or target mismatch is found.
     :raises HTTPNotFoundException: If any chain task does not exist.
     """
     parent_target = parent_task.data.get("Constraints", [{}])[0].get("RTarget")
