@@ -23,6 +23,84 @@
     max-height: 400px;
 }
 
+.highlight-wrapper {
+    width: 90%;
+    max-height: 400px;
+    overflow: auto;
+}
+
+[data-theme="light"] .highlight-wrapper {
+    background: #ffffff;
+    color: #000000;
+}
+
+[data-theme="dark"] .highlight-wrapper {
+    background: #272822;
+    color: #F8F8F2;
+}
+
+.highlight-wrapper .highlight {
+    width: 100%;
+    background: transparent;
+}
+
+.highlight-wrapper .highlight pre {
+    max-height: none;
+}
+
+.highlighttable td {
+    vertical-align: top;
+}
+
+.linenodiv {
+    line-height: 125%;
+}
+
+.highlighttable pre code {
+    font-size: inherit;
+    font-family: inherit;
+}
+
+.highlight-wrapper .highlighttable {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.highlight-wrapper .linenos {
+    width: calc(var(--linenos-width, 3ch) + 20px);
+}
+
+.highlight-wrapper .linenos pre {
+    text-align: right;
+}
+
+.frontmatter-toggle {
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+.frontmatter-toggle summary {
+    cursor: pointer;
+    padding: 2px 10px;
+    font-family: monospace;
+    font-size: 0.85em;
+    list-style: none;
+    user-select: none;
+}
+
+[data-theme="light"] .frontmatter-toggle summary {
+    color: #6e7781;
+}
+
+[data-theme="dark"] .frontmatter-toggle summary {
+    color: #90918B;
+}
+
+.frontmatter-toggle summary::-webkit-details-marker {
+    display: none;
+}
+
 td.code {
     width: calc(70vw + 40px);
     max-width: calc(70vw + 40px);
