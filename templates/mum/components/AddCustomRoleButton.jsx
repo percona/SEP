@@ -28,7 +28,7 @@ const DEFAULT_DB = "admin";
 // Collection/database-level actions — apply to {db, collection} resources.
 const COLLECTION_ACTION_GROUPS = {
   "Query & Write": [
-    "find", "insert", "update", "remove", "aggregate",
+    "find", "insert", "update", "remove",
     "bypassDocumentValidation",
   ],
   "Collection management": [
