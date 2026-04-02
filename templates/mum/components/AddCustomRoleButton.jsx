@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import apiClient from "../../../ui/apiClient";
 import {
   Box,
@@ -117,7 +117,9 @@ const buildResource = (priv) => {
   return { db: priv.resourceDb, collection: priv.resourceCollection };
 };
 
-const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
+const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled, roleDb }) => {
+  const isAdminRole = roleDb === "admin";
+
   const toggleAction = (action) => {
     const next = priv.actions.includes(action)
       ? priv.actions.filter((a) => a !== action)
@@ -130,13 +132,24 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
       const newType = e.target.value;
       const validActions = allActionsForType(newType);
       const filteredActions = priv.actions.filter((a) => validActions.includes(a));
-      onChange(index, { ...priv, resourceType: newType, actions: filteredActions });
+      // When switching to collection on a non-admin role, lock db to roleDb.
+      const resourceDb = newType === "collection" && !isAdminRole ? roleDb : priv.resourceDb;
+      onChange(index, { ...priv, resourceType: newType, actions: filteredActions, resourceDb });
     } else {
       onChange(index, { ...priv, [field]: e.target.value });
     }
   };
 
   const actionGroups = ACTION_GROUPS_BY_TYPE[priv.resourceType] || COLLECTION_ACTION_GROUPS;
+
+  const clusterRadio = (
+    <FormControlLabel
+      value="cluster"
+      control={<Radio size="small" />}
+      label="Cluster"
+      disabled={disabled || !isAdminRole}
+    />
+  );
 
   return (
     <Box
@@ -167,7 +180,13 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
         <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Resource type</FormLabel>
         <RadioGroup row value={priv.resourceType} onChange={set("resourceType")}>
           <FormControlLabel value="collection" control={<Radio size="small" />} label="Collection / Database" disabled={disabled} />
-          <FormControlLabel value="cluster" control={<Radio size="small" />} label="Cluster" disabled={disabled} />
+          {isAdminRole ? (
+            clusterRadio
+          ) : (
+            <Tooltip title="Cluster resources are only available for roles owned by the 'admin' database">
+              <span>{clusterRadio}</span>
+            </Tooltip>
+          )}
         </RadioGroup>
       </FormControl>
 
@@ -176,11 +195,12 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
         <Box sx={{ display: "flex", gap: 2 }}>
           <TextField
             label="Database"
-            placeholder="empty = all databases"
+            placeholder={isAdminRole ? "empty = all databases" : undefined}
             size="small"
             value={priv.resourceDb}
             onChange={set("resourceDb")}
-            disabled={disabled}
+            disabled={disabled || !isAdminRole}
+            helperText={!isAdminRole ? `Locked to role's database "${roleDb}"` : undefined}
             fullWidth
           />
           <TextField
@@ -198,7 +218,9 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled }) => {
       <Typography variant="caption" color="text.secondary">
         {priv.resourceType === "cluster"
           ? "Cluster-level actions affect the entire system (replication, sharding, server config)."
-          : "Leave both fields empty to match all non-system collections across all databases."}
+          : isAdminRole
+            ? "Leave both fields empty to match all non-system collections across all databases."
+            : `Database is locked to "${roleDb}". Leave Collection empty to match all collections in that database.`}
       </Typography>
 
       {/* Actions */}
@@ -378,6 +400,28 @@ const AddCustomRoleButton = ({
   const handleOpen = () => { resetForm(); setOpen(true); };
   const handleClose = () => { if (!loading) setOpen(false); };
 
+  // When the role's owning DB changes away from 'admin', sanitize existing privileges:
+  // - force any cluster resource type to collection
+  // - lock resourceDb to the new db value
+  useEffect(() => {
+    if (db === "admin") return;
+    setPrivileges((prev) =>
+      prev.map((p) => {
+        const base =
+          p.resourceType === "cluster"
+            ? {
+                ...p,
+                resourceType: "collection",
+                actions: p.actions.filter((a) =>
+                  allActionsForType("collection").includes(a)
+                ),
+              }
+            : p;
+        return base.resourceDb !== db ? { ...base, resourceDb: db } : base;
+      })
+    );
+  }, [db]);
+
   const handlePrivilegeChange = useCallback((index, updated) => {
     setPrivileges((prev) => prev.map((p, i) => (i === index ? updated : p)));
   }, []);
@@ -386,7 +430,11 @@ const AddCustomRoleButton = ({
     setPrivileges((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleAddPrivilege = () => setPrivileges((prev) => [...prev, EMPTY_PRIVILEGE()]);
+  const handleAddPrivilege = () =>
+    setPrivileges((prev) => [
+      ...prev,
+      { ...EMPTY_PRIVILEGE(), resourceDb: db === "admin" ? "" : db },
+    ]);
 
   const handleSubmit = async () => {
     if (!selectedTarget) { setError("Select an executor host first."); return; }
@@ -481,6 +529,7 @@ const AddCustomRoleButton = ({
                     onChange={handlePrivilegeChange}
                     onRemove={handlePrivilegeRemove}
                     disabled={loading}
+                    roleDb={db || DEFAULT_DB}
                   />
                 ))}
               </Box>
