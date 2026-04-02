@@ -275,9 +275,14 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled, roleDb }) =
 };
 
 // ─── InheritedRolesSelector ───────────────────────────────────────────────────
-const InheritedRolesSelector = ({ rolesData, value, onChange, disabled, excludeKey = null }) => {
+const InheritedRolesSelector = ({ rolesData, value, onChange, disabled, excludeKey = null, roleDb = "admin" }) => {
+  const isAdmin = roleDb === "admin";
   const customRoles = rolesData.filter(
-    (r) => !r.isBuiltin && r.role && `${r.role}@${r.db}` !== excludeKey
+    (r) =>
+      !r.isBuiltin &&
+      r.role &&
+      `${r.role}@${r.db}` !== excludeKey &&
+      (isAdmin || r.db === roleDb)
   );
   const selectedKeys = value.map((r) => `${r.role}@${r.db}`);
 
@@ -292,9 +297,15 @@ const InheritedRolesSelector = ({ rolesData, value, onChange, disabled, excludeK
 
   return (
     <FormControl component="fieldset" fullWidth disabled={disabled}>
-      <FormLabel sx={{ mb: 0.5 }}>Inherited roles (custom)</FormLabel>
+      <FormLabel sx={{ mb: 0.5 }}>
+        Inherited roles (custom{!isAdmin ? ` — scoped to "${roleDb}"` : ""})
+      </FormLabel>
       {customRoles.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">No custom roles available to inherit from.</Typography>
+        <Typography variant="body2" color="text.secondary">
+          {isAdmin
+            ? "No custom roles available to inherit from."
+            : `No custom roles in the "${roleDb}" database to inherit from.`}
+        </Typography>
       ) : (
         <Box sx={{ border: (t) => `1px solid ${t.palette.divider}`, borderRadius: 1, maxHeight: 160, overflowY: "auto", p: 1 }}>
           <FormGroup sx={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", columnGap: 1 }}>
@@ -441,6 +452,7 @@ const RoleFormDialog = ({
           onChange={setInheritedRoles}
           disabled={loading}
           excludeKey={editMode ? `${roleName}@${db || DEFAULT_DB}` : null}
+          roleDb={db || DEFAULT_DB}
         />
 
         {/* Privileges */}
