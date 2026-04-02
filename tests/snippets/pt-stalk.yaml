@@ -65,7 +65,7 @@ tests:
         file: "invalid-action.stdout"
         isre: true
       stderr:
-      returncode: 255
+      returncode: 12
       dirs:
       files:
     notExpected:

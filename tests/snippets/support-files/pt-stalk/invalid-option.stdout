@@ -1,18 +1,5 @@
-Error parsing options
-Usage: pt-stalk.sh \[OPTIONS\]
-Executes pt-stalk or stops the daemon
+Starting pt-stalk with extra options: --invalid-option
 
-Command line options:
+Usage: pt-stalk \[OPTIONS\]
 
-   --defaults-file         Path to MySQL defaults-file
-   --pid                   pt-stalk PID file
-   --log                   pt-stalk log file
-   -d, --dest              Destination for the summaries.
-                           Default: .+/{{hostname}}
-   --iterations            How many iterations to run
-   --sleep                 Sleep time between iterations
-   --daemon                Run pt-stalk in daemon mode
-   --system-only           Collect only operating system related captures
-   --action=\[start|stop\]   Start or stop pt-stalk. Compresses data when stopped.
-                           Default: start
-   -h, --help              Show this help message
+For more information, 'man pt-stalk' or 'perldoc /usr/bin/pt-stalk'.

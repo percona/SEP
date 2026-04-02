@@ -1,5 +1,5 @@
 Unrecognized action 'invalid'
-Usage: pt-stalk.sh \[OPTIONS\]
+Usage: pt-stalk\.sh \[OPTIONS\]
 Executes pt-stalk or stops the daemon
 
 Command line options:
@@ -11,7 +11,12 @@ Command line options:
                            Default: .+/{{hostname}}
    --iterations            How many iterations to run
    --sleep                 Sleep time between iterations
+   -s                      Short form for --sleep \(seconds\)
    --daemon                Run pt-stalk in daemon mode
+   --run-time              Set the number of seconds for --run-time, default disabled
    --system-only           Collect only operating system related captures
-   --action=\[start|stop\]   Start or stop pt-stalk. Compresses data when stopped.
+   --action=\[start\|stop\]   Start or stop pt-stalk. Compresses data when stopped.
                            Default: start
+   -h, --help              Show full help \(includes pt-stalk --help\)
+
+Any other options are passed through to pt-stalk \(e\.g\. --config, --mysql-only, --variable\).
