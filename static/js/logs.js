@@ -269,6 +269,14 @@ $(document).ready(function() {
         }
     }
 
+    function closeExecutionEventsStream(taskId) {
+        const src = executionEventsStreams[taskId];
+        if (src) {
+            src.close();
+            delete executionEventsStreams[taskId];
+        }
+    }
+
     function shouldFetchExecutionEvents($logConsole) {
         const status = String($logConsole.data('task-status') || '').toLowerCase();
         const logsPresent = String($logConsole.data('logs-present')).toLowerCase() !== 'false';
@@ -414,6 +422,17 @@ $(document).ready(function() {
                 `/stream-logs/${encodeURIComponent(taskId)}/execution-events`
             );
             executionEventsStreams[taskId] = src;
+            const $logDialog = $logConsole.closest('dialog');
+            if ($logDialog.length) {
+                $logDialog[0].addEventListener(
+                    'close',
+                    function() {
+                        closeExecutionEventsStream(taskId);
+                    }, {
+                        once: true
+                    }
+                );
+            }
             src.onmessage = function(event) {
                 let payload;
                 try {
@@ -425,22 +444,18 @@ $(document).ready(function() {
                 appendExecutionEvent(taskId, payload);
                 buildExecutionEventsUi($logConsole, taskId, executionEventsCache[taskId]);
                 if (!$logConsole.parent().prop('open')) {
-                    src.close();
-                    delete executionEventsStreams[taskId];
+                    closeExecutionEventsStream(taskId);
                 }
             };
             src.addEventListener('finish', function() {
-                src.close();
-                delete executionEventsStreams[taskId];
+                closeExecutionEventsStream(taskId);
             });
             src.addEventListener('sep-error', function() {
-                src.close();
-                delete executionEventsStreams[taskId];
+                closeExecutionEventsStream(taskId);
             });
             src.onerror = function() {
                 if (!$logConsole.parent().prop('open')) {
-                    src.close();
-                    delete executionEventsStreams[taskId];
+                    closeExecutionEventsStream(taskId);
                 }
             };
             return;
@@ -465,12 +480,7 @@ $(document).ready(function() {
     window.clearLoadedTasks = function() {
         loadedCompletedTasks.clear();
         executionEventsFetched.clear();
-        Object.values(executionEventsStreams).forEach(function(src) {
-            src.close();
-        });
-        Object.keys(executionEventsStreams).forEach(function(key) {
-            delete executionEventsStreams[key];
-        });
+        Object.keys(executionEventsStreams).forEach(closeExecutionEventsStream);
     };
 
     $('.view-logs-button').click(function() {
