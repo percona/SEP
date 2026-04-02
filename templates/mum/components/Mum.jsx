@@ -23,6 +23,7 @@ import DeleteUserButton from "./DeleteUserButton";
 import MumUserList from "./MumUserList";
 import MumRoleList from "./MumRoleList";
 import AddCustomRoleButton from "./AddCustomRoleButton";
+import EditRoleButton from "./EditRoleButton";
 import DeleteRoleButton from "./DeleteRoleButton";
 
 // Build a MUI theme that mirrors CSS variables from base.css
@@ -636,11 +637,19 @@ const Mum = () => {
             }
             renderRowActions={(row) =>
               row.isBuiltin ? null : (
-                <DeleteRoleButton
-                  row={row}
-                  selectedTarget={selectedTarget}
-                  onSuccess={handleRoleMutation}
-                />
+                <>
+                  <EditRoleButton
+                    row={row}
+                    selectedTarget={selectedTarget}
+                    rolesData={rolesData}
+                    onSuccess={handleRoleMutation}
+                  />
+                  <DeleteRoleButton
+                    row={row}
+                    selectedTarget={selectedTarget}
+                    onSuccess={handleRoleMutation}
+                  />
+                </>
               )
             }
           />
