@@ -48,6 +48,7 @@ from app.tasks.deps import (
     TaskDep,
     TaskExecutor,
     TaskHistoryWithTaskDep,
+    validate_chain_task_names,
 )
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
@@ -72,10 +73,12 @@ router = APIRouter(tags=["tasks"])
 
 # TODO: Pagination  # noqa: TD002, TD003
 @router.get("/", dependencies=[IsAuthenticatedDep], response_model=list[TaskResponse])
-async def list_tasks(session: SessionDep, owner: str | None = None) -> list[Task]:
+async def list_tasks(
+    session: SessionDep, owner: str | None = None, target: str | None = None
+) -> list[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
-    return await TaskManager.list_active(session=session, owner=owner)
+    return await TaskManager.list_active(session=session, owner=owner, target=target)
 
 
 @router.delete(
@@ -163,11 +166,16 @@ async def list_periodic_tasks_by_task_name(
 )
 async def create_periodic_task_for_task_name(
     celery_beat_session: CeleryBeatSessionDep,
+    session: SessionDep,
     task: ExecutableTaskDep,
     periodic_task: PeriodicTaskCreate,
 ) -> PeriodicTask:
     """Create a new periodic task for the specified task name."""
     logger.debug("Creating periodic task %s", periodic_task)
+    if periodic_task.execute_request and periodic_task.execute_request.chain_task_names:
+        await validate_chain_task_names(
+            session, periodic_task.execute_request.chain_task_names, task
+        )
     kwargs = json.loads(periodic_task.kwargs)
     kwargs["task_name"] = task.name
     if not periodic_task.name:
