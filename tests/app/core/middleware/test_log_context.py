@@ -15,6 +15,8 @@
 
 """Test the LogContextMiddleware."""
 
+from unittest.mock import patch
+
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
@@ -149,11 +151,11 @@ async def test_sets_endpoint_context(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_clears_context_after_request(client: AsyncClient) -> None:
-    """Assert context vars are reset after request completes."""
-    await client.get("/test")
+    """Assert clear_log_context is scheduled as a background task on the response."""
+    with patch("app.core.middleware.log_context.clear_log_context") as mock_clear:
+        await client.get("/test")
 
-    for var in _CONTEXT_VARS.values():
-        assert var.get() == "-"
+    mock_clear.assert_called_once()
 
 
 @pytest.mark.asyncio

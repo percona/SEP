@@ -18,6 +18,7 @@
 import re
 from uuid import uuid4
 
+from starlette.background import BackgroundTask
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
@@ -25,7 +26,7 @@ from starlette.responses import Response
 from app.core.log import clear_log_context, set_log_context
 
 CORRELATION_ID_HEADER = "X-Correlation-ID"
-_VALID_CORRELATION_ID = re.compile(r"^[\w\-]{1,64}$")
+_VALID_CORRELATION_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class LogContextMiddleware(BaseHTTPMiddleware):
@@ -64,7 +65,10 @@ class LogContextMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
-            response.headers[CORRELATION_ID_HEADER] = correlation_id
-            return response
-        finally:
+        except Exception:
             clear_log_context()
+            raise
+        else:
+            response.headers[CORRELATION_ID_HEADER] = correlation_id
+            response.background = BackgroundTask(clear_log_context)
+            return response
