@@ -29,37 +29,70 @@ const DEFAULT_DB = "admin";
 const COLLECTION_ACTION_GROUPS = {
   "Query & Write": [
     "find", "insert", "update", "remove",
-    "bypassDocumentValidation",
+    "bypassDocumentValidation", "killCursors", "killAnyCursor",
   ],
-  "Collection management": [
+  "Collection & Index": [
     "createCollection", "dropCollection", "createIndex", "dropIndex",
-    "listIndexes", "collStats", "compact", "convertToCapped",
-    "emptycapped", "reIndex", "validate",
+    "listIndexes", "reIndex", "convertToCapped", "compact",
+    "compactStructuredEncryptionData", "collMod", "renameCollectionSameDB",
   ],
-  "Database management": [
-    "dropDatabase", "listCollections", "dbStats", "dbHash",
-    "planCacheRead", "planCacheWrite", "planCacheIndexFilter",
+  "Database Administration": [
+    "dropDatabase", "listCollections", "dbStats", "enableProfiler",
   ],
-  "Users & Roles (DB level)": [
-    "createUser", "dropUser", "grantRolesToUser", "revokeRolesFromUser",
-    "viewUser", "changeOwnPassword", "changeAnyPassword",
-    "changeOwnCustomData", "changeAnyCustomData",
-    "createRole", "dropRole", "grantRolesToRole", "revokeRolesFromRole",
-    "viewRole",
+  "Plan Cache & Diagnostics": [
+    "collStats", "dbHash", "validate", "indexStats",
+    "planCacheRead", "planCacheWrite", "planCacheIndexFilter", "querySettings",
+  ],
+  "Change Streams": [
+    "changeStream",
+  ],
+  "Users & Roles": [
+    "createUser", "dropUser", "viewUser",
+    "changePassword", "changeOwnPassword",
+    "changeCustomData", "changeOwnCustomData",
+    "setAuthenticationRestriction",
+    "grantRole", "revokeRole",
+    "createRole", "dropRole", "viewRole",
+  ],
+  "Sharding": [
+    "enableSharding", "analyzeShardKey", "clearJumboFlag",
+    "refineCollectionShardKey", "moveChunk", "reshardCollection",
+    "checkMetadataConsistency",
+  ],
+  "Search Indexes (Atlas)": [
+    "createSearchIndexes", "dropSearchIndex", "listSearchIndexes", "updateSearchIndex",
   ],
 };
 
 // Cluster-level actions — only valid on {cluster: true} resources.
 const CLUSTER_ACTION_GROUPS = {
-  "Cluster management": [
-    "hostInfo", "listDatabases", "serverStatus", "top", "killOp",
-    "killCursors", "connPoolStats", "getCmdLineOpts", "getLog",
-    "getParameter", "setParameter", "shutdown", "fsync",
-    "addShard", "removeShard", "enableSharding",
+  "Server Administration": [
+    "hostInfo", "serverStatus", "getCmdLineOpts", "getLog",
+    "getParameter", "setParameter", "getDefaultRWConcern", "setDefaultRWConcern",
+    "fsync", "unlock", "shutdown", "logRotate", "rotateCertificates",
+    "connPoolStats", "connPoolSync", "dropConnections",
+    "listDatabases", "top", "setFeatureCompatibilityVersion",
+    "applicationMessage", "bypassWriteBlockingMode", "bypassDefaultMaxTimeMS",
+    "setUserWriteBlockMode", "forceUUID", "oidReset",
+  ],
+  "Deployment Management": [
+    "inprog", "killop", "invalidateUserCache", "cpuProfiler",
+    "useUUID", "closeAllDatabases", "touch",
+    "authSchemaUpgrade", "cleanupOrphaned",
   ],
   "Replication": [
     "appendOplogNote", "replSetConfigure", "replSetGetConfig",
     "replSetGetStatus", "replSetHeartbeat", "replSetStateChange", "resync",
+  ],
+  "Sharding & Routing": [
+    "addShard", "removeShard", "enableSharding",
+    "flushRouterConfig", "getClusterParameter", "getShardMap", "listShards",
+    "moveCollection", "shardedDataDistribution", "shardingState", "splitChunk",
+    "transitionFromDedicatedConfigServer", "transitionToDedicatedConfigServer",
+    "unshardCollection", "checkMetadataConsistency",
+  ],
+  "Sessions": [
+    "listSessions", "killAnySession", "impersonate",
   ],
 };
 
