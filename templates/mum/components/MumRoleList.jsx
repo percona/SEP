@@ -14,7 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 
-const EXCLUDED_COLUMNS = new Set(["isBuiltin"]);
+const EXCLUDED_COLUMNS = new Set(["isBuiltin", "_id"]);
 
 const getColumns = (rows) => {
   const cols = new Set();
