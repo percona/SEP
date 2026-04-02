@@ -367,7 +367,9 @@ async def sync_task_history(
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
         return task_history
     updated = await executor.sync_task_history(task_history)
-    saved = await TaskHistoryManager.save(session, updated)
+    saved = await TaskHistoryManager.save(
+        session, updated, flag_modified_fields=["execution_request"]
+    )
     return await TaskHistoryManager.get_or_404(
         session, select_related=(TaskHistory.task,), id=saved.id
     )
