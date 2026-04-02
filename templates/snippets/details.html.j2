@@ -115,7 +115,10 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </h3>
         {% if snippet_preview -%}
             {% if snippet_preview.frontmatter -%}
-                <div class="highlight-wrapper">
+                {%- set last_line = snippet_preview.code_linenostart + snippet_preview.content.splitlines()|length - 1 -%}
+                {%- set linenos_chars = last_line|string|length -%}
+                <div class="highlight-wrapper"
+                     style="--linenos-width: {{ linenos_chars }}ch">
                     {% if snippet_preview.preamble -%}
                         {{ snippet_preview.preamble|syntax_highlight(style="monokai", stripall=False, linenos=True, wrapcode=True) |safe }}
                     {%- endif %}

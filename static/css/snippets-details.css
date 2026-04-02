@@ -61,6 +61,19 @@
     font-family: inherit;
 }
 
+.highlight-wrapper .highlighttable {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.highlight-wrapper .linenos {
+    width: calc(var(--linenos-width, 3ch) + 20px);
+}
+
+.highlight-wrapper .linenos pre {
+    text-align: right;
+}
+
 .frontmatter-toggle {
     border: none;
     margin: 0;
