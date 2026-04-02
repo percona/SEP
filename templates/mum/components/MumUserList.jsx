@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Box,
   Chip,
@@ -8,10 +8,13 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Toolbar,
   Typography,
 } from "@mui/material";
+
+const ROWS_PER_PAGE = 10;
 
 const EXCLUDED_COLUMNS = new Set(["_id", "userId", "UserId"]);
 
@@ -70,6 +73,11 @@ const MumUserList = ({
 }) => {
   const columns = useMemo(() => getColumns(usersData), [usersData]);
   const showActions = typeof renderRowActions === "function";
+  const [page, setPage] = useState(0);
+
+  useEffect(() => { setPage(0); }, [usersData]);
+
+  const pageRows = usersData.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
 
   if (!usersData && !toolbarActions) {
     return null;
@@ -112,7 +120,7 @@ const MumUserList = ({
                 </TableCell>
               </TableRow>
             ) : (
-              usersData.map((row, idx) => (
+              pageRows.map((row, idx) => (
                 <TableRow key={idx} hover>
                   {columns.map((col) => (
                     <TableCell key={col}>{formatCell(col, row?.[col])}</TableCell>
@@ -130,6 +138,14 @@ const MumUserList = ({
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={usersData.length}
+        page={page}
+        rowsPerPage={ROWS_PER_PAGE}
+        rowsPerPageOptions={[ROWS_PER_PAGE]}
+        onPageChange={(_, newPage) => setPage(newPage)}
+      />
     </Paper>
   );
 };

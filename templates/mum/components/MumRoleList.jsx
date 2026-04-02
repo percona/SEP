@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Box,
   Chip,
@@ -8,11 +8,14 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Toolbar,
   Tooltip,
   Typography,
 } from "@mui/material";
+
+const ROWS_PER_PAGE = 10;
 
 const EXCLUDED_COLUMNS = new Set(["isBuiltin", "_id"]);
 
@@ -54,6 +57,11 @@ const MumRoleList = ({
 }) => {
   const columns = useMemo(() => getColumns(rolesData), [rolesData]);
   const showActions = typeof renderRowActions === "function";
+  const [page, setPage] = useState(0);
+
+  useEffect(() => { setPage(0); }, [rolesData]);
+
+  const pageRows = rolesData.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
 
   return (
     <Paper elevation={1}>
@@ -88,7 +96,7 @@ const MumRoleList = ({
                 </TableCell>
               </TableRow>
             ) : (
-              rolesData.map((row, idx) => (
+              pageRows.map((row, idx) => (
                 <TableRow
                   key={idx}
                   hover
@@ -126,6 +134,14 @@ const MumRoleList = ({
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={rolesData.length}
+        page={page}
+        rowsPerPage={ROWS_PER_PAGE}
+        rowsPerPageOptions={[ROWS_PER_PAGE]}
+        onPageChange={(_, newPage) => setPage(newPage)}
+      />
     </Paper>
   );
 };
