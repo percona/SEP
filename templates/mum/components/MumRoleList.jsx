@@ -49,9 +49,11 @@ const formatCell = (col, value) => {
 const MumRoleList = ({
   rolesData = [],
   toolbarActions = null,
+  renderRowActions = null,
   emptyState = "No roles to display.",
 }) => {
   const columns = useMemo(() => getColumns(rolesData), [rolesData]);
+  const showActions = typeof renderRowActions === "function";
 
   return (
     <Paper elevation={1}>
@@ -73,12 +75,13 @@ const MumRoleList = ({
               {columns.map((col) => (
                 <TableCell key={col}>{col}</TableCell>
               ))}
+              {showActions && <TableCell>actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {rolesData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={Math.max(columns.length + 1, 1)}>
+                <TableCell colSpan={Math.max(columns.length + (showActions ? 2 : 1), 1)}>
                   <Typography variant="body2" color="text.secondary">
                     {emptyState}
                   </Typography>
@@ -89,11 +92,7 @@ const MumRoleList = ({
                 <TableRow
                   key={idx}
                   hover
-                  sx={
-                    row.isBuiltin
-                      ? { opacity: 0.75 }
-                      : undefined
-                  }
+                  sx={row.isBuiltin ? { opacity: 0.75 } : undefined}
                 >
                   <TableCell>
                     <Tooltip
@@ -114,6 +113,13 @@ const MumRoleList = ({
                   {columns.map((col) => (
                     <TableCell key={col}>{formatCell(col, row?.[col])}</TableCell>
                   ))}
+                  {showActions && (
+                    <TableCell>
+                      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                        {renderRowActions(row)}
+                      </Box>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}

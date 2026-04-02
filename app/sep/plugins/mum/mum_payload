@@ -218,6 +218,24 @@ def delete_user(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-
     print(json_util.dumps({"ok": True, "result": result, "user": username, "db": db_name}))
 
 
+def delete_role(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
+    """Drop a custom MongoDB role from a specific database.
+
+    Expected config keys:
+    - role (required): role name
+    - db (optional; defaults to 'admin'): database that owns the role
+    """
+    role_name = config.get("role")
+    if not role_name:
+        print(json_util.dumps({"ok": False, "error": "role name is required"}))
+        sys.exit(1)
+
+    db_name = config.get("db", "admin")
+    target_db = db.client.get_database(db_name)
+    result = target_db.command({"dropRole": role_name})
+    print(json_util.dumps({"ok": True, "result": result, "role": role_name, "db": db_name}))
+
+
 def create_role(db, config: Dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
     """Create a custom MongoDB role.
 
@@ -261,6 +279,8 @@ def mum() -> None:
 
         if action == "list_roles":
             list_roles(db)
+        elif action == "delete_role":
+            delete_role(db, config)
         elif action == "create_role":
             create_role(db, config)
         elif action == "create_user":

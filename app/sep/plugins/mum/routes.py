@@ -650,6 +650,65 @@ async def mum_create_role(
 
 
 @router.post(
+    "/ui/delete-role",
+    dependencies=[IsAuthenticated],
+    response_class=JSONResponse,
+)
+@csrf_exempt
+async def mum_delete_role(
+    request: Request,  # noqa: ARG001
+    body: dict[str, Any],
+    tasks_api: TaskAPI,
+) -> JSONResponse:
+    """Drop a custom MongoDB role.
+
+    Expects JSON body with:
+    - target: executor host name (required)
+    - role: role name (required)
+    - db: database that owns the role (optional, defaults to 'admin')
+    """
+    target = body.get("target")
+    if not target:
+        return JSONResponse(
+            content={"detail": "'target' is required"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    role = body.get("role")
+    if not role:
+        return JSONResponse(
+            content={"detail": "'role' is required"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    db_name = body.get("db") or "admin"
+
+    try:
+        config_obj: dict[str, Any] = {
+            "action": "delete_role",
+            "role": role,
+            "db": db_name,
+        }
+        task_name = _resolve_mum_task_name(config_obj["action"])
+        default_task, history = await _execute_mum_task(
+            tasks_api,
+            task_name=task_name,
+            target=target,
+            config=config_obj,
+        )
+        return JSONResponse(
+            content={"task": default_task, "history": history},
+            status_code=status.HTTP_201_CREATED,
+        )
+    except HTTPException as exc:  # type: ignore[name-defined]
+        return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+    except Exception as exc:
+        logger.exception("Unexpected error while deleting role for target '%s'", target)
+        return JSONResponse(
+            content={"detail": f"Internal error: {str(exc)}"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post(
     "/ui/usertask",
     dependencies=[IsAuthenticated],
     response_class=JSONResponse,
