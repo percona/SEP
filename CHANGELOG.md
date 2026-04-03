@@ -75,6 +75,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-906: Bump `Pygments` package for security
 - SEP-731: Upgrade `Celery` to 5.6.0+ — credential leakage fix (AIKIDO-2025-10881)
 
+### Configuration Changes
+
+- SEP-602: New `DEFAULT_EXECUTOR_HOST` setting in MySQLSyncer configuration for RDS inventory sync
+- SEP-867: New `strict_executor_matching` setting to fail sync when no matching executor host is found
+- SEP-749: PBM credentials file path is now configurable via settings
+- SEP-802: New `CONTAINER_REGISTRY` environment variable for using internal container registries in the installer
+
 ## [v0.10.3] - 2026-02-25
 
 ### Added
