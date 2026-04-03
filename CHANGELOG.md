@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
 
+### Security
+
+- SEP-931: Upgrade Pygments to 2.20.0 and remove CVE-2026-4539 audit ignore
+
 ## [v0.10.3] - 2026-02-25
 
 ### Added
