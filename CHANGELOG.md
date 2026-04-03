@@ -10,9 +10,70 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
 
+## [v0.11.0] - 2026-04-02
+
+### Added
+
+- SEP-777: Alert template YAML schema and loader (PMM Alerting plugin)
+- SEP-778: PMM API client alerting endpoints
+- SEP-779: Alert templates list page with service filter tabs
+- SEP-780: Push to PMM functionality for alert templates
+- SEP-781: PagerDuty contact point management widget
+- SEP-782: Periodic alert rules backup
+- SEP-783: Alert rules restore from backup
+- SEP-602: Include RDS instances in inventory sync with `DEFAULT_EXECUTOR_HOST` setting
+- SEP-800: IO/CPU/load/memory utilization alert snippets
+- SEP-801: TimeDriftPMMAgents alert snippet
+- SEP-867: `strict_executor_matching` setting to fail sync when no matching executor host
+- SEP-804: `OPTIONAL_DEFAULT_TRUE` SnippetSudoOption for pre-checked sudo checkbox
+- SEP-807: Signed URLs for artifact downloads instead of forwarding tokens to Nomad
+- SEP-424: Next execution column in periodic tasks table
+- SEP-802: Internal container registry support in installer and deployment
+
+### Changed
+
+- SEP-891: Core CSS dark mode fixes
+- SEP-892: Theme-aware syntax highlighting for dark mode
+- SEP-893: Dark mode for Simple Datatables
+- SEP-894: Dark mode for flash messages, confirm modal, and saved-task containers
+- SEP-895: Fix page-specific hardcoded colors for dark mode
+- SEP-813: Execution target dropdowns show inventory node names alongside service names
+- SEP-533: Improved cron mode UI for task scheduling
+- SEP-794: Dipper form defaults dynamically populated from selected service and PMM context
+- SEP-798: Updated Snippets Manager main page title
+- SEP-749: PBM credentials path is now configurable
+- SEP-400: All MongoDB restore options (batch size, workers, download buffers) now available in the UI
+- SEP-698: Binlog PITR restore supports extra arguments via `BINLOG_RESTORE_EXTRA_ARGS`
+- SEP-693: Binary log file filtering for all backup source types
+- SEP-696: XB restore cleans up `.zst` files after decompression
+- SEP-699: Tightened permissions on backup logs and output files
+- SEP-870: Installer script respects `NO_COLOR` convention
+- SEP-792: Secrets masked in logs and dev shell using Pydantic `SecretStr`
+
+### Fixed
+
+- SEP-868: Plugin pages fail to load for services with 130K+ schemas/tables — inventory data now loaded with pagination
+- SEP-811: Frequent "CSRF signatures do not match" errors — tokens now persist across requests with correct cookie attributes
+- SEP-822: Mydumper + Upload fails for file permissions when XB backup was executed first
+- SEP-821: Backup S3 information not available on Edit page
+- SEP-889: Navbar actions dropdown items partially unclickable
+- SEP-888: Login page does not display error messages for invalid credentials
+- SEP-885: Sub-app lifespan never runs in standalone mode due to `__name__` guard
+- SEP-806: Global JSON deserializer eagerly converts Task.data dicts to TaskExecutionRequest
+- SEP-803: Snippet/Dipper preview content leaks outside highlight container
+- SEP-795: Download button stuck on 'Preparing download' after download starts
+- SEP-563: Mydumper backup log not shown in full in SEP
+- SEP-855: pt-stalk execution fails due to unsupported system-only option
+- SEP-854: Parameter help parsing error in `mysql_version.sh`
+- SEP-853: Parameter help parsing error in `mysql_query_tuning.sh`
+- SEP-841: Permission issue in `mysql_log_extractor.sh` when reading MySQL error log
+
 ### Security
 
-- SEP-931: Upgrade Pygments to 2.20.0 and remove CVE-2026-4539 audit ignore
+- SEP-931: Upgrade `Pygments` to 2.20.0 — CVE-2026-4539
+- SEP-930: Bump `aiohttp` to 3.13.4
+- SEP-906: Bump `Pygments` package for security
+- SEP-731: Upgrade `Celery` to 5.6.0+ — credential leakage fix (AIKIDO-2025-10881)
 
 ## [v0.10.3] - 2026-02-25
 
@@ -90,7 +151,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-701: Update `aiohttp` to 3.13.3
 - SEP-728: Update `python-multipart` to 0.0.22
 
-[Unreleased]: https://github.com/percona/SEP/compare/v0.10.3...HEAD
+[Unreleased]: https://github.com/percona/SEP/compare/v0.11.0...HEAD
+[v0.11.0]: https://github.com/percona/SEP/compare/v0.10.3...v0.11.0
 [v0.10.3]: https://github.com/percona/SEP/compare/v0.10.2...v0.10.3
 [v0.10.2]: https://github.com/percona/SEP/compare/v0.10.1...v0.10.2
 [v0.10.1]: https://github.com/percona/SEP/compare/v0.10.0...v0.10.1
