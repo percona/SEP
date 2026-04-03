@@ -178,11 +178,23 @@ endif
 	echo ""; \
 	echo "=== RC $$RC_VERSION released successfully ==="; \
 	echo ""; \
+	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
+		echo "==> Triggering Jenkins release build for v$$RC_VERSION..."; \
+		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
+			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
+			--data-urlencode "releaseTag=v$$RC_VERSION" 2>&1; then \
+			echo "    Jenkins build triggered successfully."; \
+		else \
+			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
+		fi; \
+	else \
+		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
+	fi; \
+	echo ""; \
 	echo "Next steps:"; \
 	echo "  1. Create Jira version $(VERSION) (if not already created)"; \
-	echo "  2. Trigger Jenkins RC build for v$$RC_VERSION"; \
-	echo "  3. Deploy to staging and verify"; \
-	echo "  4. Notify the team"
+	echo "  2. Deploy to staging and verify"; \
+	echo "  3. Notify the team"
 
 release-stable:
 ifndef VERSION
@@ -247,10 +259,22 @@ endif
 	echo ""; \
 	echo "=== Stable $(VERSION) released successfully ==="; \
 	echo ""; \
+	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
+		echo "==> Triggering Jenkins release build for v$(VERSION)..."; \
+		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
+			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
+			--data-urlencode "releaseTag=v$(VERSION)" 2>&1; then \
+			echo "    Jenkins build triggered successfully."; \
+		else \
+			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
+		fi; \
+	else \
+		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
+	fi; \
+	echo ""; \
 	echo "Next steps:"; \
-	echo "  1. Trigger Jenkins stable build for v$(VERSION)"; \
-	echo "  2. Publish release notes"; \
-	echo "  3. Mark Jira version $(VERSION) as released"; \
-	echo "  4. Merge the dev version bump PR"
+	echo "  1. Publish release notes"; \
+	echo "  2. Mark Jira version $(VERSION) as released"; \
+	echo "  3. Merge the dev version bump PR"
 
 .PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations migrate checkmigrations test release-rc release-stable
