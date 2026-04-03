@@ -42,6 +42,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     <link rel="stylesheet"
           href="{{ url_for('static', path='/css/saved.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/logs.css') }}">
+    <link rel="stylesheet"
+          href="{{ url_for('static', path='/css/chain-builder.css') }}">
 {% endblock style %}
 {% block behaviours_optimized_extra %}
     <script src="{{ url_for('static', path='/js/relativeTime.js') }}"
@@ -52,6 +54,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         <script src="{{ url_for('static', path='/js/logs.js') }}"
                 nonce="{{ request.state.csp_nonce }}"></script>
     {% endif %}
+    <script src="{{ url_for('static', path='/js/chain-builder.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
 {% block main %}
     <table data-table>

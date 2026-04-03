@@ -22,7 +22,13 @@ from fastapi import status
 
 from app.sep.deps import get_task_by_name
 from app.sep.main import sep_app
-from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskExecuteRequest,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+)
 from tests.app.factories import TaskFactory
 
 
@@ -138,12 +144,7 @@ def test_task_execute(
     """Test executing a task."""
     mock_task_api_dep.post.return_value = AsyncMock()
 
-    execute_data = {
-        "meta": {},
-        "payload": None,
-        "eta": None,
-        "anonymize_mask": None,
-    }
+    execute_data = TaskExecuteRequest().model_dump()
 
     response = test_client.post(f"/tasks/{created_task.name}", follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
