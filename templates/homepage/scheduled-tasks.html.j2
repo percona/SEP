@@ -30,6 +30,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                 <th>Last Run At</th>
                 <th>Next Execution</th>
                 <th>Runs</th>
+                <th>Chain with</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -54,6 +55,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                             <td class="relativeTime">{{ periodic_task.next_run_at or '' }}</td>
                             <td>{{ periodic_task.total_run_count }}</td>
                             <td>
+                                {% if periodic_task.execute_request and periodic_task.execute_request.chain_task_names %}
+                                    {% with chain_names=periodic_task.execute_request.chain_task_names %}
+                                        {% include "tasks/partials/chain-display.html" %}
+                                    {% endwith %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>
                                 {% if is_task_manager_enabled %}
                                     <a href="{{ url_for('tasks_detail', task_name=task_name) }}"><span class="material-symbols-outlined">visibility</span></a>
                                 {% else %}
@@ -68,7 +78,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="7" class="no-tasks">No periodic tasks</td>
+                        <td colspan="8" class="no-tasks">No periodic tasks</td>
                     </tr>
                 {% endif %}
             </tbody>

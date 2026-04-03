@@ -61,6 +61,14 @@
                 const el = document.getElementById(TOOLTIP_ID);
                 if (el) el.classList.remove('visible');
             });
+
+            icon.addEventListener('focus', function() {
+                icon.dispatchEvent(new Event('mouseenter'));
+            });
+
+            icon.addEventListener('blur', function() {
+                icon.dispatchEvent(new Event('mouseleave'));
+            });
         });
     }
 
