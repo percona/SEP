@@ -34,8 +34,10 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             {% for host in executor_hosts %}<option value="{{ host.value }}">{{ host.label }}</option>{% endfor %}
         </select>
     </section>
+    {% set plugin_base_raw = url_for('troubleshooting_index') | string %}
+    {% set plugin_base = plugin_base_raw[:-1] if plugin_base_raw.endswith('/') else plugin_base_raw %}
     {% if snippets %}
-        <div class="at-snippet-cards" data-base-uri="{{ base_uri }}">
+        <div class="at-snippet-cards" data-base-uri="{{ plugin_base }}">
             {% for snippet in snippets %}
                 {% include "alert_troubleshooting/partials/snippet-card.html.j2" %}
             {% endfor %}

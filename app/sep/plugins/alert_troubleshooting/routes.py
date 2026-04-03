@@ -21,13 +21,13 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import IsAuthenticated, TaskAPI
+from app.sep.deps import IsAuthenticated, IsCsrfValidated, TaskAPI
 from app.sep.plugins.alert_troubleshooting.deps import (
+    AjaxExecutableSnippet,
     ExecutionRequestMeta,
     TroubleshootingDetailContext,
     TroubleshootingIndexContext,
 )
-from app.sep.plugins.snippets.deps import ExecutableSnippet
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -86,11 +86,11 @@ async def troubleshooting_detail(
 
 @router.post(
     "/execute/{snippet_filename}",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsAuthenticated, IsCsrfValidated],
 )
 async def troubleshooting_execute(
     tasks_api: TaskAPI,
-    snippet: ExecutableSnippet,
+    snippet: AjaxExecutableSnippet,
     execution_request_meta: ExecutionRequestMeta,
 ) -> JSONResponse:
     """Execute a snippet via AJAX and return the task ID as JSON.
@@ -101,7 +101,7 @@ async def troubleshooting_execute(
     :param tasks_api: The authenticated Tasks API client.
     :type tasks_api: TaskAPI
     :param snippet: The validated executable snippet.
-    :type snippet: ExecutableSnippet
+    :type snippet: AjaxExecutableSnippet
     :param execution_request_meta: The assembled execution metadata.
     :type execution_request_meta: ExecutionRequestMeta
     :return: A JSON response with the task ID and submission status.
@@ -158,12 +158,23 @@ async def troubleshooting_output(
         response_data = {"status": task_status, "output": ""}
         if task_status in ("completed", "failed", "stopped"):
             try:
-                files = await tasks_api.get(f"/history/{task_history_id}/files/")
+                files_meta = await tasks_api.get(f"/history/{task_history_id}/files/")
                 output_parts = []
-                for file_entry in files:
-                    content = file_entry.get("content", "")
-                    if content:
-                        output_parts.append(content)
+                for filename in files_meta:
+                    try:
+                        content = "".join(
+                            [
+                                chunk.decode("utf-8", errors="replace")
+                                async for chunk in tasks_api.stream(
+                                    f"/history/{task_history_id}/file/",
+                                    params={"path": filename},
+                                )
+                            ]
+                        )
+                        if content:
+                            output_parts.append(content)
+                    except (HTTPException, KeyError, TypeError, OSError):
+                        pass
                 response_data["output"] = "\n".join(output_parts)
             except (HTTPException, KeyError, TypeError, OSError):
                 logger.debug(

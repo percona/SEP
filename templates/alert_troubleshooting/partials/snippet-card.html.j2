@@ -14,10 +14,8 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses />.
 #}
-{# djlint:off J018 #}
 {% set form_id = "snippetForm-" ~ snippet.filename | replace(".", "-") | replace("/", "-") %}
-{% set execute_url = base_uri ~ "/execute/" ~ snippet.filename %}
-{# djlint:on #}
+{% set execute_url = url_for('troubleshooting_execute', snippet_filename=snippet.filename) %}
 <div class="at-snippet-card"
      data-snippet-filename="{{ snippet.filename }}">
     <div class="at-snippet-header">
@@ -28,9 +26,17 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         {% if snippet.is_approved and snippet.can_execute %}
             {{ snippet.to_form(form_action=execute_url, form_id=form_id) | safe }}
             <script nonce="{{ request.state.csp_nonce }}">
-                if (window.initInfoTooltips) {
-                    window.initInfoTooltips(document.getElementById('{{ form_id }}'));
-                }
+                (function() {
+                    var form = document.getElementById('{{ form_id }}');
+                    if (form) {
+                        var input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'csrf-token';
+                        input.value = '{{ csrf_token }}';
+                        form.appendChild(input);
+                        if (window.initInfoTooltips) window.initInfoTooltips(form);
+                    }
+                })();
             </script>
         {% elif snippet.is_approved %}
             <span class="at-disabled-warning">

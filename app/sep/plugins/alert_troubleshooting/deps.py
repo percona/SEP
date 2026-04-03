@@ -19,14 +19,23 @@ import logging
 import re
 from typing import Annotated, Any, NamedTuple
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Request, status
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
 from app.sep.deps import DefaultContext, ExecutorHostsCtx, SessionDep
 from app.sep.models import AlertServiceType
-from app.sep.plugins.snippets.deps import get_snippet_execution_request_meta
+from app.sep.plugins.snippets.deps import (
+    get_snippet_execution_request_meta,
+    get_snippet_source,
+    get_validated_execution_args,
+    SnippetDep,
+)
 from app.sep.snippets.crud import SnippetManager
-from app.sep.snippets.models.snippet import SnippetExecutionMeta
+from app.sep.snippets.models.snippet import (
+    BaseSnippetArgs,
+    Snippet,
+    SnippetExecutionMeta,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -310,7 +319,86 @@ TroubleshootingDetailContext = Annotated[
     Depends(get_troubleshooting_detail_context),
 ]
 
+
+def get_ajax_executable_snippet(
+    snippet: SnippetDep,
+) -> Snippet:
+    """Verify snippet executability and return a JSON error on failure.
+
+    Wrap the standard executable snippet check for AJAX endpoints by
+    raising an ``HTTPException`` with a 400 status instead of an
+    ``HTTPRedirectException``.
+
+    :param snippet: The snippet to verify.
+    :type snippet: SnippetDep
+    :return: The verified executable snippet.
+    :rtype: Snippet
+    :raises HTTPException: If the snippet cannot be executed.
+    """
+    if snippet.can_execute:
+        return snippet
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Snippet {snippet} cannot be executed",
+    )
+
+
+AjaxExecutableSnippet = Annotated[Snippet, Depends(get_ajax_executable_snippet)]
+
+
+async def get_ajax_validated_execution_args(
+    request: Request,
+    snippet: AjaxExecutableSnippet,
+) -> BaseSnippetArgs:
+    """Validate execution arguments and return JSON errors on failure.
+
+    Wrap the standard argument validation for AJAX endpoints by catching
+    ``HTTPRedirectException`` and raising ``HTTPException`` with a 400
+    status instead.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param snippet: The executable snippet.
+    :type snippet: AjaxExecutableSnippet
+    :return: The validated execution arguments.
+    :rtype: BaseSnippetArgs
+    :raises HTTPException: If the execution arguments are invalid.
+    """
+    try:
+        return await get_validated_execution_args(request, snippet)
+    except HTTPRedirectException:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid execution parameters",
+        ) from None
+
+
+def get_ajax_execution_request_meta(
+    snippet: AjaxExecutableSnippet,
+    snippet_source: Annotated[str, Depends(get_snippet_source)],
+    execution_args: Annotated[
+        BaseSnippetArgs, Depends(get_ajax_validated_execution_args)
+    ],
+) -> SnippetExecutionMeta:
+    """Prepare execution metadata for an AJAX snippet execution request.
+
+    Delegate to the standard snippet execution metadata builder but use
+    AJAX-safe dependency validation that returns JSON errors instead of
+    redirect responses.
+
+    :param snippet: The executable snippet.
+    :type snippet: AjaxExecutableSnippet
+    :param snippet_source: The signed URL to download the snippet artifact.
+    :type snippet_source: str
+    :param execution_args: The validated execution arguments.
+    :type execution_args: BaseSnippetArgs
+    :return: The prepared execution metadata.
+    :rtype: SnippetExecutionMeta
+    """
+    return get_snippet_execution_request_meta(snippet, snippet_source, execution_args)
+
+
 ExecutionRequestMeta = Annotated[
     SnippetExecutionMeta,
-    Depends(get_snippet_execution_request_meta),
+    Depends(get_ajax_execution_request_meta),
 ]

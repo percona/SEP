@@ -27,12 +27,10 @@ from app.sep.main import sep_app
 from app.sep.models import AlertServiceType
 from app.sep.plugins.alert_troubleshooting.deps import (
     AlertInfo,
+    get_ajax_executable_snippet,
+    get_ajax_execution_request_meta,
     get_troubleshooting_detail_context,
     get_troubleshooting_index_context,
-)
-from app.sep.plugins.snippets.deps import (
-    get_executable_snippet,
-    get_snippet_execution_request_meta,
 )
 from app.sep.snippets.models.snippet import SnippetExecutionMeta
 
@@ -205,10 +203,8 @@ class TestTroubleshootingExecute:
         mock_api = AsyncMock(spec=RemoteAPI)
         mock_api.post.return_value = {"id": MOCK_TASK_ID, "status": "running"}
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
-        sep_app.dependency_overrides[get_executable_snippet] = self._mock_snippet
-        sep_app.dependency_overrides[get_snippet_execution_request_meta] = (
-            self._mock_meta
-        )
+        sep_app.dependency_overrides[get_ajax_executable_snippet] = self._mock_snippet
+        sep_app.dependency_overrides[get_ajax_execution_request_meta] = self._mock_meta
         response = test_client.post(
             "/alert-troubleshooting/execute/test.sh",
             data={"-hostname-": "node-1", "csrf-token": "fake"},
@@ -223,10 +219,8 @@ class TestTroubleshootingExecute:
         mock_api = AsyncMock(spec=RemoteAPI)
         mock_api.post.side_effect = HTTPException(status_code=502, detail="Bad Gateway")
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
-        sep_app.dependency_overrides[get_executable_snippet] = self._mock_snippet
-        sep_app.dependency_overrides[get_snippet_execution_request_meta] = (
-            self._mock_meta
-        )
+        sep_app.dependency_overrides[get_ajax_executable_snippet] = self._mock_snippet
+        sep_app.dependency_overrides[get_ajax_execution_request_meta] = self._mock_meta
         response = test_client.post(
             "/alert-troubleshooting/execute/test.sh",
             data={"-hostname-": "node-1", "csrf-token": "fake"},
@@ -253,8 +247,13 @@ class TestTroubleshootingOutput:
         mock_api = AsyncMock(spec=RemoteAPI)
         mock_api.get.side_effect = [
             {"id": 1, "status": "completed"},
-            [{"name": "stdout.log", "content": "query result OK"}],
+            {"stdout.log": {"size": 16, "is_dir": False}},
         ]
+
+        async def _mock_stream(path, **kwargs):
+            yield b"query result OK"
+
+        mock_api.stream = _mock_stream
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
         response = test_client.get("/alert-troubleshooting/output/1")
         assert response.status_code == status.HTTP_200_OK
@@ -267,8 +266,13 @@ class TestTroubleshootingOutput:
         mock_api = AsyncMock(spec=RemoteAPI)
         mock_api.get.side_effect = [
             {"id": 1, "status": "failed"},
-            [{"name": "stderr.log", "content": "Error: connection refused"}],
+            {"stderr.log": {"size": 25, "is_dir": False}},
         ]
+
+        async def _mock_stream(path, **kwargs):
+            yield b"Error: connection refused"
+
+        mock_api.stream = _mock_stream
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
         response = test_client.get("/alert-troubleshooting/output/1")
         assert response.status_code == status.HTTP_200_OK

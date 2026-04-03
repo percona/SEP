@@ -93,8 +93,16 @@
             fetch(baseUri + '/output/' + encodeURIComponent(taskId), {
                 credentials: 'include'
             }).then(function(res) {
+                if (!res.ok) {
+                    throw new Error('Server returned ' + res.status);
+                }
                 return res.json();
             }).then(function(data) {
+                if (data.error) {
+                    setButtonLoading(form, false);
+                    setCardState(card, 'error', data.error);
+                    return;
+                }
                 if (data.output) {
                     showOutput(card, data.output);
                 }
