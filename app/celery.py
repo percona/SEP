@@ -20,9 +20,16 @@ import logging.config
 from typing import Any
 
 from celery import Celery
-from celery.signals import setup_logging, worker_process_init
+from celery.signals import (
+    before_task_publish,
+    setup_logging,
+    task_postrun,
+    task_prerun,
+    worker_process_init,
+)
 
 from app.core.config import settings
+from app.core.log import clear_log_context, correlation_id_var, set_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -44,3 +51,49 @@ def init_child_event_loop(**kwargs: Any) -> None:
     logger.debug("Initializing new event loop for worker process")
     celery.loop = asyncio.new_event_loop()
     asyncio.set_event_loop(celery.loop)
+
+
+CORRELATION_ID_HEADER_KEY = "correlation_id"
+
+
+@before_task_publish.connect
+def propagate_correlation_id(headers: dict[str, Any], **kwargs: Any) -> None:
+    """Copy the current correlation ID into outgoing task message headers.
+
+    :param headers: The mutable task message headers dict.
+    :type headers: dict[str, Any]
+    :param kwargs: Additional signal keyword arguments (unused).
+    :type kwargs: Any
+    """
+    correlation_id = correlation_id_var.get()
+    if correlation_id != "-":
+        headers[CORRELATION_ID_HEADER_KEY] = correlation_id
+
+
+@task_prerun.connect
+def set_task_log_context(task_id: str, task: Any, **kwargs: Any) -> None:
+    """Set log context variables from the incoming Celery task.
+
+    :param task_id: The unique task execution ID.
+    :type task_id: str
+    :param task: The Celery task instance.
+    :type task: Any
+    :param kwargs: Additional signal keyword arguments (unused).
+    :type kwargs: Any
+    """
+    correlation_id = getattr(task.request, CORRELATION_ID_HEADER_KEY, None) or "-"
+    set_log_context(
+        correlation_id=correlation_id,
+        task_id=task_id,
+        task_name=task.name,
+    )
+
+
+@task_postrun.connect
+def clear_task_log_context(**kwargs: Any) -> None:
+    """Clear all log context variables after task execution.
+
+    :param kwargs: Additional signal keyword arguments (unused).
+    :type kwargs: Any
+    """
+    clear_log_context()

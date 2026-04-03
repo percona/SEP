@@ -1,0 +1,43 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% if chainable_tasks is defined and chainable_tasks %}
+    <div class="chain-builder{% if compact %} chain-builder--compact{% endif %}"
+         data-task-name="{{ chain_task_name }}"
+         data-form-id="{{ chain_form_id }}"
+         {% if chain_input_name %}data-input-name="{{ chain_input_name }}"{% endif %}
+         {% if initial_chain %}data-initial-chain='{{ initial_chain | tojson }}'{% endif %}
+         {% if chain_on_failure is defined and chain_on_failure %}data-chain-on-failure="true"{% endif %}>
+        <label class="form-label">Chain tasks after execution (optional)</label>
+        <div class="chain-sequence"></div>
+        <div class="chain-add-controls">
+            <select class="chain-task-select form-input">
+                <option value="">Add task to chain...</option>
+                {% for t in chainable_tasks %}<option value="{{ t.name }}">{{ t.name }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="chain-options" style="display: none;">
+            <label class="checkbox" title="When enabled, the chain continues even if a task fails, stops, or is lost">
+                <input type="checkbox" class="chain-on-failure-checkbox">
+                <div class="checkmark">
+                    <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                    <span class="material-symbols-outlined checked">check_box</span>
+                </div>
+                <span class="label">Continue chain on failure</span>
+            </label>
+        </div>
+    </div>
+{% endif %}
