@@ -15,6 +15,7 @@
 
 """Test the alert troubleshooting plugin routes."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from fastapi import status
@@ -181,8 +182,6 @@ class TestTroubleshootingExecute:
     @staticmethod
     def _mock_snippet():
         """Create a mock executable snippet."""
-        from types import SimpleNamespace
-
         return SimpleNamespace(
             filename="test.sh",
             execution_task_name="run-command",

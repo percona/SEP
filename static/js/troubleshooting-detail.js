@@ -28,9 +28,8 @@
     var HOSTNAME_FIELD = '-hostname-';
 
     function getBaseUri() {
-        var cards = document.querySelector('.at-snippet-cards');
-        if (!cards) return '';
-        var link = document.querySelector('link[rel="stylesheet"][href*="alert-troubleshooting"]');
+        var cards = document.querySelector('.at-snippet-cards[data-base-uri]');
+        if (cards && cards.dataset.baseUri) return cards.dataset.baseUri;
         var path = window.location.pathname;
         var parts = path.split('/');
         parts.pop();

@@ -17,11 +17,11 @@
 
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.sep.config import sep_settings
-from app.sep.deps import IsAuthenticated, IsCsrfValidated, TaskAPI
+from app.sep.deps import IsAuthenticated, TaskAPI
 from app.sep.plugins.alert_troubleshooting.deps import (
     ExecutionRequestMeta,
     TroubleshootingDetailContext,
@@ -86,7 +86,7 @@ async def troubleshooting_detail(
 
 @router.post(
     "/execute/{snippet_filename}",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
+    dependencies=[IsAuthenticated],
 )
 async def troubleshooting_execute(
     tasks_api: TaskAPI,
@@ -103,7 +103,7 @@ async def troubleshooting_execute(
     :param snippet: The validated executable snippet.
     :type snippet: ExecutableSnippet
     :param execution_request_meta: The assembled execution metadata.
-    :type execution_request_meta: SnippetExecutionMeta
+    :type execution_request_meta: ExecutionRequestMeta
     :return: A JSON response with the task ID and submission status.
     :rtype: JSONResponse
     """
@@ -128,7 +128,7 @@ async def troubleshooting_execute(
         )
         return JSONResponse(
             {"error": "Failed to submit snippet execution"},
-            status_code=502,
+            status_code=status.HTTP_502_BAD_GATEWAY,
         )
 
 
@@ -162,7 +162,7 @@ async def troubleshooting_output(
                     if content:
                         output_parts.append(content)
                 response_data["output"] = "\n".join(output_parts)
-            except (KeyError, TypeError, OSError):
+            except (HTTPException, KeyError, TypeError, OSError):
                 logger.debug(
                     "Could not fetch output files for task %s",
                     task_history_id,
@@ -173,5 +173,5 @@ async def troubleshooting_output(
         logger.exception("Failed to poll output for task history %s", task_history_id)
         return JSONResponse(
             {"error": "Failed to retrieve task output"},
-            status_code=502,
+            status_code=status.HTTP_502_BAD_GATEWAY,
         )

@@ -35,7 +35,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </select>
     </section>
     {% if snippets %}
-        <div class="at-snippet-cards">
+        <div class="at-snippet-cards" data-base-uri="{{ base_uri }}">
             {% for snippet in snippets %}
                 {% include "alert_troubleshooting/partials/snippet-card.html.j2" %}
             {% endfor %}

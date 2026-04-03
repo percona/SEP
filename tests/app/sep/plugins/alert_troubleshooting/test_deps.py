@@ -263,8 +263,9 @@ class TestFilterSnippetsForAlert:
         s1 = self._make_snippet({"alerts": ["HighCPU"]})
         s2 = self._make_snippet({"alerts": ["LowDisk"]})
         s3 = self._make_snippet({"alerts": ["HighCPU", "LowDisk"]})
-        result = filter_snippets_for_alert([s1, s2, s3], "HighCPU")
-        assert result == [s1, s3]
+        matched, alert_info = filter_snippets_for_alert([s1, s2, s3], "HighCPU")
+        assert matched == [s1, s3]
+        assert alert_info.name == "HighCPU"
 
     def test_no_match_raises_not_found(self):
         """Assert ``HTTPNotFoundException`` when no snippet matches."""
@@ -280,22 +281,23 @@ class TestFilterSnippetsForAlert:
     def test_dict_alert_entries_matched(self):
         """Assert dict-style alert entries are matched by name."""
         s1 = self._make_snippet({"alerts": [{"name": "HighCPU", "label": "High CPU"}]})
-        result = filter_snippets_for_alert([s1], "HighCPU")
-        assert result == [s1]
+        matched, alert_info = filter_snippets_for_alert([s1], "HighCPU")
+        assert matched == [s1]
+        assert alert_info.label == "High CPU"
 
     def test_snippets_without_alerts_skipped(self):
         """Assert snippets with no alerts metadata are skipped."""
         s1 = self._make_snippet({"title": "no alerts"})
         s2 = self._make_snippet({"alerts": ["HighCPU"]})
-        result = filter_snippets_for_alert([s1, s2], "HighCPU")
-        assert result == [s2]
+        matched, _ = filter_snippets_for_alert([s1, s2], "HighCPU")
+        assert matched == [s2]
 
     def test_mixed_approved_unapproved_all_returned(self):
         """Assert both approved and unapproved snippets are returned."""
         s1 = SimpleNamespace(meta={"alerts": ["HighCPU"]}, is_approved=True)
         s2 = SimpleNamespace(meta={"alerts": ["HighCPU"]}, is_approved=False)
-        result = filter_snippets_for_alert([s1, s2], "HighCPU")
-        assert len(result) == EXPECTED_BOTH_SNIPPETS
+        matched, _ = filter_snippets_for_alert([s1, s2], "HighCPU")
+        assert len(matched) == EXPECTED_BOTH_SNIPPETS
 
 
 class TestGetAlertInfoFromSnippets:

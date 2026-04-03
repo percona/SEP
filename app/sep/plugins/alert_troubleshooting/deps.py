@@ -199,41 +199,67 @@ TroubleshootingIndexContext = Annotated[
 ]
 
 
-def _snippet_has_alert(snippet: Any, alert_name: str) -> bool:
-    """Check whether a snippet's metadata declares the given alert.
+def _get_normalized_alerts(snippet: Any) -> list[AlertInfo]:
+    """Extract and normalize all alert entries from a snippet's metadata.
+
+    :param snippet: A snippet object with a ``meta`` attribute.
+    :type snippet: Any
+    :return: A list of normalized alert entries, excluding invalid ones.
+    :rtype: list[AlertInfo]
+    """
+    alerts_raw = snippet.meta.get("alerts", [])
+    if isinstance(alerts_raw, str | dict):
+        alerts_raw = [alerts_raw]
+    return [
+        info
+        for raw_entry in alerts_raw
+        if (info := normalize_alert_entry(raw_entry)) is not None
+    ]
+
+
+def _find_alert_in_snippet(snippet: Any, alert_name: str) -> AlertInfo | None:
+    """Find a specific alert entry in a snippet's metadata.
 
     :param snippet: A snippet object with a ``meta`` attribute.
     :type snippet: Any
     :param alert_name: The alert identifier to look for.
     :type alert_name: str
-    :return: ``True`` if the snippet declares the alert, ``False`` otherwise.
-    :rtype: bool
+    :return: The matching ``AlertInfo``, or ``None`` if not found.
+    :rtype: AlertInfo | None
     """
-    alerts_raw = snippet.meta.get("alerts", [])
-    if isinstance(alerts_raw, str | dict):
-        alerts_raw = [alerts_raw]
-    for raw_entry in alerts_raw:
-        info = normalize_alert_entry(raw_entry)
-        if info is not None and info.name == alert_name:
-            return True
-    return False
+    for info in _get_normalized_alerts(snippet):
+        if info.name == alert_name:
+            return info
+    return None
 
 
-def filter_snippets_for_alert(snippets: Any, alert_name: str) -> list:
+def filter_snippets_for_alert(
+    snippets: Any, alert_name: str
+) -> tuple[list[Any], AlertInfo]:
     """Filter snippets to those declaring a specific alert.
+
+    Return the matched snippets and the ``AlertInfo`` from the first match,
+    avoiding a second traversal to extract the alert label.
 
     :param snippets: An iterable of snippet objects with a ``meta`` attribute.
     :type snippets: Any
     :param alert_name: The alert identifier to filter by.
     :type alert_name: str
-    :return: A list of snippets that declare the given alert.
-    :rtype: list
+    :return: A tuple of (matched snippets, alert info from first match).
+    :rtype: tuple[list[Any], AlertInfo]
     :raises HTTPNotFoundException: If no snippets match the alert name.
     """
-    matched = [s for s in snippets if _snippet_has_alert(s, alert_name)]
-    if not matched:
+    matched = []
+    first_alert_info = None
+    for snippet in snippets:
+        info = _find_alert_in_snippet(snippet, alert_name)
+        if info is not None:
+            matched.append(snippet)
+            if first_alert_info is None:
+                first_alert_info = info
+    if not matched or first_alert_info is None:
         raise HTTPNotFoundException(detail=f"Alert '{alert_name}' not found")
-    return matched
+    return matched, first_alert_info
 
 
 def get_alert_info_from_snippets(alert_name: str, snippets: Any) -> AlertInfo:
@@ -247,57 +273,52 @@ def get_alert_info_from_snippets(alert_name: str, snippets: Any) -> AlertInfo:
     :rtype: AlertInfo
     """
     for snippet in snippets:
-        alerts_raw = snippet.meta.get("alerts", [])
-        if isinstance(alerts_raw, str | dict):
-            alerts_raw = [alerts_raw]
-        for raw_entry in alerts_raw:
-            info = normalize_alert_entry(raw_entry)
-            if info is not None and info.name == alert_name:
-                return info
+        info = _find_alert_in_snippet(snippet, alert_name)
+        if info is not None:
+            return info
     return AlertInfo(name=alert_name, label=camel_case_to_title(alert_name))
 
 
 async def get_snippets_for_alert(
     session: SessionDep,
     alert_name: str,
-) -> list:
+) -> tuple[list[Any], AlertInfo]:
     """Load all snippets and filter to those declaring a specific alert.
 
     :param session: The database session.
     :type session: SessionDep
     :param alert_name: The alert identifier to filter by.
     :type alert_name: str
-    :return: A list of snippets that declare the given alert.
-    :rtype: list
+    :return: A tuple of (matched snippets, alert info from first match).
+    :rtype: tuple[list[Any], AlertInfo]
     :raises HTTPNotFoundException: If no snippets match the alert name.
     """
     snippets = await SnippetManager.list(session)
     return filter_snippets_for_alert(snippets, alert_name)
 
 
-AlertSnippetsDep = Annotated[list, Depends(get_snippets_for_alert)]
+AlertSnippetsDep = Annotated[
+    tuple[list[Any], AlertInfo], Depends(get_snippets_for_alert)
+]
 
 
 async def get_troubleshooting_detail_context(
     context: DefaultContext,
-    alert_name: str,
-    snippets: AlertSnippetsDep,
+    snippets_and_alert: AlertSnippetsDep,
     executor_hosts_ctx: ExecutorHostsCtx,
 ) -> dict[str, Any]:
     """Assemble the template context for the Alert Troubleshooting detail page.
 
     :param context: The default template context with user and base URI.
     :type context: DefaultContext
-    :param alert_name: The alert identifier from the URL path.
-    :type alert_name: str
-    :param snippets: The snippets associated with this alert.
-    :type snippets: AlertSnippetsDep
+    :param snippets_and_alert: The snippets and alert info from filtering.
+    :type snippets_and_alert: AlertSnippetsDep
     :param executor_hosts_ctx: The executor hosts context with display names.
     :type executor_hosts_ctx: ExecutorHostsCtx
     :return: The updated context dictionary for the detail template.
     :rtype: dict[str, Any]
     """
-    alert_info = get_alert_info_from_snippets(alert_name, snippets)
+    snippets, alert_info = snippets_and_alert
     context |= {
         "alert_info": alert_info,
         "snippets": snippets,
