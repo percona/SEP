@@ -134,10 +134,11 @@ def test_backups_detail(
     """Test GET /backups/{task_name} route."""
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
-            {},
-            {},
-            [],
-            {"address1": "host1", "address2": "host2"},  # for /hosts/
+            {},  # /hosts/
+            {},  # history
+            {},  # running_tasks
+            [],  # stats
+            [],  # chainable_tasks
         ]
     )
     mock_inventory_api_dep.get.return_value = AsyncMock()
@@ -160,7 +161,7 @@ def test_backups_detail(
     "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
 )
 def test_backups_execute(test_client, mock_task_api_dep, created_task):
-    """Test POST /backups/{task_name} route."""
+    """Test POST /backups/{task_name} route with no chain_task_names."""
     response = test_client.post(f"/backups/{created_task.name}", follow_redirects=False)
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -172,7 +173,31 @@ def test_backups_execute(test_client, mock_task_api_dep, created_task):
     mock_task_api_dep.post.assert_called_once()
     called_args, called_kwargs = mock_task_api_dep.post.call_args
     assert called_args[0] == f"/execute/{created_task.name}"
-    assert called_kwargs["json"] == {"eta": None}
+    assert called_kwargs["json"] == {
+        "eta": None,
+        "chain_task_names": None,
+        "chain_on_failure": None,
+    }
+
+
+@pytest.mark.usefixtures(
+    "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
+def test_backups_execute_with_chain_task_names(
+    test_client, mock_task_api_dep, created_task
+):
+    """Test POST /backups/{task_name} passes chain_task_names to the tasks API."""
+    response = test_client.post(
+        f"/backups/{created_task.name}",
+        data={"chain_task_names": ["task-a", "task-b"]},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+
+    called_args, called_kwargs = mock_task_api_dep.post.call_args
+    assert called_args[0] == f"/execute/{created_task.name}"
+    assert called_kwargs["json"]["chain_task_names"] == ["task-a", "task-b"]
 
 
 @pytest.mark.usefixtures("_mock_get_backups_task_dep")

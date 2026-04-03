@@ -128,11 +128,15 @@ class FormFieldMixin(BaseModel):
     :type: required: bool
     :param: label: The label for the form field, if any. Defaults to None.
     :type: label: NonEmptyStr | None
+    :param: description: The tooltip description rendered as an info icon next to the
+        field. Defaults to None.
+    :type: description: NonEmptyStr | None
     """
 
     name: NonEmptyStr
     required: bool = False
     label: NonEmptyStr | None = Field(None, exclude=True)
+    description: NonEmptyStr | None = Field(None, exclude=True)
 
     @model_validator(mode="after")
     def set_label_by_name(self) -> Self:
@@ -151,16 +155,28 @@ class FormFieldMixin(BaseModel):
     def to_html(self) -> str:
         """Return the HTML representation of the form field.
 
-        This method generates the HTML for the form field, wrapping it in a label if
-        a label is provided.
+        Generate the HTML for the form field, wrapping it in a label if a label is
+        provided. When a description is set, render an info-icon tooltip span adjacent
+        to the label text, before the field HTML.
 
         :return: The HTML representation of the form field, possibly wrapped in a label.
         :rtype: str
         """
         html = super().to_html()
+        info_icon = ""
+        if self.description:
+            desc = html_escape(self.description)
+            info_icon = (
+                f'<span class="info-icon" data-tooltip="{desc}"'
+                f' aria-label="{desc}" role="button" tabindex="0">'
+                f'<span class="{ICON_CLASS}">info</span></span>'
+            )
         if self.label:
-            return f"<label><span>{html_escape(self.label)}</span>{html}</label>"
-        return html
+            label_text = html_escape(self.label)
+            if info_icon:
+                label_text = f"{label_text}{info_icon}"
+            return f"<label><span>{label_text}</span>{html}</label>"
+        return html + info_icon
 
 
 class TypeableFieldMixin(FormFieldMixin):
@@ -259,9 +275,9 @@ class BaseHTMLElement(BaseHTMLEntity, ABC):
     """Define base class for HTML elements.
 
     This class provides common attributes and methods for HTML elements, including
-    handling of tag names, classes, IDs, titles, and HTML attributes. It also
-    provides methods for generating start and end tags, as well as converting the
-    element to HTML.
+    handling of tag names, classes, IDs, and HTML attributes. It also provides
+    methods for generating start and end tags, as well as converting the element
+    to HTML.
 
     :cvar: TAG_NAME: The name of the HTML tag (e.g., 'div', 'span').
     :vartype: TAG_NAME: ClassVar[str]
@@ -269,14 +285,11 @@ class BaseHTMLElement(BaseHTMLEntity, ABC):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
     """
 
     TAG_NAME: ClassVar[str]
     classes: set[HTMLClassName] = Field(default_factory=set, exclude=True)
     id: NonEmptyStr | None = Field(None, pattern=r"^\S+$")
-    title: NonEmptyStr | None = Field(None, validation_alias="description")
 
     @computed_field(alias="class")
     @property
@@ -370,8 +383,6 @@ class VoidHTMLElement(BaseHTMLElement, ABC):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
     """
 
     def to_html(self) -> str:
@@ -395,8 +406,6 @@ class HTMLElement(BaseHTMLElement, ABC):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     """
@@ -481,8 +490,6 @@ class FieldsetElement(HTMLElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: legend: The text for the legend of the fieldset, if any. Defaults to None.
@@ -522,8 +529,6 @@ class SpanElement(SetChildrenByLabelMixin, HTMLElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     """
@@ -557,8 +562,9 @@ class TextareaElement(TextFieldMixin, HTMLElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
+    :param: description: The tooltip description rendered as an info icon next to the
+        field. Defaults to None.
+    :type: description: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: rows: The number of rows in the textarea. If None, no specific
@@ -588,8 +594,6 @@ class OptionElement(SetChildrenByLabelMixin, HTMLElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: value: The value of the option element, which is submitted with the form.
@@ -636,8 +640,9 @@ class SelectElement(FormFieldMixin, HTMLElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
+    :param: description: The tooltip description rendered as an info icon next to the
+        field. Defaults to None.
+    :type: description: NonEmptyStr | None
     :param: children: A list of child options contained within this element.
     :type: children: list[OptionElement]
     :param: default: The default selected option value. If None (default), no option is
@@ -697,8 +702,9 @@ class BaseInputElement(FormFieldMixin, VoidHTMLElement, ABC):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
+    :param: description: The tooltip description rendered as an info icon next to the
+        field. Defaults to None.
+    :type: description: NonEmptyStr | None
     """
 
     TAG_NAME: ClassVar[str] = "input"
@@ -743,8 +749,9 @@ class TextInputElement(TextFieldMixin, BaseInputElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
+    :param: description: The tooltip description rendered as an info icon next to the
+        field. Defaults to None.
+    :type: description: NonEmptyStr | None
     :param: pattern: A regex pattern that the input value must match. If None, no
         pattern is enforced. Defaults to None.
     :type: pattern: NonEmptyStr | None
@@ -783,8 +790,9 @@ class NumberInputElement(TypeableFieldMixin, BaseInputElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
+    :param: description: The tooltip description rendered as an info icon next to the
+        field. Defaults to None.
+    :type: description: NonEmptyStr | None
     :param: max: The maximum value allowed for the number input. If None, no maximum
         is enforced. Defaults to None.
     :type: max: float | None
@@ -849,8 +857,9 @@ class CheckboxInputElement(BaseInputElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
+    :param: description: The tooltip description rendered as an info icon next to the
+        field. Defaults to None.
+    :type: description: NonEmptyStr | None
     :param: checked: Whether the checkbox is checked by default. Defaults to False.
     :type: checked: bool
     """
@@ -908,8 +917,6 @@ class SubmitButtonElement(HTMLElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: label: The label text for the button.
@@ -978,8 +985,6 @@ class FormElement(HTMLElement):
     :type: classes: set[HTMLClassName]
     :param: id: The ID attribute of the element.
     :type: id: NonEmptyStr | None
-    :param: title: The title attribute of the element, used for tooltips descriptions.
-    :type: title: NonEmptyStr | None
     :param: children: A list of child HTML entities contained within this element.
     :type: children: list[BaseHTMLEntity]
     :param: action: The URL to which the form data will be submitted. Defaults to an
