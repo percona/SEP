@@ -90,7 +90,9 @@ async def schema(session: AsyncSession, service: Service) -> Schema:
 async def table(session: AsyncSession, schema: Schema) -> Table:
     """Create a table in the database."""
     return await TableManager.create(
-        session, TableWriteFactory.build(), schema_id=schema.id
+        session,
+        TableWriteFactory.build(name="inventory_test_table_one"),
+        schema_id=schema.id,
     )
 
 
@@ -98,5 +100,7 @@ async def table(session: AsyncSession, schema: Schema) -> Table:
 async def second_table(session: AsyncSession, schema: Schema) -> Table:
     """Create a second table in the database."""
     return await TableManager.create(
-        session, TableWriteFactory.build(), schema_id=schema.id
+        session,
+        TableWriteFactory.build(name="inventory_test_table_two"),
+        schema_id=schema.id,
     )

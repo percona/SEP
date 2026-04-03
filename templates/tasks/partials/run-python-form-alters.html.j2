@@ -80,6 +80,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             {% endif %}
         </fieldset>
     {% endif %}
+    {% with chain_task_name=task.name, chain_form_id=task.name ~ "-send" %}
+        {% include "tasks/partials/chain-builder.html" %}
+    {% endwith %}
     <div class="actions-cell flex">
         <button type="button"
                 class="text medium submitButton triggerScheduleExec schedule-task-form"
