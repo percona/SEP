@@ -39,6 +39,7 @@ from fastapi import HTTPException, status
 from pydantic import computed_field, Field, HttpUrl, PrivateAttr
 
 from app.core.exceptions import HTTPGoneException
+from app.core.log import correlation_id_var
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
 from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
@@ -315,6 +316,11 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         prepared_path = self.prepare_path(path)
         if extra_headers := self._extra_headers.get():
             kwargs["headers"] = kwargs.pop("headers", {}) | extra_headers
+        correlation_id = correlation_id_var.get()
+        if correlation_id != "-":
+            kwargs["headers"] = kwargs.pop("headers", {}) | {
+                "X-Correlation-ID": correlation_id
+            }
         self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
             self.endpoint,
