@@ -185,6 +185,7 @@ def test_alters_detail(
         {},
         {},
         {},
+        [],  # chainable_tasks
     ]
     expected_awaits = [
         call("/hosts/"),
@@ -204,6 +205,10 @@ def test_alters_detail(
             params={"status": TaskHistoryStatusEnum.RUNNING},
         ),
         call(f"/stats/{created_task.name}"),
+        call(
+            "/",
+            params={"owner": created_task.owner, "target": "localhost"},
+        ),
     ]
 
     response = test_client.get(f"/alters/{created_task.name}")

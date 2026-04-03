@@ -28,6 +28,7 @@ from app.core.auth.exceptions import (
     InactiveUserException,
 )
 from app.core.auth.utils import get_user_model
+from app.core.log import set_log_context
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -55,6 +56,7 @@ async def get_current_user(token: AuthToken) -> User:
         raise HTTPUnauthorizedException from None
     if not user.is_active:
         raise InactiveUserException
+    set_log_context(user=user.username)
     return user
 
 
