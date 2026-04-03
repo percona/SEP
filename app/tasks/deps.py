@@ -21,11 +21,12 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
 from app.api.deps import CurrentUserID
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -113,9 +114,54 @@ async def get_executable_task_by_name(session: SessionDep, task_name: str) -> Ta
 ExecutableTaskDep = Annotated[Task, Depends(get_executable_task_by_name)]
 
 
-def prepare_task_history(
+async def validate_chain_task_names(
+    session: AsyncSession,
+    chain_task_names: list[str],
+    parent_task: Task,
+) -> None:
+    """Validate that all chain task names exist, no cycles are present, and owners/targets match.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param chain_task_names: Ordered list of task names to chain.
+    :type chain_task_names: list[str]
+    :param parent_task: The parent task (to prevent cycles and enforce owner/target matching).
+    :type parent_task: Task
+    :raises HTTPBadRequestException: If a cycle, owner mismatch, or target mismatch is found.
+    :raises HTTPNotFoundException: If any chain task does not exist.
+    """
+    parent_target = parent_task.data.get("Constraints", [{}])[0].get("RTarget")
+    seen = {parent_task.name}
+    for name in chain_task_names:
+        if name in seen:
+            raise HTTPBadRequestException(
+                f"Cycle detected in task chain: {name!r} already appears in the chain."
+            )
+        seen.add(name)
+        chain_task = await TaskManager.first(
+            session,
+            col(Task.deleted_at).is_(None),
+            name=name,
+        )
+        if chain_task is None:
+            raise HTTPNotFoundException(f"Chained task {name!r} not found.")
+        if chain_task.owner != parent_task.owner:
+            raise HTTPBadRequestException(
+                f"Chained task {name!r} has owner {chain_task.owner!r},"
+                f" expected {parent_task.owner!r}."
+            )
+        chain_target = chain_task.data.get("Constraints", [{}])[0].get("RTarget")
+        if chain_target != parent_target:
+            raise HTTPBadRequestException(
+                f"Chained task {name!r} has target {chain_target!r},"
+                f" expected {parent_target!r}."
+            )
+
+
+async def prepare_task_history(
     task: ExecutableTaskDep,
     executed_by: CurrentUserID,
+    session: SessionDep,
     execution_data: TaskExecuteRequest | None = None,
 ) -> TaskHistory:
     """Prepare the history of a task execution request.
@@ -124,16 +170,23 @@ def prepare_task_history(
     :type task: Task
     :param executed_by: The ID of the user executing the task.
     :type executed_by: CurrentUserID
+    :param session: The async database session for validation queries.
+    :type session: AsyncSession
     :param execution_data: Execution details and parameters, if any.
     :type execution_data: TaskExecuteRequest | None
     :return: The logged TaskHistory entry.
     :rtype: TaskHistory
+    :raises HTTPNotFoundException: If the specified chain task does not exist.
     """
     logger.debug("Preparing TaskHistory for %s", task.name)
     execution_data = TaskExecuteRequest() if execution_data is None else execution_data
     if task.backend == TaskBackendEnum.PROXY:
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
+    if execution_data.chain_task_names:
+        await validate_chain_task_names(session, execution_data.chain_task_names, task)
+        execution_data.meta["_chain_task_names"] = execution_data.chain_task_names
+        execution_data.meta["_chain_on_failure"] = execution_data.chain_on_failure
     target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
         0
     ].get("RTarget")

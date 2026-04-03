@@ -28,6 +28,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
+    get_chainable_tasks,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
@@ -137,6 +138,9 @@ async def checksums_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+    context["chainable_tasks"] = await get_chainable_tasks(
+        tasks_api, task.owner, meta["target"], task.name
+    )
     return templates.TemplateResponse(
         request=request,
         name="checksums/details.html.j2",
@@ -153,12 +157,18 @@ async def checksums_execute(
     task: ChecksumsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
+    chain_task_names: Annotated[list[str] | None, Form()] = None,
+    chain_on_failure: Annotated[bool | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute checksums task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta},
-    )  # TODO: send meta form fields  # noqa: TD002, TD003
+        json={
+            "eta": eta,
+            "chain_task_names": chain_task_names,
+            "chain_on_failure": chain_on_failure,
+        },
+    )
     return RedirectResponse("/checksums", status_code=status.HTTP_303_SEE_OTHER)
 
 
