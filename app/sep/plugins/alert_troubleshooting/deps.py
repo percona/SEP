@@ -127,10 +127,8 @@ def collect_grouped_alerts(
     """
     grouped = {}
     for snippet in snippets:
-        alerts_raw = snippet.meta.get("alerts", [])
-        if isinstance(alerts_raw, str | dict):
-            alerts_raw = [alerts_raw]
-        if not alerts_raw:
+        alerts = _get_normalized_alerts(snippet)
+        if not alerts:
             continue
         raw_service_type = snippet.meta.get("service_type")
         if raw_service_type is None:
@@ -144,10 +142,7 @@ def collect_grouped_alerts(
                     raw_service_type,
                 )
                 continue
-        for raw_entry in alerts_raw:
-            info = normalize_alert_entry(raw_entry)
-            if info is None:
-                continue
+        for info in alerts:
             grouped.setdefault(service_type, {})[info.name] = info
     return {
         svc: sorted(alerts.values(), key=lambda a: a.label)
@@ -260,23 +255,6 @@ def filter_snippets_for_alert(
     if not matched or first_alert_info is None:
         raise HTTPNotFoundException(detail=f"Alert '{alert_name}' not found")
     return matched, first_alert_info
-
-
-def get_alert_info_from_snippets(alert_name: str, snippets: Any) -> AlertInfo:
-    """Extract ``AlertInfo`` for a given alert from the first matching snippet.
-
-    :param alert_name: The alert identifier to look up.
-    :type alert_name: str
-    :param snippets: An iterable of snippets that declare the alert.
-    :type snippets: Any
-    :return: The normalized alert info with name and label.
-    :rtype: AlertInfo
-    """
-    for snippet in snippets:
-        info = _find_alert_in_snippet(snippet, alert_name)
-        if info is not None:
-            return info
-    return AlertInfo(name=alert_name, label=camel_case_to_title(alert_name))
 
 
 async def get_snippets_for_alert(

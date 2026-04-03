@@ -26,7 +26,6 @@ from app.sep.plugins.alert_troubleshooting.deps import (
     camel_case_to_title,
     collect_grouped_alerts,
     filter_snippets_for_alert,
-    get_alert_info_from_snippets,
     normalize_alert_entry,
 )
 
@@ -300,41 +299,35 @@ class TestFilterSnippetsForAlert:
         assert len(matched) == EXPECTED_BOTH_SNIPPETS
 
 
-class TestGetAlertInfoFromSnippets:
-    """Test alert info extraction from snippet metadata."""
+class TestFilterSnippetsForAlertAlertInfo:
+    """Test that ``filter_snippets_for_alert`` returns correct ``AlertInfo``."""
 
     @staticmethod
     def _make_snippet(meta):
         """Create a mock snippet object with the given meta dict."""
         return SimpleNamespace(meta=meta)
 
-    def test_string_alert_entry(self):
-        """Assert ``AlertInfo`` is derived from a string alert entry."""
+    def test_string_alert_returns_derived_label(self):
+        """Assert ``AlertInfo`` label is derived from a string alert entry."""
         s = self._make_snippet({"alerts": ["HighCPUUsage"]})
-        result = get_alert_info_from_snippets("HighCPUUsage", [s])
-        assert result == AlertInfo(name="HighCPUUsage", label="High CPU Usage")
+        _, alert_info = filter_snippets_for_alert([s], "HighCPUUsage")
+        assert alert_info == AlertInfo(name="HighCPUUsage", label="High CPU Usage")
 
-    def test_dict_alert_with_label(self):
+    def test_dict_alert_returns_explicit_label(self):
         """Assert ``AlertInfo`` uses the explicit label from a dict entry."""
         s = self._make_snippet(
             {"alerts": [{"name": "HighCPU", "label": "Custom Label"}]}
         )
-        result = get_alert_info_from_snippets("HighCPU", [s])
-        assert result == AlertInfo(name="HighCPU", label="Custom Label")
+        _, alert_info = filter_snippets_for_alert([s], "HighCPU")
+        assert alert_info == AlertInfo(name="HighCPU", label="Custom Label")
 
-    def test_first_matching_snippet_used(self):
-        """Assert the first snippet's alert metadata is used."""
+    def test_first_matching_snippet_provides_info(self):
+        """Assert the first snippet's alert metadata is used for the label."""
         s1 = self._make_snippet(
             {"alerts": [{"name": "Alert1", "label": "First Label"}]}
         )
         s2 = self._make_snippet(
             {"alerts": [{"name": "Alert1", "label": "Second Label"}]}
         )
-        result = get_alert_info_from_snippets("Alert1", [s1, s2])
-        assert result.label == "First Label"
-
-    def test_fallback_to_generated_label(self):
-        """Assert label is auto-generated when not in metadata."""
-        s = self._make_snippet({"alerts": ["MySQLSlowQuery"]})
-        result = get_alert_info_from_snippets("MySQLSlowQuery", [s])
-        assert result.label == "MySQL Slow Query"
+        _, alert_info = filter_snippets_for_alert([s1, s2], "Alert1")
+        assert alert_info.label == "First Label"

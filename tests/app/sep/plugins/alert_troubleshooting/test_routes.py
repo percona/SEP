@@ -18,7 +18,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from fastapi import status
+from fastapi import HTTPException, status
 from starlette.testclient import TestClient
 
 from app.core.requests import RemoteAPI
@@ -221,7 +221,7 @@ class TestTroubleshootingExecute:
     def test_execute_tasks_api_error(self, test_client: TestClient):
         """Assert JSON error response when Tasks API fails."""
         mock_api = AsyncMock(spec=RemoteAPI)
-        mock_api.post.side_effect = Exception("Connection refused")
+        mock_api.post.side_effect = HTTPException(status_code=502, detail="Bad Gateway")
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
         sep_app.dependency_overrides[get_executable_snippet] = self._mock_snippet
         sep_app.dependency_overrides[get_snippet_execution_request_meta] = (
@@ -277,9 +277,9 @@ class TestTroubleshootingOutput:
         assert "connection refused" in data["output"]
 
     def test_output_tasks_api_error(self, test_client: TestClient):
-        """Assert JSON error response when Tasks API is unreachable."""
+        """Assert JSON error response when Tasks API returns an error."""
         mock_api = AsyncMock(spec=RemoteAPI)
-        mock_api.get.side_effect = Exception("Connection refused")
+        mock_api.get.side_effect = HTTPException(status_code=502, detail="Bad Gateway")
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
         response = test_client.get("/alert-troubleshooting/output/1")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY

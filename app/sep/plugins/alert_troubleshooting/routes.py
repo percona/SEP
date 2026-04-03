@@ -17,7 +17,7 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.sep.config import sep_settings
@@ -122,13 +122,16 @@ async def troubleshooting_execute(
             result.get("id"),
         )
         return JSONResponse({"task_id": result["id"], "status": "submitted"})
-    except Exception:
-        logger.exception(
-            "Failed to execute snippet %r via troubleshooting", snippet.filename
+    except HTTPException as exc:
+        logger.warning(
+            "HTTP error executing snippet %r: %s %s",
+            snippet.filename,
+            exc.status_code,
+            exc.detail,
         )
         return JSONResponse(
-            {"error": "Failed to submit snippet execution"},
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            {"error": exc.detail or "Execution failed"},
+            status_code=exc.status_code,
         )
 
 
@@ -169,9 +172,14 @@ async def troubleshooting_output(
                     exc_info=True,
                 )
         return JSONResponse(response_data)
-    except Exception:
-        logger.exception("Failed to poll output for task history %s", task_history_id)
+    except HTTPException as exc:
+        logger.warning(
+            "HTTP error polling task %s: %s %s",
+            task_history_id,
+            exc.status_code,
+            exc.detail,
+        )
         return JSONResponse(
-            {"error": "Failed to retrieve task output"},
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            {"error": exc.detail or "Failed to retrieve task output"},
+            status_code=exc.status_code,
         )
