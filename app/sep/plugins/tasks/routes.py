@@ -17,7 +17,6 @@
 
 import logging
 from typing import Annotated
-from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -25,6 +24,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
 from app.sep.deps import (
+    AVAILABLE_TIMEZONES,
     DefaultContext,
     ExecutorHostsCtx,
     IsAuthenticated,
@@ -110,7 +110,7 @@ async def tasks_detail(
     context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     context["executor_hosts"] = executor_hosts_ctx.as_template_list()
-    context["AVAILABLE_TIMEZONES"] = list(available_timezones())
+    context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
     return templates.TemplateResponse(
         request=request,
         name="tasks/view.html.j2",

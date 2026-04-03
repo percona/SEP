@@ -36,6 +36,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPRedirectException,
 )
+from app.core.log import set_log_context
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
@@ -65,6 +66,7 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+AVAILABLE_TIMEZONES = sorted(available_timezones())
 
 
 def get_base_url(request: Request) -> URL:
@@ -138,6 +140,7 @@ async def get_current_user(
         logger.debug("User %s is not active", user.username)
         # TODO: Message on inactive  # noqa: TD002, TD003
         raise LoginRedirectException(request)
+    set_log_context(user=user.username)
     return user
 
 
@@ -717,12 +720,38 @@ async def get_tasks_context(
             "running_tasks": running_tasks,
             "history_tasks": history_tasks,
             "periodic_tasks": periodic_tasks,
-            "AVAILABLE_TIMEZONES": list(available_timezones()),
+            "chainable_tasks": tasks,
+            "AVAILABLE_TIMEZONES": AVAILABLE_TIMEZONES,
             "alert_on_fail_default": alert_on_fail_available and alert_on_fail_default,
             "alert_on_fail_available": alert_on_fail_available,
         }
     )
     return context
+
+
+async def get_chainable_tasks(
+    tasks_api: RemoteAPI,
+    owner: str,
+    target: str,
+    exclude_task_name: str,
+) -> list[dict[str, Any]]:
+    """Fetch tasks that can be chained after a given task.
+
+    Return tasks matching the same owner and target, excluding the current task.
+
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: RemoteAPI
+    :param owner: The task owner to filter by.
+    :type owner: str
+    :param target: The execution target to filter by.
+    :type target: str
+    :param exclude_task_name: The current task name to exclude from results.
+    :type exclude_task_name: str
+    :return: A list of chainable task dicts.
+    :rtype: list[dict[str, Any]]
+    """
+    all_tasks = await tasks_api.get("/", params={"owner": owner, "target": target})
+    return [t for t in all_tasks if t["name"] != exclude_task_name]
 
 
 async def get_tasks_index_context(
