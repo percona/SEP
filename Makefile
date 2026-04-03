@@ -182,7 +182,10 @@ endif
 		echo "==> Triggering Jenkins release build for v$$RC_VERSION..."; \
 		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
 			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=v$$RC_VERSION" 2>&1; then \
+			--data-urlencode "releaseTag=v$$RC_VERSION" \
+			--data-urlencode "notifySlack=true" \
+			--data-urlencode "pushImage=true" \
+			--data-urlencode "pushImageDocker=true" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \
 		else \
 			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
@@ -263,7 +266,10 @@ endif
 		echo "==> Triggering Jenkins release build for v$(VERSION)..."; \
 		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
 			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=v$(VERSION)" 2>&1; then \
+			--data-urlencode "releaseTag=v$(VERSION)" \
+			--data-urlencode "notifySlack=true" \
+			--data-urlencode "pushImage=true" \
+			--data-urlencode "pushImageDocker=true" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \
 		else \
 			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
