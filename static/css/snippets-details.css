@@ -23,6 +23,84 @@
     max-height: 400px;
 }
 
+.highlight-wrapper {
+    width: 90%;
+    max-height: 400px;
+    overflow: auto;
+}
+
+[data-theme="light"] .highlight-wrapper {
+    background: #ffffff;
+    color: #000000;
+}
+
+[data-theme="dark"] .highlight-wrapper {
+    background: #272822;
+    color: #F8F8F2;
+}
+
+.highlight-wrapper .highlight {
+    width: 100%;
+    background: transparent;
+}
+
+.highlight-wrapper .highlight pre {
+    max-height: none;
+}
+
+.highlighttable td {
+    vertical-align: top;
+}
+
+.linenodiv {
+    line-height: 125%;
+}
+
+.highlighttable pre code {
+    font-size: inherit;
+    font-family: inherit;
+}
+
+.highlight-wrapper .highlighttable {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.highlight-wrapper .linenos {
+    width: calc(var(--linenos-width, 3ch) + 20px);
+}
+
+.highlight-wrapper .linenos pre {
+    text-align: right;
+}
+
+.frontmatter-toggle {
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+.frontmatter-toggle summary {
+    cursor: pointer;
+    padding: 2px 10px;
+    font-family: monospace;
+    font-size: 0.85em;
+    list-style: none;
+    user-select: none;
+}
+
+[data-theme="light"] .frontmatter-toggle summary {
+    color: #6e7781;
+}
+
+[data-theme="dark"] .frontmatter-toggle summary {
+    color: #90918B;
+}
+
+.frontmatter-toggle summary::-webkit-details-marker {
+    display: none;
+}
+
 td.code {
     width: calc(70vw + 40px);
     max-width: calc(70vw + 40px);
@@ -153,4 +231,55 @@ label:has(> input[type="checkbox"]:disabled)>.checkmark {
     100% {
         opacity: .5
     }
+}
+
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    cursor: help;
+    margin-left: 0.25em;
+    vertical-align: middle;
+    color: var(--textSecondary, #666);
+    opacity: 0.25;
+    transition: opacity 0.15s ease;
+}
+
+.info-icon:hover,
+.info-icon:focus-visible {
+    opacity: 1;
+}
+
+.info-icon:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.info-icon .material-symbols-outlined {
+    font-size: 1.1rem;
+}
+
+.info-tooltip-floating {
+    position: fixed;
+    z-index: 2147483647;
+    min-width: 180px;
+    max-width: 200px;
+    padding: 0.5em 0.75em;
+    border-radius: 6px;
+    background: var(--surfaceElevation1, #fff);
+    color: var(--textPrimary, #333);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    border: 1px solid var(--lineDivider, #ddd);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    pointer-events: none;
+    white-space: normal;
+    word-wrap: break-word;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.info-tooltip-floating.visible {
+    opacity: 1;
+    visibility: visible;
 }

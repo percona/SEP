@@ -24,7 +24,11 @@ from sqlalchemy_celery_beat import PeriodicTask
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.tasks.crud import TaskManager
-from app.tasks.deps import get_executable_task_by_name, SessionDep
+from app.tasks.deps import (
+    get_executable_task_by_name,
+    SessionDep,
+    validate_chain_task_names,
+)
 from app.tasks.models import (
     TaskOwner,
 )
@@ -86,8 +90,15 @@ async def update_periodic_task(
     """Update a periodic task."""
     updated_kwargs = json.loads(updated_task.kwargs)
     existing_kwargs = json.loads(existing_task.kwargs)
-    if (task_name := updated_kwargs.get("task_name")) != existing_kwargs["task_name"]:
+    task_name = updated_kwargs.get("task_name") or existing_kwargs["task_name"]
+    if task_name != existing_kwargs["task_name"]:
         await get_executable_task_by_name(tasks_session, task_name)
+    if updated_task.execute_request and updated_task.execute_request.chain_task_names:
+        await validate_chain_task_names(
+            tasks_session,
+            updated_task.execute_request.chain_task_names,
+            await get_executable_task_by_name(tasks_session, task_name),
+        )
     logger.debug("Updating periodic task %s", existing_task.id)
     return await PeriodicTaskManager.update(session, existing_task, updated_task)
 
