@@ -38,10 +38,13 @@ class TestListSchemas:
     ) -> None:
         """Return a list of schemas with tables loaded."""
         second = SchemaWriteFactory.build()
-        test_client.post(
+        create_response = test_client.post(
             f"/services/{service.id}/schemas/",
-            json=second.model_dump(),
+            json=second.model_copy(
+                update={"name": f"second_schema_{schema.id}"},
+            ).model_dump(),
         )
+        assert create_response.status_code == status.HTTP_201_CREATED
 
         response = test_client.get("/schemas/")
         assert response.status_code == status.HTTP_200_OK
