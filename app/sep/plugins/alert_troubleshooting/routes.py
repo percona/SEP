@@ -17,7 +17,7 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.sep.config import sep_settings
@@ -116,12 +116,22 @@ async def troubleshooting_execute(
                 )
             },
         )
+        task_id = result["id"]
         logger.info(
             "Troubleshooting execution submitted for snippet %r, task %s",
             snippet.filename,
-            result.get("id"),
+            task_id,
         )
-        return JSONResponse({"task_id": result["id"], "status": "submitted"})
+        return JSONResponse({"task_id": task_id, "status": "submitted"})
+    except KeyError:
+        logger.warning(
+            "Unexpected response from Tasks API for snippet %r",
+            snippet.filename,
+        )
+        return JSONResponse(
+            {"error": "Unexpected response from Tasks API"},
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
     except HTTPException as exc:
         logger.warning(
             "HTTP error executing snippet %r: %s %s",

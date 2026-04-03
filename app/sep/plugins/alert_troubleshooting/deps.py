@@ -19,9 +19,13 @@ import logging
 import re
 from typing import Annotated, Any, NamedTuple
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
 
-from app.core.exceptions import HTTPNotFoundException, HTTPRedirectException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPNotFoundException,
+    HTTPRedirectException,
+)
 from app.sep.deps import DefaultContext, ExecutorHostsCtx, SessionDep
 from app.sep.models import AlertServiceType
 from app.sep.plugins.snippets.deps import (
@@ -326,21 +330,18 @@ def get_ajax_executable_snippet(
     """Verify snippet executability and return a JSON error on failure.
 
     Wrap the standard executable snippet check for AJAX endpoints by
-    raising an ``HTTPException`` with a 400 status instead of an
+    raising an ``HTTPBadRequestException`` instead of an
     ``HTTPRedirectException``.
 
     :param snippet: The snippet to verify.
     :type snippet: SnippetDep
     :return: The verified executable snippet.
     :rtype: Snippet
-    :raises HTTPException: If the snippet cannot be executed.
+    :raises HTTPBadRequestException: If the snippet cannot be executed.
     """
     if snippet.can_execute:
         return snippet
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"Snippet {snippet} cannot be executed",
-    )
+    raise HTTPBadRequestException(detail=f"Snippet {snippet} cannot be executed")
 
 
 AjaxExecutableSnippet = Annotated[Snippet, Depends(get_ajax_executable_snippet)]
@@ -353,8 +354,8 @@ async def get_ajax_validated_execution_args(
     """Validate execution arguments and return JSON errors on failure.
 
     Wrap the standard argument validation for AJAX endpoints by catching
-    ``HTTPRedirectException`` and raising ``HTTPException`` with a 400
-    status instead.
+    ``HTTPRedirectException`` and raising ``HTTPBadRequestException``
+    instead.
 
     :param request: The HTTP request object.
     :type request: Request
@@ -362,13 +363,12 @@ async def get_ajax_validated_execution_args(
     :type snippet: AjaxExecutableSnippet
     :return: The validated execution arguments.
     :rtype: BaseSnippetArgs
-    :raises HTTPException: If the execution arguments are invalid.
+    :raises HTTPBadRequestException: If the execution arguments are invalid.
     """
     try:
         return await get_validated_execution_args(request, snippet)
     except HTTPRedirectException:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+        raise HTTPBadRequestException(
             detail="Invalid execution parameters",
         ) from None
 

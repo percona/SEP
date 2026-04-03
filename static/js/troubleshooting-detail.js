@@ -118,6 +118,8 @@
                         setCardState(card, 'error', 'Execution failed');
                     } else if (data.status === 'stopped') {
                         setCardState(card, 'error', 'Execution stopped');
+                    } else {
+                        setCardState(card, 'error', 'Unexpected status: ' + data.status);
                     }
                 }
             }).catch(function() {
