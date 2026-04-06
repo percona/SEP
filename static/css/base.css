@@ -1274,6 +1274,10 @@ button.list-item:focus-visible {
     content: "troubleshoot";
 }
 
+.list-item.report .icon::before {
+    content: "assignment";
+}
+
 /*=============================================*/
 /* Foundations for the sidebar type of layout */
 /*=============================================*/
