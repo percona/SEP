@@ -1964,8 +1964,8 @@ class GSUploadProvider:
             msg = 'GS_BUCKET is not set.'
             raise BackupError(msg)
 
-        logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
-        log_file = os.path.join(logging_dir, 'gsutil-%s-%s-%s.log' %
+        self.logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
+        log_file = os.path.join(self.logging_dir, 'gsutil-%s-%s-%s.log' %
                                 (self.alias,
                                  self.backup_type,
                                  time.strftime('%Y%m%d')
@@ -1973,7 +1973,7 @@ class GSUploadProvider:
                                )
         self.log_stream = open(log_file, 'a')
 
-    def upload(self, source_dir, dest_dir):
+    def upload(self, source_dir: str, dest_dir: str) -> str:
         """Upload given directory to provided GS destination.
 
         :param source_dir: Local source directory.
@@ -1996,7 +1996,9 @@ class GSUploadProvider:
             msg = 'GS upload failed. Error: %s' % (err,)
             raise BackupError(msg)
 
-        if self.backup_type != 'B' and not (self.backup_type == 'X' and '_incrementals' in dest_dir):
+        if self.backup_type not in ["B", "O"] and not (
+            self.backup_type == "X" and "_incrementals" in dest_dir
+        ):
             latest_file_local_dir = os.path.join('/tmp/percona_backup_latest',
                                                  "/".join(dest_path.split('/')[-4:-2]))
             if os.path.isdir(latest_file_local_dir):

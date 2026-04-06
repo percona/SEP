@@ -1816,7 +1816,7 @@ class S3UploadProvider:
         return f"s3://{self.bucket_name}/{full_prefix}"
 
 class GSUploadProvider:
-    """Google Cloud Storage upload."""
+    """Google Cloud Storage upload using gsutil."""
 
     def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
         """Initialize GSUploadProvider.
@@ -1844,8 +1844,8 @@ class GSUploadProvider:
                        )
         self.log_stream = open(log_file, 'a')
 
-    def upload(self, source_dir, dest_dir):
-        """Upload given directory to provided GS destination.
+    def upload(self, source_dir, dest_dir: str) -> str:
+        """Upload directory to GS.
 
         :param source_dir: Local source directory.
         :param dest_dir: Destination path (relative) on GS.
@@ -1853,10 +1853,10 @@ class GSUploadProvider:
         :raises BackupError: If GS upload fails.
         """
         source_path = os.path.join(source_dir, '')
-        bucket_url = self.gs_bucket
-        if not bucket_url.startswith('gs://'):
-            bucket_url = f'gs://{bucket_url}'
-        dest_path = os.path.join(bucket_url, dest_dir, '')
+        bucket_str = self.gs_bucket
+        if not bucket_str.startswith('gs://'):
+            bucket_str = f'gs://{bucket_str}'
+        dest_path = os.path.join(bucket_str, dest_dir, '')
         gs_cmd = [GSUTIL_BIN, 'rsync', '-r', source_path, dest_path]
         self.logger.info('Uploading backup...')
         self.logger.info('Running: %s', ' '.join(gs_cmd))
@@ -1867,7 +1867,10 @@ class GSUploadProvider:
             msg = 'GS upload failed. Error: %s' % (err,)
             raise BackupError(msg)
 
-        if self.backup_type != 'B' and not (self.backup_type == 'X' and '_incrementals' in dest_dir):
+        if self.backup_type != "B" and not (
+            self.backup_type == "X" and "_incrementals" in dest_dir
+        ):
+
             latest_file_local_dir = os.path.join('/tmp/percona_backup_latest',
                                                  "/".join(dest_path.split('/')[-4:-2]))
             if os.path.isdir(latest_file_local_dir):
