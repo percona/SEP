@@ -97,12 +97,6 @@ default:
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
       PORT: null
       NAME: sep.db
-    PMM:
-      BACKUP_INTERVAL:
-        EVERY: 24
-        PERIOD: hours
-      BACKUP_RETENTION: 10
-      ALERT_FOLDER_NAME: "SEP Alerts"
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
