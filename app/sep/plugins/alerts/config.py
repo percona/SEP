@@ -59,10 +59,10 @@ def _create_alerts_pmm_config() -> AlertsPMMConfig:
     alerts_fields = {"backup_interval", "backup_retention", "alert_folder_name"}
     deprecated_set = pmm.model_fields_set & alerts_fields
     if deprecated_set:
-        logger.warning(
-            "Setting alerts fields under SEP.PMM is deprecated. "
+        logger.info(
+            "Alerts fields are being read from SEP.PMM. "
             "These fields will move to a dedicated alerts config section "
-            "in a future release. Deprecated fields found: %s",
+            "in a future release. Fields found: %s",
             ", ".join(sorted(deprecated_set)),
         )
     return AlertsPMMConfig(
