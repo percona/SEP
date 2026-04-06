@@ -2,7 +2,7 @@
 
 # ---
 # title: "mysql_query_tuning"
-# description: "Collects data for MySQL query tuning. Extra args are not supported;"
+# description: "Collects data for MySQL query tuning, Extra args are not supported."
 # allow_extra_args: false
 # parameters:
 #  - name: defaults-file
@@ -181,9 +181,10 @@ QUERY="${QUERY%%[;[:space:]]}"
 QUERY="${QUERY%%;}"
 QUERY="${QUERY%%[[:space:]]}"
 
-MYSQL="mysql $DEFAULTS_FILE -B"
-
 [ "$SEPDEBUG" ] && echo "Using query: '${QUERY}'"
+
+# We can only define MYSQL command after we have defaults-file
+MYSQL="mysql $DEFAULTS_FILE -B"
 
 # 1. Check if the query starts with "SELECT"
 # 2. Else, check if the query is DML (INSERT, UPDATE, DELETE)
@@ -262,7 +263,7 @@ fi
 # 9. If --execute is set, execute the diagnostic queries and write results to results.txt
 if [ $EXECUTE -eq 1 ]; then
     [ "$SEPDEBUG" ] && echo "Writing results to: ${DEST}/results.txt"
-    if ! $MYSQL "$@" < "${QUERY_FILE}" > "${DEST}/results.txt" 2>&1; then
+    if ! $MYSQL < "${QUERY_FILE}" > "${DEST}/results.txt" 2>&1; then
         echo "Error executing diagnostic queries, check results.txt for details."
         exit 1
     fi
