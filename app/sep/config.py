@@ -33,6 +33,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    PositiveInt,
     SecretStr,
 )
 
@@ -162,9 +163,27 @@ class SessionOptions(BaseModel):
 class _DeprecatedPMMConfig(BaseLowercaseModel):
     """Accept deprecated ``SEP.PMM`` fields for backward compatibility.
 
-    Includes both connection/auth fields (forwarded to ``settings.PMM``) and
+    Include both connection/auth fields (forwarded to ``settings.PMM``) and
     alerts-specific fields (read by ``AlertsPMMConfig``). All fields are typed
     so that env-var values are validated correctly by Pydantic.
+
+    :param endpoint: The PMM server URL.
+    :type endpoint: StrHttpUrl | None
+    :param frontend: The PMM frontend URL.
+    :type frontend: StrHttpUrl | None
+    :param api_key: API key for PMM authentication.
+    :type api_key: SecretStr | None
+    :param verify_ssl: Whether to verify SSL certificates.
+    :type verify_ssl: bool
+    :param execution_target: Explicit execution target name or address for PMM tasks.
+    :type execution_target: str | None
+    :param backup_interval: Interval between alert configuration backups.
+    :type backup_interval: IntervalSchedule
+    :param backup_retention: Maximum number of alert backups to retain.
+    :type backup_retention: PositiveInt
+    :param alert_folder_name: Display name of the PMM folder used for SEP-managed
+        alert rules.
+    :type alert_folder_name: str
     """
 
     model_config = ConfigDict(extra="allow")
@@ -174,7 +193,7 @@ class _DeprecatedPMMConfig(BaseLowercaseModel):
     verify_ssl: bool = True
     execution_target: str | None = None
     backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
-    backup_retention: int = 10
+    backup_retention: PositiveInt = 10
     alert_folder_name: str = "SEP Alerts"
 
 
@@ -286,7 +305,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
     PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
-    ARTIFACT_DOWNLOAD_TTL: int = 600
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @computed_field

@@ -374,16 +374,8 @@ def _mock_pmm_api():
     return api
 
 
-def _patch_pmm_settings(mocker, *, endpoint="https://pmm.example.com", retention=10):
-    """Patch PMM settings inside _backup_alert_config."""
-    mock_settings = MagicMock(
-        PMM=MagicMock(
-            endpoint=endpoint,
-            api_key=MagicMock(get_secret_value=lambda: "key123") if endpoint else None,
-            verify_ssl=True,
-        ),
-    )
-    mocker.patch("app.sep.celery.sep_settings", mock_settings)
+def _patch_pmm_settings(mocker, *, retention=10):
+    """Patch alerts PMM config inside _backup_alert_config."""
     mocker.patch(
         "app.sep.plugins.alerts.config.alerts_pmm_config",
         MagicMock(backup_retention=retention),
