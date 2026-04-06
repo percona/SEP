@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2086
 
 # ---
 # title: "mysql_query_tuning"
-# description: "Collects data for MySQL query tuning. Extra args are passed to the mysql client (e.g. -u, --ssl-mode)."
-# allow_extra_args: true
+# description: "Collects data for MySQL query tuning. Extra args are not supported;"
+# allow_extra_args: false
 # parameters:
 #  - name: defaults-file
 #    type: str

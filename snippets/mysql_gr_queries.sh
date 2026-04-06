@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2086
 
 # ---
 # title: "Group Replication queries"
