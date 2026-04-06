@@ -947,7 +947,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             <span class="label">Skip S3 Safety Check</span>{{ info_icon(skip_s3_safety_check_title) }}
                         </label>
                     </div>
-                    <button class="text large" type="button" id="toggle_gcp_btn">+ Add GS upload</button>
+                    <button class="text large" type="button" id="toggle_gs_btn">+ Add GS upload</button>
                     <br>
                     <div id="gs_container">
                         {% set gs_bucket_title = "Type the name of the GS Bucket where backups will be stored." %}
@@ -1006,7 +1006,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
     const gsContainer = document.getElementById('gs_container');
-    const toggleGsBtn = document.getElementById('toggle_gcp_btn');
+    const toggleGsBtn = document.getElementById('toggle_gs_btn');
     const gsBucketInput = document.getElementById('gs_bucket');
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
