@@ -112,7 +112,7 @@
                     setTimeout(doPoll, interval);
                 } else {
                     setButtonLoading(form, false);
-                    if (data.status === 'completed') {
+                    if (data.status === 'success') {
                         setCardState(card, 'success', 'Completed');
                     } else if (data.status === 'failed') {
                         setCardState(card, 'error', 'Execution failed');

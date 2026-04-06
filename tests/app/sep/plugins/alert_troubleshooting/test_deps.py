@@ -298,6 +298,24 @@ class TestFilterSnippetsForAlert:
         matched, _ = filter_snippets_for_alert([s1, s2], "HighCPU")
         assert len(matched) == EXPECTED_BOTH_SNIPPETS
 
+    def test_service_type_filters_snippets(self):
+        """Assert service_type restricts matches to the given type."""
+        s_mysql = self._make_snippet({"alerts": ["HighCPU"], "service_type": "mysql"})
+        s_pg = self._make_snippet({"alerts": ["HighCPU"], "service_type": "postgresql"})
+        matched, _ = filter_snippets_for_alert(
+            [s_mysql, s_pg], "HighCPU", AlertServiceType.MYSQL
+        )
+        assert matched == [s_mysql]
+
+    def test_service_type_none_defaults_to_generic(self):
+        """Assert snippets without service_type match GENERIC filter."""
+        s_generic = self._make_snippet({"alerts": ["HighCPU"]})
+        s_mysql = self._make_snippet({"alerts": ["HighCPU"], "service_type": "mysql"})
+        matched, _ = filter_snippets_for_alert(
+            [s_generic, s_mysql], "HighCPU", AlertServiceType.GENERIC
+        )
+        assert matched == [s_generic]
+
 
 class TestFilterSnippetsForAlertAlertInfo:
     """Test that ``filter_snippets_for_alert`` returns correct ``AlertInfo``."""

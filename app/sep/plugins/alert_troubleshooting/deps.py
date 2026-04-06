@@ -242,7 +242,9 @@ def _find_alert_in_snippet(snippet: Any, alert_name: str) -> AlertInfo | None:
 
 
 def filter_snippets_for_alert(
-    snippets: Any, alert_name: str
+    snippets: Any,
+    alert_name: str,
+    service_type: AlertServiceType | None = None,
 ) -> tuple[list[Any], AlertInfo]:
     """Filter snippets to those declaring a specific alert.
 
@@ -253,6 +255,8 @@ def filter_snippets_for_alert(
     :type snippets: Any
     :param alert_name: The alert identifier to filter by.
     :type alert_name: str
+    :param service_type: Optional service type to restrict matches.
+    :type service_type: AlertServiceType | None
     :return: A tuple of (matched snippets, alert info from first match).
     :rtype: tuple[list[Any], AlertInfo]
     :raises HTTPNotFoundException: If no snippets match the alert name.
@@ -260,6 +264,11 @@ def filter_snippets_for_alert(
     matched = []
     first_alert_info = None
     for snippet in snippets:
+        if service_type is not None:
+            raw_svc = snippet.meta.get("service_type")
+            snippet_svc = AlertServiceType.GENERIC if raw_svc is None else raw_svc
+            if str(snippet_svc) != str(service_type):
+                continue
         info = _find_alert_in_snippet(snippet, alert_name)
         if info is not None:
             matched.append(snippet)
@@ -273,6 +282,7 @@ def filter_snippets_for_alert(
 async def get_snippets_for_alert(
     session: SessionDep,
     alert_name: str,
+    service_type: AlertServiceType,
 ) -> tuple[list[Any], AlertInfo]:
     """Load all snippets and filter to those declaring a specific alert.
 
@@ -280,12 +290,14 @@ async def get_snippets_for_alert(
     :type session: SessionDep
     :param alert_name: The alert identifier to filter by.
     :type alert_name: str
+    :param service_type: The service type to restrict matches.
+    :type service_type: AlertServiceType
     :return: A tuple of (matched snippets, alert info from first match).
     :rtype: tuple[list[Any], AlertInfo]
     :raises HTTPNotFoundException: If no snippets match the alert name.
     """
     snippets = await SnippetManager.list(session)
-    return filter_snippets_for_alert(snippets, alert_name)
+    return filter_snippets_for_alert(snippets, alert_name, service_type)
 
 
 AlertSnippetsDep = Annotated[

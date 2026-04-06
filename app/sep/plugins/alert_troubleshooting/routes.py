@@ -58,32 +58,6 @@ async def troubleshooting_index(
     )
 
 
-@router.get(
-    "/{alert_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse
-)
-async def troubleshooting_detail(
-    request: Request,
-    context: TroubleshootingDetailContext,
-) -> HTMLResponse:
-    """Render the Alert Troubleshooting detail page for a specific alert.
-
-    Display the alert header, shared host selector, and snippet cards with
-    parameter forms for AJAX-based execution.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :param context: The assembled template context with alert info and snippets.
-    :type context: TroubleshootingDetailContext
-    :return: The rendered HTML response.
-    :rtype: HTMLResponse
-    """
-    return templates.TemplateResponse(
-        request=request,
-        name="alert_troubleshooting/detail.html.j2",
-        context=context,
-    )
-
-
 @router.post(
     "/execute/{snippet_filename}",
     dependencies=[IsAuthenticated, IsCsrfValidated],
@@ -152,7 +126,7 @@ async def troubleshooting_output(
 ) -> JSONResponse:
     """Poll the execution status and output for a task history entry.
 
-    Return the current task status and, when completed, the STDOUT content
+    Return the current task status and, when successful, the STDOUT content
     from the task's output files.
 
     :param task_history_id: The task history ID to poll.
@@ -166,7 +140,7 @@ async def troubleshooting_output(
         history = await tasks_api.get(f"/history/{task_history_id}/")
         task_status = history.get("status", "unknown")
         response_data = {"status": task_status, "output": ""}
-        if task_status in ("completed", "failed", "stopped"):
+        if task_status in ("success", "failed", "stopped"):
             try:
                 files_meta = await tasks_api.get(f"/history/{task_history_id}/files/")
                 output_parts = []
@@ -204,3 +178,31 @@ async def troubleshooting_output(
             {"error": exc.detail or "Failed to retrieve task output"},
             status_code=exc.status_code,
         )
+
+
+@router.get(
+    "/{service_type}/{alert_name}",
+    dependencies=[IsAuthenticated],
+    response_class=HTMLResponse,
+)
+async def troubleshooting_detail(
+    request: Request,
+    context: TroubleshootingDetailContext,
+) -> HTMLResponse:
+    """Render the Alert Troubleshooting detail page for a specific alert.
+
+    Display the alert header, shared host selector, and snippet cards with
+    parameter forms for AJAX-based execution.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param context: The assembled template context with alert info and snippets.
+    :type context: TroubleshootingDetailContext
+    :return: The rendered HTML response.
+    :rtype: HTMLResponse
+    """
+    return templates.TemplateResponse(
+        request=request,
+        name="alert_troubleshooting/detail.html.j2",
+        context=context,
+    )

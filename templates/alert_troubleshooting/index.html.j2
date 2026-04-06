@@ -47,7 +47,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                 {% for alert in alerts %}
                                     <li>
                                         {# djlint:off J018 #}
-                                        <a href="{{ base_uri }}/{{ alert.name }}" class="at-alert-link">
+                                        <a href="{{ base_uri }}/{{ svc.value }}/{{ alert.name }}"
+                                           class="at-alert-link">
                                             {# djlint:on #}
                                             <span class="material-symbols-outlined at-alert-icon">troubleshoot</span>
                                             {{ alert.label }}

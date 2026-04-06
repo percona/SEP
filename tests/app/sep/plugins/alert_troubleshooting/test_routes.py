@@ -115,7 +115,7 @@ class TestTroubleshootingIndex:
             _override_context(grouped)
         )
         response = test_client.get("/alert-troubleshooting/")
-        assert "/alert-troubleshooting/HighCPUUsage" in response.text
+        assert "/alert-troubleshooting/generic/HighCPUUsage" in response.text
 
 
 def _override_detail_context(alert_info, snippets, executor_hosts):
@@ -141,7 +141,7 @@ class TestTroubleshootingDetail:
         sep_app.dependency_overrides[get_troubleshooting_detail_context] = (
             _override_detail_context(alert_info, [], [])
         )
-        response = test_client.get("/alert-troubleshooting/HighCPU")
+        response = test_client.get("/alert-troubleshooting/generic/HighCPU")
         assert response.status_code == status.HTTP_200_OK
 
     def test_detail_renders_alert_label(self, test_client: TestClient):
@@ -150,7 +150,7 @@ class TestTroubleshootingDetail:
         sep_app.dependency_overrides[get_troubleshooting_detail_context] = (
             _override_detail_context(alert_info, [], [])
         )
-        response = test_client.get("/alert-troubleshooting/MySQLSlowQueries")
+        response = test_client.get("/alert-troubleshooting/mysql/MySQLSlowQueries")
         assert "MySQL Slow Queries" in response.text
 
     def test_detail_empty_snippets_shows_empty_state(self, test_client: TestClient):
@@ -159,7 +159,7 @@ class TestTroubleshootingDetail:
         sep_app.dependency_overrides[get_troubleshooting_detail_context] = (
             _override_detail_context(alert_info, [], [])
         )
-        response = test_client.get("/alert-troubleshooting/EmptyAlert")
+        response = test_client.get("/alert-troubleshooting/generic/EmptyAlert")
         assert response.status_code == status.HTTP_200_OK
         assert "No snippets are associated" in response.text
 
@@ -170,7 +170,7 @@ class TestTroubleshootingDetail:
         sep_app.dependency_overrides[get_troubleshooting_detail_context] = (
             _override_detail_context(alert_info, [], hosts)
         )
-        response = test_client.get("/alert-troubleshooting/HighCPU")
+        response = test_client.get("/alert-troubleshooting/generic/HighCPU")
         assert "Node 1" in response.text
 
 
@@ -242,11 +242,11 @@ class TestTroubleshootingOutput:
         data = response.json()
         assert data["status"] == "running"
 
-    def test_output_completed(self, test_client: TestClient):
-        """Assert completed task returns status and output text."""
+    def test_output_success(self, test_client: TestClient):
+        """Assert successful task returns status and output text."""
         mock_api = AsyncMock(spec=RemoteAPI)
         mock_api.get.side_effect = [
-            {"id": 1, "status": "completed"},
+            {"id": 1, "status": "success"},
             {"stdout.log": {"size": 16, "is_dir": False}},
         ]
 
@@ -258,7 +258,7 @@ class TestTroubleshootingOutput:
         response = test_client.get("/alert-troubleshooting/output/1")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["status"] == "completed"
+        assert data["status"] == "success"
         assert "query result OK" in data["output"]
 
     def test_output_failed(self, test_client: TestClient):
