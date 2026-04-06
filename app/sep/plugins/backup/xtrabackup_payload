@@ -1844,6 +1844,13 @@ class GSUploadProvider:
                        )
         self.log_stream = open(log_file, 'a')
 
+        bucket_str = self.gs_bucket
+        if bucket_str.startswith("gs://"):
+            bucket_str = bucket_str[5:]
+        parts = bucket_str.split("/", 1)
+        self.bucket_name = parts[0]
+        self.bucket_prefix = parts[1] if len(parts) > 1 else ""
+
     def upload(self, source_dir, dest_dir: str) -> str:
         """Upload directory to GS.
 
@@ -1852,19 +1859,20 @@ class GSUploadProvider:
         :return: GS URI of the uploaded backup.
         :raises BackupError: If GS upload fails.
         """
-        source_path = os.path.join(source_dir, '')
-        bucket_str = self.gs_bucket
-        if not bucket_str.startswith('gs://'):
-            bucket_str = f'gs://{bucket_str}'
-        dest_path = os.path.join(bucket_str, dest_dir, '')
-        gs_cmd = [GSUTIL_BIN, 'rsync', '-r', source_path, dest_path]
+        source_path = Path(source_dir)
+        full_prefix = (
+            str(Path(self.bucket_prefix) / dest_dir)
+            if self.bucket_prefix else dest_dir
+        )
+        dest_path = f"gs://{self.bucket_name}/{full_prefix}"
+        gs_cmd = [GSUTIL_BIN, 'rsync', '-r', str(source_path), dest_path]
         self.logger.info('Uploading backup...')
         self.logger.info('Running: %s', ' '.join(gs_cmd))
 
-        gs_proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
-        _, err = gs_proc.communicate()
-        if gs_proc.returncode != 0:
-            msg = 'GS upload failed. Error: %s' % (err,)
+        proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            msg = f"GS upload failed. Error: {err}"
             raise BackupError(msg)
 
         if self.backup_type != "B" and not (
@@ -1887,10 +1895,11 @@ class GSUploadProvider:
             with open(latest_file_local_path, 'w') as fn:
                 fn.write("%s" % dest_path)
             gs_cmd = [GSUTIL_BIN,'cp',latest_file_local_path,latest_file_remote_dir]
-            gs_proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
-            _, err = gs_proc.communicate()
-            if gs_proc.returncode != 0:
-                self.logger.warning('GS latest file upload failed. Error: %s' % (err,))
+            proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+            _, err = proc.communicate()
+            if proc.returncode != 0:
+                msg = f"GS upload failed. Error: {err}"
+                raise BackupError(msg)
 
         return dest_path
 
