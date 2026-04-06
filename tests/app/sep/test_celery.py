@@ -38,6 +38,7 @@ from app.sep.clients.pmm import (
     AlertTemplate as PMMAlertTemplate,
 )
 from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.config import AlertsPMMConfig
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.snippets.config import SnippetFilter, SnippetFilterType
 
@@ -378,7 +379,7 @@ def _patch_pmm_settings(mocker, *, retention=10):
     """Patch alerts PMM config inside _backup_alert_config."""
     mocker.patch(
         "app.sep.plugins.alerts.config.alerts_pmm_config",
-        MagicMock(backup_retention=retention),
+        MagicMock(spec=AlertsPMMConfig, backup_retention=retention),
     )
 
 
