@@ -330,7 +330,7 @@ class PMMSyncer(BaseSyncer):
         """Merge the global PMM settings with any provided PMM settings.
 
         This validator checks if the provided value is a dictionary and, if so, merges
-        it with the global PMM settings defined in `sep_settings`. This allows for any
+        it with the global PMM settings from ``settings.PMM``. This allows for any
         PMMSyncer instance to override specific PMM settings while still inheriting
         defaults from the global configuration.
 
