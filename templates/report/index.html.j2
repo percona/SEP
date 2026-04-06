@@ -55,32 +55,44 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     </div>
                     <div class="form-row">
                         <label for="until">To</label>
-                        <input type="text" name="until" id="until" value="now" readonly>
+                        <select name="until" id="until">
+                            <option value="now" selected>now</option>
+                            <option value="now-1d">1 day ago</option>
+                            <option value="now-3d">3 days ago</option>
+                            <option value="now-7d">7 days ago</option>
+                        </select>
                     </div>
                 </fieldset>
                 <fieldset>
                     <legend>Options</legend>
                     <div class="form-row">
-                        <label for="full">
+                        <label class="checkbox">
                             <input type="checkbox" name="full" id="full" value="true">
-                            Full report - show all check results and full
-                            backup history instead of only failures/summaries
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Full report - show all check results and full
+                                backup history instead of only failures/summaries</span>
                         </label>
                     </div>
                     <div class="form-row">
-                        <label for="refresh">
+                        <label class="checkbox">
                             <input type="checkbox" name="refresh" id="refresh" value="true">
-                            Refresh - force a refresh of advisor checks
-                            before fetching results
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Refresh - force a refresh of advisor checks
+                                before fetching results</span>
                         </label>
                     </div>
                 </fieldset>
                 <div class="form-actions">
-                    <button type="submit" class="btn primary">Generate Report</button>
-                    <a href="{{ request.url_for('report_generate_json') }}"
-                       class="btn"
-                       target="_blank"
-                       rel="noopener noreferrer">Download as JSON</a>
+                    <button type="submit" class="contained large">Generate Report</button>
+                    <button type="button"
+                            class="outlined large"
+                            onclick="window.open('{{ request.url_for('report_generate_json') }}', '_blank', 'noopener,noreferrer')">Download as JSON</button>
                 </div>
             </form>
         {% endif %}
