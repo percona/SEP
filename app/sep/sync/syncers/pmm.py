@@ -22,10 +22,9 @@ from typing import Any, ClassVar, Self
 from async_lru import alru_cache
 from pydantic import field_validator
 
-from app.core.config import settings
+from app.core.config import PMMSettings, settings
 from app.inventory.models import SourceEnum
 from app.sep.clients.pmm import PMMRemoteAPI, PMMService
-from app.sep.config import PMMSettings, sep_settings
 from app.sep.inventory import CreatedNode, CreatedService, Node
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.sync.models import BaseSyncer
@@ -68,7 +67,7 @@ class PMMSyncer(BaseSyncer):
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
-    pmm: PMMSettings = sep_settings.PMM
+    pmm: PMMSettings = settings.PMM
     keepalive_api: bool = True
     _pmm_api: PMMRemoteAPI | None = None
 
@@ -341,5 +340,5 @@ class PMMSyncer(BaseSyncer):
         :rtype: Any
         """
         if isinstance(value, dict):
-            return sep_settings.PMM.model_dump() | value
+            return settings.PMM.model_dump() | value
         return value

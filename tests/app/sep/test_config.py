@@ -18,19 +18,7 @@
 from string import Template
 from unittest.mock import patch
 
-from app.sep.config import PMMSettings, SEPSettings
-
-
-def test_pmm_api_key_masked_in_repr():
-    """Test that api_key is masked in repr output."""
-    pmm = PMMSettings(api_key="my-pmm-api-key")
-    assert "my-pmm-api-key" not in repr(pmm)
-
-
-def test_pmm_api_key_accepts_secretstr():
-    """Test that PMMSettings accepts SecretStr for api_key."""
-    pmm = PMMSettings(api_key="test-key")
-    assert pmm.api_key.get_secret_value() == "test-key"
+from app.sep.config import SEPSettings
 
 
 class TestFooterTemplate:
