@@ -426,8 +426,12 @@ class SEPSettings(BaseYamlAppSettings):
                 "Deprecated fields found: %s",
                 ", ".join(sorted(fields_to_forward)),
             )
-            for field_name in fields_to_forward:
-                setattr(settings.PMM, field_name, getattr(self.PMM, field_name))
+            settings.PMM = settings.PMM.model_copy(
+                update={
+                    field_name: getattr(self.PMM, field_name)
+                    for field_name in fields_to_forward
+                }
+            )
         return self
 
 
