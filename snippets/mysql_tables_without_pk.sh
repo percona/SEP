@@ -5,6 +5,7 @@
 # title: "Tables without Primary Key"
 # description: "Prints all tables in all databases that do not have a primary key. Extra args are passed to mysql (e.g. -u, -p, SSL options)."
 # allow_extra_args: true
+# extra_args_placeholder: "e.g. -h 127.0.0.1 -u monitor"
 # parameters:
 #  - name: defaults-file
 #    type: str
