@@ -18,7 +18,11 @@
 from string import Template
 from unittest.mock import patch
 
-from app.sep.config import SEPSettings
+from app.core.config import PMMSettings
+from app.sep.config import _DeprecatedPMMConfig, SEPSettings
+
+PMM_ENDPOINT = "https://pmm.example.com"
+CORE_PMM_ENDPOINT = "https://core.example.com"
 
 
 class TestFooterTemplate:
@@ -61,3 +65,42 @@ class TestFooterTemplate:
         """Assert FOOTER_TEXT safely ignores unknown placeholders."""
         settings = SEPSettings(FOOTER_TEMPLATE="$summary $unknown $version")
         assert settings.FOOTER_TEXT == "App $unknown 0.0.1"
+
+
+class TestForwardDeprecatedPMMFields:
+    """Test the ``_forward_deprecated_pmm_fields`` model validator."""
+
+    def test_forwards_fields_to_core_settings(self):
+        """Assert deprecated ``SEP.PMM`` fields are forwarded to ``settings.PMM``."""
+        core_pmm = PMMSettings()
+        with patch("app.sep.config.settings") as mock_settings:
+            mock_settings.PMM = core_pmm
+            SEPSettings(PMM={"ENDPOINT": PMM_ENDPOINT})
+        assert mock_settings.PMM.endpoint == PMM_ENDPOINT
+
+    def test_core_settings_take_precedence(self):
+        """Assert top-level ``PMM`` fields are not overwritten by ``SEP.PMM``."""
+        core_pmm = PMMSettings(endpoint=CORE_PMM_ENDPOINT)
+        with patch("app.sep.config.settings") as mock_settings:
+            mock_settings.PMM = core_pmm
+            SEPSettings(PMM={"ENDPOINT": PMM_ENDPOINT})
+        assert mock_settings.PMM.endpoint == CORE_PMM_ENDPOINT
+
+    def test_deprecation_warning_logged(self):
+        """Assert a deprecation warning is logged when fields are forwarded."""
+        core_pmm = PMMSettings()
+        with (
+            patch("app.sep.config.settings") as mock_settings,
+            patch("app.sep.config.logger") as mock_logger,
+        ):
+            mock_settings.PMM = core_pmm
+            SEPSettings(PMM={"ENDPOINT": PMM_ENDPOINT})
+        mock_logger.warning.assert_called_once()
+
+    def test_no_op_when_no_deprecated_fields_set(self):
+        """Assert ``settings.PMM`` is not modified when no deprecated fields are set."""
+        core_pmm = PMMSettings()
+        with patch("app.sep.config.settings") as mock_settings:
+            mock_settings.PMM = core_pmm
+            SEPSettings(PMM=_DeprecatedPMMConfig())
+        assert mock_settings.PMM is core_pmm
