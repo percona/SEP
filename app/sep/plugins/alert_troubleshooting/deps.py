@@ -267,7 +267,7 @@ def filter_snippets_for_alert(
         if service_type is not None:
             raw_svc = snippet.meta.get("service_type")
             snippet_svc = AlertServiceType.GENERIC if raw_svc is None else raw_svc
-            if str(snippet_svc) != str(service_type):
+            if snippet_svc != service_type:
                 continue
         info = _find_alert_in_snippet(snippet, alert_name)
         if info is not None:
