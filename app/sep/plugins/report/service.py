@@ -22,6 +22,7 @@ calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -841,3 +842,45 @@ async def generate_report(
         await _collect_section(section, report, **collector_kwargs)
 
     return report
+
+
+# PDF generation helpers
+
+_PDF_SECTIONS: list[tuple[str, str]] = [
+    ("advisors", "Advisors"),
+    ("alerts", "Alerts"),
+    ("backups", "Backups"),
+    ("storage", "Disk Usage"),
+    ("uptime", "Service Uptime"),
+    ("inventory", "Included Services"),
+]
+
+
+async def generate_pdf_report(report: ReportData) -> bytes:
+    """Render a report to a self-contained HTML document and convert it to PDF.
+
+    HTML template (``report/result_pdf.html.j2``) includes inline CSS and
+    has no dependency on a Starlette ``Request`` object. weasyprint conversion
+    is offloaded to a thread because it is synchronous and CPU-bound.
+
+    :param report: The completed report data.
+    :type report: ReportData
+    :return: The PDF file contents.
+    :rtype: bytes
+    """
+    from weasyprint import CSS, HTML
+
+    from app.sep.config import sep_settings
+
+    template = sep_settings.JINJA_ENVIRONMENT.get_template("report/result_pdf.html.j2")
+    html = template.render(
+        report=report,
+        service_names=SERVICE_NAMES,
+        sections=_PDF_SECTIONS,
+    )
+
+    def _generate() -> bytes:
+        page_css = CSS(string="@page { size: 370mm 445.5mm; margin: 20mm; }")
+        return HTML(string=html).write_pdf(stylesheets=[page_css])
+
+    return await asyncio.to_thread(_generate)
