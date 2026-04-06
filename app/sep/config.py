@@ -308,6 +308,23 @@ class SEPSettings(BaseYamlAppSettings):
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_removed_pmm_frontend(cls, data: Any) -> Any:
+        """Warn if the removed ``PMM_FRONTEND`` field is still set.
+
+        :param data: The raw input data.
+        :type data: Any
+        :return: The input data unchanged.
+        :rtype: Any
+        """
+        if isinstance(data, dict) and data.get("PMM_FRONTEND") is not None:
+            logger.warning(
+                "SEP__PMM_FRONTEND has been removed. "
+                "Use PMM__FRONTEND (top-level) or SEP__PMM__FRONTEND instead.",
+            )
+        return data
+
     @computed_field
     @cached_property
     def JINJA_ENVIRONMENT(self) -> Environment:
