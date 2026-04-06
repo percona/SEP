@@ -15,6 +15,7 @@
 
 """Define routes for the Alert Troubleshooting plugin."""
 
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -126,8 +127,8 @@ async def troubleshooting_output(
 ) -> JSONResponse:
     """Poll the execution status and output for a task history entry.
 
-    Return the current task status and, when successful, the STDOUT content
-    from the task's output files.
+    Return the current task status and, when finished, the STDOUT content
+    from the task's logs.
 
     :param task_history_id: The task history ID to poll.
     :type task_history_id: int
@@ -142,27 +143,19 @@ async def troubleshooting_output(
         response_data = {"status": task_status, "output": ""}
         if task_status in ("success", "failed", "stopped"):
             try:
-                files_meta = await tasks_api.get(f"/history/{task_history_id}/files/")
-                output_parts = []
-                for filename in files_meta:
-                    try:
-                        content = "".join(
-                            [
-                                chunk.decode("utf-8", errors="replace")
-                                async for chunk in tasks_api.stream(
-                                    f"/history/{task_history_id}/file/",
-                                    params={"path": filename},
-                                )
-                            ]
-                        )
-                        if content:
-                            output_parts.append(content)
-                    except (HTTPException, KeyError, TypeError, OSError):
-                        pass
-                response_data["output"] = "\n".join(output_parts)
-            except (HTTPException, KeyError, TypeError, OSError):
+                stdout_parts = []
+                async for chunk in tasks_api.stream(
+                    f"/history/{task_history_id}/logs/",
+                    params={"step": "run-script"},
+                ):
+                    if chunk:
+                        log_entry = json.loads(chunk)
+                        if log_entry.get("type") == "stdout" and log_entry.get("msg"):
+                            stdout_parts.append(log_entry["msg"])
+                response_data["output"] = "".join(stdout_parts)
+            except (HTTPException, KeyError, TypeError, ValueError, OSError):
                 logger.debug(
-                    "Could not fetch output files for task %s",
+                    "Could not fetch logs for task %s",
                     task_history_id,
                     exc_info=True,
                 )

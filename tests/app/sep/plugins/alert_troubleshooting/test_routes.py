@@ -243,15 +243,12 @@ class TestTroubleshootingOutput:
         assert data["status"] == "running"
 
     def test_output_success(self, test_client: TestClient):
-        """Assert successful task returns status and output text."""
+        """Assert successful task returns status and stdout log output."""
         mock_api = AsyncMock(spec=RemoteAPI)
-        mock_api.get.side_effect = [
-            {"id": 1, "status": "success"},
-            {"stdout.log": {"size": 16, "is_dir": False}},
-        ]
+        mock_api.get.return_value = {"id": 1, "status": "success"}
 
         async def _mock_stream(path, **kwargs):
-            yield b"query result OK"
+            yield b'{"step":"run-script","type":"stdout","msg":"query result OK","offset":15}'
 
         mock_api.stream = _mock_stream
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
@@ -262,15 +259,12 @@ class TestTroubleshootingOutput:
         assert "query result OK" in data["output"]
 
     def test_output_failed(self, test_client: TestClient):
-        """Assert failed task returns error status."""
+        """Assert failed task returns status and stderr is excluded."""
         mock_api = AsyncMock(spec=RemoteAPI)
-        mock_api.get.side_effect = [
-            {"id": 1, "status": "failed"},
-            {"stderr.log": {"size": 25, "is_dir": False}},
-        ]
+        mock_api.get.return_value = {"id": 1, "status": "failed"}
 
         async def _mock_stream(path, **kwargs):
-            yield b"Error: connection refused"
+            yield b'{"step":"run-script","type":"stderr","msg":"Error: connection refused","offset":25}'
 
         mock_api.stream = _mock_stream
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
@@ -278,7 +272,7 @@ class TestTroubleshootingOutput:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["status"] == "failed"
-        assert "connection refused" in data["output"]
+        assert data["output"] == ""
 
     def test_output_tasks_api_error(self, test_client: TestClient):
         """Assert JSON error response when Tasks API returns an error."""
