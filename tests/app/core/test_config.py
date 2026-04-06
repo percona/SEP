@@ -248,6 +248,24 @@ class TestPMMSettings:
         assert pmm.endpoint == "https://pmm.example.com"
         assert not hasattr(pmm, "unknown_field")
 
+    def test_frontend_defaults_to_endpoint(self):
+        """Assert ``frontend`` defaults to ``endpoint`` when not explicitly set."""
+        pmm = PMMSettings(endpoint="https://pmm.example.com")
+        assert pmm.frontend == "https://pmm.example.com"
+
+    def test_frontend_not_overridden_when_set(self):
+        """Assert ``frontend`` is not overridden when explicitly set."""
+        pmm = PMMSettings(
+            endpoint="https://pmm.example.com",
+            frontend="https://pmm-frontend.example.com",
+        )
+        assert pmm.frontend == "https://pmm-frontend.example.com"
+
+    def test_frontend_stays_none_when_no_endpoint(self):
+        """Assert ``frontend`` stays ``None`` when endpoint is also ``None``."""
+        pmm = PMMSettings()
+        assert pmm.frontend is None
+
     def test_settings_has_pmm_field(self):
         """Assert the global ``Settings`` class has a ``PMM`` field."""
         assert "PMM" in Settings.model_fields
