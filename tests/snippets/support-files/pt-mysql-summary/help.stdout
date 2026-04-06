@@ -1,16 +1,10 @@
-(?s)Usage: pt-mysql-summary\.sh \[OPTIONS\]
-Executes the pt-mysql-summary wrapper \(Percona Toolkit\)\.
+Usage: pt-mysql-summary.sh \[OPTIONS\]
+Executes pt-mysql-summary script
 
-Wrapper options:
+Command line options:
 
-   --defaults-file   Path to MySQL defaults-file \(passed to pt-mysql-summary\)
+   --defaults-file   Path to MySQL defaults-file
    -d, --dest        Destination for the samples.
                      Default: .+/{{hostname}}-\d\d(\d\d-){4}\d\d
    --save-samples    Save samples
-   -h, --help        Show this message and pt-mysql-summary --help
-
-Any other options are passed through to pt-mysql-summary \(e\.g\. --host, --sleep, --read-samples\)\.
-Use -- before MySQL-style options if needed\.
-
------ pt-mysql-summary --help -----
-.*
+   -h, --help        Show this help message
