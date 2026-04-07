@@ -27,7 +27,7 @@ from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 
 from .deps import ReportIndexContext, RequiredPMMAPIDep
 from .models import REPORT_SECTIONS
-from .service import generate_report, generate_pdf_report, SERVICE_NAMES
+from .service import generate_pdf_report, generate_report, SERVICE_NAMES
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

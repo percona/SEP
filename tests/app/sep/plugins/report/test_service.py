@@ -45,8 +45,8 @@ from app.sep.plugins.report.service import (
     collect_inventory,
     collect_storage,
     collect_uptime,
-    generate_report,
     generate_pdf_report,
+    generate_report,
 )
 
 
