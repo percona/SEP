@@ -183,3 +183,58 @@ along with this program. If not, see <https://www.gnu.org/licenses/>. */
     color: var(--text-secondary, #666);
     font-size: 0.9rem;
 }
+
+/* Radio buttons - mirrors .checkbox / .checkmark pattern from base.css */
+.radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1.5rem;
+}
+
+.radio {
+    display: flex;
+    align-items: center;
+    user-select: none;
+    cursor: pointer;
+}
+
+input[type="radio"] {
+    opacity: 0;
+    height: 0;
+    width: 0;
+    cursor: pointer;
+}
+
+.radiomark {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--cornerFull);
+    transition: background 0.2s;
+}
+
+.radio:hover .radiomark {
+    background: var(--primaryHover);
+}
+
+.radiomark .checked {
+    color: var(--primaryMain);
+}
+
+input[type="radio"] ~ .radiomark .checked,
+input[type="radio"]:checked ~ .radiomark .unchecked {
+    display: none;
+}
+
+input[type="radio"] ~ .radiomark .unchecked,
+input[type="radio"]:checked ~ .radiomark .checked {
+    display: block;
+}
+
+input[type="radio"]:focus-visible ~ .radiomark {
+    background: var(--primaryFocus);
+    outline: 0.1875rem solid var(--lineFocus);
+    outline-offset: -0.1875rem;
+}

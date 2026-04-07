@@ -65,26 +65,40 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 </fieldset>
                 <fieldset>
                     <legend>Options</legend>
-                    <div class="form-row">
-                        <label class="checkbox">
-                            <input type="checkbox" name="full" id="full" value="true" checked>
-                            <div class="checkmark">
-                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                                <span class="material-symbols-outlined checked">check_box</span>
+                    <div class="form-row radio-group">
+                        <label class="radio">
+                            <input type="radio" name="full" value="true" checked>
+                            <div class="radiomark">
+                                <span class="material-symbols-outlined unchecked">radio_button_unchecked</span>
+                                <span class="material-symbols-outlined checked">radio_button_checked</span>
                             </div>
-                            <span class="label">Full report - show all check results and full
-                                backup history instead of only failures/summaries</span>
+                            <span class="label">Full report</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="full" value="false">
+                            <div class="radiomark">
+                                <span class="material-symbols-outlined unchecked">radio_button_unchecked</span>
+                                <span class="material-symbols-outlined checked">radio_button_checked</span>
+                            </div>
+                            <span class="label">Summary only (failures and recent backups)</span>
                         </label>
                     </div>
-                    <div class="form-row">
-                        <label class="checkbox">
-                            <input type="checkbox" name="refresh" id="refresh" value="true">
-                            <div class="checkmark">
-                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
-                                <span class="material-symbols-outlined checked">check_box</span>
+                    <div class="form-row radio-group">
+                        <label class="radio">
+                            <input type="radio" name="refresh" value="false" checked>
+                            <div class="radiomark">
+                                <span class="material-symbols-outlined unchecked">radio_button_unchecked</span>
+                                <span class="material-symbols-outlined checked">radio_button_checked</span>
                             </div>
-                            <span class="label">Refresh - force a refresh of advisor checks
-                                before fetching results</span>
+                            <span class="label">Use cached advisor results</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="refresh" value="true">
+                            <div class="radiomark">
+                                <span class="material-symbols-outlined unchecked">radio_button_unchecked</span>
+                                <span class="material-symbols-outlined checked">radio_button_checked</span>
+                            </div>
+                            <span class="label">Refresh advisor checks before fetching results</span>
                         </label>
                     </div>
                 </fieldset>
