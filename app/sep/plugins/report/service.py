@@ -884,3 +884,67 @@ async def generate_pdf_report(report: ReportData) -> bytes:
         return HTML(string=html).write_pdf(stylesheets=[page_css])
 
     return await asyncio.to_thread(_generate)
+
+
+# ServiceNow upload
+
+_MAX_UPLOAD_SIZE = 30 * 1024 * 1024  # 30 MB
+
+
+async def upload_pdf_report(report: ReportData, pdf_bytes: bytes) -> dict[str, Any]:
+    """Upload a PDF report to the ServiceNow API.
+
+    :param report: The report metadata used to populate upload fields.
+    :type report: ReportData
+    :param pdf_bytes: The rendered PDF file contents.
+    :type pdf_bytes: bytes
+    :return: The JSON response body from the upload API.
+    :rtype: dict[str, Any]
+    :raises ValueError: If the PDF exceeds the 30 MB API size limit.
+    :raises RuntimeError: If the upload API returns a non-200 status.
+    """
+    from aiohttp import ClientSession, FormData
+
+    from app.sep.config import sep_settings
+
+    upload = sep_settings.REPORT_UPLOAD
+    if not upload.is_configured:
+        raise RuntimeError("Report upload is not configured")
+
+    if len(pdf_bytes) >= _MAX_UPLOAD_SIZE:
+        raise ValueError(
+            f"PDF size ({len(pdf_bytes)} bytes) exceeds the "
+            f"{_MAX_UPLOAD_SIZE // (1024 * 1024)} MB upload limit"
+        )
+
+    filename = f"Health_and_Security_Report_{report.metadata.generated_at:%Y-%m-%d}.pdf"
+
+    form = FormData()
+    form.add_field("api_key", upload.api_key.get_secret_value())
+    form.add_field("client_identifier", upload.client_id)
+    form.add_field("report_type", "security_and_health_status")
+    form.add_field("report_week", report.metadata.report_week)
+    form.add_field("report_period", report.metadata.report_interval)
+    form.add_field(
+        "report_generated_on",
+        report.metadata.generated_at.strftime("%Y-%m-%d %H:%M:%S %Z"),
+    )
+    form.add_field(
+        "file",
+        pdf_bytes,
+        filename=filename,
+        content_type="application/pdf",
+    )
+
+    async with (
+        ClientSession() as session,
+        session.post(
+            str(upload.endpoint),
+            data=form,
+            headers={"accept": "application/json"},
+        ) as resp,
+    ):
+        body = await resp.json()
+        if resp.status != 200:  # noqa: PLR2004
+            raise RuntimeError(f"Upload failed with status {resp.status}: {body}")
+        return body
