@@ -65,6 +65,19 @@ async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:
 RequiredPMMAPIDep = Annotated[PMMRemoteAPI, Depends(require_pmm_api)]
 
 
+async def require_upload_configured() -> None:
+    """Raise if report upload to ServiceNow is not configured.
+
+    :raises HTTPServiceUnavailableException: If any required upload setting is
+        missing.
+    """
+    if not sep_settings.REPORT_UPLOAD.is_configured:
+        raise HTTPServiceUnavailableException(detail="Report upload is not configured")
+
+
+IsUploadConfigured = Depends(require_upload_configured)
+
+
 async def get_report_index_context(
     context: DefaultContext,
     pmm_api: PMMAPIDep,
