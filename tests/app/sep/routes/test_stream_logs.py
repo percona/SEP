@@ -63,7 +63,7 @@ def mock_tasks_client(task_history_response):
     client.stream.side_effect = lambda path, **_kwargs: mock_stream(
         path, task_history_response.id
     )
-    client.get.return_value = task_history_response.model_dump()
+    client.post.return_value = task_history_response.model_dump()
 
     sep_app.dependency_overrides[get_tasks_client] = lambda: client
     sep_app.dependency_overrides[get_task_history] = lambda: task_history_response
@@ -87,11 +87,16 @@ def test_archives_logs_event_stream(
     streamed_content = response.content.decode("utf-8")
     assert "log line 1" in streamed_content
     assert "log line 2" in streamed_content
+    assert "event: finish" in streamed_content
+    assert TaskHistoryStatusEnum.SUCCESS.value in streamed_content
 
     mock_tasks_client.stream.assert_called_once_with(
         f"/history/{task_history_response.id}/logs/",
         params=mocker.ANY,
         timeout=mocker.ANY,
+    )
+    mock_tasks_client.post.assert_called_once_with(
+        f"/history/{task_history_response.id}/sync/"
     )
 
 

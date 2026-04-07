@@ -15,7 +15,7 @@
 
 """Define test cases for the task routes in the FastAPI application."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -450,6 +450,37 @@ async def test_stop_task_finished_returns_400(test_client, created_task_with_his
     """Assert stopping a finished task returns 400."""
     response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.asyncio
+async def test_sync_task_history_running_calls_executor(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert syncing a RUNNING task calls executor.sync_task_history and persists status."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    async def fake_sync(item):
+        item.status = TaskHistoryStatusEnum.SUCCESS
+        item.finished_at = utc_now()
+        return item
+
+    mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
+    mock_executor.sync_task_history.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_task_history_not_running_skips_executor(
+    test_client, mock_executor, created_task_with_history
+):
+    """Assert syncing a non-running task returns current status without calling the executor."""
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
+    mock_executor.sync_task_history.assert_not_called()
 
 
 @pytest.mark.asyncio
