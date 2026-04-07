@@ -939,7 +939,7 @@ async def upload_pdf_report(report: ReportData, pdf_bytes: bytes) -> dict[str, A
     async with (
         ClientSession() as session,
         session.post(
-            str(upload.endpoint),
+            upload.endpoint,
             data=form,
             headers={"accept": "application/json"},
         ) as resp,

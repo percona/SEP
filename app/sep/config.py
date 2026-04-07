@@ -254,7 +254,7 @@ class HealthReportSettings(BaseLowercaseModel):
         (the default) uploading is disabled regardless of other fields.
     :type upload: bool
     :param endpoint: The ServiceNow upload API URL.
-    :type endpoint: StrHttpUrl | None
+    :type endpoint: str | None
     :param api_key: API key for authenticating with the upload endpoint.
     :type api_key: SecretStr | None
     :param client_id: Customer identifier sent with each upload.
@@ -262,7 +262,7 @@ class HealthReportSettings(BaseLowercaseModel):
     """
 
     upload: bool = False
-    endpoint: StrHttpUrl | None = None
+    endpoint: str | None = None
     api_key: SecretStr | None = None
     client_id: str | None = None
 
@@ -271,6 +271,13 @@ class HealthReportSettings(BaseLowercaseModel):
     def _empty_str_to_none(cls, v: Any) -> Any:
         if isinstance(v, str) and not v.strip():
             return None
+        return v
+
+    @field_validator("endpoint", mode="after")
+    @classmethod
+    def _normalize_endpoint(cls, v: str | None) -> str | None:
+        if v is not None:
+            return v.rstrip("/")
         return v
 
     @field_validator("api_key", mode="before")
@@ -284,14 +291,33 @@ class HealthReportSettings(BaseLowercaseModel):
         return v
 
     @property
+    def upload_disabled_reasons(self) -> list[str]:
+        """Return a list of reasons why uploading is not possible.
+
+        An empty list means upload is fully configured and ready.
+        """
+        if not self.upload:
+            return ["Upload is disabled"]
+
+        from urllib.parse import urlparse
+
+        reasons: list[str] = []
+        if self.endpoint is None:
+            reasons.append("Endpoint is not configured")
+        else:
+            parsed = urlparse(self.endpoint)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                reasons.append("Endpoint is not a valid HTTP/HTTPS address")
+        if self.api_key is None:
+            reasons.append("API key is not configured")
+        if self.client_id is None:
+            reasons.append("Client ID is not configured")
+        return reasons
+
+    @property
     def is_upload_configured(self) -> bool:
         """Return ``True`` when upload is enabled and all credentials are set."""
-        return (
-            self.upload
-            and self.endpoint is not None
-            and self.api_key is not None
-            and self.client_id is not None
-        )
+        return not self.upload_disabled_reasons
 
 
 class SEPSettings(BaseYamlAppSettings):
