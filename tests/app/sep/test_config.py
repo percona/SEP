@@ -18,7 +18,13 @@
 from string import Template
 from unittest.mock import patch
 
-from app.sep.config import PMMSettings, SEPSettings
+from app.core.celery.models import CrontabSchedule, IntervalSchedule
+from app.sep.config import (
+    HealthReportSettings,
+    PMMSettings,
+    ReportScheduleEntry,
+    SEPSettings,
+)
 
 
 def test_pmm_api_key_masked_in_repr():
@@ -73,3 +79,68 @@ class TestFooterTemplate:
         """Assert FOOTER_TEXT safely ignores unknown placeholders."""
         settings = SEPSettings(FOOTER_TEMPLATE="$summary $unknown $version")
         assert settings.FOOTER_TEXT == "App $unknown 0.0.1"
+
+
+class TestHealthReportSchedules:
+    """Test HealthReportSettings.schedules parsing for interval and crontab."""
+
+    def test_default_schedules_is_empty(self):
+        """Assert the default schedules list is empty (no periodic generation)."""
+        settings = HealthReportSettings()
+        assert settings.schedules == []
+
+    def test_single_interval_entry(self):
+        """Assert a single interval schedule entry parses correctly."""
+        settings = HealthReportSettings(
+            schedules=[{"schedule": {"every": 7, "period": "days"}}]
+        )
+        assert len(settings.schedules) == 1
+        entry = settings.schedules[0]
+        assert isinstance(entry, ReportScheduleEntry)
+        assert isinstance(entry.schedule, IntervalSchedule)
+        assert entry.schedule.every == 7  # noqa: PLR2004
+        assert entry.full is True
+
+    def test_crontab_entry_with_full_disabled(self):
+        """Assert a crontab entry with full=false parses correctly."""
+        settings = HealthReportSettings(
+            schedules=[
+                {
+                    "schedule": {"minute": "0", "hour": "2", "day_of_month": "1"},
+                    "full": False,
+                }
+            ]
+        )
+        entry = settings.schedules[0]
+        assert isinstance(entry.schedule, CrontabSchedule)
+        assert entry.schedule.minute == "0"
+        assert entry.schedule.hour == "2"
+        assert entry.schedule.day_of_month == "1"
+        assert entry.full is False
+
+    def test_multiple_schedules(self):
+        """Assert multiple schedule entries with different types and params."""
+        settings = HealthReportSettings(
+            schedules=[
+                {"schedule": {"every": 3, "period": "days"}, "full": False},
+                {
+                    "schedule": {"minute": "0", "hour": "3", "day_of_month": "1"},
+                    "since": "now-30d",
+                },
+            ]
+        )
+        assert len(settings.schedules) == 2  # noqa: PLR2004
+        assert isinstance(settings.schedules[0].schedule, IntervalSchedule)
+        assert settings.schedules[0].full is False
+        assert isinstance(settings.schedules[1].schedule, CrontabSchedule)
+        assert settings.schedules[1].full is True
+        assert settings.schedules[1].since == "now-30d"
+
+    def test_entry_defaults(self):
+        """Assert ReportScheduleEntry defaults for since, until, full, refresh, sections."""
+        entry = ReportScheduleEntry(schedule={"every": 1, "period": "days"})
+        assert entry.since == "now-7d"
+        assert entry.until == "now"
+        assert entry.full is True
+        assert entry.refresh is False
+        assert entry.sections is None
