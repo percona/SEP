@@ -89,6 +89,10 @@ default:
         MODULE_NAME: report
         URI_PATH: /report
         CSS_CLASS: report
+    REPORT_UPLOAD:
+      ENDPOINT:    # ServiceNow upload API URL
+      API_KEY:     # API key for authenticating with the upload endpoint
+      CLIENT_ID:   # Customer identifier sent with each upload
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
@@ -97,8 +101,8 @@ default:
       PORT: null
       NAME: sep.db
     PMM:
-      ENDPOINT: https://127.0.0.1:8443
-      VERIFY_SSL: true
+      ENDPOINT: https://192.168.122.10
+      VERIFY_SSL: false
       FRONTEND: null # Optional: PMM frontend URL for links
       EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
     SYNCERS:
