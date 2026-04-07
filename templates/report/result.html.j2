@@ -29,6 +29,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <p class="subtitle">{{ report.metadata.report_week }}</p>
             <p class="subtitle">{{ report.metadata.report_interval }}</p>
             <div class="form-actions">
+                <a href="{{ request.url_for('report_index') }}" class="btn outlined">Back to Report</a>
                 <form method="post"
                       action="{{ request.url_for('report_generate_pdf') }}">
                     <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
