@@ -56,7 +56,7 @@ async def report_generate(
     context: ReportIndexContext,
     since: Annotated[str, Form()] = "now-7d",
     until: Annotated[str, Form()] = "now",
-    full: Annotated[bool, Form()] = False,  # noqa: FBT002
+    full: Annotated[bool, Form()] = True,  # noqa: FBT002
     refresh: Annotated[bool, Form()] = False,  # noqa: FBT002
 ) -> HTMLResponse:
     """Generate a report and render the HTML result page.
@@ -99,7 +99,7 @@ async def report_generate_json(
     pmm_api: RequiredPMMAPIDep,
     since: Annotated[str, Query()] = "now-7d",
     until: Annotated[str, Query()] = "now",
-    full: Annotated[bool, Query()] = False,  # noqa: FBT002
+    full: Annotated[bool, Query()] = True,  # noqa: FBT002
     refresh: Annotated[bool, Query()] = False,  # noqa: FBT002
     sections: Annotated[list[str] | None, Query()] = None,
 ) -> JSONResponse:
@@ -132,7 +132,7 @@ async def report_generate_pdf(
     pmm_api: RequiredPMMAPIDep,
     since: Annotated[str, Form()] = "now-7d",
     until: Annotated[str, Form()] = "now",
-    full: Annotated[bool, Form()] = False,  # noqa: FBT002
+    full: Annotated[bool, Form()] = True,  # noqa: FBT002
     refresh: Annotated[bool, Form()] = False,  # noqa: FBT002
 ) -> Response:
     """Generate a report and return it as a downloadable PDF.
@@ -165,7 +165,7 @@ async def report_upload(
     pmm_api: RequiredPMMAPIDep,
     since: Annotated[str, Form()] = "now-7d",
     until: Annotated[str, Form()] = "now",
-    full: Annotated[bool, Form()] = False,  # noqa: FBT002
+    full: Annotated[bool, Form()] = True,  # noqa: FBT002
     refresh: Annotated[bool, Form()] = False,  # noqa: FBT002
 ) -> JSONResponse:
     """Generate a report, convert to PDF, and upload to ServiceNow.

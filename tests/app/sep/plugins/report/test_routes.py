@@ -161,7 +161,7 @@ class TestReportGenerate:
         _, kwargs = mock_gen.call_args
         assert kwargs["since"] == "now-7d"
         assert kwargs["until"] == "now"
-        assert kwargs["full"] is False
+        assert kwargs["full"] is True
         assert kwargs["refresh"] is False
 
     @pytest.mark.usefixtures("_mock_report_index_context")
@@ -283,7 +283,7 @@ class TestReportGenerateJSON:
         assert "storage" in data
         assert "uptime" in data
         assert "inventory" in data
-        assert data["full"] is False
+        assert data["full"] is True
         assert data["refresh"] is False
 
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
@@ -299,7 +299,7 @@ class TestReportGenerateJSON:
         _, kwargs = mock_gen.call_args
         assert kwargs["since"] == "now-7d"
         assert kwargs["until"] == "now"
-        assert kwargs["full"] is False
+        assert kwargs["full"] is True
         assert kwargs["refresh"] is False
         assert kwargs["sections"] is None
 
@@ -477,7 +477,7 @@ class TestReportGeneratePDF:
         _, kwargs = mock_gen.call_args
         assert kwargs["since"] == "now-7d"
         assert kwargs["until"] == "now"
-        assert kwargs["full"] is False
+        assert kwargs["full"] is True
         assert kwargs["refresh"] is False
 
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
@@ -595,7 +595,7 @@ class TestReportUpload:
         _, kwargs = mock_gen.call_args
         assert kwargs["since"] == "now-7d"
         assert kwargs["until"] == "now"
-        assert kwargs["full"] is False
+        assert kwargs["full"] is True
         assert kwargs["refresh"] is False
 
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):

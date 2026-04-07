@@ -760,7 +760,7 @@ async def generate_report(
     *,
     since: str = "now-7d",
     until: str = "now",
-    full: bool = False,
+    full: bool = True,
     refresh: bool = False,
     sections: list[str] | None = None,
 ) -> ReportData:

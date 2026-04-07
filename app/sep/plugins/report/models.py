@@ -228,7 +228,7 @@ REPORT_SECTIONS = (
 class ReportData(BaseModel):
     """Complete report payload ready for rendering."""
 
-    full: bool = False
+    full: bool = True
     refresh: bool = False
     metadata: ReportMetadata
     monitored: MonitoredSummary = Field(default_factory=MonitoredSummary)
