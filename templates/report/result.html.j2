@@ -28,6 +28,21 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <h1>{{ report.metadata.title }}</h1>
             <p class="subtitle">{{ report.metadata.report_week }}</p>
             <p class="subtitle">{{ report.metadata.report_interval }}</p>
+            <div class="form-actions">
+                <form method="post"
+                      action="{{ request.url_for('report_generate_pdf') }}">
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                    <input type="hidden" name="since" value="{{ report_params.since }}">
+                    <input type="hidden" name="until" value="{{ report_params.until }}">
+                    {% if report_params.full %}
+                        <input type="hidden" name="full" value="true">
+                    {% endif %}
+                    {% if report_params.refresh %}
+                        <input type="hidden" name="refresh" value="true">
+                    {% endif %}
+                    <button type="submit" class="contained large">Download PDF</button>
+                </form>
+            </div>
         </header>
         <section class="report-intro">
             <p>
@@ -660,22 +675,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </section>
         <footer class="report-footer">
             <p>Generated {{ report.metadata.generated_at }}.</p>
-            <div class="form-actions">
-                <a href="{{ request.url_for('report_index') }}" class="btn outlined">Back to Report</a>
-                <form method="post"
-                      action="{{ request.url_for('report_generate_pdf') }}">
-                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
-                    <input type="hidden" name="since" value="{{ report_params.since }}">
-                    <input type="hidden" name="until" value="{{ report_params.until }}">
-                    {% if report_params.full %}
-                        <input type="hidden" name="full" value="true">
-                    {% endif %}
-                    {% if report_params.refresh %}
-                        <input type="hidden" name="refresh" value="true">
-                    {% endif %}
-                    <button type="submit" class="contained">Download PDF</button>
-                </form>
-            </div>
+            <a href="{{ request.url_for('report_index') }}" class="btn">Back to Report</a>
         </footer>
     </div>
 {% endblock main %}
