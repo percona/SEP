@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, UTC
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -1485,7 +1485,7 @@ class TestUploadPdfReport:
             client_id="test-client-id" if configured else None,
         )
         return patch(
-            "app.sep.plugins.report.service.sep_settings",
+            "app.sep.config.sep_settings",
             new_callable=PropertyMock,
             HEALTH_REPORT=settings,
         )
@@ -1497,7 +1497,7 @@ class TestUploadPdfReport:
 
         settings = HealthReportSettings()
         with patch(
-            "app.sep.plugins.report.service.sep_settings",
+            "app.sep.config.sep_settings",
         ) as mock_settings:
             mock_settings.HEALTH_REPORT = settings
             with pytest.raises(RuntimeError, match="not configured"):
@@ -1516,7 +1516,7 @@ class TestUploadPdfReport:
         )
         oversized = b"x" * _MAX_UPLOAD_SIZE
         with patch(
-            "app.sep.plugins.report.service.sep_settings",
+            "app.sep.config.sep_settings",
         ) as mock_settings:
             mock_settings.HEALTH_REPORT = settings
             with pytest.raises(ValueError, match="exceeds"):
@@ -1541,13 +1541,13 @@ class TestUploadPdfReport:
         mock_resp.__aexit__ = AsyncMock(return_value=False)
 
         mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_resp)
+        mock_session.post = MagicMock(return_value=mock_resp)
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
         with (
             patch(
-                "app.sep.plugins.report.service.sep_settings",
+                "app.sep.config.sep_settings",
             ) as mock_settings,
             patch("aiohttp.ClientSession", return_value=mock_session),
         ):
@@ -1557,7 +1557,7 @@ class TestUploadPdfReport:
         assert result == {"status": "ok"}
         mock_session.post.assert_called_once()
         call_kwargs = mock_session.post.call_args
-        assert str(call_kwargs.args[0]) == "https://servicenow.example.com/api/upload"
+        assert call_kwargs.args[0] == "https://servicenow.example.com/api/upload"
         assert call_kwargs.kwargs["headers"] == {"accept": "application/json"}
 
     @pytest.mark.asyncio
@@ -1579,13 +1579,13 @@ class TestUploadPdfReport:
         mock_resp.__aexit__ = AsyncMock(return_value=False)
 
         mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_resp)
+        mock_session.post = MagicMock(return_value=mock_resp)
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
         with (
             patch(
-                "app.sep.plugins.report.service.sep_settings",
+                "app.sep.config.sep_settings",
             ) as mock_settings,
             patch("aiohttp.ClientSession", return_value=mock_session),
         ):
