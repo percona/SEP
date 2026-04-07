@@ -43,21 +43,21 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     {% endif %}
                     <button type="submit" class="contained large">Download PDF</button>
                 </form>
-                {% if upload_configured %}
-                    <form method="post"
-                          action="{{ request.url_for('report_upload') }}">
-                        <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
-                        <input type="hidden" name="since" value="{{ report_params.since }}">
-                        <input type="hidden" name="until" value="{{ report_params.until }}">
-                        {% if report_params.full %}
-                            <input type="hidden" name="full" value="true">
-                        {% endif %}
-                        {% if report_params.refresh %}
-                            <input type="hidden" name="refresh" value="true">
-                        {% endif %}
-                        <button type="submit" class="contained large">Upload to ServiceNow</button>
-                    </form>
-                {% endif %}
+                <form method="post"
+                      action="{{ request.url_for('report_upload') }}">
+                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
+                    <input type="hidden" name="since" value="{{ report_params.since }}">
+                    <input type="hidden" name="until" value="{{ report_params.until }}">
+                    {% if report_params.full %}
+                        <input type="hidden" name="full" value="true">
+                    {% endif %}
+                    {% if report_params.refresh %}
+                        <input type="hidden" name="refresh" value="true">
+                    {% endif %}
+                    <button type="submit"
+                            class="contained large"
+                            {% if not upload_configured %}disabled title="Upload is not configured"{% endif %}>Upload to ServiceNow</button>
+                </form>
             </div>
         </header>
         <section class="report-intro">
