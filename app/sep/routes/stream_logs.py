@@ -65,6 +65,17 @@ async def task_history_events_event_stream(
 
     The Tasks API returns events oldest-first; only the tail after the last emitted
     index is processed each poll so cost stays bounded for long runs.
+
+    :param tasks_client: The TaskAPI client for interacting with the Tasks service.
+    :type tasks_client: RemoteAPI
+    :param task_history_id: The ID of the task history whose execution events to stream.
+    :type task_history_id: int
+    :param request: The FastAPI request object, used to detect client disconnect.
+    :type request: Request
+    :param access_token: Bearer token used to authenticate requests to the Tasks API.
+    :type access_token: str
+    :yield: Execution event payloads and control messages formatted as server-sent events.
+    :rtype: str
     """
     emitted_count = 0
     wait_interval = 2

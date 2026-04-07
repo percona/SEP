@@ -24,39 +24,6 @@ from starlette.status import HTTP_200_OK
 from app.core.requests import RemoteAPI
 from app.sep.deps import get_current_user, get_task_history, get_tasks_api
 from app.sep.main import sep_app
-from app.tasks.models import (
-    Task,
-    TaskExecutionRequest,
-    TaskHistoryResponse,
-    TaskHistoryStatusEnum,
-)
-from tests.app.factories import TaskFactory
-
-
-@pytest.fixture
-def created_task() -> Task:
-    """Return a fake created task."""
-    return TaskFactory.build()
-
-
-@pytest.fixture
-def task_history_response(faker, created_task):
-    """Return a fake task history response."""
-    started_at = faker.past_datetime(start_date="-15d")
-    return TaskHistoryResponse(
-        id=faker.random_int(min=1),
-        execution_request=TaskExecutionRequest(
-            task="example-task",
-            target="example-target",
-            meta={"key": "value"},
-            tracking={"allocation_id": "12345", "evaluation_id": "67890"},
-        ),
-        status=TaskHistoryStatusEnum.SUCCESS,
-        task=created_task,
-        started_at=started_at,
-        finished_at=started_at + faker.time_delta(end_datetime="+1h"),
-        executed_by=None,
-    )
 
 
 @pytest.fixture
@@ -97,6 +64,20 @@ class TestListTaskExecutionEvents:
         assert body[0]["description"] == "Task received"
         assert body[0]["step"] == "prepare-env"
         assert "timestamp" in body[0]
+        mock_tasks_api_dep.get.assert_awaited_once_with(
+            f"/history/{task_history_response.id}/events"
+        )
+
+    def test_returns_empty_when_tasks_api_returns_none(
+        self, test_client, mock_tasks_api_dep, task_history_response
+    ):
+        """Assert GET /execution-events/{id} returns [] when the Tasks API yields None."""
+        mock_tasks_api_dep.get.return_value = None
+
+        response = test_client.get(f"/execution-events/{task_history_response.id}")
+
+        assert response.status_code == HTTP_200_OK
+        assert response.json() == []
         mock_tasks_api_dep.get.assert_awaited_once_with(
             f"/history/{task_history_response.id}/events"
         )
