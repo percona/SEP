@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
+from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 
 from .deps import ReportIndexContext, RequiredPMMAPIDep
 from .models import REPORT_SECTIONS
@@ -77,6 +78,7 @@ async def report_generate(
                 "full": full,
                 "refresh": refresh,
             },
+            "csrf_token": request.cookies.get(CSRF_COOKIE_NAME, ""),
         }
     )
     return templates.TemplateResponse(request, "report/result.html.j2", context)
