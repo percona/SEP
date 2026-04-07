@@ -37,6 +37,7 @@ from app.sep.plugins.report.service import (
     _find_labels,
     _get_metrics_datasource,
     _interval_ms,
+    _MAX_UPLOAD_SIZE,
     _parse_failed_checks,
     _refresh_checks,
     collect_advisors,
@@ -47,6 +48,7 @@ from app.sep.plugins.report.service import (
     collect_uptime,
     generate_pdf_report,
     generate_report,
+    upload_pdf_report,
 )
 
 
@@ -1452,3 +1454,141 @@ class TestGenerateReportPdf:
         assert "<style>" in html
         assert "url_for" not in html
         assert "Back to Report" not in html
+
+
+# upload_pdf_report
+class TestUploadPdfReport:
+    """Test the ``upload_pdf_report`` helper."""
+
+    def _make_report(self) -> ReportData:
+        return ReportData(
+            metadata=ReportMetadata(
+                title="Weekly Health Report",
+                generated_at=datetime(2026, 3, 31, 12, 0, 0, tzinfo=UTC),
+                report_week="2026 - Week 14",
+                report_interval="now-7d to now",
+            ),
+        )
+
+    def _mock_upload_settings(self, *, configured: bool = True):
+        """Return a patch context that configures or disables upload settings."""
+        from unittest.mock import PropertyMock
+
+        from app.sep.config import HealthReportSettings
+
+        settings = HealthReportSettings(
+            upload=configured,
+            endpoint="https://servicenow.example.com/api/upload"
+            if configured
+            else None,
+            api_key="test-api-key" if configured else None,
+            client_id="test-client-id" if configured else None,
+        )
+        return patch(
+            "app.sep.plugins.report.service.sep_settings",
+            new_callable=PropertyMock,
+            HEALTH_REPORT=settings,
+        )
+
+    @pytest.mark.asyncio
+    async def test_raises_when_not_configured(self):
+        """Assert RuntimeError is raised when upload is not configured."""
+        from app.sep.config import HealthReportSettings
+
+        settings = HealthReportSettings()
+        with patch(
+            "app.sep.plugins.report.service.sep_settings",
+        ) as mock_settings:
+            mock_settings.HEALTH_REPORT = settings
+            with pytest.raises(RuntimeError, match="not configured"):
+                await upload_pdf_report(self._make_report(), b"%PDF-1.4")
+
+    @pytest.mark.asyncio
+    async def test_raises_when_pdf_exceeds_size_limit(self):
+        """Assert ValueError is raised for oversized PDFs."""
+        from app.sep.config import HealthReportSettings
+
+        settings = HealthReportSettings(
+            upload=True,
+            endpoint="https://example.com/upload",
+            api_key="key",
+            client_id="cid",
+        )
+        oversized = b"x" * _MAX_UPLOAD_SIZE
+        with patch(
+            "app.sep.plugins.report.service.sep_settings",
+        ) as mock_settings:
+            mock_settings.HEALTH_REPORT = settings
+            with pytest.raises(ValueError, match="exceeds"):
+                await upload_pdf_report(self._make_report(), oversized)
+
+    @pytest.mark.asyncio
+    async def test_posts_multipart_form_to_endpoint(self):
+        """Assert the upload sends correct multipart fields."""
+        from app.sep.config import HealthReportSettings
+
+        settings = HealthReportSettings(
+            upload=True,
+            endpoint="https://servicenow.example.com/api/upload",
+            api_key="test-api-key",
+            client_id="test-client-id",
+        )
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"status": "ok"})
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.post = AsyncMock(return_value=mock_resp)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "app.sep.plugins.report.service.sep_settings",
+            ) as mock_settings,
+            patch("aiohttp.ClientSession", return_value=mock_session),
+        ):
+            mock_settings.HEALTH_REPORT = settings
+            result = await upload_pdf_report(self._make_report(), b"%PDF-1.4 content")
+
+        assert result == {"status": "ok"}
+        mock_session.post.assert_called_once()
+        call_kwargs = mock_session.post.call_args
+        assert str(call_kwargs.args[0]) == "https://servicenow.example.com/api/upload"
+        assert call_kwargs.kwargs["headers"] == {"accept": "application/json"}
+
+    @pytest.mark.asyncio
+    async def test_raises_on_non_200_response(self):
+        """Assert RuntimeError is raised when the API returns a non-200 status."""
+        from app.sep.config import HealthReportSettings
+
+        settings = HealthReportSettings(
+            upload=True,
+            endpoint="https://servicenow.example.com/api/upload",
+            api_key="test-api-key",
+            client_id="test-client-id",
+        )
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 500
+        mock_resp.json = AsyncMock(return_value={"error": "internal"})
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.post = AsyncMock(return_value=mock_resp)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "app.sep.plugins.report.service.sep_settings",
+            ) as mock_settings,
+            patch("aiohttp.ClientSession", return_value=mock_session),
+        ):
+            mock_settings.HEALTH_REPORT = settings
+            with pytest.raises(RuntimeError, match="status 500"):
+                await upload_pdf_report(self._make_report(), b"%PDF-1.4")
