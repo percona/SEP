@@ -90,6 +90,31 @@ default:
         URI_PATH: /report
         CSS_CLASS: report
     HEALTH_REPORT:
+      # Periodic report generation — empty by default (no automatic generation).
+      # Each entry pairs a SCHEDULE (interval or crontab) with optional params:
+      #   SINCE    — start of report window (default: "now-7d")
+      #   UNTIL    — end of report window   (default: "now")
+      #   FULL     — generate a full report (default: true)
+      #   REFRESH  — re-run advisor checks before collecting results (default: false)
+      #   SECTIONS — list of sections to include (default: all)
+      #
+      # Interval examples:
+      #   SCHEDULES:
+      #     - SCHEDULE: {EVERY: 7, PERIOD: days}        # weekly full report (default)
+      #       SINCE: "now-10d"                           # covering last 10 days
+      #     - SCHEDULE: {EVERY: 3, PERIOD: days}        # quick report every 3 days
+      #       FULL: false
+      #
+      # Crontab examples:
+      #   SCHEDULES:
+      #     - SCHEDULE: {MINUTE: "0", HOUR: "6", DAY_OF_WEEK: "5"}
+      #       SINCE: "now-7d"                            # every Friday at 6AM
+      #       FULL: false                                # quick weekly report
+      #     - SCHEDULE: {MINUTE: "0", HOUR: "2", DAY_OF_WEEK: "6"}
+      #       SINCE: "now-14d"                           # every Saturday at 2AM, 14-day window
+      #     - SCHEDULE: {MINUTE: "0", HOUR: "3", DAY_OF_MONTH: "1"}
+      #       SINCE: "now-30d"                           # 1st of each month at 3AM
+      SCHEDULES: []
       UPLOAD: false    # Enable ServiceNow upload (true/false)
       ENDPOINT:        # ServiceNow upload API URL
       API_KEY:         # API key for authenticating with the upload endpoint
