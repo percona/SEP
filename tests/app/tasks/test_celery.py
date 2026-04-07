@@ -621,16 +621,16 @@ class TestSyncRunningItems:
 
 
 class TestSyncQueueItemPersistsDetachedMutations:
-    """Regression: sync_queue_item must flag all fields mutated after session closes."""
+    """Test sync_queue_item save flags fields mutated after the load session closes."""
 
     @pytest.mark.asyncio
     async def test_save_flags_scalars_after_sync_task_history(self) -> None:
-        """Detached TaskHistory updates from sync_task_history must be included in save.
+        """Assert save receives flag_modified_fields for executor-updated scalars.
 
-        After the first DB session closes, ``sync_task_history`` mutates the in-memory
-        ``TaskHistory``. SQLAlchemy does not detect those scalar changes on merge unless
-        they are passed via ``flag_modified_fields``; omitting them left rows stuck in
-        RUNNING and caused 409 conflicts on subsequent dispatches.
+        Cover the path where the load session closes before ``sync_task_history``
+        mutates the in-memory ``TaskHistory``. Flag those columns on save so merge
+        persists them; omitting them from ``flag_modified_fields`` skips the UPDATE,
+        leaves RUNNING in the database, and triggers 409 conflicts on redispatch.
         """
         main_task = _make_chain_task("mum-task")
         running_history = _make_chain_history(
