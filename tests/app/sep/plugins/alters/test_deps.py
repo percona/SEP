@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.plugins.alters.deps module."""
 
+import shlex
 from unittest.mock import AsyncMock
 
 import pytest
@@ -314,6 +315,28 @@ async def test_build_alters_task_payload_requires_schema_and_table(
     mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
     with pytest.raises(ValueError, match="schema/table"):
         await build_alters_task_payload(created_alters, mock_remote_api)
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_payload_dsn_recursion_defaults_empty_dsn_table(
+    created_alters, created_service, created_schema, created_table, mock_remote_api
+):
+    """DSN recursion with blank dsn_table applies default D=percona,t=dsns in command."""
+    created_alters.recursion_method = "dsn"
+    created_alters.dsn_table = ""
+    mock_remote_api.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    args = task.data["meta"]["args"]
+    assert "D=percona,t=dsns" in args
+    rec_arg = next(a for a in shlex.split(args) if a.startswith("--recursion-method="))
+    assert rec_arg.startswith("--recursion-method=dsn=")
+    assert "D=percona,t=dsns" in rec_arg
 
 
 @pytest.mark.asyncio

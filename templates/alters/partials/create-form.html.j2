@@ -589,6 +589,19 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const resultPanel = document.getElementById('result-panel');
     const form = document.getElementById('create-task-form');
     const createButton = form.querySelector('button[type="submit"]');
+    const recursionMethodSelect = document.getElementById('recursion_method');
+    const dsnTableInput = document.getElementById('dsn_table');
+    if (recursionMethodSelect && dsnTableInput) {
+        recursionMethodSelect.addEventListener('change', function () {
+            if (this.value === 'dsn') {
+                if (!dsnTableInput.value.trim()) {
+                    dsnTableInput.value = 'D=percona,t=dsns';
+                }
+            } else {
+                dsnTableInput.value = '';
+            }
+        });
+    }
 
     let selectedService = null;
     let selectedSchema = null;
