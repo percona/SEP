@@ -146,6 +146,18 @@ class TestExtraArgsFormGeneration:
         assert EXTRA_ARGS_INPUT_NAME in html
         assert f'placeholder="{custom}"' in html
 
+    def test_extra_args_title_override_from_meta_style(self):
+        """Verify custom tooltip text appears in the extra-args field HTML."""
+        custom = "Custom tooltip"
+        html = BaseSnippet._to_form(
+            "[]",
+            frozenset({("host1", "host1")}),
+            add_extra_args_field=True,
+            extra_args_title=custom,
+        )
+        assert EXTRA_ARGS_INPUT_NAME in html
+        assert f'data-tooltip="{custom}"' in html
+
 
 class TestSudoExecutionModel:
     """Test that _get_execution_model sets correct sudo default."""

@@ -817,7 +817,7 @@ class BaseSnippet(BaseModel):
             groups.setdefault(param.group, []).append(field)
         if add_extra_args_field:
             extra_input = EXTRA_ARGS_INPUT
-            _ea_updates: dict[str, str] = {}
+            _ea_updates = {}
             if extra_args_placeholder is not None:
                 _ea_updates["placeholder"] = extra_args_placeholder
             if extra_args_title is not None:
