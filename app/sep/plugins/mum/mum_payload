@@ -101,9 +101,9 @@ def load_config(config_path: Optional[str]) -> Dict[str, Any]:
 
 
 def list_roles(db) -> None:  # type: ignore[no-untyped-def]
-    """Return all custom roles from every database plus built-in roles (deduplicated)."""
+    """Return all custom roles from every database with their privileges (deduplicated)."""
     all_roles: List[Dict[str, Any]] = []
-    seen_builtins: set = set()
+    seen: set = set()
 
     try:
         db_names = [info["name"] for info in db.client.list_databases()]
@@ -114,18 +114,17 @@ def list_roles(db) -> None:  # type: ignore[no-untyped-def]
         target = db.client.get_database(db_name)
         try:
             result: Dict[str, Any] = target.command(
-                {"rolesInfo": 1, "showBuiltinRoles": True}
+                {"rolesInfo": 1, "showPrivileges": True}
             )
         except Exception:
             continue
-        for r in result.get("roles", []) + result.get("builtinRoles", []):
+        for r in result.get("roles", []):
             key = (r.get("role"), r.get("db"))
-            if key not in seen_builtins:
-                seen_builtins.add(key)
-                # Trust MongoDB's own isBuiltin field; default False for custom roles
+            if key not in seen:
+                seen.add(key)
                 all_roles.append(dict(r, isBuiltin=bool(r.get("isBuiltin", False))))
 
-    all_roles.sort(key=lambda r: (r.get("isBuiltin", False), r.get("db", ""), r.get("role", "")))
+    all_roles.sort(key=lambda r: (r.get("db", ""), r.get("role", "")))
     print(json_util.dumps(all_roles, indent=2))
 
 
