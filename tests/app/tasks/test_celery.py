@@ -16,6 +16,7 @@
 """Define tests for the app.tasks.celery module."""
 
 import asyncio
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -617,6 +618,85 @@ class TestSyncRunningItems:
             await sync_running_items()
 
         mock_sync_task.chunks.assert_not_called()
+
+
+class TestSyncQueueItemPersistsDetachedMutations:
+    """Regression: sync_queue_item must flag all fields mutated after session closes."""
+
+    @pytest.mark.asyncio
+    async def test_save_flags_scalars_after_sync_task_history(self) -> None:
+        """Detached TaskHistory updates from sync_task_history must be included in save.
+
+        After the first DB session closes, ``sync_task_history`` mutates the in-memory
+        ``TaskHistory``. SQLAlchemy does not detect those scalar changes on merge unless
+        they are passed via ``flag_modified_fields``; omitting them left rows stuck in
+        RUNNING and caused 409 conflicts on subsequent dispatches.
+        """
+        main_task = _make_chain_task("mum-task")
+        running_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.RUNNING,
+            {},
+        )
+        running_history.sync_in_progress_started_at = datetime(
+            2026, 4, 1, 10, 0, 0, tzinfo=UTC
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+        mock_save = AsyncMock()
+
+        async def sync_mutates_in_place(queue_item: TaskHistory) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.FAILED
+            queue_item.started_at = datetime(2026, 4, 1, 10, 1, 0, tzinfo=UTC)
+            queue_item.finished_at = datetime(2026, 4, 1, 10, 2, 0, tzinfo=UTC)
+            return queue_item
+
+        async def save_returns_item(session, queue_item, **kwargs):
+            return queue_item
+
+        mock_save.side_effect = save_returns_item
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.get_or_404",
+                new_callable=AsyncMock,
+                return_value=running_history,
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.get_root_task",
+                new_callable=AsyncMock,
+                return_value=main_task,
+            ),
+            patch("app.tasks.celery.get_executor_for_task") as mock_get_executor,
+            patch(
+                "app.tasks.celery.TaskHistoryManager.save",
+                new=mock_save,
+            ),
+        ):
+            executor = AsyncMock()
+            executor.sync_task_history = AsyncMock(side_effect=sync_mutates_in_place)
+            mock_get_executor.return_value = executor
+
+            result = await sync_queue_item(1)
+
+        mock_save.assert_awaited_once()
+        call_kw = mock_save.await_args.kwargs
+        assert set(call_kw["flag_modified_fields"]) == {
+            "execution_request",
+            "status",
+            "started_at",
+            "finished_at",
+            "sync_in_progress_started_at",
+        }
+        saved_arg = mock_save.await_args.args[1]
+        assert saved_arg is result
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.started_at == datetime(2026, 4, 1, 10, 1, 0, tzinfo=UTC)
+        assert result.finished_at == datetime(2026, 4, 1, 10, 2, 0, tzinfo=UTC)
+        assert result.sync_in_progress_started_at is None
 
 
 class TestTaskRevokedHandler:
