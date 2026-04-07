@@ -19,14 +19,14 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Query, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 
 from .deps import ReportIndexContext, RequiredPMMAPIDep
 from .models import REPORT_SECTIONS
-from .service import generate_report, SERVICE_NAMES
+from .service import generate_report, generate_pdf_report, SERVICE_NAMES
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -71,6 +71,12 @@ async def report_generate(
         {
             "report": report,
             "service_names": SERVICE_NAMES,
+            "report_params": {
+                "since": since,
+                "until": until,
+                "full": full,
+                "refresh": refresh,
+            },
         }
     )
     return templates.TemplateResponse(request, "report/result.html.j2", context)
@@ -107,4 +113,36 @@ async def report_generate_json(
     return JSONResponse(
         content=report.model_dump(mode="json"),
         status_code=status.HTTP_200_OK,
+    )
+
+
+@router.post(
+    "/generate/pdf",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+)
+async def report_generate_pdf(
+    pmm_api: RequiredPMMAPIDep,
+    since: Annotated[str, Form()] = "now-7d",
+    until: Annotated[str, Form()] = "now",
+    full: Annotated[bool, Form()] = False,  # noqa: FBT002
+    refresh: Annotated[bool, Form()] = False,  # noqa: FBT002
+) -> Response:
+    """Generate a report and return it as a downloadable PDF.
+
+    :param pmm_api: The PMM API client.
+    :param since: Relative start of the report period.
+    :param until: Relative end of the report period.
+    :param full: Include all check results and full backup history.
+    :param refresh: Force a refresh of advisor checks before fetching results.
+    :return: PDF file response.
+    """
+    report = await generate_report(
+        pmm_api, since=since, until=until, full=full, refresh=refresh
+    )
+    pdf_bytes = await generate_pdf_report(report)
+    filename = f"Health_and_Security_Report_{report.metadata.generated_at:%Y-%m-%d}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
