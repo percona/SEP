@@ -41,7 +41,7 @@ from pydantic import (
 from pydantic_core.core_schema import ValidationInfo
 
 from app import __summary__, __version__
-from app.core.celery.models import IntervalSchedule, Period
+from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
 )
@@ -194,7 +194,6 @@ class PMMSettings(BaseLowercaseModel):
     backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
     backup_retention: PositiveInt = 10
     alert_folder_name: str = "SEP Alerts"
-    report_interval: IntervalSchedule = IntervalSchedule(every=7, period=Period.DAYS)
 
     @cached_property
     def hostname(self) -> str | None:
@@ -247,9 +246,37 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
+class ReportScheduleEntry(BaseLowercaseModel):
+    """A single scheduled report generation with its own cadence and parameters.
+
+    :param schedule: When to run (interval or crontab).
+    :type schedule: IntervalSchedule | CrontabSchedule
+    :param since: Prometheus-style start offset for the report window.
+    :type since: str
+    :param until: Prometheus-style end offset for the report window.
+    :type until: str
+    :param full: Whether to generate a full report.
+    :type full: bool
+    :param refresh: Re-run advisor checks before collecting results.
+    :type refresh: bool
+    :param sections: Optional list of report sections to include.
+    :type sections: list[str] | None
+    """
+
+    schedule: IntervalSchedule | CrontabSchedule
+    since: str = "now-7d"
+    until: str = "now"
+    full: bool = True
+    refresh: bool = False
+    sections: list[str] | None = None
+
+
 class HealthReportSettings(BaseLowercaseModel):
     """Configuration for the Health & Security Report plugin.
 
+    :param schedules: List of report generation schedules, each with its own
+        cadence and parameters.  Empty by default (no periodic generation).
+    :type schedules: list[ReportScheduleEntry]
     :param upload: Master toggle for ServiceNow upload.  When ``False``
         (the default) uploading is disabled regardless of other fields.
     :type upload: bool
@@ -261,6 +288,7 @@ class HealthReportSettings(BaseLowercaseModel):
     :type client_id: str | None
     """
 
+    schedules: list[ReportScheduleEntry] = []
     upload: bool = False
     endpoint: str | None = None
     api_key: SecretStr | None = None

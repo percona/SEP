@@ -22,9 +22,13 @@ from typing import Any, NamedTuple
 
 from sqlalchemy_celery_beat import PeriodicTask
 
-from app.core.celery.crud import BasePeriodicTaskManager, IntervalScheduleManager
+from app.core.celery.crud import (
+    BasePeriodicTaskManager,
+    CrontabScheduleManager,
+    IntervalScheduleManager,
+)
 from app.core.celery.db import get_async_session_maker
-from app.core.celery.models import IntervalSchedule
+from app.core.celery.models import CrontabSchedule, IntervalSchedule
 
 
 class SystemPeriodicTaskData(NamedTuple):
@@ -49,13 +53,13 @@ class SystemPeriodicTaskSchedule(NamedTuple):
     This model is used to represent the schedule of system periodic tasks
     in the database.
 
-    :param schedule: The interval schedule for the periodic task.
-    :type schedule: IntervalSchedule
+    :param schedule: The schedule for the periodic task (interval or crontab).
+    :type schedule: IntervalSchedule | CrontabSchedule
     :param tasks: List of system periodic tasks associated with the schedule.
     :type tasks: list[SystemPeriodicTaskData]
     """
 
-    schedule: IntervalSchedule
+    schedule: IntervalSchedule | CrontabSchedule
     tasks: list[SystemPeriodicTaskData]
 
 
@@ -68,29 +72,35 @@ async def init_periodic_tasks_db(
     based on the provided periodic tasks dictionary. It also removes any orphaned tasks
     that match the prefix filter.
 
-    :param periodic_tasks: A dictionary where keys are `IntervalSchedule` instances
-        and values are lists of tuples containing task details.
-    :type periodic_tasks: dict[IntervalSchedule, list[tuple[str, str, dict[str, Any]]]]
+    :param periodic_tasks: A list of schedule/task pairs to seed.
+    :type periodic_tasks: list[SystemPeriodicTaskSchedule]
     :param prefix_filter: Prefix to filter tasks for deletion.
     :type prefix_filter: str
     """
     celery_beat_async_session = get_async_session_maker()
-    system_task_names = [
+    system_task_names: list[str] = [
         "celery.backend_cleanup",
         "app.tasks.celery.execute_task_by_name",
     ]
+    seeded_names: list[str] = []
     async with celery_beat_async_session() as celery_beat_session:
         for schedule, tasks in periodic_tasks:
-            created_schedule, _ = await IntervalScheduleManager.get_or_create(
-                celery_beat_session, schedule
-            )
+            if isinstance(schedule, CrontabSchedule):
+                created_schedule, _ = await CrontabScheduleManager.get_or_create(
+                    celery_beat_session, schedule
+                )
+            else:
+                created_schedule, _ = await IntervalScheduleManager.get_or_create(
+                    celery_beat_session, schedule
+                )
             for periodic_task_name, task_name, optional_extra_kwargs in tasks:
                 extra_kwargs = optional_extra_kwargs or {}
                 system_task_names.append(task_name)
+                seeded_names.append(periodic_task_name)
                 if (
                     periodic_task := (
                         await BasePeriodicTaskManager.first(
-                            celery_beat_session, task=task_name
+                            celery_beat_session, name=periodic_task_name
                         )
                     )
                 ) is None:
@@ -101,13 +111,14 @@ async def init_periodic_tasks_db(
                         **extra_kwargs,
                     )
                 else:
+                    periodic_task.task = task_name
                     periodic_task.schedule_model = created_schedule
-                    periodic_task.name = periodic_task_name
                     for key, value in extra_kwargs.items():
                         setattr(periodic_task, key, value)
                 celery_beat_session.add(periodic_task)
         await BasePeriodicTaskManager.delete_where(
             celery_beat_session,
+            PeriodicTask.name.not_in(seeded_names),
             PeriodicTask.task.not_in(system_task_names),
             PeriodicTask.name.startswith(prefix_filter),
         )
