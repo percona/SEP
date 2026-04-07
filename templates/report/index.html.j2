@@ -104,9 +104,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 </fieldset>
                 <div class="form-actions">
                     <button type="submit" class="contained large">Generate Report</button>
-                    <button type="button"
+                    <button type="submit"
                             class="outlined large"
-                            onclick="window.open('{{ request.url_for('report_generate_json') }}', '_blank', 'noopener,noreferrer')">Download as JSON</button>
+                            formaction="{{ request.url_for('report_generate_json') }}"
+                            formmethod="get"
+                            formtarget="_blank">Download as JSON</button>
                 </div>
             </form>
         {% endif %}
