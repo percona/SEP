@@ -1851,7 +1851,7 @@ class GSUploadProvider:
         self.bucket_name = parts[0]
         self.bucket_prefix = parts[1] if len(parts) > 1 else ""
 
-    def upload(self, source_dir, dest_dir: str) -> str:
+    def upload(self, source_dir: str, dest_dir: str) -> str:
         """Upload directory to GS.
 
         :param source_dir: Local source directory.
