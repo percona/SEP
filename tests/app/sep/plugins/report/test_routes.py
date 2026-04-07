@@ -27,6 +27,7 @@ from app.sep.plugins.report.deps import (
     get_pmm_api,
     get_report_index_context,
     require_pmm_api,
+    require_upload_configured,
 )
 from app.sep.plugins.report.models import ReportData, ReportMetadata
 
@@ -527,5 +528,147 @@ class TestReportGeneratePDF:
             side_effect=RuntimeError("collection failed"),
         ):
             response = test_client.post(self._PDF_URL)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+class TestReportUpload:
+    """Test POST /report/upload (ServiceNow upload)."""
+
+    _UPLOAD_URL = "/report/upload"
+
+    @pytest.fixture(autouse=True)
+    def _mock_upload_configured(self):
+        """Override the upload dependency to allow requests."""
+        sep_app.dependency_overrides[require_upload_configured] = lambda: None
+        yield
+        sep_app.dependency_overrides.pop(require_upload_configured, None)
+
+    def test_returns_200_with_json(self, test_client, mock_pmm_api):
+        """Assert a successful upload returns 200 with JSON."""
+        report = _make_report()
+        upload_result = {"status": "ok", "id": "12345"}
+        with (
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+                return_value=report,
+            ),
+            patch(
+                "app.sep.plugins.report.routes.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+            patch(
+                "app.sep.plugins.report.routes.upload_pdf_report",
+                new_callable=AsyncMock,
+                return_value=upload_result,
+            ),
+        ):
+            response = test_client.post(self._UPLOAD_URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == upload_result
+
+    def test_passes_default_parameters(self, test_client, mock_pmm_api):
+        """Assert default form parameters are forwarded."""
+        report = _make_report()
+        with (
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+                return_value=report,
+            ) as mock_gen,
+            patch(
+                "app.sep.plugins.report.routes.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+            patch(
+                "app.sep.plugins.report.routes.upload_pdf_report",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+        ):
+            test_client.post(self._UPLOAD_URL)
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["since"] == "now-7d"
+        assert kwargs["until"] == "now"
+        assert kwargs["full"] is False
+        assert kwargs["refresh"] is False
+
+    def test_passes_custom_parameters(self, test_client, mock_pmm_api):
+        """Assert custom form parameters are forwarded to generate_report."""
+        report = _make_report(full=True, refresh=True)
+        with (
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+                return_value=report,
+            ) as mock_gen,
+            patch(
+                "app.sep.plugins.report.routes.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+            patch(
+                "app.sep.plugins.report.routes.upload_pdf_report",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+        ):
+            test_client.post(
+                self._UPLOAD_URL,
+                data={
+                    "since": "now-30d",
+                    "until": "now-1d",
+                    "full": "true",
+                    "refresh": "true",
+                },
+            )
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["since"] == "now-30d"
+        assert kwargs["until"] == "now-1d"
+        assert kwargs["full"] is True
+        assert kwargs["refresh"] is True
+
+    def test_returns_503_when_pmm_unavailable(self, test_client):
+        """Assert 503 when PMM is not configured."""
+        sep_app.dependency_overrides[get_pmm_api] = lambda: None
+        try:
+            response = test_client.post(self._UPLOAD_URL)
+            assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        finally:
+            sep_app.dependency_overrides = {}
+
+    def test_returns_503_when_upload_not_configured(self, test_client, mock_pmm_api):
+        """Assert 503 when upload settings are missing."""
+        sep_app.dependency_overrides.pop(require_upload_configured, None)
+        response = test_client.post(self._UPLOAD_URL)
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def test_returns_500_on_upload_error(self, test_client, mock_pmm_api):
+        """Assert 500 when the upload service raises an exception."""
+        report = _make_report()
+        with (
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+                return_value=report,
+            ),
+            patch(
+                "app.sep.plugins.report.routes.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+            patch(
+                "app.sep.plugins.report.routes.upload_pdf_report",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("upload failed"),
+            ),
+        ):
+            response = test_client.post(self._UPLOAD_URL)
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
