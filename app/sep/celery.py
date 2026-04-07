@@ -136,13 +136,19 @@ def generate_health_report() -> None:
 
 
 async def _generate_health_report() -> None:
-    """Generate a health report from PMM and log it.
+    """Generate a health report from PMM, log it, and optionally upload to ServiceNow.
 
-    The report data is logged at INFO level.  Extend this function to persist
-    report results (e.g. to the database or file system) as needed.
+    When ``REPORT_UPLOAD`` is fully configured the report is rendered to PDF
+    and uploaded.  Upload failures are logged but do not prevent the task from
+    completing.
     """
+    from app.sep.config import sep_settings
     from app.sep.plugins.report.deps import get_pmm_api
-    from app.sep.plugins.report.service import generate_report
+    from app.sep.plugins.report.service import (
+        generate_pdf_report,
+        generate_report,
+        upload_pdf_report,
+    )
 
     pmm_api = await get_pmm_api()
     if pmm_api is None:
@@ -159,6 +165,17 @@ async def _generate_health_report() -> None:
         )
     except Exception:
         logger.exception("Failed to generate health report")
+        return
+
+    if not sep_settings.REPORT_UPLOAD.is_configured:
+        return
+
+    try:
+        pdf_bytes = await generate_pdf_report(report)
+        result = await upload_pdf_report(report, pdf_bytes)
+        logger.info("Health report uploaded to ServiceNow: %s", result)
+    except Exception:
+        logger.exception("Failed to upload health report to ServiceNow")
 
 
 @celery.task

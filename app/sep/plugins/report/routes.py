@@ -25,9 +25,14 @@ from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 
-from .deps import ReportIndexContext, RequiredPMMAPIDep
+from .deps import IsUploadConfigured, ReportIndexContext, RequiredPMMAPIDep
 from .models import REPORT_SECTIONS
-from .service import generate_pdf_report, generate_report, SERVICE_NAMES
+from .service import (
+    generate_pdf_report,
+    generate_report,
+    SERVICE_NAMES,
+    upload_pdf_report,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -79,6 +84,7 @@ async def report_generate(
                 "refresh": refresh,
             },
             "csrf_token": request.cookies.get(CSRF_COOKIE_NAME, ""),
+            "upload_configured": sep_settings.REPORT_UPLOAD.is_configured,
         }
     )
     return templates.TemplateResponse(request, "report/result.html.j2", context)
@@ -148,3 +154,32 @@ async def report_generate_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post(
+    "/upload",
+    dependencies=[IsAuthenticated, IsCsrfValidated, IsUploadConfigured],
+    response_class=JSONResponse,
+)
+async def report_upload(
+    pmm_api: RequiredPMMAPIDep,
+    since: Annotated[str, Form()] = "now-7d",
+    until: Annotated[str, Form()] = "now",
+    full: Annotated[bool, Form()] = False,  # noqa: FBT002
+    refresh: Annotated[bool, Form()] = False,  # noqa: FBT002
+) -> JSONResponse:
+    """Generate a report, convert to PDF, and upload to ServiceNow.
+
+    :param pmm_api: The PMM API client.
+    :param since: Relative start of the report period.
+    :param until: Relative end of the report period.
+    :param full: Include all check results and full backup history.
+    :param refresh: Force a refresh of advisor checks before fetching results.
+    :return: JSON response with the upload result.
+    """
+    report = await generate_report(
+        pmm_api, since=since, until=until, full=full, refresh=refresh
+    )
+    pdf_bytes = await generate_pdf_report(report)
+    result = await upload_pdf_report(report, pdf_bytes)
+    return JSONResponse(content=result, status_code=status.HTTP_200_OK)
