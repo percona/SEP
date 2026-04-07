@@ -247,6 +247,52 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
+class ReportUploadSettings(BaseLowercaseModel):
+    """Configuration for uploading PDF reports to ServiceNow.
+
+    Upload is considered configured only when *all three* fields are set to
+    non-empty values.  Omitted, ``None``, or empty-string values are normalised
+    to ``None`` so callers only need to check :attr:`is_configured`.
+
+    :param endpoint: The ServiceNow upload API URL.
+    :type endpoint: StrHttpUrl | None
+    :param api_key: API key for authenticating with the upload endpoint.
+    :type api_key: SecretStr | None
+    :param client_id: Customer identifier sent with each upload.
+    :type client_id: str | None
+    """
+
+    endpoint: StrHttpUrl | None = None
+    api_key: SecretStr | None = None
+    client_id: str | None = None
+
+    @field_validator("endpoint", "client_id", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _empty_secret_to_none(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        raw = v.get_secret_value() if isinstance(v, SecretStr) else v
+        if isinstance(raw, str) and not raw.strip():
+            return None
+        return v
+
+    @property
+    def is_configured(self) -> bool:
+        """Return ``True`` when all required upload fields are set."""
+        return (
+            self.endpoint is not None
+            and self.api_key is not None
+            and self.client_id is not None
+        )
+
+
 class SEPSettings(BaseYamlAppSettings):
     """Settings for SEP.
 
@@ -295,6 +341,9 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
+    :param REPORT_UPLOAD: Configuration for uploading PDF reports to ServiceNow.
+        Disabled by default.
+    :type REPORT_UPLOAD: ReportUploadSettings
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
     :type FOOTER_TEMPLATE: Template
@@ -322,6 +371,7 @@ class SEPSettings(BaseYamlAppSettings):
         deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
     )
     PMM: PMMSettings = PMMSettings()
+    REPORT_UPLOAD: ReportUploadSettings = ReportUploadSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
