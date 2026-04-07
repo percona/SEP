@@ -15,14 +15,13 @@
 
 """Define test cases for the task routes in the FastAPI application."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from fastapi import status
 
-from app.tasks.deps import get_executor
-from app.tasks.main import tasks_app
+from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.models import (
@@ -105,69 +104,6 @@ async def test_delete_task_forbidden_when_protected(test_client, session):
 
 
 @pytest.mark.asyncio
-<<<<<<< HEAD
-async def test_create_nomad_variable_generates_path(mocker, test_client):
-    """Ensure Nomad variable endpoint creates a path and forwards data."""
-    mock_executor = mocker.Mock()
-    mock_executor.create_nomad_variable = mocker.AsyncMock(return_value={})
-    tasks_app.dependency_overrides[get_executor] = lambda *_, **__: mock_executor
-    try:
-        response = test_client.post(
-            "/nomad/variables/",
-            json={"prefix": "sep/mum", "data": {"config": "secret"}},
-        )
-    finally:
-        tasks_app.dependency_overrides.pop(get_executor, None)
-
-    assert response.status_code == status.HTTP_201_CREATED
-    path = response.json()["path"]
-    assert path.startswith("sep/mum/")
-    mock_executor.create_nomad_variable.assert_called_once()
-    kwargs = mock_executor.create_nomad_variable.call_args.kwargs
-    assert kwargs["path"] == path
-    assert kwargs["data"] == {"config": "secret"}
-
-
-@pytest.mark.asyncio
-async def test_create_nomad_variable_respects_custom_path(mocker, test_client):
-    """Verify that providing an explicit path bypasses prefix logic."""
-    mock_executor = mocker.Mock()
-    mock_executor.create_nomad_variable = mocker.AsyncMock(return_value={})
-    tasks_app.dependency_overrides[get_executor] = lambda *_, **__: mock_executor
-    try:
-        response = test_client.post(
-            "/nomad/variables/",
-            json={"path": "custom/path", "data": {"key": "value"}, "namespace": "foo"},
-        )
-    finally:
-        tasks_app.dependency_overrides.pop(get_executor, None)
-
-    assert response.status_code == status.HTTP_201_CREATED
-    assert response.json() == {"path": "custom/path"}
-    mock_executor.create_nomad_variable.assert_called_once_with(
-        path="custom/path",
-        data={"key": "value"},
-        namespace="foo",
-    )
-
-
-@pytest.mark.asyncio
-async def test_delete_nomad_variable_endpoint(mocker, test_client):
-    """Deleting a Nomad variable should call the executor helper."""
-    mock_executor = mocker.Mock()
-    mock_executor.delete_nomad_variable = mocker.AsyncMock(return_value=None)
-    tasks_app.dependency_overrides[get_executor] = lambda *_, **__: mock_executor
-    try:
-        response = test_client.delete("/nomad/variables/foo/bar?namespace=ns")
-    finally:
-        tasks_app.dependency_overrides.pop(get_executor, None)
-
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-    mock_executor.delete_nomad_variable.assert_called_once_with(
-        path="foo/bar",
-        namespace="ns",
-    )
-
 async def test_create_task_success(test_client):
     """Assert creating a valid task returns 201."""
     task_data = TaskFactory.build(name="new-task")
@@ -481,6 +417,37 @@ async def test_stop_task_finished_returns_400(test_client, created_task_with_his
 
 
 @pytest.mark.asyncio
+async def test_sync_task_history_running_calls_executor(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert syncing a RUNNING task calls executor.sync_task_history and persists status."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    async def fake_sync(item):
+        item.status = TaskHistoryStatusEnum.SUCCESS
+        item.finished_at = utc_now()
+        return item
+
+    mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
+    mock_executor.sync_task_history.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_task_history_not_running_skips_executor(
+    test_client, mock_executor, created_task_with_history
+):
+    """Assert syncing a non-running task returns current status without calling the executor."""
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
+    mock_executor.sync_task_history.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_get_task_stats(test_client, created_task_with_history):
     """Assert retrieving task stats returns computed statistics."""
     task_name = created_task_with_history.task.name
@@ -536,6 +503,7 @@ async def test_transform_payload_nomad_backend(test_client, mock_executor):
             params={"backend": "nomad"},
         )
     assert response.status_code == status.HTTP_200_OK
+
 
 @pytest.mark.asyncio
 async def test_task_data_with_execution_request_keys_returned_as_dict(

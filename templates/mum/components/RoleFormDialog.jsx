@@ -186,7 +186,7 @@ const PrivilegeEntry = ({ priv, index, onChange, onRemove, disabled, roleDb }) =
       <FormControl component="fieldset" disabled={disabled}>
         <FormLabel sx={{ fontSize: "0.75rem", mb: 0.5 }}>Resource type</FormLabel>
         <RadioGroup row value={priv.resourceType} onChange={set("resourceType")}>
-          <FormControlLabel value="collection" control={<Radio size="small" />} label="Collection / Database" disabled={disabled} />
+          <FormControlLabel value="collection" control={<Radio size="small" />} label="Database and Collection" disabled={disabled} />
           {isAdminRole ? clusterRadio : (
             <Tooltip title="Cluster resources are only available for roles owned by the 'admin' database">
               <span>{clusterRadio}</span>

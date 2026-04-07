@@ -316,8 +316,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         meta.pop("config_nomad_variable_namespace", None)
 
     @staticmethod
-    def _task_context_started(task_states: dict[str, Any]) -> bool:
+    def _task_context_started(task_states: dict[str, Any] | None) -> bool:
         """Return whether at least one task has started in the allocation."""
+        if not task_states:
+            return False
         for task_state in task_states.values():
             state = str(task_state.get("State", "")).lower()
             if task_state.get("StartedAt") is not None:

@@ -17,7 +17,6 @@
 
 __all__ = ["BaseRemoteAPI", "RemoteAPI"]
 
-import json
 import logging
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
@@ -40,67 +39,10 @@ from fastapi import HTTPException, status
 from pydantic import computed_field, Field, HttpUrl, PrivateAttr
 
 from app.core.exceptions import HTTPGoneException
+from app.core.log import correlation_id_var
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
 from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
-
-REDACTED_VALUE = "***"
-_SENSITIVE_KEY_MARKERS = (
-    "password",
-    "passwd",
-    "pwd",
-    "secret",
-    "token",
-    "authorization",
-    "api_key",
-    "apikey",
-    "access_token",
-    "refresh_token",
-    "private_key",
-)
-
-
-def _is_sensitive_key(key: str) -> bool:
-    """Return whether a key appears to hold sensitive data."""
-    normalized_key = key.lower()
-    return any(marker in normalized_key for marker in _SENSITIVE_KEY_MARKERS)
-
-
-def _looks_like_json(raw_value: str) -> bool:
-    """Return whether a string looks like a JSON object/array payload."""
-    stripped_value = raw_value.strip()
-    return (
-        stripped_value.startswith("{")
-        and stripped_value.endswith("}")
-        or stripped_value.startswith("[")
-        and stripped_value.endswith("]")
-    )
-
-
-def _sanitize_for_logging(value: Any, *, key: str | None = None) -> Any:
-    """Recursively sanitize sensitive values before logging request/response data."""
-    if key and _is_sensitive_key(key):
-        return REDACTED_VALUE
-    if isinstance(value, dict):
-        return {
-            dict_key: _sanitize_for_logging(dict_value, key=str(dict_key))
-            for dict_key, dict_value in value.items()
-        }
-    if isinstance(value, list):
-        return [_sanitize_for_logging(item, key=key) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_sanitize_for_logging(item, key=key) for item in value)
-    if isinstance(value, set):
-        return {_sanitize_for_logging(item, key=key) for item in value}
-    if isinstance(value, bytes):
-        return f"<bytes:{len(value)}>"
-    if isinstance(value, str) and _looks_like_json(value):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return value
-        return _sanitize_for_logging(parsed, key=key)
-    return value
 
 
 class BaseRemoteAPI(BaseCaseInsensitiveModel):
@@ -374,13 +316,17 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         prepared_path = self.prepare_path(path)
         if extra_headers := self._extra_headers.get():
             kwargs["headers"] = kwargs.pop("headers", {}) | extra_headers
-        safe_kwargs = _sanitize_for_logging(kwargs)
+        correlation_id = correlation_id_var.get()
+        if correlation_id != "-":
+            kwargs["headers"] = kwargs.pop("headers", {}) | {
+                "X-Correlation-ID": correlation_id
+            }
         self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
             self.endpoint,
             method,
             path,
-            safe_kwargs,
+            kwargs,
         )
         async with self._session.request(method, prepared_path, **kwargs) as response:
             yield response
@@ -572,14 +518,13 @@ class RemoteAPI(BaseRemoteAPI):
         async with self._request(method, path, **kwargs) as response:
             try:
                 response_data = await response.json()
-                safe_response_data = _sanitize_for_logging(response_data)
                 self.logger.debug(
                     "RemoteAPI (%s): %s request to %s response (%s): %s",
                     self.endpoint,
                     method,
                     path,
                     response.status,
-                    safe_response_data,
+                    response_data,
                 )
                 response.raise_for_status()
             except ContentTypeError as err:
