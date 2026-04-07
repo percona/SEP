@@ -201,6 +201,26 @@ class TestReportGenerate:
 
         assert "Weekly Health Report" in response.text
 
+    @pytest.mark.usefixtures("_mock_report_index_context")
+    def test_result_page_contains_pdf_download_form(self, test_client, mock_pmm_api):
+        """Assert the result page includes a form that posts to the PDF route."""
+        report = _make_report()
+        with patch(
+            "app.sep.plugins.report.routes.generate_report",
+            new_callable=AsyncMock,
+            return_value=report,
+        ):
+            response = test_client.post(
+                self._GENERATE_URL,
+                data={"since": "now-30d", "until": "now-1d"},
+            )
+
+        body = response.text
+        assert "generate/pdf" in body
+        assert 'name="since" value="now-30d"' in body
+        assert 'name="until" value="now-1d"' in body
+        assert "Download PDF" in body
+
     def test_returns_503_when_pmm_unavailable(self, test_client):
         """Assert 503 is returned when PMM is not configured."""
         sep_app.dependency_overrides[get_report_index_context] = lambda: (
@@ -384,5 +404,128 @@ class TestReportGenerateJSON:
             side_effect=RuntimeError("collection failed"),
         ):
             response = test_client.get(self._JSON_URL)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+class TestReportGeneratePDF:
+    """Test POST /report/generate/pdf (PDF report generation)."""
+
+    _PDF_URL = "/report/generate/pdf"
+
+    def test_returns_200_with_pdf(self, test_client, mock_pmm_api):
+        """Assert a generated report is returned as a PDF download."""
+        report = _make_report()
+        pdf_bytes = b"%PDF-1.4 fake content"
+        with (
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+                return_value=report,
+            ),
+            patch(
+                "app.sep.plugins.report.routes.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=pdf_bytes,
+            ),
+        ):
+            response = test_client.post(self._PDF_URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "application/pdf"
+        assert response.content == pdf_bytes
+
+    def test_content_disposition_header(self, test_client, mock_pmm_api):
+        """Assert Content-Disposition header contains the expected filename."""
+        report = _make_report()
+        with (
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+                return_value=report,
+            ),
+            patch(
+                "app.sep.plugins.report.routes.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+        ):
+            response = test_client.post(self._PDF_URL)
+
+        disposition = response.headers["content-disposition"]
+        assert "Health_and_Security_Report_2026-03-31.pdf" in disposition
+        assert disposition.startswith("attachment")
+
+    def test_passes_default_parameters(self, test_client, mock_pmm_api):
+        """Assert default since/until/full/refresh values are forwarded."""
+        report = _make_report()
+        with (
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+                return_value=report,
+            ) as mock_gen,
+            patch(
+                "app.sep.plugins.report.routes.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+        ):
+            test_client.post(self._PDF_URL)
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["since"] == "now-7d"
+        assert kwargs["until"] == "now"
+        assert kwargs["full"] is False
+        assert kwargs["refresh"] is False
+
+    def test_passes_custom_parameters(self, test_client, mock_pmm_api):
+        """Assert custom form parameters are forwarded to generate_report."""
+        report = _make_report(full=True, refresh=True)
+        with (
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+                return_value=report,
+            ) as mock_gen,
+            patch(
+                "app.sep.plugins.report.routes.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+        ):
+            test_client.post(
+                self._PDF_URL,
+                data={
+                    "since": "now-30d",
+                    "until": "now-1d",
+                    "full": "true",
+                    "refresh": "true",
+                },
+            )
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["since"] == "now-30d"
+        assert kwargs["until"] == "now-1d"
+        assert kwargs["full"] is True
+        assert kwargs["refresh"] is True
+
+    def test_returns_503_when_pmm_unavailable(self, test_client):
+        """Assert 503 is returned when PMM is not configured."""
+        sep_app.dependency_overrides[get_pmm_api] = lambda: None
+        try:
+            response = test_client.post(self._PDF_URL)
+            assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        finally:
+            sep_app.dependency_overrides = {}
+
+    def test_returns_500_on_generation_error(self, test_client, mock_pmm_api):
+        """Assert 500 is returned when report generation raises an exception."""
+        with patch(
+            "app.sep.plugins.report.routes.generate_report",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("collection failed"),
+        ):
+            response = test_client.post(self._PDF_URL)
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR

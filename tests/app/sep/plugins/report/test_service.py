@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -46,6 +46,7 @@ from app.sep.plugins.report.service import (
     collect_storage,
     collect_uptime,
     generate_report,
+    generate_pdf_report,
 )
 
 
@@ -1373,3 +1374,81 @@ class TestGenerateReport:
         collected = {c.args[0] for c in mock_collect.await_args_list}
         expected_sections = 6
         assert len(collected) == expected_sections
+
+
+# generate_pdf_report
+class TestGenerateReportPdf:
+    """Test the ``generate_pdf_report`` helper."""
+
+    def _make_report(self, **overrides) -> ReportData:
+        defaults = {
+            "metadata": ReportMetadata(
+                title="Weekly Health Report",
+                generated_at=datetime(2026, 3, 31, 12, 0, 0, tzinfo=UTC),
+                report_week="2026 - Week 14",
+                report_interval="now-7d to now",
+            ),
+        }
+        defaults.update(overrides)
+        return ReportData(**defaults)
+
+    @pytest.mark.asyncio
+    async def test_returns_pdf_bytes(self):
+        """Assert the function returns bytes starting with the PDF magic number."""
+        report = self._make_report()
+        pdf_bytes = await generate_pdf_report(report)
+        assert isinstance(pdf_bytes, bytes)
+        assert pdf_bytes[:5] == b"%PDF-"
+
+    @pytest.mark.asyncio
+    async def test_pdf_is_not_empty(self):
+        """Assert the resulting PDF has substantial content."""
+        report = self._make_report()
+        pdf_bytes = await generate_pdf_report(report)
+        min_pdf_size = 100
+        assert len(pdf_bytes) > min_pdf_size
+
+    @pytest.mark.asyncio
+    async def test_pdf_contains_report_title(self):
+        """Assert the report title ends up in the rendered PDF."""
+        from weasyprint import HTML
+
+        report = self._make_report()
+
+        captured_html: list[str] = []
+        original_init = HTML.__init__
+
+        def _capture_html(self, *args, **kwargs):
+            if "string" in kwargs:
+                captured_html.append(kwargs["string"])
+            original_init(self, *args, **kwargs)
+
+        with patch.object(HTML, "__init__", _capture_html):
+            await generate_pdf_report(report)
+
+        assert captured_html
+        assert "Weekly Health Report" in captured_html[0]
+
+    @pytest.mark.asyncio
+    async def test_html_is_self_contained(self):
+        """Assert the intermediate HTML is a complete document with inline CSS."""
+        from weasyprint import HTML
+
+        report = self._make_report()
+
+        captured_html: list[str] = []
+        original_init = HTML.__init__
+
+        def _capture_html(self, *args, **kwargs):
+            if "string" in kwargs:
+                captured_html.append(kwargs["string"])
+            original_init(self, *args, **kwargs)
+
+        with patch.object(HTML, "__init__", _capture_html):
+            await generate_pdf_report(report)
+
+        html = captured_html[0]
+        assert "<!DOCTYPE html>" in html
+        assert "<style>" in html
+        assert "url_for" not in html
+        assert "Back to Report" not in html
