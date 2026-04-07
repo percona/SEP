@@ -1875,7 +1875,7 @@ class GSUploadProvider:
             msg = f"GS upload failed. Error: {err}"
             raise BackupError(msg)
 
-        if self.backup_type != "B" and not (
+        if self.backup_type not in ["B", "O"] and not (
             self.backup_type == "X" and "_incrementals" in dest_dir
         ):
 
