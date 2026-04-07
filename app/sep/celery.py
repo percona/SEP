@@ -130,12 +130,29 @@ def should_skip_snippet(snippet_path: Path) -> bool:
 
 
 @celery.task
-def generate_health_report() -> None:
+def generate_health_report(
+    since: str = "now-7d",
+    until: str = "now",
+    full: bool = True,  # noqa: FBT001, FBT002
+    refresh: bool = False,  # noqa: FBT001, FBT002
+    sections: list[str] | None = None,
+) -> None:
     """Define Celery task to generate a periodic PMM health report."""
-    celery.loop.run_until_complete(_generate_health_report())
+    celery.loop.run_until_complete(
+        _generate_health_report(
+            since=since, until=until, full=full, refresh=refresh, sections=sections
+        )
+    )
 
 
-async def _generate_health_report() -> None:
+async def _generate_health_report(
+    *,
+    since: str = "now-7d",
+    until: str = "now",
+    full: bool = True,
+    refresh: bool = False,
+    sections: list[str] | None = None,
+) -> None:
     """Generate a health report from PMM, log it, and optionally upload to ServiceNow.
 
     When ``HEALTH_REPORT.UPLOAD`` is enabled and all credentials are set the
@@ -156,7 +173,14 @@ async def _generate_health_report() -> None:
         return
 
     try:
-        report = await generate_report(pmm_api)
+        report = await generate_report(
+            pmm_api,
+            since=since,
+            until=until,
+            full=full,
+            refresh=refresh,
+            sections=sections,
+        )
         logger.info(
             "Health report generated: %s (%d nodes, %d services)",
             report.metadata.title,
