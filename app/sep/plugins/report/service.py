@@ -907,8 +907,8 @@ async def upload_pdf_report(report: ReportData, pdf_bytes: bytes) -> dict[str, A
 
     from app.sep.config import sep_settings
 
-    upload = sep_settings.REPORT_UPLOAD
-    if not upload.is_configured:
+    upload = sep_settings.HEALTH_REPORT
+    if not upload.is_upload_configured:
         raise RuntimeError("Report upload is not configured")
 
     if len(pdf_bytes) >= _MAX_UPLOAD_SIZE:

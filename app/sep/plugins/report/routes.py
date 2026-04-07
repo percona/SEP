@@ -84,7 +84,7 @@ async def report_generate(
                 "refresh": refresh,
             },
             "csrf_token": request.cookies.get(CSRF_COOKIE_NAME, ""),
-            "upload_configured": sep_settings.REPORT_UPLOAD.is_configured,
+            "upload_configured": sep_settings.HEALTH_REPORT.is_upload_configured,
         }
     )
     return templates.TemplateResponse(request, "report/result.html.j2", context)

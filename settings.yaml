@@ -89,10 +89,11 @@ default:
         MODULE_NAME: report
         URI_PATH: /report
         CSS_CLASS: report
-    REPORT_UPLOAD:
-      ENDPOINT:    # ServiceNow upload API URL
-      API_KEY:     # API key for authenticating with the upload endpoint
-      CLIENT_ID:   # Customer identifier sent with each upload
+    HEALTH_REPORT:
+      UPLOAD: false    # Enable ServiceNow upload (true/false)
+      ENDPOINT:        # ServiceNow upload API URL
+      API_KEY:         # API key for authenticating with the upload endpoint
+      CLIENT_ID:       # Customer identifier sent with each upload
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null

@@ -247,13 +247,12 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
-class ReportUploadSettings(BaseLowercaseModel):
-    """Configuration for uploading PDF reports to ServiceNow.
+class HealthReportSettings(BaseLowercaseModel):
+    """Configuration for the Health & Security Report plugin.
 
-    Upload is considered configured only when *all three* fields are set to
-    non-empty values.  Omitted, ``None``, or empty-string values are normalised
-    to ``None`` so callers only need to check :attr:`is_configured`.
-
+    :param upload: Master toggle for ServiceNow upload.  When ``False``
+        (the default) uploading is disabled regardless of other fields.
+    :type upload: bool
     :param endpoint: The ServiceNow upload API URL.
     :type endpoint: StrHttpUrl | None
     :param api_key: API key for authenticating with the upload endpoint.
@@ -262,6 +261,7 @@ class ReportUploadSettings(BaseLowercaseModel):
     :type client_id: str | None
     """
 
+    upload: bool = False
     endpoint: StrHttpUrl | None = None
     api_key: SecretStr | None = None
     client_id: str | None = None
@@ -284,10 +284,11 @@ class ReportUploadSettings(BaseLowercaseModel):
         return v
 
     @property
-    def is_configured(self) -> bool:
-        """Return ``True`` when all required upload fields are set."""
+    def is_upload_configured(self) -> bool:
+        """Return ``True`` when upload is enabled and all credentials are set."""
         return (
-            self.endpoint is not None
+            self.upload
+            and self.endpoint is not None
             and self.api_key is not None
             and self.client_id is not None
         )
@@ -341,9 +342,9 @@ class SEPSettings(BaseYamlAppSettings):
     :type PMM_FRONTEND: StrHttpUrl | None
     :param PMM: Centralized PMM configuration options.
     :type PMM: PMMSettings
-    :param REPORT_UPLOAD: Configuration for uploading PDF reports to ServiceNow.
-        Disabled by default.
-    :type REPORT_UPLOAD: ReportUploadSettings
+    :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
+        Upload is disabled by default.
+    :type HEALTH_REPORT: HealthReportSettings
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
     :type FOOTER_TEMPLATE: Template
@@ -371,7 +372,7 @@ class SEPSettings(BaseYamlAppSettings):
         deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
     )
     PMM: PMMSettings = PMMSettings()
-    REPORT_UPLOAD: ReportUploadSettings = ReportUploadSettings()
+    HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 

@@ -71,7 +71,7 @@ async def require_upload_configured() -> None:
     :raises HTTPServiceUnavailableException: If any required upload setting is
         missing.
     """
-    if not sep_settings.REPORT_UPLOAD.is_configured:
+    if not sep_settings.HEALTH_REPORT.is_upload_configured:
         raise HTTPServiceUnavailableException(detail="Report upload is not configured")
 
 

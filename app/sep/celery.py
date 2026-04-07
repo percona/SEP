@@ -138,9 +138,9 @@ def generate_health_report() -> None:
 async def _generate_health_report() -> None:
     """Generate a health report from PMM, log it, and optionally upload to ServiceNow.
 
-    When ``REPORT_UPLOAD`` is fully configured the report is rendered to PDF
-    and uploaded.  Upload failures are logged but do not prevent the task from
-    completing.
+    When ``HEALTH_REPORT.UPLOAD`` is enabled and all credentials are set the
+    report is rendered to PDF and uploaded.  Upload failures are logged but do
+    not prevent the task from completing.
     """
     from app.sep.config import sep_settings
     from app.sep.plugins.report.deps import get_pmm_api
@@ -167,7 +167,7 @@ async def _generate_health_report() -> None:
         logger.exception("Failed to generate health report")
         return
 
-    if not sep_settings.REPORT_UPLOAD.is_configured:
+    if not sep_settings.HEALTH_REPORT.is_upload_configured:
         return
 
     try:
