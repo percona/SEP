@@ -32,18 +32,14 @@
 # Usage: ./pt-mysql-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]
 # Example: ./pt-mysql-summary.sh --dest=/tmp/summary --save-samples
 
-# Stable name in help output (Nomad/SEP may run this file as "script" or another temp name).
-readonly _PT_MYSQL_SUMMARY_SH_NAME="pt-mysql-summary.sh"
-
 declare DEFAULTS_FILE=""
 declare PTDEST=
 declare SAVE_SAMPLES=0
 
-# Short usage (parse errors, etc.) — matches snippet test fixtures for invalid-option.
-usage_short() {
+usage() {
     local -i exit_code="${1:-0}"
     cat << EOS
-Usage: ${_PT_MYSQL_SUMMARY_SH_NAME} [OPTIONS]
+Usage: $(basename "${0}") [OPTIONS]
 Executes pt-mysql-summary script
 
 Command line options:
@@ -58,35 +54,9 @@ EOS
     exit ${exit_code}
 }
 
-# Full usage for --help only (includes pt-mysql-summary --help); matches help.stdout fixture.
-usage_full() {
-    local -i exit_code="${1:-0}"
-    cat << EOS
-Usage: ${_PT_MYSQL_SUMMARY_SH_NAME} [OPTIONS]
-Executes the pt-mysql-summary wrapper (Percona Toolkit).
-
-Wrapper options:
-
-   --defaults-file   Path to MySQL defaults-file (passed to pt-mysql-summary)
-   -d, --dest        Destination for the samples.
-                     Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
-   --save-samples    Save samples
-   -h, --help        Show this message and pt-mysql-summary --help
-
-Any other options are passed through to pt-mysql-summary (e.g. --host, --sleep, --read-samples).
-Use -- before MySQL-style options if needed.
-
-EOS
-    if ((exit_code == 0)) && command -v pt-mysql-summary > /dev/null 2>&1; then
-        echo "----- pt-mysql-summary --help -----"
-        pt-mysql-summary --help 2>&1 || true
-    fi
-    exit ${exit_code}
-}
-
 if ! OPTS=$(getopt --options -d:h --longoptions 'defaults-file:,dest:,save-samples,help' -- "$@"); then
     echo "Error parsing options"
-    usage_short 1
+    usage 1
 fi
 
 eval set -- "$OPTS"
@@ -106,15 +76,15 @@ while [[ -n $* ]]; do
             shift 1
             ;;
         -h | --help)
-            usage_full
+            usage
             ;;
         --)
-            shift
             break
             ;;
+        # Need this to catch options mess up that getopt does not recognize
         *)
             echo "Unrecognized option '$1'"
-            usage_short 1
+            usage 1
             ;;
     esac
 done
@@ -126,8 +96,8 @@ if [ -d "${PTDEST}" ]; then
     exit 11
 fi
 
-if [ $# -gt 0 ]; then
-    echo "Starting pt-mysql-summary with extra options: -- $*"
+if [ $# -gt 1 ]; then
+    echo "Starting pt-mysql-summary with extra options: $*"
 fi
 
 if [ $SAVE_SAMPLES -eq 1 ]; then
@@ -135,11 +105,5 @@ if [ $SAVE_SAMPLES -eq 1 ]; then
     pt-mysql-summary "${DEFAULTS_FILE}" --save-samples="${PTDEST}" "$@"
     tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
 else
-    # When there are passthrough args, keep stdout to the "extra options" line only
-    # (snippet test fixture mysql-options.stdout); send tool output to stderr.
-    if [ $# -gt 0 ]; then
-        pt-mysql-summary "${DEFAULTS_FILE}" "$@" 1>&2
-    else
-        pt-mysql-summary "${DEFAULTS_FILE}" "$@"
-    fi
+    pt-mysql-summary "${DEFAULTS_FILE}" "$@"
 fi
