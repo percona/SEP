@@ -90,6 +90,30 @@ class FileMetadata(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class ExecutionEvent(BaseModel):
+    """A single lifecycle event from a task executor (executor-agnostic shape).
+
+    :param timestamp: When the event occurred (UTC).
+    :type timestamp: UTCDatetime
+    :param event_type: Executor-specific event category (e.g. Nomad task event type).
+    :type event_type: str
+    :param description: Human-readable message for the event (no step prefix).
+    :type description: str
+    :param step: Optional executor task/step name (e.g. Nomad task within the group).
+    :type step: str | None
+    """
+
+    timestamp: UTCDatetime
+    event_type: str = Field(
+        serialization_alias="type",
+        validation_alias="type",
+    )
+    description: str
+    step: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class TaskBackendEnum(StrEnum):
     """Control the choice of backends.
 
@@ -489,12 +513,66 @@ class TaskExecuteRequest(BaseModel):
     :param eta: The earliest time the task can be executed. Defaults to None, meaning
         it will be executed as soon as possible.
     :type eta: datetime | None
+    :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
+    :type anonymize_mask: int | None
+    :param chain_task_names: Ordered list of task names to execute sequentially after
+        this one completes. Defaults to None.
+    :type chain_task_names: list[str] | None
+    :param chain_on_failure: Whether the chain should continue when a task fails,
+        stops, or is lost. Defaults to False (chain only on success).
+    :type chain_on_failure: bool
     """
 
     meta: dict[str, Any] = {}
     payload: str | None = None
     eta: datetime | EmptyStrToNone = None
     anonymize_mask: int | None = None
+    chain_task_names: list[str] | None = None
+    chain_on_failure: bool = False
+
+    @field_validator("chain_on_failure", mode="before")
+    @classmethod
+    def normalize_chain_on_failure(cls, v: Any) -> bool:
+        """Normalize form string values to a boolean.
+
+        :param v: The raw chain_on_failure value.
+        :type v: Any
+        :return: The normalized boolean value.
+        :rtype: bool
+        """
+        if isinstance(v, str):
+            return v.lower() in ("true", "on", "1")
+        return bool(v)
+
+    @field_validator("chain_task_names", mode="before")
+    @classmethod
+    def normalize_chain_task_names(cls, v: Any) -> list[str] | None:
+        """Normalize chain task names to a list or None.
+
+        Accept a JSON-encoded list, a plain string (single task name), or
+        a Python list. Normalize empty values to None.
+
+        :param v: The raw chain_task_names value.
+        :type v: Any
+        :return: A list of task names or None.
+        :rtype: list[str] | None
+        """
+        if isinstance(v, str):
+            if not v:
+                return None
+            if v.startswith("["):
+                try:
+                    parsed = json.loads(v)
+                except json.JSONDecodeError:
+                    return [v]
+                if isinstance(parsed, list):
+                    filtered = [name for name in parsed if name]
+                    return filtered or None
+            return [v]
+        if isinstance(v, list):
+            filtered = [name for name in v if name]
+            return filtered or None
+        return v
 
     @model_validator(mode="before")
     @classmethod

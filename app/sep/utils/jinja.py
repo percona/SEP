@@ -67,7 +67,13 @@ def syntax_highlight_css(
     return Markup(f"{light_css}\n{dark_css}")  # nosec B704
 
 
-def syntax_highlight(code: str, language: str | None = None, **fmt_options: Any) -> str:
+def syntax_highlight(
+    code: str,
+    language: str | None = None,
+    *,
+    stripall: bool = True,
+    **fmt_options: Any,
+) -> str:
     """Apply syntax highlighting to the provided source code using Pygments.
 
     This function defines a jinja2 filter that applies syntax highlighting to a block
@@ -81,19 +87,27 @@ def syntax_highlight(code: str, language: str | None = None, **fmt_options: Any)
     :param language: The programming language of the code. If not provided, the lexer is
         guessed.
     :type language: str or None
+    :param stripall: Whether to strip all leading/trailing whitespace from the code
+        before highlighting. When ``False``, also disables newline stripping
+        (``stripnl``) so that leading/trailing blank lines are preserved for correct
+        line numbering in multi-block previews.
+    :type stripall: bool
     :param fmt_options: Additional keyword arguments passed to the
         :class:`pygments.formatters.HtmlFormatter`.
     :type fmt_options: Any
     :return: A string containing HTML markup with syntax-highlighted code.
     :rtype: str
     """
+    lexer_options = {"stripall": stripall}
+    if not stripall:
+        lexer_options["stripnl"] = False
     if language is None:
-        lexer = guess_lexer(code, stripall=True)
+        lexer = guess_lexer(code, **lexer_options)
     else:
         try:
-            lexer = get_lexer_by_name(language, stripall=True)
+            lexer = get_lexer_by_name(language, **lexer_options)
         except ClassNotFound:
-            lexer = TextLexer(stripall=True)
+            lexer = TextLexer(**lexer_options)
     return highlight(code, lexer, HtmlFormatter(**fmt_options))
 
 

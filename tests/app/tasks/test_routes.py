@@ -15,15 +15,17 @@
 
 """Define test cases for the task routes in the FastAPI application."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from fastapi import status
 
+from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.models import (
+    ExecutionEvent,
     Task,
     TaskHistoryStatusEnum,
     TaskWrite,
@@ -204,6 +206,41 @@ async def test_retrieve_task_history_by_id_not_found(test_client):
     """Assert retrieving a non-existing task history returns 404."""
     response = test_client.get("/history/99999")
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_events(
+    test_client, created_task_with_history, mock_executor
+):
+    """Assert the events endpoint returns executor-provided events (oldest-first order)."""
+    dt = utc_now()
+    mock_executor.get_events.return_value = [
+        ExecutionEvent(
+            timestamp=dt,
+            event_type="Terminated",
+            description="Exit 1",
+            step="run-script",
+        )
+    ]
+    response = test_client.get(f"/history/{created_task_with_history.id}/events")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["type"] == "Terminated"
+    assert data[0]["description"] == "Exit 1"
+    assert data[0]["step"] == "run-script"
+    assert "timestamp" in data[0]
+    mock_executor.get_events.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_events_empty_by_default(
+    test_client, created_task_with_history, mock_executor
+):
+    """Assert the mock executor returns no events unless configured."""
+    response = test_client.get(f"/history/{created_task_with_history.id}/events")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == []
 
 
 @pytest.mark.asyncio
@@ -413,6 +450,37 @@ async def test_stop_task_finished_returns_400(test_client, created_task_with_his
     """Assert stopping a finished task returns 400."""
     response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.asyncio
+async def test_sync_task_history_running_calls_executor(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert syncing a RUNNING task calls executor.sync_task_history and persists status."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    async def fake_sync(item):
+        item.status = TaskHistoryStatusEnum.SUCCESS
+        item.finished_at = utc_now()
+        return item
+
+    mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
+    mock_executor.sync_task_history.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_task_history_not_running_skips_executor(
+    test_client, mock_executor, created_task_with_history
+):
+    """Assert syncing a non-running task returns current status without calling the executor."""
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
+    mock_executor.sync_task_history.assert_not_called()
 
 
 @pytest.mark.asyncio
