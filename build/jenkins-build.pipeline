@@ -164,15 +164,15 @@ pipeline {
 						set -o errexit
 						set -o pipefail
 
-						podman image tag sep:${GIT_TAG} sep:${GIT_TAG_SHORT}
 						podman image push sep:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG}
-						podman image push sep:${GIT_TAG_SHORT} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG_SHORT}
 
 						if [ "${PUSH_LATEST}" = "true" ]; then
+							podman image tag sep:${GIT_TAG} sep:${GIT_TAG_SHORT}
+							podman image push sep:${GIT_TAG_SHORT} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG_SHORT}
 							echo "Pushing labbox-mini.tp.int.percona.com:5555/sep:latest"
 							podman image push sep:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:latest
 						else
-							echo "Skipping internal :latest push (not a stable release tag): ${GIT_TAG}"
+							echo "Skipping internal :${GIT_TAG_SHORT} and :latest push (not a stable release tag): ${GIT_TAG}"
 						fi
 					'''
 
@@ -184,13 +184,13 @@ pipeline {
 
 							echo -n "${DOCKER_TOKEN}" | podman login --authfile .dockerhub --username percona --password-stdin docker.io
 							podman image push --authfile .dockerhub sep:${GIT_TAG} docker.io/percona/percona-sep:${GIT_TAG}
-							podman image push --authfile .dockerhub sep:${GIT_TAG_SHORT} docker.io/percona/percona-sep:${GIT_TAG_SHORT}
 
 							if [ "${PUSH_LATEST}" = "true" ]; then
+								podman image push --authfile .dockerhub sep:${GIT_TAG_SHORT} docker.io/percona/percona-sep:${GIT_TAG_SHORT}
 								echo "Pushing docker.io/percona/percona-sep:latest"
 								podman image push --authfile .dockerhub sep:${GIT_TAG} docker.io/percona/percona-sep:latest
 							else
-								echo "Skipping :latest push (not a stable release tag): ${GIT_TAG}"
+								echo "Skipping Docker Hub :${GIT_TAG_SHORT} and :latest push (not a stable release tag): ${GIT_TAG}"
 							fi
 
 							podman logout --authfile .dockerhub docker.io
