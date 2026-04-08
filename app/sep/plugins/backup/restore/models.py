@@ -17,11 +17,14 @@
 
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.sep.plugins.backup.models import BackupType
+
+BACKUP_SOURCE_SHELLBACKTICK = "`"
+BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
 
 
 class S3Tool(EnumFieldMixin, StrEnum):
@@ -186,6 +189,21 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     stop_position: int | EmptyStrToNone = None
     use_sql_file: NonEmptyStr | EmptyStrToNone = None
     binlog_restore_extra_args: NonEmptyStr | EmptyStrToNone = None
+
+    @field_validator("backup_source")
+    @classmethod
+    def validate_backup_source_shell_safe(cls, value: str) -> str:
+        """Reject shell metacharacters in backup source (defense in depth)."""
+        if not value:
+            return value
+        if "\n" in value or "\r" in value:
+            raise ValueError("backup_source must not contain newline characters")
+        if BACKUP_SOURCE_SHELL_FORBIDDEN.intersection(value):
+            raise ValueError(
+                "backup_source contains disallowed shell metacharacters; "
+                "remove special characters from the backup source field"
+            )
+        return value
 
 
 class RestoreConfigServer(BaseRestoreConfigServer):
