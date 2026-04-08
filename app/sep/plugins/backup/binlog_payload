@@ -18,6 +18,7 @@ import struct
 import subprocess
 import sys
 import time
+import tempfile
 import uuid
 from contextlib import suppress
 from enum import auto, Enum, IntEnum
@@ -2008,27 +2009,23 @@ class GSUploadProvider:
         if self.backup_type not in ["B", "O"] and not (
             self.backup_type == "X" and "_incrementals" in dest_dir
         ):
-            latest_file_local_dir = os.path.join('/tmp/percona_backup_latest',
-                                                 "/".join(dest_path.split('/')[-4:-2]))
-            if os.path.isdir(latest_file_local_dir):
-                shutil.rmtree(latest_file_local_dir)
-
+            with tempfile.NamedTemporaryFile("w", delete=False) as tmpf:
+                tmpf.write(dest_path)
+                tmpf.flush()
+                latest_file_local_path = tmpf.name
             try:
-                os.makedirs(latest_file_local_dir)
-            except Exception:
-                self.logger.warning('Could not create %s' % latest_file_local_dir)
-                return dest_path
-
-            latest_file_local_path = os.path.join(latest_file_local_dir, 'latest')
-            latest_file_remote_dir = os.path.join('gs://', *(dest_path.split('/')[2:-2] + ['']))
-            with open(latest_file_local_path, 'w') as fn:
-                fn.write("%s" % dest_path)
-            gs_cmd = [GSUTIL_BIN,'cp',latest_file_local_path,latest_file_remote_dir]
-            proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
-            if proc.returncode != 0:
-                msg = f"GS upload failed. Error: {err}"
-                raise BackupError(msg)
+                latest_file_remote_dir = (
+                       f"gs://{self.bucket_name}/{Path(full_prefix).parent}/latest"
+                )
+                gs_cmd = [GSUTIL_BIN,'cp',latest_file_local_path, latest_file_remote_dir]
+                proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+                _, err = proc.communicate()
+                if proc.returncode != 0:
+                    msg = f"GS upload failed. Error: {err}"
+                    raise BackupError(msg)
+            finally:
+                if Path(latest_file_local_path).exists():
+                    Path(latest_file_local_path).unlink()
 
         return dest_path
 
