@@ -19,6 +19,11 @@ default:
       - http://127.0.0.1:9999
     CERTIFICATE_PATH: null  # Path to JWT key certificate
     APPLICATION_NAME: sep-app
+  PMM:
+    ENDPOINT: https://127.0.0.1:8443
+    VERIFY_SSL: true
+    FRONTEND: null  # Optional: PMM frontend URL for links
+    EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
   SEP:
     SNIPPETS:
       FILTER_EXTENSIONS:
@@ -92,11 +97,6 @@ default:
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
       PORT: null
       NAME: sep.db
-    PMM:
-      ENDPOINT: https://127.0.0.1:8443
-      VERIFY_SSL: true
-      FRONTEND: null # Optional: PMM frontend URL for links
-      EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
@@ -142,6 +142,9 @@ default:
       DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
 
 development:
+  PMM:
+    ENDPOINT: https://127.0.0.1:8443
+    VERIFY_SSL: false
   SEP:
     UVICORN_RELOAD: true
     # UVICORN_EXTRA_RELOAD_DIRS:
@@ -164,9 +167,6 @@ development:
         MODULE_NAME: tasks
         URI_PATH: /tasks
         CSS_CLASS: tasks
-    PMM:
-      ENDPOINT: https://127.0.0.1:8443
-      VERIFY_SSL: false
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
@@ -196,6 +196,9 @@ production_docker:
   ALLOWED_HOSTS:
     - "*"
   AUTH_USER_MODEL: app.models.CasdoorUser
+  PMM:
+    ENDPOINT: https://127.0.0.1
+    VERIFY_SSL: false
   BACKEND_CORS_ORIGINS:
     - https://127.0.0.1:8444
   CASDOOR:
@@ -250,9 +253,6 @@ production_docker:
     SESSION:
       COOKIE_NAME: casdoorToken
       SECURE: True
-    PMM:
-      ENDPOINT: https://127.0.0.1
-      VERIFY_SSL: false
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
