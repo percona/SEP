@@ -52,6 +52,7 @@ from app.tasks.deps import (
 )
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
+    ExecutionEvent,
     FileMetadata,
     Task,
     TaskBackendEnum,
@@ -268,6 +269,20 @@ async def retrieve_task_history(
     """Retrieve a task history by id."""
     logger.debug("Requesting task history %s", task_history.id)
     return task_history
+
+
+@router.get(
+    "/history/{task_history_id}/events",
+    dependencies=[IsAuthenticatedDep],
+    response_model=list[ExecutionEvent],
+)
+async def list_task_history_events(
+    executor: TaskExecutor,
+    task_history: TaskHistoryWithTaskDep,
+) -> list[ExecutionEvent]:
+    """Return structured execution events from executor tracking (oldest first)."""
+    logger.debug("Requesting execution events for task history %s", task_history.id)
+    return executor.get_events(task_history)
 
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
