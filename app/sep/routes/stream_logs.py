@@ -32,7 +32,7 @@ from app.sep.deps import (
     TasksClient,
 )
 from app.sep.utils.decorators import csrf_exempt
-from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -86,13 +86,7 @@ async def task_history_logs_event_stream(
             ):
                 if log_entry:
                     yield f"data: {log_entry.decode()}\n\n"
-            # TODO(yan): Don't wait for task to finish
-            # SEP-379
-            wait_interval = 5
-            task_history = await tasks_api.get(f"/history/{task_history_id}")
-            while task_history["status"] == TaskHistoryStatusEnum.RUNNING:
-                await asyncio.sleep(wait_interval)
-                task_history = await tasks_api.get(f"/history/{task_history_id}")
+            task_history = await tasks_api.post(f"/history/{task_history_id}/sync/")
         yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
     except TimeoutError as exc:
         logger.warning(
