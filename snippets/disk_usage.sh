@@ -2,7 +2,7 @@
 
 # ---
 # title: "Disk Usage"
-# description: "This snippet displays the device usage for the specified target. Extra args are not supported; du options are exposed as parameters."
+# description: "This snippet displays the device usage for the specified target."
 # allow_extra_args: false
 # sudo: optional
 # parameters:
