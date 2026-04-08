@@ -1965,6 +1965,7 @@ class GSUploadProvider:
             raise BackupError(msg)
 
         self.logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
+        os.makedirs(logging_dir, exist_ok=True)
         log_file = os.path.join(self.logging_dir, 'gsutil-%s-%s-%s.log' %
                                 (self.alias,
                                  self.backup_type,
