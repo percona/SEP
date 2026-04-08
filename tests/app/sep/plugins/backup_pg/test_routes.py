@@ -87,14 +87,6 @@ def created_task():
     )
 
 
-@pytest.fixture
-def _mock_get_backups_task_dep(created_task):
-    """Mock the get_backups_task dependency."""
-    sep_app.dependency_overrides[get_backups_task] = lambda: created_task
-    yield
-    sep_app.dependency_overrides = {}
-
-
 @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
 def test_backups_index(test_client):
     """Test GET /backup-pg/ route."""
