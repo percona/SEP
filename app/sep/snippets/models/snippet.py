@@ -93,11 +93,8 @@ EXECUTOR_HOSTS_INPUT_NAME = "-hostname-"
 EXTRA_ARGS_INPUT_NAME = "-extra_args-"
 EXTRA_ARGS_INPUT = TextInputElement(
     name=EXTRA_ARGS_INPUT_NAME,
-    placeholder="Space-separated flags (see snippet description)",
-    description=(
-        "Optional arguments appended after declared parameters "
-        "(see each snippet's description)."
-    ),
+    placeholder="e.g. --verbose",
+    description="Any extra args to pass to the snippet execution command",
     label="Extra Args",
 )
 SUDO_INPUT_NAME = "-sudo-"
@@ -637,18 +634,6 @@ class BaseSnippet(BaseModel):
                 for param in parameters
             ]
         logger.debug("Meta Snippet parameters: %s)", parameters)
-        raw_placeholder = self.meta.get("extra_args_placeholder")
-        extra_args_placeholder = (
-            str(raw_placeholder).strip()
-            if raw_placeholder is not None and str(raw_placeholder).strip()
-            else None
-        )
-        raw_title = self.meta.get("extra_args_title")
-        extra_args_title = (
-            str(raw_title).strip()
-            if raw_title is not None and str(raw_title).strip()
-            else None
-        )
         return self._to_form(
             json_serializer(parameters, sort_keys=True),
             executor_hosts,
@@ -657,8 +642,6 @@ class BaseSnippet(BaseModel):
             sudo_default=self.sudo.sudo_default,
             form_action=form_action,
             disabled=not self.can_execute,
-            extra_args_placeholder=extra_args_placeholder,
-            extra_args_title=extra_args_title,
         )
 
     def get_execution_model(self) -> type[BaseSnippetArgs]:
@@ -762,8 +745,6 @@ class BaseSnippet(BaseModel):
         sudo_default: bool = False,
         form_action: str = "",
         disabled: bool = False,
-        extra_args_placeholder: str | None = None,
-        extra_args_title: str | None = None,
     ) -> str:
         """Generate an HTML form for executing a snippet.
 
@@ -791,12 +772,6 @@ class BaseSnippet(BaseModel):
         :param disabled: Whether to disable the form fields and submit button. Defaults
             to `False`.
         :type disabled: bool
-        :param extra_args_placeholder: Override placeholder for the extra-args field
-            (from snippet metadata). Defaults to `None` (use built-in default).
-        :type extra_args_placeholder: str | None
-        :param extra_args_title: Override info-tooltip description for the extra-args
-            field (from snippet metadata). Defaults to `None` (use built-in default).
-        :type extra_args_title: str | None
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
@@ -816,15 +791,7 @@ class BaseSnippet(BaseModel):
                 continue
             groups.setdefault(param.group, []).append(field)
         if add_extra_args_field:
-            extra_input = EXTRA_ARGS_INPUT
-            _ea_updates = {}
-            if extra_args_placeholder is not None:
-                _ea_updates["placeholder"] = extra_args_placeholder
-            if extra_args_title is not None:
-                _ea_updates["description"] = extra_args_title
-            if _ea_updates:
-                extra_input = EXTRA_ARGS_INPUT.model_copy(update=_ea_updates)
-            groups.setdefault(None, []).append(extra_input)
+            groups.setdefault(None, []).append(EXTRA_ARGS_INPUT)
         if add_sudo_field:
             groups.setdefault(None, []).append(
                 CheckboxInputElement(

@@ -22,11 +22,7 @@ from typing import Any
 import pytest
 
 from app.sep.snippets.config import SnippetSudoOption
-from app.sep.snippets.models.snippet import (
-    BaseSnippet,
-    EXTRA_ARGS_INPUT_NAME,
-    SUDO_INPUT_NAME,
-)
+from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
 
 EXECUTOR_HOSTS = frozenset({("host1", "host1")})
 
@@ -129,34 +125,6 @@ class TestSudoFormGeneration:
             add_sudo_field=False,
         )
         assert SUDO_INPUT_NAME not in html
-
-
-class TestExtraArgsFormGeneration:
-    """Tests for the snippet extra-args input on execution forms."""
-
-    def test_extra_args_placeholder_override_from_meta_style(self):
-        """Verify custom placeholder text appears in the extra-args field HTML."""
-        custom = "e.g. -h 127.0.0.1 -u monitor"
-        html = BaseSnippet._to_form(
-            "[]",
-            frozenset({("host1", "host1")}),
-            add_extra_args_field=True,
-            extra_args_placeholder=custom,
-        )
-        assert EXTRA_ARGS_INPUT_NAME in html
-        assert f'placeholder="{custom}"' in html
-
-    def test_extra_args_title_override_from_meta_style(self):
-        """Verify custom tooltip text appears in the extra-args field HTML."""
-        custom = "Custom tooltip"
-        html = BaseSnippet._to_form(
-            "[]",
-            frozenset({("host1", "host1")}),
-            add_extra_args_field=True,
-            extra_args_title=custom,
-        )
-        assert EXTRA_ARGS_INPUT_NAME in html
-        assert f'data-tooltip="{custom}"' in html
 
 
 class TestSudoExecutionModel:
