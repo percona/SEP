@@ -1507,7 +1507,7 @@ pull_and_start() {
             fi
             print_styled "✓ Authenticated to ${SEP_IMAGE_NAME%%/*}" --style "green"
 
-            spin_or_die earth "Pulling SEP image (authenticated)..." "${CONTAINER_ENGINE} pull ${image_ref}"
+            spin_or_die earth "Pulling SEP image (authenticated)..." "${CONTAINER_ENGINE} pull ${EXTRA_ARGS:+$EXTRA_ARGS} ${image_ref}"
             pulled_image=1
             ${CONTAINER_ENGINE} logout ${EXTRA_ARGS:+$EXTRA_ARGS} docker.io > /dev/null 2>&1 || true
             ${CONTAINER_ENGINE} logout ${EXTRA_ARGS:+$EXTRA_ARGS} https://index.docker.io/v1/ > /dev/null 2>&1 || true
