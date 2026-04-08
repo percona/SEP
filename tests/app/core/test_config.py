@@ -24,6 +24,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.core.config import (
     BaseYamlAppSettings,
     default_lifespan,
+    PMMSettings,
     Settings,
     settings,
     YamlPrefixConfigSettingsSource,
@@ -197,6 +198,106 @@ async def test_default_lifespan():
 def test_uvicorn_reload_defaults_to_false():
     """Assert ``UVICORN_RELOAD`` defaults to ``False`` on ``BaseYamlAppSettings``."""
     assert BaseYamlAppSettings.model_fields["UVICORN_RELOAD"].default is False
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "UVICORN_EXTRA_RELOAD_DIRS",
+        "UVICORN_EXTRA_RELOAD_INCLUDES",
+        "UVICORN_EXTRA_RELOAD_EXCLUDES",
+    ],
+)
+def test_uvicorn_extra_reload_fields_default_to_empty_list(field_name: str):
+    """Assert extra reload fields default to empty lists on ``BaseYamlAppSettings``."""
+    field_info = BaseYamlAppSettings.model_fields[field_name]
+    assert field_info.default == []
+
+
+@pytest.mark.parametrize(
+    ("field_name", "extra_values"),
+    [
+        ("UVICORN_EXTRA_RELOAD_DIRS", ["/extra/dir1", "/extra/dir2"]),
+        ("UVICORN_EXTRA_RELOAD_INCLUDES", ["*.toml", "*.yaml"]),
+        ("UVICORN_EXTRA_RELOAD_EXCLUDES", ["*.log", "*.tmp"]),
+    ],
+)
+def test_uvicorn_extra_reload_fields_accept_nonempty_lists(field_name, extra_values):
+    """Assert extra reload fields store non-empty values on ``BaseYamlAppSettings``."""
+    instance = BaseYamlAppSettings.model_construct(**{field_name: extra_values})
+    assert getattr(instance, field_name) == extra_values
+
+
+class TestPMMSettings:
+    """Test the core ``PMMSettings`` model."""
+
+    def test_defaults_all_none_or_true(self):
+        """Assert all fields default to ``None`` or ``True``."""
+        pmm = PMMSettings()
+        assert pmm.endpoint is None
+        assert pmm.frontend is None
+        assert pmm.api_key is None
+        assert pmm.verify_ssl is True
+        assert pmm.execution_target is None
+
+    def test_hostname_extracted_from_endpoint(self):
+        """Assert ``hostname`` extracts the host from the endpoint URL."""
+        pmm = PMMSettings(endpoint="https://pmm.example.com:8443/path")
+        assert pmm.hostname == "pmm.example.com"
+
+    def test_hostname_none_when_no_endpoint(self):
+        """Assert ``hostname`` is ``None`` when endpoint is not set."""
+        pmm = PMMSettings()
+        assert pmm.hostname is None
+
+    def test_api_key_masked_in_repr(self):
+        """Assert ``api_key`` is masked in repr output."""
+        pmm = PMMSettings(api_key="my-secret-key")
+        assert "my-secret-key" not in repr(pmm)
+
+    def test_api_key_accepts_secretstr(self):
+        """Assert ``PMMSettings`` accepts a string for ``api_key``."""
+        pmm = PMMSettings(api_key="test-key")
+        assert pmm.api_key.get_secret_value() == "test-key"
+
+    def test_lowercases_yaml_keys(self):
+        """Assert uppercase YAML keys are normalized to lowercase."""
+        pmm = PMMSettings.model_validate(
+            {"ENDPOINT": "https://pmm.example.com", "VERIFY_SSL": False}
+        )
+        assert pmm.endpoint == "https://pmm.example.com"
+        assert pmm.verify_ssl is False
+
+    def test_ignores_extra_fields(self):
+        """Assert extra fields are silently ignored."""
+        pmm = PMMSettings.model_validate(
+            {"endpoint": "https://pmm.example.com", "unknown_field": "value"}
+        )
+        assert pmm.endpoint == "https://pmm.example.com"
+        assert not hasattr(pmm, "unknown_field")
+
+    def test_frontend_defaults_to_endpoint(self):
+        """Assert ``frontend`` defaults to ``endpoint`` when not explicitly set."""
+        pmm = PMMSettings(endpoint="https://pmm.example.com")
+        assert pmm.frontend == "https://pmm.example.com"
+
+    def test_frontend_not_overridden_when_set(self):
+        """Assert ``frontend`` is not overridden when explicitly set."""
+        pmm = PMMSettings(
+            endpoint="https://pmm.example.com",
+            frontend="https://pmm-frontend.example.com",
+        )
+        assert pmm.frontend == "https://pmm-frontend.example.com"
+
+    def test_frontend_stays_none_when_no_endpoint(self):
+        """Assert ``frontend`` stays ``None`` when endpoint is also ``None``."""
+        pmm = PMMSettings()
+        assert pmm.frontend is None
+
+    def test_settings_has_pmm_field(self):
+        """Assert the global ``Settings`` class has a ``PMM`` field."""
+        assert "PMM" in Settings.model_fields
+        assert Settings.model_fields["PMM"].default == PMMSettings()
 
 
 def test_settings_secret_key_is_secretstr():

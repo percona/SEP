@@ -2,8 +2,8 @@
 
 # ---
 # title: "pt-stalk"
-# description: "Executes pt-stalk command"
-# allow_extra_args: false
+# description: "Executes pt-stalk command. Extra args are passed to pt-stalk after known options."
+# allow_extra_args: true
 # sudo: always
 # parameters:
 #  - name: defaults-file
