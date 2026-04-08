@@ -65,12 +65,12 @@
         if (!btn) return;
         btn.disabled = loading;
         if (loading) {
-            btn.dataset.originalText = btn.textContent;
+            btn.dataset.originalHtml = btn.innerHTML;
             btn.textContent = 'Running…';
             form.classList.add('at-run-loading');
         } else {
-            if (btn.dataset.originalText) {
-                btn.textContent = btn.dataset.originalText;
+            if (btn.dataset.originalHtml) {
+                btn.innerHTML = btn.dataset.originalHtml;
             }
             form.classList.remove('at-run-loading');
         }
@@ -98,11 +98,6 @@
                 }
                 return res.json();
             }).then(function(data) {
-                if (data.error) {
-                    setButtonLoading(form, false);
-                    setCardState(card, 'error', data.error);
-                    return;
-                }
                 if (data.output) {
                     showOutput(card, data.output);
                 }
@@ -111,6 +106,11 @@
                     var interval = elapsed > BACKOFF_AFTER_MS ? POLL_BACKOFF_MS : POLL_INITIAL_MS;
                     setTimeout(doPoll, interval);
                 } else {
+                    if (!data.output && data.error) {
+                        showOutput(card, data.error);
+                    } else if (!data.output) {
+                        showOutput(card, '');
+                    }
                     setButtonLoading(form, false);
                     if (data.status === 'success') {
                         setCardState(card, 'success', 'Completed');

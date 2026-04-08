@@ -38,26 +38,35 @@ templates = sep_settings.TEMPLATES
 _TERMINAL_STATUSES = frozenset({"success", "failed", "stopped"})
 
 
-async def _collect_stdout(tasks_api: RemoteAPI, task_history_id: int) -> str:
-    """Stream task logs and collect STDOUT content.
+async def _collect_output(
+    tasks_api: RemoteAPI, task_history_id: int
+) -> tuple[str, str]:
+    """Stream task logs and collect STDOUT and STDERR content.
 
     :param tasks_api: The authenticated Tasks API client.
     :type tasks_api: RemoteAPI
     :param task_history_id: The task history ID to fetch logs for.
     :type task_history_id: int
-    :return: The concatenated STDOUT output.
-    :rtype: str
+    :return: A tuple of (stdout, stderr) concatenated output.
+    :rtype: tuple[str, str]
     """
-    parts = []
+    stdout_parts = []
+    stderr_parts = []
     async for chunk in tasks_api.stream(
         f"/history/{task_history_id}/logs/",
         params={"step": "run-script"},
     ):
         if chunk:
             log_entry = json.loads(chunk)
-            if log_entry.get("type") == "stdout" and log_entry.get("msg"):
-                parts.append(log_entry["msg"])
-    return "".join(parts)
+            msg = log_entry.get("msg")
+            if not msg:
+                continue
+            entry_type = log_entry.get("type")
+            if entry_type == "stdout":
+                stdout_parts.append(msg)
+            elif entry_type == "stderr":
+                stderr_parts.append(msg)
+    return "".join(stdout_parts), "".join(stderr_parts)
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -154,13 +163,16 @@ async def troubleshooting_output(
     """Poll the execution status and output for a task history entry.
 
     Return the current task status and, when finished, the STDOUT content
-    from the task's logs.
+    from the task's logs.  When the task has failed and STDERR is
+    available, include it in the ``error`` field so the client can display
+    the failure reason.
 
     :param task_history_id: The task history ID to poll.
     :type task_history_id: int
     :param tasks_api: The authenticated Tasks API client.
     :type tasks_api: TaskAPI
-    :return: A JSON response with the task status and optional output.
+    :return: A JSON response with the task status, optional output, and
+        optional error.
     :rtype: JSONResponse
     """
     try:
@@ -178,16 +190,20 @@ async def troubleshooting_output(
         )
     task_status = history.get("status", "unknown")
     output = ""
+    stderr = ""
     if task_status in _TERMINAL_STATUSES:
         try:
-            output = await _collect_stdout(tasks_api, task_history_id)
+            output, stderr = await _collect_output(tasks_api, task_history_id)
         except (HTTPException, KeyError, TypeError, ValueError, OSError):
             logger.debug(
                 "Could not fetch logs for task %s",
                 task_history_id,
                 exc_info=True,
             )
-    return JSONResponse({"status": task_status, "output": output})
+    response = {"status": task_status, "output": output}
+    if task_status == "failed" and stderr:
+        response["error"] = stderr
+    return JSONResponse(response)
 
 
 @router.get(

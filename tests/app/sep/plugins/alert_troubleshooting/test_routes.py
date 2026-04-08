@@ -259,7 +259,7 @@ class TestTroubleshootingOutput:
         assert "query result OK" in data["output"]
 
     def test_output_failed(self, test_client: TestClient):
-        """Assert failed task returns status and stderr is excluded."""
+        """Assert failed task returns stderr in the error field."""
         mock_api = AsyncMock(spec=RemoteAPI)
         mock_api.get.return_value = {"id": 1, "status": "failed"}
 
@@ -273,6 +273,24 @@ class TestTroubleshootingOutput:
         data = response.json()
         assert data["status"] == "failed"
         assert data["output"] == ""
+        assert data["error"] == "Error: connection refused"
+
+    def test_output_failed_no_stderr(self, test_client: TestClient):
+        """Assert failed task without stderr omits the error field."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.get.return_value = {"id": 1, "status": "failed"}
+
+        async def _mock_stream(path, **kwargs):
+            yield b'{"step":"run-script","type":"stdout","msg":"","offset":0}'
+
+        mock_api.stream = _mock_stream
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        response = test_client.get("/alert-troubleshooting/output/1")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "failed"
+        assert data["output"] == ""
+        assert "error" not in data
 
     def test_output_tasks_api_error(self, test_client: TestClient):
         """Assert JSON error response when Tasks API returns an error."""
