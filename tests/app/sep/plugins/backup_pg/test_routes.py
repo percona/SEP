@@ -1,0 +1,222 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define tests for the app.sep.plugins.backup_pg.routes module."""
+
+from unittest.mock import AsyncMock
+
+import pytest
+import yaml
+from fastapi import HTTPException, status
+
+from app.inventory.models import ServiceTypeEnum
+from app.sep.main import sep_app
+from app.sep.plugins.backup_pg.deps import (
+    get_backups_index_context,
+    get_backups_task,
+)
+from app.sep.plugins.backup_pg.models import BackupCreate, BackupType
+from app.tasks.models import (
+    TaskHistoryStatusEnum,
+    TaskOwner,
+)
+from tests.app.factories import TaskFactory
+
+
+@pytest.fixture
+def _mock_get_backups_index_context_dep():
+    """Mock the get_backups_index_context dependency with default context."""
+    sep_app.dependency_overrides[get_backups_index_context] = lambda: {
+        "user": "default_user",
+        "executor_hosts": [],
+        "services": [],
+        "tasks": [],
+        "history_tasks": [],
+        "running_tasks": [],
+        "alert_on_fail_default": False,
+        "alert_on_fail_available": False,
+    }
+    yield
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def backup_create():
+    """Define a sample BackupCreate form data."""
+    return BackupCreate(
+        task_name="fake_task",
+        hostname="localhost",
+        service_id=1,
+        backup_type=BackupType.PGBACKREST,
+    )
+
+
+@pytest.fixture
+def created_task():
+    """Return a fake created Task instance."""
+    return TaskFactory.build(
+        owner=TaskOwner.BACKUP_PG,
+        data={
+            "meta": {
+                "target": "localhost",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "HOST": "localhost",
+                                "PORT": 5432,
+                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                            }
+                        ]
+                    }
+                ),
+            }
+        },
+    )
+
+
+@pytest.fixture
+def _mock_get_backups_task_dep(created_task):
+    """Mock the get_backups_task dependency."""
+    sep_app.dependency_overrides[get_backups_task] = lambda: created_task
+    yield
+    sep_app.dependency_overrides = {}
+
+
+@pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
+def test_backups_index(test_client):
+    """Test GET /backup-pg/ route."""
+    response = test_client.get("/backup-pg/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+    assert (
+        "<title>PostgreSQL Backups — Services Enablement Platform</title>"
+        in response.text
+    )
+
+
+def test_backups_create(
+    test_client, mock_task_api_dep, backup_create, mock_build_backup_task_payload_dep
+):
+    """Test POST /backup-pg/ route."""
+    response = test_client.post(
+        "/backup-pg/", data=backup_create.model_dump(), follow_redirects=False
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backup-pg/{backup_create.task_name}"
+    )
+
+    mock_task_api_dep.post.assert_called_once()
+    called_args, called_kwargs = mock_task_api_dep.post.call_args
+    assert called_args[0] == "/"
+    assert called_kwargs["json"] == mock_build_backup_task_payload_dep.model_dump()
+
+
+@pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
+def test_backups_detail(
+    test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
+):
+    """Test GET /backup-pg/{task_name} route."""
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},  # hosts
+            {},  # history
+            {},  # running_tasks
+            [],  # stats
+            [],  # chainable_tasks
+        ]
+    )
+    mock_inventory_api_dep.get = AsyncMock(return_value=[])
+
+    response = test_client.get(f"/backup-pg/{created_task.name}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert (
+        f"<title>Backups - {created_task.name} — Services Enablement Platform</title>"
+        in response.text
+    )
+
+    mock_task_api_dep.get.assert_any_call(f"/{created_task.name}/history/")
+    mock_task_api_dep.get.assert_any_call(
+        f"/{created_task.name}/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
+    )
+    mock_task_api_dep.get.assert_any_call(f"/stats/{created_task.name}")
+
+
+@pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
+def test_backups_detail_handles_inventory_error(
+    test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
+):
+    """Test detail route continues when inventory service lookup fails."""
+    mock_task_api_dep.get = AsyncMock(side_effect=[{}, {}, {}, [], []])
+    mock_inventory_api_dep.get = AsyncMock(side_effect=HTTPException(status_code=404))
+
+    response = test_client.get(f"/backup-pg/{created_task.name}")
+
+    assert response.status_code == status.HTTP_200_OK
+    mock_inventory_api_dep.get.assert_any_call(
+        "/services/",
+        params={"service_type": ServiceTypeEnum.POSTGRESQL},
+    )
+
+
+@pytest.mark.usefixtures(
+    "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
+def test_backups_execute(test_client, mock_task_api_dep, created_task):
+    """Test POST /backup-pg/{task_name} route with no chain_task_names."""
+    response = test_client.post(
+        f"/backup-pg/{created_task.name}", follow_redirects=False
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backup-pg/{created_task.name}"
+    )
+
+    mock_task_api_dep.post.assert_called_once()
+    called_args, called_kwargs = mock_task_api_dep.post.call_args
+    assert called_args[0] == f"/execute/{created_task.name}"
+    assert called_kwargs["json"] == {
+        "eta": None,
+        "chain_task_names": None,
+        "chain_on_failure": None,
+    }
+
+
+@pytest.mark.usefixtures(
+    "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
+)
+def test_backups_execute_with_chain_task_names(
+    test_client, mock_task_api_dep, created_task
+):
+    """Test POST /backup-pg/{task_name} passes chain_task_names to the tasks API."""
+    response = test_client.post(
+        f"/backup-pg/{created_task.name}",
+        data={"chain_task_names": ["task-a", "task-b"]},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+
+    called_args, called_kwargs = mock_task_api_dep.post.call_args
+    assert called_args[0] == f"/execute/{created_task.name}"
+    assert called_kwargs["json"]["chain_task_names"] == ["task-a", "task-b"]
