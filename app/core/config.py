@@ -393,6 +393,18 @@ class BaseYamlAppSettings(BaseYamlSettings):
     :param UVICORN_RELOAD: Enable auto-reload on file changes. Defaults to ``False``.
         Set to ``True`` in development for hot-reloading.
     :type UVICORN_RELOAD: bool
+    :param UVICORN_EXTRA_RELOAD_DIRS: Additional directories for uvicorn to watch when
+        ``UVICORN_RELOAD`` is enabled. Appended to the hardcoded base directories.
+        Defaults to ``[]``.
+    :type UVICORN_EXTRA_RELOAD_DIRS: list[str]
+    :param UVICORN_EXTRA_RELOAD_INCLUDES: Additional glob patterns for uvicorn to include
+        when watching for changes. Appended to the hardcoded base includes.
+        Defaults to ``[]``.
+    :type UVICORN_EXTRA_RELOAD_INCLUDES: list[str]
+    :param UVICORN_EXTRA_RELOAD_EXCLUDES: Additional glob patterns for uvicorn to exclude
+        when watching for changes. Appended to the hardcoded base excludes.
+        Defaults to ``[]``.
+    :type UVICORN_EXTRA_RELOAD_EXCLUDES: list[str]
     :param SSL_KEYFILE: Path to the SSL key file. Defaults to None.
     :type SSL_KEYFILE: RelativeFilePathField | None
     :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
@@ -412,6 +424,9 @@ class BaseYamlAppSettings(BaseYamlSettings):
     UVICORN_HOST: str = "127.0.0.1"
     UVICORN_PORT: int = 0
     UVICORN_RELOAD: bool = False
+    UVICORN_EXTRA_RELOAD_DIRS: list[str] = []
+    UVICORN_EXTRA_RELOAD_INCLUDES: list[str] = []
+    UVICORN_EXTRA_RELOAD_EXCLUDES: list[str] = []
     SSL_KEYFILE: RelativeFilePathField | None = None
     SSL_CERTFILE: RelativeFilePathField | None = None
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = Field(
