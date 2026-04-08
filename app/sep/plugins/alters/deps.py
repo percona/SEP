@@ -39,6 +39,8 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_RECURSION_DSN_TABLE = "D=percona,t=dsns"
+
 
 def _build_dsn_with_service(
     dsn_base: str, service_address: str, service_port: int | None
@@ -124,8 +126,9 @@ async def build_alters_task_payload(
     )
 
     if form.recursion_method == "dsn":
+        dsn_table_base = (form.dsn_table or "").strip() or DEFAULT_RECURSION_DSN_TABLE
         dsn_table = _build_dsn_with_service(
-            form.dsn_table, service.node.address, service.port
+            dsn_table_base, service.node.address, service.port
         )
         form.recursion_method = f"dsn={dsn_table}"
 

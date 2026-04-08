@@ -39,8 +39,8 @@ class ChecksumsCreate(BaseModel):
     :type tables: str
     :param recursion_method: The method for handling recursion.
     :type recursion_method: NonEmptyStr
-    :param dsn_table: The DSN table for recursion method when using `dsn`. Defaults to
-        an empty string.
+    :param dsn_table: The DSN table for recursion method when using ``dsn``. When empty,
+        the command builder uses ``D=percona,t=dsns`` (Percona Toolkit convention).
     :type dsn_table: str
     :param pause_file: Execution will be paused while the file specified by this param exists.
     :type pause_file: str
