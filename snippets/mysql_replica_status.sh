@@ -4,7 +4,6 @@
 # title: "Show Replica Status"
 # description: "Prints the output of SHOW REPLICA STATUS. Extra args are passed to all mysql commands (e.g. -u, -p, SSL options)."
 # allow_extra_args: true
-# extra_args_placeholder: "e.g. -h 127.0.0.1 -u monitor"
 # parameters:
 #  - name: defaults-file
 #    type: str
