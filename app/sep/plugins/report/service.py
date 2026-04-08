@@ -800,7 +800,7 @@ async def generate_report(
     metadata = ReportMetadata(
         title="Health and Security Report",
         generated_at=now,
-        report_week=f"Report Week {year} Week {week_number}",
+        report_week=f"Report {year} Week {week_number}",
         report_interval=(
             f"Report Period "
             f"{datetime.fromtimestamp(start_ts / 1000, UTC).strftime('%Y-%m-%d')} to "
