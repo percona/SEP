@@ -21,8 +21,10 @@ import secrets
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
+from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Self, TypeVar
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, FastAPI
 from fastapi.applications import AppType
@@ -53,6 +55,7 @@ from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
     SecurityHeadersOptions,
 )
+from app.core.models import BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
 from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
@@ -255,6 +258,50 @@ class BaseYamlSettings(BaseSettings):
 T = TypeVar("T", bound=BaseRemoteAPI)
 
 
+class PMMSettings(BaseLowercaseModel):
+    """Define core PMM connection and authentication configuration.
+
+    :param endpoint: The PMM server URL.
+    :type endpoint: StrHttpUrl | None
+    :param frontend: The PMM frontend URL.
+    :type frontend: StrHttpUrl | None
+    :param api_key: API key for PMM authentication.
+    :type api_key: SecretStr | None
+    :param verify_ssl: Whether to verify SSL certificates.
+    :type verify_ssl: bool
+    :param execution_target: Explicit execution target name or address for PMM tasks.
+    :type execution_target: str | None
+    """
+
+    endpoint: StrHttpUrl | None = None
+    frontend: StrHttpUrl | None = None
+    api_key: SecretStr | None = None
+    verify_ssl: bool = True
+    execution_target: str | None = None
+
+    @model_validator(mode="after")
+    def _default_frontend_to_endpoint(self) -> Self:
+        """Set ``frontend`` to ``endpoint`` when not explicitly provided.
+
+        :return: The updated settings instance.
+        :rtype: Self
+        """
+        if "frontend" not in self.model_fields_set and self.endpoint is not None:
+            self.frontend = self.endpoint
+        return self
+
+    @cached_property
+    def hostname(self) -> str | None:
+        """Extract and return the hostname from the PMM endpoint.
+
+        :return: The hostname of the PMM endpoint, or ``None`` if not set.
+        :rtype: str | None
+        """
+        if self.endpoint:
+            return urlparse(self.endpoint).hostname
+        return None
+
+
 class Settings(BaseYamlSettings):
     """Main application settings class.
 
@@ -289,6 +336,8 @@ class Settings(BaseYamlSettings):
     :param SECURITY_HEADERS: Global options for the SecurityHeadersMiddleware, to be
         used as the default SECURITY_HEADERS setting across all apps.
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
+    :param PMM: PMM connection and authentication configuration.
+    :type PMM: PMMSettings
     """
 
     CASDOOR: CasdoorSDK
@@ -303,6 +352,7 @@ class Settings(BaseYamlSettings):
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
+    PMM: PMMSettings = PMMSettings()
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field
@@ -393,6 +443,18 @@ class BaseYamlAppSettings(BaseYamlSettings):
     :param UVICORN_RELOAD: Enable auto-reload on file changes. Defaults to ``False``.
         Set to ``True`` in development for hot-reloading.
     :type UVICORN_RELOAD: bool
+    :param UVICORN_EXTRA_RELOAD_DIRS: Additional directories for uvicorn to watch when
+        ``UVICORN_RELOAD`` is enabled. Appended to the hardcoded base directories.
+        Defaults to ``[]``.
+    :type UVICORN_EXTRA_RELOAD_DIRS: list[str]
+    :param UVICORN_EXTRA_RELOAD_INCLUDES: Additional glob patterns for uvicorn to include
+        when watching for changes. Appended to the hardcoded base includes.
+        Defaults to ``[]``.
+    :type UVICORN_EXTRA_RELOAD_INCLUDES: list[str]
+    :param UVICORN_EXTRA_RELOAD_EXCLUDES: Additional glob patterns for uvicorn to exclude
+        when watching for changes. Appended to the hardcoded base excludes.
+        Defaults to ``[]``.
+    :type UVICORN_EXTRA_RELOAD_EXCLUDES: list[str]
     :param SSL_KEYFILE: Path to the SSL key file. Defaults to None.
     :type SSL_KEYFILE: RelativeFilePathField | None
     :param SSL_CERTFILE: Path to the SSL certificate file. Defaults to None.
@@ -412,6 +474,9 @@ class BaseYamlAppSettings(BaseYamlSettings):
     UVICORN_HOST: str = "127.0.0.1"
     UVICORN_PORT: int = 0
     UVICORN_RELOAD: bool = False
+    UVICORN_EXTRA_RELOAD_DIRS: list[str] = []
+    UVICORN_EXTRA_RELOAD_INCLUDES: list[str] = []
+    UVICORN_EXTRA_RELOAD_EXCLUDES: list[str] = []
     SSL_KEYFILE: RelativeFilePathField | None = None
     SSL_CERTFILE: RelativeFilePathField | None = None
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = Field(
