@@ -15,7 +15,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses />.
 #}
 {% set form_id = "snippetForm-" ~ snippet.filename | replace(".", "-") | replace("/", "-") %}
-{% set execute_url = url_for('troubleshooting_execute', snippet_filename=snippet.filename) %}
+{% set execute_url = url_for('troubleshooting_execute', snippet_filename=snippet.filename) | string %}
 <div class="at-snippet-card"
      data-snippet-filename="{{ snippet.filename }}">
     <div class="at-snippet-header">

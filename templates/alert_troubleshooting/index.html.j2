@@ -23,6 +23,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
           href="{{ url_for('static', path='/css/alert-troubleshooting.css') }}">
 {% endblock style %}
 {% block main %}
+    {% set plugin_base_raw = url_for('troubleshooting_index') | string %}
+    {% set plugin_base = plugin_base_raw[:-1] if plugin_base_raw.endswith('/') else plugin_base_raw %}
     <p>
         Select an alert to view troubleshooting steps and diagnostic snippets
         grouped by database service type.
@@ -47,7 +49,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                 {% for alert in alerts %}
                                     <li>
                                         {# djlint:off J018 #}
-                                        <a href="{{ base_uri }}/{{ svc.value }}/{{ alert.name }}"
+                                        <a href="{{ plugin_base }}/{{ svc.value }}/{{ alert.name }}"
                                            class="at-alert-link">
                                             {# djlint:on #}
                                             <span class="material-symbols-outlined at-alert-icon">troubleshoot</span>
