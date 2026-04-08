@@ -682,7 +682,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             {% endif %}
         </section>
         <footer class="report-footer">
-            <p>Generated {{ report.metadata.generated_at }}.</p>
+            <p>Generated {{ report.metadata.generated_at.strftime("%Y-%m-%d %H:%M:%S %Z") }}.</p>
             <a href="{{ request.url_for('report_index') }}" class="btn outlined large">Back to Report</a>
         </footer>
     </div>
