@@ -1965,9 +1965,9 @@ class GSUploadProvider:
             msg = 'GS_BUCKET is not set.'
             raise BackupError(msg)
 
-        self.logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
+        logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
         os.makedirs(logging_dir, exist_ok=True)
-        log_file = os.path.join(self.logging_dir, 'gsutil-%s-%s-%s.log' %
+        log_file = os.path.join(logging_dir, 'gsutil-%s-%s-%s.log' %
                                 (self.alias,
                                  self.backup_type,
                                  time.strftime('%Y%m%d')
