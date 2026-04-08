@@ -324,8 +324,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                id="dsn_table"
                                name="dsn_table"
                                class="validate"
-                               placeholder="D=schema,t=table"
-                               disabled />
+                               placeholder="D=percona,t=dsns" />
                     </div>
                 </fieldset>
                 <fieldset>
@@ -494,11 +493,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     recursion_method.addEventListener('change', function () {
         if (this.value === 'dsn') {
-            dsn_table.disabled = false;
-            dsn_table.required = true;
+            if (!dsn_table.value.trim()) {
+                dsn_table.value = 'D=percona,t=dsns';
+            }
         } else {
-            dsn_table.disabled = true;
-            dsn_table.required = false;
+            dsn_table.value = '';
         }
     });
 
