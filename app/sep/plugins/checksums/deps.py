@@ -33,7 +33,13 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.checksums.models import ChecksumsCreate
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +236,52 @@ async def get_checksums_task(
 
 
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
+
+
+async def get_checksums_task_names_by_status(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum,
+) -> set[str]:
+    """Retrieve checksum task names that have histories with the requested status."""
+    histories = await tasks_api.get("/history/", params={"status": status.value})
+    return {
+        history["task"]["name"]
+        for history in histories
+        if history.get("task", {}).get("owner") == TaskOwner.CHECKSUMS.value
+    }
+
+
+async def get_checksums_api_tasks(
+    tasks_api: TaskAPI,
+    service_type: ServiceTypeEnum | None = None,
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve checksum tasks for the API endpoint, optionally filtering them."""
+    if service_type is not None and service_type != ServiceTypeEnum.MYSQL:
+        return []
+
+    params = {"owner": TaskOwner.CHECKSUMS.value}
+    tasks = await tasks_api.get("/", params=params)
+
+    if status is not None:
+        checksum_task_names = await get_checksums_task_names_by_status(
+            tasks_api, status
+        )
+        tasks = [task for task in tasks if task.get("name") in checksum_task_names]
+
+    return tasks
+
+
+def build_checksums_api_task_response(
+    task: dict[str, Any],
+    status: TaskHistoryStatusEnum | None = None,
+) -> dict[str, Any]:
+    """Build a checksum task response object for the JSON API."""
+    return {
+        **task,
+        "service_type": ServiceTypeEnum.MYSQL.value,
+        "status": status.value if status else task.get("status"),
+    }
 
 
 def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:

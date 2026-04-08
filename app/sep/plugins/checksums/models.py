@@ -15,9 +15,14 @@
 
 """Define models for the Checksums plugin."""
 
+from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
+from app.inventory.models import ServiceTypeEnum
+from app.tasks.models import TaskBackendEnum, TaskOwner
 
 
 class ChecksumsCreate(BaseModel):
@@ -89,3 +94,26 @@ class ChecksumsCreate(BaseModel):
     max_lag: str = ""
     extra_args: str = ""
     alert_on_fail: bool = False
+
+
+class ChecksumTaskBase(BaseModel):
+    """Define the common fields shared across checksum task API responses."""
+
+    name: str
+    owner: TaskOwner
+    service_type: ServiceTypeEnum | None = None
+    status: str | None = None
+
+
+class ChecksumTaskResponse(ChecksumTaskBase):
+    """Represent a checksum task API response."""
+
+    id: int | None = None
+    backend: TaskBackendEnum
+    data: dict[str, Any]
+    protected: bool
+    alert_on_fail: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None
