@@ -2,7 +2,7 @@
 
 # ---
 # title: "mysql_version"
-# description: "Returns the MySQL version"
+# description: "Returns the MySQL version."
 # allow_extra_args: false
 # parameters:
 #  - name: basedir
