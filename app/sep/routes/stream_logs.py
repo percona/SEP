@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for streaming tasks logs."""
+"""Define routes for streaming task logs and execution events (SSE)."""
 
 import asyncio
 import json
@@ -32,10 +32,104 @@ from app.sep.deps import (
     TasksClient,
 )
 from app.sep.utils.decorators import csrf_exempt
-from app.tasks.models import TaskHistoryResponse
+from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/{task_history_id}/execution-events", dependencies=[IsAuthenticated])
+@csrf_exempt
+async def task_execution_events_stream(
+    request: Request,
+    user: CurrentUser,
+    task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
+    tasks_client: TasksClient,
+) -> StreamingResponse:
+    """Stream task execution events as server-sent events."""
+    return StreamingResponse(
+        task_history_events_event_stream(
+            tasks_client, task_history.id, request, user.access_token
+        ),
+        media_type="text/event-stream",
+    )
+
+
+async def task_history_events_event_stream(
+    tasks_client: TasksClient,
+    task_history_id: int,
+    request: Request,
+    access_token: str,
+) -> AsyncGenerator[str, None]:
+    """Yield incremental execution events for a task history.
+
+    The Tasks API returns events oldest-first; only the tail after the last emitted
+    index is processed each poll so cost stays bounded for long runs.
+
+    :param tasks_client: The TaskAPI client for interacting with the Tasks service.
+    :type tasks_client: RemoteAPI
+    :param task_history_id: The ID of the task history whose execution events to stream.
+    :type task_history_id: int
+    :param request: The FastAPI request object, used to detect client disconnect.
+    :type request: Request
+    :param access_token: Bearer token used to authenticate requests to the Tasks API.
+    :type access_token: str
+    :yield: Execution event payloads and control messages formatted as server-sent events.
+    :rtype: str
+    """
+    emitted_count = 0
+    wait_interval = 2
+    try:
+        with tasks_client.auth(access_token) as tasks_api:
+            while True:
+                if await request.is_disconnected():
+                    return
+
+                raw_events = await tasks_api.get(f"/history/{task_history_id}/events")
+                events = raw_events if isinstance(raw_events, list) else []
+                if len(events) < emitted_count:
+                    logger.warning(
+                        "Execution events list shrank (task_history_id=%s): "
+                        "had %s emitted index, now len=%s; resetting cursor",
+                        task_history_id,
+                        emitted_count,
+                        len(events),
+                    )
+                    emitted_count = 0
+                for event in events[emitted_count:]:
+                    yield f"data: {json.dumps(event, default=str)}\n\n"
+                emitted_count = len(events)
+
+                task_history = await tasks_api.get(f"/history/{task_history_id}")
+                if task_history["status"] != TaskHistoryStatusEnum.RUNNING:
+                    payload = {"status": task_history["status"]}
+                    yield f"event: finish\ndata: {json.dumps(payload)}\n\n"
+                    return
+                await asyncio.sleep(wait_interval)
+    except TimeoutError as exc:
+        logger.warning(
+            "Timeout while streaming execution events task_history_id=%s: %s",
+            task_history_id,
+            exc,
+        )
+        yield f"event: sep-error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
+    except asyncio.CancelledError:
+        logger.info(
+            "Task execution events stream cancelled task_history_id=%s", task_history_id
+        )
+        raise
+    except HTTPException as exc:
+        logger.exception(
+            "HTTP error streaming task execution events [%s]", exc.status_code
+        )
+        payload = {"code": exc.status_code, "detail": exc.detail}
+        yield f"event: sep-error\ndata: {json.dumps(payload)}\n\n"
+    except Exception as exc:
+        logger.exception(
+            "Error streaming task execution events task_history_id=%s",
+            task_history_id,
+        )
+        yield f"event: sep-error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
 
 
 @router.get("/{task_history_id}", dependencies=[IsAuthenticated])
