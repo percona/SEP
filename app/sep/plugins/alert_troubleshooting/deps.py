@@ -17,15 +17,19 @@
 
 import logging
 import re
-from typing import Annotated, Any, NamedTuple
+from collections.abc import Iterable
+from contextlib import suppress
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
+from pydantic import BaseModel, model_validator, ValidationError
 
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPRedirectException,
 )
+from app.core.utils.fields import NonEmptyStr
 from app.sep.deps import DefaultContext, ExecutorHostsCtx, SessionDep
 from app.sep.models import AlertServiceType
 from app.sep.plugins.snippets.deps import (
@@ -55,17 +59,39 @@ _KNOWN_ACRONYMS = frozenset({"SQL", "CPU", "IO", "PK", "DB", "PG"})
 _CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
-class AlertInfo(NamedTuple):
+class AlertInfo(BaseModel):
     """Represent a normalized alert entry with its identifier and display label.
 
+    Accept a plain string identifier, a dict with ``name`` (required) and
+    optional ``label``, or keyword arguments.  Invalid inputs raise
+    ``ValidationError``.
+
     :param name: The alert identifier as declared in snippet frontmatter.
-    :type name: str
+    :type name: NonEmptyStr
     :param label: The human-readable display label for the alert.
     :type label: str
     """
 
-    name: str
+    name: NonEmptyStr
     label: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_entry(cls, data: Any) -> Any:
+        """Normalize flexible alert frontmatter into model fields.
+
+        :param data: Raw alert entry — string, dict, or keyword dict.
+        :type data: Any
+        :return: A dict with ``name`` and ``label`` keys.
+        :rtype: Any
+        """
+        if isinstance(data, str):
+            return {"name": data, "label": camel_case_to_title(data)}
+        if isinstance(data, dict):
+            name = data.get("name", "")
+            label = data.get("label") or (camel_case_to_title(name) if name else "")
+            return {"name": name, "label": label}
+        return data
 
 
 def camel_case_to_title(s: str) -> str:
@@ -111,21 +137,31 @@ def normalize_alert_entry(entry: Any) -> AlertInfo | None:
     :return: The normalized alert info, or ``None`` if the entry is invalid.
     :rtype: AlertInfo | None
     """
-    if isinstance(entry, str):
-        if not entry:
-            return None
-        return AlertInfo(name=entry, label=camel_case_to_title(entry))
-    if isinstance(entry, dict):
-        name = entry.get("name")
-        if not name:
-            return None
-        label = entry.get("label") or camel_case_to_title(name)
-        return AlertInfo(name=name, label=label)
+    with suppress(ValidationError):
+        return AlertInfo.model_validate(entry)
     return None
 
 
+def _parse_service_type(snippet: Snippet) -> AlertServiceType | None:
+    """Parse the service type from a snippet's metadata.
+
+    :param snippet: A snippet object with a ``meta`` attribute.
+    :type snippet: Snippet
+    :return: The parsed service type, or ``None`` for unrecognized values.
+    :rtype: AlertServiceType | None
+    """
+    raw = snippet.meta.get("service_type")
+    if raw is None:
+        return AlertServiceType.GENERIC
+    try:
+        return AlertServiceType(raw)
+    except ValueError:
+        logger.warning("Unknown service_type %r in snippet, skipping", raw)
+        return None
+
+
 def collect_grouped_alerts(
-    snippets: Any,
+    snippets: Iterable[Snippet],
 ) -> dict[AlertServiceType, list[AlertInfo]]:
     """Collect and group alerts from snippet metadata by service type.
 
@@ -134,7 +170,7 @@ def collect_grouped_alerts(
     within each service type, and return a mapping sorted by label.
 
     :param snippets: An iterable of snippet objects with a ``meta`` attribute.
-    :type snippets: Any
+    :type snippets: Iterable[Snippet]
     :return: A mapping from service type to a sorted list of unique alerts.
     :rtype: dict[AlertServiceType, list[AlertInfo]]
     """
@@ -143,18 +179,9 @@ def collect_grouped_alerts(
         alerts = _get_normalized_alerts(snippet)
         if not alerts:
             continue
-        raw_service_type = snippet.meta.get("service_type")
-        if raw_service_type is None:
-            service_type = AlertServiceType.GENERIC
-        else:
-            try:
-                service_type = AlertServiceType(raw_service_type)
-            except ValueError:
-                logger.warning(
-                    "Unknown service_type %r in snippet, skipping",
-                    raw_service_type,
-                )
-                continue
+        service_type = _parse_service_type(snippet)
+        if service_type is None:
+            continue
         for info in alerts:
             grouped.setdefault(service_type, {})[info.name] = info
     return {
@@ -207,11 +234,11 @@ TroubleshootingIndexContext = Annotated[
 ]
 
 
-def _get_normalized_alerts(snippet: Any) -> list[AlertInfo]:
+def _get_normalized_alerts(snippet: Snippet) -> list[AlertInfo]:
     """Extract and normalize all alert entries from a snippet's metadata.
 
     :param snippet: A snippet object with a ``meta`` attribute.
-    :type snippet: Any
+    :type snippet: Snippet
     :return: A list of normalized alert entries, excluding invalid ones.
     :rtype: list[AlertInfo]
     """
@@ -225,11 +252,11 @@ def _get_normalized_alerts(snippet: Any) -> list[AlertInfo]:
     ]
 
 
-def _find_alert_in_snippet(snippet: Any, alert_name: str) -> AlertInfo | None:
+def _find_alert_in_snippet(snippet: Snippet, alert_name: str) -> AlertInfo | None:
     """Find a specific alert entry in a snippet's metadata.
 
     :param snippet: A snippet object with a ``meta`` attribute.
-    :type snippet: Any
+    :type snippet: Snippet
     :param alert_name: The alert identifier to look for.
     :type alert_name: str
     :return: The matching ``AlertInfo``, or ``None`` if not found.
@@ -242,33 +269,30 @@ def _find_alert_in_snippet(snippet: Any, alert_name: str) -> AlertInfo | None:
 
 
 def filter_snippets_for_alert(
-    snippets: Any,
+    snippets: Iterable[Snippet],
     alert_name: str,
     service_type: AlertServiceType | None = None,
-) -> tuple[list[Any], AlertInfo]:
+) -> tuple[list[Snippet], AlertInfo]:
     """Filter snippets to those declaring a specific alert.
 
     Return the matched snippets and the ``AlertInfo`` from the first match,
     avoiding a second traversal to extract the alert label.
 
     :param snippets: An iterable of snippet objects with a ``meta`` attribute.
-    :type snippets: Any
+    :type snippets: Iterable[Snippet]
     :param alert_name: The alert identifier to filter by.
     :type alert_name: str
     :param service_type: Optional service type to restrict matches.
     :type service_type: AlertServiceType | None
     :return: A tuple of (matched snippets, alert info from first match).
-    :rtype: tuple[list[Any], AlertInfo]
+    :rtype: tuple[list[Snippet], AlertInfo]
     :raises HTTPNotFoundException: If no snippets match the alert name.
     """
     matched = []
     first_alert_info = None
     for snippet in snippets:
-        if service_type is not None:
-            raw_svc = snippet.meta.get("service_type")
-            snippet_svc = AlertServiceType.GENERIC if raw_svc is None else raw_svc
-            if snippet_svc != service_type:
-                continue
+        if service_type is not None and _parse_service_type(snippet) != service_type:
+            continue
         info = _find_alert_in_snippet(snippet, alert_name)
         if info is not None:
             matched.append(snippet)
@@ -283,7 +307,7 @@ async def get_snippets_for_alert(
     session: SessionDep,
     alert_name: str,
     service_type: AlertServiceType,
-) -> tuple[list[Any], AlertInfo]:
+) -> tuple[list[Snippet], AlertInfo]:
     """Load all snippets and filter to those declaring a specific alert.
 
     :param session: The database session.
@@ -293,7 +317,7 @@ async def get_snippets_for_alert(
     :param service_type: The service type to restrict matches.
     :type service_type: AlertServiceType
     :return: A tuple of (matched snippets, alert info from first match).
-    :rtype: tuple[list[Any], AlertInfo]
+    :rtype: tuple[list[Snippet], AlertInfo]
     :raises HTTPNotFoundException: If no snippets match the alert name.
     """
     snippets = await SnippetManager.list(session)
@@ -301,7 +325,7 @@ async def get_snippets_for_alert(
 
 
 AlertSnippetsDep = Annotated[
-    tuple[list[Any], AlertInfo], Depends(get_snippets_for_alert)
+    tuple[list[Snippet], AlertInfo], Depends(get_snippets_for_alert)
 ]
 
 

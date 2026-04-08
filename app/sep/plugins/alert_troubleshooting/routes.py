@@ -21,6 +21,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from app.core.requests import RemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated, TaskAPI
 from app.sep.plugins.alert_troubleshooting.deps import (
@@ -33,6 +34,30 @@ from app.sep.plugins.alert_troubleshooting.deps import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
+
+_TERMINAL_STATUSES = frozenset({"success", "failed", "stopped"})
+
+
+async def _collect_stdout(tasks_api: RemoteAPI, task_history_id: int) -> str:
+    """Stream task logs and collect STDOUT content.
+
+    :param tasks_api: The authenticated Tasks API client.
+    :type tasks_api: RemoteAPI
+    :param task_history_id: The task history ID to fetch logs for.
+    :type task_history_id: int
+    :return: The concatenated STDOUT output.
+    :rtype: str
+    """
+    parts = []
+    async for chunk in tasks_api.stream(
+        f"/history/{task_history_id}/logs/",
+        params={"step": "run-script"},
+    ):
+        if chunk:
+            log_entry = json.loads(chunk)
+            if log_entry.get("type") == "stdout" and log_entry.get("msg"):
+                parts.append(log_entry["msg"])
+    return "".join(parts)
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -91,22 +116,6 @@ async def troubleshooting_execute(
                 )
             },
         )
-        task_id = result["id"]
-        logger.info(
-            "Troubleshooting execution submitted for snippet %r, task %s",
-            snippet.filename,
-            task_id,
-        )
-        return JSONResponse({"task_id": task_id, "status": "submitted"})
-    except KeyError:
-        logger.warning(
-            "Unexpected response from Tasks API for snippet %r",
-            snippet.filename,
-        )
-        return JSONResponse(
-            {"error": "Unexpected response from Tasks API"},
-            status_code=status.HTTP_502_BAD_GATEWAY,
-        )
     except HTTPException as exc:
         logger.warning(
             "HTTP error executing snippet %r: %s %s",
@@ -118,6 +127,23 @@ async def troubleshooting_execute(
             {"error": exc.detail or "Execution failed"},
             status_code=exc.status_code,
         )
+    try:
+        task_id = result["id"]
+    except KeyError:
+        logger.warning(
+            "Unexpected response from Tasks API for snippet %r",
+            snippet.filename,
+        )
+        return JSONResponse(
+            {"error": "Unexpected response from Tasks API"},
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
+    logger.info(
+        "Troubleshooting execution submitted for snippet %r, task %s",
+        snippet.filename,
+        task_id,
+    )
+    return JSONResponse({"task_id": task_id, "status": "submitted"})
 
 
 @router.get("/output/{task_history_id}", dependencies=[IsAuthenticated])
@@ -139,27 +165,6 @@ async def troubleshooting_output(
     """
     try:
         history = await tasks_api.get(f"/history/{task_history_id}/")
-        task_status = history.get("status", "unknown")
-        response_data = {"status": task_status, "output": ""}
-        if task_status in ("success", "failed", "stopped"):
-            try:
-                stdout_parts = []
-                async for chunk in tasks_api.stream(
-                    f"/history/{task_history_id}/logs/",
-                    params={"step": "run-script"},
-                ):
-                    if chunk:
-                        log_entry = json.loads(chunk)
-                        if log_entry.get("type") == "stdout" and log_entry.get("msg"):
-                            stdout_parts.append(log_entry["msg"])
-                response_data["output"] = "".join(stdout_parts)
-            except (HTTPException, KeyError, TypeError, ValueError, OSError):
-                logger.debug(
-                    "Could not fetch logs for task %s",
-                    task_history_id,
-                    exc_info=True,
-                )
-        return JSONResponse(response_data)
     except HTTPException as exc:
         logger.warning(
             "HTTP error polling task %s: %s %s",
@@ -171,6 +176,18 @@ async def troubleshooting_output(
             {"error": exc.detail or "Failed to retrieve task output"},
             status_code=exc.status_code,
         )
+    task_status = history.get("status", "unknown")
+    output = ""
+    if task_status in _TERMINAL_STATUSES:
+        try:
+            output = await _collect_stdout(tasks_api, task_history_id)
+        except (HTTPException, KeyError, TypeError, ValueError, OSError):
+            logger.debug(
+                "Could not fetch logs for task %s",
+                task_history_id,
+                exc_info=True,
+            )
+    return JSONResponse({"status": task_status, "output": output})
 
 
 @router.get(
