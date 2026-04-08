@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
+- SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
 
 ### Changed
 
