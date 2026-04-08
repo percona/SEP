@@ -69,10 +69,63 @@ along with this program. If not, see <https://www.gnu.org/licenses/>. */
     max-width: 20rem;
 }
 
-.report-form .form-actions {
+.report-layout .form-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 1rem;
     align-items: center;
+}
+
+/* Anchor-as-button: mirrors button styles from base.css */
+
+a.btn,
+a.btn:link,
+a.btn:visited {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    line-height: 1.0625;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: var(--cornerFull);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.btn.large {
+    font-size: 0.9375em;
+    padding: 1rem 1.5rem;
+}
+
+a.btn.contained,
+a.btn.contained:link,
+a.btn.contained:visited {
+    color: var(--primaryContrast);
+    background: var(--primaryMain);
+    border: none;
+    box-shadow: var(--elevation2);
+    transition: background .2s, box-shadow .2s;
+}
+
+a.btn.contained:hover {
+    background: var(--primaryDark);
+    box-shadow: var(--elevation4);
+}
+
+a.btn.outlined,
+a.btn.outlined:link,
+a.btn.outlined:visited {
+    color: var(--primaryMain);
+    border: 0.125rem solid var(--primaryMain);
+    background: none;
+    transition: border .2s, color .2s, background .2s;
+}
+
+a.btn.outlined:hover {
+    color: var(--primaryDark);
+    background: var(--primaryHover);
+    border-color: var(--primaryDark);
 }
 
 /* Report result */
