@@ -20,7 +20,7 @@ import resource
 import tempfile
 from getpass import getuser
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional
 
 import pymysql
 import pymysql.cursors
@@ -82,6 +82,74 @@ GSUTIL_BIN = os.getenv('PERCONA_BACKUP_GSUTIL_BIN', '/usr/local/bin/gsutil')
 AWS_BIN = os.getenv('PERCONA_BACKUP_AWS_BIN', '/usr/bin/aws')
 SSH_ARGS = '-o PasswordAuthentication=no -o StrictHostKeyChecking=no'
 UPLOADME_FILE = '.uploadme'
+BACKTICK = "`"
+FORBIDDEN_SHELL_METACHARS = frozenset("$;|&()" + BACKTICK)
+
+
+def validate_backup_source_for_shell(value: str) -> None:
+    if not value:
+        return
+    if "\n" in value or "\r" in value:
+        raise ValueError("backup_source must not contain newline characters")
+    bad = FORBIDDEN_SHELL_METACHARS.intersection(value)
+    if bad:
+        raise ValueError(
+            "backup_source contains disallowed shell metacharacters; remove special characters from the backup source field"
+        )
+
+
+def readlink_argv_for_backup_source(
+    backup_source: str,
+    ssh_port: int,
+    ssh_user: str,
+    ssh_identity_path: Optional[str] = None,
+) -> List[str]:
+    identity = ssh_identity_path or f"/home/{ssh_user}/.ssh/id_rsa"
+    if ":" in backup_source:
+        host, path = backup_source.split(":", 1)
+        return [
+            "ssh",
+            "-p",
+            str(ssh_port),
+            "-l",
+            ssh_user,
+            "-i",
+            identity,
+            host,
+            "readlink",
+            "-n",
+            "--",
+            path,
+        ]
+    return ["readlink", "-n", "--", backup_source]
+
+
+def rsync_remote_restore_argv(
+    *,
+    include_args: List[str],
+    exclude_args: List[str],
+    ssh_port: int,
+    ssh_user: str,
+    remote_source: str,
+    destination: str,
+    ssh_identity_path: Optional[str] = None,
+) -> List[str]:
+    identity = ssh_identity_path or f"/home/{ssh_user}/.ssh/id_rsa"
+    identity_quoted = shlex.quote(identity)
+    rsh = f"ssh -t -p {ssh_port} -i {identity_quoted}"
+    remote_spec = f"{ssh_user}@{remote_source}"
+    return [
+        "rsync",
+        "-LAvhr",
+        *include_args,
+        *exclude_args,
+        "--rsync-path=sudo rsync",
+        "-e",
+        rsh,
+        remote_spec,
+        destination,
+    ]
+
 
 LOGGING_FORMAT = '%(asctime)s PID<%(process)d> %(levelname)s::%(alias)s%(message)s'
 LOGGING_LEVEL = logging.INFO
@@ -1338,14 +1406,18 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
     def _symlink_to_real(self):
         """ get real path from symlink """
-        if ':' in self.backup_source:
-            host, path = self.backup_source.split(':')
-            rl_cmd = 'ssh -p %s -l %s -i /home/%s/.ssh/id_rsa %s readlink -n %s' \
-                     % (self.ssh_port, self.ssh_user, self.ssh_user, host, path)
-        else:
-            rl_cmd = 'readlink -n %s' % self.backup_source
+        try:
+            validate_backup_source_for_shell(self.backup_source)
+        except ValueError as exc:
+            raise BackupError("Invalid backup_source: %s" % (exc,)) from exc
 
-        proc = subprocess.Popen(rl_cmd, stdout=subprocess.PIPE, shell=True)
+        rl_cmd = readlink_argv_for_backup_source(
+            self.backup_source,
+            self.ssh_port,
+            self.ssh_user,
+        )
+
+        proc = subprocess.Popen(rl_cmd, stdout=subprocess.PIPE)
         real_dir, _ = proc.communicate()
         real_dir = real_dir.decode('utf-8').strip()
         if real_dir:
@@ -1574,46 +1646,57 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
     def rsync_copy(self, source, destination, log_file, **kwargs):
         """ Rsync remote backups """
 
+        try:
+            validate_backup_source_for_shell(source)
+        except ValueError as exc:
+            raise BackupError("Invalid backup_source: %s" % (exc,)) from exc
+
         info_file = {'X': 'xtrabackup_info', 'M': 'metadata'}
         info_only = kwargs.get('info_only', False)
         files_list = kwargs.get('files_list', [])
 
         if files_list:
-            include_args = ""
+            include_args = []
             for f in files_list:
                 f = f.strip()
                 if f:
-                    include_args += '--include="%s" ' % f
-            exclude_args = '--exclude="*"'
+                    include_args.append('--include=%s' % f)
+            exclude_args = ['--exclude=*']
         elif info_only and self.backup_code in info_file:
-            exclude_args = '--exclude="*"'
-            include_args = '--include="%s*"' % info_file[self.backup_code]
+            exclude_args = ['--exclude=*']
+            include_args = ['--include=%s*' % info_file[self.backup_code]]
         else:
-            exclude_args = ""
+            exclude_args = []
             for path in kwargs.get('exclude', []):
                 if path.strip():
-                    exclude_args += '--exclude="%s.*" ' % path.strip()
+                    exclude_args.append('--exclude=%s.*' % path.strip())
 
-            include_args = ""
+            include_args = []
             for path in kwargs.get('include', []):
                 if path.strip():
-                    include_args += '--include="%s.*" ' % path.strip()
+                    include_args.append('--include=%s.*' % path.strip())
 
             if include_args and not exclude_args:
-                exclude_args = '--exclude="*"'
-                include_args += '--include="metadata*" '
+                exclude_args = ['--exclude=*']
+                include_args.append('--include=metadata*')
 
         if os.path.isdir(destination):
             shutil.rmtree(destination)
 
         os.makedirs(destination, exist_ok=True)
 
-        rsync_cmd = 'rsync -LAvhr %s %s --rsync-path="sudo rsync" -e "ssh -t -p %s -i /home/%s/.ssh/id_rsa" %s@%s %s' \
-                    % (include_args, exclude_args, self.ssh_port, self.ssh_user, self.ssh_user, source, destination)
+        rsync_cmd = rsync_remote_restore_argv(
+            include_args=include_args,
+            exclude_args=exclude_args,
+            ssh_port=self.ssh_port,
+            ssh_user=self.ssh_user,
+            remote_source=source,
+            destination=destination,
+        )
 
-        self.logger.info('Running: %s', rsync_cmd)
+        self.logger.info('Running: %s', ' '.join(rsync_cmd))
         log_stream = open(log_file, 'a')
-        proc = subprocess.Popen(rsync_cmd, stdout=log_stream, stderr=log_stream, shell=True)
+        proc = subprocess.Popen(rsync_cmd, stdout=log_stream, stderr=log_stream)
         proc.communicate()
         if proc.returncode != 0:
             msg = 'Rsync failed.'

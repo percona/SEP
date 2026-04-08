@@ -366,6 +366,23 @@ async def stop_task_history(
     return await executor.stop_task(session, task_history)
 
 
+@router.post("/history/{task_history_id}/sync/", dependencies=[IsAuthenticatedDep])
+async def sync_task_history(
+    session: SessionDep, executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
+) -> TaskHistoryResponse:
+    """Sync task history with the executor and persist the latest status."""
+    logger.debug("Syncing task history %s", task_history.id)
+    if task_history.status != TaskHistoryStatusEnum.RUNNING:
+        return task_history
+    updated = await executor.sync_task_history(task_history)
+    saved = await TaskHistoryManager.save(
+        session, updated, flag_modified_fields=["execution_request"]
+    )
+    return await TaskHistoryManager.get_or_404(
+        session, select_related=(TaskHistory.task,), id=saved.id
+    )
+
+
 @router.post(
     "/history/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
 )
