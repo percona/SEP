@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.backup_pg.deps import (
     build_backup_task_payload,
@@ -134,6 +135,18 @@ async def test_get_backups_task(mocker):
     assert result == fake_task
 
 
+@pytest.mark.asyncio
+async def test_get_backups_task_raises_http_exception(mocker):
+    """Test get_backups_task propagates task-not-found errors."""
+    mocker.patch(
+        "app.sep.plugins.backup_pg.deps.get_task_by_name",
+        side_effect=HTTPNotFoundException(),
+    )
+
+    with pytest.raises(HTTPNotFoundException):
+        await get_backups_task("missing-task", AsyncMock())
+
+
 def test_get_backups_task_info():
     """Test extracting the correct fields from a backup_pg task dictionary."""
     server_port = 5555
@@ -199,3 +212,37 @@ def test_parse_backup_task_data():
     assert result["host"] == "localhost"
     assert result["port"] == expected_port
     assert result["logging_dir"] == "/var/log/pgbackrest"
+
+
+def test_parse_backup_task_data_without_all_servers():
+    """Test parse_backup_task_data handles missing ALL_SERVERS section."""
+    expected_port = 5432
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "HOST": "localhost",
+                                "PORT": expected_port,
+                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                            }
+                        ]
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["name"] == "test_task"
+    assert result["hostname"] == "host.example.com"
+    assert result["backup_type"] == BackupType.PGBACKREST.value
+    assert result["service_id"] is None
+    assert result["host"] == "localhost"
+    assert result["port"] == expected_port
+    assert "logging_dir" not in result
