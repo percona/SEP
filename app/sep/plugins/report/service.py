@@ -839,10 +839,13 @@ async def generate_report(
         "refresh": refresh,
     }
 
-    for section in sections:
-        if section in requires_datasource and not ds_id:
-            continue
-        await _collect_section(section, report, **collector_kwargs)
+    await asyncio.gather(
+        *(
+            _collect_section(section, report, **collector_kwargs)
+            for section in sections
+            if section not in requires_datasource or ds_id
+        )
+    )
 
     return report
 
