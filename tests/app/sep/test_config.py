@@ -18,12 +18,9 @@
 from string import Template
 from unittest.mock import patch
 
-from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.config import PMMSettings
 from app.sep.config import (
     _DeprecatedPMMConfig,
-    HealthReportSettings,
-    ReportScheduleEntry,
     SEPSettings,
 )
 
