@@ -2,8 +2,8 @@
 
 # ---
 # title: "mysql_query_tuning"
-# description: "Collects data for MySQL query tuning"
-# strict: false
+# description: "Collects data for MySQL query tuning."
+# allow_extra_args: false
 # parameters:
 #  - name: defaults-file
 #    type: str

@@ -60,55 +60,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         width: 130px;
     }
 
-    .selection-panel,
-    .result-panel {
-        background-color: #fff;
-        padding-left: 20px;
-        padding-right: 20px;
-        border-radius: 5px;
-    }
-
-    #toggleCreateTable {
-        padding: 10px 20px;
-    }
-
-    #createTableOutput {
-        background-color: var(--surfaceElevation1);
-        color: var(--textPrimary);
-        padding: 15px;
-        border-radius: 5px;
-        overflow-x: auto;
-        max-height: 1000px;
-        font-family: monospace;
-        line-height: 1.4em;
-        white-space: pre-wrap;
-    }
-
-    #statusMessage {
-        margin-top: 20px;
-    }
-
-    #statusMessage.success {
-        color: green;
-    }
-
-    #statusMessage.error {
-        color: red;
-    }
-
-    #result-panel {
-        overflow: hidden;
-        transition: opacity 0.5s ease, max-height 0.5s ease;
-        opacity: 1;
-        max-height: 1000px;
-    }
-
-    #result-panel.fade {
-        opacity: 0;
-        max-height: 0;
-        pointer-events: none;
-    }
-
     input[type="checkbox"] {
         flex: none;
         margin-right: 0.5em;
