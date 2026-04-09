@@ -1,0 +1,24 @@
+name: Auto-assign PR author
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  assign-author:
+    # Skip if already assigned, and skip fork PRs.
+    if: >-
+      length(github.event.pull_request.assignees) == 0 &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign PR to author
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr edit "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --add-assignee "${{ github.event.pull_request.user.login }}"
