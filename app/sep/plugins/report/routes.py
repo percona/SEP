@@ -18,7 +18,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Query, Request, status
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.sep.config import sep_settings
@@ -118,10 +118,7 @@ async def report_generate_json(
     report = await generate_report(
         pmm_api, since=since, until=until, full=full, refresh=refresh, sections=sections
     )
-    return JSONResponse(
-        content=report.model_dump(mode="json"),
-        status_code=status.HTTP_200_OK,
-    )
+    return JSONResponse(content=report.model_dump(mode="json"))
 
 
 @router.post(
@@ -182,4 +179,4 @@ async def report_upload(
     )
     pdf_bytes = await generate_pdf_report(report)
     result = await upload_pdf_report(report, pdf_bytes)
-    return JSONResponse(content=result, status_code=status.HTTP_200_OK)
+    return JSONResponse(content=result)
