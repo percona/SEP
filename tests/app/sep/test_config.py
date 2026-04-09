@@ -23,7 +23,6 @@ from app.core.config import PMMSettings
 from app.sep.config import (
     _DeprecatedPMMConfig,
     HealthReportSettings,
-    PMMSettings,
     ReportScheduleEntry,
     SEPSettings,
 )
