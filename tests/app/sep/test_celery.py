@@ -38,6 +38,7 @@ from app.sep.clients.pmm import (
     AlertTemplate as PMMAlertTemplate,
 )
 from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.config import AlertsPMMConfig
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.snippets.config import SnippetFilter, SnippetFilterType
 
@@ -374,18 +375,12 @@ def _mock_pmm_api():
     return api
 
 
-def _patch_pmm_settings(mocker, *, endpoint="https://pmm.example.com", retention=10):
-    """Patch sep_settings inside _backup_alert_config."""
-    mock_settings = MagicMock(
-        PMM=MagicMock(
-            endpoint=endpoint,
-            api_key=MagicMock(get_secret_value=lambda: "key123") if endpoint else None,
-            verify_ssl=True,
-            backup_interval="every 24 hours",
-            backup_retention=retention,
-        ),
+def _patch_pmm_settings(mocker, *, retention=10):
+    """Patch alerts PMM config inside _backup_alert_config."""
+    mocker.patch(
+        "app.sep.plugins.alerts.config.alerts_pmm_config",
+        MagicMock(spec=AlertsPMMConfig, backup_retention=retention),
     )
-    mocker.patch("app.sep.celery.sep_settings", mock_settings)
 
 
 def _patch_session(mocker, session):

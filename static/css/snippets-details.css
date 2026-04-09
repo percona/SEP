@@ -113,7 +113,7 @@ td.code {
 
 .linenos pre {
     overflow: hidden;
-    color: #90918B;
+    color: var(--textSecondary);
 }
 
 .code div {
@@ -195,17 +195,17 @@ label:has(> input[type="checkbox"]:disabled)>.checkmark {
 }
 
 .snippetDisabledWarning {
-    color: #d22929;
+    color: var(--errorMain);
     font-weight: 600;
 }
 
 .sudoAlways {
-    color: #d22929;
+    color: var(--errorMain);
     font-weight: 600;
 }
 
 .sudoOptional {
-    color: #fd720c;
+    color: var(--warningMain);
     font-weight: 500;
 }
 

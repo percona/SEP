@@ -600,9 +600,11 @@ class BaseSnippet(BaseModel):
 
     def to_form(
         self,
-        executor_hosts: Iterable[tuple[str, str]],
+        executor_hosts: Iterable[tuple[str, str]] | None = None,
         form_action: str = "",
         defaults: dict[str, Any] | None = None,
+        *,
+        form_id: str = "snippetExecuteForm",
     ) -> str:
         """Generate an HTML form for executing the snippet.
 
@@ -611,7 +613,8 @@ class BaseSnippet(BaseModel):
         executor host and fields for snippet parameters.
 
         :param executor_hosts: An iterable of (value, label) tuples for executor hosts.
-        :type executor_hosts: Iterable[tuple[str, str]]
+            When ``None``, the executor host fieldset is omitted from the form.
+        :type executor_hosts: Iterable[tuple[str, str]] | None
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
@@ -619,6 +622,8 @@ class BaseSnippet(BaseModel):
             name.  When provided, matching parameter defaults are overridden before
             form generation.
         :type defaults: dict[str, Any] | None
+        :param form_id: The HTML ``id`` attribute for the ``<form>`` element.
+        :type form_id: str
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
@@ -642,6 +647,7 @@ class BaseSnippet(BaseModel):
             sudo_default=self.sudo.sudo_default,
             form_action=form_action,
             disabled=not self.can_execute,
+            form_id=form_id,
         )
 
     def get_execution_model(self) -> type[BaseSnippetArgs]:
@@ -738,13 +744,14 @@ class BaseSnippet(BaseModel):
     @ttl_cache(ttl=_ONE_HOUR, maxsize=8)
     def _to_form(
         parameters_json: str,
-        executor_hosts: frozenset[tuple[str, str]],
+        executor_hosts: frozenset[tuple[str, str]] | None = None,
         *,
         add_extra_args_field: bool = False,
         add_sudo_field: bool = False,
         sudo_default: bool = False,
         form_action: str = "",
         disabled: bool = False,
+        form_id: str = "snippetExecuteForm",
     ) -> str:
         """Generate an HTML form for executing a snippet.
 
@@ -756,30 +763,33 @@ class BaseSnippet(BaseModel):
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
         :param executor_hosts: A set of (value, label) tuples for executor hosts.
-        :type executor_hosts: frozenset[tuple[str, str]]
+            When ``None``, the executor host fieldset is omitted.
+        :type executor_hosts: frozenset[tuple[str, str]] | None
         :param add_extra_args_field: Whether to include an extra arguments field in the
-            form. Defaults to `False`.
+            form. Defaults to ``False``.
         :type add_extra_args_field: bool
         :param add_sudo_field: Whether to include a sudo checkbox in the form.
-            Defaults to `False`.
+            Defaults to ``False``.
         :type add_sudo_field: bool
         :param sudo_default: The default checked state for the sudo checkbox. Only
-            relevant when `add_sudo_field` is `True`. Defaults to `False`.
+            relevant when ``add_sudo_field`` is ``True``. Defaults to ``False``.
         :type sudo_default: bool
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
         :param disabled: Whether to disable the form fields and submit button. Defaults
-            to `False`.
+            to ``False``.
         :type disabled: bool
+        :param form_id: The HTML ``id`` attribute for the ``<form>`` element.
+        :type form_id: str
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
-        executor_hosts_fieldset = get_executor_hosts_fieldset(executor_hosts)
-        executor_hosts_fieldset.disabled = disabled
-        fieldsets = [
-            executor_hosts_fieldset,
-        ]
+        fieldsets = []
+        if executor_hosts is not None:
+            executor_hosts_fieldset = get_executor_hosts_fieldset(executor_hosts)
+            executor_hosts_fieldset.disabled = disabled
+            fieldsets.append(executor_hosts_fieldset)
         parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
         groups = {}
@@ -811,7 +821,7 @@ class BaseSnippet(BaseModel):
                 FieldsetElement(legend=legend, children=group_fields, disabled=disabled)
             )
         return FormElement(
-            id="snippetExecuteForm",
+            id=form_id,
             children=fieldsets,
             submit_button=SubmitButtonElement(
                 label="Execute",

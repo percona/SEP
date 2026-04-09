@@ -27,6 +27,7 @@ from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
+    ExecutionEvent,
     FileMetadata,
     Task,
     TaskHistory,
@@ -192,6 +193,23 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :param queue_item: The task history record that will be streamed.
         :type queue_item: TaskHistory
         """
+
+    def get_events(
+        self,
+        queue_item: TaskHistory,  # noqa: ARG002
+    ) -> list[ExecutionEvent]:
+        """Return structured execution events from stored tracking data.
+
+        Executors that persist backend-specific state under
+        :attr:`TaskHistory.execution_request` should override this to map that
+        data into :class:`~app.tasks.models.ExecutionEvent`.
+
+        :param queue_item: The task history record to read tracking from.
+        :type queue_item: TaskHistory
+        :return: Events sorted oldest-first by the executor implementation.
+        :rtype: list[ExecutionEvent]
+        """
+        return []
 
     @abstractmethod
     async def stream_file(
