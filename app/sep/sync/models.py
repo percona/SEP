@@ -31,6 +31,8 @@ from async_lru import _LRUCacheWrapper, alru_cache
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.config import alert_service
+from app.core.alerts.models import AlertSeverity
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
@@ -366,6 +368,19 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self._session,
                 sync_item,
             )
+            syncer_name = self.get_name()
+            entity_id_repr = "root" if entity_id is None else str(entity_id)
+            alert_data = {
+                "summary": (
+                    f"Inventory sync failed for {syncer_name} "
+                    f"({entity_type.name} id {entity_id_repr})."
+                ),
+                "source": f"{syncer_name}:{entity_type.name}:{entity_id_repr}",
+                "severity": AlertSeverity.ERROR,
+                "class": "inventory_sync_item_failure",
+                "dedup_key": f"{syncer_name}:{entity_type.name}:{entity_id_repr}",
+            }
+            await alert_service.trigger(alert_data)
             if self.break_on_error:
                 raise SyncFailError(
                     entity_type, self.sync_items[sync_item_entity]
