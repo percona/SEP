@@ -15,15 +15,26 @@
 
 """Test the alert troubleshooting plugin routes."""
 
-from fastapi import status
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+from fastapi import HTTPException, status
 from starlette.testclient import TestClient
 
+from app.core.requests import RemoteAPI
+from app.sep.deps import get_tasks_api
 from app.sep.main import sep_app
 from app.sep.models import AlertServiceType
 from app.sep.plugins.alert_troubleshooting.deps import (
     AlertInfo,
+    get_ajax_executable_snippet,
+    get_ajax_execution_request_meta,
+    get_troubleshooting_detail_context,
     get_troubleshooting_index_context,
 )
+from app.sep.snippets.models.snippet import SnippetExecutionMeta
+
+MOCK_TASK_ID = 42
 
 
 def _override_context(grouped_alerts):
@@ -104,4 +115,188 @@ class TestTroubleshootingIndex:
             _override_context(grouped)
         )
         response = test_client.get("/alert-troubleshooting/")
-        assert "/alert-troubleshooting/HighCPUUsage" in response.text
+        assert "/alert-troubleshooting/generic/HighCPUUsage" in response.text
+
+
+def _override_detail_context(alert_info, snippets, executor_hosts):
+    """Build a detail context override."""
+
+    async def _mock_context():
+        return {
+            "alert_info": alert_info,
+            "snippets": snippets,
+            "executor_hosts": executor_hosts,
+            "base_uri": "/alert-troubleshooting",
+        }
+
+    return _mock_context
+
+
+class TestTroubleshootingDetail:
+    """Test the alert troubleshooting detail route."""
+
+    def test_detail_returns_200(self, test_client: TestClient):
+        """Assert GET /{alert_name} returns 200 with valid context."""
+        alert_info = AlertInfo(name="HighCPU", label="High CPU")
+        sep_app.dependency_overrides[get_troubleshooting_detail_context] = (
+            _override_detail_context(alert_info, [], [])
+        )
+        response = test_client.get("/alert-troubleshooting/generic/HighCPU")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_detail_renders_alert_label(self, test_client: TestClient):
+        """Assert the detail page renders the alert display label."""
+        alert_info = AlertInfo(name="MySQLSlowQueries", label="MySQL Slow Queries")
+        sep_app.dependency_overrides[get_troubleshooting_detail_context] = (
+            _override_detail_context(alert_info, [], [])
+        )
+        response = test_client.get("/alert-troubleshooting/mysql/MySQLSlowQueries")
+        assert "MySQL Slow Queries" in response.text
+
+    def test_detail_empty_snippets_shows_empty_state(self, test_client: TestClient):
+        """Assert the detail page renders empty state when no snippets."""
+        alert_info = AlertInfo(name="EmptyAlert", label="Empty Alert")
+        sep_app.dependency_overrides[get_troubleshooting_detail_context] = (
+            _override_detail_context(alert_info, [], [])
+        )
+        response = test_client.get("/alert-troubleshooting/generic/EmptyAlert")
+        assert response.status_code == status.HTTP_200_OK
+        assert "No snippets are associated" in response.text
+
+    def test_detail_renders_executor_hosts(self, test_client: TestClient):
+        """Assert the detail page renders executor host options."""
+        alert_info = AlertInfo(name="HighCPU", label="High CPU")
+        hosts = [{"value": "node-1", "label": "Node 1"}]
+        sep_app.dependency_overrides[get_troubleshooting_detail_context] = (
+            _override_detail_context(alert_info, [], hosts)
+        )
+        response = test_client.get("/alert-troubleshooting/generic/HighCPU")
+        assert "Node 1" in response.text
+
+
+class TestTroubleshootingExecute:
+    """Test the AJAX snippet execution endpoint."""
+
+    @staticmethod
+    def _mock_snippet():
+        """Create a mock executable snippet."""
+        return SimpleNamespace(
+            filename="test.sh",
+            execution_task_name="run-command",
+            can_execute=True,
+            is_approved=True,
+        )
+
+    @staticmethod
+    def _mock_meta():
+        """Create a mock execution metadata."""
+        return SnippetExecutionMeta(
+            target="node-1",
+            interpreter="bash",
+            snippet_source="https://example.com/test.sh",
+            snippet_filename="test.sh",
+            md5_checksum="d" * 32,
+        )
+
+    def test_execute_success(self, test_client: TestClient):
+        """Assert POST /execute/{filename} returns JSON with task ID."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.post.return_value = {"id": MOCK_TASK_ID, "status": "running"}
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        sep_app.dependency_overrides[get_ajax_executable_snippet] = self._mock_snippet
+        sep_app.dependency_overrides[get_ajax_execution_request_meta] = self._mock_meta
+        response = test_client.post(
+            "/alert-troubleshooting/execute/test.sh",
+            data={"-hostname-": "node-1", "csrf-token": "fake"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["task_id"] == MOCK_TASK_ID
+        assert data["status"] == "submitted"
+
+    def test_execute_tasks_api_error(self, test_client: TestClient):
+        """Assert JSON error response when Tasks API fails."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.post.side_effect = HTTPException(status_code=502, detail="Bad Gateway")
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        sep_app.dependency_overrides[get_ajax_executable_snippet] = self._mock_snippet
+        sep_app.dependency_overrides[get_ajax_execution_request_meta] = self._mock_meta
+        response = test_client.post(
+            "/alert-troubleshooting/execute/test.sh",
+            data={"-hostname-": "node-1", "csrf-token": "fake"},
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "error" in response.json()
+
+
+class TestTroubleshootingOutput:
+    """Test the AJAX output polling endpoint."""
+
+    def test_output_running(self, test_client: TestClient):
+        """Assert running task returns status without output."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.get.return_value = {"id": 1, "status": "running"}
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        response = test_client.get("/alert-troubleshooting/output/1")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "running"
+
+    def test_output_success(self, test_client: TestClient):
+        """Assert successful task returns status and stdout log output."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.get.return_value = {"id": 1, "status": "success"}
+
+        async def _mock_stream(path, **kwargs):
+            yield b'{"step":"run-script","type":"stdout","msg":"query result OK","offset":15}'
+
+        mock_api.stream = _mock_stream
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        response = test_client.get("/alert-troubleshooting/output/1")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "success"
+        assert "query result OK" in data["output"]
+
+    def test_output_failed(self, test_client: TestClient):
+        """Assert failed task returns stderr in the error field."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.get.return_value = {"id": 1, "status": "failed"}
+
+        async def _mock_stream(path, **kwargs):
+            yield b'{"step":"run-script","type":"stderr","msg":"Error: connection refused","offset":25}'
+
+        mock_api.stream = _mock_stream
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        response = test_client.get("/alert-troubleshooting/output/1")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "failed"
+        assert data["output"] == ""
+        assert data["error"] == "Error: connection refused"
+
+    def test_output_failed_no_stderr(self, test_client: TestClient):
+        """Assert failed task without stderr omits the error field."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.get.return_value = {"id": 1, "status": "failed"}
+
+        async def _mock_stream(path, **kwargs):
+            yield b'{"step":"run-script","type":"stdout","msg":"","offset":0}'
+
+        mock_api.stream = _mock_stream
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        response = test_client.get("/alert-troubleshooting/output/1")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["status"] == "failed"
+        assert data["output"] == ""
+        assert "error" not in data
+
+    def test_output_tasks_api_error(self, test_client: TestClient):
+        """Assert JSON error response when Tasks API returns an error."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.get.side_effect = HTTPException(status_code=502, detail="Bad Gateway")
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        response = test_client.get("/alert-troubleshooting/output/1")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "error" in response.json()
