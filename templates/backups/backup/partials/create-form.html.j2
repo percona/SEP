@@ -36,6 +36,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     #mydumper_container,
     #xtrabackup_container,
     #s3_container,
+    #gs_container,
     #rsync_container {
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 0;
@@ -45,6 +46,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     #mydumper_container.visible,
     #xtrabackup_container.visible,
     #s3_container.visible,
+    #gs_container.visible,
     #rsync_container.visible {
         opacity: 1;
         max-height: 1000px;
@@ -52,6 +54,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
     #upload_container.visible,
     #s3_container.visible,
+    #gs_container.visible,
     #rsync_container.visible{
         display: block;
     }
@@ -833,6 +836,22 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         <span class="label">Skip S3 Safety Check</span>{{ info_icon(skip_s3_safety_check_title) }}
                     </label>
                 </div>
+                <button class="text large" type="button" id="toggle_gs_btn">+ Add GS upload</button>
+                <br>
+                <div id="gs_container" class="hidden">
+                    {% set gs_bucket_title = "Type the name of the GS Bucket where backups will be stored." %}
+                    <div>
+                        <label for="gs_bucket">
+                            GS Bucket:
+                            <input type="text"
+                                   id="gs_bucket"
+                                   name="gs_bucket"
+                                   placeholder="e.g. my-gcp-backup-bucket" />
+                            {{ info_icon(gs_bucket_title) }}
+                        </label>
+                    </div>
+                    <br>
+                </div>
                 <button class="text large" type="button" id="toggle_rsync_btn">+ Add Rsync upload</button>
                 <div id="rsync_container">
                     {% set rsync_path_title = "Type the remote destination path for Rsync transfers. Format: user@host:/path." %}
@@ -867,6 +886,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const uploadContainer = document.getElementById('upload_container');
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
+    const gsContainer = document.getElementById('gs_container');
+    const toggleGsBtn = document.getElementById('toggle_gs_btn');
+    const gsBucketInput = document.getElementById('gs_bucket');
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
     const s3BucketInput = document.getElementById('s3_bucket');
@@ -875,6 +897,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const createButton = form.querySelector('button[type="submit"]');
 
     let s3Visible = false;
+    let gsVisible = false;
     let rsyncVisible = false;
 
 
@@ -1029,6 +1052,21 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             toggleRsyncBtn.textContent = "+ Add Rsync upload";
         }
     }
+
+    function toggleGS() {
+        gsVisible = !gsVisible;
+        if (gsVisible) {
+            showContainer(gsContainer, true);
+            gsBucketInput.required = true;
+            toggleGsBtn.textContent = "- Remove GS upload";
+        } else {
+            showContainer(gsContainer, false);
+            gsBucketInput.required = false;
+            gsBucketInput.value = '';
+            toggleGsBtn.textContent = "+ Add GS upload";
+        }
+    }
+
     function updateCreateButtonState() {
         createButton.disabled = !form.checkValidity();
     }
@@ -1060,6 +1098,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
+    toggleGsBtn.addEventListener('click', toggleGS);
     toggleRsyncBtn.addEventListener('click', toggleRsync);
     ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
@@ -1068,6 +1107,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         if (form && window.initInfoTooltips) window.initInfoTooltips(form);
         updateBackupTypeUI();
         showContainer(s3Container, false);
+        showContainer(gsContainer, false);
         showContainer(rsyncContainer, false);
         updateCreateButtonState();
 
