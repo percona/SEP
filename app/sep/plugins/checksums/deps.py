@@ -37,6 +37,8 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_RECURSION_DSN_TABLE = "D=percona,t=dsns"
+
 
 def extract_databases_and_tables_from_extra_args(form: ChecksumsCreate) -> list[str]:
     """Extract --databases and --tables from extra_args and add to form fields.
@@ -144,7 +146,8 @@ async def build_checksums_task_payload(
 
     if form.recursion_method == "dsn":
         stripped_dsn = dsn.rstrip(",")
-        form.recursion_method = f"dsn={stripped_dsn},{form.dsn_table}"
+        dsn_table_part = (form.dsn_table or "").strip() or DEFAULT_RECURSION_DSN_TABLE
+        form.recursion_method = f"dsn={stripped_dsn},{dsn_table_part}"
 
     args = [dsn]
 

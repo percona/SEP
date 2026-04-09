@@ -52,6 +52,7 @@ from app.tasks.deps import (
 )
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
+    ExecutionEvent,
     FileMetadata,
     Task,
     TaskBackendEnum,
@@ -270,6 +271,20 @@ async def retrieve_task_history(
     return task_history
 
 
+@router.get(
+    "/history/{task_history_id}/events",
+    dependencies=[IsAuthenticatedDep],
+    response_model=list[ExecutionEvent],
+)
+async def list_task_history_events(
+    executor: TaskExecutor,
+    task_history: TaskHistoryWithTaskDep,
+) -> list[ExecutionEvent]:
+    """Return structured execution events from executor tracking (oldest first)."""
+    logger.debug("Requesting execution events for task history %s", task_history.id)
+    return executor.get_events(task_history)
+
+
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
 async def stream_task_history_logs(
     executor: TaskExecutor,
@@ -364,6 +379,23 @@ async def stop_task_history(
             f"task is not running (current status: {task_history.status})."
         )
     return await executor.stop_task(session, task_history)
+
+
+@router.post("/history/{task_history_id}/sync/", dependencies=[IsAuthenticatedDep])
+async def sync_task_history(
+    session: SessionDep, executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
+) -> TaskHistoryResponse:
+    """Sync task history with the executor and persist the latest status."""
+    logger.debug("Syncing task history %s", task_history.id)
+    if task_history.status != TaskHistoryStatusEnum.RUNNING:
+        return task_history
+    updated = await executor.sync_task_history(task_history)
+    saved = await TaskHistoryManager.save(
+        session, updated, flag_modified_fields=["execution_request"]
+    )
+    return await TaskHistoryManager.get_or_404(
+        session, select_related=(TaskHistory.task,), id=saved.id
+    )
 
 
 @router.post(

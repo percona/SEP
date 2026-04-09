@@ -28,9 +28,9 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
-from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext, SessionDep
 from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.config import alerts_pmm_config
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.loader import get_alert_templates
 from app.sep.plugins.alerts.models import AlertTemplate, ServiceType
@@ -71,13 +71,13 @@ async def get_pmm_api() -> PMMRemoteAPI | None:
     :return: The PMM API client, or ``None`` if endpoint or API key is missing.
     :rtype: PMMRemoteAPI | None
     """
-    if not sep_settings.PMM.endpoint or not sep_settings.PMM.api_key:
+    if not settings.PMM.endpoint or not settings.PMM.api_key:
         return None
     return await settings.get_remote_api(
         PMMRemoteAPI,
-        endpoint=sep_settings.PMM.endpoint,
-        api_key=sep_settings.PMM.api_key,
-        verify_ssl=sep_settings.PMM.verify_ssl,
+        endpoint=settings.PMM.endpoint,
+        api_key=settings.PMM.api_key,
+        verify_ssl=settings.PMM.verify_ssl,
     )
 
 
@@ -153,7 +153,7 @@ async def find_or_create_alert_folder(pmm_api: PMMRemoteAPI) -> Folder:
     :return: The existing or newly created folder.
     :rtype: Folder
     """
-    folder_name = sep_settings.PMM.alert_folder_name
+    folder_name = alerts_pmm_config.alert_folder_name
     folders = await pmm_api.list_folders()
     for folder in folders:
         if folder.title == folder_name:

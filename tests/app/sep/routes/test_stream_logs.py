@@ -29,39 +29,7 @@ from app.sep.deps import (
     get_tasks_client,
 )
 from app.sep.main import sep_app
-from app.tasks.models import (
-    Task,
-    TaskExecutionRequest,
-    TaskHistoryResponse,
-    TaskHistoryStatusEnum,
-)
-from tests.app.factories import TaskFactory
-
-
-@pytest.fixture
-def created_task() -> Task:
-    """Return a fake created task."""
-    return TaskFactory.build()
-
-
-@pytest.fixture
-def task_history_response(faker, created_task):
-    """Return a fake task history response."""
-    started_at = faker.past_datetime(start_date="-15d")
-    return TaskHistoryResponse(
-        id=faker.random_int(min=1),
-        execution_request=TaskExecutionRequest(
-            task="example-task",
-            target="example-target",
-            meta={"key": "value"},
-            tracking={"allocation_id": "12345", "evaluation_id": "67890"},
-        ),
-        status=TaskHistoryStatusEnum.SUCCESS,
-        task=created_task,
-        started_at=started_at,
-        finished_at=started_at + faker.time_delta(end_datetime="+1h"),
-        executed_by=None,
-    )
+from app.tasks.models import TaskHistoryStatusEnum
 
 
 async def mock_stream_logs_generator(log_lines):
@@ -95,7 +63,7 @@ def mock_tasks_client(task_history_response):
     client.stream.side_effect = lambda path, **_kwargs: mock_stream(
         path, task_history_response.id
     )
-    client.get.return_value = task_history_response.model_dump()
+    client.post.return_value = task_history_response.model_dump()
 
     sep_app.dependency_overrides[get_tasks_client] = lambda: client
     sep_app.dependency_overrides[get_task_history] = lambda: task_history_response
@@ -119,9 +87,63 @@ def test_archives_logs_event_stream(
     streamed_content = response.content.decode("utf-8")
     assert "log line 1" in streamed_content
     assert "log line 2" in streamed_content
+    assert "event: finish" in streamed_content
+    assert TaskHistoryStatusEnum.SUCCESS.value in streamed_content
 
     mock_tasks_client.stream.assert_called_once_with(
         f"/history/{task_history_response.id}/logs/",
         params=mocker.ANY,
         timeout=mocker.ANY,
     )
+    mock_tasks_client.post.assert_called_once_with(
+        f"/history/{task_history_response.id}/sync/"
+    )
+
+
+def test_stream_execution_events_event_stream(
+    mocker, test_client, mock_tasks_client, task_history_response
+):
+    """Test /stream-logs/{task_history_id}/execution-events SSE endpoint."""
+    mocker.patch("app.sep.routes.stream_logs.asyncio.sleep", new_callable=AsyncMock)
+
+    events_payload = [
+        {
+            "timestamp": "2026-03-26T05:43:09.907295Z",
+            "type": "Received",
+            "description": "Task received by client (exit code 0)",
+            "step": "prepare-env",
+        },
+        {
+            "timestamp": "2026-03-26T05:43:22.730705Z",
+            "type": "Started",
+            "description": "Task started by client (exit code 0)",
+            "step": "run-script",
+        },
+    ]
+
+    status_calls = {"history": 0}
+
+    async def mock_get(path, **_kwargs):
+        if path == f"/history/{task_history_response.id}/events":
+            return events_payload
+        if path == f"/history/{task_history_response.id}":
+            status_calls["history"] += 1
+            if status_calls["history"] == 1:
+                return {"status": TaskHistoryStatusEnum.RUNNING}
+            return {"status": TaskHistoryStatusEnum.FAILED}
+        raise ValueError(f"Unexpected path: {path}")
+
+    mock_tasks_client.get.side_effect = mock_get
+
+    response = test_client.get(
+        f"/stream-logs/{task_history_response.id}/execution-events"
+    )
+
+    assert response.status_code == HTTP_200_OK
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+    streamed_content = response.content.decode("utf-8")
+    assert "Received" in streamed_content
+    assert "Started" in streamed_content
+    assert "event: finish" in streamed_content
+    assert '"status": "failed"' in streamed_content

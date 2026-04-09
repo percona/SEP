@@ -18,6 +18,7 @@ import struct
 import subprocess
 import sys
 import time
+import tempfile
 import uuid
 from contextlib import suppress
 from enum import auto, Enum, IntEnum
@@ -87,6 +88,7 @@ DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 BACKUP_TYPE = "Binlogs"
 UPLOADME_FILE = ".uploadme"
 RSYNC_BIN = "/usr/bin/rsync"
+GSUTIL_BIN = os.getenv("PERCONA_BACKUP_GSUTIL_BIN", "/usr/local/bin/gsutil")
 
 DEFAULT_CFG_DIR = Path(
     os.getenv(
@@ -1159,6 +1161,12 @@ def run_binlog_process(server_data, lock_file, command_queue):
                                                 upload_provider=S3UploadProvider,
                                                 settings=server_data,
                                                 logger=LOGGER).run()
+                            elif upload_type == "gsutil":
+                                LOGGER.info("Binlog upload gs ...")
+                                BinaryLogUpload(upload_type=upload_type,
+                                                upload_provider=GSUploadProvider,
+                                                settings=server_data,
+                                                logger=LOGGER).run()
                             else:
                                 LOGGER.warning("Unsupported upload type: %r", upload_type)
                     last_upload_time = time.time()
@@ -1938,6 +1946,88 @@ class RsyncUploadProvider:
 
         return dest_path
 
+class GSUploadProvider:
+    """Google Cloud Storage upload."""
+
+    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+        """Initialize GSUploadProvider.
+
+        :param settings: Backup/server settings.
+        :param logger: Logger instance.
+        :raises BackupError: If GS_BUCKET not set.
+        """
+        self.logger = logger
+        host = settings.get("HOST", "localhost")
+        self.alias = settings.get("ALIAS", host)
+        self.gs_bucket = settings.get("GS_BUCKET")
+        self.backup_type = settings.get('BACKUP_TYPE')
+        if self.gs_bucket is None:
+            msg = 'GS_BUCKET is not set.'
+            raise BackupError(msg)
+
+        logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
+        os.makedirs(logging_dir, exist_ok=True)
+        log_file = os.path.join(logging_dir, 'gsutil-%s-%s-%s.log' %
+                                (self.alias,
+                                 self.backup_type,
+                                 time.strftime('%Y%m%d')
+                                )
+                               )
+        self.log_stream = open(log_file, 'a')
+
+        bucket_str = self.gs_bucket
+        if bucket_str.startswith("gs://"):
+            bucket_str = bucket_str[5:]
+        parts = bucket_str.split("/", 1)
+        self.bucket_name = parts[0]
+        self.bucket_prefix = parts[1] if len(parts) > 1 else ""
+
+    def upload(self, source_dir: str, dest_dir: str) -> str:
+        """Upload given directory to provided GS destination.
+
+        :param source_dir: Local source directory.
+        :param dest_dir: Destination path (relative) on GS.
+        :return: GS URI of the uploaded backup.
+        :raises BackupError: If GS upload fails.
+        """
+        source_path = Path(source_dir)
+        full_prefix = (
+            str(Path(self.bucket_prefix) / dest_dir)
+            if self.bucket_prefix else dest_dir
+        )
+        dest_path = f"gs://{self.bucket_name}/{full_prefix}"
+        gs_cmd = [GSUTIL_BIN, 'rsync', '-r', str(source_path), dest_path]
+        self.logger.info('Uploading backup...')
+        self.logger.info('Running: %s', ' '.join(gs_cmd))
+
+        proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            msg = f"GS upload failed. Error: {err}"
+            raise BackupError(msg)
+
+        if self.backup_type not in ["B", "O"] and not (
+            self.backup_type == "X" and "_incrementals" in dest_dir
+        ):
+            with tempfile.NamedTemporaryFile("w", delete=False) as tmpf:
+                tmpf.write(dest_path)
+                tmpf.flush()
+                latest_file_local_path = tmpf.name
+            try:
+                latest_file_remote_dir = (
+                       f"gs://{self.bucket_name}/{Path(full_prefix).parent}/latest"
+                )
+                gs_cmd = [GSUTIL_BIN,'cp',latest_file_local_path, latest_file_remote_dir]
+                proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+                _, err = proc.communicate()
+                if proc.returncode != 0:
+                    msg = f"GS upload failed. Error: {err}"
+                    raise BackupError(msg)
+            finally:
+                if Path(latest_file_local_path).exists():
+                    Path(latest_file_local_path).unlink()
+
+        return dest_path
 
 if __name__ == "__main__":
     try:
