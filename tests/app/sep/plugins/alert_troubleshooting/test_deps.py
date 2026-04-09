@@ -17,13 +17,19 @@
 
 from types import SimpleNamespace
 
+import pytest
+
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.models import AlertServiceType
 from app.sep.plugins.alert_troubleshooting.deps import (
     AlertInfo,
     camel_case_to_title,
     collect_grouped_alerts,
+    filter_snippets_for_alert,
     normalize_alert_entry,
 )
+
+EXPECTED_BOTH_SNIPPETS = 2
 
 
 class TestCamelCaseToTitle:
@@ -241,3 +247,105 @@ class TestCollectGroupedAlerts:
         """Assert empty snippet list produces empty result."""
         result = collect_grouped_alerts([])
         assert len(result) == 0
+
+
+class TestFilterSnippetsForAlert:
+    """Test filtering snippets by alert name."""
+
+    @staticmethod
+    def _make_snippet(meta):
+        """Create a mock snippet object with the given meta dict."""
+        return SimpleNamespace(meta=meta)
+
+    def test_filters_matching_snippets(self):
+        """Assert only snippets declaring the alert are returned."""
+        s1 = self._make_snippet({"alerts": ["HighCPU"]})
+        s2 = self._make_snippet({"alerts": ["LowDisk"]})
+        s3 = self._make_snippet({"alerts": ["HighCPU", "LowDisk"]})
+        matched, alert_info = filter_snippets_for_alert([s1, s2, s3], "HighCPU")
+        assert matched == [s1, s3]
+        assert alert_info.name == "HighCPU"
+
+    def test_no_match_raises_not_found(self):
+        """Assert ``HTTPNotFoundException`` when no snippet matches."""
+        s1 = self._make_snippet({"alerts": ["HighCPU"]})
+        with pytest.raises(HTTPNotFoundException):
+            filter_snippets_for_alert([s1], "NonExistentAlert")
+
+    def test_empty_snippets_raises_not_found(self):
+        """Assert ``HTTPNotFoundException`` for empty snippet list."""
+        with pytest.raises(HTTPNotFoundException):
+            filter_snippets_for_alert([], "AnyAlert")
+
+    def test_dict_alert_entries_matched(self):
+        """Assert dict-style alert entries are matched by name."""
+        s1 = self._make_snippet({"alerts": [{"name": "HighCPU", "label": "High CPU"}]})
+        matched, alert_info = filter_snippets_for_alert([s1], "HighCPU")
+        assert matched == [s1]
+        assert alert_info.label == "High CPU"
+
+    def test_snippets_without_alerts_skipped(self):
+        """Assert snippets with no alerts metadata are skipped."""
+        s1 = self._make_snippet({"title": "no alerts"})
+        s2 = self._make_snippet({"alerts": ["HighCPU"]})
+        matched, _ = filter_snippets_for_alert([s1, s2], "HighCPU")
+        assert matched == [s2]
+
+    def test_mixed_approved_unapproved_all_returned(self):
+        """Assert both approved and unapproved snippets are returned."""
+        s1 = SimpleNamespace(meta={"alerts": ["HighCPU"]}, is_approved=True)
+        s2 = SimpleNamespace(meta={"alerts": ["HighCPU"]}, is_approved=False)
+        matched, _ = filter_snippets_for_alert([s1, s2], "HighCPU")
+        assert len(matched) == EXPECTED_BOTH_SNIPPETS
+
+    def test_service_type_filters_snippets(self):
+        """Assert service_type restricts matches to the given type."""
+        s_mysql = self._make_snippet({"alerts": ["HighCPU"], "service_type": "mysql"})
+        s_pg = self._make_snippet({"alerts": ["HighCPU"], "service_type": "postgresql"})
+        matched, _ = filter_snippets_for_alert(
+            [s_mysql, s_pg], "HighCPU", AlertServiceType.MYSQL
+        )
+        assert matched == [s_mysql]
+
+    def test_service_type_none_defaults_to_generic(self):
+        """Assert snippets without service_type match GENERIC filter."""
+        s_generic = self._make_snippet({"alerts": ["HighCPU"]})
+        s_mysql = self._make_snippet({"alerts": ["HighCPU"], "service_type": "mysql"})
+        matched, _ = filter_snippets_for_alert(
+            [s_generic, s_mysql], "HighCPU", AlertServiceType.GENERIC
+        )
+        assert matched == [s_generic]
+
+
+class TestFilterSnippetsForAlertAlertInfo:
+    """Test that ``filter_snippets_for_alert`` returns correct ``AlertInfo``."""
+
+    @staticmethod
+    def _make_snippet(meta):
+        """Create a mock snippet object with the given meta dict."""
+        return SimpleNamespace(meta=meta)
+
+    def test_string_alert_returns_derived_label(self):
+        """Assert ``AlertInfo`` label is derived from a string alert entry."""
+        s = self._make_snippet({"alerts": ["HighCPUUsage"]})
+        _, alert_info = filter_snippets_for_alert([s], "HighCPUUsage")
+        assert alert_info == AlertInfo(name="HighCPUUsage", label="High CPU Usage")
+
+    def test_dict_alert_returns_explicit_label(self):
+        """Assert ``AlertInfo`` uses the explicit label from a dict entry."""
+        s = self._make_snippet(
+            {"alerts": [{"name": "HighCPU", "label": "Custom Label"}]}
+        )
+        _, alert_info = filter_snippets_for_alert([s], "HighCPU")
+        assert alert_info == AlertInfo(name="HighCPU", label="Custom Label")
+
+    def test_first_matching_snippet_provides_info(self):
+        """Assert the first snippet's alert metadata is used for the label."""
+        s1 = self._make_snippet(
+            {"alerts": [{"name": "Alert1", "label": "First Label"}]}
+        )
+        s2 = self._make_snippet(
+            {"alerts": [{"name": "Alert1", "label": "Second Label"}]}
+        )
+        _, alert_info = filter_snippets_for_alert([s1, s2], "Alert1")
+        assert alert_info.label == "First Label"
