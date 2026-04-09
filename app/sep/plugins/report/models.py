@@ -15,7 +15,6 @@
 
 """Pydantic models for PMM health report data."""
 
-from collections import OrderedDict
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
@@ -116,10 +115,8 @@ class AlertSection(BaseModel):
     alerts_per_service: dict[str, int] = Field(default_factory=dict)
     alerts_per_rule: dict[str, int] = Field(default_factory=dict)
     alerts_per_host: dict[str, int] = Field(default_factory=dict)
-    alerts_daily: OrderedDict[str, int] = Field(default_factory=OrderedDict)
-    alerts_daily_per_host: OrderedDict[str, dict[str, int]] = Field(
-        default_factory=OrderedDict
-    )
+    alerts_daily: dict[str, int] = Field(default_factory=dict)
+    alerts_daily_per_host: dict[str, dict[str, int]] = Field(default_factory=dict)
     alert_history: list[AlertEntry] = Field(default_factory=list)
 
 

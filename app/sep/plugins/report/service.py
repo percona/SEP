@@ -26,7 +26,6 @@ import asyncio
 import logging
 import re
 import time
-from collections import OrderedDict
 from datetime import datetime, timedelta, UTC
 from typing import Any
 
@@ -274,8 +273,8 @@ async def collect_alerts(
     per_service: dict[str, int] = {}
     per_rule: dict[str, int] = {}
     per_host: dict[str, int] = {}
-    daily: OrderedDict[str, int] = OrderedDict()
-    daily_per_host: OrderedDict[str, dict[str, int]] = OrderedDict()
+    daily: dict[str, int] = {}
+    daily_per_host: dict[str, dict[str, int]] = {}
 
     for annotation in raw:
         if annotation.get("newState") != "Alerting":
