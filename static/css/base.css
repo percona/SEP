@@ -1710,6 +1710,84 @@ td.errors ul {
     width: 100%;
 }
 
+/* Monospace like <pre class="log-output">; headings are h4/h5 so override global Poppins on h4–h6 */
+.log-events-view {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 12rem;
+    padding: 0.75rem 1rem 1rem;
+    overflow: auto;
+    font-family: 'Roboto Mono', ui-monospace, monospace;
+    font-size: 1em;
+    line-height: 1.4;
+    color: var(--textPrimary);
+    background: var(--surfaceElevation0);
+}
+
+.log-events-view__title {
+    margin: 0 0 0.75rem;
+    font-size: 1em;
+    font-weight: 600;
+    font-family: 'Roboto Mono', ui-monospace, monospace;
+}
+
+.log-events-view h4.log-events-view__title,
+.log-events-view h5.log-events-step__title {
+    font-family: 'Roboto Mono', ui-monospace, monospace;
+}
+
+.log-events-step {
+    margin: 0 0 1rem;
+    padding: 0 0 0.5rem;
+}
+
+.log-events-step:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.log-events-step__title {
+    margin: 0 0 0.5rem;
+    font-size: 1em;
+    font-weight: 600;
+    font-family: 'Roboto Mono', ui-monospace, monospace;
+}
+
+.log-events-step__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.log-events-step__item {
+    margin: 0 0 0.65rem;
+}
+
+.log-events-step__time {
+    display: block;
+    margin-bottom: 0.15rem;
+    opacity: 0.88;
+    font-size: 0.875em;
+    font-family: inherit;
+}
+
+.log-events-step__body {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.log-events-step-panels .log-events-step-panel {
+    display: none;
+}
+
+.log-events-step-missing {
+    display: none;
+    margin: 0.5rem 0 0;
+    padding: 0.75rem 0;
+    opacity: 0.85;
+    font-family: inherit;
+}
+
 .sep-stream-error {
     box-sizing: border-box;
     padding: 1rem 1.25rem;
