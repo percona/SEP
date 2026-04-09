@@ -267,7 +267,7 @@ async def get_default_context(
         "plugins": sep_settings.PLUGINS,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
-        "pmm_url": sep_settings.PMM.frontend,
+        "pmm_url": settings.PMM.frontend,
         "footer_text": sep_settings.FOOTER_TEXT,
         "user_id_to_username": await get_username_mapping(),
     }
