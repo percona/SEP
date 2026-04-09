@@ -880,7 +880,9 @@ async def generate_pdf_report(report: ReportData) -> bytes:
     )
 
     def _generate() -> bytes:
-        page_css = CSS(string="@page { size: 370mm 445.5mm; margin: 20mm; }")
+        page_css = CSS(
+            string="@page { size: 370mm 445.5mm; margin: 0; background: rgb(0, 18, 34); }"
+        )
         return HTML(string=html).write_pdf(stylesheets=[page_css])
 
     return await asyncio.to_thread(_generate)
