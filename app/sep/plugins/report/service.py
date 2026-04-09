@@ -70,18 +70,20 @@ SERVICE_NAMES: dict[str, str] = {
     "proxysql": "ProxySQL",
 }
 
-_ALERT_LABEL_KEYS = [
-    "alertname",
-    "environment",
-    "grafana_folder",
-    "node_id",
-    "node_name",
-    "service",
-    "service_id",
-    "service_type",
-    "severity",
-    "template_name",
-]
+_ALERT_LABEL_KEYS = frozenset(
+    {
+        "alertname",
+        "environment",
+        "grafana_folder",
+        "node_id",
+        "node_name",
+        "service",
+        "service_id",
+        "service_type",
+        "severity",
+        "template_name",
+    }
+)
 _ALERT_PATTERN = re.compile(r"\{(.+)\}")
 
 _EXCLUDED_FS = "rootfs|selinuxfs|autofs|rpc_pipefs|tmpfs"
