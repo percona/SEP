@@ -246,14 +246,235 @@ $(document).ready(function() {
 
     const lastOffsets = {};
     const loadedCompletedTasks = new Set();
+    const executionEventsFetched = new Set();
+    const executionEventsStreams = {};
+    const executionEventsCache = {};
+
+    function executionEventKey(ev) {
+        return JSON.stringify({
+            timestamp: ev && ev.timestamp,
+            type: ev && ev.type,
+            description: ev && ev.description,
+            step: ev && ev.step,
+        });
+    }
+
+    function appendExecutionEvent(taskId, eventObj) {
+        executionEventsCache[taskId] = executionEventsCache[taskId] || [];
+        const exists = executionEventsCache[taskId].some(function(item) {
+            return executionEventKey(item) === executionEventKey(eventObj);
+        });
+        if (!exists) {
+            executionEventsCache[taskId].push(eventObj);
+        }
+    }
+
+    function closeExecutionEventsStream(taskId) {
+        const src = executionEventsStreams[taskId];
+        if (src) {
+            src.close();
+            delete executionEventsStreams[taskId];
+        }
+    }
+
+    function getSelectedLogStepName($logConsole) {
+        const $tab = $logConsole.find('.log-footer .log-step-tab.selected');
+        if ($tab.length) {
+            return String($tab.attr('data-step-name') || $tab.data('step-name') || '');
+        }
+        const $first = $logConsole.find('.log-footer .log-step-tab').first();
+        return $first.length ?
+            String($first.attr('data-step-name') || $first.data('step-name') || '') :
+            '';
+    }
+
+    /** Show the execution-events panel for the bottom step tab that is selected (or first panel). */
+    function syncExecutionEventsStepVisibility($logConsole) {
+        const $view = $logConsole.find('.log-events-view');
+        if ($view.length === 0) return;
+        const stepName = getSelectedLogStepName($logConsole);
+        const $panels = $view.find('.log-events-step-panel');
+        const $missing = $view.find('.log-events-step-missing');
+        $panels.hide();
+        $missing.hide();
+        if ($panels.length === 0) {
+            return;
+        }
+        if (!stepName) {
+            $panels.first().show();
+            return;
+        }
+        let found = false;
+        $panels.each(function() {
+            const $p = $(this);
+            if ($p.attr('data-step-name') === stepName) {
+                $p.show();
+                found = true;
+                return false;
+            }
+        });
+        if (!found) {
+            $missing.show();
+        }
+    }
+
+    function buildExecutionEventsUi($logConsole, taskId, events) {
+        const $stderrTab = $logConsole.find('[role="log-tab"][aria-controls*="stderr"]');
+        if ($stderrTab.length === 0) return;
+
+        let $eventsTab = $logConsole.find('#tab-events-' + taskId);
+        if ($eventsTab.length === 0) {
+            $eventsTab = $(
+                '<button type="button" class="large" role="log-tab" aria-selected="false">' +
+                '<span class="label">Execution events</span></button>'
+            );
+            $eventsTab.attr('id', 'tab-events-' + taskId);
+            $eventsTab.attr('aria-controls', 'log-events-' + taskId);
+            $stderrTab.after($eventsTab);
+        }
+
+        let $panel = $logConsole.find('#log-events-' + taskId);
+        if ($panel.length === 0) {
+            $panel = $('<div class="log-events-view"></div>');
+            $panel.attr('id', 'log-events-' + taskId);
+            $panel.attr('aria-label', 'Execution events');
+            $panel.attr('role', 'region');
+            $panel.append('<div class="log-events-step-panels"></div>');
+            $panel.append(
+                $('<div class="log-events-step-missing"></div>').text(
+                    'No execution events for this step.'
+                )
+            );
+            $logConsole.find('.log-content').append($panel);
+            $panel.hide();
+        }
+
+        const $wrap = $panel.find('.log-events-step-panels');
+        $wrap.empty();
+
+        const stepOrder = [];
+        const byStep = {};
+        (Array.isArray(events) ? events : []).forEach(function(ev) {
+            const s = ev.step != null && String(ev.step) !== '' ? String(ev.step) : '';
+            const key = s || '_';
+            if (!byStep[key]) {
+                byStep[key] = [];
+                stepOrder.push(key);
+            }
+            byStep[key].push(ev);
+        });
+
+        stepOrder.forEach(function(key) {
+            const list = byStep[key];
+            const dataStep = key === '_' ? '' : key;
+            const $section = $('<section class="log-events-step log-events-step-panel"></section>');
+            $section.attr('data-step-name', dataStep);
+            const $ol = $('<ol class="log-events-step__list"></ol>');
+            list.forEach(function(ev) {
+                const ts = ev.timestamp != null ? String(ev.timestamp) : '';
+                const st = ev.step != null && String(ev.step) !== '' ? String(ev.step) : '';
+                const typ = ev.type != null ? String(ev.type) : '';
+                const desc = ev.description != null ? String(ev.description) : '';
+                const body = st ? typ + '[' + st + '] ' + desc : typ + ' ' + desc;
+                const $li = $('<li class="log-events-step__item"></li>');
+                $li.append(
+                    $('<time class="log-events-step__time relativeTime code"></time>')
+                    .attr('datetime', ts)
+                    .text(ts)
+                );
+                $li.append($('<div class="log-events-step__body code"></div>').text(body));
+                $ol.append($li);
+            });
+            $section.append($ol);
+            $wrap.append($section);
+        });
+
+        if (stepOrder.length === 0) {
+            $panel.find('.log-events-step-missing').text('No execution events yet.');
+        } else {
+            $panel.find('.log-events-step-missing').text('No execution events for this step.');
+        }
+
+        syncExecutionEventsStepVisibility($logConsole);
+    }
+
+    function fetchExecutionEventsIfNeeded($logConsole, taskId) {
+        const status = String($logConsole.data('task-status') || '').toLowerCase();
+        const isRunning = status === 'running';
+        if (isRunning) {
+            if (executionEventsStreams[taskId]) return;
+            executionEventsCache[taskId] = executionEventsCache[taskId] || [];
+            buildExecutionEventsUi($logConsole, taskId, executionEventsCache[taskId]);
+            const src = new EventSource(
+                `/stream-logs/${encodeURIComponent(taskId)}/execution-events`
+            );
+            executionEventsStreams[taskId] = src;
+            const $logDialog = $logConsole.closest('dialog');
+            if ($logDialog.length) {
+                $logDialog[0].addEventListener(
+                    'close',
+                    function() {
+                        closeExecutionEventsStream(taskId);
+                    }, {
+                        once: true
+                    }
+                );
+            }
+            src.onmessage = function(event) {
+                let payload;
+                try {
+                    payload = JSON.parse(event.data);
+                } catch (e) {
+                    console.warn('Invalid execution event payload:', event.data);
+                    return;
+                }
+                appendExecutionEvent(taskId, payload);
+                buildExecutionEventsUi($logConsole, taskId, executionEventsCache[taskId]);
+                if (!$logConsole.parent().prop('open')) {
+                    closeExecutionEventsStream(taskId);
+                }
+            };
+            src.addEventListener('finish', function() {
+                closeExecutionEventsStream(taskId);
+            });
+            src.addEventListener('sep-error', function() {
+                closeExecutionEventsStream(taskId);
+            });
+            src.onerror = function() {
+                if (!$logConsole.parent().prop('open')) {
+                    closeExecutionEventsStream(taskId);
+                }
+            };
+            return;
+        }
+        if (executionEventsFetched.has(taskId)) return;
+        fetch(`/execution-events/${encodeURIComponent(taskId)}`, {
+                credentials: 'include',
+            })
+            .then(function(res) {
+                return res.ok ? res.json() : [];
+            })
+            .then(function(events) {
+                executionEventsCache[taskId] = Array.isArray(events) ? events : [];
+                buildExecutionEventsUi($logConsole, taskId, executionEventsCache[taskId]);
+                executionEventsFetched.add(taskId);
+            })
+            .catch(function() {
+                executionEventsFetched.add(taskId);
+            });
+    }
 
     window.clearLoadedTasks = function() {
         loadedCompletedTasks.clear();
+        executionEventsFetched.clear();
+        Object.keys(executionEventsStreams).forEach(closeExecutionEventsStream);
     };
 
     $('.view-logs-button').click(function() {
         const taskId = $(this).data('task-id');
         const $logConsole = $(`.log-console.streaming-console[data-task-id=${taskId}]`);
+
+        fetchExecutionEventsIfNeeded($logConsole, taskId);
 
         if (loadedCompletedTasks.has(taskId)) {
             if ($logConsole.find('.log-content').children().length === 0) {
@@ -330,6 +551,12 @@ $(document).ready(function() {
                 stepContent.append(stdoutPre);
                 stepContent.append(stderrPre);
                 $logConsole.find('.log-content').append(stepContent);
+
+                const topControlsAfterStep =
+                    $logConsole.find('[role="log-tab"][aria-selected="true"]').attr('aria-controls') || '';
+                if (topControlsAfterStep.indexOf('log-events') === 0) {
+                    syncExecutionEventsStepVisibility($logConsole);
+                }
             }
 
             const $pre = $logConsole.find('.log-step-content[data-step-name="' + step + '"] .log-output[data-log-type="' + type + '"]');
@@ -526,22 +753,60 @@ $(document).ready(function() {
         e.preventDefault();
         const $this = $(this);
         const $modal = $this.closest('.modal-log');
-        const logType = $this.attr('aria-controls').includes('stdout') ? 'stdout' : 'stderr';
+        const $logConsole = $modal.find('.log-console');
+        const $logContent = $logConsole.find('.log-content');
+        const controls = $this.attr('aria-controls') || '';
 
         $this.attr('aria-selected', 'true').siblings('[role="log-tab"]').attr('aria-selected', 'false');
 
+        if (controls.indexOf('log-events') === 0) {
+            $logContent.find('.log-step-content').hide();
+            $logContent.find('.log-events-view').show();
+            syncExecutionEventsStepVisibility($logConsole);
+            return;
+        }
+
+        $logContent.find('.log-events-view').hide();
+
+        const $selectedStepBtn = $logConsole.find('.log-footer .log-step-tab.selected');
+        let $stepPane = $();
+        if ($selectedStepBtn.length) {
+            $stepPane = $logContent.find(
+                '.log-step-content[data-step-name="' + $selectedStepBtn.data('step-name') + '"]'
+            );
+        }
+        if ($stepPane.length === 0) {
+            $stepPane = $logContent.find('.log-step-content').first();
+        }
+        $logContent.find('.log-step-content').hide();
+        if ($stepPane.length) {
+            $stepPane.show();
+        }
+
+        const logType = controls.includes('stdout') ? 'stdout' : 'stderr';
         $modal.find('.log-output').hide();
-        $modal.find('.log-step-content:visible .log-output[data-log-type="' + logType + '"]').show();
+        if ($stepPane.length) {
+            $stepPane.find('.log-output[data-log-type="' + logType + '"]').show();
+        }
     });
 
     $('.modal-log').on('click', '.log-step-tab', function(e) {
         e.preventDefault();
         const $this = $(this);
         const $modal = $this.closest('.modal-log');
+        const $logConsole = $modal.find('.log-console');
+        const $logContent = $logConsole.find('.log-content');
         const stepName = $this.data('step-name');
 
         $this.addClass('selected').siblings('.log-step-tab').removeClass('selected');
 
+        const topControls = $modal.find('[role="log-tab"][aria-selected="true"]').attr('aria-controls') || '';
+        if (topControls.indexOf('log-events') === 0) {
+            syncExecutionEventsStepVisibility($logConsole);
+            return;
+        }
+
+        $logContent.find('.log-events-view').hide();
         $modal.find('.log-step-content').hide();
         const $selectedStep = $modal.find('.log-step-content[data-step-name="' + stepName + '"]');
         $selectedStep.show();
