@@ -26,6 +26,7 @@ from app.core.utils.fields import NonEmptyStr
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated, SessionDep
+from app.sep.plugins.alerts.config import alerts_pmm_config
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.deps import (
     AlertsIndexContext,
@@ -291,7 +292,7 @@ async def alerts_push(
                     template_name=template.name,
                     folder_uid=folder.uid,
                     for_duration=DEFAULT_FOR_DURATION,
-                    group=sep_settings.PMM.alert_folder_name,
+                    group=alerts_pmm_config.alert_folder_name,
                 )
             except (HTTPException, OSError):
                 logger.debug("Rule already exists for %s", name, exc_info=True)
@@ -318,7 +319,7 @@ async def alerts_push(
                 template_name=template.name,
                 folder_uid=folder.uid,
                 for_duration=DEFAULT_FOR_DURATION,
-                group=sep_settings.PMM.alert_folder_name,
+                group=alerts_pmm_config.alert_folder_name,
             )
             results.append(
                 {"name": name, "status": "success", "message": "Pushed successfully"}
@@ -341,7 +342,7 @@ async def alerts_push(
                     template_name=template.name,
                     folder_uid=folder.uid,
                     for_duration=DEFAULT_FOR_DURATION,
-                    group=sep_settings.PMM.alert_folder_name,
+                    group=alerts_pmm_config.alert_folder_name,
                 )
                 results.append(
                     {

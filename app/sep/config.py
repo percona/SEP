@@ -21,7 +21,6 @@ from functools import cached_property
 from pathlib import Path
 from string import Template
 from typing import Any, ClassVar, Literal, Self
-from urllib.parse import urlparse
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
@@ -36,20 +35,18 @@ from pydantic import (
     model_validator,
     PositiveInt,
     SecretStr,
-    ValidationError,
 )
-from pydantic_core.core_schema import ValidationInfo
 
 from app import __summary__, __version__
 from app.core.celery.models import IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
+    settings,
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.utils import (
     deep_dict_update,
-    run_pydantic_type_validator,
     slugify,
 )
 from app.core.utils.fields import (
@@ -163,8 +160,12 @@ class SessionOptions(BaseModel):
     SECURE: bool = True
 
 
-class PMMSettings(BaseLowercaseModel):
-    """Define centralized PMM configuration.
+class _DeprecatedPMMConfig(BaseLowercaseModel):
+    """Accept deprecated ``SEP.PMM`` fields for backward compatibility.
+
+    Include both connection/auth fields (forwarded to ``settings.PMM``) and
+    alerts-specific fields (read by ``AlertsPMMConfig``). All fields are typed
+    so that env-var values are validated correctly by Pydantic.
 
     :param endpoint: The PMM server URL.
     :type endpoint: StrHttpUrl | None
@@ -181,7 +182,7 @@ class PMMSettings(BaseLowercaseModel):
     :param backup_retention: Maximum number of alert backups to retain.
     :type backup_retention: PositiveInt
     :param alert_folder_name: Display name of the PMM folder used for SEP-managed
-        alert rules. Defaults to ``"SEP Alerts"``.
+        alert rules.
     :type alert_folder_name: str
     """
 
@@ -194,17 +195,6 @@ class PMMSettings(BaseLowercaseModel):
     backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
     backup_retention: PositiveInt = 10
     alert_folder_name: str = "SEP Alerts"
-
-    @cached_property
-    def hostname(self) -> str | None:
-        """Extract and return the hostname from the PMM endpoint.
-
-        :return: The hostname of the PMM endpoint, or None if not set.
-        :rtype: str | None
-        """
-        if self.endpoint:
-            return urlparse(self.endpoint).hostname
-        return None
 
 
 class SyncOptions(BaseLowercaseModel):
@@ -288,12 +278,10 @@ class SEPSettings(BaseYamlAppSettings):
     :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
         synchronization. Defaults to 5 seconds.
     :type SYNC_REFRESH_TIME: int
-    :param PMM_FRONTEND: The URL for the PMM frontend. Defaults to `None`. If not set,
-        it will be determined based on the `pmm.endpoint` from the `PMMSyncer` (if
-        available). This field is deprecated; use `PMM.FRONTEND` instead.
-    :type PMM_FRONTEND: StrHttpUrl | None
-    :param PMM: Centralized PMM configuration options.
-    :type PMM: PMMSettings
+    :param PMM: Deprecated ``SEP.PMM`` section for backward compatibility. Connection
+        fields are forwarded to the top-level ``settings.PMM``; alerts fields are read
+        by ``AlertsPMMConfig``.
+    :type PMM: _DeprecatedPMMConfig
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
     :type FOOTER_TEMPLATE: Template
@@ -316,13 +304,26 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
-    PMM_FRONTEND: StrHttpUrl | None = Field(
-        None,
-        deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
-    )
-    PMM: PMMSettings = PMMSettings()
+    PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_removed_pmm_frontend(cls, data: Any) -> Any:
+        """Warn if the removed ``PMM_FRONTEND`` field is still set.
+
+        :param data: The raw input data.
+        :type data: Any
+        :return: The input data unchanged.
+        :rtype: Any
+        """
+        if isinstance(data, dict) and data.get("PMM_FRONTEND") is not None:
+            logger.warning(
+                "SEP__PMM_FRONTEND has been removed. "
+                "Use PMM__FRONTEND (top-level) or SEP__PMM__FRONTEND instead.",
+            )
+        return data
 
     @computed_field
     @cached_property
@@ -394,56 +395,14 @@ class SEPSettings(BaseYamlAppSettings):
             return Template(v)
         return v
 
-    @field_validator("PMM_FRONTEND", mode="after")
-    @classmethod
-    def warn_deprecated_pmm_field(cls, v: StrHttpUrl | None) -> StrHttpUrl | None:
-        """Warn about the deprecated PMM_FRONTEND field.
-
-        If the `PMM_FRONTEND` field is set, log a warning indicating that it is
-        deprecated and suggest using `PMM.FRONTEND` instead.
-
-        :param v: The value of the `PMM_FRONTEND` field.
-        :type v: StrHttpUrl | None
-        :return: The original value of the `PMM_FRONTEND` field.
-        :rtype: StrHttpUrl | None
-        """
-        if v is not None:
-            logger.warning(
-                "SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead."
-            )
-        return v
-
-    @field_validator("PMM")
-    @classmethod
-    def fallback_to_deprecated_frontend(
-        cls, v: PMMSettings, info: ValidationInfo
-    ) -> PMMSettings:
-        """Fallback to deprecated PMM_FRONTEND if PMM.FRONTEND is not set.
-
-        If `PMM.FRONTEND` is not set, check if the deprecated `PMM_FRONTEND` field
-        has a value and use it to set `PMM.FRONTEND`.
-
-        :param v: The PMMSettings instance being validated.
-        :type v: PMMSettings
-        :param info: The validation info containing context.
-        :type info: ValidationInfo
-        :return: The updated PMMSettings instance.
-        :rtype: PMMSettings
-        """
-        if v.frontend is None and (pmm_frontend := info.data.get("PMM_FRONTEND")):
-            v.frontend = pmm_frontend
-        return v
-
     @model_validator(mode="after")
     def add_syncer_extra_kwargs(self) -> Self:
-        """Integrate extra keyword arguments into synchronizers and set PMM_FRONTEND.
+        """Integrate extra keyword arguments into synchronizers.
 
-        Merge additional keyword arguments from `SYNCER_EXTRA_KWARGS` into each
-        synchronizer in `SYNCERS` and update the list accordingly. If the PMM
-        endpoint is not set and a `PMMSyncer` is found with an endpoint,
-        extract and validate it to set the centralized PMM endpoint.
+        Merge additional keyword arguments from ``SYNCER_EXTRA_KWARGS`` into each
+        synchronizer in ``SYNCERS`` and update the list accordingly.
 
-        :return: The updated `SEPSettings` instance with modified `SYNCERS`.
+        :return: The updated ``SEPSettings`` instance with modified ``SYNCERS``.
         :rtype: Self
         """
         syncers = UniqueList()
@@ -451,32 +410,45 @@ class SEPSettings(BaseYamlAppSettings):
             syncer_data = syncer.model_dump()
             deep_dict_update(syncer_data, self.SYNCER_EXTRA_KWARGS)
             syncers.append(SyncOptions.model_validate(syncer_data))
-            try:
-                if syncer_data["syncer"].endswith("PMMSyncer") and (
-                    pmm_data := syncer_data.get("pmm")
-                ):
-                    if self.PMM.endpoint is None and (
-                        pmm_endpoint := pmm_data.get("endpoint")
-                    ):
-                        logger.warning(
-                            "It's recommended to set SEP__PMM__ENDPOINT instead of using the legacy PMMSyncer configuration."
-                        )
-                        self.PMM.endpoint = run_pydantic_type_validator(
-                            StrHttpUrl, pmm_endpoint
-                        )
-                        self.PMM.frontend = self.PMM.frontend or self.PMM.endpoint
-                    if self.PMM.api_key is None and (
-                        pmm_api_key := pmm_data.get("api_key")
-                    ):
-                        logger.warning(
-                            "It's recommended to set SEP__PMM__API_KEY instead of using the legacy PMMSyncer configuration."
-                        )
-                        self.PMM.api_key = SecretStr(pmm_api_key)
-            except AttributeError:
-                continue
-            except ValidationError:
-                raise ValueError("PMM endpoint should be a valid HTTP URL") from None
         self.SYNCERS = syncers
+        return self
+
+    @model_validator(mode="after")
+    def _forward_deprecated_pmm_fields(self) -> Self:
+        """Forward deprecated ``SEP.PMM`` connection fields to ``settings.PMM``.
+
+        Only forward fields that were explicitly set under ``SEP.PMM`` AND were
+        NOT explicitly set in the top-level ``PMM`` section. This ensures the
+        top-level config always wins when both are present.
+
+        :return: The updated settings instance.
+        :rtype: Self
+        """
+        connection_fields = {
+            "endpoint",
+            "frontend",
+            "api_key",
+            "verify_ssl",
+            "execution_target",
+        }
+        deprecated_set = self.PMM.model_fields_set & connection_fields
+        if not deprecated_set:
+            return self
+        core_set = settings.PMM.model_fields_set
+        fields_to_forward = deprecated_set - core_set
+        if fields_to_forward:
+            logger.warning(
+                "Setting PMM connection fields under SEP.PMM is deprecated. "
+                "Use the top-level PMM section instead. "
+                "Deprecated fields found: %s",
+                ", ".join(sorted(fields_to_forward)),
+            )
+            settings.PMM = settings.PMM.model_copy(
+                update={
+                    field_name: getattr(self.PMM, field_name)
+                    for field_name in fields_to_forward
+                }
+            )
         return self
 
 

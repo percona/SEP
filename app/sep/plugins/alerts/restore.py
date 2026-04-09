@@ -22,8 +22,8 @@ from fastapi import status
 from fastapi.exceptions import HTTPException
 
 from app.sep.clients.pmm import AlertRule, Folder, NotificationPolicy, PMMRemoteAPI
-from app.sep.config import sep_settings
 from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.config import alerts_pmm_config
 from app.sep.plugins.alerts.deps import find_or_create_alert_folder
 from app.sep.plugins.alerts.loader import get_alert_templates
 from app.sep.plugins.alerts.models import (
@@ -135,7 +135,7 @@ async def _restore_rules(
                 template_name=template_name,
                 folder_uid=folder.uid,
                 for_duration=r_data.get("for", DEFAULT_FOR_DURATION),
-                group=r_data.get("group", sep_settings.PMM.alert_folder_name),
+                group=r_data.get("group", alerts_pmm_config.alert_folder_name),
             )
             created += 1
         except HTTPException as exc:
