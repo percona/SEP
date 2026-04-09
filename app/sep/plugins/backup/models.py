@@ -65,6 +65,7 @@ class UploadProvider(EnumFieldMixin, StrEnum):
 
     RSYNC = auto()
     S3 = auto()
+    GSUTIL = auto()
 
 
 class DirEncryptConfig(BaseModel):
@@ -136,6 +137,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     s3_storage_class: NonEmptyStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
     awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone = None
+    gs_bucket: NonEmptyStr | EmptyStrToNone = None
     rsync_path: NonEmptyStr | EmptyStrToNone = None
 
 

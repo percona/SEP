@@ -2,8 +2,8 @@
 
 # ---
 # title: "pt-summary"
-# description: "Executes pt-summary command"
-# allow_extra_args: false
+# description: "Executes pt-summary command. Extra args are passed to pt-summary after known options."
+# allow_extra_args: true
 # sudo: always
 # parameters:
 #  - name: defaults-file

@@ -118,3 +118,169 @@ checkmigrations: migrate
 
 test: venv
 	@"${VENV_BIN}"/pytest -v -r a --cov=app tests/
+
+release-rc:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
+endif
+ifndef RC
+	$(error RC is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
+endif
+	@set -euo pipefail; \
+	CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$(RC)" = "1" ] && [ "$$CURRENT_BRANCH" != "main" ]; then \
+		echo "Error: RC=1 requires being on the main branch (currently on $$CURRENT_BRANCH)"; \
+		exit 1; \
+	fi; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Error: Working tree is not clean. Commit or stash changes first."; \
+		exit 1; \
+	fi; \
+	RC_VERSION="$(VERSION)rc$(RC)"; \
+	BRANCH="release/v$(VERSION)"; \
+	if [ "$(RC)" = "1" ]; then \
+		echo "==> Pulling latest main..."; \
+		git pull origin main; \
+		echo "==> Creating release branch $$BRANCH..."; \
+		if git show-ref --verify --quiet "refs/heads/$$BRANCH"; then \
+			echo "Error: Branch $$BRANCH already exists locally. Delete it first or use RC>1."; \
+			exit 1; \
+		fi; \
+		git checkout -b "$$BRANCH"; \
+	else \
+		echo "==> Checking out existing release branch $$BRANCH..."; \
+		git checkout "$$BRANCH"; \
+		git pull origin "$$BRANCH"; \
+	fi; \
+	echo "==> Bumping version to $$RC_VERSION..."; \
+	sed -i "s/^version = .*/version = \"$$RC_VERSION\"/" pyproject.toml; \
+	sed -i "s/^__version__ = .*/__version__ = \"v$$RC_VERSION\"/" app/__init__.py; \
+	echo "==> Committing version bump..."; \
+	git commit -am "Bump version to v$$RC_VERSION"; \
+	echo "==> Tagging v$$RC_VERSION..."; \
+	git tag "v$$RC_VERSION"; \
+	echo "==> Building wheel..."; \
+	$(MAKE) build; \
+	WHEEL="dist/sep-$$RC_VERSION-py3-none-any.whl"; \
+	if [ ! -f "$$WHEEL" ]; then \
+		echo "Error: Wheel not found at $$WHEEL after build. Aborting before push."; \
+		exit 1; \
+	fi; \
+	echo "==> Pushing branch and tag..."; \
+	git push origin "$$BRANCH" "v$$RC_VERSION"; \
+	if command -v gh > /dev/null 2>&1; then \
+		echo "==> Creating GitHub pre-release..."; \
+		gh release create "v$$RC_VERSION" --prerelease --generate-notes --target "$$BRANCH"; \
+		gh release upload "v$$RC_VERSION" "$$WHEEL"; \
+	else \
+		echo "Note: gh CLI not found, skipping GitHub release creation."; \
+	fi; \
+	echo ""; \
+	echo "=== RC $$RC_VERSION released successfully ==="; \
+	echo ""; \
+	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
+		echo "==> Triggering Jenkins release build for v$$RC_VERSION..."; \
+		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
+			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
+			--data-urlencode "releaseTag=v$$RC_VERSION" \
+			--data-urlencode "notifySlack=true" \
+			--data-urlencode "pushImage=true" \
+			--data-urlencode "pushImageDocker=true" 2>&1; then \
+			echo "    Jenkins build triggered successfully."; \
+		else \
+			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
+		fi; \
+	else \
+		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
+	fi; \
+	echo ""; \
+	echo "Next steps:"; \
+	echo "  1. Create Jira version $(VERSION) (if not already created)"; \
+	echo "  2. Deploy to staging and verify"; \
+	echo "  3. Notify the team"
+
+release-stable:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release-stable VERSION=X.Y.Z)
+endif
+	@set -euo pipefail; \
+	CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	EXPECTED_BRANCH="release/v$(VERSION)"; \
+	if [ "$$CURRENT_BRANCH" != "$$EXPECTED_BRANCH" ]; then \
+		echo "Error: Must be on $$EXPECTED_BRANCH (currently on $$CURRENT_BRANCH)"; \
+		exit 1; \
+	fi; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Error: Working tree is not clean. Commit or stash changes first."; \
+		exit 1; \
+	fi; \
+	echo "==> Bumping version to $(VERSION)..."; \
+	sed -i "s/^version = .*/version = \"$(VERSION)\"/" pyproject.toml; \
+	sed -i "s/^__version__ = .*/__version__ = \"v$(VERSION)\"/" app/__init__.py; \
+	echo "==> Committing version bump..."; \
+	git commit -am "Bump version to v$(VERSION)"; \
+	echo "==> Tagging v$(VERSION)..."; \
+	git tag "v$(VERSION)"; \
+	echo "==> Building wheel..."; \
+	$(MAKE) build; \
+	WHEEL="dist/sep-$(VERSION)-py3-none-any.whl"; \
+	if [ ! -f "$$WHEEL" ]; then \
+		echo "Error: Wheel not found at $$WHEEL after build. Aborting before push."; \
+		exit 1; \
+	fi; \
+	echo "==> Pushing branch and tag..."; \
+	git push origin "$$EXPECTED_BRANCH" "v$(VERSION)"; \
+	if command -v gh > /dev/null 2>&1; then \
+		echo "==> Creating GitHub release..."; \
+		gh release create "v$(VERSION)" --generate-notes; \
+		gh release upload "v$(VERSION)" "$$WHEEL"; \
+	else \
+		echo "Note: gh CLI not found, skipping GitHub release creation."; \
+	fi; \
+	echo "==> Creating dev version bump PR on main..."; \
+	MINOR=$$(echo "$(VERSION)" | cut -d. -f2); \
+	NEXT_MINOR=$$((MINOR + 1)); \
+	PREFIX=$$(echo "$(VERSION)" | cut -d. -f1); \
+	DEV_VERSION="$$PREFIX.$$NEXT_MINOR.0.dev0"; \
+	DEV_BRANCH="bump-dev-version-$$DEV_VERSION"; \
+	git fetch origin main; \
+	git checkout -b "$$DEV_BRANCH" origin/main; \
+	sed -i "s/^version = .*/version = \"$$DEV_VERSION\"/" pyproject.toml; \
+	sed -i "s/^__version__ = .*/__version__ = \"v$$DEV_VERSION\"/" app/__init__.py; \
+	git commit -am "Bump version to v$$DEV_VERSION"; \
+	git push -u origin "$$DEV_BRANCH"; \
+	if command -v gh > /dev/null 2>&1; then \
+		gh pr create --base main --title "Bump dev version to v$$DEV_VERSION" \
+			--body "Automated dev version bump after v$(VERSION) stable release."; \
+	else \
+		echo "Note: gh CLI not found. Manually create a PR from $$DEV_BRANCH to main."; \
+	fi; \
+	echo "==> Deleting release branch..."; \
+	git checkout main; \
+	git push origin --delete "$$EXPECTED_BRANCH" || true; \
+	git branch -d "$$EXPECTED_BRANCH" || true; \
+	echo ""; \
+	echo "=== Stable $(VERSION) released successfully ==="; \
+	echo ""; \
+	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
+		echo "==> Triggering Jenkins release build for v$(VERSION)..."; \
+		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
+			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
+			--data-urlencode "releaseTag=v$(VERSION)" \
+			--data-urlencode "notifySlack=true" \
+			--data-urlencode "pushImage=true" \
+			--data-urlencode "pushImageDocker=true" 2>&1; then \
+			echo "    Jenkins build triggered successfully."; \
+		else \
+			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
+		fi; \
+	else \
+		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
+	fi; \
+	echo ""; \
+	echo "Next steps:"; \
+	echo "  1. Publish release notes"; \
+	echo "  2. Mark Jira version $(VERSION) as released"; \
+	echo "  3. Merge the dev version bump PR"
+
+.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations migrate checkmigrations test release-rc release-stable

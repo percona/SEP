@@ -32,8 +32,6 @@ from functools import cached_property
 from itertools import product
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
-from uuid import uuid1
 
 from aiohttp import (
     ClientError,
@@ -64,6 +62,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.models import (
+    ExecutionEvent,
     FileMetadata,
     Task,
     TaskHistory,
@@ -79,6 +78,106 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
+
+
+def _nomad_event_body_text(ev: dict) -> str:
+    raw = ev.get("DisplayMessage") or ev.get("Message") or ev.get("Description") or ""
+    if isinstance(raw, str):
+        return raw.strip()
+    return str(raw).strip() if raw else ""
+
+
+def _nomad_event_exit_code(ev: dict) -> Any:
+    exit_code = ev.get("ExitCode")
+    details = ev.get("Details")
+    if exit_code is None and isinstance(details, dict):
+        return details.get("exit_code", details.get("ExitCode"))
+    return exit_code
+
+
+def _append_exit_code_suffix(
+    parts: list[str], description: str, exit_code: Any
+) -> None:
+    desc_lower = description.lower()
+    try:
+        code_int = int(exit_code)
+    except (TypeError, ValueError):
+        if str(exit_code).lower() not in desc_lower:
+            parts.append(f"(exit code {exit_code})")
+        return
+    if f"exit code {code_int}" not in desc_lower:
+        parts.append(f"(exit code {exit_code})")
+
+
+def _sortable_nomad_tracking_event(
+    task_name: str,
+    list_index: int,
+    ev: dict,
+) -> tuple[datetime, str, int, ExecutionEvent] | None:
+    if not isinstance(ev, dict):
+        return None
+    ts_raw = ev.get("Time")
+    try:
+        ts_ns = int(ts_raw)
+    except (TypeError, ValueError):
+        return None
+
+    event_type = ev.get("Type")
+    if not isinstance(event_type, str):
+        event_type = str(event_type) if event_type is not None else "Unknown"
+
+    description = _nomad_event_body_text(ev)
+    parts: list[str] = []
+    parts.append(description if description else event_type)
+
+    exit_code = _nomad_event_exit_code(ev)
+    if exit_code is not None:
+        _append_exit_code_suffix(parts, description, exit_code)
+
+    dt = NomadExecutor.timestamp_to_datetime(ts_ns)
+    return (
+        dt,
+        task_name,
+        list_index,
+        ExecutionEvent(
+            timestamp=make_datetime_utc(dt),
+            event_type=event_type,
+            description=" ".join(parts).strip(),
+            step=task_name,
+        ),
+    )
+
+
+def nomad_task_states_to_execution_events(
+    task_states: dict[str, Any] | None,
+) -> list[ExecutionEvent]:
+    """Map Nomad allocation ``TaskStates`` (from tracking) to execution events.
+
+    Parses each task's ``Events`` array defensively for Nomad API shape drift.
+
+    :param task_states: The ``task_states`` object from execution tracking.
+    :type task_states: dict[str, Any] | None
+    :return: Events sorted by timestamp ascending (oldest first).
+    :rtype: list[ExecutionEvent]
+    """
+    if not isinstance(task_states, dict):
+        return []
+
+    collected: list[tuple[datetime, str, int, ExecutionEvent]] = []
+
+    for task_name, state in task_states.items():
+        if not isinstance(task_name, str) or not isinstance(state, dict):
+            continue
+        raw_events = state.get("Events")
+        if not isinstance(raw_events, list):
+            continue
+        for idx, ev in enumerate(raw_events):
+            row = _sortable_nomad_tracking_event(task_name, idx, ev)
+            if row is not None:
+                collected.append(row)
+
+    collected.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[3] for item in collected]
 
 
 class NomadAllocStatusEnum(StrEnum):
@@ -240,93 +339,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     )
         return task
 
-    async def create_nomad_variable(
-        self,
-        *,
-        path: str,
-        data: dict[str, Any],
-        namespace: str | None = None,
-    ) -> dict[str, Any]:
-        """Create or update a Nomad variable with the provided data."""
-        sanitized_path = path.strip("/")
-        payload: dict[str, Any] = {
-            "Path": sanitized_path,
-            "Namespace": namespace or "default",
-            "Items": {},
-        }
-        for key, value in data.items():
-            if isinstance(value, (dict, list)):
-                raw_value = json.dumps(value)
-            else:
-                raw_value = str(value)
-            payload["Items"][key] = raw_value
-        endpoint = f"/v1/var/{quote(sanitized_path)}"
-        async with self._request("PUT", endpoint, json=payload) as response:
-            body = await response.text()
-            if response.status >= status.HTTP_400_BAD_REQUEST:
-                detail = (
-                    json.loads(body).get("error")
-                    if body and body.startswith("{")
-                    else body or "Failed to create Nomad variable"
-                )
-                raise HTTPException(status_code=response.status, detail=detail)
-            try:
-                return json.loads(body) if body else {"Path": sanitized_path}
-            except json.JSONDecodeError:
-                return {"Path": sanitized_path}
-
-    async def delete_nomad_variable(
-        self,
-        *,
-        path: str,
-        namespace: str | None = None,
-    ) -> None:
-        """Delete a Nomad variable."""
-        sanitized_path = path.strip("/")
-        params = {"namespace": namespace} if namespace else None
-        endpoint = f"/v1/var/{quote(sanitized_path)}"
-        async with self._request("DELETE", endpoint, params=params) as response:
-            body = await response.text()
-            if response.status in (
-                status.HTTP_200_OK,
-                status.HTTP_204_NO_CONTENT,
-                status.HTTP_404_NOT_FOUND,
-            ):
-                return
-            detail = (
-                json.loads(body).get("error")
-                if body and body.startswith("{")
-                else body or "Failed to delete Nomad variable"
-            )
-            raise HTTPException(status_code=response.status, detail=detail)
-
-    async def _cleanup_nomad_variable(self, queue_item: TaskHistory) -> None:
-        """Remove temporary Nomad variables referenced by this execution."""
-        meta = queue_item.execution_request.meta or {}
-        path = meta.get("config_nomad_variable")
-        namespace = meta.get("config_nomad_variable_namespace")
-        if not path:
-            return
-        try:
-            await self.delete_nomad_variable(path=path, namespace=namespace)
-        except (BaseNomadException, HTTPException):
-            logger.warning("Failed to delete Nomad variable %s", path, exc_info=True)
-            return
-        meta.pop("config_nomad_variable", None)
-        meta.pop("config_nomad_variable_namespace", None)
-
-    @staticmethod
-    def _task_context_started(task_states: dict[str, Any] | None) -> bool:
-        """Return whether at least one task has started in the allocation."""
-        if not task_states:
-            return False
-        for task_state in task_states.values():
-            state = str(task_state.get("State", "")).lower()
-            if task_state.get("StartedAt") is not None:
-                return True
-            if state in {"running", "dead", "complete", "failed", "lost"}:
-                return True
-        return False
+    def get_events(self, queue_item: TaskHistory) -> list[ExecutionEvent]:
+        """Return task events from stored Nomad ``task_states`` tracking data."""
+        tracking = queue_item.execution_request.tracking
+        if not isinstance(tracking, dict):
+            return []
+        return nomad_task_states_to_execution_events(tracking.get("task_states"))
 
     async def parse_payload(
         self, payload: str | bytes, payload_format: str
@@ -391,12 +409,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 payload = minify_file_content(payload)
             payload = b2a_base64(gzip_compress(payload)).decode("utf-8")
 
-        filtered_meta = {}
-        if queue_item.execution_request.meta:
-            for key, value in queue_item.execution_request.meta.items():
-                if key.startswith("_"):
-                    continue
-                filtered_meta[key] = value
+        filtered_meta = (
+            {
+                key: value
+                for key, value in queue_item.execution_request.meta.items()
+                if not key.startswith("_")
+            }
+            if queue_item.execution_request.meta
+            else {}
+        )
 
         custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
         if custom_prefix:
@@ -733,15 +754,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     "Lost job and allocation from task history %s", queue_item.id
                 )
                 queue_item.status = TaskHistoryStatusEnum.LOST
-            if queue_item.status != TaskHistoryStatusEnum.RUNNING:
-                await self._cleanup_nomad_variable(queue_item)
             return queue_item
 
         task_states = alloc["TaskStates"]
-        if self._task_context_started(task_states):
-            # Once tasks started, the rendered template is available in alloc context,
-            # so the temporary variable is no longer needed.
-            await self._cleanup_nomad_variable(queue_item)
+
         try:
             job = self.get_job(job_id)
         except JobNotFoundError:
@@ -761,6 +777,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     queue_item.status,
                     stopped=job.get("Stop", False),
                 )
+
         task_logs = self.get_logs_for_allocation(
             alloc,
             queue_item.task_logs,
@@ -789,27 +806,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
             ).decode(),
         )
-        try:
-            job = self.get_job(job_id)
-        except JobNotFoundError:
-            queue_item.status = TaskHistoryStatusEnum.LOST
-        else:
-            if job["Status"] == NOMAD_DEAD_JOB_STATUS:
-                last_modified_timestamp = alloc.get("ModifyTime")
-                if last_modified_timestamp:
-                    queue_item.finished_at = self.timestamp_to_datetime(
-                        last_modified_timestamp
-                    )
-                else:
-                    queue_item.finished_at = utc_now()
-
-                queue_item.status = self.get_task_history_status_from_alloc_status(
-                    alloc["ClientStatus"],
-                    queue_item.status,
-                    stopped=job.get("Stop", False),
-                )
-        if queue_item.status != TaskHistoryStatusEnum.RUNNING:
-            await self._cleanup_nomad_variable(queue_item)
         return queue_item
 
     def task_needs_job_register(self, task: Task) -> bool:

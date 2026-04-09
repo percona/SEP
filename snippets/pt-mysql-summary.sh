@@ -2,8 +2,8 @@
 
 # ---
 # title: "pt-mysql-summary"
-# description: "Executes pt-mysql-summary command"
-# allow_extra_args: false
+# description: "Executes pt-mysql-summary command. Extra args are passed to pt-mysql-summary after known options (e.g. MySQL client flags after --)."
+# allow_extra_args: true
 # parameters:
 #  - name: defaults-file
 #    type: str
