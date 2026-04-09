@@ -224,6 +224,15 @@ REPORT_SECTIONS = (
     "inventory",
 )
 
+REPORT_SECTION_LABELS: list[tuple[str, str]] = [
+    ("advisors", "Advisors"),
+    ("alerts", "Alerts"),
+    ("backups", "Backups"),
+    ("storage", "Disk Usage"),
+    ("uptime", "Service Uptime"),
+    ("inventory", "Included Services"),
+]
+
 
 class ReportData(BaseModel):
     """Complete report payload ready for rendering."""

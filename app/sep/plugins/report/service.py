@@ -46,6 +46,7 @@ from .models import (
     InventorySection,
     InventoryServiceEntry,
     MonitoredSummary,
+    REPORT_SECTION_LABELS,
     REPORT_SECTIONS,
     ReportData,
     ReportMetadata,
@@ -846,15 +847,6 @@ async def generate_report(
 
 # PDF generation helpers
 
-_PDF_SECTIONS: list[tuple[str, str]] = [
-    ("advisors", "Advisors"),
-    ("alerts", "Alerts"),
-    ("backups", "Backups"),
-    ("storage", "Disk Usage"),
-    ("uptime", "Service Uptime"),
-    ("inventory", "Included Services"),
-]
-
 
 async def generate_pdf_report(report: ReportData) -> bytes:
     """Render a report to a self-contained HTML document and convert it to PDF.
@@ -876,7 +868,7 @@ async def generate_pdf_report(report: ReportData) -> bytes:
     html = template.render(
         report=report,
         service_names=SERVICE_NAMES,
-        sections=_PDF_SECTIONS,
+        sections=REPORT_SECTION_LABELS,
     )
 
     def _generate() -> bytes:

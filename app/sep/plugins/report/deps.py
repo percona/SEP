@@ -25,6 +25,7 @@ from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import DefaultContext
+from app.sep.plugins.report.models import REPORT_SECTION_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +95,7 @@ async def get_report_index_context(
     context.update(
         {
             "pmm_configured": pmm_api is not None,
-            "sections": [
-                ("advisors", "Advisors"),
-                ("alerts", "Alerts"),
-                ("backups", "Backups"),
-                ("storage", "Disk Usage"),
-                ("uptime", "Service Uptime"),
-                ("inventory", "Included Services"),
-            ],
+            "sections": REPORT_SECTION_LABELS,
         }
     )
     return context
