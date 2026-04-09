@@ -35,13 +35,13 @@ async def get_pmm_api() -> PMMRemoteAPI | None:
     :return: The PMM API client, or ``None`` if endpoint or API key is missing.
     :rtype: PMMRemoteAPI | None
     """
-    if not sep_settings.PMM.endpoint or not sep_settings.PMM.api_key:
+    if not settings.PMM.endpoint or not settings.PMM.api_key:
         return None
     return await settings.get_remote_api(
         PMMRemoteAPI,
-        endpoint=sep_settings.PMM.endpoint,
-        api_key=sep_settings.PMM.api_key,
-        verify_ssl=sep_settings.PMM.verify_ssl,
+        endpoint=settings.PMM.endpoint,
+        api_key=settings.PMM.api_key,
+        verify_ssl=settings.PMM.verify_ssl,
     )
 
 

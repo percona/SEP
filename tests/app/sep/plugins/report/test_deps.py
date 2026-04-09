@@ -43,7 +43,7 @@ class TestGetPmmApi:
     @pytest.mark.asyncio
     async def test_returns_none_when_endpoint_not_configured(self):
         """Assert ``None`` is returned when PMM endpoint is not set."""
-        with patch("app.sep.plugins.report.deps.sep_settings") as mock_settings:
+        with patch("app.sep.plugins.report.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = None
             mock_settings.PMM.api_key = None
             result = await get_pmm_api()
@@ -52,7 +52,7 @@ class TestGetPmmApi:
     @pytest.mark.asyncio
     async def test_returns_none_when_api_key_not_configured(self):
         """Assert ``None`` is returned when PMM API key is not set."""
-        with patch("app.sep.plugins.report.deps.sep_settings") as mock_settings:
+        with patch("app.sep.plugins.report.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = "https://pmm.example.com"
             mock_settings.PMM.api_key = None
             result = await get_pmm_api()
@@ -61,7 +61,7 @@ class TestGetPmmApi:
     @pytest.mark.asyncio
     async def test_returns_none_when_endpoint_empty(self):
         """Assert ``None`` is returned when PMM endpoint is an empty string."""
-        with patch("app.sep.plugins.report.deps.sep_settings") as mock_settings:
+        with patch("app.sep.plugins.report.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = ""
             mock_settings.PMM.api_key = "secret-key"
             result = await get_pmm_api()
@@ -72,16 +72,15 @@ class TestGetPmmApi:
         """Assert a ``PMMRemoteAPI`` is returned when PMM is configured."""
         mock_client = AsyncMock(spec=PMMRemoteAPI)
         with (
-            patch("app.sep.plugins.report.deps.sep_settings") as mock_settings,
-            patch("app.sep.plugins.report.deps.settings") as mock_global_settings,
+            patch("app.sep.plugins.report.deps.settings") as mock_settings,
         ):
             mock_settings.PMM.endpoint = "https://pmm.example.com"
             mock_settings.PMM.api_key = "secret-key"
             mock_settings.PMM.verify_ssl = True
-            mock_global_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
             result = await get_pmm_api()
         assert result is mock_client
-        mock_global_settings.get_remote_api.assert_awaited_once_with(
+        mock_settings.get_remote_api.assert_awaited_once_with(
             PMMRemoteAPI,
             endpoint="https://pmm.example.com",
             api_key="secret-key",
