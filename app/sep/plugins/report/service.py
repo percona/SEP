@@ -217,7 +217,8 @@ async def collect_advisors(
             continue
         family = raw.get("family")
         if family:
-            if family.split("_")[-1].lower() not in active_service_types:
+            family_suffix = family.split("_")[-1]
+            if family_suffix.lower() not in active_service_types:
                 continue
         elif raw["name"].split("_")[0].lower() not in allowed:
             continue
@@ -232,8 +233,8 @@ async def collect_advisors(
 
         if family and family not in families:
             display = SERVICE_NAMES.get(
-                family.split("_")[-1].lower(),
-                family.split("_")[-1].capitalize(),
+                family_suffix.lower(),
+                family_suffix.capitalize(),
             )
             families[family] = AdvisorFamily(family_key=family, display_name=display)
         if family:
