@@ -369,7 +369,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 sync_item,
             )
             syncer_name = self.get_name()
-            entity_id_repr = "root" if entity_id is None else str(entity_id)
+            entity_id_repr = "none" if entity_id is None else str(entity_id)
             alert_data = {
                 "summary": (
                     f"Inventory sync failed for {syncer_name} "

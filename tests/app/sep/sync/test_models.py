@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.models import AlertService, AlertSeverity
 from app.inventory.models import ServiceTypeEnum
 from app.sep.crud import SyncInstanceManager
 from app.sep.inventory import (
@@ -239,6 +240,96 @@ async def test_manage_sync_item(mock_remote_api, mocker):
     assert mock_prepare_sync.call_count == 0
     assert mock_start_sync.call_count == 1
     assert mock_finish_sync.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_manage_sync_item_failure_triggers_alert(mock_remote_api, mocker):
+    """Test manage_sync_item runs fail_sync and triggers an ERROR alert with dedup_key when sync fails."""
+    mock_sync_instance = AsyncMock(spec=SyncInstance)
+    mock_sync_instance.id = uuid.uuid4()
+    mock_sync_item = AsyncMock(spec=SyncItem)
+    mock_sync_items = {
+        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
+    }
+
+    class TestSyncer(BaseSyncer):
+        _session = AsyncMock(spec=AsyncSession)
+
+    syncer = TestSyncer(
+        inventory_api=mock_remote_api,
+        sync_instance=mock_sync_instance,
+        sync_items=mock_sync_items,
+    )
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.prepare_sync",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.sep.sync.models.SyncItemManager.start_sync", new_callable=AsyncMock
+    )
+    mock_fail_sync = mocker.patch(
+        "app.sep.sync.models.SyncItemManager.fail_sync", new_callable=AsyncMock
+    )
+    mock_trigger = mocker.patch.object(AlertService, "trigger", new_callable=AsyncMock)
+    syncer_name = TestSyncer.get_name()
+
+    async with syncer.manage_sync_item(SyncInventoryEntityTypeEnum.INVENTORY, None):
+        raise RuntimeError("Simulate inventory sync failure.")
+
+    mock_fail_sync.assert_awaited_once()
+    mock_trigger.assert_awaited_once()
+    alert_data = mock_trigger.call_args[0][0]
+    assert alert_data["severity"] == AlertSeverity.ERROR
+    assert alert_data["class"] == "inventory_sync_item_failure"
+    assert syncer_name in alert_data["summary"]
+    assert "INVENTORY" in alert_data["summary"]
+    assert "none" in alert_data["summary"]
+    assert alert_data["source"] == f"{syncer_name}:INVENTORY:none"
+    assert alert_data["dedup_key"] == f"{syncer_name}:INVENTORY:none"
+
+
+@pytest.mark.asyncio
+async def test_manage_sync_item_failure_alert_includes_entity_id(
+    created_node, mock_remote_api, mocker
+):
+    """Test manage_sync_item includes entity id in summary, source, and dedup_key when NODE sync fails."""
+    mock_sync_instance = AsyncMock(spec=SyncInstance)
+    mock_sync_instance.id = uuid.uuid4()
+    mock_sync_item = AsyncMock(spec=SyncItem)
+    mock_sync_items = {
+        (SyncInventoryEntityTypeEnum.NODE, created_node.id): mock_sync_item,
+    }
+
+    class TestSyncer(BaseSyncer):
+        _session = AsyncMock(spec=AsyncSession)
+
+    syncer = TestSyncer(
+        inventory_api=mock_remote_api,
+        sync_instance=mock_sync_instance,
+        sync_items=mock_sync_items,
+    )
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.prepare_sync",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.sep.sync.models.SyncItemManager.start_sync", new_callable=AsyncMock
+    )
+    mocker.patch(
+        "app.sep.sync.models.SyncItemManager.fail_sync", new_callable=AsyncMock
+    )
+    mock_trigger = mocker.patch.object(AlertService, "trigger", new_callable=AsyncMock)
+    syncer_name = TestSyncer.get_name()
+    entity_id_str = str(created_node.id)
+
+    async with syncer.manage_sync_item(SyncInventoryEntityTypeEnum.NODE, created_node):
+        raise RuntimeError("Simulate node sync failure.")
+
+    mock_trigger.assert_awaited_once()
+    alert_data = mock_trigger.call_args[0][0]
+    assert entity_id_str in alert_data["summary"]
+    assert alert_data["source"] == f"{syncer_name}:NODE:{entity_id_str}"
+    assert alert_data["dedup_key"] == f"{syncer_name}:NODE:{entity_id_str}"
 
 
 @pytest.mark.asyncio
