@@ -72,6 +72,8 @@ if _report_plugin_enabled:
             _task_kwargs["refresh"] = _entry.refresh
         if _entry.sections is not None:
             _task_kwargs["sections"] = _entry.sections
+        if _entry.upload:
+            _task_kwargs["upload"] = _entry.upload
         SYSTEM_PERIODIC_TASKS.append(
             SystemPeriodicTaskSchedule(
                 schedule=_entry.schedule,

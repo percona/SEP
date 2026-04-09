@@ -261,6 +261,9 @@ class ReportScheduleEntry(BaseLowercaseModel):
     :type refresh: bool
     :param sections: Optional list of report sections to include.
     :type sections: list[str] | None
+    :param upload: Upload the generated report to ServiceNow after generation.
+        Requires global upload credentials to be configured.
+    :type upload: bool
     """
 
     schedule: IntervalSchedule | CrontabSchedule
@@ -269,6 +272,7 @@ class ReportScheduleEntry(BaseLowercaseModel):
     full: bool = True
     refresh: bool = False
     sections: list[str] | None = None
+    upload: bool = False
 
 
 class HealthReportSettings(BaseLowercaseModel):

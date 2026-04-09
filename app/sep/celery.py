@@ -136,11 +136,17 @@ def generate_health_report(
     full: bool = True,  # noqa: FBT001, FBT002
     refresh: bool = False,  # noqa: FBT001, FBT002
     sections: list[str] | None = None,
+    upload: bool = False,  # noqa: FBT001, FBT002
 ) -> None:
     """Define Celery task to generate a periodic PMM health report."""
     celery.loop.run_until_complete(
         _generate_health_report(
-            since=since, until=until, full=full, refresh=refresh, sections=sections
+            since=since,
+            until=until,
+            full=full,
+            refresh=refresh,
+            sections=sections,
+            upload=upload,
         )
     )
 
@@ -152,12 +158,14 @@ async def _generate_health_report(
     full: bool = True,
     refresh: bool = False,
     sections: list[str] | None = None,
+    upload: bool = False,
 ) -> None:
     """Generate a health report from PMM, log it, and optionally upload to ServiceNow.
 
-    When ``HEALTH_REPORT.UPLOAD`` is enabled and all credentials are set the
-    report is rendered to PDF and uploaded.  Upload failures are logged but do
-    not prevent the task from completing.
+    When *upload* is ``True`` and the global upload credentials are fully
+    configured the report is rendered to PDF and uploaded.  If *upload* is
+    requested but credentials are incomplete a warning is logged.  Upload
+    failures are logged but do not prevent the task from completing.
     """
     from app.sep.config import sep_settings
     from app.sep.plugins.report.deps import get_pmm_api
@@ -191,7 +199,15 @@ async def _generate_health_report(
         logger.exception("Failed to generate health report")
         return
 
+    if not upload:
+        return
+
     if not sep_settings.HEALTH_REPORT.is_upload_configured:
+        reasons = sep_settings.HEALTH_REPORT.upload_disabled_reasons
+        logger.warning(
+            "Scheduled upload requested but upload is not fully configured: %s",
+            "; ".join(reasons),
+        )
         return
 
     try:

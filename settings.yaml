@@ -97,6 +97,8 @@ default:
       #   FULL     - generate a full report (default: true)
       #   REFRESH  - re-run advisor checks before collecting results (default: false)
       #   SECTIONS - list of sections to include (default: all)
+      #   UPLOAD   - upload to ServiceNow after generation (default: false)
+      #              requires global UPLOAD, ENDPOINT, API_KEY, and CLIENT_ID below
       #
       # Interval examples:
       #   SCHEDULES:
@@ -112,6 +114,7 @@ default:
       #       FULL: false                                # quick weekly report
       #     - SCHEDULE: {MINUTE: "0", HOUR: "2", DAY_OF_WEEK: "6"}
       #       SINCE: "now-14d"                           # every Saturday at 2AM, 14-day window
+      #       UPLOAD: true                               # upload this report to ServiceNow
       #     - SCHEDULE: {MINUTE: "0", HOUR: "3", DAY_OF_MONTH: "1"}
       #       SINCE: "now-30d"                           # 1st of each month at 3AM
       SCHEDULES: []

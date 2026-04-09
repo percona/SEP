@@ -137,10 +137,19 @@ class TestHealthReportSchedules:
         assert settings.schedules[1].since == "now-30d"
 
     def test_entry_defaults(self):
-        """Assert ReportScheduleEntry defaults for since, until, full, refresh, sections."""
+        """Assert ReportScheduleEntry defaults for since, until, full, refresh, sections, upload."""
         entry = ReportScheduleEntry(schedule={"every": 1, "period": "days"})
         assert entry.since == "now-7d"
         assert entry.until == "now"
         assert entry.full is True
         assert entry.refresh is False
         assert entry.sections is None
+        assert entry.upload is False
+
+    def test_entry_with_upload_enabled(self):
+        """Assert a schedule entry with upload=True parses correctly."""
+        entry = ReportScheduleEntry(
+            schedule={"every": 7, "period": "days"}, upload=True
+        )
+        assert entry.upload is True
+        assert entry.full is True
