@@ -62,6 +62,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.models import (
+    ExecutionEvent,
     FileMetadata,
     Task,
     TaskHistory,
@@ -77,6 +78,106 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
+
+
+def _nomad_event_body_text(ev: dict) -> str:
+    raw = ev.get("DisplayMessage") or ev.get("Message") or ev.get("Description") or ""
+    if isinstance(raw, str):
+        return raw.strip()
+    return str(raw).strip() if raw else ""
+
+
+def _nomad_event_exit_code(ev: dict) -> Any:
+    exit_code = ev.get("ExitCode")
+    details = ev.get("Details")
+    if exit_code is None and isinstance(details, dict):
+        return details.get("exit_code", details.get("ExitCode"))
+    return exit_code
+
+
+def _append_exit_code_suffix(
+    parts: list[str], description: str, exit_code: Any
+) -> None:
+    desc_lower = description.lower()
+    try:
+        code_int = int(exit_code)
+    except (TypeError, ValueError):
+        if str(exit_code).lower() not in desc_lower:
+            parts.append(f"(exit code {exit_code})")
+        return
+    if f"exit code {code_int}" not in desc_lower:
+        parts.append(f"(exit code {exit_code})")
+
+
+def _sortable_nomad_tracking_event(
+    task_name: str,
+    list_index: int,
+    ev: dict,
+) -> tuple[datetime, str, int, ExecutionEvent] | None:
+    if not isinstance(ev, dict):
+        return None
+    ts_raw = ev.get("Time")
+    try:
+        ts_ns = int(ts_raw)
+    except (TypeError, ValueError):
+        return None
+
+    event_type = ev.get("Type")
+    if not isinstance(event_type, str):
+        event_type = str(event_type) if event_type is not None else "Unknown"
+
+    description = _nomad_event_body_text(ev)
+    parts: list[str] = []
+    parts.append(description if description else event_type)
+
+    exit_code = _nomad_event_exit_code(ev)
+    if exit_code is not None:
+        _append_exit_code_suffix(parts, description, exit_code)
+
+    dt = NomadExecutor.timestamp_to_datetime(ts_ns)
+    return (
+        dt,
+        task_name,
+        list_index,
+        ExecutionEvent(
+            timestamp=make_datetime_utc(dt),
+            event_type=event_type,
+            description=" ".join(parts).strip(),
+            step=task_name,
+        ),
+    )
+
+
+def nomad_task_states_to_execution_events(
+    task_states: dict[str, Any] | None,
+) -> list[ExecutionEvent]:
+    """Map Nomad allocation ``TaskStates`` (from tracking) to execution events.
+
+    Parses each task's ``Events`` array defensively for Nomad API shape drift.
+
+    :param task_states: The ``task_states`` object from execution tracking.
+    :type task_states: dict[str, Any] | None
+    :return: Events sorted by timestamp ascending (oldest first).
+    :rtype: list[ExecutionEvent]
+    """
+    if not isinstance(task_states, dict):
+        return []
+
+    collected: list[tuple[datetime, str, int, ExecutionEvent]] = []
+
+    for task_name, state in task_states.items():
+        if not isinstance(task_name, str) or not isinstance(state, dict):
+            continue
+        raw_events = state.get("Events")
+        if not isinstance(raw_events, list):
+            continue
+        for idx, ev in enumerate(raw_events):
+            row = _sortable_nomad_tracking_event(task_name, idx, ev)
+            if row is not None:
+                collected.append(row)
+
+    collected.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[3] for item in collected]
 
 
 class NomadAllocStatusEnum(StrEnum):
@@ -237,6 +338,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         json.dumps(constraint).replace(meta, str(meta_val)),
                     )
         return task
+
+    def get_events(self, queue_item: TaskHistory) -> list[ExecutionEvent]:
+        """Return task events from stored Nomad ``task_states`` tracking data."""
+        tracking = queue_item.execution_request.tracking
+        if not isinstance(tracking, dict):
+            return []
+        return nomad_task_states_to_execution_events(tracking.get("task_states"))
 
     async def parse_payload(
         self, payload: str | bytes, payload_format: str

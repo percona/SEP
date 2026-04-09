@@ -141,7 +141,17 @@ if __name__ == "__main__":
         ssl_certfile=tasks_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
         reload=tasks_settings.UVICORN_RELOAD,
-        reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
-        reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
-        reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
+        reload_dirs=[
+            str(settings.BASE_DIR),
+            str(settings.BASE_DIR / "app"),
+            *tasks_settings.UVICORN_EXTRA_RELOAD_DIRS,
+        ],
+        reload_includes=[
+            f"{settings.BASE_DIR.name}/settings.yaml",
+            *tasks_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
+        ],
+        reload_excludes=[
+            f"{settings.BASE_DIR.name}/*.py",
+            *tasks_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
+        ],
     )
