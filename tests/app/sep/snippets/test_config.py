@@ -229,3 +229,44 @@ class TestToFormParameterGrouping:
         html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
         legends = _extract_fieldset_legends(html)
         assert "Parameters" not in legends
+
+
+class TestToFormOptionalExecutorHosts:
+    """Test ``_to_form`` with optional executor hosts and custom form ID."""
+
+    def test_executor_hosts_none_omits_host_fieldset(self):
+        """Verify no executor host fieldset is rendered when hosts are ``None``."""
+        html = BaseSnippet._to_form("[]", None)
+        legends = _extract_fieldset_legends(html)
+        assert "Executor Host" not in legends
+
+    def test_executor_hosts_none_still_renders_parameters(self):
+        """Verify parameter fieldsets render even when hosts are ``None``."""
+        params = _make_params_json({"name": "port"})
+        html = BaseSnippet._to_form(params, None)
+        legends = _extract_fieldset_legends(html)
+        assert "Parameters" in legends
+
+    def test_executor_hosts_provided_includes_host_fieldset(self):
+        """Verify executor host fieldset renders when hosts are provided."""
+        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        assert "Executor Host" in legends
+
+    def test_custom_form_id(self):
+        """Verify the form element uses a custom ID when provided."""
+        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS, form_id="myCustomForm")
+        assert 'id="myCustomForm"' in html
+
+    def test_default_form_id(self):
+        """Verify the form element uses the default ID."""
+        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
+        assert 'id="snippetExecuteForm"' in html
+
+    def test_executor_hosts_none_with_custom_form_id(self):
+        """Verify both optional hosts and custom ID work together."""
+        params = _make_params_json({"name": "host"})
+        html = BaseSnippet._to_form(params, None, form_id="troubleshoot-test")
+        assert 'id="troubleshoot-test"' in html
+        assert "Executor Host" not in html
+        assert "Parameters" in html

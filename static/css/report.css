@@ -29,7 +29,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>. */
 }
 
 .report-header .subtitle {
-    color: var(--text-secondary, #666);
+    color: var(--textSecondary);
     margin: 0.15rem 0;
     font-size: 0.95rem;
 }
@@ -40,7 +40,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>. */
 }
 
 .report-form fieldset {
-    border: 0.1rem solid var(--border-color, #ddd);
+    border: 0.1rem solid var(--lineDivider);
     border-radius: 1rem;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
@@ -131,7 +131,7 @@ a.btn.outlined:hover {
 /* Report result */
 
 .report-toc {
-    border: 0.1rem solid var(--border-color, #ddd);
+    border: 0.1rem solid var(--lineDivider);
     border-radius: 1rem;
     padding: 1.5rem;
     margin-bottom: 2rem;
@@ -161,11 +161,11 @@ a.btn.outlined:hover {
 }
 
 .report-toc a:hover {
-    background-color: var(--hover-bg, #eee);
+    background-color: var(--actionHover);
 }
 
 .report-section {
-    border: 0.1rem solid var(--border-color, #ddd);
+    border: 0.1rem solid var(--lineDivider);
     border-radius: 1rem;
     padding: 1.5rem;
     margin-bottom: 2rem;
@@ -174,13 +174,13 @@ a.btn.outlined:hover {
 .report-section h2 {
     margin-top: 0;
     font-size: 1.4rem;
-    border-bottom: 0.1rem dotted var(--border-color, #ccc);
+    border-bottom: 0.1rem dotted var(--lineDivider);
     padding-bottom: 0.5rem;
 }
 
 .report-section h3 {
     font-size: 1.1rem;
-    border-bottom: 0.1rem dotted var(--border-color, #eee);
+    border-bottom: 0.1rem dotted var(--lineDivider);
     padding-bottom: 0.3rem;
 }
 
@@ -215,7 +215,7 @@ a.btn.outlined:hover {
 }
 
 .report-section thead th {
-    background-color: var(--table-header-bg, #eee);
+    background-color: var(--surfaceElevation2);
     border-radius: 0.5rem;
 }
 
@@ -228,12 +228,12 @@ a.btn.outlined:hover {
 .report-footer {
     text-align: center;
     padding: 1.5rem 0;
-    border-top: 0.1rem solid var(--border-color, #ddd);
+    border-top: 0.1rem solid var(--lineDivider);
     margin-top: 2rem;
 }
 
 .report-footer p {
-    color: var(--text-secondary, #666);
+    color: var(--textSecondary);
     font-size: 0.9rem;
 }
 

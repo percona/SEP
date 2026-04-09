@@ -22,6 +22,7 @@ from fastapi import Depends, Header, Request
 from pydantic import ValidationError
 from starlette import status
 
+from app.core.config import settings
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
@@ -31,7 +32,6 @@ from app.core.exceptions import (
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.inventory.models import ServiceTypeEnum
-from app.sep.config import sep_settings
 from app.sep.deps import (
     CreatedServiceDep,
     ExecutorHosts,
@@ -178,7 +178,7 @@ async def get_dipper_execution_args(
     logger.debug("Form data: %s", form_data)
 
     if collector_type == CollectorTypeEnum.PMM:
-        pmm = sep_settings.PMM
+        pmm = settings.PMM
         pmm_server = form_data.get("pmmserver") or pmm.endpoint
         if not pmm_server:
             raise HTTPUnprocessableEntityException(
@@ -236,7 +236,7 @@ def resolve_pmm_executor_host(executor_hosts: ExecutorHosts) -> str | None:
     :return: The resolved Nomad node name, or None if no match found.
     :rtype: str | None
     """
-    pmm = sep_settings.PMM
+    pmm = settings.PMM
 
     host = None
     for node_name, node_address in executor_hosts.items():
@@ -271,7 +271,7 @@ def get_pmm_form_defaults(
     :return: A dictionary of default parameter values for the PMM form.
     :rtype: dict[str, str]
     """
-    pmm = sep_settings.PMM
+    pmm = settings.PMM
     defaults = {}
     if resolved_executor_host is not None:
         defaults["pmmserver"] = "https://localhost:8443"

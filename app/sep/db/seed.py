@@ -46,9 +46,11 @@ SYSTEM_PERIODIC_TASKS = [
 ]
 
 if _alerts_plugin_enabled:
+    from app.sep.plugins.alerts.config import alerts_pmm_config
+
     SYSTEM_PERIODIC_TASKS.append(
         SystemPeriodicTaskSchedule(
-            schedule=sep_settings.PMM.backup_interval,
+            schedule=alerts_pmm_config.backup_interval,
             tasks=[
                 SystemPeriodicTaskData(
                     name="sep__backup_alert_config",

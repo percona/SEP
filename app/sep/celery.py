@@ -22,7 +22,6 @@ from pathlib import Path
 from sqlmodel import col
 
 from app.celery import celery
-from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
@@ -280,7 +279,9 @@ async def _backup_alert_config() -> None:
         backup = AlertBackup(data=data, metadata_=metadata)
         await AlertBackupManager.save(session, backup)
 
-        retention = sep_settings.PMM.backup_retention
+        from app.sep.plugins.alerts.config import alerts_pmm_config
+
+        retention = alerts_pmm_config.backup_retention
         all_backups = await AlertBackupManager.list(session)
         if len(all_backups) > retention:
             ids_to_delete = [b.id for b in all_backups[retention:]]
