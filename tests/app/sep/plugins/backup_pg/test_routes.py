@@ -18,73 +18,10 @@
 from unittest.mock import AsyncMock
 
 import pytest
-import yaml
 from fastapi import HTTPException, status
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.main import sep_app
-from app.sep.plugins.backup_pg.deps import (
-    get_backups_index_context,
-    get_backups_task,
-)
-from app.sep.plugins.backup_pg.models import BackupCreate, BackupType
-from app.tasks.models import (
-    TaskHistoryStatusEnum,
-    TaskOwner,
-)
-from tests.app.factories import TaskFactory
-
-
-@pytest.fixture
-def _mock_get_backups_index_context_dep():
-    """Mock the get_backups_index_context dependency with default context."""
-    sep_app.dependency_overrides[get_backups_index_context] = lambda: {
-        "user": "default_user",
-        "executor_hosts": [],
-        "services": [],
-        "tasks": [],
-        "history_tasks": [],
-        "running_tasks": [],
-        "alert_on_fail_default": False,
-        "alert_on_fail_available": False,
-    }
-    yield
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def backup_create():
-    """Define a sample BackupCreate form data."""
-    return BackupCreate(
-        task_name="fake_task",
-        hostname="localhost",
-        service_id=1,
-        backup_type=BackupType.PGBACKREST,
-    )
-
-
-@pytest.fixture
-def created_task():
-    """Return a fake created Task instance."""
-    return TaskFactory.build(
-        owner=TaskOwner.BACKUP_PG,
-        data={
-            "meta": {
-                "target": "localhost",
-                "config": yaml.dump(
-                    {
-                        "SERVER_LIST": [
-                            {
-                                "HOST": "localhost",
-                                "PORT": 5432,
-                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
-                            }
-                        ]
-                    }
-                ),
-            }
-        },
-    )
+from app.tasks.models import TaskHistoryStatusEnum
 
 
 @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
@@ -125,15 +62,7 @@ def test_backups_detail(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):
     """Test GET /backup-pg/{task_name} route."""
-    mock_task_api_dep.get = AsyncMock(
-        side_effect=[
-            {},  # hosts
-            {},  # history
-            {},  # running_tasks
-            [],  # stats
-            [],  # chainable_tasks
-        ]
-    )
+    mock_task_api_dep.get = AsyncMock(side_effect=[{}, {}, {}, [], []])
     mock_inventory_api_dep.get = AsyncMock(return_value=[])
 
     response = test_client.get(f"/backup-pg/{created_task.name}")

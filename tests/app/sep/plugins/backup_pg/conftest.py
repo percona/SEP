@@ -16,6 +16,7 @@
 """Define fixtures for the app.sep.plugins.backup_pg tests."""
 
 import pytest
+import yaml
 
 from app.sep.main import sep_app
 from app.sep.plugins.backup_pg.deps import (
@@ -23,8 +24,10 @@ from app.sep.plugins.backup_pg.deps import (
     get_backups_index_context,
     get_backups_task,
 )
+from app.sep.plugins.backup_pg.models import BackupCreate, BackupType
 from app.sep.plugins.backup_pg.routes import router as backup_pg_router
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from tests.app.factories import TaskFactory
 
 if not any(route.path.startswith("/backup-pg") for route in sep_app.routes):
     sep_app.include_router(backup_pg_router, prefix="/backup-pg")
@@ -45,6 +48,41 @@ def _mock_get_backups_index_context_dep() -> None:
     }
     yield
     sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def backup_create() -> BackupCreate:
+    """Define a sample BackupCreate form data."""
+    return BackupCreate(
+        task_name="fake_task",
+        hostname="localhost",
+        service_id=1,
+        backup_type=BackupType.PGBACKREST,
+    )
+
+
+@pytest.fixture
+def created_task() -> Task:
+    """Return a fake created Task instance."""
+    return TaskFactory.build(
+        owner=TaskOwner.BACKUP_PG,
+        data={
+            "meta": {
+                "target": "localhost",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "HOST": "localhost",
+                                "PORT": 5432,
+                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                            }
+                        ]
+                    }
+                ),
+            }
+        },
+    )
 
 
 @pytest.fixture
