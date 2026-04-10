@@ -5,6 +5,9 @@
 # description: "This script checks PMM agent and PostgreSQL exporter logs to diagnose exporter errors affecting monitoring."
 # allow_extra_args: false
 # sudo: optional
+# service_type: postgresql
+# alerts:
+#   - PostgreSQLExporterError
 # ---
 
 # Usage: ./postgresql_exporter_error_check.sh
@@ -40,4 +43,4 @@ fi
 echo ""
 echo "********* PostgreSQL exporter processes *********"
 echo ""
-ps aux | grep -i "[p]ostgres_exporter" || echo "No postgres_exporter processes found."
+pgrep -af "postgres_exporter" || echo "No postgres_exporter processes found."

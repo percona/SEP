@@ -5,6 +5,9 @@
 # description: "This script checks replication lag details including WAL positions, replication slots, blocking queries, and long-running transactions."
 # allow_extra_args: false
 # sudo: optional
+# service_type: postgresql
+# alerts:
+#   - PostgreSQLReplicationLag
 # ---
 
 # Usage: ./postgresql_replication_lag_check.sh

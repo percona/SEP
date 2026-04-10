@@ -5,6 +5,9 @@
 # description: "This script checks database and table ages against autovacuum_freeze_max_age, ongoing vacuum progress, and oldest unfrozen tables."
 # allow_extra_args: false
 # sudo: optional
+# service_type: postgresql
+# alerts:
+#   - PostgreSQLWraparound
 # ---
 
 # Usage: ./postgresql_wraparound_check.sh
@@ -29,12 +32,16 @@ SQL
 echo ""
 echo "********* Replication slot size *********"
 $PSQL << SQL
-SELECT a.client_addr, b.slot_name, a.state, pg_current_wal_lsn() as current_wal,a.replay_lsn,
-       a.replay_lag as lag_in_time,
-       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(),a.replay_lsn)) as lag_in_size
-FROM pg_stat_replication a, pg_replication_slots b
-WHERE a.pid = b.active_pid
-ORDER BY pg_wal_lsn_diff(pg_current_wal_lsn(),a.replay_lsn) DESC;
+SELECT a.client_addr,
+       b.slot_name,
+       a.state,
+       pg_current_wal_lsn() AS current_wal,
+       a.replay_lsn,
+       a.replay_lag AS lag_in_time,
+       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), a.replay_lsn)) AS lag_in_size
+FROM pg_stat_replication a
+LEFT JOIN pg_replication_slots b ON a.pid = b.active_pid
+ORDER BY pg_wal_lsn_diff(pg_current_wal_lsn(), a.replay_lsn) DESC;
 SQL
 
 echo ""
@@ -53,10 +60,10 @@ SELECT p.pid, now() - a.xact_start AS duration,
        pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
        pg_size_pretty(p.heap_blks_scanned * current_setting('block_size')::int) AS scanned,
        pg_size_pretty(p.heap_blks_vacuumed * current_setting('block_size')::int) AS vacuumed,
-       round(100.0 * p.heap_blks_scanned / p.heap_blks_total, 1) AS scanned_pct,
-       round(100.0 * p.heap_blks_vacuumed / p.heap_blks_total, 1) AS vacuumed_pct,
+       COALESCE(round(100.0 * p.heap_blks_scanned / NULLIF(p.heap_blks_total, 0), 1), 0) AS scanned_pct,
+       COALESCE(round(100.0 * p.heap_blks_vacuumed / NULLIF(p.heap_blks_total, 0), 1), 0) AS vacuumed_pct,
        p.index_vacuum_count,
-       round(100.0 * p.num_dead_tuples / p.max_dead_tuples, 1) AS dead_pct
+       COALESCE(round(100.0 * p.num_dead_tuples / NULLIF(p.max_dead_tuples, 0), 1), 0) AS dead_pct
 FROM pg_stat_progress_vacuum p
 JOIN pg_stat_activity a USING (pid)
 ORDER BY now() - a.xact_start DESC;
