@@ -5,9 +5,14 @@
 # description: "This script checks mydumper/xtrabackup logs, retention configuration, and disk space to diagnose failed and/or stale backups, including binary log backups."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mysql
+# alerts:
+#   - BackupFailed
+#   - StaleBackup
+#   - StaleBackupLog
 # ---
 
-# Usage: ./backup_failed_check.sh
+# Usage: ./backup_failed_stale_check.sh
 
 set -euo pipefail
 
@@ -34,21 +39,33 @@ fi
 echo ""
 echo "********* Latest detailed backup logs *********"
 echo ""
-ls -alhrt "$BACKUP_LOG_DIR" 2> /dev/null | grep -E "xtrabackup-|mydumper-" | tail -n 4 \
-    || echo "No detailed backup logs found."
+detailed_logs=""
+if [ -d "$BACKUP_LOG_DIR" ]; then
+    detailed_logs=$(
+        find "$BACKUP_LOG_DIR" -maxdepth 1 -type f \
+            \( -name 'xtrabackup-*' -o -name 'mydumper-*' \) \
+            -printf '%T@ %TY-%Tm-%Td %TH:%TM %s %p\n' 2> /dev/null |
+            sort -n | tail -n 4 | cut -d' ' -f2-
+    )
+fi
+if [ -n "$detailed_logs" ]; then
+    echo "$detailed_logs"
+else
+    echo "No detailed backup logs found."
+fi
 
 echo ""
 echo "********* Running backup processes *********"
 echo ""
 ps aux | head -n1
-ps aux | grep -E "[x]trabackup|[m]ydumper" || echo "No backup processes currently running."
+pgrep -a -f '(xtrabackup|mydumper)' || echo "No backup processes currently running."
 
 echo ""
 echo "********* Backup retention configuration *********"
 echo ""
 if [ -f "$BACKUP_CONFIG" ]; then
-    grep -E "BINLOG_PURGE_DAYS|MYDUMPER_DAILY_PURGE|MYDUMPER_WEEKLY_PURGE|XTRABACKUP_COPIES" "$BACKUP_CONFIG" \
-        || echo "No retention settings found in config."
+    grep -E "BINLOG_PURGE_DAYS|MYDUMPER_DAILY_PURGE|MYDUMPER_WEEKLY_PURGE|XTRABACKUP_COPIES" "$BACKUP_CONFIG" ||
+        echo "No retention settings found in config." || true
 else
     echo "Backup config not found at $BACKUP_CONFIG"
 fi
@@ -57,7 +74,7 @@ echo ""
 echo "********* Backup directory sizes *********"
 echo ""
 if [ -f "$BACKUP_CONFIG" ]; then
-    BACKUP_DIR=$(grep BACKUP_DIR "$BACKUP_CONFIG" 2> /dev/null | cut -d ":" -f2 | xargs)
+    BACKUP_DIR=$(grep BACKUP_DIR "$BACKUP_CONFIG" 2> /dev/null | cut -d ":" -f2 | xargs || true)
     if [ -n "${BACKUP_DIR:-}" ] && [ -d "$BACKUP_DIR" ]; then
         du -hd1 "$BACKUP_DIR" 2> /dev/null | tail -10
     else
@@ -70,8 +87,20 @@ fi
 echo ""
 echo "********* Recent binlog puller logs *********"
 echo ""
-ls -alhrt "$BACKUP_LOG_DIR" 2> /dev/null | grep "binlog_puller" | tail -n 4 \
-    || echo "No binlog puller logs found."
+binlog_puller_logs=""
+if [ -d "$BACKUP_LOG_DIR" ]; then
+    binlog_puller_logs=$(
+        find "$BACKUP_LOG_DIR" -maxdepth 1 -type f \
+            -name 'binlog_puller*' \
+            -printf '%T@ %TY-%Tm-%Td %TH:%TM %s %p\n' 2> /dev/null |
+            sort -n | tail -n 4 | cut -d' ' -f2-
+    )
+fi
+if [ -n "$binlog_puller_logs" ]; then
+    echo "$binlog_puller_logs"
+else
+    echo "No binlog puller logs found."
+fi
 
 for logfile in "$BACKUP_LOG_DIR"/binlog_puller_*.log; do
     if [ -f "$logfile" ]; then
@@ -84,17 +113,7 @@ done
 echo ""
 echo "********* Running mysqlbinlog processes *********"
 echo ""
-ps aux | grep "[m]ysqlbinlog" || echo "No mysqlbinlog processes currently running."
-
-echo ""
-echo "********* Backup retention configuration *********"
-echo ""
-if [ -f "$BACKUP_CONFIG" ]; then
-    grep -E "BINLOG_PURGE_DAYS|MYDUMPER_DAILY_PURGE|MYDUMPER_WEEKLY_PURGE|XTRABACKUP_COPIES" "$BACKUP_CONFIG" \
-        || echo "No retention settings found."
-else
-    echo "Backup config not found at $BACKUP_CONFIG"
-fi
+pgrep -a -f mysqlbinlog || echo "No mysqlbinlog processes currently running."
 
 echo ""
 echo "********* Backup cron jobs *********"
