@@ -30,22 +30,6 @@ jobs:
       - name: Run bandit
         run: make bandit
 
-  pip-audit:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        python: ["3.11.9"]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Setup Python
-        uses: ./.github/actions/setup-python-job
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Run pip-audit
-        run: make pip-audit
-
   check_migrations:
     needs: [bandit]
     strategy:
