@@ -123,6 +123,7 @@ async def build_backup_task_payload(
     requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
     if form.backup_type == BackupType.MYDUMPER:
         payload_name = "mydumper_payload"
+        requirements += "\nfilelock"
     elif form.backup_type == BackupType.XTRABACKUP:
         payload_name = "xtrabackup_payload"
         requirements += "\nfilelock"
