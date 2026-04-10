@@ -90,6 +90,8 @@ async def build_backup_task_payload(
     upload_providers = []
     if form.s3_bucket:
         upload_providers.append(UploadProvider.S3)
+    if form.gs_bucket:
+        upload_providers.append(UploadProvider.GSUTIL)
     if form.rsync_path:
         upload_providers.append(UploadProvider.RSYNC)
 
@@ -187,6 +189,8 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         result["skip_s3_safety_check"] = all_servers_config.get(
             "skip_s3_safety_check", False
         )
+    if "GSUTIL" in upload_providers:
+        result["gs_bucket"] = all_servers_config.get("gs_bucket")
     if "RSYNC" in upload_providers:
         result["rsync_path"] = all_servers_config.get("rsync_path")
 
