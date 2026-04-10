@@ -867,6 +867,16 @@ async def generate_report(
 # PDF generation helpers
 
 
+@functools.lru_cache(maxsize=1)
+def _get_page_css():  # noqa: ANN202
+    """Return the cached WeasyPrint CSS object for the PDF page layout."""
+    from weasyprint import CSS
+
+    return CSS(
+        string="@page { size: 370mm 445.5mm; margin: 0; background: rgb(0, 18, 34); }"
+    )
+
+
 async def generate_pdf_report(report: ReportData) -> bytes:
     """Render a report to a self-contained HTML document and convert it to PDF.
 
@@ -879,7 +889,7 @@ async def generate_pdf_report(report: ReportData) -> bytes:
     :return: The PDF file contents.
     :rtype: bytes
     """
-    from weasyprint import CSS, HTML
+    from weasyprint import HTML
 
     from app.sep.config import sep_settings
 
@@ -891,10 +901,7 @@ async def generate_pdf_report(report: ReportData) -> bytes:
     )
 
     def _generate() -> bytes:
-        page_css = CSS(
-            string="@page { size: 370mm 445.5mm; margin: 0; background: rgb(0, 18, 34); }"
-        )
-        return HTML(string=html).write_pdf(stylesheets=[page_css])
+        return HTML(string=html).write_pdf(stylesheets=[_get_page_css()])
 
     return await asyncio.to_thread(_generate)
 
