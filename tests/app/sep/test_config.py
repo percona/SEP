@@ -19,10 +19,7 @@ from string import Template
 from unittest.mock import patch
 
 from app.core.config import PMMSettings
-from app.sep.config import (
-    _DeprecatedPMMConfig,
-    SEPSettings,
-)
+from app.sep.config import _DeprecatedPMMConfig, SEPSettings
 
 PMM_ENDPOINT = "https://pmm.example.com"
 CORE_PMM_ENDPOINT = "https://core.example.com"
