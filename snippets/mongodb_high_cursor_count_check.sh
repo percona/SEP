@@ -5,6 +5,9 @@
 # description: "This script checks open cursor counts and identifies potential cursor leaks to diagnose high cursor count alerts."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBHighCursorCount
 # ---
 
 # Usage: ./mongodb_high_cursor_count_check.sh
@@ -49,7 +52,7 @@ echo ""
 MONGOD_PID=$(pgrep -x mongod 2> /dev/null | head -1) || true
 if [ -n "${MONGOD_PID:-}" ]; then
     echo "mongod PID: $MONGOD_PID"
-    ls /proc/"$MONGOD_PID"/fd 2> /dev/null | wc -l || echo "Cannot count open FDs."
+    find /proc/"$MONGOD_PID"/fd -mindepth 1 -maxdepth 1 2> /dev/null | wc -l || echo "Cannot count open FDs."
 else
     echo "mongod process not found."
 fi

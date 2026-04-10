@@ -5,6 +5,9 @@
 # description: "This script checks MongoDB tcmalloc heap memory usage and provides diagnostics for high heap consumption."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBHighHeapUsage
 # ---
 
 # Usage: ./mongodb_high_heap_usage_check.sh
@@ -25,10 +28,12 @@ if (tcm && tcm.generic) {
 }
 if (tcm && tcm.tcmalloc) {
     var t = tcm.tcmalloc;
-    print('pageheap_free_bytes:     ' + (t.pageheap_free_bytes || 'N/A') + ' (' + ((t.pageheap_free_bytes || 0) / 1024 / 1024 / 1024).toFixed(2) + ' GB)');
-    print('central_cache_free_bytes: ' + (t.central_cache_free_bytes || 'N/A'));
-    print('thread_cache_free_bytes: ' + (t.thread_cache_free_bytes || 'N/A'));
-    print('aggressive_memory_decommit: ' + (t.aggressive_memory_decommit || 'N/A'));
+    function fmt(v) { return v != null ? v : 'N/A'; }
+    var phfb = t.pageheap_free_bytes;
+    print('pageheap_free_bytes:     ' + fmt(phfb) + (typeof phfb === 'number' ? ' (' + (phfb / 1024 / 1024 / 1024).toFixed(2) + ' GB)' : ''));
+    print('central_cache_free_bytes: ' + fmt(t.central_cache_free_bytes));
+    print('thread_cache_free_bytes: ' + fmt(t.thread_cache_free_bytes));
+    print('aggressive_memory_decommit: ' + fmt(t.aggressive_memory_decommit));
 }
 " 2> /dev/null || echo "Cannot retrieve tcmalloc stats."
 
@@ -63,7 +68,7 @@ echo ""
 echo "********* MongoDB process memory *********"
 echo ""
 MONGOD_PID="$(pgrep -x mongod 2> /dev/null | head -1 || true)"
-if [[ -n "${MONGOD_PID}" ]]; then
+if [[ -n ${MONGOD_PID} ]]; then
     ps -o pid,rss,vsz,comm -p "${MONGOD_PID}" 2> /dev/null || echo "mongod process not found."
 else
     echo "mongod process not found."

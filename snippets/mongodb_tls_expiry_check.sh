@@ -5,6 +5,9 @@
 # description: "This script checks MongoDB TLS certificate expiration dates to prevent service disruption from expired certificates."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBTLSCertificateExpiry
 # ---
 
 # Usage: ./mongodb_tls_expiry_check.sh
@@ -19,13 +22,18 @@ echo ""
 $MONGOSH --eval "
 var ss = db.serverStatus();
 if (ss.security && ss.security.SSLServerCertificateExpirationDate) {
-    var expDate = ss.security.SSLServerCertificateExpirationDate;
-    var now = new Date();
-    var daysLeft = Math.floor((expDate - now) / (1000 * 60 * 60 * 24));
-    print('Certificate expires: ' + expDate);
-    print('Days until expiry:   ' + daysLeft);
-    if (daysLeft < 30) {
-        print('WARNING: Certificate expires in less than 30 days!');
+    var expDateRaw = ss.security.SSLServerCertificateExpirationDate;
+    var expDate = (expDateRaw instanceof Date) ? expDateRaw : new Date(expDateRaw);
+    if (isNaN(expDate.getTime())) {
+        print('Certificate expiration date is not in a valid format: ' + expDateRaw);
+    } else {
+        var now = new Date();
+        var daysLeft = Math.floor((expDate - now) / (1000 * 60 * 60 * 24));
+        print('Certificate expires: ' + expDate);
+        print('Days until expiry:   ' + daysLeft);
+        if (daysLeft < 30) {
+            print('WARNING: Certificate expires in less than 30 days!');
+        }
     }
 } else {
     print('TLS certificate info not available in serverStatus (TLS may not be enabled).');

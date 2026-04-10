@@ -5,6 +5,9 @@
 # description: "This script checks global lock queues and identifies long-running or unindexed queries causing queue buildup."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBReadWriteQueueHigh
 # ---
 
 # Usage: ./mongodb_read_write_queue_check.sh
@@ -48,6 +51,6 @@ db.currentOp({'planSummary': 'COLLSCAN'}).inprog.forEach(function(op) {
 echo ""
 echo "********* Recent slow query log entries *********"
 echo ""
-journalctl -u mongod --no-pager -n 200 2> /dev/null | grep -i "Slow query\|COLLSCAN\|durationMillis" | tail -20 \
-    || grep -i "Slow query\|COLLSCAN\|durationMillis" /var/log/mongodb/mongod.log 2> /dev/null | tail -20 \
-    || echo "No slow query log entries found."
+journalctl -u mongod --no-pager -n 200 2> /dev/null | grep -i "Slow query\|COLLSCAN\|durationMillis" | tail -20 ||
+    grep -i "Slow query\|COLLSCAN\|durationMillis" /var/log/mongodb/mongod.log 2> /dev/null | tail -20 ||
+    echo "No slow query log entries found."

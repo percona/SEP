@@ -5,6 +5,9 @@
 # description: "This script checks replication lag between primary and secondaries using replica set status."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBReplicationLag
 # ---
 
 # Usage: ./mongodb_repl_lag_check.sh
@@ -23,11 +26,20 @@ status.members.forEach(function(m) {
     if (m.stateStr === 'PRIMARY') primary = m;
 });
 if (primary) {
-    print('Primary: ' + primary.name + '  optime: ' + tojson(primary.optimeDate));
+    var primaryOptimeDate = primary.optimeDate;
+    var primaryOptimeStr = primaryOptimeDate ? tojson(primaryOptimeDate) : 'N/A';
+    print('Primary: ' + primary.name + '  optime: ' + primaryOptimeStr);
     status.members.forEach(function(m) {
         if (m.stateStr !== 'PRIMARY') {
-            var lagMs = primary.optimeDate - m.optimeDate;
-            print('  ' + m.name + '  state: ' + m.stateStr + '  lag: ' + (lagMs / 1000) + 's  optime: ' + tojson(m.optimeDate));
+            var memberOptimeStr = m.optimeDate ? tojson(m.optimeDate) : 'N/A';
+            var lagStr = 'N/A';
+            if (primaryOptimeDate && m.optimeDate) {
+                var lagMs = primaryOptimeDate - m.optimeDate;
+                if (!isNaN(lagMs)) {
+                    lagStr = (lagMs / 1000) + 's';
+                }
+            }
+            print('  ' + m.name + '  state: ' + m.stateStr + '  lag: ' + lagStr + '  optime: ' + memberOptimeStr);
         }
     });
 } else {

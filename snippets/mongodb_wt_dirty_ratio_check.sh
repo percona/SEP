@@ -5,6 +5,9 @@
 # description: "This script checks the WiredTiger dirty cache ratio and write throughput to diagnose cache pressure issues."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBHighDirtyRatio
 # ---
 
 # Usage: ./mongodb_wt_dirty_ratio_check.sh
@@ -22,11 +25,14 @@ var cache = ss.wiredTiger.cache;
 var total = cache['bytes currently in the cache'];
 var dirty = cache['tracked dirty bytes in the cache'];
 var maxBytes = cache['maximum bytes configured'];
-var dirtyPct = (dirty / total * 100).toFixed(2);
+var dirtyPct = 'N/A';
+if (typeof total === 'number' && typeof dirty === 'number' && total > 0) {
+    dirtyPct = (dirty / total * 100).toFixed(2);
+}
 print('cache bytes in use:    ' + total + ' (' + (total / 1024 / 1024 / 1024).toFixed(2) + ' GB)');
 print('cache max configured:  ' + maxBytes + ' (' + (maxBytes / 1024 / 1024 / 1024).toFixed(2) + ' GB)');
 print('dirty bytes in cache:  ' + dirty + ' (' + (dirty / 1024 / 1024 / 1024).toFixed(2) + ' GB)');
-print('dirty ratio:           ' + dirtyPct + '%');
+print('dirty ratio:           ' + (dirtyPct === 'N/A' ? dirtyPct : dirtyPct + '%'));
 print('');
 print('pages read into cache: ' + cache['pages read into cache']);
 print('pages written from cache: ' + cache['pages written from cache']);

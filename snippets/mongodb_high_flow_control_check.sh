@@ -5,6 +5,9 @@
 # description: "This script checks MongoDB flow control status and replication lag to diagnose write throttling on the primary."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBHighFlowControl
 # ---
 
 # Usage: ./mongodb_high_flow_control_check.sh
@@ -18,15 +21,17 @@ echo "********* Flow control status *********"
 echo ""
 $MONGOSH --eval "
 var ss = db.serverStatus();
+function fmt(v) { return v != null ? v : 'N/A'; }
 if (ss.flowControl) {
-    print('enabled:                  ' + (ss.flowControl.enabled || 'N/A'));
-    print('isLagged:                 ' + (ss.flowControl.isLagged || 'N/A'));
-    print('isLaggedCount:            ' + (ss.flowControl.isLaggedCount || 'N/A'));
-    print('isLaggedTimeMicros:       ' + (ss.flowControl.isLaggedTimeMicros || 'N/A'));
-    print('targetRateLimit:          ' + (ss.flowControl.targetRateLimit || 'N/A'));
-    print('timeAcquiringMicros:      ' + (ss.flowControl.timeAcquiringMicros || 'N/A'));
-    print('locksPerKiloOp:           ' + (ss.flowControl.locksPerKiloOp || 'N/A'));
-    print('sustainerRate:            ' + (ss.flowControl.sustainerRate || 'N/A'));
+    var fc = ss.flowControl;
+    print('enabled:                  ' + fmt(fc.enabled));
+    print('isLagged:                 ' + fmt(fc.isLagged));
+    print('isLaggedCount:            ' + fmt(fc.isLaggedCount));
+    print('isLaggedTimeMicros:       ' + fmt(fc.isLaggedTimeMicros));
+    print('targetRateLimit:          ' + fmt(fc.targetRateLimit));
+    print('timeAcquiringMicros:      ' + fmt(fc.timeAcquiringMicros));
+    print('locksPerKiloOp:           ' + fmt(fc.locksPerKiloOp));
+    print('sustainerRate:            ' + fmt(fc.sustainerRate));
 } else {
     print('flowControl not available in serverStatus.');
 }
@@ -44,8 +49,14 @@ status.members.forEach(function(m) {
 if (primary) {
     status.members.forEach(function(m) {
         if (m.stateStr !== 'PRIMARY') {
-            var lagMs = primary.optimeDate - m.optimeDate;
-            print(m.name + '  state: ' + m.stateStr + '  lag: ' + (lagMs / 1000) + 's');
+            var lagOutput = 'N/A';
+            if (primary.optimeDate && m.optimeDate) {
+                var lagMs = primary.optimeDate - m.optimeDate;
+                if (!isNaN(lagMs)) {
+                    lagOutput = (lagMs / 1000) + 's';
+                }
+            }
+            print(m.name + '  state: ' + m.stateStr + '  lag: ' + lagOutput);
         }
     });
 } else {

@@ -5,6 +5,9 @@
 # description: "This script checks shard balancer state and chunk distribution to diagnose uneven data distribution across shards."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBChunksImbalance
 # ---
 
 # Usage: ./mongodb_chunks_imbalance_check.sh
@@ -31,6 +34,6 @@ $MONGOSH --eval "sh.status()" 2> /dev/null || echo "Cannot retrieve shard status
 echo ""
 echo "********* Recent balancer/moveChunk log entries *********"
 echo ""
-journalctl -u mongos --no-pager -n 200 2> /dev/null | grep -i "balancer\|moveChunk\|jumbo" | tail -20 \
-    || grep -i "balancer\|moveChunk\|jumbo" /var/log/mongodb/mongos.log 2> /dev/null | tail -20 \
-    || echo "No balancer log entries found."
+journalctl -u mongos --no-pager -n 200 2> /dev/null | grep -i "balancer\|moveChunk\|jumbo" | tail -20 ||
+    grep -i "balancer\|moveChunk\|jumbo" /var/log/mongodb/mongos.log 2> /dev/null | tail -20 ||
+    echo "No balancer log entries found."

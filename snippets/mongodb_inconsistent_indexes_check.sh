@@ -5,6 +5,9 @@
 # description: "This script checks for inconsistent indexes across shards in a sharded MongoDB cluster."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBInconsistentIndexes
 # ---
 
 # Usage: ./mongodb_inconsistent_indexes_check.sh
@@ -30,12 +33,23 @@ echo "********* Metadata consistency check *********"
 echo ""
 $MONGOSH --eval "
 var result = db.adminCommand({ checkMetadataConsistency: 1, checkIndexes: true });
-if (result.firstBatch && result.firstBatch.length > 0) {
-    result.firstBatch.forEach(function(item) {
+var batch = [];
+if (result.cursor) {
+    if (Array.isArray(result.cursor.firstBatch)) {
+        batch = result.cursor.firstBatch;
+    } else if (Array.isArray(result.cursor.nextBatch)) {
+        batch = result.cursor.nextBatch;
+    }
+}
+if (batch.length > 0) {
+    batch.forEach(function(item) {
         printjson(item);
     });
-} else {
+} else if (result.cursor) {
     print('No inconsistencies found.');
+} else {
+    print('checkMetadataConsistency did not return a cursor document:');
+    printjson(result);
 }
 " 2> /dev/null || echo "Cannot run checkMetadataConsistency (requires MongoDB 7.0+ or config server)."
 

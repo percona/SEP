@@ -5,6 +5,9 @@
 # description: "This script checks WiredTiger read/write ticket availability to diagnose ticket exhaustion causing request queuing."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mongodb
+# alerts:
+#   - MongoDBTicketExhaustion
 # ---
 
 # Usage: ./mongodb_wt_ticket_use_check.sh
@@ -18,13 +21,22 @@ echo "********* WiredTiger concurrent transactions (tickets) *********"
 echo ""
 $MONGOSH --eval "
 var ss = db.serverStatus();
-var wt = ss.wiredTiger.concurrentTransactions;
-print('read available:  ' + wt.read.available);
-print('read out:        ' + wt.read.out);
-print('read totalTickets: ' + wt.read.totalTickets);
-print('write available: ' + wt.write.available);
-print('write out:       ' + wt.write.out);
-print('write totalTickets: ' + wt.write.totalTickets);
+function dumpTickets(label, t) {
+    if (!t) { print(label + ' tickets not available.'); return; }
+    print(label + ' available:    ' + (t.available != null ? t.available : 'N/A'));
+    print(label + ' out:          ' + (t.out != null ? t.out : 'N/A'));
+    print(label + ' totalTickets: ' + (t.totalTickets != null ? t.totalTickets : 'N/A'));
+}
+if (ss.queues && ss.queues.execution) {
+    dumpTickets('read ', ss.queues.execution.read);
+    dumpTickets('write', ss.queues.execution.write);
+} else if (ss.wiredTiger && ss.wiredTiger.concurrentTransactions) {
+    var wt = ss.wiredTiger.concurrentTransactions;
+    dumpTickets('read ', wt.read);
+    dumpTickets('write', wt.write);
+} else {
+    print('Ticket metrics not available in serverStatus.');
+}
 " 2> /dev/null || echo "Cannot retrieve WiredTiger ticket info."
 
 echo ""
