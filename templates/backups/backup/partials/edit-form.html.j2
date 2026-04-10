@@ -35,6 +35,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     #mydumper_container,
     #xtrabackup_container,
     #s3_container,
+    #gs_container,
     #rsync_container {
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
@@ -45,6 +46,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     #mydumper_container.visible,
     #xtrabackup_container.visible,
     #s3_container.visible,
+    #gs_container.visible,
     #rsync_container.visible {
         opacity: 1;
         max-height: 1000px;
@@ -52,6 +54,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
     #upload_container.visible,
     #s3_container.visible,
+    #gs_container.visible,
     #rsync_container.visible{
         display: block;
     }
@@ -944,6 +947,23 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             <span class="label">Skip S3 Safety Check</span>{{ info_icon(skip_s3_safety_check_title) }}
                         </label>
                     </div>
+                    <button class="text large" type="button" id="toggle_gs_btn">+ Add GS upload</button>
+                    <br>
+                    <div id="gs_container" class="hidden">
+                        {% set gs_bucket_title = "Type the name of the GS Bucket where backups will be stored." %}
+                        <div>
+                            <label for="gs_bucket">
+                                GS Bucket:
+                                <input type="text"
+                                       id="gs_bucket"
+                                       name="gs_bucket"
+                                       value="{{ task.gs_bucket or '' }}"
+                                       placeholder="e.g. my-gcp-backup-bucket" />
+                                {{ info_icon(gs_bucket_title) }}
+                            </label>
+                        </div>
+                        <br>
+                    </div>
                     <button class="text large" type="button" id="toggle_rsync_btn">+ Add Rsync upload</button>
                     <div id="rsync_container">
                         {% set rsync_path_title = "Type the remote destination path for Rsync transfers. Format: user@host:/path." %}
@@ -985,6 +1005,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const uploadContainer = document.getElementById('upload_container');
     const s3Container = document.getElementById('s3_container');
     const toggleS3Btn = document.getElementById('toggle_s3_btn');
+    const gsContainer = document.getElementById('gs_container');
+    const toggleGsBtn = document.getElementById('toggle_gs_btn');
+    const gsBucketInput = document.getElementById('gs_bucket');
     const rsyncContainer = document.getElementById('rsync_container');
     const toggleRsyncBtn = document.getElementById('toggle_rsync_btn');
     const s3BucketInput = document.getElementById('s3_bucket');
@@ -994,6 +1017,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const serviceSelect = document.getElementById('service_id');
 
     let s3Visible = false;
+    let gsVisible = false;
     let rsyncVisible = false;
 
     const source_data = { "host": "{{ task.host }}", "port": "{{ task.port }}" };
@@ -1161,6 +1185,20 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     }
 
+    function toggleGS() {
+        gsVisible = !gsVisible;
+        if (gsVisible) {
+            showContainer(gsContainer, true);
+            gsBucketInput.required = true;
+            toggleGsBtn.textContent = "- Remove GS upload";
+        } else {
+            showContainer(gsContainer, false);
+            gsBucketInput.required = false;
+            gsBucketInput.value = '';
+            toggleGsBtn.textContent = "+ Add GS upload";
+        }
+    }
+
     function toggleRsync() {
         rsyncVisible = !rsyncVisible;
         if (rsyncVisible) {
@@ -1222,6 +1260,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     backupTypeSelect.addEventListener('change', updateBackupTypeUI);
     toggleS3Btn.addEventListener('click', toggleS3);
+    toggleGsBtn.addEventListener('click', toggleGS);
     toggleRsyncBtn.addEventListener('click', toggleRsync);
     ['input', 'change'].forEach(event => form.addEventListener(event, updateEditButtonState));
 
@@ -1230,6 +1269,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         initSource();
         updateBackupTypeUI();
         updateCompressionOptions();
+        showContainer(gsContainer, false);
         if (s3BucketInput && s3BucketInput.value.trim() !== '') {
             showContainer(s3Container, true);
             s3Visible = true;
@@ -1237,6 +1277,12 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             toggleS3Btn.textContent = "- Remove S3 upload";
         } else {
             showContainer(s3Container, false);
+        }
+        if (gsBucketInput && gsBucketInput.value.trim() !== '') {
+            showContainer(gsContainer, true);
+            gsVisible = true;
+            gsBucketInput.required = true;
+            toggleGsBtn.textContent = "- Remove GS upload";
         }
         if (rsyncPathInput && rsyncPathInput.value.trim() !== '') {
             showContainer(rsyncContainer, true);
