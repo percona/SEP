@@ -19,7 +19,7 @@ import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
@@ -36,13 +36,13 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.checksums.deps import (
-    build_checksums_api_task_response,
     ChecksumsGeneratedTask,
     ChecksumsTask,
     extract_service_info,
-    get_checksums_api_tasks,
+    get_checksums_api_task_responses,
     get_checksums_index_context,
     get_checksums_task,
+    get_checksums_task_status,
     parse_checksums_task_args,
 )
 from app.sep.plugins.checksums.models import ChecksumTaskResponse
@@ -73,10 +73,16 @@ async def checksums_index(
     response_model=list[ChecksumTaskResponse],
 )
 async def checksums_api_list(
-    tasks: Annotated[list[dict[str, Any]], Depends(get_checksums_api_tasks)],
+    tasks_api: TaskAPI,
+    service_type: ServiceTypeEnum | None = None,
+    status: TaskHistoryStatusEnum | None = None,
 ) -> list[ChecksumTaskResponse]:
     """List checksum tasks as JSON."""
-    return [build_checksums_api_task_response(task) for task in tasks]
+    return await get_checksums_api_task_responses(
+        tasks_api,
+        service_type=service_type,
+        status=status,
+    )
 
 
 @router.get(
@@ -89,15 +95,13 @@ async def checksums_api_detail(
     tasks_api: TaskAPI,
 ) -> ChecksumTaskResponse:
     """Retrieve a checksum task as JSON."""
-    try:
-        task = await get_checksums_task(task_name, tasks_api)
-    except HTTPException as exc:
-        return JSONResponse(
-            {"detail": exc.detail},
-            status_code=exc.status_code,
-        )
-
-    return build_checksums_api_task_response(task.model_dump())
+    task = await get_checksums_task(task_name, tasks_api)
+    task_status = await get_checksums_task_status(task.name, tasks_api)
+    return ChecksumTaskResponse(
+        **task.model_dump(),
+        service_type=ServiceTypeEnum.MYSQL,
+        status=task_status,
+    )
 
 
 @router.post(

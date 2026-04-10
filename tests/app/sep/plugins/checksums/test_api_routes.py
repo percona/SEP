@@ -16,10 +16,11 @@
 """Tests for the checksums plugin JSON API routes."""
 
 from datetime import datetime, UTC
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call, patch
 
-from fastapi import HTTPException, status
+from fastapi import status
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
@@ -55,7 +56,12 @@ def build_checksum_task(name: str = "checksum-task") -> dict:
 def test_checksums_api_list_returns_data(test_client, mock_task_api_dep):
     """Ensure the checksums API list returns task data."""
     task = build_checksum_task()
-    mock_task_api_dep.get.return_value = [task]
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            [task],
+            [{"status": TaskHistoryStatusEnum.SUCCESS.value}],
+        ]
+    )
 
     response = test_client.get("/checksums/api/")
 
@@ -66,6 +72,7 @@ def test_checksums_api_list_returns_data(test_client, mock_task_api_dep):
     assert len(data) == 1
     assert data[0]["name"] == task["name"]
     assert data[0]["service_type"] == ServiceTypeEnum.MYSQL.value
+    assert data[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
 
 
 def test_checksums_api_list_returns_empty_array(test_client, mock_task_api_dep):
@@ -78,6 +85,20 @@ def test_checksums_api_list_returns_empty_array(test_client, mock_task_api_dep):
     assert response.json() == []
 
 
+def test_checksums_api_list_returns_empty_array_for_non_mysql_service_type(
+    test_client, mock_task_api_dep
+):
+    """Ensure the checksums API returns an empty list for unsupported service types."""
+    response = test_client.get(
+        "/checksums/api/",
+        params={"service_type": ServiceTypeEnum.POSTGRESQL.value},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == []
+    mock_task_api_dep.get.assert_not_called()
+
+
 def test_checksums_api_list_filters_by_service_type_and_status(
     test_client, mock_task_api_dep
 ):
@@ -86,15 +107,7 @@ def test_checksums_api_list_filters_by_service_type_and_status(
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
             [task],
-            [
-                {
-                    "task": {
-                        "name": task["name"],
-                        "owner": TaskOwner.CHECKSUMS.value,
-                    },
-                    "status": TaskHistoryStatusEnum.RUNNING.value,
-                }
-            ],
+            [{"status": TaskHistoryStatusEnum.RUNNING.value}],
         ]
     )
 
@@ -110,19 +123,23 @@ def test_checksums_api_list_filters_by_service_type_and_status(
     data = response.json()
     assert len(data) == 1
     assert data[0]["name"] == task["name"]
+    assert data[0]["status"] == TaskHistoryStatusEnum.RUNNING.value
 
-    mock_task_api_dep.get.assert_any_call(
-        "/", params={"owner": TaskOwner.CHECKSUMS.value}
-    )
-    mock_task_api_dep.get.assert_any_call(
-        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING.value}
-    )
+    assert mock_task_api_dep.get.call_args_list == [
+        call("/", params={"owner": TaskOwner.CHECKSUMS.value}),
+        call(f"/{task['name']}/history/"),
+    ]
 
 
 def test_checksums_api_detail_returns_task(test_client, mock_task_api_dep):
     """Ensure the checksums API detail endpoint returns a single task."""
     task = build_checksum_task()
-    mock_task_api_dep.get.return_value = task
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            task,
+            [{"status": TaskHistoryStatusEnum.FAILED.value}],
+        ]
+    )
 
     response = test_client.get(f"/checksums/api/{task['name']}")
 
@@ -130,12 +147,22 @@ def test_checksums_api_detail_returns_task(test_client, mock_task_api_dep):
     body = response.json()
     assert body["name"] == task["name"]
     assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+    assert body["status"] == TaskHistoryStatusEnum.FAILED.value
 
 
 def test_checksums_api_detail_returns_404(test_client, mock_task_api_dep):
     """Ensure the checksums API detail endpoint returns 404 for missing tasks."""
-    mock_task_api_dep.get.side_effect = HTTPException(status_code=404)
-
-    response = test_client.get("/checksums/api/nonexistent")
+    non_existent_task_name = "nonexistent"
+    with patch(
+        "app.sep.plugins.checksums.routes.get_checksums_task",
+        new=AsyncMock(side_effect=HTTPNotFoundException()),
+    ) as mock_get_checksums_task:
+        response = test_client.get(f"/checksums/api/{non_existent_task_name}")
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert "application/json" in response.headers["content-type"]
+    assert response.json() == {"detail": "Not Found"}
+    mock_get_checksums_task.assert_awaited_once_with(
+        non_existent_task_name,
+        mock_task_api_dep,
+    )
