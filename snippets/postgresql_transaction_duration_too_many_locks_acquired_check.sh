@@ -5,6 +5,11 @@
 # description: "This script identifies long-running active transactions and any blocking queries to diagnose transaction duration, idle-in-transaction, and too-many-locks-acquired alerts."
 # allow_extra_args: false
 # sudo: optional
+# service_type: postgresql
+# alerts:
+#   - PostgreSQLIdleInTransaction
+#   - PostgreSQLTransactionDuration
+#   - PostgreSQLTooManyLocksAcquired
 # ---
 
 # Usage: ./postgresql_transaction_duration_too_many_locks_acquired_check.sh

@@ -5,6 +5,10 @@
 # description: "This script checks PostgreSQL availability by verifying uptime, service status, processes, network ports, and pg_hba configuration."
 # allow_extra_args: false
 # sudo: always
+# service_type: postgresql
+# alerts:
+#   - PostgreSQLIsDown
+#   - PostgreSQLUptime
 # ---
 
 # Usage: ./postgresql_is_down_check.sh
@@ -22,11 +26,11 @@ systemctl status postgres* --no-pager 2> /dev/null || echo "No PostgreSQL system
 
 echo ""
 echo "********* PostgreSQL processes *********"
-ps -ef | grep -E "[p]ostgres|[p]ostmaster" || echo "No PostgreSQL processes found."
+pgrep -a -f "postgres|postmaster" || echo "No PostgreSQL processes found."
 
 echo ""
 echo "********* PostgreSQL listening ports *********"
-sudo ss -lntp | grep postgres 2> /dev/null || echo "Could not check PostgreSQL listening ports."
+sudo ss -lntp 2> /dev/null | grep postgres || echo "Could not check PostgreSQL listening ports."
 
 echo ""
 echo "********* PostgreSQL uptime *********"
@@ -38,7 +42,7 @@ echo "********* Recent PostgreSQL log entries *********"
 tail -50 /var/log/postgresql/postgresql-*.log 2> /dev/null ||
     tail -50 /var/log/postgresql/postgresql*.log 2> /dev/null ||
     echo "No PostgreSQL logs found in /var/log/postgresql/."
-tail -50 $(
+log_glob=$(
     $PSQL -tA -c "
         SELECT CASE
             WHEN current_setting('log_directory') LIKE '/%'
@@ -46,8 +50,10 @@ tail -50 $(
             ELSE current_setting('data_directory') || '/'
                  || current_setting('log_directory') || '/*.log'
         END;
-    "
-) 2> /dev/null ||
+    " 2> /dev/null
+) && [ -n "$log_glob" ] && for f in $log_glob; do
+    [ -f "$f" ] && tail -50 "$f"
+done ||
     echo "No PostgreSQL logs found in log_directory or problem occurred when querying for log_directory parameter."
 
 echo ""
