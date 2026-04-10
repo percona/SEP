@@ -37,7 +37,7 @@ systemctl status mysqld --no-pager 2> /dev/null ||
 
 echo ""
 echo "********* MySQL processes *********"
-pgrep -af "mysqld" || echo "No mysqld processes found."
+pgrep -a -x "mysqld" || echo "No mysqld processes found."
 
 echo ""
 echo "********* MySQL uptime (if accessible) *********"

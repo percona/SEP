@@ -33,7 +33,7 @@ systemctl status proxysql --no-pager 2> /dev/null || echo "ProxySQL service not 
 
 echo ""
 echo "********* ProxySQL process *********"
-pgrep -af "proxysql" || echo "No ProxySQL processes found."
+pgrep -a -x "proxysql" || echo "No ProxySQL processes found."
 
 echo ""
 echo "********* Recent ProxySQL logs *********"
