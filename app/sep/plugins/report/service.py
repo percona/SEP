@@ -23,9 +23,11 @@ calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import re
 import time
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, UTC
 from typing import Any
 
@@ -254,11 +256,8 @@ async def collect_advisors(
     failed_by_name = _parse_failed_checks(raw_failed, nodes, services)
 
     for fam in families.values():
-        fam.failed = {
-            k: v
-            for k, v in failed_by_name.items()
-            if any(c.name == k for c in fam.checks)
-        }
+        check_names = {c.name for c in fam.checks}
+        fam.failed = {k: v for k, v in failed_by_name.items() if k in check_names}
 
     return AdvisorSection(
         total_checks=len(checks),
@@ -283,11 +282,11 @@ async def collect_alerts(
     raw = await pmm_api.get_grafana_annotations(from_ts=start_ts, to_ts=stop_ts)
 
     alerts: list[AlertEntry] = []
-    per_service: dict[str, int] = {}
-    per_rule: dict[str, int] = {}
-    per_host: dict[str, int] = {}
-    daily: dict[str, int] = {}
-    daily_per_host: dict[str, dict[str, int]] = {}
+    per_service: dict[str, int] = defaultdict(int)
+    per_rule: dict[str, int] = defaultdict(int)
+    per_host: dict[str, int] = defaultdict(int)
+    daily: dict[str, int] = defaultdict(int)
+    daily_per_host: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for annotation in raw:
         if annotation.get("newState") != "Alerting":
@@ -312,31 +311,28 @@ async def collect_alerts(
             continue
 
         rule = entry.alertname.rsplit("_", 1)[-1]
-        per_rule[rule] = per_rule.get(rule, 0) + 1
-        per_host[entry.node_name] = per_host.get(entry.node_name, 0) + 1
+        per_rule[rule] += 1
+        per_host[entry.node_name] += 1
 
         svc_key = entry.service_type or entry.service
         if svc_key:
-            per_service[svc_key] = per_service.get(svc_key, 0) + 1
+            per_service[svc_key] += 1
 
         try:
             day = time.strftime("%d %B %Y", time.gmtime(entry.time / 1000))
-            daily[day] = daily.get(day, 0) + 1
-            daily_per_host.setdefault(entry.node_name, {})
-            daily_per_host[entry.node_name][day] = (
-                daily_per_host[entry.node_name].get(day, 0) + 1
-            )
+            daily[day] += 1
+            daily_per_host[entry.node_name][day] += 1
         except (OverflowError, OSError):
             logger.warning("Failed to format alert time %s", entry.time)
 
     alerts.sort(key=lambda a: a.time, reverse=True)
     return AlertSection(
         total_alerts=len(alerts),
-        alerts_per_service=per_service,
-        alerts_per_rule=per_rule,
-        alerts_per_host=per_host,
-        alerts_daily=daily,
-        alerts_daily_per_host=daily_per_host,
+        alerts_per_service=dict(per_service),
+        alerts_per_rule=dict(per_rule),
+        alerts_per_host=dict(per_host),
+        alerts_daily=dict(daily),
+        alerts_daily_per_host={k: dict(v) for k, v in daily_per_host.items()},
         alert_history=alerts,
     )
 
@@ -372,9 +368,9 @@ async def collect_backups(
     )
 
     status_frames = results.get("A", {}).get("frames", [])
-    by_host: dict[str, int] = {}
-    by_status: dict[str, int] = {"pass": 0, "fail": 0, "inactive": 0}
-    by_type: dict[str, int] = {}
+    by_host: dict[str, int] = defaultdict(int)
+    by_status: dict[str, int] = defaultdict(int, {"pass": 0, "fail": 0, "inactive": 0})
+    by_type: dict[str, int] = defaultdict(int)
     failed: list[BackupEntry] = []
     all_backups: list[BackupEntry] = []
 
@@ -446,17 +442,17 @@ async def collect_backups(
         )
         all_backups.append(entry)
 
-        by_host[node_name] = by_host.get(node_name, 0) + 1
-        by_status[bk_status_str] = by_status.get(bk_status_str, 0) + 1
-        by_type[bk_type] = by_type.get(bk_type, 0) + 1
+        by_host[node_name] += 1
+        by_status[bk_status_str] += 1
+        by_type[bk_type] += 1
         if bk_status == BackupStatus.FAIL and bk_type != "Binlogs":
             failed.append(entry)
 
     return BackupSection(
         total_backups=len(all_backups),
-        backups_by_host=by_host,
-        backups_by_status=by_status,
-        backups_by_type=by_type,
+        backups_by_host=dict(by_host),
+        backups_by_status=dict(by_status),
+        backups_by_type=dict(by_type),
         failed_backups=failed,
         all_backups=all_backups,
     )
@@ -825,13 +821,11 @@ async def generate_report(
         ),
     )
 
+    type_counts = Counter(s["type"] for s in services_raw.values())
     monitored = MonitoredSummary(
         total_nodes=len(nodes_raw),
         total_services=len(services_raw),
-        services_by_type={
-            svc_type: sum(1 for s in services_raw.values() if s["type"] == svc_type)
-            for svc_type in sorted(active_types)
-        },
+        services_by_type={k: type_counts[k] for k in sorted(type_counts)},
     )
 
     report = ReportData(
