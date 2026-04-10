@@ -863,7 +863,9 @@ async def generate_report(
 # PDF generation helpers
 
 
-_LOGO_PNG_PATH = Path(__file__).resolve().parents[4] / "static" / "img" / "percona_logo.png"
+_LOGO_PNG_PATH = (
+    Path(__file__).resolve().parents[4] / "static" / "img" / "percona_logo.png"
+)
 
 
 @functools.lru_cache(maxsize=1)
