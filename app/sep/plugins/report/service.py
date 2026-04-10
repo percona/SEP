@@ -895,7 +895,9 @@ async def generate_pdf_report(report: ReportData) -> bytes:
     )
 
     def _generate() -> bytes:
-        return HTML(string=html).write_pdf(stylesheets=[_get_page_css()])
+        return HTML(string=html).write_pdf(
+            stylesheets=[_get_page_css()], presentational_hints=False
+        )
 
     return await asyncio.to_thread(_generate)
 
