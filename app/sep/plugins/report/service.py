@@ -168,21 +168,31 @@ def _build_allowed_check_prefixes(active_service_types: set[str]) -> set[str]:
     return active_service_types | extra
 
 
+async def _refresh_single_check(
+    pmm_api: PMMRemoteAPI,
+    name: str,
+) -> str | None:
+    """Refresh one check, returning its name on failure or ``None`` on success."""
+    try:
+        await pmm_api.start_advisor_checks(names=[name])
+    except (KeyError, IndexError, OSError):
+        logger.warning("Refresh timeout for check %s", name)
+        return name
+    return None
+
+
 async def _refresh_checks(
     pmm_api: PMMRemoteAPI,
     raw_checks: list[dict[str, Any]],
 ) -> list[str]:
     """Trigger a refresh for each enabled check and return names that timed out."""
-    issues: list[str] = []
-    for raw in raw_checks:
-        if raw.get("disabled"):
-            continue
-        try:
-            await pmm_api.start_advisor_checks(names=[raw["name"]])
-        except (KeyError, IndexError, OSError):
-            logger.warning("Refresh timeout for check %s", raw["name"])
-            issues.append(raw["name"])
-    return issues
+    enabled = [raw["name"] for raw in raw_checks if not raw.get("disabled")]
+    if not enabled:
+        return []
+    results = await asyncio.gather(
+        *(_refresh_single_check(pmm_api, name) for name in enabled)
+    )
+    return [name for name in results if name is not None]
 
 
 async def collect_advisors(
