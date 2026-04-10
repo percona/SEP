@@ -681,14 +681,20 @@ async def _fetch_base_inventory(
 
     :return: Tuple of (nodes_raw, services_raw, active_service_types).
     """
-    nodes_raw: dict[str, dict[str, Any]] = {}
-    services_raw: dict[str, dict[str, Any]] = {}
-    active_types: set[str] = set()
+    is_legacy = await pmm_api.is_older_than_v3()
 
-    if await pmm_api.is_older_than_v3():
-        nodes_data = await pmm_api.post("/v1/inventory/Nodes/List", json={})
+    if is_legacy:
+        nodes_data, svc_data = await asyncio.gather(
+            pmm_api.post("/v1/inventory/Nodes/List", json={}),
+            pmm_api.post("/v1/inventory/Services/List", json={}),
+        )
     else:
-        nodes_data = await pmm_api.get("/v1/inventory/nodes")
+        nodes_data, svc_data = await asyncio.gather(
+            pmm_api.get("/v1/inventory/nodes"),
+            pmm_api.get("/v1/inventory/services"),
+        )
+
+    nodes_raw: dict[str, dict[str, Any]] = {}
     for node_type, node_list in nodes_data.items():
         for node in node_list:
             nid = node.get("node_id", "")
@@ -697,10 +703,8 @@ async def _fetch_base_inventory(
                 continue
             nodes_raw[nid] = {"name": nname, "type": node_type, "id": nid}
 
-    if await pmm_api.is_older_than_v3():
-        svc_data = await pmm_api.post("/v1/inventory/Services/List", json={})
-    else:
-        svc_data = await pmm_api.get("/v1/inventory/services")
+    services_raw: dict[str, dict[str, Any]] = {}
+    active_types: set[str] = set()
     for svc_type, svc_list in svc_data.items():
         for svc in svc_list:
             sid = svc.get("service_id", "")
