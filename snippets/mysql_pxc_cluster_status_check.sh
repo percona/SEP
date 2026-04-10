@@ -10,6 +10,9 @@
 #    type: str
 #    label: Path to defaults-file
 #    description: Path to defaults-file
+# service_type: mysql
+# alerts:
+#   - MySQLPXCClusterStatus
 # ---
 
 # Usage: ./mysql_pxc_cluster_status_check.sh [--defaults-file=path]
@@ -17,10 +20,10 @@
 set -euo pipefail
 
 DEFAULTS_FILE=""
-if [[ "${1:-}" == --defaults-file=* ]]; then
+if [[ ${1:-} == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
-elif [[ "${1:-}" == --defaults-file ]]; then
+elif [[ ${1:-} == --defaults-file ]]; then
     DEFAULTS_FILE="--defaults-file=${2}"
     shift 2
 fi
@@ -49,9 +52,9 @@ $MYSQL -e "SHOW GLOBAL STATUS LIKE 'wsrep_incoming_addresses';"
 
 echo ""
 echo "********* MySQL service status *********"
-systemctl status mysql --no-pager 2> /dev/null \
-    || systemctl status mysqld --no-pager 2> /dev/null \
-    || echo "MySQL service status not available."
+systemctl status mysql --no-pager 2> /dev/null ||
+    systemctl status mysqld --no-pager 2> /dev/null ||
+    echo "MySQL service status not available."
 
 echo ""
 echo "********* Recent MySQL error log (wsrep entries) *********"

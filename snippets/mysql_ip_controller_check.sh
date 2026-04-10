@@ -5,6 +5,9 @@
 # description: "This script checks the ip_controller process and logs to diagnose VIP assignment issues for MySQL clusters."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mysql
+# alerts:
+#   - MySQLIPControllerDown
 # ---
 
 # Usage: ./mysql_ip_controller_check.sh
@@ -12,17 +15,22 @@
 set -euo pipefail
 
 echo "********* IP controller process *********"
-ps -ef | grep -i "[i]p_controller" || echo "No ip_controller processes found."
+pgrep -afi "ip_controller" || echo "No ip_controller processes found."
 
 echo ""
 echo "********* IP controller logs *********"
-for logfile in ~/.local/percona/ip_controller_*.log; do
-    if [ -f "$logfile" ]; then
+shopt -s nullglob
+logfiles=(~/.local/percona/ip_controller_*.log)
+shopt -u nullglob
+if [ ${#logfiles[@]} -eq 0 ]; then
+    echo "No ip_controller logs found in ~/.local/percona/"
+else
+    for logfile in "${logfiles[@]}"; do
         echo "--- $(basename "$logfile") (last 50 lines) ---"
         tail -50 "$logfile"
         echo ""
-    fi
-done || echo "No ip_controller logs found in ~/.local/percona/"
+    done
+fi
 
 echo ""
 echo "********* GAS tools version *********"

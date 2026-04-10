@@ -10,6 +10,9 @@
 #    type: str
 #    label: Path to defaults-file
 #    description: Path to defaults-file
+# service_type: mysql
+# alerts:
+#   - MySQLInstanceNotAvailable
 # ---
 
 # Usage: ./mysql_instance_not_available_check.sh [--defaults-file=path]
@@ -17,10 +20,10 @@
 set -euo pipefail
 
 DEFAULTS_FILE=""
-if [[ "${1:-}" == --defaults-file=* ]]; then
+if [[ ${1:-} == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
-elif [[ "${1:-}" == --defaults-file ]]; then
+elif [[ ${1:-} == --defaults-file ]]; then
     DEFAULTS_FILE="--defaults-file=${2}"
     shift 2
 fi
@@ -28,13 +31,13 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* MySQL service status *********"
-systemctl status mysqld --no-pager 2> /dev/null \
-    || systemctl status mysql --no-pager 2> /dev/null \
-    || echo "MySQL service not found."
+systemctl status mysqld --no-pager 2> /dev/null ||
+    systemctl status mysql --no-pager 2> /dev/null ||
+    echo "MySQL service not found."
 
 echo ""
 echo "********* MySQL processes *********"
-ps -ef | grep "[m]ysqld" || echo "No mysqld processes found."
+pgrep -af "mysqld" || echo "No mysqld processes found."
 
 echo ""
 echo "********* MySQL uptime (if accessible) *********"
@@ -57,11 +60,11 @@ fi
 
 echo ""
 echo "********* OOM killer events (dmesg) *********"
-dmesg -T 2> /dev/null | grep -i "oom\|out of memory\|killed process" | tail -10 \
-    || echo "No OOM events found or dmesg not accessible."
+dmesg -T 2> /dev/null | grep -i "oom\|out of memory\|killed process" | tail -10 ||
+    echo "No OOM events found or dmesg not accessible."
 
 echo ""
 echo "********* System log errors *********"
-tail -30 /var/log/syslog 2> /dev/null | grep -i "mysql\|oom\|kill" \
-    || tail -30 /var/log/messages 2> /dev/null | grep -i "mysql\|oom\|kill" \
-    || echo "No relevant entries in system logs."
+tail -30 /var/log/syslog 2> /dev/null | grep -i "mysql\|oom\|kill" ||
+    tail -30 /var/log/messages 2> /dev/null | grep -i "mysql\|oom\|kill" ||
+    echo "No relevant entries in system logs."

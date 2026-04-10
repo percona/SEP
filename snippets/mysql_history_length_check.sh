@@ -10,6 +10,9 @@
 #    type: str
 #    label: Path to defaults-file
 #    description: Path to defaults-file
+# service_type: mysql
+# alerts:
+#   - MySQLHistoryListLengthHigh
 # ---
 
 # Usage: ./mysql_history_length_check.sh [--defaults-file=path]
@@ -17,10 +20,10 @@
 set -euo pipefail
 
 DEFAULTS_FILE=""
-if [[ "${1:-}" == --defaults-file=* ]]; then
+if [[ ${1:-} == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
-elif [[ "${1:-}" == --defaults-file ]]; then
+elif [[ ${1:-} == --defaults-file ]]; then
     DEFAULTS_FILE="--defaults-file=${2}"
     shift 2
 fi
@@ -28,8 +31,8 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* InnoDB History List Length *********"
-$MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | grep -i "history list length" \
-    || echo "Cannot retrieve InnoDB status."
+$MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | grep -i "history list length" ||
+    echo "Cannot retrieve InnoDB status."
 
 echo ""
 echo "********* Purge thread configuration *********"
@@ -41,5 +44,5 @@ $MYSQL -e "SELECT * FROM information_schema.processlist WHERE command != 'Sleep'
 
 echo ""
 echo "********* Open transactions (including sleeping) *********"
-$MYSQL -e "SELECT * FROM information_schema.innodb_trx ORDER BY trx_started;" 2> /dev/null \
-    || echo "Cannot query innodb_trx."
+$MYSQL -e "SELECT * FROM information_schema.innodb_trx ORDER BY trx_started;" 2> /dev/null ||
+    echo "Cannot query innodb_trx."

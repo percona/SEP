@@ -10,6 +10,9 @@
 #    type: str
 #    label: Path to defaults-file
 #    description: Path to defaults-file
+# service_type: mysql
+# alerts:
+#   - MySQLPrimaryReadOnly
 # ---
 
 # Usage: ./mysql_primary_read_only_check.sh [--defaults-file=path]
@@ -17,10 +20,10 @@
 set -euo pipefail
 
 DEFAULTS_FILE=""
-if [[ "${1:-}" == --defaults-file=* ]]; then
+if [[ ${1:-} == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
-elif [[ "${1:-}" == --defaults-file ]]; then
+elif [[ ${1:-} == --defaults-file ]]; then
     DEFAULTS_FILE="--defaults-file=${2}"
     shift 2
 fi
@@ -51,5 +54,5 @@ fi
 
 echo ""
 echo "********* my.cnf read_only setting *********"
-grep -i "read_only" /etc/mysql/my.cnf /etc/my.cnf /etc/mysql/mysql.conf.d/*.cnf 2> /dev/null \
-    || echo "read_only not found in common config files."
+grep -i "read_only" /etc/mysql/my.cnf /etc/my.cnf /etc/mysql/mysql.conf.d/*.cnf 2> /dev/null ||
+    echo "read_only not found in common config files."

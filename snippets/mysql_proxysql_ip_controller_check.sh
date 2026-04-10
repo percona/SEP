@@ -5,6 +5,9 @@
 # description: "This script checks the ProxySQL ip_controller process and logs to diagnose VIP assignment issues for ProxySQL nodes."
 # allow_extra_args: false
 # sudo: optional
+# service_type: mysql
+# alerts:
+#   - ProxySQLIPControllerDown
 # ---
 
 # Usage: ./mysql_proxysql_ip_controller_check.sh
@@ -12,17 +15,22 @@
 set -euo pipefail
 
 echo "********* ProxySQL IP controller process *********"
-ps -ef | grep -i "[p]roxysql_ip_con" || echo "No proxysql_ip_controller processes found."
+pgrep -afi "proxysql_ip_con" || echo "No proxysql_ip_controller processes found."
 
 echo ""
 echo "********* ProxySQL IP controller logs *********"
-for logfile in ~/.local/percona/proxysql_ip_controller_*.log; do
-    if [ -f "$logfile" ]; then
+shopt -s nullglob
+logfiles=(~/.local/percona/proxysql_ip_controller_*.log)
+shopt -u nullglob
+if [ ${#logfiles[@]} -eq 0 ]; then
+    echo "No proxysql_ip_controller logs found in ~/.local/percona/"
+else
+    for logfile in "${logfiles[@]}"; do
         echo "--- $(basename "$logfile") (last 50 lines) ---"
         tail -50 "$logfile"
         echo ""
-    fi
-done || echo "No proxysql_ip_controller logs found in ~/.local/percona/"
+    done
+fi
 
 echo ""
 echo "********* GAS tools version *********"

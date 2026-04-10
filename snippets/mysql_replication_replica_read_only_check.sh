@@ -10,6 +10,10 @@
 #    type: str
 #    label: Path to defaults-file
 #    description: Path to defaults-file
+# service_type: mysql
+# alerts:
+#   - MySQLReplicationBroken
+#   - MySQLReplicaReadOnlyDisabled
 # ---
 
 # Usage: ./mysql_replication_replica_read_only_check.sh [--defaults-file=path]
@@ -17,10 +21,10 @@
 set -euo pipefail
 
 DEFAULTS_FILE=""
-if [[ "${1:-}" == --defaults-file=* ]]; then
+if [[ ${1:-} == --defaults-file=* ]]; then
     DEFAULTS_FILE="$1"
     shift
-elif [[ "${1:-}" == --defaults-file ]]; then
+elif [[ ${1:-} == --defaults-file ]]; then
     DEFAULTS_FILE="--defaults-file=${2}"
     shift 2
 fi
