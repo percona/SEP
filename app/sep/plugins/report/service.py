@@ -23,12 +23,14 @@ calls to :class:`~app.sep.clients.pmm.PMMRemoteAPI` and returning structured
 from __future__ import annotations
 
 import asyncio
+import base64
 import functools
 import logging
 import re
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, UTC
+from pathlib import Path
 from typing import Any
 
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -861,6 +863,17 @@ async def generate_report(
 # PDF generation helpers
 
 
+_LOGO_PNG_PATH = Path(__file__).resolve().parents[4] / "static" / "img" / "percona_logo.png"
+
+
+@functools.lru_cache(maxsize=1)
+def _get_logo_data_uri() -> str:
+    """Return a ``data:`` URI for the pre-rendered Percona logo PNG."""
+    png_bytes = _LOGO_PNG_PATH.read_bytes()
+    b64 = base64.b64encode(png_bytes).decode()
+    return f"data:image/png;base64,{b64}"
+
+
 @functools.lru_cache(maxsize=1)
 def _get_page_css():  # noqa: ANN202
     """Return the cached WeasyPrint CSS object for the PDF page layout."""
@@ -892,6 +905,7 @@ async def generate_pdf_report(report: ReportData) -> bytes:
         report=report,
         service_names=SERVICE_NAMES,
         sections=REPORT_SECTION_LABELS,
+        logo_data_uri=_get_logo_data_uri(),
     )
 
     def _generate() -> bytes:
