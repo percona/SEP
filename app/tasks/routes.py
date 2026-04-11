@@ -214,10 +214,13 @@ async def execute_task_name(
             + timedelta(seconds=settings.CELERY.global_expire_seconds),
         )
         history_recorded.execution_request.tracking["celery_task_id"] = celery_task.id
-        return await TaskHistoryManager.save(
+        history_recorded = await TaskHistoryManager.save(
             session, history_recorded, flag_modified_fields=["execution_request"]
         )
-    return await dispatch_queue_item(queue_item, session)
+    else:
+        history_recorded = await dispatch_queue_item(queue_item, session)
+    await session.refresh(history_recorded, attribute_names=["execution_request"])
+    return history_recorded
 
 
 @router.get("/history/", dependencies=[IsAuthenticatedDep])

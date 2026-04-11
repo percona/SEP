@@ -496,3 +496,50 @@ async def test_task_data_with_execution_request_keys_returned_as_dict(
     task_json = response.json()
     assert task_json["data"] == conflicting_data
     assert isinstance(task_json["data"], dict)
+
+
+@pytest.mark.asyncio
+async def test_execute_task_name_response_serializes_deferred_execution_request(
+    test_client, session, mocker
+):
+    """Assert POST /execute/{task_name} serializes the deferred ``execution_request``.
+
+    Regression for a ``MissingGreenlet`` error: ``TaskHistory.execution_request`` is
+    mapped as a deferred column, and ``TaskHistoryManager.save`` expires it via
+    ``session.refresh`` after commit. The route must load it eagerly before
+    returning, otherwise FastAPI serialization triggers a lazy load after the
+    async session has closed.
+    """
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="execute-task", anonymize_mask=0)
+        ),
+    )
+
+    async def fake_dispatch_queue_item(queue_item, passed_session):
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        return await TaskHistoryManager.save(
+            passed_session,
+            queue_item,
+            flag_modified_fields=["execution_request"],
+        )
+
+    fake_executor = MagicMock()
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    mocker.patch(
+        "app.tasks.routes.dispatch_queue_item",
+        side_effect=fake_dispatch_queue_item,
+    )
+
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["status"] == TaskHistoryStatusEnum.RUNNING
+    assert data["execution_request"]["task"] == task.name
+    assert data["execution_request"]["target"] == "node1"
