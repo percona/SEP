@@ -890,31 +890,17 @@ async def generate_report(
 
 # PDF generation helpers
 
-_LOGO_PATH_CANDIDATES = (
-    Path(__file__).resolve().parents[4] / "static" / "img" / "percona_logo.png",
-    Path(__file__).resolve().parents[4] / "static" / "img" / "percona-fav.svg",
+_LOGO_PNG_PATH = (
+    Path(__file__).resolve().parents[4] / "static" / "img" / "percona_logo.png"
 )
-
-_LOGO_MIME_TYPES: dict[str, str] = {
-    ".png": "image/png",
-    ".svg": "image/svg+xml",
-}
 
 
 @functools.lru_cache(maxsize=1)
 def _get_logo_data_uri() -> str:
-    """Return a ``data:`` URI for the first available Percona logo asset."""
-    for logo_path in _LOGO_PATH_CANDIDATES:
-        if not logo_path.is_file():
-            continue
-        logo_bytes = logo_path.read_bytes()
-        b64 = base64.b64encode(logo_bytes).decode()
-        mime_type = _LOGO_MIME_TYPES.get(logo_path.suffix.lower(), "application/octet-stream")
-        return f"data:{mime_type};base64,{b64}"
-    searched = ", ".join(str(p) for p in _LOGO_PATH_CANDIDATES)
-    raise FileNotFoundError(
-        f"Unable to locate a logo asset for PDF generation. Tried: {searched}"
-    )
+    """Return a ``data:`` URI for the pre-rendered Percona logo PNG."""
+    png_bytes = _LOGO_PNG_PATH.read_bytes()
+    b64 = base64.b64encode(png_bytes).decode()
+    return f"data:image/png;base64,{b64}"
 
 
 @functools.lru_cache(maxsize=1)
