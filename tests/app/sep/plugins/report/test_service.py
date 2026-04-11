@@ -1505,26 +1505,6 @@ class TestUploadPdfReport:
             ),
         )
 
-    def _mock_upload_settings(self, *, configured: bool = True):
-        """Return a patch context that configures or disables upload settings."""
-        from unittest.mock import PropertyMock
-
-        from app.sep.config import HealthReportSettings
-
-        settings = HealthReportSettings(
-            upload=configured,
-            endpoint="https://servicenow.example.com/api/upload"
-            if configured
-            else None,
-            api_key="test-api-key" if configured else None,
-            client_id="test-client-id" if configured else None,
-        )
-        return patch(
-            "app.sep.config.sep_settings",
-            new_callable=PropertyMock,
-            HEALTH_REPORT=settings,
-        )
-
     @pytest.mark.asyncio
     async def test_raises_when_not_configured(self):
         """Assert RuntimeError is raised when upload is not configured."""
@@ -1549,7 +1529,7 @@ class TestUploadPdfReport:
             api_key="key",
             client_id="cid",
         )
-        oversized = b"x" * _MAX_UPLOAD_SIZE
+        oversized = b"x" * (_MAX_UPLOAD_SIZE_BYTES + 1)
         with patch(
             "app.sep.config.sep_settings",
         ) as mock_settings:
