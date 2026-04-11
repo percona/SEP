@@ -23,6 +23,7 @@ from fastapi import status
 
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
+from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
@@ -525,7 +526,7 @@ async def test_execute_task_name_response_serializes_deferred_execution_request(
             flag_modified_fields=["execution_request"],
         )
 
-    fake_executor = MagicMock()
+    fake_executor = MagicMock(spec=BaseExecutor)
     fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
     mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
     mocker.patch(
@@ -540,6 +541,6 @@ async def test_execute_task_name_response_serializes_deferred_execution_request(
 
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert data["status"] == TaskHistoryStatusEnum.RUNNING
+    assert data["status"] == TaskHistoryStatusEnum.RUNNING.value
     assert data["execution_request"]["task"] == task.name
     assert data["execution_request"]["target"] == "node1"
