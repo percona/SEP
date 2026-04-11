@@ -37,7 +37,7 @@ from app.sep.plugins.report.service import (
     _find_labels,
     _get_metrics_datasource,
     _interval_ms,
-    _MAX_UPLOAD_SIZE,
+    _MAX_UPLOAD_SIZE_BYTES,
     _parse_failed_checks,
     _refresh_checks,
     collect_advisors,
