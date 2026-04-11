@@ -42,7 +42,7 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
         (
             BackupType.MYDUMPER,
             "mydumper_payload",
-            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
+            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
             "fake-address",
         ),
         (

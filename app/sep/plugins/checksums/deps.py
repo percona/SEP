@@ -17,6 +17,7 @@
 
 import logging
 import shlex
+from collections.abc import Iterable
 from typing import Annotated, Any
 
 from fastapi import Depends, Form
@@ -32,8 +33,14 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.checksums.models import ChecksumsCreate
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumTaskResponse
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +237,107 @@ async def get_checksums_task(
 
 
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
+
+
+async def get_checksums_task_names_by_status(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum,
+) -> set[str]:
+    """Retrieve checksum task names that have histories with the requested status.
+
+    :param tasks_api: The TaskAPI instance used to query task histories.
+    :type tasks_api: TaskAPI
+    :param status: The status used to filter checksum task histories.
+    :type status: TaskHistoryStatusEnum
+    :return: The set of checksum task names that have at least one matching history.
+    :rtype: set[str]
+    """
+    histories = await tasks_api.get("/history/", params={"status": status})
+    return {
+        history["task"]["name"]
+        for history in histories
+        if history.get("task", {}).get("owner") == TaskOwner.CHECKSUMS.value
+    }
+
+
+def _extract_latest_task_status(
+    histories: Iterable[dict[str, Any]],
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload."""
+    for history in histories:
+        if (status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(status)
+    return None
+
+
+async def get_checksums_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for a checksum task.
+
+    :param task_name: The name of the checksum task.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to query task history.
+    :type tasks_api: TaskAPI
+    :return: The latest known task status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    histories = await tasks_api.get(f"/{task_name}/history/")
+    return _extract_latest_task_status(histories)
+
+
+def build_checksums_api_task_response(
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+) -> ChecksumTaskResponse:
+    """Build a checksum task response object for the JSON API.
+
+    :param task: The checksum task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A validated checksum task API response object.
+    :rtype: ChecksumTaskResponse
+    """
+    return ChecksumTaskResponse(
+        **task.model_dump(),
+        service_type=ServiceTypeEnum.MYSQL,
+        status=status,
+    )
+
+
+async def get_checksums_api_task_responses(
+    tasks_api: TaskAPI,
+    service_type: ServiceTypeEnum | None = None,
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[ChecksumTaskResponse]:
+    """Retrieve checksum task responses for the JSON API.
+
+    :param tasks_api: The TaskAPI instance used to query checksum tasks.
+    :type tasks_api: TaskAPI
+    :param service_type: Optional service type filter for the checksum task list.
+    :type service_type: ServiceTypeEnum | None
+    :param status: Optional latest-history status filter for the checksum task list.
+    :type status: TaskHistoryStatusEnum | None
+    :return: The checksum task responses matching the requested filters.
+    :rtype: list[ChecksumTaskResponse]
+    """
+    if service_type is not None and service_type != ServiceTypeEnum.MYSQL:
+        return []
+
+    params = {"owner": TaskOwner.CHECKSUMS.value}
+    raw_tasks = await tasks_api.get("/", params=params)
+    tasks = [Task.model_validate(task) for task in raw_tasks]
+    task_status_pairs = [
+        (task, await get_checksums_task_status(task.name, tasks_api)) for task in tasks
+    ]
+
+    return [
+        build_checksums_api_task_response(task, status=task_status)
+        for task, task_status in task_status_pairs
+        if status is None or task_status == status
+    ]
 
 
 def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
