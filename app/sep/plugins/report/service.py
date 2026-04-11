@@ -33,6 +33,9 @@ from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 
+from fastapi import status as http_status
+from weasyprint import CSS, HTML
+
 from app.sep.clients.pmm import PMMRemoteAPI
 
 from .models import (
@@ -93,6 +96,8 @@ _ALERT_PATTERN = re.compile(r"\{(.+)\}")
 _EXCLUDED_FS = "rootfs|selinuxfs|autofs|rpc_pipefs|tmpfs"
 _PMM_SERVER_FILTER = {"pmm-server", "pmm-server-postgresql"}
 _MIN_FRAME_FIELDS = 2
+_OTHER_FAMILY_KEY = "other"
+_OTHER_FAMILY_DISPLAY = "Other"
 
 
 def _find_labels(schema_fields: list[dict[str, Any]]) -> dict[str, Any]:
@@ -117,7 +122,12 @@ def _interval_ms(start: str, end: str) -> tuple[int, int]:
             return now_ms
         if value.startswith("now-"):
             offset_str = value[4:]
-            multiplier = {"s": 1, "m": 60, "h": 3600, "d": 86400}.get(offset_str[-1], 1)
+            if not offset_str or not offset_str[:-1].isdigit():
+                raise ValueError(f"Unsupported time format: {value}")
+            unit = offset_str[-1]
+            multiplier = {"s": 1, "m": 60, "h": 3600, "d": 86400}.get(unit)
+            if multiplier is None:
+                raise ValueError(f"Unsupported time format: {value}")
             return now_ms - int(offset_str[:-1]) * multiplier * 1000
         raise ValueError(f"Unsupported time format: {value}")
 
@@ -245,14 +255,20 @@ async def collect_advisors(
         )
         checks.append(check)
 
-        if family and family not in families:
-            display = SERVICE_NAMES.get(
-                family_suffix.lower(),
-                family_suffix.capitalize(),
-            )
-            families[family] = AdvisorFamily(family_key=family, display_name=display)
         if family:
+            if family not in families:
+                display = SERVICE_NAMES.get(
+                    family_suffix.lower(),
+                    family_suffix.capitalize(),
+                )
+                families[family] = AdvisorFamily(family_key=family, display_name=display)
             families[family].checks.append(check)
+        else:
+            if _OTHER_FAMILY_KEY not in families:
+                families[_OTHER_FAMILY_KEY] = AdvisorFamily(
+                    family_key=_OTHER_FAMILY_KEY, display_name=_OTHER_FAMILY_DISPLAY
+                )
+            families[_OTHER_FAMILY_KEY].checks.append(check)
 
     checks.sort(key=lambda c: c.name)
     failed_by_name = _parse_failed_checks(raw_failed, nodes, services)
@@ -358,7 +374,6 @@ async def collect_backups(
     results = await pmm_api.query_grafana_datasource(
         expressions=[
             '{__name__="msp_backup_status"}',
-            '{__name__="msp_backup_enabled"}',
         ],
         datasource_uid=ds_uid,
         datasource_id=ds_id,
@@ -426,7 +441,7 @@ async def collect_backups(
         elif isinstance(raw_start, int) and raw_start > start_ts and raw_end < stop_ts:
             estimated = False
 
-        bk_size = labels.get("backup_size", "0")
+        bk_size = labels.get("backup_size")
         if bk_size is None:
             estimated = True
         elif bk_size:
@@ -462,7 +477,7 @@ async def collect_backups(
 
 async def collect_storage(
     pmm_api: PMMRemoteAPI,
-    node_ids: list[str],
+    nodes_raw: dict[str, dict[str, Any]],
     since: str,
     until: str,
     ds_id: int,
@@ -471,17 +486,18 @@ async def collect_storage(
     """Fetch disk usage metrics from Prometheus via Grafana.
 
     :param pmm_api: PMM API client.
-    :param node_ids: List of PMM node IDs to include.
+    :param nodes_raw: Mapping of node_id to node info dicts (must contain ``name``).
     :param since: Relative start time (e.g. ``now-7d``).
     :param until: Relative end time (e.g. ``now``).
     :param ds_id: Metrics datasource numeric ID.
     :param ds_uid: Metrics datasource UID.
     :return: Populated storage section.
     """
-    if not node_ids:
+    if not nodes_raw:
         return StorageSection()
 
-    node_filter = "|".join(node_ids)
+    node_id_to_name: dict[str, str] = {nid: info["name"] for nid, info in nodes_raw.items()}
+    node_filter = "|".join(nodes_raw.keys())
     expr_used = (
         f"avg by (node_id, mountpoint) ("
         f" (max_over_time(node_filesystem_size_bytes{{"
@@ -521,7 +537,23 @@ async def collect_storage(
     total_frames = results.get("B", {}).get("frames", [])
     entries: list[DiskUsageEntry] = []
 
-    for i, frame in enumerate(used_frames):
+    # Build a lookup for total capacity keyed by (node_id, mountpoint) so that
+    # frame ordering differences between refIds don't cause misaligned reads.
+    total_lookup: dict[tuple[str, str], int] = {}
+    for frame in total_frames:
+        t_fields = frame.get("schema", {}).get("fields", [])
+        if len(t_fields) < _MIN_FRAME_FIELDS:
+            continue
+        t_labels = t_fields[1].get("labels", {})
+        t_node_id = t_labels.get("node_id", "")
+        t_mountpoint = t_labels.get("mountpoint", "")
+        if not t_node_id or not t_mountpoint:
+            continue
+        t_values = frame.get("data", {}).get("values", [])
+        if len(t_values) >= _MIN_FRAME_FIELDS and t_values[1]:
+            total_lookup[(t_node_id, t_mountpoint)] = t_values[1][0]
+
+    for frame in used_frames:
         fields = frame.get("schema", {}).get("fields", [])
         if len(fields) < _MIN_FRAME_FIELDS:
             continue
@@ -535,11 +567,7 @@ async def collect_storage(
         if len(values) < _MIN_FRAME_FIELDS:
             continue
 
-        total_bytes = 0
-        if i < len(total_frames):
-            t_values = total_frames[i].get("data", {}).get("values", [])
-            if len(t_values) >= _MIN_FRAME_FIELDS and t_values[1]:
-                total_bytes = t_values[1][0]
+        total_bytes = total_lookup.get((node_id, mountpoint), 0)
 
         used_values = values[1]
         pct = (
@@ -550,7 +578,7 @@ async def collect_storage(
 
         entries.append(
             DiskUsageEntry(
-                node_name=node_id,
+                node_name=node_id_to_name.get(node_id, node_id),
                 mountpoint=mountpoint,
                 capacity_bytes=int(total_bytes),
                 used_start_bytes=used_values[0] if used_values else 0,
@@ -746,7 +774,7 @@ async def _collect_section(
         ),
         "storage": lambda: collect_storage(
             kwargs["pmm_api"],
-            sorted(kwargs["nodes_raw"].keys()),
+            kwargs["nodes_raw"],
             kwargs["since"],
             kwargs["until"],
             kwargs["ds_id"],
@@ -862,25 +890,36 @@ async def generate_report(
 
 # PDF generation helpers
 
-
-_LOGO_PNG_PATH = (
-    Path(__file__).resolve().parents[4] / "static" / "img" / "percona_logo.png"
+_LOGO_PATH_CANDIDATES = (
+    Path(__file__).resolve().parents[4] / "static" / "img" / "percona_logo.png",
+    Path(__file__).resolve().parents[4] / "static" / "img" / "percona-fav.svg",
 )
+
+_LOGO_MIME_TYPES: dict[str, str] = {
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+}
 
 
 @functools.lru_cache(maxsize=1)
 def _get_logo_data_uri() -> str:
-    """Return a ``data:`` URI for the pre-rendered Percona logo PNG."""
-    png_bytes = _LOGO_PNG_PATH.read_bytes()
-    b64 = base64.b64encode(png_bytes).decode()
-    return f"data:image/png;base64,{b64}"
+    """Return a ``data:`` URI for the first available Percona logo asset."""
+    for logo_path in _LOGO_PATH_CANDIDATES:
+        if not logo_path.is_file():
+            continue
+        logo_bytes = logo_path.read_bytes()
+        b64 = base64.b64encode(logo_bytes).decode()
+        mime_type = _LOGO_MIME_TYPES.get(logo_path.suffix.lower(), "application/octet-stream")
+        return f"data:{mime_type};base64,{b64}"
+    searched = ", ".join(str(p) for p in _LOGO_PATH_CANDIDATES)
+    raise FileNotFoundError(
+        f"Unable to locate a logo asset for PDF generation. Tried: {searched}"
+    )
 
 
 @functools.lru_cache(maxsize=1)
-def _get_page_css():  # noqa: ANN202
+def _get_page_css() -> CSS:
     """Return the cached WeasyPrint CSS object for the PDF page layout."""
-    from weasyprint import CSS
-
     return CSS(
         string="@page { size: 370mm 445.5mm; margin: 0; background: rgb(0, 18, 34); }"
     )
@@ -898,8 +937,6 @@ async def generate_pdf_report(report: ReportData) -> bytes:
     :return: The PDF file contents.
     :rtype: bytes
     """
-    from weasyprint import HTML
-
     from app.sep.config import sep_settings
 
     template = sep_settings.JINJA_ENVIRONMENT.get_template("report/result_pdf.html.j2")
@@ -920,7 +957,8 @@ async def generate_pdf_report(report: ReportData) -> bytes:
 
 # ServiceNow upload
 
-_MAX_UPLOAD_SIZE = 30 * 1024 * 1024  # 30 MB
+_MAX_UPLOAD_SIZE_MB = 30
+_MAX_UPLOAD_SIZE_BYTES = _MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 
 async def upload_pdf_report(report: ReportData, pdf_bytes: bytes) -> dict[str, Any]:
@@ -943,10 +981,10 @@ async def upload_pdf_report(report: ReportData, pdf_bytes: bytes) -> dict[str, A
     if not upload.is_upload_configured:
         raise RuntimeError("Report upload is not configured")
 
-    if len(pdf_bytes) >= _MAX_UPLOAD_SIZE:
+    if len(pdf_bytes) > _MAX_UPLOAD_SIZE_BYTES:
         raise ValueError(
             f"PDF size ({len(pdf_bytes)} bytes) exceeds the "
-            f"{_MAX_UPLOAD_SIZE // (1024 * 1024)} MB upload limit"
+            f"{_MAX_UPLOAD_SIZE_MB} MB upload limit"
         )
 
     filename = f"Health_and_Security_Report_{report.metadata.generated_at:%Y-%m-%d}.pdf"
@@ -977,6 +1015,6 @@ async def upload_pdf_report(report: ReportData, pdf_bytes: bytes) -> dict[str, A
         ) as resp,
     ):
         body = await resp.json()
-        if resp.status != 200:  # noqa: PLR2004
+        if resp.status != http_status.HTTP_200_OK:
             raise RuntimeError(f"Upload failed with status {resp.status}: {body}")
         return body

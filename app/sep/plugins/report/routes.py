@@ -56,19 +56,28 @@ async def report_generate(
     context: ReportIndexContext,
     since: Annotated[str, Form()] = "now-7d",
     until: Annotated[str, Form()] = "now",
-    full: Annotated[bool, Form()] = True,  # noqa: FBT002
-    refresh: Annotated[bool, Form()] = False,  # noqa: FBT002
+    *,
+    full: Annotated[bool, Form()] = True,
+    refresh: Annotated[bool, Form()] = False,
 ) -> HTMLResponse:
     """Generate a report and render the HTML result page.
 
     :param request: The incoming HTTP request.
+    :type request: Request
     :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
     :param context: Template context.
+    :type context: dict
     :param since: Relative start of the report period.
+    :type since: str
     :param until: Relative end of the report period.
+    :type until: str
     :param full: Include all check results and full backup history.
+    :type full: bool
     :param refresh: Force a refresh of advisor checks before fetching results.
+    :type refresh: bool
     :return: Rendered HTML report.
+    :rtype: HTMLResponse
     """
     report = await generate_report(
         pmm_api, since=since, until=until, full=full, refresh=refresh
@@ -99,19 +108,27 @@ async def report_generate_json(
     pmm_api: RequiredPMMAPIDep,
     since: Annotated[str, Query()] = "now-7d",
     until: Annotated[str, Query()] = "now",
-    full: Annotated[bool, Query()] = True,  # noqa: FBT002
-    refresh: Annotated[bool, Query()] = False,  # noqa: FBT002
+    *,
+    full: Annotated[bool, Query()] = True,
+    refresh: Annotated[bool, Query()] = False,
     sections: Annotated[list[str] | None, Query()] = None,
 ) -> JSONResponse:
     """Generate a report and return as JSON.
 
     :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
     :param since: Relative start of the report period.
+    :type since: str
     :param until: Relative end of the report period.
+    :type until: str
     :param full: Include all check results and full backup history.
+    :type full: bool
     :param refresh: Force a refresh of advisor checks before fetching results.
+    :type refresh: bool
     :param sections: Optional list of sections to include.
+    :type sections: list[str] | None
     :return: JSON response with the full report data.
+    :rtype: JSONResponse
     """
     if sections:
         sections = [s for s in sections if s in REPORT_SECTIONS]
@@ -129,17 +146,24 @@ async def report_generate_pdf(
     pmm_api: RequiredPMMAPIDep,
     since: Annotated[str, Form()] = "now-7d",
     until: Annotated[str, Form()] = "now",
-    full: Annotated[bool, Form()] = True,  # noqa: FBT002
-    refresh: Annotated[bool, Form()] = False,  # noqa: FBT002
+    *,
+    full: Annotated[bool, Form()] = True,
+    refresh: Annotated[bool, Form()] = False,
 ) -> Response:
     """Generate a report and return it as a downloadable PDF.
 
     :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
     :param since: Relative start of the report period.
+    :type since: str
     :param until: Relative end of the report period.
+    :type until: str
     :param full: Include all check results and full backup history.
+    :type full: bool
     :param refresh: Force a refresh of advisor checks before fetching results.
+    :type refresh: bool
     :return: PDF file response.
+    :rtype: Response
     """
     report = await generate_report(
         pmm_api, since=since, until=until, full=full, refresh=refresh
@@ -162,17 +186,24 @@ async def report_upload(
     pmm_api: RequiredPMMAPIDep,
     since: Annotated[str, Form()] = "now-7d",
     until: Annotated[str, Form()] = "now",
-    full: Annotated[bool, Form()] = True,  # noqa: FBT002
-    refresh: Annotated[bool, Form()] = False,  # noqa: FBT002
+    *,
+    full: Annotated[bool, Form()] = True,
+    refresh: Annotated[bool, Form()] = False,
 ) -> JSONResponse:
     """Generate a report, convert to PDF, and upload to ServiceNow.
 
     :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
     :param since: Relative start of the report period.
+    :type since: str
     :param until: Relative end of the report period.
+    :type until: str
     :param full: Include all check results and full backup history.
+    :type full: bool
     :param refresh: Force a refresh of advisor checks before fetching results.
+    :type refresh: bool
     :return: JSON response with the upload result.
+    :rtype: JSONResponse
     """
     report = await generate_report(
         pmm_api, since=since, until=until, full=full, refresh=refresh

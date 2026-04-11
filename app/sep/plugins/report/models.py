@@ -52,7 +52,17 @@ class ServiceStatus(StrEnum):
 
 
 class AdvisorCheck(BaseModel):
-    """A single advisor check definition (enabled only)."""
+    """A single advisor check definition (enabled only).
+
+    :param name: The unique check name.
+    :type name: str
+    :param description: Human-readable description of what the check tests.
+    :type description: str
+    :param summary: Short one-line summary of the check.
+    :type summary: str
+    :param family: The advisor family key this check belongs to, if any.
+    :type family: str | None
+    """
 
     name: str
     description: str
@@ -61,7 +71,27 @@ class AdvisorCheck(BaseModel):
 
 
 class FailedCheck(BaseModel):
-    """A single failed advisor check result."""
+    """A single failed advisor check result.
+
+    :param name: The check name that failed.
+    :type name: str
+    :param description: Human-readable description of what the check tests.
+    :type description: str
+    :param summary: Short one-line summary of the check.
+    :type summary: str
+    :param severity: Severity level of the failure.
+    :type severity: CheckSeverity
+    :param node_name: Name of the node affected, if applicable.
+    :type node_name: str | None
+    :param node_id: PMM node ID of the affected node, if applicable.
+    :type node_id: str | None
+    :param service_name: Name of the service affected, if applicable.
+    :type service_name: str | None
+    :param service_id: PMM service ID of the affected service, if applicable.
+    :type service_id: str | None
+    :param read_more_url: URL linking to documentation for this check.
+    :type read_more_url: str
+    """
 
     name: str
     description: str
@@ -75,7 +105,17 @@ class FailedCheck(BaseModel):
 
 
 class AdvisorFamily(BaseModel):
-    """A group of advisor checks that share the same family."""
+    """A group of advisor checks that share the same family.
+
+    :param family_key: Internal family key (e.g. ``"FAMILY_MYSQL"``).
+    :type family_key: str
+    :param display_name: Human-readable name shown in the report (e.g. ``"MySQL"``).
+    :type display_name: str
+    :param checks: All enabled checks belonging to this family.
+    :type checks: list[AdvisorCheck]
+    :param failed: Mapping of check name to its list of failed results.
+    :type failed: dict[str, list[FailedCheck]]
+    """
 
     family_key: str
     display_name: str
@@ -109,7 +149,23 @@ class AlertEntry(BaseModel):
 
 
 class AlertSection(BaseModel):
-    """Aggregated alert data for the report."""
+    """Aggregated alert data for the report.
+
+    :param total_alerts: Total number of alert annotations in the period.
+    :type total_alerts: int
+    :param alerts_per_service: Alert count keyed by service name.
+    :type alerts_per_service: dict[str, int]
+    :param alerts_per_rule: Alert count keyed by alert rule name.
+    :type alerts_per_rule: dict[str, int]
+    :param alerts_per_host: Alert count keyed by node name.
+    :type alerts_per_host: dict[str, int]
+    :param alerts_daily: Alert count keyed by date string (``YYYY-MM-DD``).
+    :type alerts_daily: dict[str, int]
+    :param alerts_daily_per_host: Daily alert count per host, keyed by date then host.
+    :type alerts_daily_per_host: dict[str, dict[str, int]]
+    :param alert_history: Full list of individual alert entries.
+    :type alert_history: list[AlertEntry]
+    """
 
     total_alerts: int = 0
     alerts_per_service: dict[str, int] = Field(default_factory=dict)
@@ -121,7 +177,29 @@ class AlertSection(BaseModel):
 
 
 class BackupEntry(BaseModel):
-    """A single backup record."""
+    """A single backup record.
+
+    :param id: Unique identifier for this backup entry.
+    :type id: str
+    :param alias: Human-readable alias for the backup schedule.
+    :type alias: str
+    :param name: Node name where the backup was taken.
+    :type name: str
+    :param type: Backup type (e.g. ``"physical"``, ``"logical"``).
+    :type type: str
+    :param status: Result status of the backup.
+    :type status: BackupStatus
+    :param size: Raw backup size value from the metric label, or ``"0"`` if unknown.
+    :type size: str
+    :param estimated_data: ``True`` when the time period or size data is estimated.
+    :type estimated_data: bool
+    :param enabled: Whether the backup schedule is currently enabled, if available.
+    :type enabled: bool | None
+    :param encryption: Encryption state label reported by PMM.
+    :type encryption: str
+    :param period: Dictionary with ``start``, ``end``, and ``duration`` of the backup.
+    :type period: dict[str, Any]
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -138,7 +216,21 @@ class BackupEntry(BaseModel):
 
 
 class BackupSection(BaseModel):
-    """Aggregated backup data for the report."""
+    """Aggregated backup data for the report.
+
+    :param total_backups: Total number of backup entries collected.
+    :type total_backups: int
+    :param backups_by_host: Backup count keyed by node name.
+    :type backups_by_host: dict[str, int]
+    :param backups_by_status: Backup count keyed by status string.
+    :type backups_by_status: dict[str, int]
+    :param backups_by_type: Backup count keyed by backup type.
+    :type backups_by_type: dict[str, int]
+    :param failed_backups: Subset of backups with a ``fail`` status.
+    :type failed_backups: list[BackupEntry]
+    :param all_backups: Complete list of all backup entries.
+    :type all_backups: list[BackupEntry]
+    """
 
     total_backups: int = 0
     backups_by_host: dict[str, int] = Field(default_factory=dict)
@@ -149,7 +241,23 @@ class BackupSection(BaseModel):
 
 
 class DiskUsageEntry(BaseModel):
-    """Disk usage for a single mountpoint on a node."""
+    """Disk usage for a single mountpoint on a node.
+
+    :param node_name: Human-readable node hostname.
+    :type node_name: str
+    :param mountpoint: Filesystem mountpoint path (e.g. ``"/"``, ``"/data"``).
+    :type mountpoint: str
+    :param capacity_bytes: Total filesystem capacity in bytes.
+    :type capacity_bytes: int
+    :param used_start_bytes: Used bytes at the start of the report period.
+    :type used_start_bytes: float
+    :param used_end_bytes: Used bytes at the end of the report period.
+    :type used_end_bytes: float
+    :param used_peak_bytes: Peak used bytes observed during the report period.
+    :type used_peak_bytes: float
+    :param usage_percentage: End-of-period usage as a percentage of total capacity.
+    :type usage_percentage: int
+    """
 
     node_name: str
     mountpoint: str
@@ -161,7 +269,11 @@ class DiskUsageEntry(BaseModel):
 
 
 class StorageSection(BaseModel):
-    """Aggregated storage data for the report."""
+    """Aggregated storage data for the report.
+
+    :param entries: List of per-mountpoint disk usage entries, sorted by usage descending.
+    :type entries: list[DiskUsageEntry]
+    """
 
     entries: list[DiskUsageEntry] = Field(default_factory=list)
 
@@ -204,7 +316,17 @@ class MonitoredSummary(BaseModel):
 
 
 class ReportMetadata(BaseModel):
-    """Metadata about a generated report."""
+    """Metadata about a generated report.
+
+    :param title: Report title string.
+    :type title: str
+    :param generated_at: Timestamp when the report was generated.
+    :type generated_at: datetime
+    :param report_week: ISO week label, e.g. ``"Report 2026 Week 15"``.
+    :type report_week: str
+    :param report_interval: Human-readable date range string for the report period.
+    :type report_interval: str
+    """
 
     title: str = ""
     generated_at: datetime
@@ -232,7 +354,29 @@ REPORT_SECTION_LABELS: list[tuple[str, str]] = [
 
 
 class ReportData(BaseModel):
-    """Complete report payload ready for rendering."""
+    """Complete report payload ready for rendering.
+
+    :param full: When ``True``, all check results and full backup history are included.
+    :type full: bool
+    :param refresh: When ``True``, advisor checks were refreshed before data collection.
+    :type refresh: bool
+    :param metadata: Report title, generation timestamp, and period labels.
+    :type metadata: ReportMetadata
+    :param monitored: Summary counts of monitored nodes and services.
+    :type monitored: MonitoredSummary
+    :param advisors: Advisor check results grouped by family.
+    :type advisors: AdvisorSection
+    :param alerts: Alert annotation history and aggregations.
+    :type alerts: AlertSection
+    :param backups: Backup status entries and aggregations.
+    :type backups: BackupSection
+    :param storage: Disk usage entries per node mountpoint.
+    :type storage: StorageSection
+    :param uptime: Service uptime entries for the report period.
+    :type uptime: UptimeSection
+    :param inventory: Monitored service inventory with connectivity status.
+    :type inventory: InventorySection
+    """
 
     full: bool = True
     refresh: bool = False

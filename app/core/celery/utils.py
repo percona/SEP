@@ -119,7 +119,6 @@ async def init_periodic_tasks_db(
         await BasePeriodicTaskManager.delete_where(
             celery_beat_session,
             PeriodicTask.name.not_in(seeded_names),
-            PeriodicTask.task.not_in(system_task_names),
             PeriodicTask.name.startswith(prefix_filter),
         )
         await celery_beat_session.commit()

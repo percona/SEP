@@ -21,6 +21,7 @@ from functools import cached_property
 from pathlib import Path
 from string import Template
 from typing import Any, ClassVar, Literal, Self
+from urllib.parse import urlparse
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
@@ -321,8 +322,6 @@ class HealthReportSettings(BaseLowercaseModel):
         if not self.upload:
             return ["Upload is disabled"]
 
-        from urllib.parse import urlparse
-
         reasons: list[str] = []
         if self.endpoint is None:
             reasons.append("Endpoint is not configured")
@@ -388,10 +387,6 @@ class SEPSettings(BaseYamlAppSettings):
         fields are forwarded to the top-level ``settings.PMM``; alerts fields are read
         by ``AlertsPMMConfig``.
     :type PMM: _DeprecatedPMMConfig
-        :param PMM_FRONTEND: The URL for the PMM frontend. Defaults to `None`. If not set,
-        it will be determined based on the `pmm.endpoint` from the `PMMSyncer` (if
-        available). This field is deprecated; use `PMM.FRONTEND` instead.
-    :type PMM_FRONTEND: StrHttpUrl | None
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
     :type HEALTH_REPORT: HealthReportSettings
@@ -417,10 +412,6 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
-    PMM_FRONTEND: StrHttpUrl | None = Field(
-        None,
-        deprecated="SEP__PMM_FRONTEND is deprecated. Use SEP__PMM__FRONTEND instead.",
-    )
     PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600

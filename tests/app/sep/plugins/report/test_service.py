@@ -740,9 +740,17 @@ class TestCollectStorage:
             "data": {"values": values},
         }
 
-    def _make_total_frame(self, *, total_bytes=1_000_000):
+    def _make_total_frame(self, *, node_id="node-1", mountpoint="/", total_bytes=1_000_000):
         return {
-            "schema": {"fields": [{"name": "Time"}, {"name": "Value"}]},
+            "schema": {
+                "fields": [
+                    {"name": "Time"},
+                    {
+                        "name": "Value",
+                        "labels": {"node_id": node_id, "mountpoint": mountpoint},
+                    },
+                ],
+            },
             "data": {"values": [[100], [total_bytes]]},
         }
 
@@ -750,7 +758,7 @@ class TestCollectStorage:
     async def test_returns_empty_for_no_node_ids(self, pmm_api):
         """Assert empty StorageSection when no node IDs are provided."""
         result = await collect_storage(
-            pmm_api, [], "now-7d", "now", self._DS_ID, self._DS_UID
+            pmm_api, {}, "now-7d", "now", self._DS_ID, self._DS_UID
         )
         assert result.entries == []
         pmm_api.query_grafana_datasource.assert_not_awaited()
@@ -764,11 +772,17 @@ class TestCollectStorage:
             "B": {"frames": [self._make_total_frame(total_bytes=total_bytes)]},
         }
         result = await collect_storage(
-            pmm_api, ["node-1"], "now-7d", "now", self._DS_ID, self._DS_UID
+            pmm_api,
+            {"node-1": {"name": "node-hostname-1"}},
+            "now-7d",
+            "now",
+            self._DS_ID,
+            self._DS_UID,
         )
         assert len(result.entries) == 1
         expected_pct = 70
         assert result.entries[0].usage_percentage == expected_pct
+        assert result.entries[0].node_name == "node-hostname-1"
 
     @pytest.mark.asyncio
     async def test_entries_sorted_by_usage_descending(self, pmm_api):
@@ -787,13 +801,22 @@ class TestCollectStorage:
             },
             "B": {
                 "frames": [
-                    self._make_total_frame(total_bytes=total),
-                    self._make_total_frame(total_bytes=total),
+                    self._make_total_frame(
+                        node_id="n1", mountpoint="/a", total_bytes=total
+                    ),
+                    self._make_total_frame(
+                        node_id="n2", mountpoint="/b", total_bytes=total
+                    ),
                 ],
             },
         }
         result = await collect_storage(
-            pmm_api, ["n1", "n2"], "now-7d", "now", self._DS_ID, self._DS_UID
+            pmm_api,
+            {"n1": {"name": "host-n1"}, "n2": {"name": "host-n2"}},
+            "now-7d",
+            "now",
+            self._DS_ID,
+            self._DS_UID,
         )
         assert result.entries[0].usage_percentage > result.entries[1].usage_percentage
 
@@ -806,7 +829,12 @@ class TestCollectStorage:
             "B": {"frames": []},
         }
         result = await collect_storage(
-            pmm_api, ["n1"], "now-7d", "now", self._DS_ID, self._DS_UID
+            pmm_api,
+            {"n1": {"name": "host-n1"}},
+            "now-7d",
+            "now",
+            self._DS_ID,
+            self._DS_UID,
         )
         assert result.entries == []
 
@@ -818,7 +846,12 @@ class TestCollectStorage:
             "B": {"frames": []},
         }
         result = await collect_storage(
-            pmm_api, ["node-1"], "now-7d", "now", self._DS_ID, self._DS_UID
+            pmm_api,
+            {"node-1": {"name": "host-node-1"}},
+            "now-7d",
+            "now",
+            self._DS_ID,
+            self._DS_UID,
         )
         assert result.entries[0].usage_percentage == 0
 

@@ -132,10 +132,11 @@ def should_skip_snippet(snippet_path: Path) -> bool:
 def generate_health_report(
     since: str = "now-7d",
     until: str = "now",
-    full: bool = True,  # noqa: FBT001, FBT002
-    refresh: bool = False,  # noqa: FBT001, FBT002
     sections: list[str] | None = None,
-    upload: bool = False,  # noqa: FBT001, FBT002
+    *,
+    full: bool = True,
+    refresh: bool = False,
+    upload: bool = False,
 ) -> None:
     """Define Celery task to generate a periodic PMM health report."""
     celery.loop.run_until_complete(
@@ -194,7 +195,7 @@ async def _generate_health_report(
             report.monitored.total_nodes,
             report.monitored.total_services,
         )
-    except Exception:
+    except (OSError, ValueError, LookupError, RuntimeError):
         logger.exception("Failed to generate health report")
         return
 
@@ -213,7 +214,7 @@ async def _generate_health_report(
         pdf_bytes = await generate_pdf_report(report)
         result = await upload_pdf_report(report, pdf_bytes)
         logger.info("Health report uploaded to ServiceNow: %s", result)
-    except Exception:
+    except (OSError, ValueError, RuntimeError):
         logger.exception("Failed to upload health report to ServiceNow")
 
 
