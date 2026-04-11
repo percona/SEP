@@ -124,7 +124,10 @@ class AdvisorFamily(BaseModel):
 
 
 class AdvisorSection(BaseModel):
-    """Aggregated advisor data for the report."""
+    """Aggregated advisor data for the report.
+
+    ``total_failed`` counts failed advisor results (rows), not distinct check names.
+    """
 
     total_checks: int = 0
     total_failed: int = 0

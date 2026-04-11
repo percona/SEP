@@ -87,8 +87,8 @@ async def get_report_index_context(
 
     :param context: The default template context.
     :type context: DefaultContext
-    :param pmm_api: The PMM API client or ``None``.
-    :type pmm_api: PMMAPIDep
+    :param pmm_api: The PMM API client or ``None`` (injected via ``PMMAPIDep``).
+    :type pmm_api: PMMRemoteAPI | None
     :return: The updated context dictionary.
     :rtype: dict[str, Any]
     """
