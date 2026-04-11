@@ -261,7 +261,9 @@ async def collect_advisors(
                     family_suffix.lower(),
                     family_suffix.capitalize(),
                 )
-                families[family] = AdvisorFamily(family_key=family, display_name=display)
+                families[family] = AdvisorFamily(
+                    family_key=family, display_name=display
+                )
             families[family].checks.append(check)
         else:
             if _OTHER_FAMILY_KEY not in families:
@@ -496,7 +498,9 @@ async def collect_storage(
     if not nodes_raw:
         return StorageSection()
 
-    node_id_to_name: dict[str, str] = {nid: info["name"] for nid, info in nodes_raw.items()}
+    node_id_to_name: dict[str, str] = {
+        nid: info["name"] for nid, info in nodes_raw.items()
+    }
     node_filter = "|".join(nodes_raw.keys())
     expr_used = (
         f"avg by (node_id, mountpoint) ("

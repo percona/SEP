@@ -740,7 +740,9 @@ class TestCollectStorage:
             "data": {"values": values},
         }
 
-    def _make_total_frame(self, *, node_id="node-1", mountpoint="/", total_bytes=1_000_000):
+    def _make_total_frame(
+        self, *, node_id="node-1", mountpoint="/", total_bytes=1_000_000
+    ):
         return {
             "schema": {
                 "fields": [
