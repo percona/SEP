@@ -67,7 +67,7 @@ async def report_generate(
     :param pmm_api: The PMM API client.
     :type pmm_api: PMMRemoteAPI
     :param context: Template context.
-    :type context: dict
+    :type context: ReportIndexContext
     :param since: Relative start of the report period.
     :type since: str
     :param until: Relative end of the report period.
