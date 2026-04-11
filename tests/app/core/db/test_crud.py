@@ -37,6 +37,7 @@ from app.core.utils import json_serializer
 MATCHING_ITEM_TOTAL = 3
 SELECT_RELATED_PAGE_LIMIT = 2
 INVALID_PAGINATION_VALUE = -1
+UNPAGINATED_ITEM_TOTAL = 55
 
 
 class PaginationParent(BaseSQLModel, table=True):
@@ -129,13 +130,13 @@ class TestBaseSQLModelManagerPagination:
     """Test pagination behavior for `BaseSQLModelManager`."""
 
     @pytest.mark.asyncio
-    async def test_list_defaults_to_fifty_items_in_created_at_desc_order(
+    async def test_list_without_pagination_returns_all_items(
         self,
         session: AsyncSession,
     ) -> None:
-        """Assert default pagination returns the newest 50 records."""
+        """Assert ``list()`` without pagination returns every matching record."""
         base_time = datetime(2026, 1, 1, tzinfo=UTC)
-        for index in range(55):
+        for index in range(UNPAGINATED_ITEM_TOTAL):
             await _create_item(
                 session,
                 name=f"item-{index}",
@@ -144,8 +145,30 @@ class TestBaseSQLModelManagerPagination:
 
         result = await PaginationItemManager.list(session)
 
-        assert len(result) == DEFAULT_PAGINATION_LIMIT
+        assert len(result) == UNPAGINATED_ITEM_TOTAL
         assert [item.name for item in result[:3]] == ["item-54", "item-53", "item-52"]
+        assert result[-1].name == "item-0"
+
+    @pytest.mark.asyncio
+    async def test_list_with_explicit_limit_applies_pagination(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert ``list()`` with an explicit limit paginates in ``created_at`` order."""
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        for index in range(UNPAGINATED_ITEM_TOTAL):
+            await _create_item(
+                session,
+                name=f"item-{index}",
+                created_at=base_time + timedelta(minutes=index),
+            )
+
+        result = await PaginationItemManager.list(
+            session, limit=DEFAULT_PAGINATION_LIMIT
+        )
+
+        assert len(result) == DEFAULT_PAGINATION_LIMIT
+        assert result[0].name == "item-54"
         assert result[-1].name == "item-5"
 
     @pytest.mark.asyncio
@@ -314,6 +337,39 @@ class TestBaseSQLModelManagerPagination:
         assert len(result.items) == SELECT_RELATED_PAGE_LIMIT
         assert all(item.parent is not None for item in result.items)
         assert result.items[0].parent.name == "parent-1"
+
+    @pytest.mark.asyncio
+    async def test_list_paginated_deduplicates_collection_joins(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert collection joinedloads do not under-fill paginated pages.
+
+        Without the primary-key subquery fix, a naive ``LIMIT 1`` query combined
+        with a ``joinedload`` of the ``items`` collection multiplies rows and
+        drops entities after ``result.unique()`` runs, causing the page to be
+        under-filled.
+        """
+        parent = await _create_parent(session, "parent-1")
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        for index in range(MATCHING_ITEM_TOTAL):
+            await _create_item(
+                session,
+                name=f"item-{index}",
+                created_at=base_time + timedelta(minutes=index),
+                parent_id=parent.id,
+            )
+
+        result = await PaginationParentManager.list_paginated(
+            session,
+            select_related=[PaginationParent.items],
+            limit=1,
+        )
+
+        assert result.total == 1
+        assert len(result.items) == 1
+        assert result.items[0].name == "parent-1"
+        assert len(result.items[0].items) == MATCHING_ITEM_TOTAL
 
     @pytest.mark.asyncio
     async def test_explicit_ordering_takes_precedence_over_created_at_fallback(

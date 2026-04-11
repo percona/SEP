@@ -206,18 +206,20 @@ class BaseManager:
         return None
 
     @staticmethod
-    def _validate_pagination(offset: int, limit: int) -> None:
+    def _validate_pagination(offset: int | None, limit: int | None) -> None:
         """Validate pagination arguments.
 
-        :param offset: The zero-based starting offset for the query results.
-        :type offset: int
-        :param limit: The maximum number of records to return.
-        :type limit: int
+        :param offset: The zero-based starting offset for the query results,
+            or ``None`` when pagination is not requested.
+        :type offset: int | None
+        :param limit: The maximum number of records to return, or ``None`` when
+            pagination is not requested.
+        :type limit: int | None
         :raises ValueError: If ``offset`` or ``limit`` is negative.
         """
-        if offset < 0:
+        if offset is not None and offset < 0:
             raise ValueError("offset must be greater than or equal to 0")
-        if limit < 0:
+        if limit is not None and limit < 0:
             raise ValueError("limit must be greater than or equal to 0")
 
     @classmethod
@@ -235,19 +237,47 @@ class BaseManager:
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
-        offset: int = DEFAULT_PAGINATION_OFFSET,
-        limit: int = DEFAULT_PAGINATION_LIMIT,
+        offset: int | None = None,
+        limit: int | None = None,
         **equal_filters: Any,
     ) -> TupleResult | ScalarResult:
-        query = cls._build_query(
-            *whereclause,
-            select_related=select_related,
-            **equal_filters,
-        )
         cls._validate_pagination(offset, limit)
-        if ordering := cls._get_ordering():
-            query = query.order_by(*ordering)
-        query = query.offset(offset).limit(limit)
+        ordering = cls._get_ordering()
+        pagination_requested = offset is not None or limit is not None
+
+        if select_related and pagination_requested:
+            pk_query = cls._filter_query(
+                select(cls._get_column("id")),
+                *whereclause,
+                **equal_filters,
+            )
+            if ordering:
+                pk_query = pk_query.order_by(*ordering)
+            if offset is not None:
+                pk_query = pk_query.offset(offset)
+            if limit is not None:
+                pk_query = pk_query.limit(limit)
+            pk_result = await cls._exec(session, pk_query)
+            page_ids = list(pk_result.all())
+            query = cls._build_query(
+                cls._get_column("id").in_(page_ids),
+                select_related=select_related,
+            )
+            if ordering:
+                query = query.order_by(*ordering)
+        else:
+            query = cls._build_query(
+                *whereclause,
+                select_related=select_related,
+                **equal_filters,
+            )
+            if ordering:
+                query = query.order_by(*ordering)
+            if offset is not None:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
+
         result = await cls._exec(session, query)
         return result.unique()
 
@@ -476,11 +506,11 @@ class BaseManager:
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
-        offset: int = DEFAULT_PAGINATION_OFFSET,
-        limit: int = DEFAULT_PAGINATION_LIMIT,
+        offset: int | None = None,
+        limit: int | None = None,
         **equal_filters: Any,
     ) -> list[T]:
-        """Return a list of all records that match the query.
+        """Return a list of matching records, optionally paginated.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :type session: AsyncSession
@@ -489,10 +519,12 @@ class BaseManager:
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
-        :param offset: The zero-based starting offset for the query results.
-        :type offset: int
-        :param limit: The maximum number of records to return.
-        :type limit: int
+        :param offset: The zero-based starting offset for the query results, or
+            ``None`` (default) to return all matching records from the beginning.
+        :type offset: int | None
+        :param limit: The maximum number of records to return, or ``None``
+            (default) to return all matching records.
+        :type limit: int | None
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
@@ -538,6 +570,7 @@ class BaseManager:
         :return: A paginated response containing matching records and metadata.
         :rtype: PaginatedResponse[T]
         """
+        cls._validate_pagination(offset, limit)
         total = await cls.count(session, *whereclause, **equal_filters)
         items = await cls.list(
             session,
@@ -547,7 +580,7 @@ class BaseManager:
             limit=limit,
             **equal_filters,
         )
-        return PaginatedResponse[T](
+        return PaginatedResponse(
             items=items,
             total=total,
             offset=offset,
