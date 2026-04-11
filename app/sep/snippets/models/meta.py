@@ -129,6 +129,11 @@ class SnippetMetaParameter(BaseModel):
     :param placeholder: A placeholder for the parameter. Defaults to None, meaning it
         won't be used for validation.
     :type placeholder: NonEmptyStr | None
+    :param group: An optional group name for organizing parameters into separate
+        fieldsets in the execution form. Parameters sharing the same group are rendered
+        together. Defaults to None, meaning the parameter belongs to the default
+        ungrouped fieldset.
+    :type group: NonEmptyStr | None
     :param default: The default value for the parameter. Defaults to None, meaning no
         default.
     :type default: str | int | float | bool | None
@@ -178,6 +183,7 @@ class SnippetMetaParameter(BaseModel):
     description: NonEmptyStr | None = None
     label: NonEmptyStr | None = None
     placeholder: NonEmptyStr | None = None
+    group: NonEmptyStr | None = None
     default: ParameterType = None
     choices: list[SnippetMetaParameterChoice] | None = Field(
         None, validation_alias=AliasChoices("choices", "options")

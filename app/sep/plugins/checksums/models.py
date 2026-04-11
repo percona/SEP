@@ -15,9 +15,14 @@
 
 """Define models for the Checksums plugin."""
 
+from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
+from app.inventory.models import ServiceTypeEnum
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class ChecksumsCreate(BaseModel):
@@ -39,8 +44,8 @@ class ChecksumsCreate(BaseModel):
     :type tables: str
     :param recursion_method: The method for handling recursion.
     :type recursion_method: NonEmptyStr
-    :param dsn_table: The DSN table for recursion method when using `dsn`. Defaults to
-        an empty string.
+    :param dsn_table: The DSN table for recursion method when using ``dsn``. When empty,
+        the command builder uses ``D=percona,t=dsns`` (Percona Toolkit convention).
     :type dsn_table: str
     :param pause_file: Execution will be paused while the file specified by this param exists.
     :type pause_file: str
@@ -89,3 +94,56 @@ class ChecksumsCreate(BaseModel):
     max_lag: str = ""
     extra_args: str = ""
     alert_on_fail: bool = False
+
+
+class ChecksumTaskBase(BaseModel):
+    """Define the common fields shared across checksum task API responses.
+
+    :param name: The name of the checksum task.
+    :type name: str
+    :param owner: The entity or user that owns the task.
+    :type owner: TaskOwner
+    :param service_type: The type of database service (e.g., MySQL, PostgreSQL).
+    :type service_type: ServiceTypeEnum | None
+    :param status: The current execution status of the task.
+    :type status: TaskHistoryStatusEnum | None
+    """
+
+    name: str
+    owner: TaskOwner
+    service_type: ServiceTypeEnum | None = None
+    status: TaskHistoryStatusEnum | None = None
+
+
+class ChecksumTaskResponse(ChecksumTaskBase):
+    """Represent a checksum task API response.
+
+    :param id: The unique identifier for the checksum task.
+    :type id: int | None
+    :param backend: The backend worker/engine executing the task.
+    :type backend: TaskBackendEnum
+    :param data: The raw configuration and parameters used for the checksum execution.
+    :type data: dict[str, Any]
+    :param protected: Whether the task is protected from deletion or modification.
+    :type protected: bool
+    :param alert_on_fail: If True, notifications are sent upon task failure.
+    :type alert_on_fail: bool
+    :param created_at: The timestamp when the task was first created.
+    :type created_at: datetime | None
+    :param updated_at: The timestamp of the last modification to the task.
+    :type updated_at: datetime | None
+    :param created_by: The user who initiated the task.
+    :type created_by: str | None
+    :param last_updated_by: The user who last modified the task record.
+    :type last_updated_by: str | None
+    """
+
+    id: int | None = None
+    backend: TaskBackendEnum
+    data: dict[str, Any]
+    protected: bool
+    alert_on_fail: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None

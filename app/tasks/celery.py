@@ -25,12 +25,12 @@ from datetime import timedelta
 from hashlib import sha256
 from typing import Any
 
-from celery import Task
+from celery import Task as CeleryTask
 from celery.app.task import Context
 from celery.signals import task_revoked
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
-from sqlalchemy import func
+from sqlalchemy import cast, func, Text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
@@ -60,12 +60,16 @@ from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     DispatchLock,
     SYSTEM_USER,
+    Task,
+    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
 )
 from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 
 logger = logging.getLogger(__name__)
+
+_MAX_CHAIN_DEPTH = 10
 
 
 @task_revoked.connect
@@ -87,11 +91,11 @@ def task_revoked_handler(*, request: Context, expired: bool, **kwargs: Any) -> N
     retry_backoff=True,
     retry_kwargs={"max_retries": celery.conf.max_retries},
 )
-def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
+def execute_task_queue(self: CeleryTask, queue_id: int) -> dict[str, Any]:
     """Trigger a Celery task by executing a queue item.
 
     :param self: The Celery task instance.
-    :type self: Task
+    :type self: CeleryTask
     :param queue_id: The ID of the queue item to trigger.
     :type queue_id: int
     :return: The data of the processed TaskHistory.
@@ -111,7 +115,7 @@ def execute_task_queue(self: Task, queue_id: int) -> dict[str, Any]:
     retry_kwargs={"max_retries": celery.conf.max_retries},
 )
 def execute_task_by_name(
-    self: Task,
+    self: CeleryTask,
     task_name: str,
     periodic_task_name: str | None = None,
     execution_data: PeriodicTaskExecuteRequest | None = None,
@@ -119,7 +123,7 @@ def execute_task_by_name(
     """Define Celery task to execute a SEP task by name.
 
     :param self: The Celery task instance.
-    :type self: Task
+    :type self: CeleryTask
     :param task_name: The name of the task to execute.
     :type task_name: int | None
     :param periodic_task_name: The name of the periodic task, if available.
@@ -217,8 +221,11 @@ async def prepare_periodic_task_history(
     async_session = get_async_session_maker()
     async with async_session() as session:
         task = await get_executable_task_by_name(session, task_name)
-        return prepare_task_history(
-            task, executed_by=SYSTEM_USER, execution_data=execution_data
+        return await prepare_task_history(
+            task,
+            executed_by=SYSTEM_USER,
+            session=session,
+            execution_data=execution_data,
         )
 
 
@@ -297,11 +304,18 @@ async def _raise_if_identical_task_conflict(
     engine_name = session.get_bind().name
     meta_where_clauses = []
     if queue_item.execution_request.meta:
-        meta_where_clauses = [
-            func_json_extract(engine_name, TaskHistory.execution_request, "meta", field)
-            == prepare_unsafe_value_for_json_comparison(engine_name, value)
-            for field, value in queue_item.execution_request.meta.items()
-        ]
+        for field, raw_value in queue_item.execution_request.meta.items():
+            extracted = func_json_extract(
+                engine_name, TaskHistory.execution_request, "meta", field
+            )
+            if isinstance(raw_value, list | dict):
+                comparable = json.dumps(raw_value, separators=(",", ":"))
+                extracted = cast(extracted, Text)
+            else:
+                comparable = prepare_unsafe_value_for_json_comparison(
+                    engine_name, raw_value
+                )
+            meta_where_clauses.append(extracted == comparable)
     if identical_task := (
         await TaskHistoryManager.first(
             session,
@@ -370,7 +384,8 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
             id=queue_id,
         )
         task = await TaskManager.get_root_task(session, queue_item.task)
-    if not queue_item.is_running:
+    was_running = queue_item.is_running
+    if not was_running:
         async with async_session() as session:
             result = await TaskHistoryManager.update_where(
                 session,
@@ -386,14 +401,107 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
                     id=queue_id,
                 )
                 task = await TaskManager.get_root_task(session, queue_item.task)
+                was_running = True
             else:
                 return queue_item
     executor = get_executor_for_task(task)
     queue_item = await executor.sync_task_history(queue_item)
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
-        return await TaskHistoryManager.save(
+        saved = await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
+        )
+    chain_on_failure = saved.execution_request.meta.get("_chain_on_failure", False)
+    is_terminal = (
+        saved.status.is_finished() or saved.status == TaskHistoryStatusEnum.LOST
+    )
+    should_chain = saved.status == TaskHistoryStatusEnum.SUCCESS or (
+        chain_on_failure and is_terminal
+    )
+    if (
+        was_running
+        and should_chain
+        and (chain_task_names := saved.execution_request.meta.get("_chain_task_names"))
+    ):
+        await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
+    return saved
+
+
+async def _dispatch_chained_task(
+    chain_task_name: str,
+    parent: TaskHistory,
+    remaining_chain: list[str] | None = None,
+) -> None:
+    """Dispatch the next chained task after the parent completes successfully.
+
+    Load the task by name, build a new TaskHistory inheriting the parent's executor
+    target, and call `dispatch_queue_item`. Any `chain_task_names` in the chained
+    task's static `data["meta"]` is stripped to prevent unintended multi-level
+    chaining; the `remaining_chain` is set as the next chain steps.
+
+    :param chain_task_name: The name of the next task to dispatch.
+    :type chain_task_name: str
+    :param parent: The completed parent TaskHistory.
+    :type parent: TaskHistory
+    :param remaining_chain: Task names to chain after this one, if any.
+    :type remaining_chain: list[str] | None
+    """
+    if parent.execution_request.meta.get("_chain_depth", 0) >= _MAX_CHAIN_DEPTH:
+        logger.warning(
+            "Chain depth limit (%d) reached for task %r; skipping chain to %r",
+            _MAX_CHAIN_DEPTH,
+            parent.execution_request.task,
+            chain_task_name,
+        )
+        return
+    try:
+        async_session = get_async_session_maker()
+        async with async_session() as session:
+            chain_task = await TaskManager.first(
+                session, col(Task.deleted_at).is_(None), name=chain_task_name
+            )
+        if chain_task is None:
+            logger.warning(
+                "Chained task %r not found; skipping chain dispatch", chain_task_name
+            )
+            return
+        if chain_task_name == parent.execution_request.task:
+            logger.warning(
+                "Chained task %r is the same as the parent task; skipping self-chain",
+                chain_task_name,
+            )
+            return
+        chain_meta = dict(chain_task.data.get("meta", {}))
+        chain_meta.pop("_chain_task_names", None)
+        if remaining_chain:
+            chain_meta["_chain_task_names"] = remaining_chain
+        chain_meta["target"] = parent.execution_request.target
+        chain_meta["_chain_on_failure"] = parent.execution_request.meta.get(
+            "_chain_on_failure", False
+        )
+        chain_meta["_chain_depth"] = (
+            parent.execution_request.meta.get("_chain_depth", 0) + 1
+        )
+        chain_history = TaskHistory(
+            task_id=chain_task.id,
+            task=chain_task,
+            execution_request=TaskExecutionRequest(
+                task=chain_task.name,
+                target=parent.execution_request.target,
+                meta=chain_meta,
+                payload=chain_task.data.get("payload"),
+                tracking={"evaluation_id": ""},
+            ),
+            status=TaskHistoryStatusEnum.PENDING,
+            executed_by=parent.executed_by,
+            anonymize_mask=parent.anonymize_mask,
+        )
+        await dispatch_queue_item(chain_history)
+    except Exception:
+        logger.exception(
+            "Failed to dispatch chained task %r from parent %r",
+            chain_task_name,
+            parent.execution_request.task,
         )
 
 

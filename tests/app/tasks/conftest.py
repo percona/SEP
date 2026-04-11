@@ -65,6 +65,7 @@ def mock_executor() -> AsyncMock:
     executor = AsyncMock(spec=BaseExecutor)
     executor.get_hosts = MagicMock(return_value={"node1": "10.0.0.1"})
     executor.preflight_stream_logs = MagicMock(return_value=None)
+    executor.get_events = MagicMock(return_value=[])
     return executor
 
 

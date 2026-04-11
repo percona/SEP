@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from app.api.main import api_router
 from app.celery import celery as celery_app
 from app.core.config import create_app, settings
+from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
@@ -62,6 +63,7 @@ app = create_app(
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
 )
+app.add_middleware(LogContextMiddleware)
 app.mount("/api/inventory", inventory_app)
 app.mount("/api/tasks", tasks_app)
 app.mount("/", sep_app)
@@ -114,9 +116,19 @@ if __name__ == "__main__":
                 port=sep_settings.UVICORN_PORT,
                 log_config=settings.LOGGING_CONFIG,
                 reload=sep_settings.UVICORN_RELOAD,
-                reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
-                reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
-                reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
+                reload_dirs=[
+                    str(settings.BASE_DIR),
+                    str(settings.BASE_DIR / "app"),
+                    *sep_settings.UVICORN_EXTRA_RELOAD_DIRS,
+                ],
+                reload_includes=[
+                    f"{settings.BASE_DIR.name}/settings.yaml",
+                    *sep_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
+                ],
+                reload_excludes=[
+                    f"{settings.BASE_DIR.name}/*.py",
+                    *sep_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
+                ],
             )
         except KeyboardInterrupt:
             logging.info("Shutting down Celery worker...")
@@ -135,7 +147,17 @@ if __name__ == "__main__":
             port=sep_settings.UVICORN_PORT,
             log_config=settings.LOGGING_CONFIG,
             reload=sep_settings.UVICORN_RELOAD,
-            reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
-            reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
-            reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
+            reload_dirs=[
+                str(settings.BASE_DIR),
+                str(settings.BASE_DIR / "app"),
+                *sep_settings.UVICORN_EXTRA_RELOAD_DIRS,
+            ],
+            reload_includes=[
+                f"{settings.BASE_DIR.name}/settings.yaml",
+                *sep_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
+            ],
+            reload_excludes=[
+                f"{settings.BASE_DIR.name}/*.py",
+                *sep_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
+            ],
         )
