@@ -39,9 +39,13 @@ from app.sep.plugins.checksums.deps import (
     ChecksumsGeneratedTask,
     ChecksumsTask,
     extract_service_info,
+    get_checksums_api_task_responses,
     get_checksums_index_context,
+    get_checksums_task,
+    get_checksums_task_status,
     parse_checksums_task_args,
 )
+from app.sep.plugins.checksums.models import ChecksumTaskResponse
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -60,6 +64,43 @@ async def checksums_index(
         request=request,
         name="checksums/index.html.j2",
         context=context,
+    )
+
+
+@router.get(
+    "/api/",
+    dependencies=[IsAuthenticated],
+    response_model=list[ChecksumTaskResponse],
+)
+async def checksums_api_list(
+    tasks_api: TaskAPI,
+    service_type: ServiceTypeEnum | None = None,
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[ChecksumTaskResponse]:
+    """List checksum tasks as JSON."""
+    return await get_checksums_api_task_responses(
+        tasks_api,
+        service_type=service_type,
+        status=status,
+    )
+
+
+@router.get(
+    "/api/{task_name}",
+    dependencies=[IsAuthenticated],
+    response_model=ChecksumTaskResponse,
+)
+async def checksums_api_detail(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> ChecksumTaskResponse:
+    """Retrieve a checksum task as JSON."""
+    task = await get_checksums_task(task_name, tasks_api)
+    task_status = await get_checksums_task_status(task.name, tasks_api)
+    return ChecksumTaskResponse(
+        **task.model_dump(),
+        service_type=ServiceTypeEnum.MYSQL,
+        status=task_status,
     )
 
 

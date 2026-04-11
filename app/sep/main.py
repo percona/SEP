@@ -194,6 +194,15 @@ async def custom_404_handler(
     exc: BaseException,
 ) -> Response:
     """Load custom 404 page."""
+    if request.url.path.startswith("/checksums/api/"):
+        detail = getattr(exc, "detail", "Not Found")
+        headers = getattr(exc, "headers", None)
+        return JSONResponse(
+            {"detail": detail},
+            status_code=status.HTTP_404_NOT_FOUND,
+            headers=headers,
+        )
+
     base_url = get_base_url(request)
     try:
         user = await get_current_user(request)
@@ -246,7 +255,11 @@ async def json_exception_handler(
     :return: A JSON response with the error detail and status code.
     :rtype: JSONResponse
     """
-    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    return JSONResponse(
+        {"detail": exc.detail},
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
 
 @sep_app.exception_handler(HTTPException)
@@ -254,6 +267,13 @@ async def default_exception_handler(
     request: Request, exc: HTTPException
 ) -> RedirectResponse:
     """Define default exception handler."""
+    if request.url.path.startswith("/checksums/api/"):
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+            headers=exc.headers,
+        )
+
     error_detail = exc.detail
     messages.error(request, str(error_detail))
     return RedirectResponse(
