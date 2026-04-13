@@ -1,0 +1,31 @@
+{
+  "name": "@sep/framework",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sep/api": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "typescript": "~5.8.0"
+  },
+  "peerDependencies": {
+    "@emotion/react": "^11.0.0",
+    "@emotion/styled": "^11.0.0",
+    "@mui/icons-material": "^7.0.0",
+    "@mui/material": "^7.0.0",
+    "@percona/percona-ui": "^1.0.0",
+    "@tanstack/react-query": "^5.0.0",
+    "material-react-table": "^1.15.0",
+    "notistack": "^3.0.0",
+    "react": "^19.0.0",
+    "react-hook-form": "^7.0.0",
+    "react-router-dom": "^7.0.0"
+  }
+}

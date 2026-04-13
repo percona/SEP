@@ -1,0 +1,1 @@
+export { SchemaDrivenPlugin } from './SchemaDrivenPlugin';

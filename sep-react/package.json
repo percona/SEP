@@ -1,0 +1,19 @@
+{
+  "name": "@sep/root",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @sep/shell dev",
+    "build": "pnpm --filter @sep/shell build",
+    "preview": "pnpm --filter @sep/shell preview",
+    "lint": "eslint . --fix",
+    "type-check": "pnpm -r type-check",
+    "test": "pnpm -r test"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
