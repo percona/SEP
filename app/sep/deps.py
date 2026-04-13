@@ -778,9 +778,10 @@ async def get_tasks_index_context(
     :return: An updated context dictionary containing tasks' data.
     :rtype: dict[str, Any]
     """
-    running_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    running_tasks = response["items"]
     response = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
@@ -894,12 +895,14 @@ async def check_for_conflicted_running_tasks(
     :raises HTTPConflictException: If there are running or pending tasks with the same
         name.
     """
-    running_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    pending_tasks = await tasks_api.get(
+    running_tasks = response["items"]
+    response = await tasks_api.get(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
+    pending_tasks = response["items"]
     if running_tasks or pending_tasks:
         raise HTTPConflictException("Task is already running or pending.")
 
