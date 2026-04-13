@@ -1,0 +1,60 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define routes for database connectivity checks."""
+
+from fastapi import APIRouter, status
+
+from app.api.deps import IsAuthenticatedDep
+from app.core.exceptions import HTTPBadRequestException
+from app.tasks.celery import get_executor_for_task
+from app.tasks.connectivity.models import (
+    ConnectivityCheckResponse,
+    ConnectivityCheckWrite,
+)
+from app.tasks.connectivity.service import check_connectivity
+from app.tasks.crud import TaskManager
+from app.tasks.deps import SessionDep
+
+router = APIRouter(tags=["connectivity"])
+
+
+@router.post(
+    "/connectivity-check/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=ConnectivityCheckResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def connectivity_check(
+    session: SessionDep,
+    request: ConnectivityCheckWrite,
+) -> ConnectivityCheckResponse:
+    """Check database connectivity via a Nomad task.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param request: The connectivity check request parameters.
+    :type request: ConnectivityCheckWrite
+    :return: The connectivity check result.
+    :rtype: ConnectivityCheckResponse
+    """
+    task = await TaskManager.retrieve_by_name(session, name="run-python")
+    executor = get_executor_for_task(task)
+    if request.target not in executor.get_hosts():
+        raise HTTPBadRequestException(
+            f"Target {request.target!r} is not available in "
+            f"{executor.__class__.__name__}"
+        )
+    return await check_connectivity(session, request)
