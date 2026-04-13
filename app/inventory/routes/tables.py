@@ -17,7 +17,7 @@
 
 import logging
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
@@ -34,8 +34,8 @@ router = APIRouter(prefix="/tables", tags=["tables"])
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_tables(
     session: SessionDep,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[TableResponse]:
     """List Tables."""
     logger.debug("Listing tables")

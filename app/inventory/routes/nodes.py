@@ -17,7 +17,7 @@
 
 import logging
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
@@ -48,8 +48,8 @@ async def list_nodes(
     external_id: NonEmptyStr | None = None,
     source: SourceEnum | None = None,
     node_type: NonEmptyStr | None = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[NodeResponse]:
     """List Nodes from Inventory."""
     logger.debug(
@@ -115,8 +115,8 @@ async def list_services_by_node(
     session: SessionDep,
     node: NodeDep,
     service_type: ServiceTypeEnum | None = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services by Node."""
     logger.debug(

@@ -17,7 +17,7 @@
 
 import logging
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
@@ -46,8 +46,8 @@ router = APIRouter(prefix="/services", tags=["services"])
 async def list_services(
     session: SessionDep,
     service_type: ServiceTypeEnum | None = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services."""
     logger.debug("Listing services for type '%s'", service_type or "all")
@@ -102,8 +102,8 @@ async def list_schemas_by_service(
     service: ServiceDep,
     search: str | None = None,
     include_tables: str | None = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[SchemaResponse | SchemaCompactResponse]:
     """List Schemas by Service.
 
