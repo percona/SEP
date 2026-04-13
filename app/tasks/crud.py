@@ -18,15 +18,20 @@
 import logging
 from collections.abc import Sequence
 
-from sqlalchemy import CursorResult
+from sqlalchemy import CursorResult, func
 from sqlalchemy.orm import aliased
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.db.crud import BaseSQLModelManager
+from app.core.db.crud import (
+    BaseSQLModelManager,
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+)
 from app.core.db.utils import func_json_extract
 from app.core.exceptions import HTTPConflictException
+from app.core.models import PaginatedResponse
 from app.core.utils.date_time import utc_now
 from app.tasks.models import (
     DispatchLock,
@@ -79,6 +84,42 @@ class TaskManager(BaseSQLModelManager):
         if target is not None:
             where.append(Task.data["meta"]["target"].as_string() == target)
         return await cls.list(session, *where, **kwargs)
+
+    @classmethod
+    async def list_active_paginated(
+        cls,
+        session: AsyncSession,
+        owner: TaskOwner | None = None,
+        target: str | None = None,
+        offset: int = DEFAULT_PAGINATION_OFFSET,
+        limit: int = DEFAULT_PAGINATION_LIMIT,
+    ) -> PaginatedResponse[Task]:
+        """Return a paginated response of active (non-deleted) tasks.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param owner: The owner of the tasks. If provided, only tasks for this owner
+            will be listed.
+        :type owner: TaskOwner | None
+        :param target: The execution target hostname. If provided, only tasks whose
+            ``data["meta"]["target"]`` matches will be listed.
+        :type target: str | None
+        :param offset: The zero-based starting offset for the query results.
+        :type offset: int
+        :param limit: The maximum number of records to return.
+        :type limit: int
+        :return: A paginated response containing active tasks and metadata.
+        :rtype: PaginatedResponse[Task]
+        """
+        where = [col(Task.deleted_at).is_(None)]
+        kwargs = {}
+        if owner is not None:
+            kwargs["owner"] = owner
+        if target is not None:
+            where.append(Task.data["meta"]["target"].as_string() == target)
+        return await cls.list_paginated(
+            session, *where, offset=offset, limit=limit, **kwargs
+        )
 
     @classmethod
     async def retrieve_by_name(
@@ -230,6 +271,8 @@ class TaskHistoryManager(BaseSQLModelManager):
         status: TaskHistoryStatusEnum | None = None,
         snippet_filename: str | None = None,
         select_related_task: bool = False,
+        offset: int | None = None,
+        limit: int | None = None,
     ) -> list[TaskHistory]:
         """List task histories by the task's name.
 
@@ -246,6 +289,10 @@ class TaskHistoryManager(BaseSQLModelManager):
         :param snippet_filename: If provided, filter task histories by the specified
             snippet filename in the task's metadata.
         :type snippet_filename: str | None
+        :param offset: The zero-based starting offset, or ``None`` to skip offset.
+        :type offset: int | None
+        :param limit: The maximum number of records, or ``None`` for no limit.
+        :type limit: int | None
         :return: A list of task histories for the specified task.
         :rtype: list[TaskHistory]
         """
@@ -268,8 +315,80 @@ class TaskHistoryManager(BaseSQLModelManager):
             select_related=select_related,
             status=status,
         )
+        ordering = cls._get_ordering()
+        if ordering:
+            query = query.order_by(*ordering)
+        if offset is not None:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
         result = await cls._exec(session, query)
         return list(result.all())
+
+    @classmethod
+    async def list_by_task_name_paginated(
+        cls,
+        *,
+        session: AsyncSession,
+        task_name: str,
+        status: TaskHistoryStatusEnum | None = None,
+        snippet_filename: str | None = None,
+        select_related_task: bool = False,
+        offset: int = DEFAULT_PAGINATION_OFFSET,
+        limit: int = DEFAULT_PAGINATION_LIMIT,
+    ) -> PaginatedResponse[TaskHistory]:
+        """Return a paginated response of task histories by the task's name.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param task_name: The name of the task to list histories for.
+        :type task_name: str
+        :param status: The status of the task history. If provided, only histories
+            with this status will be listed.
+        :type status: TaskHistoryStatusEnum | None
+        :param snippet_filename: If provided, filter task histories by the specified
+            snippet filename in the task's metadata.
+        :type snippet_filename: str | None
+        :param select_related_task: Whether to include the related task data in the
+            result. Defaults to False.
+        :type select_related_task: bool
+        :param offset: The zero-based starting offset for the query results.
+        :type offset: int
+        :param limit: The maximum number of records to return.
+        :type limit: int
+        :return: A paginated response containing task histories and metadata.
+        :rtype: PaginatedResponse[TaskHistory]
+        """
+        cls._validate_pagination(offset, limit)
+        count_query = select(func.count()).select_from(TaskHistory).join(Task)
+        count_clauses = [col(Task.name) == task_name]
+        if snippet_filename:
+            count_clauses.append(
+                func_json_extract(
+                    session.get_bind().name,
+                    col(TaskHistory.execution_request),
+                    "meta",
+                    "_snippet_filename",
+                )
+                == snippet_filename
+            )
+        count_query = cls._filter_query(count_query, *count_clauses, status=status)
+        total = await session.scalar(count_query) or 0
+        items = await cls.list_by_task_name(
+            session=session,
+            task_name=task_name,
+            status=status,
+            snippet_filename=snippet_filename,
+            select_related_task=select_related_task,
+            offset=offset,
+            limit=limit,
+        )
+        return PaginatedResponse(
+            items=items,
+            total=total,
+            offset=offset,
+            limit=limit,
+        )
 
 
 class DispatchLockManager(BaseSQLModelManager):

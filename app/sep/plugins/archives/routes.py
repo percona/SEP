@@ -133,10 +133,12 @@ async def archives_detail(
         **task_data,
         **PurgeConfigItem.model_validate(purge_item).model_dump(),
     }
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    context["running_tasks"] = response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     services = await inventory_api.get(

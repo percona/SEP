@@ -29,7 +29,9 @@ from sqlalchemy_celery_beat import PeriodicTask
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.core.models import PaginatedResponse
 from app.core.utils import utc_now
 from app.core.utils.fields import NonEmptyStr
 from app.tasks.celery import (
@@ -72,14 +74,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
 
 
-# TODO: Pagination  # noqa: TD002, TD003
-@router.get("/", dependencies=[IsAuthenticatedDep], response_model=list[TaskResponse])
+@router.get(
+    "/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PaginatedResponse[TaskResponse],
+)
 async def list_tasks(
-    session: SessionDep, owner: str | None = None, target: str | None = None
-) -> list[Task]:
+    session: SessionDep,
+    owner: str | None = None,
+    target: str | None = None,
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
-    return await TaskManager.list_active(session=session, owner=owner, target=target)
+    return await TaskManager.list_active_paginated(
+        session=session, owner=owner, target=target, offset=offset, limit=limit
+    )
 
 
 @router.delete(
@@ -232,33 +243,43 @@ async def execute_task_name(
 async def list_task_history(
     session: SessionDep,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
-) -> list[TaskHistoryResponse]:
-    """Create a new task."""
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[TaskHistoryResponse]:
+    """List all task history records."""
     logger.debug("Listing task history")
-    return await TaskHistoryManager.list(
-        session, select_related=(TaskHistory.task,), status=task_status
+    return await TaskHistoryManager.list_paginated(
+        session,
+        select_related=(TaskHistory.task,),
+        offset=offset,
+        limit=limit,
+        status=task_status,
     )
 
 
 @router.get(
     "/{task}/history/",
     dependencies=[IsAuthenticatedDep],
-    response_model=list[TaskHistoryResponse],
+    response_model=PaginatedResponse[TaskHistoryResponse],
 )
 async def get_task_history(
     session: SessionDep,
     task: str,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     snippet_filename: NonEmptyStr | None = None,
-) -> list[TaskHistory]:
-    """Retrieve a task history by task name."""
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[TaskHistory]:
+    """Retrieve task history by task name."""
     logger.debug("Requesting task history for %s", task)
-    return await TaskHistoryManager.list_by_task_name(
+    return await TaskHistoryManager.list_by_task_name_paginated(
         session=session,
         task_name=task,
         status=task_status,
         select_related_task=True,
         snippet_filename=snippet_filename,
+        offset=offset,
+        limit=limit,
     )
 
 

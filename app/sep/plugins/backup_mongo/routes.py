@@ -162,24 +162,30 @@ async def pbm_backups_detail(
     }
 
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["history_logical"] = await tasks_api.get(f"/{task.name}-logical/history/")
-    context["history_physical"] = await tasks_api.get(f"/{task.name}-physical/history/")
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(f"/{task.name}-logical/history/")
+    context["history_logical"] = response["items"]
+    response = await tasks_api.get(f"/{task.name}-physical/history/")
+    context["history_physical"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    context["running_tasks"] += await tasks_api.get(
+    context["running_tasks"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}-logical/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
-    context["running_tasks"] += await tasks_api.get(
+    context["running_tasks"] += response["items"]
+    response = await tasks_api.get(
         f"/{task.name}-physical/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
+    context["running_tasks"] += response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    # get latest status
-    pbm_status_tasks = await tasks_api.get(f"/{task.name}-status/history/")
+    response = await tasks_api.get(f"/{task.name}-status/history/")
+    pbm_status_tasks = response["items"]
     try:
         tracking = pbm_status_tasks[0]["execution_request"]["tracking"]
         context["latest_status"] = tracking["task_logs"]["run-script"]["stdout"]

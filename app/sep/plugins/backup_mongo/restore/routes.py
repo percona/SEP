@@ -81,28 +81,32 @@ async def _fetch_running_tasks(
     tasks_api: TaskAPI,
 ) -> list[dict[str, Any]]:
     """Fetch running tasks for parent and child tasks."""
-    running_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    running_tasks = response["items"]
 
     restore_task_name = f"{task_name}-{task_config.get('backupType')}"
-    running_tasks += await tasks_api.get(
+    response = await tasks_api.get(
         f"/{restore_task_name}/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
+    running_tasks += response["items"]
 
     pbm_list_task_name = f"{task_name}-pbm-list"
-    running_tasks += await tasks_api.get(
+    response = await tasks_api.get(
         f"/{pbm_list_task_name}/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
+    running_tasks += response["items"]
 
     if BackupType(task_config.get("backupType")) == BackupType.PBM_PHYSICAL:
         force_resync_task_name = f"{task_name}-pbm-force-resync"
-        running_tasks += await tasks_api.get(
+        response = await tasks_api.get(
             f"/{force_resync_task_name}/history/",
             params={"status": TaskHistoryStatusEnum.RUNNING},
         )
+        running_tasks += response["items"]
 
     return running_tasks
 
@@ -116,16 +120,16 @@ async def _fetch_task_history(
     pbm_list_task_name = f"{task_name}-pbm-list"
 
     try:
-        history_pbm_list = await tasks_api.get(f"/{pbm_list_task_name}/history/")
+        response = await tasks_api.get(f"/{pbm_list_task_name}/history/")
+        history_pbm_list = response["items"]
     except HTTPException:
         history_pbm_list = []
 
     if BackupType(task_config.get("backupType")) == BackupType.PBM_PHYSICAL:
         force_resync_task_name = f"{task_name}-pbm-force-resync"
         try:
-            history_force_resync = await tasks_api.get(
-                f"/{force_resync_task_name}/history/"
-            )
+            response = await tasks_api.get(f"/{force_resync_task_name}/history/")
+            history_force_resync = response["items"]
         except HTTPException:
             history_force_resync = []
     else:
@@ -257,20 +261,19 @@ async def restores_detail(
     task_data.update(parsed_task_data)
 
     context["task"] = task_data
-    all_history = await tasks_api.get(f"/{task.name}/history/")
+    response = await tasks_api.get(f"/{task.name}/history/")
+    all_history = response["items"]
     context["history"] = all_history
 
     try:
-        context["history_logical"] = await tasks_api.get(
-            f"/{task.name}-pbm_logical/history/"
-        )
+        response = await tasks_api.get(f"/{task.name}-pbm_logical/history/")
+        context["history_logical"] = response["items"]
     except HTTPException:
         context["history_logical"] = []
 
     try:
-        context["history_physical"] = await tasks_api.get(
-            f"/{task.name}-pbm_physical/history/"
-        )
+        response = await tasks_api.get(f"/{task.name}-pbm_physical/history/")
+        context["history_physical"] = response["items"]
     except HTTPException:
         context["history_physical"] = []
 

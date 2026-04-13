@@ -187,22 +187,26 @@ async def alters_detail(
 
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["history_dry_run"] = await tasks_api.get(f"/{task.name}-dry-run/history/")
-    context["history_pre_checks"] = await tasks_api.get(
-        f"/{task.name}-pre-checks/history/"
-    )
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(f"/{task.name}-dry-run/history/")
+    context["history_dry_run"] = response["items"]
+    response = await tasks_api.get(f"/{task.name}-pre-checks/history/")
+    context["history_pre_checks"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    context["running_tasks"] += await tasks_api.get(
+    context["running_tasks"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}-dry-run/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
-    context["running_tasks"] += await tasks_api.get(
+    context["running_tasks"] += response["items"]
+    response = await tasks_api.get(
         f"/{task.name}-pre-checks/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
+    context["running_tasks"] += response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     task_data.update(parse_alters_task_args(meta))

@@ -689,7 +689,8 @@ async def get_tasks_context(
     history_tasks = []
     scheduled_tasks = []
     running_tasks = []
-    for task in await tasks_api.get("/", params={"owner": owner}):
+    tasks_response = await tasks_api.get("/", params={"owner": owner})
+    for task in tasks_response["items"]:
         task_info = {
             "name": task["name"],
             "id": task["id"],
@@ -698,8 +699,8 @@ async def get_tasks_context(
         }
         task_info |= get_task_info_func(task)
         tasks.append(task_info)
-        history = await tasks_api.get(f"/{task['name']}/history/")
-        for hist in history:
+        response = await tasks_api.get(f"/{task['name']}/history/")
+        for hist in response["items"]:
             match TaskHistoryStatusEnum(hist["status"]):
                 case TaskHistoryStatusEnum.PENDING:
                     scheduled_tasks.append(hist)
@@ -750,8 +751,8 @@ async def get_chainable_tasks(
     :return: A list of chainable task dicts.
     :rtype: list[dict[str, Any]]
     """
-    all_tasks = await tasks_api.get("/", params={"owner": owner, "target": target})
-    return [t for t in all_tasks if t["name"] != exclude_task_name]
+    response = await tasks_api.get("/", params={"owner": owner, "target": target})
+    return [t for t in response["items"] if t["name"] != exclude_task_name]
 
 
 async def get_tasks_index_context(
@@ -780,12 +781,13 @@ async def get_tasks_index_context(
     running_tasks = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    scheduled_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
+    scheduled_tasks = response["items"]
     periodic_tasks = await tasks_api.get("/periodic/", params={"enabled": "True"})
-    tasks = await tasks_api.get("/")
-    task_owner_mapping = {task["name"]: task["owner"] for task in tasks}
+    response = await tasks_api.get("/")
+    task_owner_mapping = {task["name"]: task["owner"] for task in response["items"]}
     for periodic_task in periodic_tasks:
         task_name = periodic_task.get("task")
         periodic_task["owner"] = task_owner_mapping.get(task_name)
