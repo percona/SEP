@@ -23,6 +23,7 @@ from typing import Any
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
+from app.core.pmm import annotate_task_event
 from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.utils import parse_payload
@@ -254,9 +255,20 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """
+        was_running = queue_item.status == TaskHistoryStatusEnum.RUNNING
         queue_item = await self._sync_task_history(queue_item)
         if queue_item.task.alert_on_fail:
             await queue_item.alert_for_status()
+        if was_running and queue_item.status != TaskHistoryStatusEnum.RUNNING:
+            event_map = {
+                TaskHistoryStatusEnum.SUCCESS: "COMPLETED",
+                TaskHistoryStatusEnum.FAILED: "FAILED",
+                TaskHistoryStatusEnum.STOPPED: "STOPPED",
+                TaskHistoryStatusEnum.LOST: "LOST",
+            }
+            event = event_map.get(queue_item.status)
+            if event:
+                await annotate_task_event(queue_item, event)
         return queue_item
 
     @abstractmethod

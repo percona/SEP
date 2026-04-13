@@ -24,6 +24,7 @@ default:
     VERIFY_SSL: true
     FRONTEND: null  # Optional: PMM frontend URL for links
     EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
+    ANNOTATIONS_ENABLED: false
   SEP:
     SNIPPETS:
       FILTER_EXTENSIONS:

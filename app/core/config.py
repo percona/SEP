@@ -271,6 +271,9 @@ class PMMSettings(BaseLowercaseModel):
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
     :type execution_target: str | None
+    :param annotations_enabled: Whether to create PMM annotations for task lifecycle
+        events.
+    :type annotations_enabled: bool
     """
 
     endpoint: StrHttpUrl | None = None
@@ -278,6 +281,7 @@ class PMMSettings(BaseLowercaseModel):
     api_key: SecretStr | None = None
     verify_ssl: bool = True
     execution_target: str | None = None
+    annotations_enabled: bool = False
 
     @model_validator(mode="after")
     def _default_frontend_to_endpoint(self) -> Self:

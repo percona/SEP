@@ -243,6 +243,107 @@ class TestSyncTaskHistory:
 
         queue_item.alert_for_status.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("initial_status", "final_status", "expected_event"),
+        [
+            (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.SUCCESS, "COMPLETED"),
+            (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.FAILED, "FAILED"),
+            (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.STOPPED, "STOPPED"),
+            (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.LOST, "LOST"),
+        ],
+    )
+    async def test_annotates_terminal_transition(
+        self,
+        executor: ConcreteExecutor,
+        initial_status: TaskHistoryStatusEnum,
+        final_status: TaskHistoryStatusEnum,
+        expected_event: str,
+    ):
+        """Assert annotate_task_event is called on terminal state transitions."""
+        queue_item = MagicMock(spec=TaskHistory)
+        queue_item.status = initial_status
+        queue_item.task = MagicMock()
+        queue_item.task.alert_on_fail = False
+
+        synced_item = MagicMock(spec=TaskHistory)
+        synced_item.status = final_status
+        synced_item.task = MagicMock()
+        synced_item.task.alert_on_fail = False
+
+        with (
+            patch.object(
+                ConcreteExecutor,
+                "_sync_task_history",
+                AsyncMock(return_value=synced_item),
+            ),
+            patch(
+                "app.tasks.execution.models.annotate_task_event",
+                new_callable=AsyncMock,
+            ) as mock_annotate,
+        ):
+            await executor.sync_task_history(queue_item)
+
+        mock_annotate.assert_awaited_once_with(synced_item, expected_event)
+
+    @pytest.mark.asyncio
+    async def test_does_not_annotate_when_still_running(
+        self, executor: ConcreteExecutor
+    ):
+        """Assert no annotation when task remains RUNNING after sync."""
+        queue_item = MagicMock(spec=TaskHistory)
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item.task = MagicMock()
+        queue_item.task.alert_on_fail = False
+
+        synced_item = MagicMock(spec=TaskHistory)
+        synced_item.status = TaskHistoryStatusEnum.RUNNING
+        synced_item.task = MagicMock()
+        synced_item.task.alert_on_fail = False
+
+        with (
+            patch.object(
+                ConcreteExecutor,
+                "_sync_task_history",
+                AsyncMock(return_value=synced_item),
+            ),
+            patch(
+                "app.tasks.execution.models.annotate_task_event",
+                new_callable=AsyncMock,
+            ) as mock_annotate,
+        ):
+            await executor.sync_task_history(queue_item)
+
+        mock_annotate.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_does_not_annotate_already_terminal(self, executor: ConcreteExecutor):
+        """Assert no duplicate annotation on re-sync of already-terminal task."""
+        queue_item = MagicMock(spec=TaskHistory)
+        queue_item.status = TaskHistoryStatusEnum.SUCCESS
+        queue_item.task = MagicMock()
+        queue_item.task.alert_on_fail = False
+
+        synced_item = MagicMock(spec=TaskHistory)
+        synced_item.status = TaskHistoryStatusEnum.SUCCESS
+        synced_item.task = MagicMock()
+        synced_item.task.alert_on_fail = False
+
+        with (
+            patch.object(
+                ConcreteExecutor,
+                "_sync_task_history",
+                AsyncMock(return_value=synced_item),
+            ),
+            patch(
+                "app.tasks.execution.models.annotate_task_event",
+                new_callable=AsyncMock,
+            ) as mock_annotate,
+        ):
+            await executor.sync_task_history(queue_item)
+
+        mock_annotate.assert_not_awaited()
+
 
 _DEFAULT_WAIT_INTERVAL = 5
 

@@ -46,6 +46,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
+from app.core.pmm import annotate_task_event
 from app.core.utils import utc_now
 from app.tasks.config import tasks_settings
 from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
@@ -285,10 +286,13 @@ async def _dispatch_queue_item(
         await _raise_if_identical_task_conflict(queue_item, session)
         task = await TaskManager.get_root_task(session, queue_item.task)
         executor = get_executor_for_task(task)
-        return await executor.dispatch_task(session, queue_item, task)
+        result = await executor.dispatch_task(session, queue_item, task)
     except Exception:
         logger.exception("Failed to dispatch queue item")
         raise
+    else:
+        await annotate_task_event(result, "STARTED")
+        return result
     finally:
         async with lock_session_maker() as async_session:
             await DispatchLockManager.delete(async_session, dispatch_lock)
