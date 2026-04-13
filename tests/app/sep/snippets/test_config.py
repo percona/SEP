@@ -15,10 +15,31 @@
 
 """Tests for SnippetSudoOption, including OPTIONAL_DEFAULT_TRUE."""
 
+import json
+import re
+from typing import Any
+
 import pytest
 
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
+
+EXECUTOR_HOSTS = frozenset({("host1", "host1")})
+
+
+def _make_params_json(*params: dict[str, Any]) -> str:
+    """Serialize parameter dicts to a JSON string for `_to_form`."""
+    return json.dumps(list(params))
+
+
+def _extract_fieldset_legends(html: str) -> list[str]:
+    """Extract all fieldset legend texts from rendered HTML, in order."""
+    return re.findall(r"<legend[^>]*>(.*?)</legend>", html)
+
+
+def _count_fieldsets(html: str) -> int:
+    """Count total fieldset elements in rendered HTML."""
+    return html.count("<fieldset")
 
 
 class TestSnippetSudoOptionProperties:
@@ -134,3 +155,118 @@ class TestSudoExecutionModel:
             add_sudo_field=False,
         )
         assert "sudo" not in model.model_fields
+
+
+EXPECTED_FIELDSETS_WITH_EXECUTOR = 2
+EXPECTED_FIELDSETS_MIXED_GROUPS = 3
+
+
+class TestToFormParameterGrouping:
+    """Test that _to_form groups parameters into separate fieldsets."""
+
+    def test_no_groups_produces_single_parameters_fieldset(self):
+        """Verify ungrouped params render a single 'Parameters' fieldset."""
+        params = _make_params_json({"name": "host"}, {"name": "port"})
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        assert "Parameters" in legends
+        assert _count_fieldsets(html) == EXPECTED_FIELDSETS_WITH_EXECUTOR
+
+    def test_all_same_group_produces_named_fieldset(self):
+        """Verify params sharing one group render a single named fieldset."""
+        params = _make_params_json(
+            {"name": "host", "group": "Database"},
+            {"name": "port", "group": "Database"},
+        )
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        assert "Database" in legends
+        assert "Parameters" not in legends
+
+    def test_mixed_grouped_and_ungrouped(self):
+        """Verify mixed grouped/ungrouped params render multiple fieldsets."""
+        params = _make_params_json(
+            {"name": "host", "group": "Database"},
+            {"name": "verbose"},
+        )
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        assert "Database" in legends
+        assert "Parameters" in legends
+        assert _count_fieldsets(html) == EXPECTED_FIELDSETS_MIXED_GROUPS
+
+    def test_first_occurrence_order_preserved(self):
+        """Verify fieldset order follows first-occurrence of each group."""
+        params = _make_params_json(
+            {"name": "p1", "group": "Beta"},
+            {"name": "p2", "group": "Alpha"},
+            {"name": "p3", "group": "Beta"},
+        )
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        beta_idx = legends.index("Beta")
+        alpha_idx = legends.index("Alpha")
+        assert beta_idx < alpha_idx
+
+    def test_extra_args_in_ungrouped_fieldset(self):
+        """Verify extra args field lands in the ungrouped 'Parameters' fieldset."""
+        params = _make_params_json({"name": "host", "group": "DB"})
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS, add_extra_args_field=True)
+        legends = _extract_fieldset_legends(html)
+        assert "DB" in legends
+        assert "Parameters" in legends
+
+    def test_sudo_in_ungrouped_fieldset(self):
+        """Verify sudo checkbox lands in the ungrouped 'Parameters' fieldset."""
+        params = _make_params_json({"name": "host", "group": "DB"})
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS, add_sudo_field=True)
+        legends = _extract_fieldset_legends(html)
+        assert "Parameters" in legends
+        assert SUDO_INPUT_NAME in html
+
+    def test_empty_params_no_parameter_fieldset(self):
+        """Verify no parameter fieldset is created when params are empty."""
+        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        assert "Parameters" not in legends
+
+
+class TestToFormOptionalExecutorHosts:
+    """Test ``_to_form`` with optional executor hosts and custom form ID."""
+
+    def test_executor_hosts_none_omits_host_fieldset(self):
+        """Verify no executor host fieldset is rendered when hosts are ``None``."""
+        html = BaseSnippet._to_form("[]", None)
+        legends = _extract_fieldset_legends(html)
+        assert "Executor Host" not in legends
+
+    def test_executor_hosts_none_still_renders_parameters(self):
+        """Verify parameter fieldsets render even when hosts are ``None``."""
+        params = _make_params_json({"name": "port"})
+        html = BaseSnippet._to_form(params, None)
+        legends = _extract_fieldset_legends(html)
+        assert "Parameters" in legends
+
+    def test_executor_hosts_provided_includes_host_fieldset(self):
+        """Verify executor host fieldset renders when hosts are provided."""
+        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        assert "Executor Host" in legends
+
+    def test_custom_form_id(self):
+        """Verify the form element uses a custom ID when provided."""
+        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS, form_id="myCustomForm")
+        assert 'id="myCustomForm"' in html
+
+    def test_default_form_id(self):
+        """Verify the form element uses the default ID."""
+        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
+        assert 'id="snippetExecuteForm"' in html
+
+    def test_executor_hosts_none_with_custom_form_id(self):
+        """Verify both optional hosts and custom ID work together."""
+        params = _make_params_json({"name": "host"})
+        html = BaseSnippet._to_form(params, None, form_id="troubleshoot-test")
+        assert 'id="troubleshoot-test"' in html
+        assert "Executor Host" not in html
+        assert "Parameters" in html

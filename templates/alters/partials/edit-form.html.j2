@@ -59,18 +59,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         width: 130px;
     }
 
-    .selection-panel,
-    .result-panel {
-        background-color: #fff;
-        padding-left: 20px;
-        padding-right: 20px;
-        border-radius: 5px;
-    }
-
-    #toggleCreateTable {
-        padding: 10px 20px;
-    }
-
     #createTableOutput {
         background-color: var(--surfaceElevation1);
         color: var(--textPrimary);
@@ -96,6 +84,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
 
     #result-panel {
+        background-color: var(--surfaceElevation1);
         overflow: hidden;
         transition: opacity 0.5s ease, max-height 0.5s ease;
         opacity: 1;
@@ -347,7 +336,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                id="dsn_table"
                                name="dsn_table"
                                class="validate"
-                               value="{{ task.dsn_table }}"
+                               value="{%- if task.recursion_method == 'dsn' -%}{{ (task.dsn_table | default('', true) | trim) or 'D=percona,t=dsns' }}{%- endif -%}"
                                placeholder="D=percona,t=dsns"
                                title="{{ dsn_table_title }}" />
                     </div>
@@ -626,6 +615,19 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const resultPanel = document.getElementById('result-panel');
     const form = document.getElementById('edit-task-form');
     const editButton = form.querySelector('button[type="submit"]');
+    const recursionMethodSelect = document.getElementById('recursion_method');
+    const dsnTableInput = document.getElementById('dsn_table');
+    if (recursionMethodSelect && dsnTableInput) {
+        recursionMethodSelect.addEventListener('change', function () {
+            if (this.value === 'dsn') {
+                if (!dsnTableInput.value.trim()) {
+                    dsnTableInput.value = 'D=percona,t=dsns';
+                }
+            } else {
+                dsnTableInput.value = '';
+            }
+        });
+    }
 
     let selectedService = null;
     let selectedSchema = null;

@@ -325,6 +325,53 @@ class TestTaskExecuteRequest:
         req = TaskExecuteRequest.model_validate({"eta": ""})
         assert req.eta is None
 
+    def test_chain_task_names_valid_json_list(self) -> None:
+        """Assert valid JSON list is parsed correctly."""
+        req = TaskExecuteRequest(chain_task_names='["a","b"]')
+        assert req.chain_task_names == ["a", "b"]
+
+    def test_chain_task_names_invalid_json_falls_back(self) -> None:
+        """Assert invalid JSON string is treated as a single task name."""
+        req = TaskExecuteRequest(chain_task_names="[broken")
+        assert req.chain_task_names == ["[broken"]
+
+    def test_chain_task_names_empty_string_returns_none(self) -> None:
+        """Assert empty string normalizes to None."""
+        req = TaskExecuteRequest(chain_task_names="")
+        assert req.chain_task_names is None
+
+    def test_chain_task_names_empty_list_returns_none(self) -> None:
+        """Assert empty list normalizes to None."""
+        req = TaskExecuteRequest(chain_task_names=[])
+        assert req.chain_task_names is None
+
+    def test_chain_task_names_single_string(self) -> None:
+        """Assert single string is wrapped in a list."""
+        req = TaskExecuteRequest(chain_task_names="task-a")
+        assert req.chain_task_names == ["task-a"]
+
+    def test_chain_task_names_list_with_empties_filtered(self) -> None:
+        """Assert empty strings are filtered from a list."""
+        req = TaskExecuteRequest(chain_task_names=["a", "", "b"])
+        assert req.chain_task_names == ["a", "b"]
+
+    def test_chain_on_failure_defaults_to_false(self) -> None:
+        """Assert chain_on_failure defaults to False."""
+        req = TaskExecuteRequest()
+        assert req.chain_on_failure is False
+
+    @pytest.mark.parametrize("value", ["true", "on", "1", True])
+    def test_chain_on_failure_truthy_values(self, value) -> None:
+        """Assert truthy form values normalize to True."""
+        req = TaskExecuteRequest(chain_on_failure=value)
+        assert req.chain_on_failure is True
+
+    @pytest.mark.parametrize("value", ["false", "off", "0", "", False])
+    def test_chain_on_failure_falsy_values(self, value) -> None:
+        """Assert falsy form values normalize to False."""
+        req = TaskExecuteRequest(chain_on_failure=value)
+        assert req.chain_on_failure is False
+
 
 class TestTaskHistoryBase:
     """Test TaskHistoryBase computed fields."""

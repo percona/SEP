@@ -128,6 +128,7 @@ if {
 } & imported_plugins:
     from app.sep.api.routes import router as inventory_api_router
     from app.sep.routes.download_files import router as download_files_router
+    from app.sep.routes.execution_events import router as execution_events_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
     from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
@@ -135,6 +136,7 @@ if {
     sep_app.include_router(inventory_api_router, prefix="/inventory-api")
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
     sep_app.include_router(download_files_router, prefix="/files")
+    sep_app.include_router(execution_events_router, prefix="/execution-events")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
 
@@ -192,6 +194,15 @@ async def custom_404_handler(
     exc: BaseException,
 ) -> Response:
     """Load custom 404 page."""
+    if request.url.path.startswith("/checksums/api/"):
+        detail = getattr(exc, "detail", "Not Found")
+        headers = getattr(exc, "headers", None)
+        return JSONResponse(
+            {"detail": detail},
+            status_code=status.HTTP_404_NOT_FOUND,
+            headers=headers,
+        )
+
     base_url = get_base_url(request)
     try:
         user = await get_current_user(request)
@@ -244,7 +255,11 @@ async def json_exception_handler(
     :return: A JSON response with the error detail and status code.
     :rtype: JSONResponse
     """
-    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    return JSONResponse(
+        {"detail": exc.detail},
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
 
 @sep_app.exception_handler(HTTPException)
@@ -252,6 +267,13 @@ async def default_exception_handler(
     request: Request, exc: HTTPException
 ) -> RedirectResponse:
     """Define default exception handler."""
+    if request.url.path.startswith("/checksums/api/"):
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+            headers=exc.headers,
+        )
+
     error_detail = exc.detail
     messages.error(request, str(error_detail))
     return RedirectResponse(
@@ -343,7 +365,17 @@ if __name__ == "__main__":
         ssl_certfile=sep_settings.SSL_CERTFILE,
         log_config=settings.LOGGING_CONFIG,
         reload=sep_settings.UVICORN_RELOAD,
-        reload_dirs=[str(settings.BASE_DIR), str(settings.BASE_DIR / "app")],
-        reload_includes=[f"{settings.BASE_DIR.name}/settings.yaml"],
-        reload_excludes=[f"{settings.BASE_DIR.name}/*.py"],
+        reload_dirs=[
+            str(settings.BASE_DIR),
+            str(settings.BASE_DIR / "app"),
+            *sep_settings.UVICORN_EXTRA_RELOAD_DIRS,
+        ],
+        reload_includes=[
+            f"{settings.BASE_DIR.name}/settings.yaml",
+            *sep_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
+        ],
+        reload_excludes=[
+            f"{settings.BASE_DIR.name}/*.py",
+            *sep_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
+        ],
     )

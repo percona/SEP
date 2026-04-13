@@ -28,7 +28,7 @@ from io import SEEK_END
 from os import PathLike
 from pathlib import Path
 from string import Template
-from typing import Annotated, Any, ClassVar, NamedTuple, Self
+from typing import Annotated, Any, ClassVar, NamedTuple, Self, TYPE_CHECKING
 
 import aiofiles
 import yaml
@@ -70,6 +70,9 @@ from app.sep.snippets.config import (
     snippets_settings,
     SnippetSudoOption,
 )
+
+if TYPE_CHECKING:
+    from aiofiles.threadpool.text import AsyncTextIOWrapper
 from app.sep.snippets.forms import (
     CheckboxInputElement,
     FieldsetElement,
@@ -91,13 +94,13 @@ EXTRA_ARGS_INPUT_NAME = "-extra_args-"
 EXTRA_ARGS_INPUT = TextInputElement(
     name=EXTRA_ARGS_INPUT_NAME,
     placeholder="e.g. --verbose",
-    title="Any extra args to pass to the snippet execution command",
+    description="Any extra args to pass to the snippet execution command",
     label="Extra Args",
 )
 SUDO_INPUT_NAME = "-sudo-"
 SUDO_INPUT = CheckboxInputElement(
     name=SUDO_INPUT_NAME,
-    title="Execute the snippet with sudo",
+    description="Execute the snippet with sudo",
     label="Use sudo",
     id="sudoCheckbox",
 )
@@ -128,7 +131,7 @@ def get_executor_hosts_fieldset(
             SelectElement(
                 children=options,
                 name=EXECUTOR_HOSTS_INPUT_NAME,
-                title="Select the hostname of the target system for snippet execution.",
+                description="Select the hostname of the target system for snippet execution.",
                 label="Select host",
                 required=True,
                 classes={"executorHostSelect"},
@@ -138,18 +141,63 @@ def get_executor_hosts_fieldset(
 
 
 class FilePreview(NamedTuple):
-    """A preview of a snippet's content.
+    """A preview of a snippet's content with separated frontmatter.
 
-    :param content: A preview of the snippet's content, limited to a certain number of
-        characters and lines.
+    :param preamble: Lines before frontmatter (e.g. shebang).
+    :type preamble: str
+    :param frontmatter: Raw frontmatter including `# ---` delimiters.
+    :type frontmatter: str
+    :param content: Code body after frontmatter, limited by preview settings.
     :type content: str
     :param is_truncated: Whether the preview content is truncated (i.e., if the full
         content exceeds the preview limits).
     :type is_truncated: bool
     """
 
+    preamble: str
+    frontmatter: str
     content: str
     is_truncated: bool
+
+    @property
+    def preamble_line_count(self) -> int:
+        """Return the number of lines in the preamble.
+
+        :return: Line count, or 0 if preamble is empty.
+        :rtype: int
+        """
+        if not self.preamble:
+            return 0
+        return len(self.preamble.splitlines())
+
+    @property
+    def frontmatter_line_count(self) -> int:
+        """Return the number of lines in the frontmatter.
+
+        :return: Line count, or 0 if frontmatter is empty.
+        :rtype: int
+        """
+        if not self.frontmatter:
+            return 0
+        return len(self.frontmatter.splitlines())
+
+    @property
+    def code_linenostart(self) -> int:
+        """Return the starting line number for the code body.
+
+        :return: Line number where the code body starts (1-based).
+        :rtype: int
+        """
+        return self.preamble_line_count + self.frontmatter_line_count + 1
+
+    @property
+    def full_content(self) -> str:
+        """Return the complete preview content including preamble and frontmatter.
+
+        :return: Concatenation of preamble, frontmatter, and code body.
+        :rtype: str
+        """
+        return self.preamble + self.frontmatter + self.content
 
     @classmethod
     @validate_call
@@ -162,8 +210,8 @@ class FilePreview(NamedTuple):
     ) -> Self:
         """Create a FilePreview from a path.
 
-        This function reads the file in the specified `path` and generates a preview of
-        its content, limited to a certain number of characters and lines.
+        Read the file at `path`, split frontmatter from code body, and generate a
+        preview limited by character and line counts applied only to the code body.
 
         :param path: The file path to read for generating the preview.
         :type path: str | bytes | PathLike
@@ -177,6 +225,59 @@ class FilePreview(NamedTuple):
         """
         return await cls._from_path(path, max_chars, max_lines, **_kwargs)
 
+    @staticmethod
+    async def _parse_frontmatter(
+        f: "AsyncTextIOWrapper",
+        max_scan_lines: int,
+    ) -> tuple[list[str], list[str]]:
+        """Read lines from an open file and separate preamble from frontmatter.
+
+        Stop when the closing `# ---` delimiter is found, when a non-comment
+        line is encountered before any delimiter, at EOF, or after scanning
+        `max_scan_lines` lines without finding a closing delimiter.
+
+        :param f: An open async text file handle positioned at the start.
+        :type f: AsyncTextIOWrapper
+        :param max_scan_lines: Safety bound on lines to scan for frontmatter.
+        :type max_scan_lines: int
+        :return: A `(preamble_lines, frontmatter_lines)` pair.
+        :rtype: tuple[list[str], list[str]]
+        """
+        meta = snippets_settings.META
+        preamble_lines = []
+        frontmatter_lines = []
+        in_frontmatter = False
+        lines_scanned = 0
+
+        while lines_scanned < max_scan_lines:
+            line = await f.readline()
+            if not line:
+                break
+            lines_scanned += 1
+            if meta.STOP_SEARCH_PATTERN.match(line) and not in_frontmatter:
+                preamble_lines.append(line)
+                break
+            match = meta.LINE_PATTERN.match(line)
+            if not match:
+                (frontmatter_lines if in_frontmatter else preamble_lines).append(line)
+                continue
+            matched_content = match.groupdict().get("line", match.group(0))
+            if matched_content == meta.DELIMITER:
+                frontmatter_lines.append(line)
+                if in_frontmatter:
+                    break
+                in_frontmatter = True
+            elif in_frontmatter:
+                frontmatter_lines.append(line)
+            else:
+                preamble_lines.append(line)
+
+        if in_frontmatter and lines_scanned >= max_scan_lines:
+            preamble_lines = preamble_lines + frontmatter_lines
+            frontmatter_lines = []
+
+        return preamble_lines, frontmatter_lines
+
     @classmethod
     @alru_cache(ttl=_ONE_HOUR, maxsize=16)
     async def _from_path(
@@ -184,16 +285,36 @@ class FilePreview(NamedTuple):
     ) -> Self:
         logger.debug("Generating preview for file: %s", path)
         async with aiofiles.open(path) as f:
-            content = await f.readline()
-            line_number = 1
+            preamble_raw, frontmatter_raw = await cls._parse_frontmatter(f, max_lines)
+
+            if frontmatter_raw:
+                preamble_str = "".join(preamble_raw)
+                frontmatter_str = "".join(frontmatter_raw)
+                initial_content = ""
+            else:
+                preamble_str = ""
+                frontmatter_str = ""
+                initial_content = "".join(preamble_raw)
+
+            content = initial_content
+            line_number = content.count("\n")
             while len(content) < max_chars and line_number < max_lines:
-                content += await f.readline()
+                line = await f.readline()
+                if not line:
+                    break
+                content += line
                 line_number += 1
+
             preview_content = content[:max_chars]
             is_truncated = content != preview_content or await f.tell() < await f.seek(
                 0, SEEK_END
             )
-        return cls(content=preview_content, is_truncated=is_truncated)
+        return cls(
+            preamble=preamble_str,
+            frontmatter=frontmatter_str,
+            content=preview_content,
+            is_truncated=is_truncated,
+        )
 
 
 class BaseSnippetArgs(BaseModel):
@@ -479,9 +600,11 @@ class BaseSnippet(BaseModel):
 
     def to_form(
         self,
-        executor_hosts: Iterable[tuple[str, str]],
+        executor_hosts: Iterable[tuple[str, str]] | None = None,
         form_action: str = "",
         defaults: dict[str, Any] | None = None,
+        *,
+        form_id: str = "snippetExecuteForm",
     ) -> str:
         """Generate an HTML form for executing the snippet.
 
@@ -490,7 +613,8 @@ class BaseSnippet(BaseModel):
         executor host and fields for snippet parameters.
 
         :param executor_hosts: An iterable of (value, label) tuples for executor hosts.
-        :type executor_hosts: Iterable[tuple[str, str]]
+            When ``None``, the executor host fieldset is omitted from the form.
+        :type executor_hosts: Iterable[tuple[str, str]] | None
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
@@ -498,6 +622,8 @@ class BaseSnippet(BaseModel):
             name.  When provided, matching parameter defaults are overridden before
             form generation.
         :type defaults: dict[str, Any] | None
+        :param form_id: The HTML ``id`` attribute for the ``<form>`` element.
+        :type form_id: str
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
@@ -521,6 +647,7 @@ class BaseSnippet(BaseModel):
             sudo_default=self.sudo.sudo_default,
             form_action=form_action,
             disabled=not self.can_execute,
+            form_id=form_id,
         )
 
     def get_execution_model(self) -> type[BaseSnippetArgs]:
@@ -617,13 +744,14 @@ class BaseSnippet(BaseModel):
     @ttl_cache(ttl=_ONE_HOUR, maxsize=8)
     def _to_form(
         parameters_json: str,
-        executor_hosts: frozenset[tuple[str, str]],
+        executor_hosts: frozenset[tuple[str, str]] | None = None,
         *,
         add_extra_args_field: bool = False,
         add_sudo_field: bool = False,
         sudo_default: bool = False,
         form_action: str = "",
         disabled: bool = False,
+        form_id: str = "snippetExecuteForm",
     ) -> str:
         """Generate an HTML form for executing a snippet.
 
@@ -635,57 +763,65 @@ class BaseSnippet(BaseModel):
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
         :param executor_hosts: A set of (value, label) tuples for executor hosts.
-        :type executor_hosts: frozenset[tuple[str, str]]
+            When ``None``, the executor host fieldset is omitted.
+        :type executor_hosts: frozenset[tuple[str, str]] | None
         :param add_extra_args_field: Whether to include an extra arguments field in the
-            form. Defaults to `False`.
+            form. Defaults to ``False``.
         :type add_extra_args_field: bool
         :param add_sudo_field: Whether to include a sudo checkbox in the form.
-            Defaults to `False`.
+            Defaults to ``False``.
         :type add_sudo_field: bool
         :param sudo_default: The default checked state for the sudo checkbox. Only
-            relevant when `add_sudo_field` is `True`. Defaults to `False`.
+            relevant when ``add_sudo_field`` is ``True``. Defaults to ``False``.
         :type sudo_default: bool
         :param form_action: The action URL for the form submission. Defaults to an
             empty string.
         :type form_action: str
         :param disabled: Whether to disable the form fields and submit button. Defaults
-            to `False`.
+            to ``False``.
         :type disabled: bool
+        :param form_id: The HTML ``id`` attribute for the ``<form>`` element.
+        :type form_id: str
         :return: An HTML string representing the form for executing the snippet.
         :rtype: str
         """
-        executor_hosts_fieldset = get_executor_hosts_fieldset(executor_hosts)
-        executor_hosts_fieldset.disabled = disabled
-        fieldsets = [
-            executor_hosts_fieldset,
-        ]
+        fieldsets = []
+        if executor_hosts is not None:
+            executor_hosts_fieldset = get_executor_hosts_fieldset(executor_hosts)
+            executor_hosts_fieldset.disabled = disabled
+            fieldsets.append(executor_hosts_fieldset)
         parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
         logger.debug("Snippet params: %s", parameters)
-        fields = []
+        groups = {}
         for param in parameters:
             try:
-                fields.append(param.to_form_field())
+                field = param.to_form_field()
             except ValidationError:
                 logger.warning("Invalid snippet parameter: %r", param, exc_info=True)
+                continue
+            groups.setdefault(param.group, []).append(field)
         if add_extra_args_field:
-            fields.append(EXTRA_ARGS_INPUT)
+            groups.setdefault(None, []).append(EXTRA_ARGS_INPUT)
         if add_sudo_field:
-            fields.append(
+            groups.setdefault(None, []).append(
                 CheckboxInputElement(
                     name=SUDO_INPUT_NAME,
-                    title="Execute the snippet with sudo",
+                    description="Execute the snippet with sudo",
                     label="Use sudo",
                     id="sudoCheckbox",
                     checked=sudo_default,
                 )
             )
-        logger.debug("Generated snippet form fields from params: %s", fields)
-        if fields:
+        for group_name, group_fields in groups.items():
+            legend = group_name if group_name is not None else "Parameters"
+            logger.debug(
+                "Generated snippet form fields for %r: %s", legend, group_fields
+            )
             fieldsets.append(
-                FieldsetElement(legend="Parameters", children=fields, disabled=disabled)
+                FieldsetElement(legend=legend, children=group_fields, disabled=disabled)
             )
         return FormElement(
-            id="snippetExecuteForm",
+            id=form_id,
             children=fieldsets,
             submit_button=SubmitButtonElement(
                 label="Execute",

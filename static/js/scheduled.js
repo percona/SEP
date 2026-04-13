@@ -241,6 +241,25 @@ $(document).ready(function() {
 
         const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         initializeSelect2($('select[name="cron_timezone"]'), browserTimezone);
+
+        const $newChainBuilder = $('.new-periodic-task-row .chain-builder');
+        if ($newChainBuilder.length) {
+            const selectedTask = $('.new-periodic-task-row select[name="task"]').val();
+            const instance = $newChainBuilder.data('chain-builder-instance');
+            if (instance) {
+                instance.setTaskName(selectedTask);
+            }
+        }
+    });
+
+    $('.new-periodic-task-row select[name="task"]').on('change', function() {
+        const $newChainBuilder = $('.new-periodic-task-row .chain-builder');
+        if ($newChainBuilder.length) {
+            const instance = $newChainBuilder.data('chain-builder-instance');
+            if (instance) {
+                instance.setTaskName($(this).val());
+            }
+        }
     });
 
     $('#save-button').click(function(e) {
@@ -279,7 +298,30 @@ $(document).ready(function() {
             });
         }
 
-        $('#new-periodic-task-form').submit();
+        const $newForm = $('#new-periodic-task-form');
+        $newForm.find('input[name="execute_request_chain_task_names"]').remove();
+        $newForm.find('input[name="execute_request_chain_on_failure"]').remove();
+        const $newChainBuilder = $newTaskRow.find('.chain-builder');
+        if ($newChainBuilder.length) {
+            const instance = $newChainBuilder.data('chain-builder-instance');
+            if (instance) {
+                const chain = instance.getChain();
+                if (chain.length > 0) {
+                    $('<input>', {
+                        type: 'hidden',
+                        name: 'execute_request_chain_task_names',
+                        value: JSON.stringify(chain)
+                    }).appendTo($newForm);
+                    $('<input>', {
+                        type: 'hidden',
+                        name: 'execute_request_chain_on_failure',
+                        value: instance.getChainOnFailure() ? 'true' : 'false'
+                    }).appendTo($newForm);
+                }
+            }
+        }
+
+        $newForm.submit();
         return true;
     });
 
@@ -350,6 +392,26 @@ $(document).ready(function() {
         const $form = $(`#edit-periodic-task-form-${taskId}`);
 
         $form.find('input:not([name="csrf-token"])').remove();
+
+        const $chainBuilder = $editRow.find('.chain-builder');
+        if ($chainBuilder.length) {
+            const instance = $chainBuilder.data('chain-builder-instance');
+            if (instance) {
+                const chain = instance.getChain();
+                if (chain.length > 0) {
+                    $('<input>', {
+                        type: 'hidden',
+                        name: 'execute_request_chain_task_names',
+                        value: JSON.stringify(chain)
+                    }).appendTo($form);
+                    $('<input>', {
+                        type: 'hidden',
+                        name: 'execute_request_chain_on_failure',
+                        value: instance.getChainOnFailure() ? 'true' : 'false'
+                    }).appendTo($form);
+                }
+            }
+        }
 
         const enabled = $editRow.find('.edit-periodic-task-enable-checkbox').is(':checked');
         $('<input>', {

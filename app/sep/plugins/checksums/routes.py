@@ -28,6 +28,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
+    get_chainable_tasks,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsAuthenticated,
@@ -38,9 +39,13 @@ from app.sep.plugins.checksums.deps import (
     ChecksumsGeneratedTask,
     ChecksumsTask,
     extract_service_info,
+    get_checksums_api_task_responses,
     get_checksums_index_context,
+    get_checksums_task,
+    get_checksums_task_status,
     parse_checksums_task_args,
 )
+from app.sep.plugins.checksums.models import ChecksumTaskResponse
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -59,6 +64,43 @@ async def checksums_index(
         request=request,
         name="checksums/index.html.j2",
         context=context,
+    )
+
+
+@router.get(
+    "/api/",
+    dependencies=[IsAuthenticated],
+    response_model=list[ChecksumTaskResponse],
+)
+async def checksums_api_list(
+    tasks_api: TaskAPI,
+    service_type: ServiceTypeEnum | None = None,
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[ChecksumTaskResponse]:
+    """List checksum tasks as JSON."""
+    return await get_checksums_api_task_responses(
+        tasks_api,
+        service_type=service_type,
+        status=status,
+    )
+
+
+@router.get(
+    "/api/{task_name}",
+    dependencies=[IsAuthenticated],
+    response_model=ChecksumTaskResponse,
+)
+async def checksums_api_detail(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> ChecksumTaskResponse:
+    """Retrieve a checksum task as JSON."""
+    task = await get_checksums_task(task_name, tasks_api)
+    task_status = await get_checksums_task_status(task.name, tasks_api)
+    return ChecksumTaskResponse(
+        **task.model_dump(),
+        service_type=ServiceTypeEnum.MYSQL,
+        status=task_status,
     )
 
 
@@ -137,6 +179,9 @@ async def checksums_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+    context["chainable_tasks"] = await get_chainable_tasks(
+        tasks_api, task.owner, meta["target"], task.name
+    )
     return templates.TemplateResponse(
         request=request,
         name="checksums/details.html.j2",
@@ -153,12 +198,18 @@ async def checksums_execute(
     task: ChecksumsTask,
     tasks_api: TaskAPI,
     eta: Annotated[FutureDatetime | None, Form()] = None,
+    chain_task_names: Annotated[list[str] | None, Form()] = None,
+    chain_on_failure: Annotated[bool | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute checksums task."""
     await tasks_api.post(
         f"/execute/{task.name}",
-        json={"eta": eta},
-    )  # TODO: send meta form fields  # noqa: TD002, TD003
+        json={
+            "eta": eta,
+            "chain_task_names": chain_task_names,
+            "chain_on_failure": chain_on_failure,
+        },
+    )
     return RedirectResponse("/checksums", status_code=status.HTTP_303_SEE_OTHER)
 
 

@@ -19,6 +19,7 @@ import socket
 import subprocess
 import sys
 import time
+import tempfile
 from contextlib import suppress
 from enum import auto, IntEnum, Enum
 from getpass import getuser
@@ -32,6 +33,7 @@ import yaml
 from botocore.exceptions import ClientError
 from packaging.version import Version
 from pymysql import Error, InternalError, OperationalError, ProgrammingError
+from filelock import FileLock, Timeout
 
 BYTES_PER_MB = 1024**2
 ST_BLOCKS_SIZE = 512
@@ -76,6 +78,7 @@ EXCLUDE_FILES = [MD5SUM_FILE, UPLOADME_FILE]
 GPG_BIN = os.getenv("PERCONA_BACKUP_GPG_BIN", "/usr/bin/gpg")
 MYDUMPER_BIN = os.getenv("PERCONA_BACKUP_MYDUMPER_BIN", "/usr/bin/mydumper")
 RSYNC_BIN = "/usr/bin/rsync"
+GSUTIL_BIN = os.getenv('PERCONA_BACKUP_GSUTIL_BIN', '/usr/local/bin/gsutil')
 
 # GPG status codes from --status-fd output (format: [GNUPG:] STATUS_CODE)
 # Note: GPGME error codes (https://www.gnupg.org/documentation/manuals/gpgme/Error-Codes.html)
@@ -1301,7 +1304,7 @@ class Upload(Backup):
     ) -> None:
         """Initialize the Upload object.
 
-        :param upload_type: Type of upload (e.g., "S3", "Rsync").
+        :param upload_type: Type of upload (e.g., "S3", "Rsync","GS").
         :param upload_provider: Class handling the specific upload method.
         :param settings: Server/backup settings.
         :param logger: Logger instance.
@@ -1680,6 +1683,88 @@ class S3UploadProvider:
 
         return f"s3://{self.bucket_name}/{full_prefix}"
 
+class GSUploadProvider:
+    """Google Cloud Storage upload."""
+
+    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+        """Initialize GSUploadProvider.
+
+        :param settings: Backup/server settings.
+        :param logger: Logger instance.
+        :raises BackupError: If GS_BUCKET not set.
+        """
+        self.logger = logger
+        host = settings.get("HOST", "localhost")
+        self.alias = settings.get("ALIAS", host)
+        self.gs_bucket = settings.get("GS_BUCKET")
+        self.backup_type = settings.get('BACKUP_TYPE')
+        if self.gs_bucket is None:
+            msg = 'GS_BUCKET is not set.'
+            raise BackupError(msg)
+
+        logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
+        os.makedirs(logging_dir, exist_ok=True)
+        log_file = os.path.join(logging_dir, 'gsutil-%s-%s-%s.log' %
+                    (self.alias,
+                     self.backup_type,
+                     time.strftime('%Y%m%d')
+                    )
+                       )
+        self.log_stream = open(log_file, 'a')
+
+        bucket_str = self.gs_bucket
+        if bucket_str.startswith("gs://"):
+            bucket_str = bucket_str[5:]
+        parts = bucket_str.split("/", 1)
+        self.bucket_name = parts[0]
+        self.bucket_prefix = parts[1] if len(parts) > 1 else ""
+
+    def upload(self, source_dir: str, dest_dir: str) -> str:
+        """Upload directory to GS.
+
+        :param source_dir: Local source directory.
+        :param dest_dir: Destination path (relative) on GS.
+        :return: GS URI of the uploaded backup.
+        :raises BackupError: If GS upload fails.
+        """
+        source_path = Path(source_dir)
+        full_prefix = (
+            str(Path(self.bucket_prefix) / dest_dir)
+            if self.bucket_prefix else dest_dir
+        )
+        dest_path = f"gs://{self.bucket_name}/{full_prefix}"
+        gs_cmd = [GSUTIL_BIN, 'rsync', '-r', str(source_path), dest_path]
+        self.logger.info('Uploading backup...')
+        self.logger.info('Running: %s', ' '.join(gs_cmd))
+
+        proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            msg = f"GS upload failed. Error: {err}"
+            raise BackupError(msg)
+
+        if self.backup_type not in ["B", "O"] and not (
+            self.backup_type == "X" and "_incrementals" in dest_dir
+        ):
+            with tempfile.NamedTemporaryFile("w", delete=False) as tmpf:
+                tmpf.write(dest_path)
+                tmpf.flush()
+                latest_file_local_path = tmpf.name
+            try:
+                latest_file_remote_dir = (
+                       f"gs://{self.bucket_name}/{Path(full_prefix).parent}/latest"
+                )
+                gs_cmd = [GSUTIL_BIN,'cp',latest_file_local_path, latest_file_remote_dir]
+                proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
+                _, err = proc.communicate()
+                if proc.returncode != 0:
+                    msg = f"GS upload failed. Error: {err}"
+                    raise BackupError(msg)
+            finally:
+                if Path(latest_file_local_path).exists():
+                    Path(latest_file_local_path).unlink()
+
+        return dest_path
 
 class MyDumperRunner(multiprocessing.Process):
     """Mydumper multiprocessing class to run backups in parallel."""
@@ -1720,25 +1805,39 @@ class MyDumperRunner(multiprocessing.Process):
         self.logger.info("Total servers: %s", len(servers))
 
         for server_data in servers:
-            bkp = MyDumper(server_data, logger=self.logger)
+            alias = server_data.get("ALIAS", server_data.get("HOST", "localhost"))
+            # Get a lock per server with alias in the lockfile name
+            lockfile_name = os.path.join(logging_dir, f".lock_mydumper_{alias}")
+            lock = FileLock(lockfile_name, timeout=600)
+
             try:
-                bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=1)
-                bkp.run()
-                bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=0)
-            except BackupError as exc:
-                self.logger.exception(exc.message)
-                self.logger.exception("Backup failed for this host.")
-                bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
-                bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
-                sys.exit(1)
-            except:
-                self.logger.exception("Unhandled exception occurred.")
-                bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occured.")
-                bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
-                sys.exit(1)
+                self.logger.info("Acquiring lock for %s", alias)
+                should_exit = False
+                with lock:
+                    bkp = MyDumper(server_data, logger=self.logger)
+                    try:
+                        bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=1)
+                        bkp.run()
+                        bkp.textfile_collector_write_status(BackupNotifyStatus.OK, backup_running=0)
+                    except BackupError as exc:
+                        self.logger.exception(exc.message)
+                        self.logger.exception("Backup failed for this host.")
+                        bkp.notify(BackupNotifyStatus.CRITICAL, exc.message)
+                        bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
+                        should_exit = True
+                    except Exception:
+                        self.logger.exception("Unhandled exception occurred.")
+                        bkp.notify(BackupNotifyStatus.CRITICAL, "Unhandled exception occurred.")
+                        bkp.textfile_collector_write_status(BackupNotifyStatus.CRITICAL, backup_running=0)
+                        should_exit = True
 
-            logging_set_host(None, LOGGING_NAME)
+                    logging_set_host(None, LOGGING_NAME)
 
+                if should_exit:
+                    sys.exit(1)
+            except Timeout:
+                self.logger.warning("Another instance of mydumper backup for %s currently holds the lock.", alias)
+                sys.exit(1)
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         self.logger.info(
@@ -1876,6 +1975,13 @@ class MyDumper(Backup):
                 MyDumperUpload(
                     upload_type=upload_type,
                     upload_provider=S3UploadProvider,
+                    settings=self.server_setting,
+                    logger=self.logger,
+                ).run()
+            elif upload_type == "gsutil":
+                MyDumperUpload(
+                    upload_type=upload_type,
+                    upload_provider=GSUploadProvider,
                     settings=self.server_setting,
                     logger=self.logger,
                 ).run()
