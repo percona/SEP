@@ -110,9 +110,7 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
 
     @validate_call
     async def send_alert(self, alert: PagerDutyAlert) -> None:
-        """Send an alert to PagerDuty.
-
-        Send an alert to PagerDuty using the Events API v2.
+        """Send an alert to PagerDuty using the Events API v2.
 
         :param alert: The alert to be sent.
         :type alert: PagerDutyAlert

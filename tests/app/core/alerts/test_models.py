@@ -180,9 +180,12 @@ class TestBaseAlertProviderResolve:
 
     @pytest.mark.asyncio
     async def test_resolve_alert_is_noop_by_default(self):
-        """Verify resolve_alert does nothing on the base provider."""
+        """Verify the base ``resolve_alert`` does nothing.
+
+        Call ``BaseAlertProvider.resolve_alert`` directly (unbound) so the
+        ``DummyProvider`` override is bypassed.
+        """
         provider = DummyProvider()
         provider.resolved = []
         await BaseAlertProvider.resolve_alert(provider, "some-key")
-        # DummyProvider overrides resolve_alert, so call the base directly
-        # The base should not raise or produce side effects
+        assert provider.resolved == []
