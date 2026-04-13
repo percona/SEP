@@ -112,10 +112,10 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
     async def send_alert(self, alert: PagerDutyAlert) -> None:
         """Send an alert to PagerDuty.
 
-        This method sends an alert to PagerDuty using the Events API v2.
+        Send an alert to PagerDuty using the Events API v2.
 
         :param alert: The alert to be sent.
-        :type alert: Alert
+        :type alert: PagerDutyAlert
         """
         pagerduty_api = await self.get_api()
         await pagerduty_api.post(
@@ -131,5 +131,26 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
                     exclude={"dedup_key", "images", "links"},
                     exclude_none=True,
                 ),
+            },
+        )
+
+    @validate_call
+    async def resolve_alert(self, dedup_key: str) -> None:
+        """Resolve a PagerDuty alert by dedup key.
+
+        Send an ``event_action: "resolve"`` event to the PagerDuty Events API
+        v2. Resolving a non-existent incident is a harmless no-op (PD returns
+        202).
+
+        :param dedup_key: The deduplication key of the alert to resolve.
+        :type dedup_key: str
+        """
+        pagerduty_api = await self.get_api()
+        await pagerduty_api.post(
+            "enqueue",
+            json={
+                "routing_key": self.routing_key.get_secret_value(),
+                "event_action": "resolve",
+                "dedup_key": dedup_key,
             },
         )

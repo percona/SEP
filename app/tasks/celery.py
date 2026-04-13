@@ -138,14 +138,20 @@ def execute_task_by_name(
     try:
         task_history = celery.loop.run_until_complete(dispatch_queue_item(task_history))
     except BaseNomadException:
-        alert_msg = f"Failed to dispatch periodic task {periodic_task_name or task_name}: error getting a response from Nomad"
+        alert_msg = (
+            f"Failed to dispatch periodic task "
+            f"{periodic_task_name or task_name}: "
+            f"error getting a response from Nomad"
+        )
         logger.exception(alert_msg)
         if task_history.task.alert_on_fail:
+            dedup_key = f"task:{task_name}:{task_history.execution_request.target}"
             alert_data = {
                 "summary": alert_msg,
                 "source": f"{task_name}:{task_history.execution_request.target}",
                 "severity": AlertSeverity.ERROR,
                 "class": "task_dispatch_failure",
+                "dedup_key": dedup_key,
             }
             if periodic_task_name:
                 alert_data["source"] = f"{periodic_task_name}:{alert_data['source']}"

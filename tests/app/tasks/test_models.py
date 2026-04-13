@@ -551,7 +551,7 @@ class TestTaskHistory:
     async def test_alert_for_status_failed(
         self, task_instance: Task, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert alert_for_status triggers ERROR alert for FAILED status."""
+        """Assert alert_for_status triggers ERROR alert with dedup key for FAILED."""
         history = TaskHistory(
             id=1,
             task_id=task_instance.id,
@@ -567,12 +567,13 @@ class TestTaskHistory:
             assert alert_data["severity"] == AlertSeverity.ERROR
             assert alert_data["class"] == "task_failure"
             assert "failed" in alert_data["summary"]
+            assert alert_data["dedup_key"] == "task:test-task:node-1"
 
     @pytest.mark.asyncio
     async def test_alert_for_status_lost(
         self, task_instance: Task, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert alert_for_status triggers WARNING alert for LOST status."""
+        """Assert alert_for_status triggers WARNING alert with dedup key for LOST."""
         history = TaskHistory(
             id=1,
             task_id=task_instance.id,
@@ -587,12 +588,13 @@ class TestTaskHistory:
             alert_data = mock_trigger.call_args[0][0]
             assert alert_data["severity"] == AlertSeverity.WARNING
             assert alert_data["class"] == "task_lost"
+            assert alert_data["dedup_key"] == "task:test-task:node-1"
 
     @pytest.mark.asyncio
-    async def test_alert_for_status_success_no_alert(
+    async def test_alert_for_status_success_resolves(
         self, task_instance: Task, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert alert_for_status returns early for SUCCESS status."""
+        """Assert alert_for_status resolves the alert on SUCCESS status."""
         history = TaskHistory(
             id=1,
             task_id=task_instance.id,
@@ -601,9 +603,67 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.SUCCESS,
         )
         mock_trigger = AsyncMock()
-        with patch.object(AlertService, "trigger", mock_trigger):
+        mock_resolve = AsyncMock()
+        with (
+            patch.object(AlertService, "trigger", mock_trigger),
+            patch.object(AlertService, "resolve", mock_resolve),
+        ):
             await history.alert_for_status()
             mock_trigger.assert_not_called()
+            mock_resolve.assert_called_once_with("task:test-task:node-1")
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_stopped_no_action(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert alert_for_status takes no action for STOPPED status."""
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.STOPPED,
+        )
+        mock_trigger = AsyncMock()
+        mock_resolve = AsyncMock()
+        with (
+            patch.object(AlertService, "trigger", mock_trigger),
+            patch.object(AlertService, "resolve", mock_resolve),
+        ):
+            await history.alert_for_status()
+            mock_trigger.assert_not_called()
+            mock_resolve.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_dedup_key_consistent(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert dedup key is identical for FAILED and SUCCESS of same task."""
+        failed_history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        success_history = TaskHistory(
+            id=2,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        mock_trigger = AsyncMock()
+        mock_resolve = AsyncMock()
+        with (
+            patch.object(AlertService, "trigger", mock_trigger),
+            patch.object(AlertService, "resolve", mock_resolve),
+        ):
+            await failed_history.alert_for_status()
+            await success_history.alert_for_status()
+            trigger_dedup = mock_trigger.call_args[0][0]["dedup_key"]
+            resolve_dedup = mock_resolve.call_args[0][0]
+            assert trigger_dedup == resolve_dedup
 
 
 class TestTaskHistoryResponse:

@@ -707,7 +707,20 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         return PIIEntity.decode_selection(self.anonymize_mask)
 
     async def alert_for_status(self) -> None:
-        """Trigger an alert for failing statuses."""
+        """Trigger or resolve an alert based on the task execution status.
+
+        Generate a deterministic dedup key from the task name and target so
+        that PagerDuty deduplicates successive failures into a single incident
+        and can resolve it when the task succeeds.
+        """
+        dedup_key = (
+            f"task:{self.execution_request.task}:{self.execution_request.target}"
+        )
+
+        if self.status == TaskHistoryStatusEnum.SUCCESS:
+            await alert_service.resolve(dedup_key)
+            return
+
         if self.status == TaskHistoryStatusEnum.FAILED:
             summary_action = "failed"
             severity = AlertSeverity.ERROR
@@ -720,10 +733,14 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
             return
 
         alert_data = {
-            "summary": f"Task {self.execution_request.task!r} ({self.id}) {summary_action} on node {self.execution_request.target!r}.",
+            "summary": (
+                f"Task {self.execution_request.task!r} ({self.id}) "
+                f"{summary_action} on node {self.execution_request.target!r}."
+            ),
             "source": f"{self.execution_request.task}:{self.id}:{self.execution_request.target}",
             "severity": severity,
             "class": alert_class,
+            "dedup_key": dedup_key,
         }
         await alert_service.trigger(alert_data)
 

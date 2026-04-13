@@ -32,10 +32,15 @@ class DummyProvider(BaseAlertProvider):
     """Define dummy alert provider."""
 
     sent: list[Alert] = []
+    resolved: list[str] = []
 
     async def send_alert(self, alert: Alert) -> None:
         """Add alert to sent list."""
         self.sent.append(alert)
+
+    async def resolve_alert(self, dedup_key: str) -> None:
+        """Add dedup_key to resolved list."""
+        self.resolved.append(dedup_key)
 
 
 @pytest.fixture
@@ -126,3 +131,58 @@ class TestAlertService:
         logger_mock.exception.assert_called_with(
             "Failed to send alert via %s: %s", "BrokenProvider", dummy_alert
         )
+
+
+class TestAlertServiceResolve:
+    """Define tests for AlertService.resolve."""
+
+    @pytest.mark.asyncio
+    async def test_resolve_no_providers_logs_warning(self, logger_mock):
+        """Verify warning is logged when no providers are registered."""
+        svc = AlertService(providers=set())
+        await svc.resolve("task:test:node-1")
+        logger_mock.warning.assert_called_with("No alert providers registered.")
+
+    @pytest.mark.asyncio
+    async def test_resolve_calls_all_providers(self, dummy_provider, logger_mock):
+        """Verify resolve_alert is called on all registered providers."""
+        svc = AlertService(providers={dummy_provider})
+        await svc.resolve("task:test:node-1")
+        assert dummy_provider.resolved == ["task:test:node-1"]
+        logger_mock.info.assert_called_with(
+            "Alert resolved via %s: dedup_key=%s",
+            "DummyProvider",
+            "task:test:node-1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_resolve_handles_provider_exception(self, logger_mock):
+        """Ensure exceptions in providers are caught and logged during resolve."""
+
+        class BrokenProvider(BaseAlertProvider):
+            async def send_alert(self, alert: Alert) -> None:
+                pass
+
+            async def resolve_alert(self, dedup_key: str) -> None:
+                raise RuntimeError("boom")
+
+        svc = AlertService(providers={BrokenProvider()})
+        await svc.resolve("task:test:node-1")
+        logger_mock.exception.assert_called_with(
+            "Failed to resolve alert via %s: dedup_key=%s",
+            "BrokenProvider",
+            "task:test:node-1",
+        )
+
+
+class TestBaseAlertProviderResolve:
+    """Define tests for BaseAlertProvider.resolve_alert default no-op."""
+
+    @pytest.mark.asyncio
+    async def test_resolve_alert_is_noop_by_default(self):
+        """Verify resolve_alert does nothing on the base provider."""
+        provider = DummyProvider()
+        provider.resolved = []
+        await BaseAlertProvider.resolve_alert(provider, "some-key")
+        # DummyProvider overrides resolve_alert, so call the base directly
+        # The base should not raise or produce side effects
