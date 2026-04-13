@@ -122,6 +122,9 @@ def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
     :return: The parsed connectivity check result.
     :rtype: ConnectivityCheckResponse
     """
+    if task_history.id is None:
+        raise RuntimeError("_parse_check_result called with unsaved TaskHistory")
+
     if task_history.status == TaskHistoryStatusEnum.FAILED:
         stderr = ""
         for log in task_history.iter_logs(step="run-script"):
