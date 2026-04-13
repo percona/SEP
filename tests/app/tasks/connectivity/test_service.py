@@ -144,7 +144,7 @@ class TestCheckConnectivity:
 
         with (
             patch(
-                "app.tasks.connectivity.service.TaskManager.retrieve_by_name",
+                "app.tasks.connectivity.service.get_executable_task_by_name",
                 new=AsyncMock(return_value=task),
             ),
             patch(
@@ -192,7 +192,7 @@ class TestCheckConnectivity:
 
         with (
             patch(
-                "app.tasks.connectivity.service.TaskManager.retrieve_by_name",
+                "app.tasks.connectivity.service.get_executable_task_by_name",
                 new=AsyncMock(return_value=task),
             ),
             patch(
@@ -239,7 +239,7 @@ class TestCheckConnectivity:
 
         with (
             patch(
-                "app.tasks.connectivity.service.TaskManager.retrieve_by_name",
+                "app.tasks.connectivity.service.get_executable_task_by_name",
                 new=AsyncMock(return_value=task),
             ),
             patch(
@@ -281,7 +281,7 @@ class TestCheckConnectivity:
 
         with (
             patch(
-                "app.tasks.connectivity.service.TaskManager.retrieve_by_name",
+                "app.tasks.connectivity.service.get_executable_task_by_name",
                 new=AsyncMock(return_value=task),
             ),
             patch(
@@ -328,7 +328,7 @@ class TestCheckConnectivity:
 
         with (
             patch(
-                "app.tasks.connectivity.service.TaskManager.retrieve_by_name",
+                "app.tasks.connectivity.service.get_executable_task_by_name",
                 new=AsyncMock(return_value=task),
             ),
             patch(
@@ -363,7 +363,7 @@ class TestCheckConnectivity:
 
         with (
             patch(
-                "app.tasks.connectivity.service.TaskManager.retrieve_by_name",
+                "app.tasks.connectivity.service.get_executable_task_by_name",
                 new=AsyncMock(return_value=task),
             ),
             patch(
