@@ -27,6 +27,7 @@ from nomad.api.exceptions import BaseNomadException
 
 from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
+from app.tasks.connectivity.routes import router as connectivity_router
 from app.tasks.db.seed import init_tasks_db
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.periodic.routes import router as periodic_router
@@ -58,6 +59,7 @@ lifespan = tasks_lifespan
 tasks_app = create_app(
     tasks_router,
     periodic_router,
+    connectivity_router,
     lifespan=lifespan,
     backend_cors_origins=tasks_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,
