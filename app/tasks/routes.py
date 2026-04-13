@@ -239,13 +239,17 @@ async def execute_task_name(
     return await dispatch_queue_item(queue_item, session)
 
 
-@router.get("/history/", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/history/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PaginatedResponse[TaskHistoryResponse],
+)
 async def list_task_history(
     session: SessionDep,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     offset: int = DEFAULT_PAGINATION_OFFSET,
     limit: int = DEFAULT_PAGINATION_LIMIT,
-) -> PaginatedResponse[TaskHistoryResponse]:
+) -> PaginatedResponse[TaskHistory]:
     """List all task history records."""
     logger.debug("Listing task history")
     return await TaskHistoryManager.list_paginated(
