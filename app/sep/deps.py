@@ -606,8 +606,8 @@ async def get_executor_hosts_context(
     :rtype: ExecutorHostsContext
     """
     try:
-        nodes = await inventory_api.get("/")
-        display_names = {node["address"]: node["name"] for node in nodes}
+        response = await inventory_api.get("/")
+        display_names = {node["address"]: node["name"] for node in response["items"]}
     except (HTTPException, TypeError, KeyError, OSError):
         logger.warning(
             "Failed to fetch inventory nodes for display names", exc_info=True
@@ -681,9 +681,10 @@ async def get_tasks_context(
         if owner in {TaskOwner.BACKUP_PG}
         else ServiceTypeEnum.MYSQL
     )
-    services = await inventory_api.get(
+    response = await inventory_api.get(
         "/services/", params={"service_type": service_type}
     )
+    services = response["items"]
 
     tasks = []
     history_tasks = []

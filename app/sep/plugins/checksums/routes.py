@@ -159,9 +159,10 @@ async def checksums_detail(
     context["task"] = task_data
 
     try:
-        services = await inventory_api.get(
+        response = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
         )
+        services = response["items"]
     except HTTPException as exc:
         services = []
         logger.warning("Failed to get services: %s", exc)

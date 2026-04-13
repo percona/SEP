@@ -63,7 +63,9 @@ def test_backups_detail(
 ):
     """Test GET /backup-pg/{task_name} route."""
     mock_task_api_dep.get = AsyncMock(side_effect=[{}, {}, {}, [], []])
-    mock_inventory_api_dep.get = AsyncMock(return_value=[])
+    mock_inventory_api_dep.get = AsyncMock(
+        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+    )
 
     response = test_client.get(f"/backup-pg/{created_task.name}")
 

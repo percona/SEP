@@ -132,10 +132,10 @@ async def pg_backups_detail(
     ).as_template_list()
 
     try:
-        services = await inventory_api.get(
+        response = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.POSTGRESQL}
         )
-        context["services"] = services
+        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

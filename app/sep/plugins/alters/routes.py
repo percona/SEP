@@ -208,9 +208,10 @@ async def alters_detail(
     task_data.update(parse_alters_task_args(meta))
 
     try:
-        services = await inventory_api.get(
+        response = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
         )
+        services = response["items"]
     except HTTPException as exc:
         services = []
         logger.warning("Failed to get services: %s", exc)

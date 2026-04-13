@@ -131,10 +131,10 @@ async def restores_detail(
     ).as_template_list()
 
     try:
-        services = await inventory_api.get(
+        response = await inventory_api.get(
             "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
         )
-        context["services"] = services
+        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

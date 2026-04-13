@@ -154,7 +154,9 @@ async def test_prepare_sync(created_node, mock_remote_api, mocker):
         new_callable=AsyncMock,
     )
     mock_get_sync_item.side_effect = [mock_sync_item, mock_sync_item]
-    mock_remote_api.get.side_effect = [[created_node.model_dump()]]
+    mock_remote_api.get.side_effect = [
+        {"items": [created_node.model_dump()], "total": 1, "offset": 0, "limit": 50},
+    ]
 
     await syncer.prepare_sync(SyncInventoryEntityTypeEnum.INVENTORY, None)
 
