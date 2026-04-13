@@ -22,7 +22,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.core.pmm import annotate_task_event, create_pmm_annotation
-from app.tasks.models import TaskExecutionRequest, TaskHistoryStatusEnum
+from app.tasks.models import TaskExecutionRequest, TaskHistory, TaskHistoryStatusEnum
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def queue_item_factory():
         status=TaskHistoryStatusEnum.RUNNING,
         meta=None,
     ):
-        queue_item = MagicMock()
+        queue_item = MagicMock(spec=TaskHistory)
         queue_item.execution_request = TaskExecutionRequest(
             task=task,
             target=target,
