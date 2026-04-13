@@ -21,6 +21,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
@@ -34,8 +35,10 @@ from app.sep.deps import (
     IsAuthenticated,
     IsCsrfValidated,
     SessionDep,
+    TaskAPI,
 )
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
+from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.inventory.deps import SyncersDep
 from app.sep.plugins.inventory.sync import (
@@ -48,6 +51,14 @@ from app.sep.plugins.inventory.sync import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
+
+CONNECTABLE_SERVICE_TYPES = frozenset(
+    {
+        ServiceTypeEnum.MYSQL,
+        ServiceTypeEnum.POSTGRESQL,
+        ServiceTypeEnum.MONGODB,
+    }
+)
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -160,6 +171,7 @@ async def service_detail(
         SyncInventoryEntityTypeEnum.SERVICE,
     )
     context["can_sync"] = any(syncer.can_sync_service(service) for syncer in syncers)
+    context["can_check_connectivity"] = service.type in CONNECTABLE_SERVICE_TYPES
     return templates.TemplateResponse(
         request=request,
         name="inventory/service-detail.html.j2",
@@ -178,6 +190,60 @@ async def sync_service(
 ) -> RedirectResponse:
     """Start service sync as a background task."""
     background_tasks.add_task(run_service_sync, service, user.access_token, *syncers)
+    return RedirectResponse(
+        f"/inventory/services/{service.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post(
+    "/services/{service_id}/check-connectivity/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+)
+async def check_service_connectivity(
+    request: Request,
+    service: CreatedServiceDep,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Check database connectivity for a service via Nomad."""
+    if service.node is None or service.port is None:
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            "missing node or port information",
+        )
+        return RedirectResponse(
+            f"/inventory/services/{service.id}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    try:
+        result = await tasks_api.post(
+            "/connectivity-check/",
+            json={
+                "target": service.node.name,
+                "host": service.node.address,
+                "port": service.port,
+                "service_type": service.type.name,
+            },
+        )
+        if result.get("success"):
+            messages.success(
+                request,
+                f"Connectivity check passed for {service.name}",
+            )
+        else:
+            messages.error(
+                request,
+                f"Connectivity check failed for {service.name}: "
+                f"{result.get('error', 'Unknown error')}",
+            )
+    except Exception:
+        logger.exception("Connectivity check failed for service %s", service.id)
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            "could not reach the Tasks API",
+        )
     return RedirectResponse(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,

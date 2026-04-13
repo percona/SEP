@@ -28,6 +28,7 @@ from app.sep.deps import (
     get_created_schema,
     get_created_service,
     get_inventory_api,
+    get_tasks_api,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.main import sep_app
@@ -338,3 +339,155 @@ def test_table_delete(test_client, created_table, mock_inventory_api_dep):
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == f"/inventory/schemas/{returned_schema_id}"
+
+
+class TestCheckServiceConnectivity:
+    """Test the check_service_connectivity route."""
+
+    @pytest.fixture
+    def mock_tasks_api_dep(self) -> AsyncMock:
+        """Mock the TaskAPI dependency for connectivity checks."""
+        mock = AsyncMock(spec=RemoteAPI)
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock
+        yield mock
+        sep_app.dependency_overrides = {}
+
+    @pytest.fixture
+    def mysql_service(self, created_node) -> CreatedService:
+        """Return a MySQL service with a node and port."""
+        service = CreatedServiceFactory.build(type=ServiceTypeEnum.MYSQL, port=3306)
+        service.node = created_node
+        return service
+
+    @pytest.fixture
+    def _mock_mysql_service_dep(self, mysql_service):
+        """Mock CreatedServiceDep with a MySQL service."""
+        sep_app.dependency_overrides[get_created_service] = lambda: mysql_service
+        yield
+        sep_app.dependency_overrides = {}
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_success(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Verify redirect with success flash on a passing connectivity check."""
+        mock_tasks_api_dep.post.return_value = {
+            "success": True,
+            "error": None,
+            "task_history_id": 42,
+        }
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        mock_tasks_api_dep.post.assert_awaited_once()
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_failure(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Verify redirect with error flash when connectivity check fails."""
+        mock_tasks_api_dep.post.return_value = {
+            "success": False,
+            "error": "Connection refused",
+            "task_history_id": 43,
+        }
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_tasks_api_error(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Verify redirect with error flash when Tasks API raises an exception."""
+        mock_tasks_api_dep.post.side_effect = ConnectionError("timeout")
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_service_without_node(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Verify error flash when service has no associated node."""
+        mysql_service.node = None
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_service_without_port(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Verify error flash when service has no port."""
+        mysql_service.port = None
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "service_type",
+        [
+            ServiceTypeEnum.MYSQL,
+            ServiceTypeEnum.POSTGRESQL,
+            ServiceTypeEnum.MONGODB,
+        ],
+    )
+    @pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
+    def test_connectivity_button_visible_for_connectable_types(
+        self,
+        test_client,
+        created_node,
+        service_type,
+    ):
+        """Verify the connectivity check button renders for connectable service types."""
+        service = CreatedServiceFactory.build(type=service_type, port=3306)
+        service.node = created_node
+        sep_app.dependency_overrides[get_created_service] = lambda: service
+        try:
+            response = test_client.get(f"/inventory/services/{service.id}")
+            assert response.status_code == status.HTTP_200_OK
+            assert "check-connectivity" in response.text
+        finally:
+            sep_app.dependency_overrides.pop(get_created_service, None)
+
+    @pytest.mark.parametrize(
+        "service_type",
+        [
+            ServiceTypeEnum.PROXYSQL,
+            ServiceTypeEnum.HAPROXY,
+            ServiceTypeEnum.EXTERNAL,
+        ],
+    )
+    @pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
+    def test_connectivity_button_hidden_for_non_connectable_types(
+        self,
+        test_client,
+        created_node,
+        service_type,
+    ):
+        """Verify the connectivity check button does not render for non-connectable types."""
+        service = CreatedServiceFactory.build(type=service_type, port=3306)
+        service.node = created_node
+        sep_app.dependency_overrides[get_created_service] = lambda: service
+        try:
+            response = test_client.get(f"/inventory/services/{service.id}")
+            assert response.status_code == status.HTTP_200_OK
+            assert "check-connectivity" not in response.text
+        finally:
+            sep_app.dependency_overrides.pop(get_created_service, None)
