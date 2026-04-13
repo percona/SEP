@@ -17,7 +17,6 @@
 
 import asyncio
 import json
-import logging
 from pathlib import Path
 
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -28,7 +27,8 @@ from app.tasks.connectivity.models import (
     ConnectivityCheckWrite,
     REQUIREMENTS_BY_SERVICE_TYPE,
 )
-from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.crud import TaskHistoryManager
+from app.tasks.deps import get_executable_task_by_name
 from app.tasks.models import (
     SYSTEM_USER,
     TaskExecutionRequest,
@@ -36,8 +36,6 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
     TaskLogType,
 )
-
-logger = logging.getLogger(__name__)
 
 PAYLOAD_PATH = Path(__file__).parent / "payload.py"
 POLL_INTERVAL = 2
@@ -56,7 +54,7 @@ async def check_connectivity(
     :return: The connectivity check result.
     :rtype: ConnectivityCheckResponse
     """
-    task = await TaskManager.retrieve_by_name(session, name="run-python")
+    task = await get_executable_task_by_name(session, "run-python")
 
     config = json.dumps(
         {

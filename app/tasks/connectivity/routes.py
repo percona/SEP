@@ -25,8 +25,7 @@ from app.tasks.connectivity.models import (
     ConnectivityCheckWrite,
 )
 from app.tasks.connectivity.service import check_connectivity
-from app.tasks.crud import TaskManager
-from app.tasks.deps import SessionDep
+from app.tasks.deps import get_executable_task_by_name, SessionDep
 
 router = APIRouter(tags=["connectivity"])
 
@@ -50,7 +49,7 @@ async def connectivity_check(
     :return: The connectivity check result.
     :rtype: ConnectivityCheckResponse
     """
-    task = await TaskManager.retrieve_by_name(session, name="run-python")
+    task = await get_executable_task_by_name(session, "run-python")
     executor = get_executor_for_task(task)
     if request.target not in executor.get_hosts():
         raise HTTPBadRequestException(
