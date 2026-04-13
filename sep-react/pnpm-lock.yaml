@@ -64,7 +64,7 @@ importers:
         specifier: ^7.0.0
         version: 7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@percona/percona-ui':
-        specifier: ^1.0.0
+        specifier: ^1.0.14
         version: 1.0.14(5445d939df56f452e90e94cb21673e4c)
       '@sep/api':
         specifier: workspace:*

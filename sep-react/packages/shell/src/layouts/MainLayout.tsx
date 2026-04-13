@@ -4,12 +4,12 @@ import Container from '@mui/material/Container';
 import { Outlet } from 'react-router-dom';
 import TheHeader from './TheHeader';
 import TheSidebar from './TheSidebar';
-import { useNavigation } from '../contexts/navigation';
+// import { useNavigation } from '../contexts/navigation';
 
-const DRAWER_WIDTH = 260;
+// const DRAWER_WIDTH = 260;
 
 export default function MainLayout() {
-  const nav = useNavigation();
+  // const nav = useNavigation();
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
@@ -24,7 +24,7 @@ export default function MainLayout() {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.leavingScreen,
             }),
-          ml: nav.sidebarOpen ? 0 : `-${DRAWER_WIDTH}px`,
+          // ml: nav.sidebarOpen ? 0 : `-${DRAWER_WIDTH}px`,
         }}
       >
         <Toolbar /> {/* spacer for AppBar */}

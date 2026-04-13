@@ -37,18 +37,18 @@ export const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
     palette: {
       ...pmm.palette,
       mode,
-      primary: {
-        main: isLight ? brand.purple : '#9b7bfa',
-        light: isLight ? '#8a6df7' : '#b49dfc',
-        dark: isLight ? '#4a2bb8' : '#653df4',
-        contrastText: isLight ? brand.white : brand.black,
-      },
-      secondary: {
-        main: brand.yellow,
-        light: '#f8fe86',
-        dark: '#c4cb43',
-        contrastText: brand.black,
-      },
+      // primary: {
+      //   main: isLight ? brand.purple : '#9b7bfa',
+      //   light: isLight ? '#8a6df7' : '#b49dfc',
+      //   dark: isLight ? '#4a2bb8' : '#653df4',
+      //   contrastText: isLight ? brand.white : brand.black,
+      // },
+      // secondary: {
+      //   main: brand.yellow,
+      //   light: '#f8fe86',
+      //   dark: '#c4cb43',
+      //   contrastText: brand.black,
+      // },
     },
     typography: {
       ...pmmTypo,
@@ -59,6 +59,17 @@ export const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
       h5: { ...pmmTypo.h5, ...poppinsHeading, fontWeight: 500 },
       h6: { ...pmmTypo.h6, ...poppinsHeading, fontWeight: 500 },
     },
+    components: {
+      ...pmm.components,
+      MuiAppBar: {
+        styleOverrides: {
+          root: () => ({
+            color: isLight ? brand.white : brand.black,
+            backgroundColor: isLight ? brand.purple : '#9b7bfa',
+          }),
+        },
+      },
+    }
   };
 };
 
