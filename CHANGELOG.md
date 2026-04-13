@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- SEP-924: Inventory list endpoints now return paginated responses with `offset`/`limit` query parameters
 - SEP-937: PMM connection settings moved to top-level `PMM` config section (old `SEP.PMM` path still works with deprecation warning)
 
 ### Breaking Changes

@@ -46,7 +46,7 @@ async def list_schemas(
         )
     except HTTPException:
         return JSONResponse([])
-    return JSONResponse([{"id": s["id"], "name": s["name"]} for s in schemas])
+    return JSONResponse([{"id": s["id"], "name": s["name"]} for s in schemas["items"]])
 
 
 @router.get("/schemas/{schema_id}/tables", dependencies=[IsAuthenticated])
@@ -65,4 +65,4 @@ async def list_tables(
         tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
     except HTTPException:
         return JSONResponse([])
-    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in tables])
+    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in tables["items"]])

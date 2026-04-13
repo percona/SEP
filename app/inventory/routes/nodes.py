@@ -20,7 +20,9 @@ import logging
 from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPBadRequestException
+from app.core.models import PaginatedResponse
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.crud import NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
@@ -46,16 +48,20 @@ async def list_nodes(
     external_id: NonEmptyStr | None = None,
     source: SourceEnum | None = None,
     node_type: NonEmptyStr | None = None,
-) -> list[NodeResponse]:
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[NodeResponse]:
     """List Nodes from Inventory."""
     logger.debug(
         "Listing nodes for source '%s' and type '%s'",
         source or "all",
         node_type or "all",
     )
-    return await NodeManager.list(
+    return await NodeManager.list_paginated(
         session,
         select_related=[Node.services],
+        offset=offset,
+        limit=limit,
         external_id=external_id,
         source=source,
         type=node_type,
@@ -109,16 +115,20 @@ async def list_services_by_node(
     session: SessionDep,
     node: NodeDep,
     service_type: ServiceTypeEnum | None = None,
-) -> list[ServiceResponse]:
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[ServiceResponse]:
     """List Services by Node."""
     logger.debug(
         "Listing services for node '%s' and type '%s'",
         node.id,
         service_type or "all",
     )
-    return await ServiceManager.list(
+    return await ServiceManager.list_paginated(
         session,
         select_related=[Service.schemas],
+        offset=offset,
+        limit=limit,
         node_id=node.id,
         type=service_type,
     )

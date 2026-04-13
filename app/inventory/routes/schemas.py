@@ -21,6 +21,8 @@ from fastapi import APIRouter, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.core.models import PaginatedResponse
 from app.inventory.crud import SchemaManager, TableManager
 from app.inventory.deps import SchemaDep, SessionDep
 from app.inventory.models import (
@@ -39,10 +41,19 @@ router = APIRouter(prefix="/schemas", tags=["schemas"])
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
-async def list_schemas(session: SessionDep) -> list[SchemaResponse]:
+async def list_schemas(
+    session: SessionDep,
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[SchemaResponse]:
     """List Schemas."""
     logger.debug("Listing schemas")
-    return await SchemaManager.list(session, select_related=[Schema.tables])
+    return await SchemaManager.list_paginated(
+        session,
+        select_related=[Schema.tables],
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/{schema_id}", dependencies=[IsAuthenticatedDep])
@@ -83,13 +94,21 @@ async def list_tables_by_schema(
     session: SessionDep,
     schema: SchemaDep,
     search: str | None = None,
-) -> list[TableResponse]:
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[TableResponse]:
     """List Tables by Schema."""
     logger.debug("Listing tables for schema '%s'", schema.id)
     whereclause = []
     if search:
         whereclause.append(col(Table.name).ilike(f"%{search}%"))
-    return await TableManager.list(session, *whereclause, schema_id=schema.id)
+    return await TableManager.list_paginated(
+        session,
+        *whereclause,
+        offset=offset,
+        limit=limit,
+        schema_id=schema.id,
+    )
 
 
 @router.post(

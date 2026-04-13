@@ -29,10 +29,15 @@ class TestListSchemas:
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
         """Return schemas for a service."""
-        mock_inventory_api_dep.get.return_value = [
-            {"id": 1, "name": "db1", "service_id": 10},
-            {"id": 2, "name": "db2", "service_id": 10},
-        ]
+        mock_inventory_api_dep.get.return_value = {
+            "items": [
+                {"id": 1, "name": "db1", "service_id": 10},
+                {"id": 2, "name": "db2", "service_id": 10},
+            ],
+            "total": 2,
+            "offset": 0,
+            "limit": 50,
+        }
         response = test_client.get("/inventory-api/services/10/schemas")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -42,9 +47,12 @@ class TestListSchemas:
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
         """Pass search parameter through to inventory API."""
-        mock_inventory_api_dep.get.return_value = [
-            {"id": 1, "name": "mydb", "service_id": 10},
-        ]
+        mock_inventory_api_dep.get.return_value = {
+            "items": [{"id": 1, "name": "mydb", "service_id": 10}],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
         response = test_client.get(
             "/inventory-api/services/10/schemas", params={"search": "my"}
         )
@@ -57,7 +65,12 @@ class TestListSchemas:
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
         """Return empty list when service has no schemas."""
-        mock_inventory_api_dep.get.return_value = []
+        mock_inventory_api_dep.get.return_value = {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        }
         response = test_client.get("/inventory-api/services/10/schemas")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
@@ -81,10 +94,15 @@ class TestListTables:
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
         """Return tables for a schema."""
-        mock_inventory_api_dep.get.return_value = [
-            {"id": 1, "name": "users", "schema_id": 5},
-            {"id": 2, "name": "orders", "schema_id": 5},
-        ]
+        mock_inventory_api_dep.get.return_value = {
+            "items": [
+                {"id": 1, "name": "users", "schema_id": 5},
+                {"id": 2, "name": "orders", "schema_id": 5},
+            ],
+            "total": 2,
+            "offset": 0,
+            "limit": 50,
+        }
         response = test_client.get("/inventory-api/schemas/5/tables")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -94,9 +112,12 @@ class TestListTables:
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
         """Pass search parameter through to inventory API."""
-        mock_inventory_api_dep.get.return_value = [
-            {"id": 1, "name": "users", "schema_id": 5},
-        ]
+        mock_inventory_api_dep.get.return_value = {
+            "items": [{"id": 1, "name": "users", "schema_id": 5}],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
         response = test_client.get(
             "/inventory-api/schemas/5/tables", params={"search": "user"}
         )

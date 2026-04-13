@@ -21,6 +21,8 @@ from fastapi import APIRouter, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.core.models import PaginatedResponse
 from app.inventory.crud import SchemaManager, ServiceManager
 from app.inventory.deps import ServiceDep, SessionDep
 from app.inventory.models import (
@@ -44,12 +46,16 @@ router = APIRouter(prefix="/services", tags=["services"])
 async def list_services(
     session: SessionDep,
     service_type: ServiceTypeEnum | None = None,
-) -> list[ServiceResponse]:
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[ServiceResponse]:
     """List Services."""
     logger.debug("Listing services for type '%s'", service_type or "all")
-    return await ServiceManager.list(
+    return await ServiceManager.list_paginated(
         session,
         select_related=[Service.schemas, Service.node],
+        offset=offset,
+        limit=limit,
         type=service_type,
     )
 
@@ -96,7 +102,9 @@ async def list_schemas_by_service(
     service: ServiceDep,
     search: str | None = None,
     include_tables: str | None = None,
-) -> list[SchemaResponse] | list[SchemaCompactResponse]:
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[SchemaResponse | SchemaCompactResponse]:
     """List Schemas by Service.
 
     Return ``SchemaResponse`` (with nested tables) when ``include_tables``
@@ -111,25 +119,38 @@ async def list_schemas_by_service(
     :param include_tables: Include nested tables in the response when set to
         any non-empty value. Defaults to compact mode (no tables).
     :type include_tables: str | None
-    :return: A list of schema responses.
-    :rtype: list[SchemaResponse] | list[SchemaCompactResponse]
+    :param offset: The zero-based starting offset for pagination.
+    :type offset: int
+    :param limit: The maximum number of items to return.
+    :type limit: int
+    :return: A paginated response of schema responses.
+    :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
     """
     logger.debug("Listing schemas for service '%s'", service.id)
     whereclause = []
     if search:
         whereclause.append(col(Schema.name).ilike(f"%{search}%"))
     select_related = [Schema.tables] if include_tables else []
-    schemas = await SchemaManager.list(
+    result = await SchemaManager.list_paginated(
         session,
         *whereclause,
         select_related=select_related,
+        offset=offset,
+        limit=limit,
         service_id=service.id,
     )
     if include_tables:
-        return [SchemaResponse.model_validate(s, from_attributes=True) for s in schemas]
-    return [
-        SchemaCompactResponse.model_validate(s, from_attributes=True) for s in schemas
-    ]
+        items = [
+            SchemaResponse.model_validate(s, from_attributes=True) for s in result.items
+        ]
+    else:
+        items = [
+            SchemaCompactResponse.model_validate(s, from_attributes=True)
+            for s in result.items
+        ]
+    return PaginatedResponse(
+        items=items, total=result.total, offset=result.offset, limit=result.limit
+    )
 
 
 @router.post(
