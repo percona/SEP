@@ -24,7 +24,7 @@ import json
 import sys
 
 
-def check_mysql(host, port):
+def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     """Check MySQL connectivity via ``SELECT 1``.
 
     :param host: The database host address.
@@ -32,7 +32,7 @@ def check_mysql(host, port):
     :param port: The database port number.
     :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict
+    :rtype: dict[str, bool | str]
     """
     import myloginpath
     import pymysql
@@ -57,7 +57,7 @@ def check_mysql(host, port):
         return {"success": False, "error": str(exc)}
 
 
-def check_postgresql(host, port):
+def check_postgresql(host: str, port: int) -> dict[str, bool | str]:
     """Check PostgreSQL connectivity via ``SELECT 1``.
 
     :param host: The database host address.
@@ -65,7 +65,7 @@ def check_postgresql(host, port):
     :param port: The database port number.
     :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict
+    :rtype: dict[str, bool | str]
     """
     import psycopg2
 
@@ -81,7 +81,7 @@ def check_postgresql(host, port):
         return {"success": False, "error": str(exc)}
 
 
-def check_mongodb(host, port):
+def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
     """Check MongoDB connectivity via the ``ping`` command.
 
     :param host: The database host address.
@@ -89,7 +89,7 @@ def check_mongodb(host, port):
     :param port: The database port number.
     :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict
+    :rtype: dict[str, bool | str]
     """
     import pymongo
 
@@ -113,7 +113,7 @@ CHECKERS = {
 }
 
 
-def main():
+def main() -> None:
     """Parse the config argument and run the appropriate database checker."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)

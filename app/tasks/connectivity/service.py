@@ -83,6 +83,8 @@ async def check_connectivity(
     )
 
     queue_item = await dispatch_queue_item(queue_item, session)
+    if queue_item.id is None:
+        raise RuntimeError("dispatch_queue_item returned a queue item without an ID")
 
     executor = get_executor_for_task(task)
     elapsed = 0
