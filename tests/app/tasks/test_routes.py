@@ -23,12 +23,17 @@ import pytest_asyncio
 from fastapi import status
 
 from app.core.utils import utc_now
+from app.tasks.config import PreExecutionCheckMode
+from app.tasks.connectivity.models import ConnectivityServiceType
+from app.tasks.connectivity.service import _result_cache
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     ExecutionEvent,
     Task,
+    TaskExecutionRequest,
+    TaskHistory,
     TaskHistoryStatusEnum,
     TaskWrite,
 )
@@ -655,3 +660,382 @@ async def test_execute_task_name_with_eta_serializes_deferred_execution_request(
     assert (
         data["execution_request"]["tracking"]["celery_task_id"] == "fake-celery-task-id"
     )
+
+
+CONNECTIVITY_META = {
+    "_connectivity_host": "db-host",
+    "_connectivity_port": "3306",
+    "_connectivity_service_type": ConnectivityServiceType.MYSQL.value,
+}
+
+
+def _make_queue_item(
+    task: Task,
+    target: str = "node1",
+    eta: str | None = None,
+) -> TaskHistory:
+    """Build a TaskHistory queue item for execute endpoint tests."""
+    return TaskHistory(
+        task_id=task.id,
+        task=task,
+        execution_request=TaskExecutionRequest(
+            task=task.name,
+            target=target,
+            meta={"target": target},
+            tracking={"evaluation_id": ""},
+            eta=eta,
+        ),
+        status=TaskHistoryStatusEnum.PENDING,
+        executed_by="test-user",
+    )
+
+
+class TestPreExecutionConnectivityCheck:
+    """Test the pre-execution connectivity check in execute_task_name."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        """Clear the connectivity result cache around each test."""
+        _result_cache.clear()
+        yield
+        _result_cache.clear()
+
+    @pytest_asyncio.fixture
+    async def conn_task(self, session) -> Task:
+        """Return a task with connectivity meta."""
+        return await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name="conn-task",
+                    data={"Meta": CONNECTIVITY_META},
+                )
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_disabled_skips_check(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify no connectivity check runs when mode is ``disabled``."""
+        queue_item = _make_queue_item(conn_task)
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.DISABLED,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(return_value=queue_item),
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_warn_success_dispatches(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify dispatch proceeds when warn-mode check passes."""
+        queue_item = _make_queue_item(conn_task)
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.WARN,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_response = MagicMock()
+        mock_response.success = True
+        mock_response.error = None
+        mocker.patch(
+            "app.tasks.routes.check_connectivity",
+            new=AsyncMock(return_value=mock_response),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(return_value=queue_item),
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_warn_failure_logs_warning_and_dispatches(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify dispatch proceeds with a warning when warn-mode check fails."""
+        queue_item = _make_queue_item(conn_task)
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.WARN,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_response = MagicMock()
+        mock_response.success = False
+        mock_response.error = "Connection refused"
+        mocker.patch(
+            "app.tasks.routes.check_connectivity",
+            new=AsyncMock(return_value=mock_response),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(return_value=queue_item),
+        )
+        mock_logger = mocker.patch("app.tasks.routes.logger")
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_dispatch.assert_called_once()
+        mock_logger.warning.assert_called_once()
+        assert "Connection refused" in mock_logger.warning.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_block_success_dispatches(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify dispatch proceeds when block-mode check passes."""
+        queue_item = _make_queue_item(conn_task)
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_response = MagicMock()
+        mock_response.success = True
+        mock_response.error = None
+        mocker.patch(
+            "app.tasks.routes.check_connectivity",
+            new=AsyncMock(return_value=mock_response),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(return_value=queue_item),
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_block_failure_returns_400(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify dispatch is blocked with 400 when block-mode check fails."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_response = MagicMock()
+        mock_response.success = False
+        mock_response.error = "Connection refused"
+        mocker.patch(
+            "app.tasks.routes.check_connectivity",
+            new=AsyncMock(return_value=mock_response),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(),
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Connection refused" in response.json()["detail"]
+        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_connectivity_meta_skips_check(
+        self, test_client, session, mocker, mock_executor
+    ):
+        """Verify check is skipped when task has no connectivity meta fields."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="no-meta-task", data={})),
+        )
+        queue_item = _make_queue_item(task)
+
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(return_value=queue_item),
+        )
+
+        response = test_client.post(
+            f"/execute/{task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cached_success_skips_live_check(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify a cached success result skips the live connectivity check."""
+        queue_item = _make_queue_item(conn_task)
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_cached_result",
+            return_value=(True, None),
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(return_value=queue_item),
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cached_failure_warn_logs_and_dispatches(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify cached failure in warn mode logs warning and proceeds."""
+        queue_item = _make_queue_item(conn_task)
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.WARN,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_cached_result",
+            return_value=(False, "Connection refused"),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(return_value=queue_item),
+        )
+        mock_logger = mocker.patch("app.tasks.routes.logger")
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_dispatch.assert_called_once()
+        mock_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cached_failure_block_returns_400(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify cached failure in block mode returns 400 without live check."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_cached_result",
+            return_value=(False, "Connection refused"),
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(),
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_check.assert_not_called()
+        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_eta_task_skips_check(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify check is skipped for ETA-scheduled tasks regardless of mode."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mocker.patch(
+            "app.tasks.routes.execute_task_queue.apply_async",
+            return_value=MagicMock(id="celery-123"),
+        )
+
+        eta = utc_now()
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}, "eta": eta.isoformat()},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()

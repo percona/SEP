@@ -17,6 +17,7 @@
 
 import asyncio
 import json
+import time
 from pathlib import Path
 
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -41,6 +42,47 @@ PAYLOAD_PATH = Path(__file__).parent / "payload.py"
 POLL_INTERVAL = 2
 FRESH_FETCH_MAX_ATTEMPTS = 3
 FRESH_FETCH_INTERVAL = 0.5
+RESULT_CACHE_TTL = 300
+
+_result_cache: dict[tuple[str, str], tuple[bool, str | None, float]] = {}
+
+
+def get_cached_result(target: str, service_type: str) -> tuple[bool, str | None] | None:
+    """Return a cached connectivity check result, or ``None`` if expired or missing.
+
+    :param target: The Nomad node name.
+    :type target: str
+    :param service_type: The database service type.
+    :type service_type: str
+    :return: A tuple of ``(success, error)`` if cached and fresh, otherwise ``None``.
+    :rtype: tuple[bool, str | None] | None
+    """
+    key = (target, service_type)
+    entry = _result_cache.get(key)
+    if entry is None:
+        return None
+    success, error, timestamp = entry
+    if time.monotonic() - timestamp > RESULT_CACHE_TTL:
+        del _result_cache[key]
+        return None
+    return success, error
+
+
+def cache_result(
+    target: str, service_type: str, *, success: bool, error: str | None
+) -> None:
+    """Cache a connectivity check result with the current timestamp.
+
+    :param target: The Nomad node name.
+    :type target: str
+    :param service_type: The database service type.
+    :type service_type: str
+    :param success: Whether the connectivity check succeeded.
+    :type success: bool
+    :param error: Error message if the check failed.
+    :type error: str | None
+    """
+    _result_cache[(target, service_type)] = (success, error, time.monotonic())
 
 
 async def check_connectivity(
@@ -114,7 +156,14 @@ async def check_connectivity(
         )
 
     fresh_queue_item = await _fetch_fresh_task_history(session, queue_item_id)
-    return _parse_check_result(fresh_queue_item)
+    result = _parse_check_result(fresh_queue_item)
+    cache_result(
+        request.target,
+        request.service_type,
+        success=result.success,
+        error=result.error,
+    )
+    return result
 
 
 async def _fetch_fresh_task_history(

@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
 - SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
 - SEP-932: Database connectivity check endpoint via Nomad task dispatch (MySQL, PostgreSQL, MongoDB)
+- SEP-935: Pre-execution connectivity check before Nomad task dispatch with configurable mode (disabled/warn/block) and result caching
 
 ### Changed
 
@@ -26,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Configuration Changes
 
 - SEP-929: Added `UVICORN_EXTRA_RELOAD_DIRS`, `UVICORN_EXTRA_RELOAD_INCLUDES`, and `UVICORN_EXTRA_RELOAD_EXCLUDES` settings to extend uvicorn reload paths via `settings.yaml`
+- SEP-935: Added `TASKS.PRE_EXECUTION_CONNECTIVITY_CHECK` setting (disabled/warn/block) to control pre-execution connectivity checks before task dispatch
 
 ## [v0.11.0] - 2026-04-02
 

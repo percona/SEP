@@ -17,6 +17,7 @@
 
 import json
 from itertools import product
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,8 +29,12 @@ from app.tasks.connectivity.models import (
 )
 from app.tasks.connectivity.service import (
     _parse_check_result,
+    _result_cache,
+    cache_result,
     check_connectivity,
+    get_cached_result,
     POLL_INTERVAL,
+    RESULT_CACHE_TTL,
 )
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
@@ -664,3 +669,49 @@ class TestParseCheckResult:
         result = _parse_check_result(history)
         assert result.success is False
         assert result.error == "Failed to parse connectivity check output"
+
+
+class TestResultCache:
+    """Test the connectivity result cache functions."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        """Clear the result cache before and after each test."""
+        _result_cache.clear()
+        yield
+        _result_cache.clear()
+
+    def test_get_cached_result_miss(self):
+        """Verify ``None`` is returned when no entry exists."""
+        assert get_cached_result("node1", "MYSQL") is None
+
+    def test_cache_and_get_success(self):
+        """Verify a cached success result is returned."""
+        cache_result("node1", "MYSQL", success=True, error=None)
+        cached = get_cached_result("node1", "MYSQL")
+        assert cached == (True, None)
+
+    def test_cache_and_get_failure(self):
+        """Verify a cached failure result is returned with its error."""
+        cache_result("node1", "MYSQL", success=False, error="Connection refused")
+        cached = get_cached_result("node1", "MYSQL")
+        assert cached == (False, "Connection refused")
+
+    def test_expired_entry_returns_none(self):
+        """Verify expired cache entries are evicted and return ``None``."""
+        _result_cache[("node1", "MYSQL")] = (
+            True,
+            None,
+            time.monotonic() - RESULT_CACHE_TTL - 1,
+        )
+        assert get_cached_result("node1", "MYSQL") is None
+        assert ("node1", "MYSQL") not in _result_cache
+
+    def test_different_keys_are_independent(self):
+        """Verify cache entries are keyed by ``(target, service_type)``."""
+        cache_result("node1", "MYSQL", success=True, error=None)
+        cache_result("node2", "POSTGRESQL", success=False, error="timeout")
+
+        assert get_cached_result("node1", "MYSQL") == (True, None)
+        assert get_cached_result("node2", "POSTGRESQL") == (False, "timeout")
+        assert get_cached_result("node1", "POSTGRESQL") is None

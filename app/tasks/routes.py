@@ -39,6 +39,12 @@ from app.tasks.celery import (
     execute_task_queue,
     get_executor_for_task,
 )
+from app.tasks.config import PreExecutionCheckMode, tasks_settings
+from app.tasks.connectivity.models import (
+    ConnectivityCheckWrite,
+    ConnectivityServiceType,
+)
+from app.tasks.connectivity.service import check_connectivity, get_cached_result
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
@@ -214,6 +220,44 @@ async def execute_task_name(
             f"Failed to dispatch task: Target {queue_item.execution_request.target!r}"
             f"is not available in {executor.__class__.__name__} for task {task_name!r}"
         )
+
+    check_mode = tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK
+    meta = queue_item.task.data.get("Meta", {})
+    conn_host = meta.get("_connectivity_host")
+    conn_port = meta.get("_connectivity_port")
+    conn_type = meta.get("_connectivity_service_type")
+    if (
+        check_mode != PreExecutionCheckMode.DISABLED
+        and conn_host
+        and conn_port
+        and conn_type
+        and not queue_item.execution_request.eta
+    ):
+        target = queue_item.execution_request.target
+        cached = get_cached_result(target, conn_type)
+        if cached is not None:
+            success, error = cached
+        else:
+            result = await check_connectivity(
+                session,
+                ConnectivityCheckWrite(
+                    target=target,
+                    host=conn_host,
+                    port=int(conn_port),
+                    service_type=ConnectivityServiceType(conn_type),
+                    timeout=10,
+                ),
+            )
+            success, error = result.success, result.error
+        if not success:
+            msg = (
+                f"Pre-execution connectivity check failed for {task_name!r} "
+                f"on target {target!r}: {error or 'unknown error'}"
+            )
+            if check_mode == PreExecutionCheckMode.BLOCK:
+                raise HTTPBadRequestException(msg)
+            logger.warning(msg)
+
     if queue_item.execution_request.eta:
         history_recorded = await TaskHistoryManager.save(session, queue_item)
         await session.refresh(history_recorded, attribute_names=["execution_request"])
