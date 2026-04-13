@@ -15,6 +15,7 @@
 
 """Define test cases for the task routes in the FastAPI application."""
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -612,3 +613,45 @@ async def test_execute_task_name_response_serializes_deferred_execution_request(
     assert data["status"] == TaskHistoryStatusEnum.RUNNING.value
     assert data["execution_request"]["task"] == task.name
     assert data["execution_request"]["target"] == "node1"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_name_with_eta_serializes_deferred_execution_request(
+    test_client, session, mocker
+):
+    """Assert POST /execute/{task_name} with ETA serializes the deferred column.
+
+    Regression for a ``MissingGreenlet`` error on the ETA scheduling path:
+    after ``TaskHistoryManager.save`` the deferred ``execution_request`` column
+    is expired. Accessing ``history_recorded.execution_request.eta`` before
+    refreshing triggers a lazy load outside the greenlet context.
+    """
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="eta-task", anonymize_mask=0)),
+    )
+
+    fake_celery_result = MagicMock()
+    fake_celery_result.id = "fake-celery-task-id"
+
+    fake_executor = MagicMock(spec=BaseExecutor)
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    mocker.patch(
+        "app.tasks.routes.execute_task_queue.apply_async",
+        return_value=fake_celery_result,
+    )
+
+    eta = (utc_now() + timedelta(seconds=30)).isoformat()
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1", "eta": eta},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["execution_request"]["task"] == task.name
+    assert data["execution_request"]["target"] == "node1"
+    assert (
+        data["execution_request"]["tracking"]["celery_task_id"] == "fake-celery-task-id"
+    )

@@ -216,6 +216,7 @@ async def execute_task_name(
         )
     if queue_item.execution_request.eta:
         history_recorded = await TaskHistoryManager.save(session, queue_item)
+        await session.refresh(history_recorded, attribute_names=["execution_request"])
         celery_task = execute_task_queue.apply_async(
             args=[history_recorded.id],
             eta=history_recorded.execution_request.eta,
