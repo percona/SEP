@@ -135,7 +135,7 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         )
 
     @validate_call
-    async def resolve_alert(self, dedup_key: str) -> None:
+    async def resolve_alert(self, dedup_key: NonEmptyStr) -> None:
         """Resolve a PagerDuty alert by dedup key.
 
         Send an ``event_action: "resolve"`` event to the PagerDuty Events API
@@ -143,7 +143,7 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         202).
 
         :param dedup_key: The deduplication key of the alert to resolve.
-        :type dedup_key: str
+        :type dedup_key: NonEmptyStr
         """
         pagerduty_api = await self.get_api()
         await pagerduty_api.post(
