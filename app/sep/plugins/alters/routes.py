@@ -25,6 +25,7 @@ from pydantic import FutureDatetime
 from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import check_and_warn_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -132,6 +133,17 @@ async def alters_create(
         "/",
         json=pre_checks_task.model_dump(),
     )
+
+    meta = task.data.get("meta", {})
+    if "_connectivity_host" in meta:
+        await check_and_warn_connectivity(
+            request,
+            task_api,
+            target=meta["target"],
+            host=meta["_connectivity_host"],
+            port=int(meta["_connectivity_port"]),
+            service_type=meta["_connectivity_service_type"],
+        )
 
     # Redirect to the execute task detail page
     task_path = request.url_for("alters_detail", task_name=task.name)

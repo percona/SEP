@@ -43,6 +43,7 @@ from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import annotate_tasks_with_connectivity
 from app.sep.db import get_async_session_maker
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import (
@@ -697,6 +698,10 @@ async def get_tasks_context(
             "last_updated_by": task.get("last_updated_by"),
         }
         task_info |= get_task_info_func(task)
+        meta = task.get("data", {}).get("meta", {})
+        if "_connectivity_service_type" in meta:
+            task_info["_connectivity_target"] = meta.get("target", "")
+            task_info["_connectivity_service_type"] = meta["_connectivity_service_type"]
         tasks.append(task_info)
         history = await tasks_api.get(f"/{task['name']}/history/")
         for hist in history:
@@ -707,6 +712,7 @@ async def get_tasks_context(
                     running_tasks.append(hist)
                 case _:
                     history_tasks.append(hist)
+    annotate_tasks_with_connectivity(tasks)
     periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
 
     alert_on_fail_available = bool(alert_settings.PROVIDERS)

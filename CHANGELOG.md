@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
 - SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
 - SEP-932: Database connectivity check endpoint via Nomad task dispatch (MySQL, PostgreSQL, MongoDB)
+- SEP-934: Automatic connectivity check on task creation with non-blocking warnings and visual indicators
 
 ### Changed
 
