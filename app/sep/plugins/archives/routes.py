@@ -140,7 +140,7 @@ async def archives_detail(
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     response = await inventory_api.get(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0}
     )
     context["services"] = response["items"]
 

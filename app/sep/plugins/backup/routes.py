@@ -160,7 +160,8 @@ async def backups_detail(
 
     try:
         response = await inventory_api.get(
-            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+            "/services/",
+            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
         )
         context["services"] = response["items"]
     except HTTPException:

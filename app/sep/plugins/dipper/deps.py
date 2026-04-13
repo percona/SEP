@@ -294,7 +294,7 @@ async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
     services = []
     for service_type in DIPPER_SCRIPT_BY_SERVICE_TYPE:
         response = await inventory_api.get(
-            "/services/", params={"service_type": service_type.value}
+            "/services/", params={"service_type": service_type.value, "limit": 0}
         )
         services.extend(response["items"])
     logger.debug("Supported Dipper services: %s", services)

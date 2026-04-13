@@ -37,7 +37,7 @@ async def list_schemas(
     search: str | None = None,
 ) -> JSONResponse:
     """Return schemas for a service as JSON for AJAX dropdowns."""
-    params = {}
+    params = {"limit": 0}
     if search:
         params["search"] = search
     try:
@@ -58,7 +58,7 @@ async def list_tables(
     search: str | None = None,
 ) -> JSONResponse:
     """Return tables for a schema as JSON for AJAX dropdowns."""
-    params = {}
+    params = {"limit": 0}
     if search:
         params["search"] = search
     try:

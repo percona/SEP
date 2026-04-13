@@ -96,7 +96,7 @@ def test_backups_detail_handles_inventory_error(
     assert response.status_code == status.HTTP_200_OK
     mock_inventory_api_dep.get.assert_any_call(
         "/services/",
-        params={"service_type": ServiceTypeEnum.POSTGRESQL},
+        params={"service_type": ServiceTypeEnum.POSTGRESQL, "limit": 0},
     )
 
 

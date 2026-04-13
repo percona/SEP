@@ -59,7 +59,7 @@ async def node_list(
     inventory_api: InventoryAPI,
 ) -> HTMLResponse:
     """List Nodes."""
-    response = await inventory_api.get("/")
+    response = await inventory_api.get("/", params={"limit": 0})
     context["inventory"] = response["items"]
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(

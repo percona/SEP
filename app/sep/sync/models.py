@@ -432,6 +432,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             "node_type": node_type,
         }
         params = {key: value for key, value in params.items() if value is not None}
+        params["limit"] = 0
         response = await self.inventory_api.get("/", params=params)
         return [
             CreatedNode.model_validate(node_data) for node_data in response["items"]
@@ -517,7 +518,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         """
         response = await self.inventory_api.get(
             f"/services/{service_id}/schemas/",
-            params={"include_tables": "true"},
+            params={"include_tables": "true", "limit": 0},
         )
         return [
             CreatedSchema.model_validate(schema_data)

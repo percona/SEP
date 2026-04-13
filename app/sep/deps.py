@@ -606,7 +606,7 @@ async def get_executor_hosts_context(
     :rtype: ExecutorHostsContext
     """
     try:
-        response = await inventory_api.get("/")
+        response = await inventory_api.get("/", params={"limit": 0})
         display_names = {node["address"]: node["name"] for node in response["items"]}
     except (HTTPException, TypeError, KeyError, OSError):
         logger.warning(
@@ -682,7 +682,7 @@ async def get_tasks_context(
         else ServiceTypeEnum.MYSQL
     )
     response = await inventory_api.get(
-        "/services/", params={"service_type": service_type}
+        "/services/", params={"service_type": service_type, "limit": 0}
     )
     services = response["items"]
 
