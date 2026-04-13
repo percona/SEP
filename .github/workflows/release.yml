@@ -27,6 +27,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
+      - name: Restrict to release managers
+        if: github.actor != 'yyyyyyyan' && github.actor != 'maxbube'
+        run: |
+          echo "::error::Only release managers (yyyyyyyan, maxbube) can trigger this workflow."
+          exit 1
+
       - name: Validate inputs
         env:
           RELEASE_TYPE: ${{ inputs.release_type }}
