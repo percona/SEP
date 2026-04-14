@@ -122,10 +122,13 @@ class TaskBackendEnum(StrEnum):
     :vartype NOMAD: str
     :cvar PROXY: Enum value for Proxy backend.
     :vartype PROXY: str
+    :cvar CELERY: Enum value for Celery backend.
+    :vartype CELERY: str
     """
 
     NOMAD = auto()
     PROXY = auto()
+    CELERY = auto()
 
 
 class TaskHistoryStatusEnum(StrEnum):
@@ -361,17 +364,20 @@ class TaskBase(SQLModel):
 
     @model_validator(mode="after")
     def validate_data_for_backend(self) -> Self:
-        """Validate the data for the Proxy backend.
+        """Validate the data dictionary against the selected backend.
 
-        If the backend is set to `TaskBackendEnum.PROXY`, "task" is a required key in
-        the `data` dictionary.
+        Enforce that Proxy tasks include a `task` key and that Celery tasks
+        are marked as protected to prevent arbitrary code execution.
 
-        :return: The validated instance
-        :rtype: TaskBase
-        :raises ValueError: If the backend is Proxy and "task" is not set in data.
+        :return: The validated instance.
+        :rtype: Self
+        :raises ValueError: If the backend is Proxy and `task` is not set in data,
+            or if the backend is Celery and the task is not protected.
         """
         if self.backend == TaskBackendEnum.PROXY and not self.data.get("task"):
             raise ValueError("data must contain 'task' for Proxy backend")
+        if self.backend == TaskBackendEnum.CELERY and not self.protected:
+            raise ValueError("Celery tasks must be protected (system tasks only)")
         return self
 
 
