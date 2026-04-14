@@ -271,6 +271,24 @@ class TestAnnotateTaskEvent:
         assert call_kwargs["service_names"] == []
 
     @pytest.mark.asyncio
+    async def test_service_names_list_takes_precedence_over_single(
+        self, queue_item_factory
+    ):
+        """Assert ``_service_names`` list takes precedence over ``_service_name``."""
+        queue_item = queue_item_factory(
+            meta={"_service_names": ["svc-a", "svc-b"], "_service_name": "ignored-svc"}
+        )
+
+        with patch(
+            "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+        ) as mock_create:
+            await annotate_task_event(queue_item, "STARTED")
+
+        mock_create.assert_awaited_once()
+        call_kwargs = mock_create.await_args.kwargs
+        assert call_kwargs["service_names"] == ["svc-a", "svc-b"]
+
+    @pytest.mark.asyncio
     async def test_handles_none_meta(self, queue_item_factory):
         """Assert ``None`` meta falls back to empty dict."""
         queue_item = queue_item_factory(meta=None)
