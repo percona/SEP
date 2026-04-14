@@ -70,6 +70,7 @@ def created_node() -> CreatedNode:
     created_node = CreatedNodeFactory.build()
     created_node.id = MOCK_CREATED_NODE_ID
     created_node.address = "localhost"
+    created_node.external_id = "test-node-ext"
     return created_node
 
 
@@ -308,7 +309,7 @@ async def test_manage_sync_item_failure_triggers_alert(
             entity_id=entity_id,
         )
     )
-    entity_id_repr = "none" if entity_id is None else str(entity_id)
+    entity_id_repr = "top_level" if entity_id is None else str(created_node.external_id)
 
     async with syncer.manage_sync_item(entity_type, created_entity):
         raise RuntimeError(f"Simulate {entity_type.name.lower()} sync failure.")
@@ -319,8 +320,13 @@ async def test_manage_sync_item_failure_triggers_alert(
     assert alert_data["severity"] == AlertSeverity.ERROR
     assert alert_data["class"] == "inventory_sync_item_failure"
     assert syncer_name in alert_data["summary"]
-    assert entity_type.name in alert_data["summary"]
-    assert entity_id_repr in alert_data["summary"]
+    if entity_id is None:
+        assert "top-level inventory sync" in alert_data["summary"]
+    else:
+        assert f"{entity_type.name} id {entity_id}" in alert_data["summary"]
+        assert f"name={created_node.name!r}" in alert_data["summary"]
+        assert "address='localhost'" in alert_data["summary"]
+        assert f"external_id={created_node.external_id!r}" in alert_data["summary"]
     assert alert_data["source"] == f"{syncer_name}:{entity_type.name}:{entity_id_repr}"
     assert (
         alert_data["dedup_key"] == f"{syncer_name}:{entity_type.name}:{entity_id_repr}"
