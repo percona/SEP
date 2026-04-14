@@ -19,9 +19,10 @@ Revision ID: 9ebd648709e8
 Revises: bb3edb973603
 Create Date: 2026-04-14 17:52:42.245472
 
-Add expression indexes on ``execution_request->'task'`` and ``'target'`` so
-dispatch dedup and task-history filter queries can use index scans instead of
-evaluating the JSON extract over the narrowed candidate set.
+Add expression indexes on ``execution_request->>'task'`` and
+``execution_request->>'target'`` so dispatch dedup and task-history filter
+queries can use index scans instead of evaluating the JSON extract over the
+narrowed candidate set.
 
 ``payload`` is intentionally NOT indexed. ``TaskExecutionRequest.payload`` may
 hold the raw parameterization body for a task, which can be large enough to
