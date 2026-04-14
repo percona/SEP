@@ -50,9 +50,6 @@ jobs:
   test:
     needs: [bandit, check_migrations]
     name: test (${{ matrix.python }})
-    permissions:
-      contents: write
-      pull-requests: write
     strategy:
       matrix:
         os: [ubuntu-latest]
