@@ -25,6 +25,7 @@ from pymysql import InternalError, OperationalError, ProgrammingError
 
 import configparser
 import io
+from typing import Any
 
 try:
     import pymysql as MySQLdb
@@ -89,8 +90,8 @@ def readlink_argv_for_backup_source(
     backup_source: str,
     ssh_port: int,
     ssh_user: str,
-    ssh_identity_path: Optional[str] = None,
-) -> List[str]:
+    ssh_identity_path: str | None = None,
+) -> list[str]:
     identity = ssh_identity_path or f"/home/{ssh_user}/.ssh/id_rsa"
     if ":" in backup_source:
         host, path = backup_source.split(":", 1)
@@ -113,14 +114,14 @@ def readlink_argv_for_backup_source(
 
 def rsync_remote_restore_argv(
     *,
-    include_args: List[str],
-    exclude_args: List[str],
+    include_args: list[str],
+    exclude_args: list[str],
     ssh_port: int,
     ssh_user: str,
     remote_source: str,
     destination: str,
-    ssh_identity_path: Optional[str] = None,
-) -> List[str]:
+    ssh_identity_path: str | None = None,
+) -> list[str]:
     identity = ssh_identity_path or f"/home/{ssh_user}/.ssh/id_rsa"
     identity_quoted = shlex.quote(identity)
     rsh = f"ssh -t -p {ssh_port} -i {identity_quoted}"
