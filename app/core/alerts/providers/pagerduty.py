@@ -16,7 +16,7 @@
 """Provide a PagerDuty alert provider."""
 
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any
 
 from pydantic import (
     ConfigDict,
@@ -88,13 +88,14 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
 
     This provider sends alerts to PagerDuty using the Events API v2.
 
-    :cvar API_ENDPOINT: The API endpoint for Events v2.
-    :vartype API_ENDPOINT: str
+    :param api_endpoint: The API endpoint for Events v2. Override to point at a
+        local capture server for end-to-end testing.
+    :type api_endpoint: str
     :param routing_key: The routing key used for API requests.
     :type routing_key: SecretStr
     """
 
-    API_ENDPOINT: ClassVar[str] = "https://events.pagerduty.com/v2/"
+    api_endpoint: str = "https://events.pagerduty.com/v2/"
     routing_key: SecretStr
 
     def __hash__(self) -> int:
@@ -106,7 +107,7 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         :return: The RemoteAPI client for PagerDuty.
         :rtype: RemoteAPI
         """
-        return await settings.get_remote_api(endpoint=self.API_ENDPOINT)
+        return await settings.get_remote_api(endpoint=self.api_endpoint)
 
     @validate_call
     async def send_alert(self, alert: PagerDutyAlert) -> None:
