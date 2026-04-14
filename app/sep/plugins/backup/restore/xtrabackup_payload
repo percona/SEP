@@ -18,19 +18,13 @@ import datetime
 import resource
 from getpass import getuser
 from pathlib import Path
-from typing import Any, List, Optional
-
 import pymysql
 import pymysql.cursors
 import yaml
 from pymysql import InternalError, OperationalError, ProgrammingError
 
-try:
-    import configparser
-    import io as StringIO
-except ImportError:
-    import ConfigParser as configparser
-    import StringIO
+import configparser
+import io
 
 try:
     import pymysql as MySQLdb
@@ -38,10 +32,6 @@ try:
     MySQLdb.install_as_MySQLdb()
 except ImportError:
     import MySQLdb
-try:
-    import queue as Queue
-except ImportError:
-    import Queue
 
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 CURRENT_USER = os.getenv('PERCONA_BACKUP_USER') or os.getenv('SUDO_USER') or getuser()
@@ -2590,7 +2580,7 @@ class MyConfigParser(configparser.ConfigParser):
         except IOError:
             pass
         else:
-            file = StringIO.StringIO("[dummy]\n" + text)
+            file = io.StringIO("[dummy]\n" + text)
             self.readfp(file, filename)
 
 def main():
