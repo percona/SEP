@@ -39,6 +39,8 @@ from app.tasks.models import (
 
 PAYLOAD_PATH = Path(__file__).parent / "payload.py"
 POLL_INTERVAL = 2
+FRESH_FETCH_MAX_ATTEMPTS = 3
+FRESH_FETCH_INTERVAL = 0.5
 
 
 async def check_connectivity(
@@ -85,6 +87,7 @@ async def check_connectivity(
     queue_item = await dispatch_queue_item(queue_item, session)
     if queue_item.id is None:
         raise RuntimeError("dispatch_queue_item returned a queue item without an ID")
+    queue_item_id = queue_item.id
 
     executor = get_executor_for_task(task)
     elapsed = 0
@@ -107,14 +110,50 @@ async def check_connectivity(
         return ConnectivityCheckResponse(
             success=False,
             error=f"Connectivity check timed out after {request.timeout}s",
-            task_history_id=queue_item.id,
+            task_history_id=queue_item_id,
         )
 
-    queue_item = await executor.sync_task_history(queue_item)
-    await TaskHistoryManager.save(
-        session, queue_item, flag_modified_fields=["execution_request"]
-    )
-    return _parse_check_result(queue_item)
+    fresh_queue_item = await _fetch_fresh_task_history(session, queue_item_id)
+    return _parse_check_result(fresh_queue_item)
+
+
+async def _fetch_fresh_task_history(
+    session: AsyncSession, task_history_id: int
+) -> TaskHistory:
+    """Re-query the task history row until its ``run-script`` logs are populated.
+
+    The ``NomadExecutor._sync_task_history`` early-returns for terminal tasks,
+    so the in-memory ``queue_item`` after the polling loop may still be
+    missing the final stdout/stderr. The DB row, however, is kept up to date
+    by the periodic Celery sync task. Poll it a few times so the handler
+    sees the logs even if the periodic sync has not yet caught up.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the task history row to refresh.
+    :type task_history_id: int
+    :return: The freshest task history row available within the retry budget.
+    :rtype: TaskHistory
+    """
+    task_history = await TaskHistoryManager.get_or_404(session, id=task_history_id)
+    for _ in range(FRESH_FETCH_MAX_ATTEMPTS - 1):
+        if _has_run_script_logs(task_history):
+            return task_history
+        await asyncio.sleep(FRESH_FETCH_INTERVAL)
+        task_history = await TaskHistoryManager.get_or_404(session, id=task_history_id)
+    return task_history
+
+
+def _has_run_script_logs(task_history: TaskHistory) -> bool:
+    """Return whether ``task_history`` has any ``run-script`` step output.
+
+    :param task_history: The task history record to inspect.
+    :type task_history: TaskHistory
+    :return: ``True`` if a non-empty stdout or stderr log exists for the
+        ``run-script`` step, ``False`` otherwise.
+    :rtype: bool
+    """
+    return any(log.msg for log in task_history.iter_logs(step="run-script"))
 
 
 def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
