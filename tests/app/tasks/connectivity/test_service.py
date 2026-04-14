@@ -16,6 +16,7 @@
 """Test the connectivity check service function."""
 
 import json
+from itertools import product
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -34,6 +35,7 @@ from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLog,
     TaskLogType,
 )
 
@@ -87,11 +89,7 @@ def _make_task_history(
 
     history.task_logs = logs
 
-    def iter_logs_impl(start_offsets=None, chunk_size=65536, step=None):
-        from itertools import product
-
-        from app.tasks.models import TaskLog, TaskLogType
-
+    def iter_logs_impl(_start_offsets=None, chunk_size=65536, step=None):
         task_logs = logs
         if step is not None:
             task_logs = {step: task_logs.get(step, {})}
@@ -132,12 +130,12 @@ class TestCheckConnectivity:
 
         mock_executor = AsyncMock(spec=BaseExecutor)
 
-        async def mock_dispatch(queue_item, sess):
+        async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(queue_item):
+        async def mock_sync(_queue_item):
             return completed_history
 
         mock_executor.sync_task_history = mock_sync
@@ -157,6 +155,10 @@ class TestCheckConnectivity:
             ),
             patch(
                 "app.tasks.connectivity.service.TaskHistoryManager.save",
+                new=AsyncMock(return_value=completed_history),
+            ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
                 new=AsyncMock(return_value=completed_history),
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
@@ -180,12 +182,12 @@ class TestCheckConnectivity:
 
         mock_executor = AsyncMock(spec=BaseExecutor)
 
-        async def mock_dispatch(queue_item, sess):
+        async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(queue_item):
+        async def mock_sync(_queue_item):
             return completed_history
 
         mock_executor.sync_task_history = mock_sync
@@ -205,6 +207,10 @@ class TestCheckConnectivity:
             ),
             patch(
                 "app.tasks.connectivity.service.TaskHistoryManager.save",
+                new=AsyncMock(return_value=completed_history),
+            ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
                 new=AsyncMock(return_value=completed_history),
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
@@ -227,12 +233,12 @@ class TestCheckConnectivity:
 
         mock_executor = AsyncMock(spec=BaseExecutor)
 
-        async def mock_dispatch(queue_item, sess):
+        async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(queue_item):
+        async def mock_sync(_queue_item):
             return completed_history
 
         mock_executor.sync_task_history = mock_sync
@@ -254,11 +260,16 @@ class TestCheckConnectivity:
                 "app.tasks.connectivity.service.TaskHistoryManager.save",
                 new=AsyncMock(return_value=completed_history),
             ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
+                new=AsyncMock(return_value=completed_history),
+            ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
         assert result.success is False
+        assert result.error is not None
         assert "No module named" in result.error
 
     async def test_timeout(self):
@@ -269,7 +280,7 @@ class TestCheckConnectivity:
 
         mock_executor = AsyncMock(spec=BaseExecutor)
 
-        async def mock_dispatch(queue_item, sess):
+        async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
@@ -301,6 +312,7 @@ class TestCheckConnectivity:
             result = await check_connectivity(session, request)
 
         assert result.success is False
+        assert result.error is not None
         assert "timed out" in result.error
 
     async def test_malformed_stdout(self):
@@ -316,12 +328,12 @@ class TestCheckConnectivity:
 
         mock_executor = AsyncMock(spec=BaseExecutor)
 
-        async def mock_dispatch(queue_item, sess):
+        async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(queue_item):
+        async def mock_sync(_queue_item):
             return completed_history
 
         mock_executor.sync_task_history = mock_sync
@@ -343,6 +355,10 @@ class TestCheckConnectivity:
                 "app.tasks.connectivity.service.TaskHistoryManager.save",
                 new=AsyncMock(return_value=completed_history),
             ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
+                new=AsyncMock(return_value=completed_history),
+            ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
@@ -353,35 +369,35 @@ class TestCheckConnectivity:
     async def test_failure_logs_arrive_after_status_transition(self):
         """Verify stderr logs are captured when they land after status change.
 
-        Reproduces a Nomad race where ``sync_task_history`` transitions the
-        task to ``FAILED`` on one call with empty logs, and only on a
-        subsequent sync returns the populated stderr. The service must
-        perform a final sync before parsing so the real error is surfaced
-        instead of the generic ``"Task failed"``.
+        Reproduces the Nomad + executor early-return race: ``sync_task_history``
+        transitions the in-memory ``queue_item`` to ``FAILED`` with empty logs,
+        and the NomadExecutor then refuses to re-fetch logs for a terminal
+        task. The service must re-query the DB row where the background
+        Celery task has since populated the stderr.
         """
         session = AsyncMock(spec=AsyncSession)
         task = _make_task()
         request = _make_request()
 
-        failed_empty_history = _make_task_history(
+        stale_failed_history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.FAILED,
         )
-        failed_with_stderr_history = _make_task_history(
+        fresh_failed_history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.FAILED,
             stderr="Traceback: JSONDecodeError: Expecting value",
         )
 
         mock_executor = AsyncMock(spec=BaseExecutor)
 
-        async def mock_dispatch(queue_item, sess):
+        async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        sync_results = iter([failed_empty_history, failed_with_stderr_history])
-
-        async def mock_sync(queue_item):
-            return next(sync_results)
+        async def mock_sync(_queue_item):
+            # Every executor sync returns the stale (empty-logs) copy,
+            # mimicking the early-return in NomadExecutor._sync_task_history.
+            return stale_failed_history
 
         mock_executor.sync_task_history = mock_sync
 
@@ -401,45 +417,47 @@ class TestCheckConnectivity:
             patch(
                 "app.tasks.connectivity.service.TaskHistoryManager.save",
                 new=AsyncMock(),
+            ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
+                new=AsyncMock(return_value=fresh_failed_history),
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
         assert result.success is False
+        assert result.error is not None
         assert "JSONDecodeError" in result.error
 
     async def test_success_logs_arrive_after_status_transition(self):
         """Verify stdout is captured when it lands after status change.
 
-        Same Nomad race as the FAILED case but for the happy path: the first
-        sync transitions to ``SUCCESS`` with empty stdout, and only the next
-        sync returns the JSON result. Without a final sync the service would
-        wrongly report ``"Failed to parse connectivity check output"``.
+        Same race as the FAILED case but for the happy path: the executor
+        reports ``SUCCESS`` with empty stdout, and only the DB row fetched
+        via ``TaskHistoryManager.get_or_404`` carries the JSON result.
         """
         session = AsyncMock(spec=AsyncSession)
         task = _make_task()
         request = _make_request()
 
-        success_empty_history = _make_task_history(
+        stale_success_history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.SUCCESS,
         )
-        success_with_stdout_history = _make_task_history(
+        fresh_success_history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.SUCCESS,
             stdout=json.dumps({"success": True}),
         )
 
         mock_executor = AsyncMock(spec=BaseExecutor)
 
-        async def mock_dispatch(queue_item, sess):
+        async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        sync_results = iter([success_empty_history, success_with_stdout_history])
-
-        async def mock_sync(queue_item):
-            return next(sync_results)
+        async def mock_sync(_queue_item):
+            return stale_success_history
 
         mock_executor.sync_task_history = mock_sync
 
@@ -459,6 +477,10 @@ class TestCheckConnectivity:
             patch(
                 "app.tasks.connectivity.service.TaskHistoryManager.save",
                 new=AsyncMock(),
+            ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
+                new=AsyncMock(return_value=fresh_success_history),
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
@@ -468,13 +490,81 @@ class TestCheckConnectivity:
         assert result.error is None
         assert result.task_history_id == MOCK_TASK_HISTORY_ID
 
+    async def test_fresh_fetch_retries_until_logs_are_populated(self):
+        """Verify the service retries the DB fetch until logs show up.
+
+        The periodic Celery sync may not have updated the DB row by the time
+        the service first re-queries it. The service must poll
+        ``TaskHistoryManager.get_or_404`` a few times until the
+        ``run-script`` stdout is non-empty.
+        """
+        session = AsyncMock(spec=AsyncSession)
+        task = _make_task()
+        request = _make_request()
+
+        stale_history = _make_task_history(
+            task_history_status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        empty_refetch = _make_task_history(
+            task_history_status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        populated_refetch = _make_task_history(
+            task_history_status=TaskHistoryStatusEnum.SUCCESS,
+            stdout=json.dumps({"success": True}),
+        )
+
+        mock_executor = AsyncMock(spec=BaseExecutor)
+
+        async def mock_dispatch(queue_item, _session):
+            queue_item.id = MOCK_TASK_HISTORY_ID
+            queue_item.status = TaskHistoryStatusEnum.RUNNING
+            return queue_item
+
+        async def mock_sync(_queue_item):
+            return stale_history
+
+        mock_executor.sync_task_history = mock_sync
+
+        refetch_results = iter([empty_refetch, populated_refetch])
+
+        async def mock_get_or_404(*_args, **_kwargs):
+            return next(refetch_results)
+
+        with (
+            patch(
+                "app.tasks.connectivity.service.get_executable_task_by_name",
+                new=AsyncMock(return_value=task),
+            ),
+            patch(
+                "app.tasks.connectivity.service.dispatch_queue_item",
+                side_effect=mock_dispatch,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.save",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
+                side_effect=mock_get_or_404,
+            ),
+            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
+        ):
+            result = await check_connectivity(session, request)
+
+        assert result.success is True
+        assert result.error is None
+
     async def test_task_stays_pending(self):
         """Verify timeout when the task never transitions from pending."""
         session = AsyncMock(spec=AsyncSession)
         task = _make_task()
         request = _make_request(timeout=POLL_INTERVAL)
 
-        async def mock_dispatch(queue_item, sess):
+        async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.PENDING
             return queue_item
@@ -508,6 +598,7 @@ class TestCheckConnectivity:
             result = await check_connectivity(session, request)
 
         assert result.success is False
+        assert result.error is not None
         assert "timed out" in result.error
 
 
@@ -542,6 +633,7 @@ class TestParseCheckResult:
         )
         result = _parse_check_result(history)
         assert result.success is False
+        assert result.error is not None
         assert "module not found" in result.error
 
     def test_failed_status_without_stderr(self):
