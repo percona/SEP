@@ -40,6 +40,7 @@ from pydantic import (
 )
 from sqlalchemy import Column, Index, JSON
 from sqlalchemy import Enum as EnumField
+from sqlalchemy.orm import column_property
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -772,6 +773,11 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
                     msg=msg[chunk_start:chunk_end],
                     offset=chunk_end,
                 )
+
+
+TaskHistory.execution_request = column_property(
+    TaskHistory.__table__.c.execution_request, deferred=True
+)
 
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
