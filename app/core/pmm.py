@@ -60,6 +60,8 @@ async def create_pmm_annotation(
             RemoteAPI,
             endpoint=settings.PMM.endpoint,
             verify_ssl=settings.PMM.verify_ssl,
+            error_detail_key="message",
+            error_code_key="code",
         )
         with api.auth(settings.PMM.api_key.get_secret_value()):
             await asyncio.wait_for(
