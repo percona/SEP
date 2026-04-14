@@ -95,21 +95,18 @@ async def annotate_task_event(
     :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``, ``"FAILED"``).
     :type event: str
     """
-    try:
-        meta = queue_item.execution_request.meta or {}
-        service_names = meta.get("_service_names")
-        if service_names is None:
-            single = meta.get("_service_name")
-            service_names = [single] if single else []
+    meta = queue_item.execution_request.meta or {}
+    service_names = meta.get("_service_names")
+    if service_names is None:
+        single = meta.get("_service_name")
+        service_names = [single] if single else []
 
-        await create_pmm_annotation(
-            text=f"SEP {queue_item.execution_request.task} - {event}",
-            node_name=queue_item.execution_request.target,
-            tags=["sep", queue_item.execution_request.task, event.lower()],
-            service_names=service_names,
-        )
-    except Exception:
-        logger.exception("Failed to annotate task event: %s", event)
+    await create_pmm_annotation(
+        text=f"SEP {queue_item.execution_request.task} - {event}",
+        node_name=queue_item.execution_request.target,
+        tags=["sep", queue_item.execution_request.task, event.lower()],
+        service_names=service_names,
+    )
 
 
 def schedule_annotation(
