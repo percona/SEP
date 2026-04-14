@@ -11,7 +11,7 @@ jobs:
   assign-author:
     # Skip if already assigned, and skip fork PRs.
     if: >-
-      length(github.event.pull_request.assignees) == 0 &&
+      !github.event.pull_request.assignees[0] &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
