@@ -1102,7 +1102,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         if server_data.get('UPLOAD_INVERTAL'):
             self.upload_interval = server_data.get('UPLOAD_INVERTAL')
-            self.logger.warning('UPLOAD_INVERTAL typo renamed to UPLOAD_INTERVAL')
+            self.logger.warning('UPLOAD_INVERTAL typo; rename config key to UPLOAD_INTERVAL')
 
     def get_default_mycnf(self):
         """return all my.cnf files found
