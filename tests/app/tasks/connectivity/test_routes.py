@@ -67,7 +67,7 @@ class TestConnectivityCheckEndpoint:
 
         with (
             patch(
-                "app.tasks.connectivity.routes.TaskManager.retrieve_by_name",
+                "app.tasks.connectivity.routes.get_executable_task_by_name",
                 new=AsyncMock(return_value=mock_task),
             ),
             patch(
@@ -102,7 +102,7 @@ class TestConnectivityCheckEndpoint:
 
         with (
             patch(
-                "app.tasks.connectivity.routes.TaskManager.retrieve_by_name",
+                "app.tasks.connectivity.routes.get_executable_task_by_name",
                 new=AsyncMock(return_value=mock_task),
             ),
             patch(
