@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.orm import undefer
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
@@ -31,6 +32,7 @@ from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
+from app.tasks.execution.executors.celery.models import CeleryExecutor
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     Task,
@@ -62,14 +64,18 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecutor:
-    """Get the task executor.
+    """Get the task executor for the given backend.
 
+    :param backend: The backend type to get an executor for.
+    :type backend: TaskBackendEnum
     :return: The task executor.
     :rtype: BaseExecutor
+    :raises ValueError: If the backend is not supported.
     """
-    # TODO: Allow other executors  # noqa: TD002, TD003
     if backend == TaskBackendEnum.NOMAD:
         return tasks_settings.NOMAD
+    if backend == TaskBackendEnum.CELERY:
+        return CeleryExecutor()
     raise ValueError(f"Unsupported backend {backend}")
 
 
@@ -187,9 +193,12 @@ async def prepare_task_history(
         await validate_chain_task_names(session, execution_data.chain_task_names, task)
         execution_data.meta["_chain_task_names"] = execution_data.chain_task_names
         execution_data.meta["_chain_on_failure"] = execution_data.chain_on_failure
-    target = execution_data.meta.get("target") or task.data.get("Constraints", [{}])[
-        0
-    ].get("RTarget")
+    if task.backend == TaskBackendEnum.CELERY:
+        target = task.data.get("target")
+    else:
+        target = execution_data.meta.get("target") or task.data.get(
+            "Constraints", [{}]
+        )[0].get("RTarget")
     if not target:
         raise HTTPBadRequestException(
             "Execution target is required in execution data meta."
@@ -257,7 +266,10 @@ async def get_task_history_with_task(
     """
     logger.debug("Requesting task history %s", task_history_id)
     return await TaskHistoryManager.get_or_404(
-        session=session, select_related=(TaskHistory.task,), id=task_history_id
+        session=session,
+        select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=task_history_id,
     )
 
 
