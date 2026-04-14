@@ -158,7 +158,7 @@ def test_func_json_extract_postgresql_equality_compiles_with_literal_binds():
 
 
 def test_func_json_extract_postgresql_path_is_inlined_for_index_match():
-    """Inline JSON path constants so expression indexes can be matched.
+    """Inline JSON path constants so PG expression indexes can be matched.
 
     PostgreSQL expression indexes like
     ``CREATE INDEX ... ON taskhistory ((execution_request->>'task'))`` only
@@ -173,3 +173,20 @@ def test_func_json_extract_postgresql_path_is_inlined_for_index_match():
 
     rendered = _compile_postcompile(expression, postgresql.dialect())
     assert "->> 'task'" in rendered or "->>'task'" in rendered
+
+
+def test_func_json_extract_sqlite_path_is_inlined_for_index_match():
+    """Inline JSON path constants so SQLite expression indexes can be matched.
+
+    SQLite's ``CREATE INDEX ... ON taskhistory (json_extract(execution_request, '$.task'))``
+    is only used when the query renders the same literal path. Confirm the
+    helper emits ``json_extract(..., '$.task')`` rather than a parameter
+    placeholder for the path argument.
+    """
+    json_column = column("execution_request", type_=JSON)
+
+    expression = func_json_extract("sqlite", json_column, "task")
+
+    rendered = _compile_postcompile(expression, sqlite.dialect())
+    assert "'$.task'" in rendered
+    assert "?" not in rendered

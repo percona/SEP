@@ -103,7 +103,10 @@ def func_json_extract(
         return expression.op("->>", return_type=Text)(
             literal(path_elems[-1], Text, literal_execute=True)
         )
-    return func.json_extract(column, json_join_path_elems(*path_elems))
+    return func.json_extract(
+        column,
+        literal(json_join_path_elems(*path_elems), Text, literal_execute=True),
+    )
 
 
 def prepare_unsafe_value_for_json_comparison(db_engine: str, value: Any) -> Any:
