@@ -256,7 +256,7 @@ class BaseManager:
                 pk_query = pk_query.order_by(*ordering)
             if offset is not None:
                 pk_query = pk_query.offset(offset)
-            if limit is not None:
+            if limit:
                 pk_query = pk_query.limit(limit)
             pk_result = await cls._exec(session, pk_query)
             page_ids = list(pk_result.all())
