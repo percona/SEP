@@ -81,8 +81,7 @@ GSUTIL_BIN = os.getenv('PERCONA_BACKUP_GSUTIL_BIN', '/usr/local/bin/gsutil')
 AWS_BIN = os.getenv('PERCONA_BACKUP_AWS_BIN', '/usr/bin/aws')
 SSH_ARGS = '-o PasswordAuthentication=no -o StrictHostKeyChecking=no'
 UPLOADME_FILE = '.uploadme'
-BACKTICK = "`"
-FORBIDDEN_SHELL_METACHARS = frozenset("$;|&()" + BACKTICK)
+FORBIDDEN_SHELL_METACHARS = frozenset("$;|&()`")
 
 
 def validate_backup_source_for_shell(value: str) -> None:
