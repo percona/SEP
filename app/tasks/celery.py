@@ -32,6 +32,7 @@ from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import cast, func, Text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -199,7 +200,10 @@ async def get_task_history(queue_id: int) -> TaskHistory:
     async_session = get_async_session_maker()
     async with async_session() as session:
         return await TaskHistoryManager.get_or_404(
-            session, select_related=[TaskHistory.task], id=queue_id
+            session,
+            select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=queue_id,
         )
 
 
@@ -382,13 +386,32 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         queue_item = await TaskHistoryManager.get_or_404(
             session,
             select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
             id=queue_id,
         )
         task = await TaskManager.get_root_task(session, queue_item.task)
     was_running = queue_item.is_running
-    if was_running:
-        executor = get_executor_for_task(task)
-        queue_item = await executor.sync_task_history(queue_item)
+    if not was_running:
+        async with async_session() as session:
+            result = await TaskHistoryManager.update_where(
+                session,
+                {"sync_in_progress_started_at": None},
+                TaskHistory.status != TaskHistoryStatusEnum.RUNNING,
+                id=queue_id,
+            )
+            if result.rowcount == 0:
+                queue_item = await TaskHistoryManager.get_or_404(
+                    session,
+                    select_related=[TaskHistory.task],
+                    query_options=[undefer(TaskHistory.execution_request)],
+                    id=queue_id,
+                )
+                task = await TaskManager.get_root_task(session, queue_item.task)
+                was_running = True
+            else:
+                return queue_item
+    executor = get_executor_for_task(task)
+    queue_item = await executor.sync_task_history(queue_item)
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
         saved = await TaskHistoryManager.save(
