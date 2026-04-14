@@ -178,21 +178,7 @@ endif
 	echo ""; \
 	echo "=== RC $$RC_VERSION released successfully ==="; \
 	echo ""; \
-	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
-		echo "==> Triggering Jenkins release build for v$$RC_VERSION..."; \
-		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
-			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=v$$RC_VERSION" \
-			--data-urlencode "notifySlack=true" \
-			--data-urlencode "pushImage=true" \
-			--data-urlencode "pushImageDocker=true" 2>&1; then \
-			echo "    Jenkins build triggered successfully."; \
-		else \
-			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
-		fi; \
-	else \
-		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
-	fi; \
+	$(MAKE) trigger-jenkins TAG="v$$RC_VERSION"; \
 	echo ""; \
 	echo "Next steps:"; \
 	echo "  1. Create Jira version $(VERSION) (if not already created)"; \
@@ -262,11 +248,23 @@ endif
 	echo ""; \
 	echo "=== Stable $(VERSION) released successfully ==="; \
 	echo ""; \
+	$(MAKE) trigger-jenkins TAG="v$(VERSION)"; \
+	echo ""; \
+	echo "Next steps:"; \
+	echo "  1. Publish release notes"; \
+	echo "  2. Mark Jira version $(VERSION) as released"; \
+	echo "  3. Merge the dev version bump PR"
+
+trigger-jenkins:
+ifndef TAG
+	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z)
+endif
+	@set -euo pipefail; \
 	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
-		echo "==> Triggering Jenkins release build for v$(VERSION)..."; \
+		echo "==> Triggering Jenkins release build for $(TAG)..."; \
 		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
 			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=v$(VERSION)" \
+			--data-urlencode "releaseTag=$(TAG)" \
 			--data-urlencode "notifySlack=true" \
 			--data-urlencode "pushImage=true" \
 			--data-urlencode "pushImageDocker=true" 2>&1; then \
@@ -276,11 +274,6 @@ endif
 		fi; \
 	else \
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
-	fi; \
-	echo ""; \
-	echo "Next steps:"; \
-	echo "  1. Publish release notes"; \
-	echo "  2. Mark Jira version $(VERSION) as released"; \
-	echo "  3. Merge the dev version bump PR"
+	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations migrate checkmigrations test release-rc release-stable
+.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations migrate checkmigrations test release-rc release-stable trigger-jenkins
