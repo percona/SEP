@@ -56,7 +56,7 @@ repos:
             NOMAD_PAYLOAD_SIZE_LIMIT = 16384
             failed = []
             for p in sys.argv[1:]:
-                with open(p) as f:
+                with open(p, encoding="utf-8") as f:
                     src = f.read()
                 try:
                     src = minify(
@@ -88,9 +88,8 @@ repos:
                     print(f"  {p}: {sz:,} bytes (limit: {NOMAD_PAYLOAD_SIZE_LIMIT:,})")
                 sys.exit(1)
         language: python
-        additional_dependencies: ["python-minifier"]
-        files: ^app/sep/plugins/
-        exclude: (^app/sep/plugins/dipper/|\.(py|pyc|md|yaml|yml|sh|json)$|__pycache__/)
+        additional_dependencies: ["python-minifier==2.11.3"]
+        files: ^app/sep/plugins/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
         pass_filenames: true
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
