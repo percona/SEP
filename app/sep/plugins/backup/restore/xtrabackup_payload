@@ -1097,7 +1097,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         # Options for backward-compatibility
         if 'NO_COMPRESS' in server_data:
-            self.logger.warning('NO_COMPRESS deprecated, use COMPRESS instead')
+            self.logger.warning('NO_COMPRESS deprecated; use COMPRESS (inverted) instead')
             self.compress = server_data['NO_COMPRESS']
 
         if server_data.get('UPLOAD_INVERTAL'):
