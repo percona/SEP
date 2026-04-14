@@ -880,7 +880,13 @@ class TestSyncQueueItem:
 
         mock_save.assert_awaited_once()
         call_kwargs = mock_save.call_args
-        assert call_kwargs.kwargs.get("flag_modified_fields") == ["execution_request"]
+        assert set(call_kwargs.kwargs.get("flag_modified_fields")) == {
+            "execution_request",
+            "status",
+            "started_at",
+            "finished_at",
+            "sync_in_progress_started_at",
+        }
         assert result is saved_item
 
 
