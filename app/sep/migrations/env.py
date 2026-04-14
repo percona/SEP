@@ -26,6 +26,7 @@ from alembic import context
 from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
 from app.sep.models import *
+from app.sep.plugins.alerts.backup import *
 from app.sep.snippets.models import *
 
 # this is the Alembic Config object, which provides
