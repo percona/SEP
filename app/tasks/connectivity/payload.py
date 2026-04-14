@@ -20,6 +20,7 @@ argument, connects to the target database, and prints a JSON result to stdout.
 """
 
 import argparse
+import contextlib
 import json
 import sys
 
@@ -38,12 +39,10 @@ def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     import pymysql
 
     connect_kwargs = {"host": host, "port": port, "connect_timeout": 10}
-    try:
+    with contextlib.suppress(Exception):
         login = myloginpath.parse("client")
         connect_kwargs["user"] = login.get("user")
         connect_kwargs["password"] = login.get("password")
-    except Exception:
-        pass
 
     try:
         conn = pymysql.connect(**connect_kwargs)
