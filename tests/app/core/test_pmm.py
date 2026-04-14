@@ -21,14 +21,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import SecretStr
 
+from app.core.config import PMMSettings
 from app.core.pmm import annotate_task_event, create_pmm_annotation
+from app.core.requests.remote_api import RemoteAPI
 from app.tasks.models import TaskExecutionRequest, TaskHistory, TaskHistoryStatusEnum
 
 
 @pytest.fixture
 def pmm_settings_enabled():
     """Return a mock PMMSettings with annotations enabled."""
-    pmm = MagicMock()
+    pmm = MagicMock(spec=PMMSettings)
     pmm.annotations_enabled = True
     pmm.endpoint = "https://pmm.example.com"
     pmm.api_key = SecretStr("test-api-key")
@@ -39,7 +41,7 @@ def pmm_settings_enabled():
 @pytest.fixture
 def mock_remote_api():
     """Return a mock RemoteAPI with a synchronous auth context manager."""
-    api = MagicMock()
+    api = MagicMock(spec=RemoteAPI)
     api.post = AsyncMock(return_value={})
     api.auth.return_value.__enter__ = MagicMock(return_value=api)
     api.auth.return_value.__exit__ = MagicMock(return_value=False)
