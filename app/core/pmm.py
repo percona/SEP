@@ -25,6 +25,7 @@ from app.tasks.models import TaskHistory
 logger = logging.getLogger(__name__)
 
 _ANNOTATION_TIMEOUT = 5
+_background_tasks = set()
 
 
 async def create_pmm_annotation(
@@ -35,8 +36,9 @@ async def create_pmm_annotation(
 ) -> None:
     """Create a PMM annotation via POST ``/v1/management/annotations``.
 
-    Fire-and-forget: errors are logged but never raised. This function
-    must never block or fail task execution.
+    Best-effort: errors are logged but never raised. Callers should
+    schedule this via ``asyncio.create_task()`` for non-blocking behavior;
+    awaiting directly blocks for up to ``_ANNOTATION_TIMEOUT`` seconds.
 
     :param text: Annotation text (e.g. ``"SEP backup_data - STARTED"``).
     :type text: str
@@ -106,3 +108,22 @@ async def annotate_task_event(
         )
     except Exception:
         logger.exception("Failed to annotate task event: %s", event)
+
+
+def schedule_annotation(
+    queue_item: TaskHistory,
+    event: str,
+) -> None:
+    """Schedule a fire-and-forget PMM annotation as a background task.
+
+    Create a background ``asyncio.Task`` for the annotation and store a
+    reference in ``_background_tasks`` to prevent garbage collection.
+
+    :param queue_item: The task history record.
+    :type queue_item: TaskHistory
+    :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``).
+    :type event: str
+    """
+    task = asyncio.create_task(annotate_task_event(queue_item, event))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)

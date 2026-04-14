@@ -23,7 +23,7 @@ from typing import Any
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.pmm import annotate_task_event
+from app.core.pmm import schedule_annotation
 from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.utils import parse_payload
@@ -268,7 +268,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
             }
             event = event_map.get(queue_item.status)
             if event:
-                await annotate_task_event(queue_item, event)
+                schedule_annotation(queue_item, event)
         return queue_item
 
     @abstractmethod

@@ -439,13 +439,12 @@ class TestInternalDispatchQueueItem:
                 new_callable=AsyncMock,
             ),
             patch(
-                "app.tasks.celery.annotate_task_event",
-                new_callable=AsyncMock,
-            ) as mock_annotate,
+                "app.tasks.celery.schedule_annotation",
+            ) as mock_schedule,
         ):
             await _dispatch_queue_item(queue_item, session)
 
-        mock_annotate.assert_awaited_once_with(dispatched_item, "STARTED")
+        mock_schedule.assert_called_once_with(dispatched_item, "STARTED")
 
 
 class TestRaiseIfIdenticalTaskConflict:

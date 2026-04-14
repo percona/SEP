@@ -46,7 +46,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
-from app.core.pmm import annotate_task_event
+from app.core.pmm import schedule_annotation
 from app.core.utils import utc_now
 from app.tasks.config import tasks_settings
 from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
@@ -291,7 +291,7 @@ async def _dispatch_queue_item(
         logger.exception("Failed to dispatch queue item")
         raise
     else:
-        await annotate_task_event(result, "STARTED")
+        schedule_annotation(result, "STARTED")
         return result
     finally:
         async with lock_session_maker() as async_session:

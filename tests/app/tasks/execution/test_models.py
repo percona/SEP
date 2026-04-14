@@ -278,13 +278,12 @@ class TestSyncTaskHistory:
                 AsyncMock(return_value=synced_item),
             ),
             patch(
-                "app.tasks.execution.models.annotate_task_event",
-                new_callable=AsyncMock,
-            ) as mock_annotate,
+                "app.tasks.execution.models.schedule_annotation",
+            ) as mock_schedule,
         ):
             await executor.sync_task_history(queue_item)
 
-        mock_annotate.assert_awaited_once_with(synced_item, expected_event)
+        mock_schedule.assert_called_once_with(synced_item, expected_event)
 
     @pytest.mark.asyncio
     async def test_does_not_annotate_when_still_running(
@@ -308,13 +307,12 @@ class TestSyncTaskHistory:
                 AsyncMock(return_value=synced_item),
             ),
             patch(
-                "app.tasks.execution.models.annotate_task_event",
-                new_callable=AsyncMock,
-            ) as mock_annotate,
+                "app.tasks.execution.models.schedule_annotation",
+            ) as mock_schedule,
         ):
             await executor.sync_task_history(queue_item)
 
-        mock_annotate.assert_not_awaited()
+        mock_schedule.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_does_not_annotate_already_terminal(self, executor: ConcreteExecutor):
@@ -336,13 +334,12 @@ class TestSyncTaskHistory:
                 AsyncMock(return_value=synced_item),
             ),
             patch(
-                "app.tasks.execution.models.annotate_task_event",
-                new_callable=AsyncMock,
-            ) as mock_annotate,
+                "app.tasks.execution.models.schedule_annotation",
+            ) as mock_schedule,
         ):
             await executor.sync_task_history(queue_item)
 
-        mock_annotate.assert_not_awaited()
+        mock_schedule.assert_not_called()
 
 
 _DEFAULT_WAIT_INTERVAL = 5
