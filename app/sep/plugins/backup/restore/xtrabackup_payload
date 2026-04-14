@@ -2178,36 +2178,25 @@ class Xtrabackup(Restore):
         rchown(destination, pwd.getpwnam(self.ssh_user).pw_uid, pwd.getpwnam(self.ssh_user).pw_gid)
 
         if self.xtrabackup_bin_cmd == "innobackupex":
-            stream_cmd = 'ssh -tt -o PasswordAuthentication=no -o StrictHostKeyChecking=no ' \
-                         '-i /home/{}/.ssh/{} {}@{} -p {} "set -o pipefail; sudo /usr/bin/innobackupex  ' \
-                         '/tmp --slave-info --kill-long-queries-timeout=10 --kill-long-query-type=select ' \
-                         '--stream=xbstream | ssh -o PasswordAuthentication=no -o StrictHostKeyChecking=no {}@{} ' \
-                         '-p {} "xbstream -x -C {}""' \
-                .format(self.ssh_user,
-                        self.ssh_key,
-                        self.ssh_user,
-                        source,
-                        self.ssh_port,
-                        self.ssh_user,
-                        self._get_own_ssh_remote_addr(source),
-                        self.ssh_port,
-                        destination)
+            xb_part = '/usr/bin/innobackupex  /tmp'
         else:
-            stream_cmd = 'ssh -tt -o PasswordAuthentication=no -o StrictHostKeyChecking=no ' \
-                         '-i /home/{}/.ssh/{} {}@{} -p {} "set -o pipefail; sudo /usr/bin/{}  ' \
-                         '--backup --slave-info --kill-long-queries-timeout=10 --kill-long-query-type=select ' \
-                         '--stream=xbstream | ssh -o PasswordAuthentication=no -o StrictHostKeyChecking=no {}@{} ' \
-                         '-p {} "xbstream -x -C {}""' \
-                .format(self.ssh_user,
-                        self.ssh_key,
-                        self.ssh_user,
-                        source,
-                        self.ssh_port,
-                        self.xtrabackup_bin_cmd,
-                        self.ssh_user,
-                        self._get_own_ssh_remote_addr(source),
-                        self.ssh_port,
-                        destination)
+            xb_part = '/usr/bin/%s  --backup' % self.xtrabackup_bin_cmd
+        stream_cmd = (
+            'ssh -tt {ssh_args} '
+            '-i /home/{user}/.ssh/{key} {user}@{src} -p {port} "set -o pipefail; sudo {xb_part} '
+            '--slave-info --kill-long-queries-timeout=10 --kill-long-query-type=select '
+            '--stream=xbstream | ssh {ssh_args} {user}@{dst} '
+            '-p {port} "xbstream -x -C {dest}""'
+        ).format(
+            ssh_args=SSH_ARGS,
+            user=self.ssh_user,
+            key=self.ssh_key,
+            src=source,
+            port=self.ssh_port,
+            xb_part=xb_part,
+            dst=self._get_own_ssh_remote_addr(source),
+            dest=destination,
+        )
         self.logger.info('Running: %s', stream_cmd)
         xb_log_stream = open(self.xb_log_file, 'a')
         proc = subprocess.Popen(stream_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
