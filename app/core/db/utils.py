@@ -97,7 +97,7 @@ def func_json_extract(
         expression = column
         for elem in path_elems[:-1]:
             expression = expression.op("->")(literal(elem, Text))
-        return expression.op("->>")(literal(path_elems[-1], Text))
+        return expression.op("->>", return_type=Text)(literal(path_elems[-1], Text))
     return func.json_extract(column, json_join_path_elems(*path_elems))
 
 

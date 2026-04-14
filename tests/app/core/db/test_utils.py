@@ -120,3 +120,32 @@ def test_func_json_extract_postgresql_mapped_column_binds_path_as_text():
     nested_sql = str(nested.compile(dialect=postgresql.dialect()))
     assert "::JSON" not in single_sql.upper()
     assert "::JSON" not in nested_sql.upper()
+
+
+def test_func_json_extract_postgresql_equality_compiles_with_literal_binds():
+    """Render equality comparisons with literal binds on PostgreSQL.
+
+    The helper must return a text-typed expression so callers comparing the
+    result against a string (e.g. ``extract(...) == queue_item.task``) can
+    bind the RHS value as text. A JSON-typed return would try to render the
+    RHS as a JSON literal and raise a ``CompileError``.
+    """
+    mapped_column = col(TaskHistory.execution_request)
+
+    single = func_json_extract("postgresql", mapped_column, "task") == "mysqldump"
+    nested = (
+        func_json_extract("postgresql", mapped_column, "meta", "origin") == "scheduler"
+    )
+
+    single_sql = str(
+        single.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    nested_sql = str(
+        nested.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "'mysqldump'" in single_sql
+    assert "'scheduler'" in nested_sql
