@@ -60,11 +60,11 @@ def test_func_json_extract_postgresql_nested_path_renders_arrow_chain():
     expression = func_json_extract("postgresql", json_column, "meta", "key")
 
     rendered = _compile(expression, postgresql.dialect())
-    assert "->" in rendered
-    assert "->>" in rendered
-    assert "'meta'" in rendered
-    assert "'key'" in rendered
-    assert rendered.index("->") < rendered.index("->>")
+    meta_index = rendered.index("'meta'")
+    key_index = rendered.index("'key'")
+    assert "->" in rendered[:meta_index]
+    assert "->>" in rendered[meta_index:key_index]
+    assert meta_index < key_index
     assert "json_extract_path_text" not in rendered
 
 
