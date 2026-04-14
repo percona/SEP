@@ -42,6 +42,12 @@ def _compile(expr, dialect) -> str:
     return str(expr.compile(dialect=dialect, compile_kwargs={"literal_binds": True}))
 
 
+def _compile_postcompile(expr, dialect) -> str:
+    return str(
+        expr.compile(dialect=dialect, compile_kwargs={"render_postcompile": True})
+    )
+
+
 def test_func_json_extract_postgresql_single_key_renders_double_arrow():
     """Render ``execution_request->>'task'`` for a single-element path on PostgreSQL."""
     json_column = column("execution_request", type_=JSON)
@@ -149,3 +155,21 @@ def test_func_json_extract_postgresql_equality_compiles_with_literal_binds():
     )
     assert "'mysqldump'" in single_sql
     assert "'scheduler'" in nested_sql
+
+
+def test_func_json_extract_postgresql_path_is_inlined_for_index_match():
+    """Inline JSON path constants so expression indexes can be matched.
+
+    PostgreSQL expression indexes like
+    ``CREATE INDEX ... ON taskhistory ((execution_request->>'task'))`` only
+    match queries whose arrow expression contains the same literal key, not
+    a bound parameter. Render the helper with post-compile expansion to
+    confirm the path element appears as an inline literal (``'task'``)
+    rather than a parameter placeholder.
+    """
+    mapped_column = col(TaskHistory.execution_request)
+
+    expression = func_json_extract("postgresql", mapped_column, "task")
+
+    rendered = _compile_postcompile(expression, postgresql.dialect())
+    assert "->> 'task'" in rendered or "->>'task'" in rendered

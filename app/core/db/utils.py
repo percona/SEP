@@ -77,6 +77,9 @@ def func_json_extract(
 
     - PostgreSQL: ``col->'a'->>'b'``. The final ``->>`` returns the value as
       text. The expression is valid on both ``json`` and ``jsonb`` columns.
+      Path elements are inlined as SQL literals (via SQLAlchemy's
+      ``literal_execute``) instead of bound parameters so the planner can
+      syntactically match the expression against the functional indexes.
     - SQLite: ``json_extract(col, '$.a.b')``. SQLite auto-unquotes scalars, so
       the result is directly comparable to a string.
     - MySQL: ``json_extract(col, '$.a.b')``. No functional index is created on
@@ -96,8 +99,10 @@ def func_json_extract(
     if db_engine.startswith(DatabaseDialect.POSTGRESQL):
         expression = column
         for elem in path_elems[:-1]:
-            expression = expression.op("->")(literal(elem, Text))
-        return expression.op("->>", return_type=Text)(literal(path_elems[-1], Text))
+            expression = expression.op("->")(literal(elem, Text, literal_execute=True))
+        return expression.op("->>", return_type=Text)(
+            literal(path_elems[-1], Text, literal_execute=True)
+        )
     return func.json_extract(column, json_join_path_elems(*path_elems))
 
 
