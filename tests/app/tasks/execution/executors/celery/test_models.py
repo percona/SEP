@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.orm import undefer
 
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.celery.models import (
@@ -80,7 +81,10 @@ async def celery_queue_item(session, celery_task) -> TaskHistory:
     )
     saved = await TaskHistoryManager.save(session, history)
     return await TaskHistoryManager.get_or_404(
-        session, select_related=(TaskHistory.task,), id=saved.id
+        session,
+        select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=saved.id,
     )
 
 
@@ -149,11 +153,18 @@ class TestCeleryExecutorDispatchTask:
         self, executor, session, celery_queue_item
     ) -> None:
         """Assert successful dispatch updates status to SUCCESS."""
-        with patch.object(
-            executor,
-            "_run_callable",
-            new_callable=AsyncMock,
-            return_value="done",
+        with (
+            patch.object(
+                executor,
+                "_run_callable",
+                new_callable=AsyncMock,
+                return_value="done",
+            ),
+            patch(
+                "app.tasks.execution.executors.celery.models.TaskHistoryManager.save",
+                new_callable=AsyncMock,
+                side_effect=lambda _s, qi, **_kw: qi,
+            ),
         ):
             result = await executor.dispatch_task(session, celery_queue_item)
         assert result.status == TaskHistoryStatusEnum.SUCCESS
@@ -163,11 +174,18 @@ class TestCeleryExecutorDispatchTask:
     @pytest.mark.asyncio
     async def test_failed_dispatch(self, executor, session, celery_queue_item) -> None:
         """Assert failed callable updates status to FAILED."""
-        with patch.object(
-            executor,
-            "_run_callable",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("boom"),
+        with (
+            patch.object(
+                executor,
+                "_run_callable",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ),
+            patch(
+                "app.tasks.execution.executors.celery.models.TaskHistoryManager.save",
+                new_callable=AsyncMock,
+                side_effect=lambda _s, qi, **_kw: qi,
+            ),
         ):
             result = await executor.dispatch_task(session, celery_queue_item)
         assert result.status == TaskHistoryStatusEnum.FAILED
@@ -181,11 +199,18 @@ class TestCeleryExecutorDispatchTask:
         self, executor, session, celery_queue_item
     ) -> None:
         """Assert dispatch stores captured logs in tracking."""
-        with patch.object(
-            executor,
-            "_run_callable",
-            new_callable=AsyncMock,
-            return_value="output data",
+        with (
+            patch.object(
+                executor,
+                "_run_callable",
+                new_callable=AsyncMock,
+                return_value="output data",
+            ),
+            patch(
+                "app.tasks.execution.executors.celery.models.TaskHistoryManager.save",
+                new_callable=AsyncMock,
+                side_effect=lambda _s, qi, **_kw: qi,
+            ),
         ):
             result = await executor.dispatch_task(session, celery_queue_item)
         task_logs = result.execution_request.tracking.get("task_logs", {})

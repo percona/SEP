@@ -298,7 +298,8 @@ class TestPrepareTaskHistory:
         result = await prepare_task_history(task, "user-1", AsyncMock(), execution_data)
         assert result.anonymize_mask == EXECUTION_ANONYMIZE_MASK
 
-    def test_celery_backend_uses_target_from_data(self) -> None:
+    @pytest.mark.asyncio
+    async def test_celery_backend_uses_target_from_data(self) -> None:
         """Assert CELERY backend gets target from task.data."""
         task = Task(
             id=7,
@@ -309,11 +310,12 @@ class TestPrepareTaskHistory:
                 "target": "local",
             },
         )
-        result = prepare_task_history(task, "user-1")
+        result = await prepare_task_history(task, "user-1", AsyncMock())
         assert result.execution_request.target == "local"
         assert result.task_id == task.id
 
-    def test_celery_backend_missing_target_raises(self) -> None:
+    @pytest.mark.asyncio
+    async def test_celery_backend_missing_target_raises(self) -> None:
         """Assert CELERY backend without target in data raises."""
         task = Task(
             id=8,
@@ -322,7 +324,7 @@ class TestPrepareTaskHistory:
             data={"callable": "some.module.func"},
         )
         with pytest.raises(HTTPBadRequestException, match="target is required"):
-            prepare_task_history(task, "user-1")
+            await prepare_task_history(task, "user-1", AsyncMock())
 
     @pytest.mark.asyncio
     @patch("app.tasks.deps.anonymizer_settings")
