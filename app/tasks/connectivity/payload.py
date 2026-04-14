@@ -114,11 +114,17 @@ CHECKERS = {
 
 
 def main() -> None:
-    """Parse the config argument and run the appropriate database checker."""
+    """Parse the config file and run the appropriate database checker.
+
+    The ``--config`` argument is a path to a file containing the JSON
+    configuration (written by Nomad from the ``NOMAD_META_config`` env var),
+    not an inline JSON string.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
-    config = json.loads(args.config)
+    with open(args.config) as config_file:
+        config = json.load(config_file)
     checker = CHECKERS[config["service_type"]]
     result = checker(config["host"], config["port"])
     json.dump(result, sys.stdout)

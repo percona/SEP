@@ -95,11 +95,10 @@ async def check_connectivity(
     ):
         await asyncio.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
-        if queue_item.status == TaskHistoryStatusEnum.RUNNING:
-            queue_item = await executor.sync_task_history(queue_item)
-            await TaskHistoryManager.save(
-                session, queue_item, flag_modified_fields=["execution_request"]
-            )
+        queue_item = await executor.sync_task_history(queue_item)
+        await TaskHistoryManager.save(
+            session, queue_item, flag_modified_fields=["execution_request"]
+        )
 
     if queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
@@ -111,6 +110,10 @@ async def check_connectivity(
             task_history_id=queue_item.id,
         )
 
+    queue_item = await executor.sync_task_history(queue_item)
+    await TaskHistoryManager.save(
+        session, queue_item, flag_modified_fields=["execution_request"]
+    )
     return _parse_check_result(queue_item)
 
 
