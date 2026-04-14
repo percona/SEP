@@ -20,8 +20,10 @@ from sqlalchemy import JSON
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.sql import column
+from sqlmodel import col
 
 from app.core.db.utils import func_json_extract, get_async_session_maker_from_engine
+from app.tasks.models import TaskHistory
 
 
 @pytest.mark.asyncio
@@ -99,3 +101,22 @@ def test_func_json_extract_mysql_single_key_renders_json_extract():
     rendered = _compile(expression, mysql.dialect())
     assert "json_extract" in rendered.lower()
     assert "'$.task'" in rendered
+
+
+def test_func_json_extract_postgresql_mapped_column_binds_path_as_text():
+    """Force text-typed binds for PG JSON operators on mapped ORM columns.
+
+    SQLAlchemy infers bind parameter types from the LHS column type. Using a
+    mapped JSON attribute directly would otherwise render
+    ``col ->> %(param)s::JSON``, which is invalid SQL because PostgreSQL's
+    ``->`` / ``->>`` operators only accept ``text`` / ``integer`` RHS operands.
+    """
+    mapped_column = col(TaskHistory.execution_request)
+
+    single = func_json_extract("postgresql", mapped_column, "task")
+    nested = func_json_extract("postgresql", mapped_column, "meta", "key")
+
+    single_sql = str(single.compile(dialect=postgresql.dialect()))
+    nested_sql = str(nested.compile(dialect=postgresql.dialect()))
+    assert "::JSON" not in single_sql.upper()
+    assert "::JSON" not in nested_sql.upper()

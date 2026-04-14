@@ -18,7 +18,7 @@
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import Column, ColumnClause, ColumnElement, func, JSON, Text
+from sqlalchemy import Column, ColumnClause, ColumnElement, func, JSON, literal, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
@@ -96,8 +96,8 @@ def func_json_extract(
     if db_engine.startswith(DatabaseDialect.POSTGRESQL):
         expression = column
         for elem in path_elems[:-1]:
-            expression = expression.op("->")(elem)
-        return expression.op("->>")(path_elems[-1])
+            expression = expression.op("->")(literal(elem, Text))
+        return expression.op("->>")(literal(path_elems[-1], Text))
     return func.json_extract(column, json_join_path_elems(*path_elems))
 
 
