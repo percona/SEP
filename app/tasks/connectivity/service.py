@@ -120,13 +120,17 @@ async def check_connectivity(
 async def _fetch_fresh_task_history(
     session: AsyncSession, task_history_id: int
 ) -> TaskHistory:
-    """Re-query the task history row until its ``run-script`` logs are populated.
+    """Re-read the task history row from the database until its logs land.
 
-    The ``NomadExecutor._sync_task_history`` early-returns for terminal tasks,
-    so the in-memory ``queue_item`` after the polling loop may still be
-    missing the final stdout/stderr. The DB row, however, is kept up to date
-    by the periodic Celery sync task. Poll it a few times so the handler
-    sees the logs even if the periodic sync has not yet caught up.
+    The polling loop's last successful ``sync_task_history`` populates the
+    ``task_logs`` column of the DB row, but the in-memory
+    ``TaskExecutionRequest`` Pydantic object attached to ``queue_item`` is
+    NOT re-hydrated through a subsequent ``session.get``: the identity map
+    returns the existing object and SQLAlchemy's refresh leaves nested JSON
+    fields untouched. Expunge the row and fetch it again so a brand-new
+    object is materialised from the row as it exists in the database.
+    A small retry budget covers the narrow window where the final sync has
+    not yet committed by the time the handler reaches this point.
 
     :param session: The async database session.
     :type session: AsyncSession
@@ -135,13 +139,35 @@ async def _fetch_fresh_task_history(
     :return: The freshest task history row available within the retry budget.
     :rtype: TaskHistory
     """
-    task_history = await TaskHistoryManager.get_or_404(session, id=task_history_id)
+    task_history = await _expire_and_fetch(session, task_history_id)
     for _ in range(FRESH_FETCH_MAX_ATTEMPTS - 1):
         if _has_run_script_logs(task_history):
             return task_history
         await asyncio.sleep(FRESH_FETCH_INTERVAL)
-        task_history = await TaskHistoryManager.get_or_404(session, id=task_history_id)
+        task_history = await _expire_and_fetch(session, task_history_id)
     return task_history
+
+
+async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> TaskHistory:
+    """Commit, expunge, and re-fetch the task history to bypass the cache.
+
+    The executor's earlier ``sync_task_history`` mutates the in-memory
+    ``TaskExecutionRequest`` Pydantic object, which SQLAlchemy's refresh
+    does not fully re-hydrate for nested JSON columns. Commit to end the
+    open snapshot, then expunge the row from the identity map so the next
+    fetch does a genuine ``SELECT`` and builds a brand-new object.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the task history row to reload.
+    :type task_history_id: int
+    :return: A freshly-loaded task history row.
+    :rtype: TaskHistory
+    """
+    await session.commit()
+    cached = await TaskHistoryManager.get_or_404(session, id=task_history_id)
+    session.expunge(cached)
+    return await TaskHistoryManager.get_or_404(session, id=task_history_id)
 
 
 def _has_run_script_logs(task_history: TaskHistory) -> bool:
