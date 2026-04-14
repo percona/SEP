@@ -1,4 +1,3 @@
-
 import argparse
 import json
 import logging
@@ -92,8 +91,7 @@ def validate_backup_source_for_shell(value: str) -> None:
     bad = FORBIDDEN_SHELL_METACHARS.intersection(value)
     if bad:
         raise ValueError(
-            "backup_source contains disallowed shell metacharacters; "
-            "remove special characters from the backup source field"
+            "backup_source contains disallowed shell special chars"
         )
 
 
@@ -478,15 +476,13 @@ def decrypt_dir(path, password_file=None, logger=None):
         logger.info('Running on: %s', path)
     if password_file:
         if not decrypt_directory_files(encr_dir=path, password_file=password_file):
-            msg = 'Decryption failed.'
-            raise BackupError(msg)
+            raise BackupError('Decryption failed')
     else:
         if not decrypt_directory_files(encr_dir=path):
-            msg = 'Decryption failed.'
-            raise BackupError(msg)
+            raise BackupError('Decryption failed')
 
     if logger:
-        logger.info('OK Decryption complete.')
+        logger.info('OK Decryption complete')
 
 
 def parse_weekday_from_str(date_str):
@@ -683,12 +679,10 @@ class LockFile:
                         self._update_cpu_time()
                 if not proc_running:
                     # kill the old process
-                    msg = 'Killing hung process %s' % self.lock_file_data['PID']
-                    logging.error(msg)
+                    logging.error('Killing hung process %s', self.lock_file_data['PID'])
                     os.kill(int(self.lock_file_data['PID']), signal.SIGKILL)
                     for cpid in self._get_child_pids(self.lock_file_data['PID']):
-                        msg = 'Killing hung child process %s' % cpid
-                        logging.error(msg)
+                        logging.error('Killing hung child process %s', cpid)
                         os.kill(int(cpid), signal.SIGKILL)
         return proc_running
 
@@ -1112,12 +1106,12 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
 
         # Options for backward-compatibility
         if 'NO_COMPRESS' in server_data:
-            self.logger.warning('NO_COMPRESS is deprecated, use opposite COMPRESS option.')
+            self.logger.warning('NO_COMPRESS deprecated, use COMPRESS instead')
             self.compress = server_data['NO_COMPRESS']
 
         if server_data.get('UPLOAD_INVERTAL'):
             self.upload_interval = server_data.get('UPLOAD_INVERTAL')
-            self.logger.warning('There is a typo in the option name UPLOAD_INVERTAL. Please rename to UPLOAD_INTERVAL')
+            self.logger.warning('UPLOAD_INVERTAL typo renamed to UPLOAD_INTERVAL')
 
     def get_default_mycnf(self):
         """return all my.cnf files found
@@ -1201,16 +1195,14 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
                 try:
                     shutil.copy(filen, backup_dir)
                 except (shutil.Error, IOError) as err:
-                    msg = "Copy of cert files failed: %s" % str(err)
-                    self.logger.warning(msg)
+                    self.logger.warning("Cert file copy failed: %s", err)
 
     def enable_upload(self, backup_dir):
         """If upload interval permits mark backup for upload by creating uploadme file."""
         intervals = ['daily', 'weekly']
         intervals.extend(list(range(1, 8)))
         if self.upload_interval not in intervals:
-            msg = 'Invalid UPLOAD_INTERVAL setting: %s. Should be one of : %s.' % (self.upload_interval, intervals)
-            raise BackupError(msg)
+            raise BackupError('Invalid UPLOAD_INTERVAL: %s (expected: %s)' % (self.upload_interval, intervals))
 
         if self.upload_interval != 'daily':
             weekday = self.upload_interval
@@ -1220,10 +1212,9 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
             # Check if backup_dir name qualifies for upload
             bkp_weekday = parse_weekday_from_str(os.path.basename(backup_dir))
             if not bkp_weekday:
-                msg = 'Skipping upload: unknown backup folder format "%s" to determine weekday from it' % (backup_dir,)
-                raise BackupError(msg)
+                raise BackupError('Skipping upload: unknown backup folder format "%s"' % backup_dir)
             elif bkp_weekday != weekday:
-                self.logger.info("Skipping today's upload as weekday %s interval is configured.", weekday)
+                self.logger.info("Skipping upload: weekday %s interval configured.", weekday)
                 return
 
         uploadme_file = os.path.join(backup_dir, UPLOADME_FILE)
@@ -1252,8 +1243,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
             cursor = conn.cursor()
             cursor.execute(sql)
         except (OperationalError, InternalError) as err:
-            msg = 'Error running query "%s": %s' % (sql, err)
-            raise BackupError(msg)
+            raise BackupError('Error running query "%s": %s' % (sql, err))
 
         if fetchall:
             result = cursor.fetchall()
@@ -1465,15 +1455,12 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
                                                 shell=True,
                                                 stdin=file_desc)
             except OSError as err:
-                msg = 'Error trying to run SQL file %s, Err: %s' % (filename, err)
-                raise BackupError(msg)
+                raise BackupError('SQL file %s failed: %s' % (filename, err))
             _, err = cmd_proc.communicate()
             if cmd_proc.returncode != 0:
-                msg = '%s script failure: %s' % (filename, err)
-                raise BackupError(msg)
+                raise BackupError('%s script failure: %s' % (filename, err))
         else:
-            msg = 'Script hook file %s does not exists' % filename
-            raise BackupError(msg)
+            raise BackupError('Script hook not found: %s' % filename)
 
     def _run_script(self, pre_post, target_host="localhost", target_port=3306):
         """ Run pre and post scripts """
@@ -1482,8 +1469,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         elif pre_post == 'POST':
             script_path = self.post_script
         else:
-            msg = 'Invalid _run_script function call: pre_post != PRE || POST'
-            raise BackupError(msg)
+            raise BackupError('_run_script: pre_post must be PRE or POST')
 
         if script_path.endswith('.sql'):
             # Run sql script against mysql
@@ -1494,13 +1480,11 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             try:
                 hook_proc = subprocess.Popen(hook_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             except OSError as err:
-                msg = 'Error trying to run %s, Err: %s' % (script_path, err)
-                raise BackupError(msg)
+                raise BackupError('Script %s failed: %s' % (script_path, err))
 
             _, err = hook_proc.communicate()
             if hook_proc.returncode != 0:
-                msg = '%s script failure: %s' % (pre_post, err)
-                raise BackupError(msg)
+                raise BackupError('%s script failure: %s' % (pre_post, err))
 
     def _gs_get_path_from_latest(self):
         latest_dir = '/tmp/percona_backup_latest'
@@ -1510,15 +1494,13 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         try:
             os.mkdir(latest_dir)
         except:
-            msg = 'Can not create tmp dir for latest file.'
-            raise BackupError(msg)
+            raise BackupError('Cannot create tmp dir for latest file')
 
         gs_cmd = [GSUTIL_BIN, 'cp', self.backup_source, latest_local_file_path]
         gs_proc = subprocess.Popen(gs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = gs_proc.communicate()
         if gs_proc.returncode != 0:
-            msg = 'GS latest file download failed. Error: %s' % (err,)
-            raise BackupError(msg)
+            raise BackupError('GS latest file download failed. Error: %s' % (err,))
 
         with open(latest_local_file_path, 'r') as fname:
             latest_backup_source = fname.read().rstrip()
@@ -1526,8 +1508,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if 'gs://' in latest_backup_source:
             return latest_backup_source
         else:
-            msg = 'GS latest file content is an invalid path. Error: %s' % (err,)
-            raise BackupError(msg)
+            raise BackupError('GS latest file content is an invalid path. Error: %s' % (err,))
 
     def _s3_get_path_from_latest(self):
         latest_dir = '/tmp/percona_backup_latest'
@@ -1537,16 +1518,14 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         try:
             os.mkdir(latest_dir)
         except:
-            msg = 'Can not create tmp dir for latest file.'
-            raise BackupError(msg)
+            raise BackupError('Cannot create tmp dir for latest file')
 
         # using sync as get was failing PLAT-446
         s3_cmd = [PYTHON_BIN, S3CMD_BIN, 'sync', self.backup_source, latest_local_file_path]
         s3_proc = subprocess.Popen(s3_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = s3_proc.communicate()
         if s3_proc.returncode != 0:
-            msg = 'S3 latest file download failed. Error: %s' % (err,)
-            raise BackupError(msg)
+            raise BackupError('S3 latest file download failed. Error: %s' % (err,))
 
         with open(latest_local_file_path, 'r') as fname:
             latest_backup_source = fname.read().rstrip()
@@ -1554,8 +1533,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if 's3://' in latest_backup_source:
             return latest_backup_source
         else:
-            msg = 'S3 latest file content is an invalid path. Error: %s' % (err,)
-            raise BackupError(msg)
+            raise BackupError('S3 latest file content is an invalid path. Error: %s' % (err,))
 
     def _wait_for_catchup(self):
 
@@ -1600,8 +1578,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             cursor = conn.cursor()
             cursor.execute(sql, [] if not args else args)
         except (OperationalError, InternalError) as err:
-            msg = 'Error running query "%s": %s' % (sql, err)
-            raise BackupError(msg)
+            raise BackupError('Error running query "%s": %s' % (sql, err))
 
         if fetchall:
             result = cursor.fetchall()
@@ -1643,8 +1620,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         proc = subprocess.Popen(ptc_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = proc.communicate()
         if err:
-            msg = 'Checksum failed: %s' % (err)
-            raise BackupError(msg)
+            raise BackupError('Checksum failed: %s' % (err))
 
     def checksum_check(self):
         """Check checksum diffs"""
@@ -1705,8 +1681,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         proc = subprocess.Popen(rsync_cmd, stdout=log_stream, stderr=log_stream)
         proc.communicate()
         if proc.returncode != 0:
-            msg = 'Rsync failed.'
-            raise BackupError(msg)
+            raise BackupError('Rsync failed')
 
     def gs_copy(self, source, destination, log_file, **kwargs):
         """ Copy files from a GS bucket """
@@ -1733,8 +1708,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         proc = subprocess.Popen(download_cmd, stdout=log_stream, stderr=log_stream, shell=True)
         proc.communicate()
         if proc.returncode != 0:
-            msg = 'GS download failed.'
-            raise BackupError(msg)
+            raise BackupError('GS download failed')
 
     def s3_copy(self, source, destination, log_file, **kwargs):
         """ Copy files from a S3 bucket """
@@ -1781,8 +1755,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         proc = subprocess.Popen(download_cmd, stdout=log_stream, stderr=log_stream, shell=True)
         proc.communicate()
         if proc.returncode != 0:
-            msg = 'S3 download failed.'
-            raise BackupError(msg)
+            raise BackupError('S3 download failed')
 
     def local_copy(self, source, destination, **kwargs):
         """ Copy local files to destination to be restored """
@@ -1796,8 +1769,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
                 try:
                     shutil.copy(filen, destination)
                 except Exception as err:
-                    msg = "Copy failed: %s" % err
-                    raise BackupError(msg)
+                    raise BackupError("Copy failed: %s" % err)
         else:
             if os.path.isdir(destination):
                 shutil.rmtree(destination)
@@ -1807,8 +1779,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
                 else:
                     shutil.copytree(source, destination)
             except Exception as err:
-                msg = "Copy failed: %s" % err
-                raise BackupError(msg)
+                raise BackupError("Copy failed: %s" % err)
 
     def _ignore_databases(self, _, filenames):
         ignored = []
@@ -1870,15 +1841,13 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if method == 'gz':
             decompress_cmd = ['/usr/bin/gzip', '-dr', path]
         else:
-            msg = 'Decompression method not implemented: %s' % (method,)
-            raise BackupError(msg)
+            raise BackupError('Decompression method not implemented: %s' % (method,))
 
         self.logger.info('Running: %s', ' '.join(decompress_cmd))
         decompress_proc = subprocess.Popen(decompress_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = decompress_proc.communicate()
         if decompress_proc.returncode != 0:
-            msg = 'Decompression failed. Error: %s' % (err,)
-            raise BackupError(msg)
+            raise BackupError('Decompression failed. Error: %s' % (err,))
 
         self.logger.info('Decompressing binlogs complete.')
 
@@ -1936,7 +1905,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
                 except Exception:
                     self.logger.exception('Unhandled exception occurred.')
                     rst.textfile_collector_write_status(STATUS_CRITICAL, backup_running=0)
-                    rst.notify(STATUS_CRITICAL, 'Unhandled exception occurred during restore.')
+                    rst.notify(STATUS_CRITICAL, 'Unhandled exception during restore.')
         time_spent = time.time() - start_time
         self.logger.info('>>>>>>>>>>>>>>>>>> Restore finished. Total duration: %s.',
                          format_seconds_to_hhmmss(time_spent))
@@ -1993,7 +1962,7 @@ class Xtrabackup(Restore):
             if self.backup_source.startswith('stream'):
                 self.is_stream = True
         except  AttributeError as exc:
-            raise BackupError("BACKUP_SOURCE is not defined.") from exc
+            raise BackupError("BACKUP_SOURCE not defined") from exc
 
         # check for incrementals
         incremental_dirs = []
@@ -2034,10 +2003,9 @@ class Xtrabackup(Restore):
                     if self.signal_mysqld('status'):
                         self.logger.info('MySQL Not running.')
                     else:
-                        msg = '''
-                        MySQL is running. Please stop it as MySQL must not be running when restoring from command line.
-                        '''
-                        raise BackupError(msg)
+                        raise BackupError(
+                            'MySQL is running; stop before restoring from command line'
+                        )
                 else:
                     self.logger.info('Stopping mysqld.')
                     self.signal_mysqld('stop')
@@ -2071,28 +2039,25 @@ class Xtrabackup(Restore):
             self.reset_slave()
 
         if self.slave_from_master or self.continue_replication:
-            self.logger.info('Configuring replication.')
+            self.logger.info('Setting up replication.')
             self.set_slave()
             time.sleep(3)
             if self._is_running_slave():
                 self.logger.info('Slave running.')
                 if self.wait_for_catchup or self.run_checksum:
-                    self.logger.info('Waiting for Slave to catch up.')
+                    self.logger.info('Waiting for replica catchup')
                     if not self._wait_for_catchup():
-                        self.logger.info('Backup test was NOT OK.')
-                        msg = 'Backup Test failed: Slave was not able to catch up with master.'
-                        raise BackupError(msg)
+                        self.logger.info('Backup test FAILED.')
+                        raise BackupError('Backup test failed: replica not caught up')
                     elif self.run_checksum:
                         self.checksum_run()
                         if self.checksum_check():
-                            self.logger.info('No diff found after Checksum.')
+                            self.logger.info('Checksum OK')
                         else:
-                            msg = 'Differences found after checksum.'
-                            raise BackupError(msg)
+                            raise BackupError('Checksum diff found')
             else:
                 self.logger.info('Slave IS NOT running.')
-                msg = 'Backup Test failed: Slave setup did not work'
-                raise BackupError(msg)
+                raise BackupError('Backup test failed: replica setup failed')
 
         check_time = time.time()
 
@@ -2183,17 +2148,14 @@ class Xtrabackup(Restore):
             if os.path.isdir(self.datadir):
                 if self.from_commandline:
                     if os.listdir(self.datadir):
-                        msg = "datadir %s is not empty" % self.datadir
-                        raise BackupError(msg)
+                        raise BackupError("datadir %s is not empty" % self.datadir)
                 else:
                     try:
                         shutil.rmtree(self.datadir)
                     except Exception as e:
-                        msg = "Cleaning datadir failed: %s" % e
-                        raise BackupError(msg)
+                        raise BackupError("Cleaning datadir failed: %s" % e)
             else:
-                msg = "Datadir %s does not exists" % self.datadir
-                raise BackupError(msg)
+                raise BackupError("Datadir %s does not exist" % self.datadir)
             dest = self.datadir
 
         if self.is_stream:
@@ -2261,8 +2223,7 @@ class Xtrabackup(Restore):
         proc = subprocess.Popen(stream_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         proc.communicate()
         if proc.returncode != 0:
-            msg = 'Stream failed.'
-            raise BackupError(msg)
+            raise BackupError('Stream failed')
 
     def list_incrementals(self):
 
@@ -2290,8 +2251,7 @@ class Xtrabackup(Restore):
     def set_slave(self):
 
         if self.continue_replication and self.slave_from_master:
-            self.logger.info("Continue and Slave from master are both enabled. "
-                             "We are going to set up replication from master.")
+            self.logger.info("Continue and Replica from source both enabled. Setting up replication from source")
 
         if self.backup_code == 'X':
             xsi = os.path.join(self.datadir, 'xtrabackup_slave_info')
@@ -2336,8 +2296,7 @@ class Xtrabackup(Restore):
     def get_datadir(self):
 
         if not self.datadir or self.datadir == '/':
-            msg = "Destination datadir is not set. Auto detection not ready"
-            raise BackupError(msg)
+            raise BackupError("Destination datadir is not set. Auto detection not ready")
         # try restore_config.yml file
         # try my.cnf files
 
@@ -2379,12 +2338,10 @@ class Xtrabackup(Restore):
                 break
 
         if not self.custom_mysql_init_command:
-            msg = '%s mysqld failed. Not init command found' % (action)
-            raise BackupError(msg)
+            raise BackupError('%s mysqld failed. Not init command found' % (action))
 
         if action != 'status' and proc.returncode != 0:
-            msg = '%s mysqld failed.' % (action)
-            raise BackupError(msg)
+            raise BackupError('%s mysqld failed.' % (action))
         if action == 'start':
             attempts = 0
             while True:
@@ -2447,10 +2404,9 @@ class Xtrabackup(Restore):
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         proc.communicate()
         if proc.returncode != 0:
-            msg = "Decryption Failed."
-            raise BackupError(msg)
+            raise BackupError("Decryption failed")
         else:
-            self.logger.info('Decryption Completed')
+            self.logger.info('Decryption completed')
 
     def decompress_backup(self, path):
         """decompress qp files in path"""
@@ -2460,8 +2416,7 @@ class Xtrabackup(Restore):
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         proc.communicate()
         if proc.returncode != 0:
-            msg = "Decompression Failed."
-            raise BackupError(msg)
+            raise BackupError("Decompression Failed.")
         else:
             self.logger.info('OK Decompressing Completed')
 
@@ -2473,10 +2428,9 @@ class Xtrabackup(Restore):
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         proc.communicate()
         if proc.returncode != 0:
-            msg = "Decompression Failed."
-            raise BackupError(msg)
+            raise BackupError("Decompression failed")
         else:
-            self.logger.info('OK Decompressing Completed')
+            self.logger.info('OK Decompression completed')
 
     def prepare_backup(self):
         """Prepare backup by applying logs."""
@@ -2499,8 +2453,7 @@ class Xtrabackup(Restore):
         elif self.xtrabackup_bin_cmd == 'innobackupex':
             xtrabackup_cmd = [XTRABACKUP_BIN, '--apply-log']
         else:
-            msg = "Invalid XTRABACKUP_BIN_CMD or --xtrabackup-bin-cmd specified"
-            raise BackupError(msg)
+            raise BackupError("Invalid XTRABACKUP_BIN_CMD or --xtrabackup-bin-cmd specified")
 
         if self.xtrabackup_restore_args:
             xtrabackup_cmd.extend(self.xtrabackup_restore_args.split(' '))
@@ -2529,8 +2482,7 @@ class Xtrabackup(Restore):
         if proc.returncode != 0:
             xb_log_stream = open(self.xb_log_file, 'r')
             err = xb_log_stream.readlines()[-1]
-            msg = 'Xtrabackup prepare failed: %s For more details, see %s' % (err, self.xb_log_file)
-            raise BackupError(msg)
+            raise BackupError('Xtrabackup prepare failed: %s For more details, see %s' % (err, self.xb_log_file))
 
         self.logger.info('OK Preparing complete.')
 
@@ -2607,8 +2559,7 @@ class Xtrabackup(Restore):
         out, err = proc.communicate()
         if proc.returncode != 0:
             self.logger.info('Running: %s', cmd)
-            msg = 'Unable to determine own SSH remote address: %s' % (err,)
-            raise BackupError(msg)
+            raise BackupError('Unable to determine own SSH remote address: %s' % (err,))
 
         return out.decode().rstrip()
 
