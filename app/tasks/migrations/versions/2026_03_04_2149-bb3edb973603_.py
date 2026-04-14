@@ -16,7 +16,7 @@
 """Add CELERY value to TaskBackendEnum.
 
 Revision ID: bb3edb973603
-Revises: 0b852d9798ef
+Revises: add_filelock_to_backups
 Create Date: 2026-03-04 21:49:12.341657
 
 """
@@ -28,7 +28,7 @@ from alembic import op
 
 
 revision: str = "bb3edb973603"
-down_revision: Union[str, None] = "0b852d9798ef"
+down_revision: Union[str, None] = "add_filelock_to_backups"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
