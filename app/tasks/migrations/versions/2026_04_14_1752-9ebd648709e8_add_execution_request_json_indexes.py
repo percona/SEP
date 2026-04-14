@@ -19,9 +19,17 @@ Revision ID: 9ebd648709e8
 Revises: bb3edb973603
 Create Date: 2026-04-14 17:52:42.245472
 
-Add expression indexes on ``execution_request->'task'``, ``'target'``, and
-``'payload'`` so dispatch dedup and task-history filter queries can use index
-scans instead of evaluating the JSON extract over the narrowed candidate set.
+Add expression indexes on ``execution_request->'task'`` and ``'target'`` so
+dispatch dedup and task-history filter queries can use index scans instead of
+evaluating the JSON extract over the narrowed candidate set.
+
+``payload`` is intentionally NOT indexed. ``TaskExecutionRequest.payload`` may
+hold the raw parameterization body for a task, which can be large enough to
+exceed PostgreSQL's btree entry size limit (~2704 bytes) and fail inserts
+once a functional index is present. Dispatch dedup still compares payloads
+via sequential scan over the narrow candidate set produced by the new
+``task``/``target`` indexes combined with the existing
+``ix_taskhistory_task_id_status`` compound index.
 
 PostgreSQL uses ``CREATE INDEX CONCURRENTLY`` inside an autocommit block so
 index creation does not block concurrent dispatches. SQLite uses plain
@@ -44,7 +52,6 @@ depends_on: Union[str, Sequence[str], None] = None
 _INDEX_NAMES = (
     "ix_taskhistory_exec_task",
     "ix_taskhistory_exec_target",
-    "ix_taskhistory_exec_payload",
 )
 
 
@@ -62,10 +69,6 @@ def upgrade() -> None:
                 "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_taskhistory_exec_target "
                 "ON taskhistory ((execution_request->>'target'))"
             )
-            op.execute(
-                "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_taskhistory_exec_payload "
-                "ON taskhistory ((execution_request->>'payload'))"
-            )
     elif dialect == "sqlite":
         op.execute(
             "CREATE INDEX IF NOT EXISTS ix_taskhistory_exec_task "
@@ -74,10 +77,6 @@ def upgrade() -> None:
         op.execute(
             "CREATE INDEX IF NOT EXISTS ix_taskhistory_exec_target "
             "ON taskhistory (json_extract(execution_request, '$.target'))"
-        )
-        op.execute(
-            "CREATE INDEX IF NOT EXISTS ix_taskhistory_exec_payload "
-            "ON taskhistory (json_extract(execution_request, '$.payload'))"
         )
 
 
