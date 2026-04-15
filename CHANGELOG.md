@@ -22,18 +22,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-816: Reduce write amplification for `TaskHistory.execution_request` by using `JSONB` on Postgres, deferring the column by default, and clearing the sync lock via targeted `UPDATE` instead of a full ORM save
 - SEP-818: Add PostgreSQL and SQLite expression indexes on `taskhistory.execution_request->>'task'`/`->>'target'` so dispatch dedup and task-history filter queries use index scans instead of scanning a narrowed candidate set
 - SEP-937: PMM connection settings moved to top-level `PMM` config section (old `SEP.PMM` path still works with deprecation warning)
+- SEP-988: Convert `taskhistory.execution_request` to `JSONB` on PostgreSQL, add a GIN index `ix_taskhistory_execution_request_meta` on `execution_request->'meta'` using `jsonb_path_ops`, and refactor `_raise_if_identical_task_conflict` to use jsonb-native operators on PostgreSQL (`@>` containment for scalar meta items, jsonb equality for list/dict meta items). MySQL and SQLite continue to use the per-key text-equality loop unchanged.
 
 ### Breaking Changes
 
 - SEP-924: Inventory list endpoints now return paginated responses with `offset`/`limit` query parameters
 - SEP-925: Tasks list routes (`GET /`, `GET /history/`, `GET /{task}/history/`) now return paginated responses with `offset`/`limit` query parameters
 - SEP-937: The `SEP__PMM_FRONTEND` environment variable has been removed. Use `PMM__FRONTEND` (top-level) or `SEP__PMM__FRONTEND` (nested under SEP.PMM) instead.
+- SEP-988: `_raise_if_identical_task_conflict` dedup comparison on PostgreSQL is now type-strict for scalar meta values, replacing a type-loose `str(raw_value)` text comparison. A dispatch with `meta.key = 1` (int) no longer deduplicates against a pending task with `meta.key = "1"` (string), and vice versa. Bool and `None` scalar meta values were previously not deduplicated correctly on PostgreSQL (latent bugs in `str(True) == "True"` vs jsonb text output `"true"`, and `str(None) == "None"` vs jsonb `NULL`); they are now correctly deduplicated via jsonb containment.
+- SEP-988: `_raise_if_identical_task_conflict` dedup comparison on PostgreSQL is now order-insensitive for dict-valued meta items. Two dispatches whose dict-valued meta items contain the same keys/values in different insertion orders were previously considered distinct and are now considered duplicates. MySQL and SQLite dedup semantics are unchanged.
 
 ### Configuration Changes
 
 - SEP-491: Added `PMM.ANNOTATIONS_ENABLED` setting (default: `false`) to control PMM annotation creation
 - SEP-491: Added `PMM.ANNOTATIONS_TIMEOUT` setting (default: `5`) to configure PMM annotation request timeout
 - SEP-929: Added `UVICORN_EXTRA_RELOAD_DIRS`, `UVICORN_EXTRA_RELOAD_INCLUDES`, and `UVICORN_EXTRA_RELOAD_EXCLUDES` settings to extend uvicorn reload paths via `settings.yaml`
+- SEP-988: Upgrades that cross this revision run `ALTER TABLE taskhistory ALTER COLUMN execution_request TYPE jsonb USING execution_request::jsonb`, which rewrites every row in the `taskhistory` table under an `ACCESS EXCLUSIVE` lock on PostgreSQL. Expected downtime impact is proportional to row count (approximately one minute per two million rows on typical production hardware); size the upgrade window accordingly for deployments with large `taskhistory` tables. The Tasks API also fail-fasts at startup if the column is still plain `json` after deploying SEP-988, with a clear remediation message pointing to the migration.
 
 ## [v0.11.0] - 2026-04-02
 
