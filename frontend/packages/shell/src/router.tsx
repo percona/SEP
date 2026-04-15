@@ -34,6 +34,8 @@ export const router = createBrowserRouter([
           { path: 'inventory', element: <PlaceholderPage /> },
           { path: 'tasks', element: <PlaceholderPage /> },
           { path: 'snippets', element: <PlaceholderPage /> },
+          { path: 'atw', element: <PlaceholderPage /> },
+          { path: 'dipper', element: <PlaceholderPage /> },
           { path: 'alerts/templates', element: <PlaceholderPage /> },
           { path: 'alerts/troubleshooting', element: <PlaceholderPage /> },
           { path: 'schema-change/alters', element: <PlaceholderPage /> },

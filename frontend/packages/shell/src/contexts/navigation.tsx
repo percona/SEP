@@ -12,6 +12,8 @@ import TableChartIcon from '@mui/icons-material/TableChart';
 import BackupIcon from '@mui/icons-material/Backup';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import ScienceIcon from '@mui/icons-material/Science';
 import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { SvgIconProps } from '@mui/material';
@@ -30,6 +32,7 @@ const defaultNavItems: NavItem[] = [
   { title: 'Inventory', icon: DnsIcon, to: '/inventory' },
   { title: 'Tasks', icon: AssignmentIcon, to: '/tasks' },
   { title: 'Snippets', icon: CodeIcon, to: '/snippets' },
+  { title: 'Collect Diagnostic Data', icon: SupportAgentIcon, to: '/atw' },
   {
     title: 'Alerts',
     icon: NotificationsActiveIcon,
@@ -56,6 +59,7 @@ const defaultNavItems: NavItem[] = [
     ],
   },
   { title: 'Archive', icon: ArchiveIcon, to: '/archive' },
+  { title: 'Dipper Data Collection', icon: ScienceIcon, to: '/dipper' },
   { title: 'Reports', icon: BarChartIcon, to: '/reports' },
 ];
 

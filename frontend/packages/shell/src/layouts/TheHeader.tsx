@@ -14,6 +14,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import { useState } from 'react';
 import { useAuth } from '../contexts/auth';
 import { useThemeMode } from '../contexts/theme';
@@ -85,6 +86,20 @@ export default function TheHeader() {
                 </Typography>
               </Box>
               <Divider />
+              {import.meta.env.VITE_CASDOOR_USER_PROFILE_URL && (
+                <MenuItem
+                  component="a"
+                  href={import.meta.env.VITE_CASDOOR_USER_PROFILE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setAnchorEl(null)}
+                >
+                  <ListItemIcon>
+                    <AccountCircleIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Profile</ListItemText>
+                </MenuItem>
+              )}
               <MenuItem
                 onClick={() => {
                   setAnchorEl(null);
