@@ -386,7 +386,9 @@ def test_alters_detail_when_hosts_api_fails(
         return []
 
     mock_task_api_dep.get = AsyncMock(side_effect=tasks_api_get)
-    mock_inventory_api_dep.get = AsyncMock(return_value=[])
+    mock_inventory_api_dep.get = AsyncMock(
+        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+    )
     response = test_client.get(f"/alters/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text

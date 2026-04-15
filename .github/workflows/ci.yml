@@ -110,3 +110,17 @@ jobs:
           make pack
           buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
           podman run --rm --entrypoint /bin/sh --timeout 10 "sep:${RELEASE_VER}" -c 'sleep 3'
+
+  ci-success:
+    if: always()
+    needs:
+      - label-gate
+      - changes
+      - precommit
+      - python
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any dependency failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

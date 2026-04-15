@@ -71,7 +71,9 @@ def test_backups_detail(
             {"items": [], "total": 0, "offset": 0, "limit": 50},
         ]
     )
-    mock_inventory_api_dep.get = AsyncMock(return_value=[])
+    mock_inventory_api_dep.get = AsyncMock(
+        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+    )
 
     response = test_client.get(f"/backup-pg/{created_task.name}")
 
@@ -110,7 +112,7 @@ def test_backups_detail_handles_inventory_error(
     assert response.status_code == status.HTTP_200_OK
     mock_inventory_api_dep.get.assert_any_call(
         "/services/",
-        params={"service_type": ServiceTypeEnum.POSTGRESQL},
+        params={"service_type": ServiceTypeEnum.POSTGRESQL, "limit": 0},
     )
 
 

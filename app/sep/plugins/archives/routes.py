@@ -141,10 +141,10 @@ async def archives_detail(
     context["running_tasks"] = response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    services = await inventory_api.get(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+    response = await inventory_api.get(
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0}
     )
-    context["services"] = services
+    context["services"] = response["items"]
 
     context["executor_hosts"] = executor_hosts_ctx.with_host(
         task_data["hostname"]

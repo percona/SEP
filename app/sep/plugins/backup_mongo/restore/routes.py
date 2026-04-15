@@ -291,10 +291,11 @@ async def restores_detail(
     ).as_template_list()
 
     try:
-        services = await inventory_api.get(
-            "/services/", params={"service_type": ServiceTypeEnum.MONGODB}
+        response = await inventory_api.get(
+            "/services/",
+            params={"service_type": ServiceTypeEnum.MONGODB, "limit": 0},
         )
-        context["services"] = services
+        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

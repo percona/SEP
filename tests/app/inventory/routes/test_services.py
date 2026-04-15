@@ -18,18 +18,25 @@
 from starlette import status
 from starlette.testclient import TestClient
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import Node, Schema, Service
 from tests.app.factories import SchemaWriteFactory, ServiceWriteFactory
+
+OFFSET_BEYOND_TOTAL = 999
 
 
 class TestListServices:
     """Test GET /services/ endpoint."""
 
     def test_list_services_empty(self, test_client: TestClient) -> None:
-        """Return an empty list when no services exist."""
+        """Return an empty paginated response when no services exist."""
         response = test_client.get("/services/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["offset"] == 0
+        assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     def test_list_services_multiple(
         self, test_client: TestClient, service: Service
@@ -38,10 +45,11 @@ class TestListServices:
         response = test_client.get("/services/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == service.id
-        assert "schemas" in data[0]
-        assert "node" in data[0]
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["items"][0]["id"] == service.id
+        assert "schemas" in data["items"][0]
+        assert "node" in data["items"][0]
 
     def test_list_services_filter_by_service_type(
         self, test_client: TestClient, service: Service
@@ -53,8 +61,43 @@ class TestListServices:
         )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) >= 1
-        assert all(s["type"] == service.type for s in data)
+        assert len(data["items"]) >= 1
+        assert all(s["type"] == service.type for s in data["items"])
+
+    def test_list_services_custom_offset(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return empty items when offset is beyond total."""
+        response = test_client.get("/services/", params={"offset": OFFSET_BEYOND_TOTAL})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 1
+        assert data["offset"] == OFFSET_BEYOND_TOTAL
+
+    def test_list_services_custom_limit(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return limited items while total remains unchanged."""
+        response = test_client.get("/services/", params={"limit": 1})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["limit"] == 1
+
+    def test_list_services_filter_with_pagination(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return filtered total with pagination params."""
+        response = test_client.get(
+            "/services/",
+            params={"service_type": service.type, "limit": 1},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] >= 1
+        assert len(data["items"]) <= 1
 
 
 class TestRetrieveService:
@@ -137,10 +180,14 @@ class TestListSchemasByService:
     def test_list_schemas_by_service_empty(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Return an empty list when the service has no schemas."""
+        """Return an empty paginated response when the service has no schemas."""
         response = test_client.get(f"/services/{service.id}/schemas/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["offset"] == 0
+        assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     def test_list_schemas_by_service(
         self, test_client: TestClient, service: Service, schema: Schema
@@ -149,9 +196,10 @@ class TestListSchemasByService:
         response = test_client.get(f"/services/{service.id}/schemas/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == schema.id
-        assert "tables" not in data[0]
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["items"][0]["id"] == schema.id
+        assert "tables" not in data["items"][0]
 
     def test_list_schemas_by_service_search(
         self, test_client: TestClient, service: Service, schema: Schema
@@ -163,19 +211,21 @@ class TestListSchemasByService:
         )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == schema.id
+        assert len(data["items"]) == 1
+        assert data["items"][0]["id"] == schema.id
 
     def test_list_schemas_by_service_search_no_match(
         self, test_client: TestClient, service: Service, schema: Schema
     ) -> None:
-        """Return empty list when search does not match any schema."""
+        """Return empty paginated response when search does not match any schema."""
         response = test_client.get(
             f"/services/{service.id}/schemas/",
             params={"search": "nonexistent_schema_xyz"},
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     def test_list_schemas_by_service_include_tables(
         self, test_client: TestClient, service: Service, schema: Schema
@@ -187,14 +237,70 @@ class TestListSchemasByService:
         )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == schema.id
-        assert "tables" in data[0]
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["items"][0]["id"] == schema.id
+        assert "tables" in data["items"][0]
 
     def test_list_schemas_by_service_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent service ID."""
         response = test_client.get("/services/9999/schemas/")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_list_schemas_by_service_custom_offset(
+        self, test_client: TestClient, service: Service, schema: Schema
+    ) -> None:
+        """Return empty items when offset is beyond total."""
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"offset": OFFSET_BEYOND_TOTAL},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 1
+        assert data["offset"] == OFFSET_BEYOND_TOTAL
+
+    def test_list_schemas_by_service_custom_limit(
+        self, test_client: TestClient, service: Service, schema: Schema
+    ) -> None:
+        """Return limited items while total remains unchanged."""
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"limit": 1},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["limit"] == 1
+
+    def test_list_schemas_by_service_search_with_pagination(
+        self, test_client: TestClient, service: Service, schema: Schema
+    ) -> None:
+        """Return search-filtered total with pagination params."""
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"search": schema.name[:3], "limit": 1},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] >= 1
+        assert len(data["items"]) <= 1
+
+    def test_list_schemas_by_service_include_tables_with_pagination(
+        self, test_client: TestClient, service: Service, schema: Schema
+    ) -> None:
+        """Return paginated SchemaResponse with tables."""
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"include_tables": "true", "limit": 1},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert "tables" in data["items"][0]
 
 
 class TestCreateSchemaForService:
