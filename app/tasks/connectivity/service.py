@@ -18,10 +18,12 @@
 import asyncio
 import contextvars
 import json
+from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any, cast
 
 from async_lru import alru_cache
-from sqlalchemy.orm import undefer
+from sqlalchemy.orm import QueryableAttribute, undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
@@ -34,11 +36,13 @@ from app.tasks.connectivity.models import (
 )
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.deps import get_executable_task_by_name
+from app.tasks.logs.log_reader import iter_task_history_logs
 from app.tasks.models import (
     SYSTEM_USER,
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLog,
     TaskLogType,
 )
 
@@ -174,6 +178,8 @@ async def check_connectivity(
     queue_item_id = queue_item.id
     await session.refresh(queue_item, attribute_names=["execution_request"])
 
+    queue_item = await _expire_and_fetch(session, queue_item_id)
+
     executor = get_executor_for_task(task)
     elapsed = 0
     while (
@@ -187,7 +193,7 @@ async def check_connectivity(
         await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
         )
-        await session.refresh(queue_item, attribute_names=["execution_request"])
+        queue_item = await _expire_and_fetch(session, queue_item_id)
 
     if queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
@@ -200,7 +206,7 @@ async def check_connectivity(
         )
 
     fresh_queue_item = await _fetch_fresh_task_history(session, queue_item_id)
-    return _parse_check_result(fresh_queue_item)
+    return await _parse_check_result(session, fresh_queue_item)
 
 
 async def _fetch_fresh_task_history(
@@ -227,7 +233,7 @@ async def _fetch_fresh_task_history(
     """
     task_history = await _expire_and_fetch(session, task_history_id)
     for _ in range(FRESH_FETCH_MAX_ATTEMPTS - 1):
-        if _has_run_script_logs(task_history):
+        if await _has_run_script_logs(session, task_history):
             return task_history
         await asyncio.sleep(FRESH_FETCH_INTERVAL)
         task_history = await _expire_and_fetch(session, task_history_id)
@@ -235,13 +241,22 @@ async def _fetch_fresh_task_history(
 
 
 async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> TaskHistory:
-    """Commit, expunge, and re-fetch the task history to bypass the cache.
+    """Commit, expunge, and re-fetch the task history with ``execution_request`` loaded.
 
-    The executor's earlier ``sync_task_history`` mutates the in-memory
-    ``TaskExecutionRequest`` Pydantic object, which SQLAlchemy's refresh
-    does not fully re-hydrate for nested JSON columns. Commit to end the
-    open snapshot, then expunge the row from the identity map so the next
-    fetch does a genuine ``SELECT`` and builds a brand-new object.
+    Fulfill two goals needed by the polling loop:
+
+    - Force a brand-new instance materialisation. The executor's
+      ``sync_task_history`` mutates the in-memory ``TaskExecutionRequest``
+      Pydantic object, which SQLAlchemy's refresh does not fully re-hydrate
+      for nested JSON columns. Commit to end the open snapshot, then expunge
+      the row from the identity map so the next fetch does a genuine
+      ``SELECT`` and builds a brand-new object.
+    - Eagerly load the deferred ``TaskHistory.execution_request`` column.
+      Without ``undefer`` the column stays expired on the returned instance
+      and any subsequent synchronous attribute read (e.g. from
+      ``NomadExecutor.get_allocation_for_task_history``) triggers a
+      lazy-load SELECT outside the greenlet bridge, raising
+      ``MissingGreenlet`` on aiosqlite/asyncpg.
 
     The ``execution_request`` column is declared as a deferred
     ``column_property`` on :class:`TaskHistory`, so the re-fetch must
@@ -254,7 +269,8 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     :type session: AsyncSession
     :param task_history_id: The ID of the task history row to reload.
     :type task_history_id: int
-    :return: A freshly-loaded task history row.
+    :return: A freshly-loaded task history row with
+        ``execution_request`` materialised.
     :rtype: TaskHistory
     """
     await session.commit()
@@ -262,26 +278,62 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     session.expunge(cached)
     return await TaskHistoryManager.get_or_404(
         session,
-        query_options=[undefer(TaskHistory.execution_request)],
+        query_options=[
+            undefer(cast("QueryableAttribute[Any]", TaskHistory.execution_request))
+        ],
         id=task_history_id,
     )
 
 
-def _has_run_script_logs(task_history: TaskHistory) -> bool:
+async def _iter_run_script_logs(
+    session: AsyncSession,
+    task_history: TaskHistory,
+) -> AsyncGenerator[TaskLog, None]:
+    """Yield ``run-script`` logs from either legacy or chunked storage.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history: The task history row being inspected.
+    :type task_history: TaskHistory
+    :yield: Log chunks for the ``run-script`` source.
+    :rtype: AsyncGenerator[TaskLog, None]
+    """
+    iter_logs = getattr(task_history, "iter_logs", None)
+    if callable(iter_logs):
+        for log in iter_logs(step="run-script"):
+            yield log
+        return
+
+    async for log in iter_task_history_logs(session, task_history, source="run-script"):
+        yield log
+
+
+async def _has_run_script_logs(
+    session: AsyncSession, task_history: TaskHistory
+) -> bool:
     """Return whether ``task_history`` has any ``run-script`` step output.
 
+    :param session: The async database session.
+    :type session: AsyncSession
     :param task_history: The task history record to inspect.
     :type task_history: TaskHistory
     :return: ``True`` if a non-empty stdout or stderr log exists for the
         ``run-script`` step, ``False`` otherwise.
     :rtype: bool
     """
-    return any(log.msg for log in task_history.iter_logs(step="run-script"))
+    async for log in _iter_run_script_logs(session, task_history):
+        if log.msg:
+            return True
+    return False
 
 
-def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
+async def _parse_check_result(
+    session: AsyncSession, task_history: TaskHistory
+) -> ConnectivityCheckResponse:
     """Extract connectivity result from task logs.
 
+    :param session: The async database session.
+    :type session: AsyncSession
     :param task_history: The completed task history record.
     :type task_history: TaskHistory
     :return: The parsed connectivity check result.
@@ -292,7 +344,7 @@ def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
 
     if task_history.status == TaskHistoryStatusEnum.FAILED:
         stderr = ""
-        for log in task_history.iter_logs(step="run-script"):
+        async for log in _iter_run_script_logs(session, task_history):
             if log.type == TaskLogType.STDERR:
                 stderr += log.msg or ""
         return ConnectivityCheckResponse(
@@ -302,7 +354,7 @@ def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
         )
 
     stdout = ""
-    for log in task_history.iter_logs(step="run-script"):
+    async for log in _iter_run_script_logs(session, task_history):
         if log.type == TaskLogType.STDOUT:
             stdout += log.msg or ""
 

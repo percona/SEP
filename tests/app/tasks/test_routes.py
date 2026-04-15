@@ -15,6 +15,9 @@
 
 """Define test cases for the task routes in the FastAPI application."""
 
+import base64
+import gzip
+import json as json_lib
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,11 +34,13 @@ from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     ExecutionEvent,
     Task,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLogType,
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
@@ -290,6 +295,44 @@ async def test_stream_logs_finished_returns_logs(
     response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_reads_chunks_from_taskhistory_log(
+    test_client, session, created_task_with_history
+):
+    """Assert the finished branch streams from the chunk store when available."""
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk store output",
+        force_flush=True,
+        producer_offset_after=18,
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_200_OK
+    assert "chunk store output" in response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_falls_back_to_legacy_blob(
+    test_client, session, created_task_with_history
+):
+    """Assert the finished branch falls back to the legacy blob when no chunks exist."""
+    legacy = {"run-script": {"stdout": "legacy from tracking", "stderr": ""}}
+    encoded = base64.b64encode(gzip.compress(json_lib.dumps(legacy).encode())).decode()
+    created_task_with_history.execution_request.tracking["task_logs"] = encoded
+    await TaskHistoryManager.save(
+        session,
+        created_task_with_history,
+        flag_modified_fields=["execution_request"],
+    )
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_200_OK
+    assert "legacy from tracking" in response.text
 
 
 @pytest.mark.asyncio

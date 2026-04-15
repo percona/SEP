@@ -16,13 +16,11 @@
 """Provide task execution management for Nomad jobs."""
 
 import asyncio
-import gzip
 import io
 import json
 import logging
 import tarfile
 import time
-from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
 from collections.abc import AsyncGenerator
@@ -37,7 +35,7 @@ from aiohttp import (
     ClientError,
     ClientTimeout,
 )
-from fastapi import HTTPException, status
+from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -54,13 +52,18 @@ from app.core.utils import (
 )
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.crud import TaskHistoryManager
+from app.tasks.crud import TaskHistoryLogStateManager, TaskHistoryManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
 )
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.logs.log_reader import decompress_legacy_logs
+from app.tasks.logs.log_writer import (
+    backfill_legacy_logs,
+    TaskHistoryLogWriter,
+)
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
@@ -78,6 +81,25 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
+
+_LOG_FETCH_OFFSETS: dict[tuple[int, str, str, TaskLogType], int] = {}
+"""Process-local Nomad-space fetch cursors keyed by
+``(task_history_id, allocation_id, step, log_type)``. Kept separate from the
+DB-persisted ``TaskHistoryLogState.producer_offset`` so the ``offset=`` kwarg
+passed to ``stream_logs.stream`` stays in raw Nomad byte space even when
+anonymization rewrites the producer-space length."""
+
+
+def _clear_log_fetch_offsets(task_history_id: int) -> None:
+    """Drop every ``_LOG_FETCH_OFFSETS`` entry for a task history.
+
+    :param task_history_id: The task history identifier whose fetch cursors
+        should be discarded.
+    :type task_history_id: int
+    """
+    for key in list(_LOG_FETCH_OFFSETS):
+        if key[0] == task_history_id:
+            del _LOG_FETCH_OFFSETS[key]
 
 
 def _nomad_event_body_text(ev: dict) -> str:
@@ -127,7 +149,7 @@ def _sortable_nomad_tracking_event(
         event_type = str(event_type) if event_type is not None else "Unknown"
 
     description = _nomad_event_body_text(ev)
-    parts: list[str] = []
+    parts = []
     parts.append(description if description else event_type)
 
     exit_code = _nomad_event_exit_code(ev)
@@ -163,7 +185,7 @@ def nomad_task_states_to_execution_events(
     if not isinstance(task_states, dict):
         return []
 
-    collected: list[tuple[datetime, str, int, ExecutionEvent]] = []
+    collected = []
 
     for task_name, state in task_states.items():
         if not isinstance(task_name, str) or not isinstance(state, dict):
@@ -221,7 +243,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :type ssl_certfile: RelativeFilePathField | None
-    :param logger_name: Name to use for the logger. Defaults to `__name__`.
+    :param logger_name: Name to use for the logger. Defaults to ``__name__``.
     :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.
     :type secure: bool
@@ -319,7 +341,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param task: The task to be executed. If None, the queue_item's task will be
             used.
         :type task: Task | None
-        :return: The prepared `Task` instance ready for execution.
+        :return: The prepared ``Task`` instance ready for execution.
         :rtype: Task
         """
         task = queue_item.task if task is None else task
@@ -643,118 +665,217 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             raise ValueError("The job ID could not be determined")
         self.backend.job.deregister_job(job_id)
 
+    def _fetch_step_log_delta(
+        self,
+        alloc_id: str,
+        step: str,
+        log_type: TaskLogType,
+        nomad_start_offset: int,
+        producer_start_offset: int,
+        anonymize_entities: set[PIIEntity] | None,
+    ) -> tuple[str, int, int]:
+        """Fetch the delta bytes and advanced offsets for a single step/log_type.
+
+        The Nomad offset tracks the raw (pre-anonymization) byte position in
+        the Nomad log file and is used as the ``offset=`` kwarg for the next
+        ``stream_logs.stream`` call; the producer offset tracks the byte
+        position in the post-anonymization stream that the writer actually
+        persists. Keeping them separate prevents the dedup window in
+        :meth:`TaskHistoryLogWriter.append` from mixing raw and anonymized
+        byte counts on retry.
+
+        :param alloc_id: The Nomad allocation identifier.
+        :type alloc_id: str
+        :param step: The Nomad task name within the allocation.
+        :type step: str
+        :param log_type: The log stream type (stdout or stderr).
+        :type log_type: TaskLogType
+        :param nomad_start_offset: The byte offset to start reading from in
+            Nomad-space.
+        :type nomad_start_offset: int
+        :param producer_start_offset: The producer-space byte offset
+            corresponding to ``nomad_start_offset``.
+        :type producer_start_offset: int
+        :param anonymize_entities: PII entities to anonymize for ``run-script``
+            and ``step1`` content. When ``None``, no anonymization is performed.
+        :type anonymize_entities: set[PIIEntity] | None
+        :return: ``(delta_text, new_nomad_offset, new_producer_offset)`` —
+            the anonymized bytes fetched this cycle, the advanced Nomad-space
+            offset for the next fetch, and the advanced producer-space offset
+            that the writer should persist.
+        :rtype: tuple[str, int, int]
+        """
+        try:
+            raw_log_data = self.backend.client.stream_logs.stream(
+                alloc_id,
+                task=step,
+                type_=log_type,
+                offset=nomad_start_offset,
+            )
+        except BaseNomadException:
+            logger.exception(
+                "Error while fetching %s logs for allocation %s (step %s)",
+                log_type,
+                alloc_id,
+                step,
+            )
+            return "", nomad_start_offset, producer_start_offset
+        pieces = []
+        nomad_offset = nomad_start_offset
+        for raw_log_data_item in (
+            "{" + item for item in raw_log_data.split("{") if item
+        ):
+            log_data = json.loads(raw_log_data_item)
+            if raw_msg := log_data.get("Data"):
+                nomad_offset = log_data.get("Offset", nomad_offset)
+                msg = b64decode_str(raw_msg)
+                if step in ("run-script", "step1") and anonymize_entities:
+                    msg = anonymize_text(msg, anonymize_entities)
+                pieces.append(msg)
+        delta = "".join(pieces)
+        producer_offset = producer_start_offset + len(delta.encode("utf-8"))
+        return delta, nomad_offset, producer_offset
+
     def get_logs_for_allocation(
         self,
         alloc: dict[str, Any],
         initial_logs: dict[str, dict[str, Any]] | None = None,
         anonymize_entities: set[PIIEntity] | None = None,
     ) -> dict[str, dict[str, Any]]:
-        """Get logs for a specific allocation.
+        """Return the delta logs for an allocation since the previous offsets.
 
-        This method retrieves logs for each task step in the allocation and returns a
-        dictionary containing the logs and their last offsets.
+        For every ``(step, log_type)`` with a started task state, fetch the
+        Nomad log stream starting at the offset provided in ``initial_logs`` (or
+        ``0`` when absent). The returned dict holds ONLY the bytes fetched this
+        cycle alongside the advanced ``f"{log_type}_last_offset"`` (Nomad-space,
+        used as the next fetch cursor) and ``f"{log_type}_producer_offset"``
+        (post-anonymization byte count, used by the writer) for each stream;
+        it is not an accumulator over cycles.
 
         :param alloc: The allocation details from Nomad.
         :type alloc: dict[str, Any]
-        :param initial_logs: Initial logs to be merged with the fetched logs.
+        :param initial_logs: Per-step starting offsets in the shape
+            ``{step: {f"{log_type}_last_offset": int,
+            f"{log_type}_producer_offset": int}}``. Content fields are ignored.
         :type initial_logs: dict[str, dict[str, Any]] | None
-        :return: A dictionary containing logs for each task step, including their last
-            offsets.
+        :param anonymize_entities: PII entities to anonymize in run-script /
+            step1 output. When ``None``, no anonymization is performed.
+        :type anonymize_entities: set[PIIEntity] | None
+        :return: A dict containing this cycle's delta log content and the new
+            last offsets, shaped
+            ``{step: {log_type: delta_text, f"{log_type}_last_offset": int,
+            f"{log_type}_producer_offset": int}}``.
         :rtype: dict[str, dict[str, Any]]
         """
         alloc_id = alloc["ID"]
-        task_logs = defaultdict(dict, initial_logs or {})
-        # TODO(yan): Refactor logs
-        # SEP-564
-        max_lines = 100000
-        if task_states := alloc["TaskStates"]:
-            for step, log_type in product(task_states, TaskLogType):
-                if task_states[step].get("StartedAt") is None:
+        task_logs = defaultdict(dict)
+        log_type_values = {log_type.value for log_type in TaskLogType}
+        for step, payload in (initial_logs or {}).items():
+            for key, value in payload.items():
+                if isinstance(key, TaskLogType):
                     continue
-                task_logs[step][log_type] = task_logs[step].get(log_type) or ""
-                last_offset_key = f"{log_type}_last_offset"
-                task_logs[step][last_offset_key] = (
-                    task_logs[step].get(last_offset_key) or 0
-                )
-                try:
-                    raw_log_data = self.backend.client.stream_logs.stream(
-                        alloc_id,
-                        task=step,
-                        type_=log_type,
-                        offset=task_logs[step][last_offset_key],
-                    )
-                except BaseNomadException:
-                    logger.exception(
-                        "Error while fetching %s logs for allocation %s (step %s)",
-                        log_type,
-                        alloc_id,
-                        step,
-                    )
-                else:
-                    for raw_log_data_item in (
-                        "{" + item for item in raw_log_data.split("{") if item
-                    ):
-                        log_data = json.loads(raw_log_data_item)
-                        if raw_msg := log_data.get("Data"):
-                            task_logs[step][last_offset_key] = log_data.get(
-                                "Offset", task_logs[step][last_offset_key]
-                            )
-                            msg = b64decode_str(raw_msg)
-                            if step in ("run-script", "step1") and anonymize_entities:
-                                msg = anonymize_text(msg, anonymize_entities)
-                            task_logs[step][log_type] += msg
-                            task_logs[step][log_type] = "\n".join(
-                                task_logs[step][log_type].splitlines()[-max_lines:]
-                            )
+                if isinstance(key, str) and key in log_type_values:
+                    continue
+                task_logs[step][key] = value
+        task_states = alloc["TaskStates"] or {}
+        for step, log_type in product(task_states, TaskLogType):
+            if task_states[step].get("StartedAt") is None:
+                continue
+            last_offset_key = f"{log_type}_last_offset"
+            producer_offset_key = f"{log_type}_producer_offset"
+            nomad_start_offset = task_logs[step].get(last_offset_key) or 0
+            producer_start_offset = task_logs[step].get(producer_offset_key) or 0
+            delta, new_nomad_offset, new_producer_offset = self._fetch_step_log_delta(
+                alloc_id,
+                step,
+                log_type,
+                nomad_start_offset,
+                producer_start_offset,
+                anonymize_entities,
+            )
+            task_logs[step][last_offset_key] = new_nomad_offset
+            task_logs[step][producer_offset_key] = new_producer_offset
+            task_logs[step][log_type] = delta
         return task_logs
+
+    def _resolve_running_allocation(
+        self, queue_item: TaskHistory
+    ) -> tuple[dict[str, Any], str] | None:
+        """Resolve the current allocation for a running task history.
+
+        Walks any ``FollowupEvalID`` chain to land on the latest allocation. If
+        the allocation is gone, mutates ``queue_item.status`` to FAILED or LOST
+        and returns ``None`` so the caller knows to bail out without further
+        work.
+
+        :param queue_item: The running task history record.
+        :type queue_item: TaskHistory
+        :return: ``(alloc, job_id)`` when an allocation is found, or ``None``
+            when the caller should return early.
+        :rtype: tuple[dict[str, Any], str] | None
+        """
+        try:
+            alloc = self.get_allocation_for_task_history(queue_item)
+            job_id = alloc["JobID"]
+            while followup_eval_id := alloc.get("FollowupEvalID"):
+                alloc = self.get_last_allocation(job_id, followup_eval_id)
+                queue_item.execution_request.tracking["task_states"] = {}
+        except AllocationNotFoundError:
+            logger.debug("Allocation not found for task history %s", queue_item.id)
+        else:
+            return alloc, job_id
+        try:
+            job = self.get_job_for_task_history(queue_item)
+            if all(
+                evaluation.get("Status") != NomadAllocStatusEnum.PENDING
+                for evaluation in self.backend.job.get_evaluations(job["ID"])
+            ):
+                logger.warning(
+                    "No allocations or pending evaluations found for task history %s",
+                    queue_item.id,
+                )
+                queue_item.status = TaskHistoryStatusEnum.FAILED
+                queue_item.started_at = None
+        except JobNotFoundError:
+            logger.warning(
+                "Lost job and allocation from task history %s", queue_item.id
+            )
+            queue_item.status = TaskHistoryStatusEnum.LOST
+        return None
 
     async def _sync_task_history(
         self,
         queue_item: TaskHistory,
+        writer_session: AsyncSession | None = None,
     ) -> TaskHistory:
         """Synchronize the task history with the current state of the task in Nomad.
 
-        This method retrieves the latest allocation details and updates the task history
-        with the current status, task states, and logs. If the task is no longer
-        running, it updates the status accordingly.
+        Retrieve the latest allocation, update the status and the execution
+        tracking metadata, and persist the delta logs fetched from Nomad into
+        ``taskhistory_log`` via :class:`TaskHistoryLogWriter`. Legacy
+        ``tracking["task_logs"]`` blobs are migrated into the chunk store on
+        the first post-deployment sync via :func:`backfill_legacy_logs`, so
+        pre-existing records keep a continuous log stream.
 
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
+        :param writer_session: The dedicated session to use for log chunk
+            persistence. When ``None``, log persistence is skipped.
+        :type writer_session: AsyncSession | None
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """
         if queue_item.status != TaskHistoryStatusEnum.RUNNING:
             return queue_item
 
-        try:
-            alloc = self.get_allocation_for_task_history(queue_item)
-            job_id = alloc["JobID"]
-            while followup_eval_id := alloc.get("FollowupEvalID"):
-                alloc = self.get_last_allocation(job_id, followup_eval_id)
-                queue_item.execution_request.tracking.update(
-                    task_states={},
-                    task_logs={},
-                )
-        except AllocationNotFoundError:
-            logger.debug("Allocation not found for task history %s", queue_item.id)
-            try:
-                job = self.get_job_for_task_history(queue_item)
-                if all(
-                    evaluation.get("Status") != NomadAllocStatusEnum.PENDING
-                    for evaluation in self.backend.job.get_evaluations(job["ID"])
-                ):
-                    logger.warning(
-                        "No allocations or pending evaluations found for task history %s",
-                        queue_item.id,
-                    )
-                    queue_item.status = TaskHistoryStatusEnum.FAILED
-                    queue_item.started_at = None
-            except JobNotFoundError:
-                logger.warning(
-                    "Lost job and allocation from task history %s", queue_item.id
-                )
-                queue_item.status = TaskHistoryStatusEnum.LOST
+        previous_allocation_id = queue_item.execution_request.tracking.get(
+            "allocation_id"
+        )
+
+        resolved = self._resolve_running_allocation(queue_item)
+        if resolved is None:
             return queue_item
+        alloc, job_id = resolved
 
         task_states = alloc["TaskStates"]
 
@@ -778,35 +899,182 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     stopped=job.get("Stop", False),
                 )
 
-        task_logs = self.get_logs_for_allocation(
-            alloc,
-            queue_item.task_logs,
-            queue_item.anonymized_entities,
-        )
-        logger.debug(
-            "sync_task_history(queue_item_id=%s): tasks_logs = %r",
-            queue_item.id,
-            task_logs,
-        )
-        # TODO(yan): Refactor logs
-        # SEP-564
+        if writer_session is not None:
+            await self._persist_nomad_task_logs(
+                writer_session=writer_session,
+                queue_item=queue_item,
+                alloc=alloc,
+                previous_allocation_id=previous_allocation_id,
+            )
+
         queue_item.execution_request.tracking.update(
             allocation_id=alloc["ID"],
             job_id=job_id,
             evaluation_id=alloc["EvalID"],
             task_states=task_states,
-            task_logs=b64encode(
-                gzip.compress(
-                    json.dumps(
-                        sort_dict(
-                            task_logs,
-                            lambda item: list(task_states.keys()).index(item[0]),
-                        )
-                    ).encode()
-                )
-            ).decode(),
         )
+        queue_item.execution_request.tracking.pop("task_logs", None)
         return queue_item
+
+    async def _persist_nomad_task_logs(
+        self,
+        *,
+        writer_session: AsyncSession,
+        queue_item: TaskHistory,
+        alloc: dict[str, Any],
+        previous_allocation_id: str | None,
+    ) -> None:
+        """Persist this sync cycle's delta logs into the chunk store.
+
+        Resets the producer offset to ``0`` for every stream when Nomad
+        reschedules to a new allocation so the fetcher reads the new
+        allocation from the start.
+
+        :param writer_session: The dedicated session used for log chunk
+            persistence, supplied by the caller.
+        :type writer_session: AsyncSession
+        :param queue_item: The running task history record.
+        :type queue_item: TaskHistory
+        :param alloc: The current Nomad allocation dict.
+        :type alloc: dict[str, Any]
+        :param previous_allocation_id: The ``allocation_id`` stored in
+            ``tracking`` at the start of this sync cycle, or ``None`` when the
+            record has not yet landed on an allocation.
+        :type previous_allocation_id: str | None
+        """
+        alloc_id = alloc["ID"]
+        legacy_logs = decompress_legacy_logs(queue_item)
+        if legacy_logs:
+            await backfill_legacy_logs(writer_session, queue_item.id, legacy_logs)
+
+        if previous_allocation_id is not None and previous_allocation_id != alloc_id:
+            await TaskHistoryLogWriter.drain_and_reset_producer_offsets(
+                writer_session, queue_item.id
+            )
+            _clear_log_fetch_offsets(queue_item.id)
+
+        initial_offsets = await self._build_initial_log_offsets(
+            writer_session, queue_item.id, alloc_id
+        )
+        task_logs = self.get_logs_for_allocation(
+            alloc,
+            initial_offsets,
+            queue_item.anonymized_entities,
+        )
+
+        force_flush = queue_item.status != TaskHistoryStatusEnum.RUNNING
+        await self._write_nomad_deltas(
+            writer_session,
+            queue_item.id,
+            alloc_id,
+            task_logs,
+            force_flush=force_flush,
+        )
+        if force_flush:
+            await self._force_flush_remaining_streams(writer_session, queue_item.id)
+            _clear_log_fetch_offsets(queue_item.id)
+
+    @staticmethod
+    async def _build_initial_log_offsets(
+        writer_session: AsyncSession,
+        task_history_id: int,
+        alloc_id: str,
+    ) -> dict[str, dict[str, Any]]:
+        """Return the per-stream ``initial_logs`` dict for the current cycle.
+
+        :param writer_session: The dedicated log writer session.
+        :type writer_session: AsyncSession
+        :param task_history_id: The task history identifier.
+        :type task_history_id: int
+        :param alloc_id: The current Nomad allocation identifier.
+        :type alloc_id: str
+        :return: A dict shaped
+            ``{source: {f"{stream.value}_last_offset": int,
+            f"{stream.value}_producer_offset": int}}``.
+        :rtype: dict[str, dict[str, Any]]
+        """
+        state_rows = await TaskHistoryLogStateManager.list_for_task(
+            writer_session, task_history_id
+        )
+        initial_offsets = defaultdict(dict)
+        for row in state_rows:
+            nomad_offset = _LOG_FETCH_OFFSETS.get(
+                (task_history_id, alloc_id, row.source, row.stream), 0
+            )
+            initial_offsets[row.source][f"{row.stream.value}_last_offset"] = (
+                nomad_offset
+            )
+            initial_offsets[row.source][f"{row.stream.value}_producer_offset"] = (
+                row.producer_offset
+            )
+        return initial_offsets
+
+    @staticmethod
+    async def _write_nomad_deltas(
+        writer_session: AsyncSession,
+        task_history_id: int,
+        alloc_id: str,
+        task_logs: dict[str, dict[str, Any]],
+        *,
+        force_flush: bool,
+    ) -> None:
+        """Append this cycle's delta bytes to the chunk store.
+
+        :param writer_session: The dedicated log writer session.
+        :type writer_session: AsyncSession
+        :param task_history_id: The task history identifier.
+        :type task_history_id: int
+        :param alloc_id: The current Nomad allocation identifier.
+        :type alloc_id: str
+        :param task_logs: The per-step/per-stream delta dict returned by
+            :meth:`get_logs_for_allocation`.
+        :type task_logs: dict[str, dict[str, Any]]
+        :param force_flush: Whether the caller is draining staging on a
+            terminal sync.
+        :type force_flush: bool
+        """
+        for step, payload in task_logs.items():
+            for log_type in TaskLogType:
+                delta_text = payload.get(log_type) or ""
+                nomad_offset = payload.get(f"{log_type.value}_last_offset", 0)
+                _LOG_FETCH_OFFSETS[(task_history_id, alloc_id, step, log_type)] = (
+                    nomad_offset
+                )
+                if not delta_text and not force_flush:
+                    continue
+                producer_offset = payload.get(f"{log_type.value}_producer_offset", 0)
+                await TaskHistoryLogWriter.append(
+                    writer_session,
+                    task_history_id,
+                    source=step,
+                    stream=log_type,
+                    new_bytes=delta_text.encode("utf-8"),
+                    producer_offset_after=producer_offset,
+                    force_flush=force_flush,
+                )
+
+    @staticmethod
+    async def _force_flush_remaining_streams(
+        writer_session: AsyncSession, task_history_id: int
+    ) -> None:
+        """Drain every known stream's staging buffer on a terminal sync.
+
+        :param writer_session: The dedicated log writer session.
+        :type writer_session: AsyncSession
+        :param task_history_id: The task history identifier.
+        :type task_history_id: int
+        """
+        for row in await TaskHistoryLogStateManager.list_for_task(
+            writer_session, task_history_id
+        ):
+            await TaskHistoryLogWriter.append(
+                writer_session,
+                task_history_id,
+                source=row.source,
+                stream=row.stream,
+                new_bytes=b"",
+                force_flush=True,
+            )
 
     def task_needs_job_register(self, task: Task) -> bool:
         """Determine whether a job needs to be registered for the task.
@@ -818,7 +1086,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         :param task: The task to evaluate.
         :type task: Task
-        :return: `True` if a new job needs to be created, otherwise `False`.
+        :return: `True` if a new job needs to be created, otherwise ``False``.
         :rtype: bool
         :raises BaseNomadException: If there is an issue communicating with the Nomad
             backend.
@@ -844,12 +1112,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type job: dict[str, Any]
         :return: The original job specification if validation is successful.
         :rtype: dict[str, Any]
-        :raises HTTPException: If validation fails or Nomad returns an error status
-            code.
+        :raises HTTPBadRequestException: If validation fails or Nomad returns an
+            error status code.
         """
         valid = await async_run(self.backend.validate.validate_job, {"Job": job})
         if valid.status_code != status.HTTP_200_OK:
-            raise HTTPException(status_code=valid.status_code)
+            raise HTTPBadRequestException(
+                f"Nomad job validation failed with status {valid.status_code}"
+            )
         resp = json.loads(valid.text)
         if not resp.get("ValidationErrors", []):
             return job
@@ -1220,15 +1490,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """Stream logs from a task history record.
 
         Retrieves the allocation details and concurrently streams stdout and stderr logs
-        for each task step. Yields `TaskLog` instances as log lines are received.
+        for each task step. Yields ``TaskLog`` instances as log lines are received.
 
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
         :param start_offsets: A dictionary containing the starting offsets for each
             step and log type. If None, defaults to starting from the beginning.
         :type start_offsets: dict[str, dict[str, int]] | None
-        :yield: `TaskLog` instances containing log messages.
-        :rtype: TaskLog | None
+        :return: An async generator yielding ``TaskLog`` instances containing
+            log messages.
+        :rtype: AsyncGenerator[TaskLog | None, None]
         """
         job_id, eval_id = self.job_eval_ids_for_stream_logs(queue_item)
         alloc = self.get_last_allocation(job_id, eval_id)
@@ -1290,7 +1561,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param chunk_size: The size of each chunk to read from the file. Defaults to
             1 MiB.
         :type chunk_size: int
-        :yield: Chunks of the file as bytes.
+        :return: An async generator yielding chunks of the file as bytes.
         :rtype: AsyncGenerator[bytes, None]
         """
         alloc = self.get_allocation_for_task_history(queue_item)
@@ -1423,7 +1694,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         self, queue_item: TaskHistory, alloc_id: str, path: str
     ) -> AsyncGenerator[bytes, None]:
         """Archive a directory on the fly and stream it as a tar.gz archive."""
-        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        queue = asyncio.Queue()
         root_name = Path(path.rstrip("/")).name or "archive"
 
         class QueueWriter:

@@ -16,7 +16,7 @@
 """Add JSON expression indexes on taskhistory.execution_request
 
 Revision ID: 9ebd648709e8
-Revises: bb3edb973603
+Revises: taskhistory_log_tables
 Create Date: 2026-04-14 17:52:42.245472
 
 Add expression indexes on ``execution_request->>'task'`` and
@@ -45,7 +45,7 @@ from alembic import op
 
 
 revision: str = "9ebd648709e8"
-down_revision: Union[str, None] = "bb3edb973603"
+down_revision: Union[str, None] = "taskhistory_log_tables"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

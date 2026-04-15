@@ -18,11 +18,11 @@
 import json
 import logging
 import os
-from collections import defaultdict
+from collections.abc import AsyncGenerator
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
@@ -53,7 +53,7 @@ from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
     get_executor,
-    get_logs_offsets,
+    LogsOffsetsDep,
     PreparedTaskHistory,
     SessionDep,
     TaskDep,
@@ -62,6 +62,7 @@ from app.tasks.deps import (
     validate_chain_task_names,
 )
 from app.tasks.execution.utils import parse_payload
+from app.tasks.logs.log_reader import iter_task_history_logs
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
@@ -377,9 +378,10 @@ async def list_task_history_events(
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
 async def stream_task_history_logs(
+    session: SessionDep,
     executor: TaskExecutor,
     task_history: TaskHistoryWithTaskDep,
-    offsets: Annotated[defaultdict[str, dict[str, int]], Depends(get_logs_offsets)],
+    offsets: LogsOffsetsDep,
     step: str | None = None,
 ) -> StreamingResponse:
     """Stream a task history's logs."""
@@ -393,10 +395,14 @@ async def stream_task_history_logs(
             async for log_line in executor.stream_logs(task_history, offsets)
         )
     else:
-        stream_logs_generator = (
-            log.model_dump_json() + "\n"
-            for log in task_history.iter_logs(offsets, step=step)
-        )
+
+        async def _stream_finished_logs() -> AsyncGenerator[str, None]:
+            async for log in iter_task_history_logs(
+                session, task_history, offsets, source=step
+            ):
+                yield log.model_dump_json() + "\n"
+
+        stream_logs_generator = _stream_finished_logs()
     return StreamingResponse(
         stream_logs_generator,
         media_type="application/json",

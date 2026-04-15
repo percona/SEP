@@ -377,7 +377,7 @@ async def _raise_if_identical_task_conflict(
 async def sync_running_items() -> None:
     """Sync running tasks in the task history.
 
-    This function updates the `sync_in_progress_started_at` field for tasks that are
+    This function updates the ``sync_in_progress_started_at`` field for tasks that are
     either not currently in progress or have been in progress for longer than the
     configured SYNC_LOCK_TTL. It then dispatches the sync task for those tasks.
     """
@@ -441,7 +441,10 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
             else:
                 return queue_item
     executor = get_executor_for_task(task)
-    queue_item = await executor.sync_task_history(queue_item)
+    async with async_session() as writer_session:
+        queue_item = await executor.sync_task_history(
+            queue_item, writer_session=writer_session
+        )
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
         saved = await TaskHistoryManager.save(
@@ -479,9 +482,9 @@ async def _dispatch_chained_task(
     """Dispatch the next chained task after the parent completes successfully.
 
     Load the task by name, build a new TaskHistory inheriting the parent's executor
-    target, and call `dispatch_queue_item`. Any `chain_task_names` in the chained
-    task's static `data["meta"]` is stripped to prevent unintended multi-level
-    chaining; the `remaining_chain` is set as the next chain steps.
+    target, and call ``dispatch_queue_item``. Any ``chain_task_names`` in the chained
+    task's static ``data["meta"]`` is stripped to prevent unintended multi-level
+    chaining; the ``remaining_chain`` is set as the next chain steps.
 
     :param chain_task_name: The name of the next task to dispatch.
     :type chain_task_name: str
