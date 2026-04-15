@@ -98,11 +98,7 @@ class CeleryExecutor(BaseExecutor):
         finally:
             queue_item.finished_at = utc_now()
 
-        saved = await TaskHistoryManager.save(
-            session,
-            queue_item,
-            flag_modified_fields=["execution_request"],
-        )
+        saved = await TaskHistoryManager.save(session, queue_item)
         stdout_value = stdout_buffer.getvalue()
         stderr_value = stderr_buffer.getvalue()
         if stdout_value:
