@@ -78,7 +78,7 @@ def validate_backup_source_for_shell(value: str) -> None:
     if not value:
         return
     if "\n" in value or "\r" in value:
-        raise ValueError("backup_source must not contain newline characters")
+        raise ValueError("backup_source must not contain newlines")
     bad = FORBIDDEN_SHELL_METACHARS.intersection(value)
     if bad:
         raise ValueError(
@@ -186,7 +186,7 @@ def logging_setup(logging_dir, log_name, level=LOGGING_LEVEL):
     if not os.path.isdir(real_logging_dir):
         os.makedirs(real_logging_dir)
     elif not os.access(real_logging_dir, os.W_OK):
-        print('Logging directory %s is not writeable.' % logging_dir)
+        print('Logging directory %s not writeable.' % logging_dir)
         sys.exit(4)
 
     # Remove existing loggers to re-define a new one
@@ -854,7 +854,7 @@ class BaseBackup(object):
         :raises: BackupError if the algorithm is not compatible
         """
         if not self.compress:
-            self.logger.debug('Compression is disabled, skipping check')
+            self.logger.debug('Compression disabled, skipping check')
         if algorithm in COMPRESSION_ALGORITHMS[self.backup_code]:
             self.logger.debug('Algorithm %s accepted for backup type %s', algorithm, self.backup_code)
             return
@@ -922,7 +922,7 @@ class BaseBackup(object):
         # Check if Textfile Collector dir exist
         backup_textfile_collector_dir = os.path.dirname(collector_file)
         if not os.path.isdir(backup_textfile_collector_dir):
-            self.logger.warning('Textfile Collector directory {} does not exist.'.format(backup_textfile_collector_dir))
+            self.logger.warning('Textfile collector dir {} does not exist'.format(backup_textfile_collector_dir))
             return False
 
         return True
@@ -1205,7 +1205,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
             if not bkp_weekday:
                 raise BackupError('Skipping upload: unknown backup folder format "%s"' % backup_dir)
             elif bkp_weekday != weekday:
-                self.logger.info("Skipping upload: weekday %s interval configured.", weekday)
+                self.logger.info("Skipping upload: weekday %s interval configured", weekday)
                 return
 
         uploadme_file = os.path.join(backup_dir, UPLOADME_FILE)
@@ -1214,12 +1214,12 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
             # For now only required for MongpDB Cluster HoTBackups
             cmd = 'ssh -tt -q {0} {1} "touch {2}"'.format(SSH_ARGS, self.host, uploadme_file)
             if os.system(cmd) == 0:
-                self.logger.info("Remote HotBackup marked for upload.")
+                self.logger.info("Remote HotBackup marked for upload")
         else:
             # Mark for upload
             if not os.path.isfile(uploadme_file):
                 open(uploadme_file, 'w').close()
-                self.logger.info("Backup marked for upload.")
+                self.logger.info("Backup marked for upload")
 
     def _query_mysql(self, sql, fetchall=False):
         """Execute MySQL query.
@@ -1259,7 +1259,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
                 break
 
         if result and result['Slave_IO_Running'] == 'Yes':
-            self.logger.info('MySQL slave is running.')
+            self.logger.info('MySQL replica is running')
             return True
 
         return False
@@ -1268,7 +1268,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
         """Returns true if read_only is enabled."""
         result = self._query_mysql('SELECT @@read_only')
         if result['@@read_only'] == 1:
-            self.logger.info('MySQL read_only is enabled.')
+            self.logger.info('MySQL read_only is enabled')
             return True
 
         return False
@@ -1281,7 +1281,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
             return False
 
         if result['@@wsrep_on'] == 1:
-            self.logger.info('PXC/Galera cluster detected.')
+            self.logger.info('PXC/Galera cluster detected')
             return True
 
         return False
@@ -1319,7 +1319,7 @@ class Backup(BaseBackup):  # pylint: disable=too-many-instance-attributes
             if result['@@wsrep_desync'] == 1:
                 recv_queue = self._query_mysql('SHOW GLOBAL STATUS LIKE "wsrep_local_recv_queue"')
                 if int(recv_queue['Value']) > 32:
-                    logging.warning('Galera node is not synced, queue size is %s', recv_queue['Value'])
+                    logging.warning('Galera node not synced, queue size is %s', recv_queue['Value'])
 
             self._query_mysql('SET GLOBAL wsrep_desync = %s' % (new_status,))
             self.logger.info('MySQL wsrep_desync changed to %s', new_status)
@@ -1542,12 +1542,12 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             if result and result['Seconds_Behind_Master'] is not None:
                 sbm = result['Seconds_Behind_Master']
                 if sbm == 0:
-                    self.logger.info('MySQL slave is up to date.')
+                    self.logger.info('MySQL replica is up to date')
                 else:
-                    self.logger.info('MySQL slave is %s seconds behind.', sbm)
+                    self.logger.info('MySQL slave is %s seconds behind', sbm)
                     time.sleep(5)
             else:
-                self.logger.info('MySQL slave is broken.')
+                self.logger.info('MySQL replica is broken')
                 return False
 
         return True
@@ -1594,7 +1594,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
                 break
 
         if result and result['Slave_IO_Running'] == 'Yes':
-            self.logger.info('MySQL slave is running.')
+            self.logger.info('MySQL slave is running')
             return True
 
         return False
@@ -1840,7 +1840,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if decompress_proc.returncode != 0:
             raise BackupError('Decompression failed. Error: %s' % (err,))
 
-        self.logger.info('Decompressing binlogs complete.')
+        self.logger.info('Decompressing binlogs complete')
 
 class Restorer(object):  # pylint: disable=too-many-instance-attributes
     """ Parent Restorer Class """
@@ -1872,7 +1872,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
             servers = [s for s in local_cfg.server_data_list]
 
         start_time = time.time()
-        self.logger.info('>>>>>>>>>>>>>>>>>> Restore started.')
+        self.logger.info('>>>>>>>>>>>>>>>>>> Restore started')
 
         rst = None
         for server_data in servers:
@@ -1881,7 +1881,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
             if self.backup_type == 'X':
                 rst = Xtrabackup(server_data)
             else:
-                self.logger.error('No Restores to run.')
+                self.logger.error('No Restores to run')
 
             if rst:
                 try:
@@ -1890,15 +1890,15 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
                     rst.textfile_collector_write_status(STATUS_OK, backup_running=0)
                 except BackupError as exc:
                     self.logger.error(exc.message)
-                    self.logger.error('Restore failed for this host.')
+                    self.logger.error('Restore failed for this host')
                     rst.textfile_collector_write_status(STATUS_CRITICAL, backup_running=0)
                     rst.notify(STATUS_CRITICAL, exc.message)
                 except Exception:
-                    self.logger.exception('Unhandled exception occurred.')
+                    self.logger.exception('Unhandled exception occurred')
                     rst.textfile_collector_write_status(STATUS_CRITICAL, backup_running=0)
                     rst.notify(STATUS_CRITICAL, 'Unhandled exception during restore.')
         time_spent = time.time() - start_time
-        self.logger.info('>>>>>>>>>>>>>>>>>> Restore finished. Total duration: %s.',
+        self.logger.info('>>>>>>>>>>>>>>>>>> Restore finished. Total duration: %s',
                          format_seconds_to_hhmmss(time_spent))
 
         # Release lock
@@ -1990,15 +1990,15 @@ class Xtrabackup(Restore):
                     self.get_datadir()
 
                 if self.from_commandline:
-                    self.logger.info('Check MySQL running.')
+                    self.logger.info('Check MySQL running')
                     if self.signal_mysqld('status'):
-                        self.logger.info('MySQL Not running.')
+                        self.logger.info('MySQL Not running')
                     else:
                         raise BackupError(
                             'MySQL is running; stop before restoring from command line'
                         )
                 else:
-                    self.logger.info('Stopping mysqld.')
+                    self.logger.info('Stopping mysqld')
                     self.signal_mysqld('stop')
                     stop_mysql_time = time.time()
 
@@ -2017,7 +2017,7 @@ class Xtrabackup(Restore):
 
         self.chown_datadir()
 
-        self.logger.info('Starting mysqld.')
+        self.logger.info('Starting mysqld')
         self.signal_mysqld('start')
 
         self._log_binlog_position(backup_dest)
@@ -2026,7 +2026,7 @@ class Xtrabackup(Restore):
         self.report_options['time_spent_seconds'] = time_spent
 
         if not self.continue_replication:
-            self.logger.info('Reset Slave.')
+            self.logger.info('Reset Slave')
             self.reset_slave()
 
         if self.slave_from_master or self.continue_replication:
@@ -2034,11 +2034,11 @@ class Xtrabackup(Restore):
             self.set_slave()
             time.sleep(3)
             if self._is_running_slave():
-                self.logger.info('Slave running.')
+                self.logger.info('Slave running')
                 if self.wait_for_catchup or self.run_checksum:
                     self.logger.info('Waiting for replica catchup')
                     if not self._wait_for_catchup():
-                        self.logger.info('Backup test FAILED.')
+                        self.logger.info('Backup test FAILED')
                         raise BackupError('Backup test failed: replica not caught up')
                     elif self.run_checksum:
                         self.checksum_run()
@@ -2047,7 +2047,7 @@ class Xtrabackup(Restore):
                         else:
                             raise BackupError('Checksum diff found')
             else:
-                self.logger.info('Slave IS NOT running.')
+                self.logger.info('Slave IS NOT running')
                 raise BackupError('Backup test failed: replica setup failed')
 
         check_time = time.time()
@@ -2128,7 +2128,7 @@ class Xtrabackup(Restore):
 
     def chown_datadir(self):
 
-        self.logger.info('Changing datadir owner.')
+        self.logger.info('Changing datadir owner')
         rchown(self.datadir, pwd.getpwnam('mysql').pw_uid, pwd.getpwnam('mysql').pw_gid)
 
     def copy_back(self):
@@ -2139,7 +2139,7 @@ class Xtrabackup(Restore):
             if os.path.isdir(self.datadir):
                 if self.from_commandline:
                     if os.listdir(self.datadir):
-                        raise BackupError("datadir %s is not empty" % self.datadir)
+                        raise BackupError("datadir %s not empty" % self.datadir)
                 else:
                     try:
                         shutil.rmtree(self.datadir)
@@ -2172,7 +2172,7 @@ class Xtrabackup(Restore):
                             dest
                            )
 
-        self.logger.info('OK Copy Back complete.')
+        self.logger.info('OK Copy Back complete')
 
     def stream_copy(self, source, destination):
 
@@ -2242,7 +2242,7 @@ class Xtrabackup(Restore):
             for sql in cm:
                 if sql.startswith('CHANGE '):
                     if self.continue_replication and not self.slave_from_master:
-                        self.logger.info("Continue replication as backup server did.")
+                        self.logger.info("Continue replication as backup server did")
                         res = self._query_mysql('RESET SLAVE')
                         _sql = sql
                     elif self.slave_from_master:
@@ -2255,7 +2255,7 @@ class Xtrabackup(Restore):
                 res = self._query_mysql(_sql, args=_args)
             res = self._query_mysql('START SLAVE')
         except NameError:
-            self.logger.warning('Failed to set slave. Verify xtrabackup_slave_info content.')
+            self.logger.warning('Failed to set slave. Verify xtrabackup_slave_info content')
 
 
     def reset_slave(self):
@@ -2276,7 +2276,7 @@ class Xtrabackup(Restore):
     def get_datadir(self):
 
         if not self.datadir or self.datadir == '/':
-            raise BackupError("Destination datadir is not set. Auto detection not ready")
+            raise BackupError("Destination datadir not set. Auto detection not ready")
         # try restore_config.yml file
         # try my.cnf files
 
@@ -2321,7 +2321,7 @@ class Xtrabackup(Restore):
             raise BackupError('%s mysqld failed. Not init command found' % (action))
 
         if action != 'status' and proc.returncode != 0:
-            raise BackupError('%s mysqld failed.' % (action))
+            raise BackupError('%s mysqld failed' % (action))
         if action == 'start':
             attempts = 0
             while True:
@@ -2464,7 +2464,7 @@ class Xtrabackup(Restore):
             err = xb_log_stream.readlines()[-1]
             raise BackupError('Xtrabackup prepare failed: %s For more details, see %s' % (err, self.xb_log_file))
 
-        self.logger.info('OK Preparing complete.')
+        self.logger.info('OK Preparing complete')
 
     def _check_keyring_file(self):
         # Get config files from restored datadir
@@ -2478,11 +2478,11 @@ class Xtrabackup(Restore):
                         key_location = re.search('^(?!#)keyring[-_]file[-_]data *= *([^ ]+)', line)
                         if key_location:
                             self.logger.info(key_location.group(0))
-                            self.logger.info("InnoDB tablespace encrytpion is enabled.")
+                            self.logger.info("InnoDB tablespace encrytpion is enabled")
                             return key_location.group(0)
                     searchfile.close()
                 except IOError:
-                    self.logger.info("my.cnf file does not appear to exist.")
+                    self.logger.info("my.cnf file does not appear to exist")
 
 
     @staticmethod
