@@ -57,7 +57,10 @@ async def _fetch_latest_pbm_status(tasks_api: Any, pbm_status_tasks: Any) -> str
 
     Streams the ``run-script`` logs for the most recent PBM status history
     record through the tasks API and returns at most
-    ``PBM_LATEST_STATUS_TAIL_BYTES`` of the concatenated stdout content.
+    ``PBM_LATEST_STATUS_TAIL_BYTES`` characters of the concatenated stdout
+    content. The rolling buffer is truncated to that window on every append
+    so long-running PBM status tasks do not materialize their full log in
+    memory for this best-effort UI panel.
 
     :param tasks_api: The tasks API client instance.
     :type tasks_api: Any
@@ -72,7 +75,7 @@ async def _fetch_latest_pbm_status(tasks_api: Any, pbm_status_tasks: Any) -> str
         pbm_status_id = pbm_status_tasks[0]["id"]
     except (IndexError, KeyError, TypeError):
         return None
-    chunks = []
+    tail = ""
     try:
         async for log_entry in tasks_api.stream(
             f"/history/{pbm_status_id}/logs/",
@@ -82,16 +85,16 @@ async def _fetch_latest_pbm_status(tasks_api: Any, pbm_status_tasks: Any) -> str
                 continue
             log_data = json.loads(log_entry)
             if log_data.get("type") == TaskLogType.STDOUT and log_data.get("msg"):
-                chunks.append(log_data["msg"])
+                tail = (tail + log_data["msg"])[-PBM_LATEST_STATUS_TAIL_BYTES:]
     except (ClientResponseError, ValueError, KeyError):
         logger.exception(
             "Failed to fetch latest_status for backup_mongo task %s",
             pbm_status_id,
         )
         return None
-    if not chunks:
+    if not tail:
         return None
-    return "".join(chunks)[-PBM_LATEST_STATUS_TAIL_BYTES:]
+    return tail
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
