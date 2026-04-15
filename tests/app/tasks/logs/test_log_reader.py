@@ -32,6 +32,8 @@ from app.tasks.logs.log_reader import (
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import TaskHistory, TaskLogType
 
+EXPECTED_UTF8_TRIM_START = 4
+
 
 async def _collect(agen):
     """Materialize an async generator into a list."""
@@ -229,6 +231,57 @@ async def test_iter_task_history_logs_empty_history_yields_nothing(
     history = await _reload(session, history)
     logs = await _collect(iter_task_history_logs(session, history))
     assert logs == []
+
+
+@pytest.mark.asyncio
+async def test_iter_task_history_logs_start_offset_trims_multibyte_chunk(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert the trim path uses a byte offset even for non-ASCII content.
+
+    Regression test for SEP-817: the reader used ``chunk.content[trim:]``
+    which is a code-point slice on a ``str``, so a byte-offset resume
+    position would land in the wrong place for multi-byte characters.
+    """
+    history = created_task_with_history
+    payload = "\u00e9\u00e9\u00e9tail".encode()
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        force_flush=True,
+        producer_offset_after=len(payload),
+    )
+
+    history = await _reload(session, history)
+    logs = await _collect(
+        iter_task_history_logs(
+            session,
+            history,
+            start_offsets={
+                "run-script": {TaskLogType.STDOUT: EXPECTED_UTF8_TRIM_START}
+            },
+        )
+    )
+    assert [log.msg for log in logs] == ["\u00e9tail"]
+
+
+def test_decompress_legacy_logs_handles_corrupted_blob():
+    """Assert a garbled base64/gzip/JSON blob returns an empty dict.
+
+    Regression test for SEP-817: the reader used to propagate
+    ``binascii.Error`` / ``zlib.error`` / ``json.JSONDecodeError`` and
+    kill the Nomad sync loop.
+    """
+    corrupted_history = TaskHistory.model_construct(
+        id=42,
+        execution_request=TaskHistory.model_fields["execution_request"].annotation(
+            task="t", target="n", tracking={"task_logs": "not-valid-base64!!!"}
+        ),
+    )
+    assert decompress_legacy_logs(corrupted_history) == {}
 
 
 def test_decompress_legacy_logs_handles_both_shapes():

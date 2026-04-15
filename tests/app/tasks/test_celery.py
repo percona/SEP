@@ -1041,7 +1041,9 @@ class TestSyncQueueItemChainDispatch:
         session_maker, _ = _make_chain_session_mock()
         mock_save = AsyncMock()
 
-        async def sync_mutates_in_place(queue_item: TaskHistory) -> TaskHistory:
+        async def sync_mutates_in_place(
+            queue_item: TaskHistory, writer_session=None
+        ) -> TaskHistory:
             queue_item.status = TaskHistoryStatusEnum.FAILED
             queue_item.started_at = datetime(2026, 4, 1, 10, 1, 0, tzinfo=UTC)
             queue_item.finished_at = datetime(2026, 4, 1, 10, 2, 0, tzinfo=UTC)

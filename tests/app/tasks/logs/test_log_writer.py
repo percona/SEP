@@ -18,11 +18,10 @@
 from datetime import timedelta
 
 import pytest
-from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.utils.date_time import utc_now
-from app.tasks.crud import TaskHistoryLogStateManager
+from app.tasks.crud import TaskHistoryLogManager, TaskHistoryLogStateManager
 from app.tasks.logs.log_writer import (
     backfill_legacy_logs,
     CHUNK_BYTES,
@@ -33,7 +32,6 @@ from app.tasks.logs.log_writer import (
 )
 from app.tasks.models import (
     TaskHistory,
-    TaskHistoryLog,
     TaskLogType,
 )
 
@@ -44,6 +42,7 @@ EXPECTED_PRE_EXISTING_STDOUT_OFFSET = 12
 EXPECTED_PRE_EXISTING_STDERR_OFFSET = 13
 EXPECTED_MULTI_STREAM_ROW_COUNT = 3
 ALLOC_B_PRODUCER_OFFSET = 1_000
+EXPECTED_DRAIN_CHUNK_COUNT = 2
 
 
 @pytest.mark.asyncio
@@ -72,13 +71,7 @@ async def test_append_creates_state_row_when_below_min_flush(
     assert state.producer_offset == len(payload)
     assert state.version == 1
 
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog).where(
-                col(TaskHistoryLog.task_history_id) == history.id
-            )
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert chunks == []
 
 
@@ -107,13 +100,7 @@ async def test_append_flushes_full_chunk(
     assert state.staging == b"a" * 100
     assert state.producer_offset == len(payload)
 
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog).where(
-                col(TaskHistoryLog.task_history_id) == history.id
-            )
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert len(chunks) == 1
     assert chunks[0].start_offset == 0
     assert chunks[0].end_offset == CHUNK_BYTES
@@ -145,13 +132,7 @@ async def test_append_force_flush_drains_staging(
     assert state.staging == b""
     assert state.persisted_offset == len(payload)
 
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog).where(
-                col(TaskHistoryLog.task_history_id) == history.id
-            )
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert len(chunks) == 1
     assert chunks[0].content == payload.decode("utf-8")
 
@@ -171,13 +152,7 @@ async def test_append_force_flush_empty_staging_is_noop(
         force_flush=True,
         producer_offset_after=0,
     )
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog).where(
-                col(TaskHistoryLog.task_history_id) == history.id
-            )
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert chunks == []
 
 
@@ -206,13 +181,7 @@ async def test_append_accumulates_below_min_flush(
     assert state is not None
     assert state.staging == b"x" * total_bytes
     assert state.persisted_offset == 0
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog).where(
-                col(TaskHistoryLog.task_history_id) == history.id
-            )
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert chunks == []
 
 
@@ -252,13 +221,7 @@ async def test_append_max_age_flushes_remainder(
     )
     assert state.staging == b""
     assert state.persisted_offset == EXPECTED_HELLOWORLD_LEN
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog)
-            .where(col(TaskHistoryLog.task_history_id) == history.id)
-            .order_by(col(TaskHistoryLog.start_offset))
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert len(chunks) == 1
     assert chunks[0].content == "helloworld"
 
@@ -278,13 +241,7 @@ async def test_append_min_flush_triggers_remainder(
         new_bytes=payload,
         producer_offset_after=len(payload),
     )
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog).where(
-                col(TaskHistoryLog.task_history_id) == history.id
-            )
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert len(chunks) == 1
     assert chunks[0].end_offset == MIN_FLUSH
 
@@ -354,13 +311,7 @@ async def test_append_producer_offset_after_skips_persisted(
     )
     assert state.persisted_offset == EXPECTED_HELLOWORLD_LEN
     assert state.producer_offset == EXPECTED_HELLOWORLD_LEN
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog)
-            .where(col(TaskHistoryLog.task_history_id) == history.id)
-            .order_by(col(TaskHistoryLog.start_offset))
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["hello", "world"]
 
 
@@ -415,8 +366,7 @@ async def test_reset_producer_offsets_clears_db_and_allows_realloc_writes(
         producer_offset_after=50_000,
     )
 
-    await TaskHistoryLogStateManager.reset_producer_offsets(session, history.id)
-    await session.commit()
+    await TaskHistoryLogWriter.drain_and_reset_producer_offsets(session, history.id)
 
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
@@ -440,13 +390,7 @@ async def test_reset_producer_offsets_clears_db_and_allows_realloc_writes(
     assert state is not None
     assert state.producer_offset == ALLOC_B_PRODUCER_OFFSET
     assert state.persisted_offset == persisted_after_alloc_a + len(b"alloc-b content")
-    chunks = (
-        await session.exec(
-            select(TaskHistoryLog)
-            .where(col(TaskHistoryLog.task_history_id) == history.id)
-            .order_by(col(TaskHistoryLog.start_offset))
-        )
-    ).all()
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["alloc-a content", "alloc-b content"]
 
 
@@ -524,3 +468,91 @@ async def test_backfill_legacy_logs_skips_existing_streams(
         by_stream[TaskLogType.STDERR].producer_offset
         == EXPECTED_PRE_EXISTING_STDERR_OFFSET
     )
+
+
+@pytest.mark.asyncio
+async def test_append_utf8_boundary_split_is_safe(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert chunk boundaries never land inside a multi-byte UTF-8 codepoint.
+
+    Regression test for SEP-817: the writer used to slice ``staging`` at a
+    fixed ``CHUNK_BYTES`` boundary, and ``chunk.decode("utf-8")`` on the
+    resulting slice could raise ``UnicodeDecodeError`` if the cut fell in
+    the middle of a codepoint.
+    """
+    history = created_task_with_history
+    prefix = b"a" * (CHUNK_BYTES - 2)
+    payload = prefix + "\u00e9".encode() + b"tail"
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        force_flush=True,
+        producer_offset_after=len(payload),
+    )
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+    joined = "".join(chunk.content for chunk in chunks)
+    assert joined == payload.decode("utf-8")
+    for chunk in chunks:
+        chunk.content.encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_drain_and_reset_flushes_staging_before_zeroing_producer_offset(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert sub-``MIN_FLUSH`` staging is flushed before the producer reset.
+
+    Regression test for SEP-817: ``reset_producer_offsets`` used to leave
+    ``staging`` intact, so the next allocation's bytes were concatenated
+    inline with the previous allocation's leftover remainder — producing a
+    chunk that mixed content from both allocations. The writer method
+    ``drain_and_reset_producer_offsets`` must emit the remainder as its own
+    chunk first, then zero ``producer_offset``.
+    """
+    history = created_task_with_history
+    alloc_a_bytes = b"alloc-a-remainder"
+    assert len(alloc_a_bytes) < MIN_FLUSH
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=alloc_a_bytes,
+        producer_offset_after=len(alloc_a_bytes),
+    )
+    state = await TaskHistoryLogStateManager.get_for_stream(
+        session, history.id, "run-script", TaskLogType.STDOUT
+    )
+    assert state is not None
+    assert state.staging == alloc_a_bytes
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+    assert chunks == []
+
+    await TaskHistoryLogWriter.drain_and_reset_producer_offsets(session, history.id)
+
+    state = await TaskHistoryLogStateManager.get_for_stream(
+        session, history.id, "run-script", TaskLogType.STDOUT
+    )
+    assert state is not None
+    assert state.staging == b""
+    assert state.producer_offset == 0
+    assert state.persisted_offset == len(alloc_a_bytes)
+
+    alloc_b_bytes = b"alloc-b-first-bytes"
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=alloc_b_bytes,
+        force_flush=True,
+        producer_offset_after=len(alloc_b_bytes),
+    )
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+    assert len(chunks) == EXPECTED_DRAIN_CHUNK_COUNT
+    assert chunks[0].content == alloc_a_bytes.decode("utf-8")
+    assert chunks[1].content == alloc_b_bytes.decode("utf-8")

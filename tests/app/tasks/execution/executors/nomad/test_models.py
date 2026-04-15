@@ -1364,6 +1364,95 @@ class TestGetLogsForAllocation:
         assert tasks == {"ready-step"}
         assert types == {TaskLogType.STDOUT, TaskLogType.STDERR}
 
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_anonymized_offsets_track_producer_space(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert producer offset tracks anonymized bytes, not Nomad bytes.
+
+        Regression test for SEP-817: when anonymization replaces raw bytes
+        with a shorter or longer string, the producer-space offset returned
+        alongside the delta must track the post-anonymization byte length
+        so the writer dedup window does not mix Nomad-space and
+        anonymized-space counts on retry.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.return_value = "[REDACTED]"
+        raw_bytes = b"4111-1111-1111-1111"
+        raw_msg = b64encode(raw_bytes).decode()
+        log_data = json.dumps({"Data": raw_msg, "Offset": len(raw_bytes)})
+        mock_backend.client.stream_logs.stream.return_value = log_data
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        result = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+
+        assert result["run-script"]["stdout"] == "[REDACTED]"
+        assert result["run-script"]["stdout_last_offset"] == len(raw_bytes)
+        assert result["run-script"]["stdout_producer_offset"] == len("[REDACTED]")
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_anonymized_retry_dedups_correctly(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert a second fetch at the advanced offsets yields no new bytes.
+
+        Simulates a retry after a successful first fetch: the second cycle
+        starts at the advanced Nomad offset (so Nomad returns nothing new)
+        and passes the advanced producer offset through; the writer caller
+        therefore sees a zero-length delta and never re-writes already
+        persisted anonymized bytes.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.return_value = "[REDACTED]"
+        raw_bytes = b"4111-1111-1111-1111"
+        raw_msg = b64encode(raw_bytes).decode()
+        first_log_data = json.dumps({"Data": raw_msg, "Offset": len(raw_bytes)})
+        mock_backend.client.stream_logs.stream.side_effect = [
+            first_log_data,
+            "",
+            "",
+            "",
+        ]
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        first = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+        second = executor.get_logs_for_allocation(
+            alloc,
+            initial_logs={
+                "run-script": {
+                    "stdout_last_offset": first["run-script"]["stdout_last_offset"],
+                    "stdout_producer_offset": first["run-script"][
+                        "stdout_producer_offset"
+                    ],
+                    "stderr_last_offset": first["run-script"]["stderr_last_offset"],
+                    "stderr_producer_offset": first["run-script"][
+                        "stderr_producer_offset"
+                    ],
+                }
+            },
+            anonymize_entities={PIIEntity.CREDIT_CARD},
+        )
+
+        assert second["run-script"]["stdout"] == ""
+        assert second["run-script"]["stdout_last_offset"] == len(raw_bytes)
+        assert second["run-script"]["stdout_producer_offset"] == len("[REDACTED]")
+
 
 class TestNomadLogStreaming:
     """Regression tests for Nomad HTTP log streaming helpers."""
