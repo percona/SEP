@@ -15,10 +15,12 @@
 
 """Define routes for the backups plugin."""
 
+import json
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from aiohttp import ClientResponseError
+from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
@@ -34,12 +36,14 @@ from app.sep.deps import (
 )
 from app.sep.plugins.backup_mongo.deps import (
     BackupGeneratedTask,
+    BackupsIndexContextDep,
     BackupsTask,
-    get_backups_index_context,
 )
-from app.tasks.models import TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 from .restore.routes import router as restore_router
+
+PBM_LATEST_STATUS_TAIL_BYTES = 4096
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -48,10 +52,52 @@ templates = sep_settings.TEMPLATES
 router.include_router(restore_router, prefix="/restores", tags=["restores"])
 
 
+async def _fetch_latest_pbm_status(tasks_api: Any, pbm_status_tasks: Any) -> str | None:
+    """Return the tail of the latest PBM status task's stdout.
+
+    Streams the ``run-script`` logs for the most recent PBM status history
+    record through the tasks API and returns at most
+    ``PBM_LATEST_STATUS_TAIL_BYTES`` of the concatenated stdout content.
+
+    :param tasks_api: The tasks API client instance.
+    :type tasks_api: Any
+    :param pbm_status_tasks: The list of PBM status history records returned by
+        the tasks API, or an empty list when no history exists.
+    :type pbm_status_tasks: Any
+    :return: The tail of the latest PBM status stdout, or ``None`` when no
+        history exists or the stream cannot be read.
+    :rtype: str | None
+    """
+    try:
+        pbm_status_id = pbm_status_tasks[0]["id"]
+    except (IndexError, KeyError, TypeError):
+        return None
+    chunks = []
+    try:
+        async for log_entry in tasks_api.stream(
+            f"/history/{pbm_status_id}/logs/",
+            params={"step": "run-script"},
+        ):
+            if not log_entry:
+                continue
+            log_data = json.loads(log_entry)
+            if log_data.get("type") == TaskLogType.STDOUT and log_data.get("msg"):
+                chunks.append(log_data["msg"])
+    except (ClientResponseError, ValueError, KeyError):
+        logger.exception(
+            "Failed to fetch latest_status for backup_mongo task %s",
+            pbm_status_id,
+        )
+        return None
+    if not chunks:
+        return None
+    return "".join(chunks)[-PBM_LATEST_STATUS_TAIL_BYTES:]
+
+
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def pbm_backups_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
+    context: BackupsIndexContextDep,
 ) -> HTMLResponse:
     """Homepage of PBM backup mongo plugin."""
     return templates.TemplateResponse(
@@ -178,13 +224,10 @@ async def pbm_backups_detail(
     )
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
-    # get latest status
     pbm_status_tasks = await tasks_api.get(f"/{task.name}-status/history/")
-    try:
-        tracking = pbm_status_tasks[0]["execution_request"]["tracking"]
-        context["latest_status"] = tracking["task_logs"]["run-script"]["stdout"]
-    except (IndexError, KeyError):
-        context["latest_status"] = None
+    context["latest_status"] = await _fetch_latest_pbm_status(
+        tasks_api, pbm_status_tasks
+    )
 
     context["alert_on_fail_default"] = task.alert_on_fail
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)

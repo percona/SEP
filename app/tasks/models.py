@@ -15,15 +15,10 @@
 
 """Define models for the Task API."""
 
-import base64
-import gzip
 import json
-from collections import defaultdict
-from collections.abc import Generator
 from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
-from itertools import product
 from pathlib import Path
 from statistics import mean
 from typing import Annotated, Any, Literal, Self
@@ -38,7 +33,18 @@ from pydantic import (
     model_validator,
     ValidationError,
 )
-from sqlalchemy import Column, Index, JSON
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    ForeignKey,
+    func,
+    Index,
+    JSON,
+    LargeBinary,
+    String,
+    text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as EnumField
 from sqlalchemy.orm import column_property
 from sqlalchemy.types import TypeDecorator
@@ -49,6 +55,7 @@ from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.db.sql_types import MaybeCompressedText
 from app.core.utils.fields import (
     EmptyStrToNone,
     EnumFieldMixin,
@@ -273,9 +280,9 @@ class TaskExecutionRequest(BaseModel):
 
 
 class TaskExecutionRequestJSON(TypeDecorator):
-    """Define JSON column type that deserializes values into `TaskExecutionRequest`.
+    """Define JSON column type that deserializes values into ``TaskExecutionRequest``.
 
-    Use this on columns that should store and return `TaskExecutionRequest` objects
+    Use this on columns that should store and return ``TaskExecutionRequest`` objects
     instead of plain dicts. Other JSON columns are unaffected.
 
     :cvar impl: The underlying SQLAlchemy column type.
@@ -288,13 +295,13 @@ class TaskExecutionRequestJSON(TypeDecorator):
     cache_ok = True
 
     def process_result_value(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
-        """Deserialize a JSON value into a `TaskExecutionRequest`.
+        """Deserialize a JSON value into a ``TaskExecutionRequest``.
 
         :param value: The raw value from the database.
         :type value: Any
         :param dialect: The SQLAlchemy dialect in use.
         :type dialect: Any
-        :return: A `TaskExecutionRequest` if valid, otherwise the raw value.
+        :return: A ``TaskExecutionRequest`` if valid, otherwise the raw value.
         :rtype: Any
         """
         if value is None:
@@ -305,7 +312,7 @@ class TaskExecutionRequestJSON(TypeDecorator):
             return value
 
     def process_bind_param(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
-        """Serialize a `TaskExecutionRequest` into a dict for storage.
+        """Serialize a ``TaskExecutionRequest`` into a dict for storage.
 
         :param value: The value to store in the database.
         :type value: Any
@@ -366,12 +373,12 @@ class TaskBase(SQLModel):
     def validate_data_for_backend(self) -> Self:
         """Validate the data dictionary against the selected backend.
 
-        Enforce that Proxy tasks include a `task` key and that Celery tasks
+        Enforce that Proxy tasks include a ``task`` key and that Celery tasks
         are marked as protected to prevent arbitrary code execution.
 
         :return: The validated instance.
         :rtype: Self
-        :raises ValueError: If the backend is Proxy and `task` is not set in data,
+        :raises ValueError: If the backend is Proxy and ``task`` is not set in data,
             or if the backend is Celery and the task is not protected.
         """
         if self.backend == TaskBackendEnum.PROXY and not self.data.get("task"):
@@ -734,56 +741,150 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         }
         await alert_service.trigger(alert_data)
 
-    @cached_property
-    def task_logs(self) -> dict:
-        """Return task logs."""
-        # TODO(yan): Refactor logs
-        # SEP-564
-        logs = self.execution_request.tracking.get("task_logs", {})
-        if isinstance(logs, str):
-            return json.loads(gzip.decompress(base64.b64decode(logs)))
-        return logs
-
-    def iter_logs(
-        self,
-        start_offsets: dict[str, dict[str, int]] | None = None,
-        chunk_size: int = 65536,
-        step: str | None = None,
-    ) -> Generator[TaskLog]:
-        """Yield task logs in chunks based on provided start offsets.
-
-        :param start_offsets: A dictionary containing the starting offsets for each
-            step and log type. If None, defaults to starting from the beginning.
-        :type start_offsets: dict[str, dict[str, int]] | None
-        :param chunk_size: The size of each log chunk to yield. Defaults to 65536 bytes.
-        :type chunk_size: int
-        :param step: If provided, only logs for this specific step will be yielded.
-            Defaults to None.
-        :type step: str | None
-        :yield: TaskLog objects containing log chunks.
-        :rtype: Generator[TaskLog]
-        """
-        task_logs = self.task_logs
-        if step is not None:
-            task_logs = {step: task_logs.get(step, {})}
-        start_offsets = defaultdict(dict, start_offsets or {})
-        for (cur_step, log), log_type in product(task_logs.items(), TaskLogType):
-            msg = log.get(log_type) or ""
-            for chunk_start in range(
-                start_offsets[cur_step].get(log_type, 0), len(msg), chunk_size
-            ):
-                chunk_end = chunk_start + chunk_size
-                yield TaskLog(
-                    step=cur_step,
-                    type=log_type,
-                    msg=msg[chunk_start:chunk_end],
-                    offset=chunk_end,
-                )
-
 
 TaskHistory.execution_request = column_property(
     TaskHistory.__table__.c.execution_request, deferred=True
 )
+
+
+class TaskHistoryLog(BaseSQLModel, table=True):
+    """Store an append-only log chunk for a task history.
+
+    :param task_history_id: The ID of the ``TaskHistory`` this chunk belongs to.
+    :type task_history_id: int
+    :param source: The execution step (Nomad task name) that produced the chunk.
+    :type source: str
+    :param stream: The log stream (stdout or stderr) the chunk belongs to.
+    :type stream: TaskLogType
+    :param start_offset: The user-facing byte offset at which this chunk starts.
+    :type start_offset: int
+    :param end_offset: The user-facing byte offset at which this chunk ends.
+    :type end_offset: int
+    :param content: The decoded chunk content.
+    :type content: str
+    """
+
+    __tablename__ = "taskhistory_log"
+    __table_args__ = (
+        UniqueConstraint(
+            "task_history_id",
+            "source",
+            "stream",
+            "start_offset",
+            name="uq_taskhistory_log_chunk",
+        ),
+        Index(
+            "ix_taskhistory_log_lookup",
+            "task_history_id",
+            "source",
+            "stream",
+            "start_offset",
+        ),
+    )
+
+    task_history_id: int = SQLField(
+        sa_column=Column(
+            ForeignKey("taskhistory.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    source: str = SQLField(sa_column=Column(String(64), nullable=False))
+    stream: TaskLogType = SQLField(
+        sa_column=Column(
+            EnumField(TaskLogType, native_enum=False),
+            nullable=False,
+        ),
+    )
+    start_offset: int = SQLField(sa_column=Column(BigInteger, nullable=False))
+    end_offset: int = SQLField(sa_column=Column(BigInteger, nullable=False))
+    content: str = SQLField(sa_column=Column(MaybeCompressedText, nullable=False))
+
+
+class TaskHistoryLogState(BaseSQLModel, table=True):
+    """Per-stream staging buffer and persisted offsets for the log writer.
+
+    Inherits from ``BaseSQLModel`` (surrogate integer PK) and declares a
+    unique constraint on ``(task_history_id, source, stream)`` — callers
+    always look rows up by that natural tuple rather than by the surrogate id.
+
+    :param task_history_id: The ID of the ``TaskHistory`` this state row tracks.
+    :type task_history_id: int
+    :param source: The execution step (Nomad task name) this state row tracks.
+    :type source: str
+    :param stream: The log stream (stdout or stderr) this state row tracks.
+    :type stream: TaskLogType
+    :param persisted_offset: The absolute user-facing byte offset already
+        flushed into the chunk store.
+    :type persisted_offset: int
+    :param producer_offset: The producer-relative byte offset already consumed
+        from the current allocation (Nomad-relative; resets on allocation
+        switch). May diverge from ``persisted_offset`` after a Nomad
+        followup-allocation switch.
+    :type producer_offset: int
+    :param staging: Bytes pending flush to the chunk store.
+    :type staging: bytes
+    :param staging_updated_at: When ``staging`` was last modified; used to age
+        out small buffers after ``MAX_AGE_SEC``.
+    :type staging_updated_at: datetime
+    :param version: Optimistic-locking version counter; incremented on every
+        successful state update.
+    :type version: int
+    """
+
+    __tablename__ = "taskhistory_log_state"
+    __table_args__ = (
+        UniqueConstraint(
+            "task_history_id",
+            "source",
+            "stream",
+            name="uq_taskhistory_log_state_stream",
+        ),
+    )
+
+    task_history_id: int = SQLField(
+        sa_column=Column(
+            ForeignKey("taskhistory.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    source: str = SQLField(sa_column=Column(String(64), nullable=False))
+    stream: TaskLogType = SQLField(
+        sa_column=Column(
+            EnumField(TaskLogType, native_enum=False),
+            nullable=False,
+        ),
+    )
+    persisted_offset: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    producer_offset: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    staging: bytes = SQLField(
+        sa_column=Column(
+            LargeBinary,
+            nullable=False,
+            server_default=text("''"),
+        ),
+    )
+    staging_updated_at: UTCDatetime = SQLField(
+        sa_column=Column(
+            DateTimeWithTimezone,
+            nullable=False,
+            server_default=func.now(),
+        ),
+    )
+    version: int = SQLField(default=0, nullable=False)
 
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
@@ -808,24 +909,6 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """
 
     task: TaskResponse
-
-    @field_validator("execution_request", mode="after")
-    @classmethod
-    def _remove_logs(cls, v: TaskExecutionRequest) -> TaskExecutionRequest:
-        """Remove logs from the execution request tracking data.
-
-        This validator ensures that any log data present in the tracking information
-        of the execution request is removed before returning the response.
-
-        :param v: The TaskExecutionRequest instance to validate.
-        :type v: TaskExecutionRequest
-        :return: The validated TaskExecutionRequest with logs removed.
-        :rtype: TaskExecutionRequest
-        """
-        # TODO(yan): Refactor logs
-        # SEP-564
-        v.tracking["task_logs"] = bool(v.tracking.get("task_logs"))
-        return v
 
 
 class TaskStats(BaseModel):

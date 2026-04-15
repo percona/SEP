@@ -15,9 +15,6 @@
 
 """Define test cases for the tasks data models and validation."""
 
-import base64
-import gzip
-import json
 from collections import defaultdict
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
@@ -38,11 +35,9 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryBase,
-    TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
-    TaskResponse,
     TaskStats,
     TransformPayloadRequest,
 )
@@ -55,9 +50,6 @@ STATS_EXPECTED_TOTAL = 2
 STATS_AVERAGE_SECONDS = 15.0
 STATS_LAST_SECONDS = 20.0
 STATS_TOTAL_SECONDS = 10.0
-CHUNK_SIZE = 3
-EXPECTED_CHUNKS = 4
-LAST_CHUNK_OFFSET = 12
 
 
 class TestTaskBackendEnum:
@@ -464,113 +456,6 @@ class TestTaskHistory:
         )
         assert history.anonymized_entities == {PIIEntity.CREDIT_CARD, PIIEntity.PERSON}
 
-    def test_task_logs_dict(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert task_logs returns dict logs as-is."""
-        logs_data = {"step1": {"stdout": "output", "stderr": ""}}
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        assert history.task_logs == logs_data
-
-    def test_task_logs_compressed(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert task_logs decompresses gzip+base64 string logs."""
-        logs_data = {"step1": {"stdout": "compressed output"}}
-        compressed = base64.b64encode(
-            gzip.compress(json.dumps(logs_data).encode())
-        ).decode()
-        execution_request.tracking["task_logs"] = compressed
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        assert history.task_logs == logs_data
-
-    def test_iter_logs_yields_chunks(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert iter_logs yields TaskLog chunks from task_logs data."""
-        logs_data = {"step1": {"stdout": "hello", "stderr": "err"}}
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        logs = list(history.iter_logs())
-        stdout_logs = [lg for lg in logs if lg.type == TaskLogType.STDOUT]
-        stderr_logs = [lg for lg in logs if lg.type == TaskLogType.STDERR]
-        assert len(stdout_logs) == 1
-        assert stdout_logs[0].msg == "hello"
-        assert stdout_logs[0].step == "step1"
-        assert len(stderr_logs) == 1
-        assert stderr_logs[0].msg == "err"
-
-    def test_iter_logs_respects_start_offsets(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert iter_logs respects start_offsets to skip content."""
-        logs_data = {"step1": {"stdout": "0123456789"}}
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        logs = list(history.iter_logs(start_offsets={"step1": {"stdout": 5}}))
-        stdout_logs = [lg for lg in logs if lg.type == TaskLogType.STDOUT]
-        assert stdout_logs[0].msg == "56789"
-
-    def test_iter_logs_respects_step_filter(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert iter_logs only yields logs for the specified step."""
-        logs_data = {
-            "step1": {"stdout": "s1 out"},
-            "step2": {"stdout": "s2 out"},
-        }
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        logs = list(history.iter_logs(step="step1"))
-        steps = {lg.step for lg in logs}
-        assert steps == {"step1"}
-
-    def test_iter_logs_chunk_size_splitting(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert iter_logs splits messages into chunks of given size."""
-        logs_data = {"step1": {"stdout": "A" * 10}}
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        logs = list(history.iter_logs(chunk_size=CHUNK_SIZE))
-        stdout_logs = [lg for lg in logs if lg.type == TaskLogType.STDOUT]
-        assert len(stdout_logs) == EXPECTED_CHUNKS
-        assert stdout_logs[0].msg == "AAA"
-        assert stdout_logs[0].offset == CHUNK_SIZE
-        assert stdout_logs[3].msg == "A"
-        assert stdout_logs[3].offset == LAST_CHUNK_OFFSET
-
     @pytest.mark.asyncio
     async def test_alert_for_status_failed(
         self, task_instance: Task, execution_request: TaskExecutionRequest
@@ -628,56 +513,6 @@ class TestTaskHistory:
         with patch.object(AlertService, "trigger", mock_trigger):
             await history.alert_for_status()
             mock_trigger.assert_not_called()
-
-
-class TestTaskHistoryResponse:
-    """Test TaskHistoryResponse._remove_logs validator."""
-
-    def test_remove_logs_replaces_with_boolean(self) -> None:
-        """Assert _remove_logs replaces task_logs in tracking with a boolean."""
-        task_resp = TaskResponse(
-            id=1,
-            name="t",
-            data={"key": "val"},
-            backend=TaskBackendEnum.NOMAD,
-            deleted_at=None,
-            created_by=None,
-            last_updated_by=None,
-        )
-        req = TaskExecutionRequest(
-            task="t",
-            target="n",
-            tracking={"allocation_id": None, "task_logs": {"step1": {"stdout": "x"}}},
-        )
-        resp = TaskHistoryResponse(
-            id=1,
-            execution_request=req,
-            task=task_resp,
-        )
-        assert resp.execution_request.tracking["task_logs"] is True
-
-    def test_remove_logs_empty_logs(self) -> None:
-        """Assert _remove_logs sets False when task_logs is empty or missing."""
-        task_resp = TaskResponse(
-            id=1,
-            name="t",
-            data={"key": "val"},
-            backend=TaskBackendEnum.NOMAD,
-            deleted_at=None,
-            created_by=None,
-            last_updated_by=None,
-        )
-        req = TaskExecutionRequest(
-            task="t",
-            target="n",
-            tracking={"allocation_id": None},
-        )
-        resp = TaskHistoryResponse(
-            id=1,
-            execution_request=req,
-            task=task_resp,
-        )
-        assert resp.execution_request.tracking["task_logs"] is False
 
 
 class TestTaskStats:

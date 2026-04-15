@@ -20,6 +20,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
@@ -75,7 +76,11 @@ class ConcreteExecutor(BaseExecutor):
         """Return an empty file listing."""
         return {}
 
-    async def _sync_task_history(self, queue_item: TaskHistory) -> TaskHistory:
+    async def _sync_task_history(
+        self,
+        queue_item: TaskHistory,
+        writer_session: AsyncSession | None = None,
+    ) -> TaskHistory:
         """Return the queue item unchanged."""
         return queue_item
 
@@ -208,7 +213,7 @@ class TestSyncTaskHistory:
         with patch.object(ConcreteExecutor, "_sync_task_history", mock_sync):
             result = await executor.sync_task_history(queue_item)
 
-        mock_sync.assert_awaited_once_with(queue_item)
+        mock_sync.assert_awaited_once_with(queue_item, writer_session=None)
         assert result is queue_item
 
     @pytest.mark.asyncio

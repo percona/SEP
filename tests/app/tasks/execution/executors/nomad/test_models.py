@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import ClientError, ClientTimeout
-from fastapi import HTTPException
+from fastapi import status
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 
 from app.core.exceptions import HTTPBadRequestException
@@ -1181,7 +1181,7 @@ class TestValidateJob:
     async def test_validate_job_success(self, mock_nomad_cls, mock_async_run):
         """Assert validate_job returns job when validation passes."""
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = status.HTTP_200_OK
         mock_response.text = json.dumps({"ValidationErrors": []})
         mock_async_run.return_value = mock_response
 
@@ -1196,7 +1196,7 @@ class TestValidateJob:
     async def test_validate_job_validation_errors(self, mock_nomad_cls, mock_async_run):
         """Assert validate_job raises HTTPBadRequestException on validation errors."""
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = status.HTTP_200_OK
         mock_response.text = json.dumps(
             {"ValidationErrors": ["missing required field"]}
         )
@@ -1210,13 +1210,13 @@ class TestValidateJob:
     @patch("app.tasks.execution.executors.nomad.models.async_run")
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_validate_job_non_200_raises(self, mock_nomad_cls, mock_async_run):
-        """Assert validate_job raises HTTPException on non-200 status."""
+        """Assert validate_job raises HTTPBadRequestException on non-200 status."""
         mock_response = MagicMock()
-        mock_response.status_code = 500
+        mock_response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         mock_async_run.return_value = mock_response
 
         executor = _build_executor()
-        with pytest.raises(HTTPException):
+        with pytest.raises(HTTPBadRequestException):
             await executor.validate_job({"ID": "error-job"})
 
 
@@ -1302,8 +1302,13 @@ class TestGetLogsForAllocation:
         mock_anonymize.assert_called()
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_get_logs_for_allocation_with_initial_logs(self, mock_nomad_cls):
-        """Assert get_logs_for_allocation merges initial_logs."""
+    def test_get_logs_for_allocation_with_initial_offsets(self, mock_nomad_cls):
+        """Assert get_logs_for_allocation starts Nomad reads at the given offsets.
+
+        The fetcher returns only the delta for this cycle — content keys in
+        ``initial_logs`` are ignored; only ``f"{log_type}_last_offset"`` keys
+        are read.
+        """
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.client.stream_logs.stream.return_value = ""
@@ -1314,16 +1319,25 @@ class TestGetLogsForAllocation:
         }
         initial_logs = {
             "step1": {
-                "stdout": "previous output",
                 "stdout_last_offset": INITIAL_LOG_OFFSET,
+                "stderr_last_offset": INITIAL_LOG_OFFSET,
             }
         }
 
         executor = _build_executor()
         result = executor.get_logs_for_allocation(alloc, initial_logs=initial_logs)
 
-        assert result["step1"]["stdout"] == "previous output"
+        assert result["step1"]["stdout"] == ""
+        assert result["step1"]["stderr"] == ""
         assert result["step1"]["stdout_last_offset"] == INITIAL_LOG_OFFSET
+        assert result["step1"]["stderr_last_offset"] == INITIAL_LOG_OFFSET
+        stream_call_kwargs = [
+            call.kwargs
+            for call in mock_backend.client.stream_logs.stream.call_args_list
+        ]
+        assert all(
+            kwargs["offset"] == INITIAL_LOG_OFFSET for kwargs in stream_call_kwargs
+        )
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_logs_for_allocation_skips_step_when_not_started(self, mock_nomad_cls):
