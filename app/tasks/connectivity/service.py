@@ -293,7 +293,9 @@ async def _iter_run_script_logs(
         yield log
 
 
-async def _has_run_script_logs(session: AsyncSession, task_history: TaskHistory) -> bool:
+async def _has_run_script_logs(
+    session: AsyncSession, task_history: TaskHistory
+) -> bool:
     """Return whether ``task_history`` has any ``run-script`` step output.
 
     :param session: The async database session.
