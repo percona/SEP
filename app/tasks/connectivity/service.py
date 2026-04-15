@@ -18,6 +18,7 @@
 import asyncio
 import contextvars
 import json
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from async_lru import alru_cache
@@ -34,11 +35,13 @@ from app.tasks.connectivity.models import (
 )
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.deps import get_executable_task_by_name
+from app.tasks.logs.log_reader import iter_task_history_logs
 from app.tasks.models import (
     SYSTEM_USER,
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLog,
     TaskLogType,
 )
 
@@ -200,7 +203,7 @@ async def check_connectivity(
         )
 
     fresh_queue_item = await _fetch_fresh_task_history(session, queue_item_id)
-    return _parse_check_result(fresh_queue_item)
+    return await _parse_check_result(session, fresh_queue_item)
 
 
 async def _fetch_fresh_task_history(
@@ -227,7 +230,7 @@ async def _fetch_fresh_task_history(
     """
     task_history = await _expire_and_fetch(session, task_history_id)
     for _ in range(FRESH_FETCH_MAX_ATTEMPTS - 1):
-        if _has_run_script_logs(task_history):
+        if await _has_run_script_logs(session, task_history):
             return task_history
         await asyncio.sleep(FRESH_FETCH_INTERVAL)
         task_history = await _expire_and_fetch(session, task_history_id)
@@ -267,7 +270,30 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     )
 
 
-def _has_run_script_logs(task_history: TaskHistory) -> bool:
+async def _iter_run_script_logs(
+    session: AsyncSession,
+    task_history: TaskHistory,
+) -> AsyncGenerator[TaskLog, None]:
+    """Yield ``run-script`` logs from either legacy or chunked storage.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history: The task history row being inspected.
+    :type task_history: TaskHistory
+    :yield: Log chunks for the ``run-script`` source.
+    :rtype: AsyncGenerator[TaskLog, None]
+    """
+    iter_logs = getattr(task_history, "iter_logs", None)
+    if callable(iter_logs):
+        for log in iter_logs(step="run-script"):
+            yield log
+        return
+
+    async for log in iter_task_history_logs(session, task_history, source="run-script"):
+        yield log
+
+
+async def _has_run_script_logs(session: AsyncSession, task_history: TaskHistory) -> bool:
     """Return whether ``task_history`` has any ``run-script`` step output.
 
     :param task_history: The task history record to inspect.
@@ -276,10 +302,15 @@ def _has_run_script_logs(task_history: TaskHistory) -> bool:
         ``run-script`` step, ``False`` otherwise.
     :rtype: bool
     """
-    return any(log.msg for log in task_history.iter_logs(step="run-script"))
+    async for log in _iter_run_script_logs(session, task_history):
+        if log.msg:
+            return True
+    return False
 
 
-def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
+async def _parse_check_result(
+    session: AsyncSession, task_history: TaskHistory
+) -> ConnectivityCheckResponse:
     """Extract connectivity result from task logs.
 
     :param task_history: The completed task history record.
@@ -292,7 +323,7 @@ def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
 
     if task_history.status == TaskHistoryStatusEnum.FAILED:
         stderr = ""
-        for log in task_history.iter_logs(step="run-script"):
+        async for log in _iter_run_script_logs(session, task_history):
             if log.type == TaskLogType.STDERR:
                 stderr += log.msg or ""
         return ConnectivityCheckResponse(
@@ -302,7 +333,7 @@ def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
         )
 
     stdout = ""
-    for log in task_history.iter_logs(step="run-script"):
+    async for log in _iter_run_script_logs(session, task_history):
         if log.type == TaskLogType.STDOUT:
             stdout += log.msg or ""
 

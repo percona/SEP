@@ -726,66 +726,67 @@ class TestCheckConnectivityRealSession:
         assert result.error == "Failed to parse connectivity check output"
 
 
+@pytest.mark.asyncio
 class TestParseCheckResult:
     """Test the _parse_check_result helper."""
 
-    def test_success_result(self):
+    async def test_success_result(self):
         """Verify successful result parsed from stdout JSON."""
         history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.SUCCESS,
             stdout=json.dumps({"success": True}),
         )
-        result = _parse_check_result(history)
+        result = await _parse_check_result(AsyncMock(spec=AsyncSession), history)
         assert result.success is True
         assert result.error is None
 
-    def test_failure_result_with_error(self):
+    async def test_failure_result_with_error(self):
         """Verify failure result with error message from stdout JSON."""
         history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.SUCCESS,
             stdout=json.dumps({"success": False, "error": "Access denied"}),
         )
-        result = _parse_check_result(history)
+        result = await _parse_check_result(AsyncMock(spec=AsyncSession), history)
         assert result.success is False
         assert result.error == "Access denied"
 
-    def test_failed_status_with_stderr(self):
+    async def test_failed_status_with_stderr(self):
         """Verify stderr is returned as error when task status is FAILED."""
         history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.FAILED,
             stderr="Traceback: module not found",
         )
-        result = _parse_check_result(history)
+        result = await _parse_check_result(AsyncMock(spec=AsyncSession), history)
         assert result.success is False
         assert result.error is not None
         assert "module not found" in result.error
 
-    def test_failed_status_without_stderr(self):
+    async def test_failed_status_without_stderr(self):
         """Verify default error message when FAILED task has no stderr."""
         history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.FAILED,
         )
-        result = _parse_check_result(history)
+        result = await _parse_check_result(AsyncMock(spec=AsyncSession), history)
         assert result.success is False
         assert result.error == "Task failed"
 
-    def test_empty_stdout(self):
+    async def test_empty_stdout(self):
         """Verify parse error when stdout is empty."""
         history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.SUCCESS,
             stdout="",
         )
-        result = _parse_check_result(history)
+        result = await _parse_check_result(AsyncMock(spec=AsyncSession), history)
         assert result.success is False
         assert result.error == "Failed to parse connectivity check output"
 
-    def test_malformed_json(self):
+    async def test_malformed_json(self):
         """Verify parse error when stdout contains invalid JSON."""
         history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.SUCCESS,
             stdout="{{invalid json",
         )
-        result = _parse_check_result(history)
+        result = await _parse_check_result(AsyncMock(spec=AsyncSession), history)
         assert result.success is False
         assert result.error == "Failed to parse connectivity check output"
 
