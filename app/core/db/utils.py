@@ -19,12 +19,14 @@ from typing import Any
 
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import cast, Column, ColumnClause, func, Function, JSON, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
 from sqlalchemy.sql.type_api import TypeEngine
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.sql_types import AutoJSON
 from app.core.utils.fields import DatabaseDialect
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
@@ -110,7 +112,7 @@ def compare_type(
     inspected_type: TypeEngine,
     metadata_type: TypeEngine,
 ) -> bool | None:
-    """Define custom comparison to ensure Text type is not converted to AutoString.
+    """Suppress spurious Alembic type diffs for known equivalent type pairs.
 
     :param context: The Alembic migration context.
     :type context: MigrationContext
@@ -123,10 +125,12 @@ def compare_type(
     :type inspected_type: TypeEngine
     :param metadata_type: The type of the column as defined in the model's metadata.
     :type metadata_type: TypeEngine
-    :return: False if the inspected type is Text and the metadata type is AutoString,
-        indicating no change is required; otherwise, None.
+    :return: False if the types are equivalent and no migration is needed;
+        None to fall through to default comparison.
     :rtype: bool | None
     """
     if isinstance(inspected_type, Text) and isinstance(metadata_type, AutoString):
+        return False
+    if isinstance(metadata_type, AutoJSON) and isinstance(inspected_type, JSONB | JSON):
         return False
     return None
