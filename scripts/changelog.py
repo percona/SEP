@@ -363,6 +363,7 @@ def cmd_list() -> int:
 
 
 def _prepare_assemble(
+    version: str,
     tickets_csv: str,
 ) -> tuple[
     dict[str, list[tuple[str, list[str], Path]]],
@@ -371,12 +372,15 @@ def _prepare_assemble(
 ]:
     """Validate inputs and return the data needed by :func:`cmd_assemble`.
 
+    :param version: The release version (without the ``v`` prefix).
+    :type version: str
     :param tickets_csv: Comma-separated ticket keys that belong to this release.
     :type tickets_csv: str
     :return: A tuple of ``(grouped, filtered, original_changelog_text)``.
     :rtype: tuple[dict[str, list[tuple[str, list[str], Path]]], dict[str, list[tuple[str, list[str], Path]]], str]
-    :raises FragmentError: If ``--tickets`` is empty, no fragments match, or
-        ``CHANGELOG.md`` is missing.
+    :raises FragmentError: If ``--tickets`` is empty, no fragments match,
+        ``CHANGELOG.md`` is missing, or ``CHANGELOG.md`` already contains a
+        ``## [v<version>]`` section or a ``[v<version>]:`` compare link.
     """
     tickets = _parse_tickets(tickets_csv)
     if not tickets:
@@ -390,7 +394,17 @@ def _prepare_assemble(
     if not CHANGELOG_MD.exists():
         msg = f"{CHANGELOG_MD} does not exist"
         raise FragmentError(msg)
-    return grouped, filtered, CHANGELOG_MD.read_text(encoding="utf-8")
+    changelog_text = CHANGELOG_MD.read_text(encoding="utf-8")
+    version_heading = f"## [v{version}]"
+    version_link_prefix = f"[v{version}]:"
+    for line in changelog_text.splitlines():
+        if line.startswith(version_heading):
+            msg = f"{CHANGELOG_MD} already contains a ``## [v{version}]`` section"
+            raise FragmentError(msg)
+        if line.startswith(version_link_prefix):
+            msg = f"{CHANGELOG_MD} already contains a ``[v{version}]:`` compare link"
+            raise FragmentError(msg)
+    return grouped, filtered, changelog_text
 
 
 def cmd_assemble(
@@ -414,7 +428,7 @@ def cmd_assemble(
     :rtype: int
     """
     try:
-        grouped, filtered, original = _prepare_assemble(tickets_csv)
+        grouped, filtered, original = _prepare_assemble(version, tickets_csv)
         body = render_section_body(filtered)
         with_section = _splice_version_section(original, version, date, body)
         with_links = _update_compare_links(with_section, version)

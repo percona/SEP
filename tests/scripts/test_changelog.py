@@ -456,6 +456,58 @@ def test_assemble_empty_ticket_list_is_noop(repo):
     assert (repo / "changelog.d" / "SEP-503.added.md").exists()
 
 
+def test_assemble_refuses_duplicate_version(repo, capsys):
+    """``assemble`` refuses to run if the version section already exists.
+
+    :param repo: Test repo fixture.
+    :type repo: pathlib.Path
+    :param capsys: pytest output capture fixture.
+    :type capsys: pytest.CaptureFixture
+    """
+    existing = """\
+# Changelog
+
+Intro text.
+
+## [Unreleased]
+
+## [v0.12.0] - 2026-04-15
+
+### Added
+
+- SEP-503: Already assembled
+
+## [v0.11.0] - 2026-04-02
+
+### Added
+
+- SEP-100: Old feature
+
+[Unreleased]: https://github.com/percona/SEP/compare/v0.12.0...HEAD
+[v0.12.0]: https://github.com/percona/SEP/compare/v0.11.0...v0.12.0
+[v0.11.0]: https://github.com/percona/SEP/compare/v0.10.0...v0.11.0
+"""
+    (repo / "CHANGELOG.md").write_text(existing, encoding="utf-8")
+    fragment = repo / "changelog.d" / "SEP-503.added.md"
+    fragment.write_text("New alert\n", encoding="utf-8")
+    exit_code = changelog.main(
+        [
+            "assemble",
+            "--version",
+            "0.12.0",
+            "--date",
+            "2026-04-30",
+            "--tickets",
+            "SEP-503",
+        ],
+    )
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "already contains" in err
+    assert (repo / "CHANGELOG.md").read_text(encoding="utf-8") == existing
+    assert fragment.exists()
+
+
 def test_assemble_preserves_section_order(repo):
     """``assemble`` renders sections in the canonical order regardless of fragment order.
 
