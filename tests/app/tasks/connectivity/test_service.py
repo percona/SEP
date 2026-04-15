@@ -31,13 +31,16 @@ from app.tasks.connectivity.service import (
     check_connectivity,
     POLL_INTERVAL,
 )
+from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskLog,
     TaskLogType,
+    TaskWrite,
 )
+from tests.app.factories import TaskFactory
 
 MOCK_TASK_HISTORY_ID = 42
 
@@ -278,6 +281,9 @@ class TestCheckConnectivity:
         task = _make_task()
         request = _make_request(timeout=POLL_INTERVAL)
 
+        running_history = _make_task_history(
+            task_history_status=TaskHistoryStatusEnum.RUNNING,
+        )
         mock_executor = AsyncMock(spec=BaseExecutor)
 
         async def mock_dispatch(queue_item, _session):
@@ -306,6 +312,10 @@ class TestCheckConnectivity:
             patch(
                 "app.tasks.connectivity.service.TaskHistoryManager.save",
                 new=AsyncMock(),
+            ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
+                new=AsyncMock(return_value=running_history),
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
@@ -502,7 +512,16 @@ class TestCheckConnectivity:
         task = _make_task()
         request = _make_request()
 
+        running_reload = _make_task_history(
+            task_history_status=TaskHistoryStatusEnum.RUNNING,
+        )
+        success_reload = _make_task_history(
+            task_history_status=TaskHistoryStatusEnum.SUCCESS,
+        )
         stale_history = _make_task_history(
+            task_history_status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        cached_history = _make_task_history(
             task_history_status=TaskHistoryStatusEnum.SUCCESS,
         )
         empty_refetch = _make_task_history(
@@ -525,10 +544,15 @@ class TestCheckConnectivity:
 
         mock_executor.sync_task_history = mock_sync
 
+        reload_results = iter([running_reload, success_reload])
         refetch_results = iter([empty_refetch, populated_refetch])
 
-        async def mock_get_or_404(*_args, **_kwargs):
-            return next(refetch_results)
+        async def mock_get_or_404(*_args, **kwargs):
+            if kwargs.get("select_related"):
+                return next(reload_results)
+            if kwargs.get("query_options"):
+                return next(refetch_results)
+            return cached_history
 
         with (
             patch(
@@ -564,6 +588,10 @@ class TestCheckConnectivity:
         task = _make_task()
         request = _make_request(timeout=POLL_INTERVAL)
 
+        pending_history = _make_task_history(
+            task_history_status=TaskHistoryStatusEnum.PENDING,
+        )
+
         async def mock_dispatch(queue_item, _session):
             queue_item.id = MOCK_TASK_HISTORY_ID
             queue_item.status = TaskHistoryStatusEnum.PENDING
@@ -593,6 +621,10 @@ class TestCheckConnectivity:
                 "app.tasks.connectivity.service.TaskHistoryManager.save",
                 new=AsyncMock(),
             ),
+            patch(
+                "app.tasks.connectivity.service.TaskHistoryManager.get_or_404",
+                new=AsyncMock(return_value=pending_history),
+            ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
@@ -600,6 +632,91 @@ class TestCheckConnectivity:
         assert result.success is False
         assert result.error is not None
         assert "timed out" in result.error
+
+
+@pytest.mark.asyncio
+class TestCheckConnectivityIntegration:
+    """Exercise ``check_connectivity`` against a real async session.
+
+    The unit tests above mock the session entirely, which hides the lazy-load
+    behaviour of SQLAlchemy. These tests use a real ``AsyncSession`` so any
+    expired relationship or deferred column accessed inside the polling loop
+    surfaces as a runtime error instead of a silently-passing mock.
+    """
+
+    async def test_polling_loop_does_not_lazy_load_in_async_context(
+        self, session: AsyncSession
+    ):
+        """Verify the loop survives the BaseExecutor.sync_task_history pattern.
+
+        After ``dispatch_queue_item`` and again after each
+        ``TaskHistoryManager.save``, the queue item's ``task`` relationship and
+        the deferred ``execution_request`` column become expired. The real
+        ``BaseExecutor.sync_task_history`` reads ``queue_item.task`` and the
+        Nomad executor reads ``queue_item.execution_request``; either access
+        triggers a sync lazy-load that raises ``MissingGreenlet`` in the async
+        session context. This regression test mimics those reads on a real
+        session to ensure the service eagerly reloads both before each call.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="run-python")),
+        )
+        request = ConnectivityCheckWrite(
+            target="node1",
+            host="db-host",
+            port=3306,
+            service_type=ConnectivityServiceType.MYSQL,
+            timeout=POLL_INTERVAL * 2,
+        )
+
+        expected_sync_calls = 2
+        sync_calls = {"count": 0}
+
+        async def mimic_base_executor_sync_task_history(
+            queue_item: TaskHistory,
+        ) -> TaskHistory:
+            assert queue_item.execution_request.task
+            if queue_item.task.alert_on_fail:
+                await queue_item.alert_for_status()
+            sync_calls["count"] += 1
+            if sync_calls["count"] >= expected_sync_calls:
+                queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            return queue_item
+
+        mock_executor = AsyncMock(spec=BaseExecutor)
+        mock_executor.sync_task_history = mimic_base_executor_sync_task_history
+
+        async def fake_dispatch(queue_item: TaskHistory, _session) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.RUNNING
+            return await TaskHistoryManager.save(
+                _session,
+                queue_item,
+                flag_modified_fields=["execution_request"],
+            )
+
+        with (
+            patch(
+                "app.tasks.connectivity.service.get_executable_task_by_name",
+                new=AsyncMock(return_value=task),
+            ),
+            patch(
+                "app.tasks.connectivity.service.dispatch_queue_item",
+                side_effect=fake_dispatch,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.connectivity.service.asyncio.sleep",
+                new=AsyncMock(),
+            ),
+        ):
+            result = await check_connectivity(session, request)
+
+        assert sync_calls["count"] >= expected_sync_calls
+        assert result.task_history_id is not None
 
 
 class TestParseCheckResult:

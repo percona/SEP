@@ -19,6 +19,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
@@ -90,6 +91,7 @@ async def check_connectivity(
     queue_item_id = queue_item.id
 
     executor = get_executor_for_task(task)
+    queue_item = await _reload_for_sync(session, queue_item_id)
     elapsed = 0
     while (
         queue_item.status
@@ -102,6 +104,7 @@ async def check_connectivity(
         await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
         )
+        queue_item = await _reload_for_sync(session, queue_item_id)
 
     if queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
@@ -115,6 +118,33 @@ async def check_connectivity(
 
     fresh_queue_item = await _fetch_fresh_task_history(session, queue_item_id)
     return _parse_check_result(fresh_queue_item)
+
+
+async def _reload_for_sync(session: AsyncSession, task_history_id: int) -> TaskHistory:
+    """Reload the task history with ``task`` and ``execution_request`` populated.
+
+    The dispatch path and ``TaskHistoryManager.save`` both commit and refresh
+    the queue item, which expires the ``task`` relationship and leaves the
+    deferred ``execution_request`` column unloaded. The next call to
+    ``executor.sync_task_history`` would then trigger a synchronous lazy load
+    on either attribute and raise ``MissingGreenlet`` from the async session.
+    Re-fetch with eager loading to ensure both attributes are materialised
+    before they are accessed again.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the task history row to reload.
+    :type task_history_id: int
+    :return: The task history row with ``task`` and ``execution_request``
+        eagerly loaded.
+    :rtype: TaskHistory
+    """
+    return await TaskHistoryManager.get_or_404(
+        session,
+        select_related=[TaskHistory.task],
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=task_history_id,
+    )
 
 
 async def _fetch_fresh_task_history(
@@ -167,7 +197,11 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     await session.commit()
     cached = await TaskHistoryManager.get_or_404(session, id=task_history_id)
     session.expunge(cached)
-    return await TaskHistoryManager.get_or_404(session, id=task_history_id)
+    return await TaskHistoryManager.get_or_404(
+        session,
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=task_history_id,
+    )
 
 
 def _has_run_script_logs(task_history: TaskHistory) -> bool:
