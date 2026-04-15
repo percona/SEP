@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
 - SEP-928: Inventory Sync split button — the chevron next to the existing sync-all control opens a dropdown that lets DBAs run a single configured syncer instead of waiting for the full chain
 - SEP-932: Database connectivity check endpoint via Nomad task dispatch (MySQL, PostgreSQL, MongoDB)
+- SEP-935: Pre-execution connectivity check before Nomad task dispatch with configurable mode (disabled/warn/block) and result caching
 
 ### Changed
 
@@ -36,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-491: Added `PMM.ANNOTATIONS_ENABLED` setting (default: `false`) to control PMM annotation creation
 - SEP-491: Added `PMM.ANNOTATIONS_TIMEOUT` setting (default: `5`) to configure PMM annotation request timeout
 - SEP-929: Added `UVICORN_EXTRA_RELOAD_DIRS`, `UVICORN_EXTRA_RELOAD_INCLUDES`, and `UVICORN_EXTRA_RELOAD_EXCLUDES` settings to extend uvicorn reload paths via `settings.yaml`
+- SEP-935: Added `TASKS.PRE_EXECUTION_CONNECTIVITY_CHECK` setting (disabled/warn/block) to control pre-execution connectivity checks before task dispatch
 - SEP-988: Upgrades that cross this revision run `ALTER TABLE taskhistory ALTER COLUMN execution_request TYPE jsonb USING execution_request::jsonb`, which rewrites every row in the `taskhistory` table under an `ACCESS EXCLUSIVE` lock on PostgreSQL. Expected downtime impact is proportional to row count (approximately one minute per two million rows on typical production hardware); size the upgrade window accordingly for deployments with large `taskhistory` tables. The Tasks API also fail-fasts at startup if the column is still plain `json` after deploying SEP-988, with a clear remediation message pointing to the migration.
 
 ## [v0.11.0] - 2026-04-02

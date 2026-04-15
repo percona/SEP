@@ -167,6 +167,7 @@ default:
       PORT: null
       NAME: tasks.db
     SYNC_LOCK_TTL: 300  # TaskHistory sync lock timeout (seconds)
+    PRE_EXECUTION_CONNECTIVITY_CHECK: warn  # disabled | warn | block
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
       SECURE: False

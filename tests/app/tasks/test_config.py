@@ -18,7 +18,7 @@
 from datetime import timedelta
 
 from app.core.db.config import DatabaseOptions
-from app.tasks.config import tasks_settings, TasksSettings
+from app.tasks.config import PreExecutionCheckMode, tasks_settings, TasksSettings
 
 EXPECTED_UVICORN_PORT = 8002
 
@@ -49,3 +49,10 @@ class TestTasksSettings:
     def test_singleton_is_tasks_settings_instance(self):
         """Assert the module-level singleton is a TasksSettings instance."""
         assert isinstance(tasks_settings, TasksSettings)
+
+    def test_default_pre_execution_connectivity_check(self):
+        """Assert default PRE_EXECUTION_CONNECTIVITY_CHECK is ``warn``."""
+        assert (
+            tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK
+            == PreExecutionCheckMode.WARN
+        )
