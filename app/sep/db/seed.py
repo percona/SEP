@@ -15,6 +15,8 @@
 
 """Define the database initial data for the SEP app."""
 
+import json
+
 from app.core.celery.utils import (
     init_periodic_tasks_db,
     SystemPeriodicTaskData,
@@ -25,6 +27,10 @@ from app.sep.snippets.config import snippets_settings
 
 _alerts_plugin_enabled = any(
     p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS
+)
+
+_report_plugin_enabled = any(
+    p.module_name.endswith(".report") for p in sep_settings.PLUGINS
 )
 
 SYSTEM_PERIODIC_TASKS = [
@@ -53,6 +59,37 @@ if _alerts_plugin_enabled:
             ],
         ),
     )
+
+if _report_plugin_enabled:
+    for _idx, _entry in enumerate(sep_settings.HEALTH_REPORT.schedules):
+        _suffix = f"_{_idx}" if _idx else ""
+        _task_kwargs = {}
+        if _entry.since != "now-7d":
+            _task_kwargs["since"] = _entry.since
+        if _entry.until != "now":
+            _task_kwargs["until"] = _entry.until
+        if not _entry.full:
+            _task_kwargs["full"] = _entry.full
+        if _entry.refresh:
+            _task_kwargs["refresh"] = _entry.refresh
+        if _entry.sections is not None:
+            _task_kwargs["sections"] = _entry.sections
+        if _entry.upload:
+            _task_kwargs["upload"] = _entry.upload
+        SYSTEM_PERIODIC_TASKS.append(
+            SystemPeriodicTaskSchedule(
+                schedule=_entry.schedule,
+                tasks=[
+                    SystemPeriodicTaskData(
+                        name=f"sep__generate_health_report{_suffix}",
+                        task_name="app.sep.celery.generate_health_report",
+                        extra_kwargs={"kwargs": json.dumps(_task_kwargs)}
+                        if _task_kwargs
+                        else None,
+                    ),
+                ],
+            ),
+        )
 
 
 async def create_plugin_tables() -> None:
