@@ -140,10 +140,11 @@ async def dipper_index(
     )
 
     snippet_filename = f"dipper/{selected_service.id}/{script.filename}"
-    history_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         f"/{script.execution_task_name}/history/",
         params={"snippet_filename": snippet_filename},
     )
+    history_tasks = response["items"]
     for history in history_tasks:
         try:
             history["available_files"] = await tasks_api.get(
@@ -152,6 +153,13 @@ async def dipper_index(
         except HTTPException:
             history["available_files"] = []
 
+    response = await tasks_api.get(
+        f"/{script.execution_task_name}/history/",
+        params={
+            "snippet_filename": snippet_filename,
+            "status": TaskHistoryStatusEnum.RUNNING,
+        },
+    )
     context |= {
         "is_pmm_script_available": has_pmm_script(selected_service.type),
         "selected_service": selected_service,
@@ -175,13 +183,7 @@ async def dipper_index(
         "default_executor_host": default_executor_host,
         "form_defaults": form_defaults,
         "history_tasks": history_tasks,
-        "running_tasks": await tasks_api.get(
-            f"/{script.execution_task_name}/history/",
-            params={
-                "snippet_filename": snippet_filename,
-                "status": TaskHistoryStatusEnum.RUNNING,
-            },
-        ),
+        "running_tasks": response["items"],
     }
     logger.debug("Context for Dipper index page: %s", context)
 

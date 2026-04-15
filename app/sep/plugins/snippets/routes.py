@@ -78,10 +78,11 @@ async def snippets_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve and display information about a snippet."""
-    history_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         f"/{snippet.execution_task_name}/history/",
         params={"snippet_filename": snippet.filename},
     )
+    history_tasks = response["items"]
     for history in history_tasks:
         try:
             history["available_files"] = await tasks_api.get(
@@ -94,17 +95,18 @@ async def snippets_detail(
                 exc_info=True,
             )
             history["available_files"] = []
+    response = await tasks_api.get(
+        f"/{snippet.execution_task_name}/history/",
+        params={
+            "snippet_filename": snippet.filename,
+            "status": TaskHistoryStatusEnum.RUNNING,
+        },
+    )
     context |= {
         "snippet": snippet,
         "executor_hosts": executor_hosts_ctx.as_form_hosts(),
         "history_tasks": history_tasks,
-        "running_tasks": await tasks_api.get(
-            f"/{snippet.execution_task_name}/history/",
-            params={
-                "snippet_filename": snippet.filename,
-                "status": TaskHistoryStatusEnum.RUNNING,
-            },
-        ),
+        "running_tasks": response["items"],
     }
     context["snippet"] = snippet
     try:

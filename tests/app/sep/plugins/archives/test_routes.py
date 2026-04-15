@@ -158,10 +158,20 @@ def test_archives_detail(
     mock_inventory_api_dep.get.return_value = AsyncMock()
     mock_task_api_dep.get.side_effect = [
         {"127.0.0.1": "localhost"},  # for /hosts/ (dependency)
-        [],  # for /{task.name}/history/
-        [],  # for running tasks at /{task.name}/history/
+        {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        },  # for /{task.name}/history/
+        {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        },  # for running tasks at /{task.name}/history/
         [],  # for /stats/{task.name}
-        [],  # chainable_tasks
+        {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
     ]
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
