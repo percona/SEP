@@ -47,6 +47,7 @@ from app.sep.plugins.inventory.sync import (
     run_schema_sync,
     run_service_sync,
 )
+from app.tasks.connectivity.models import ConnectivityCheckResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -233,16 +234,18 @@ async def check_service_connectivity(
             status_code=status.HTTP_303_SEE_OTHER,
         )
     try:
-        result = await tasks_api.post(
-            "/connectivity-check/",
-            json={
-                "target": service.node.name,
-                "host": service.node.address,
-                "port": service.port,
-                "service_type": service.type.name,
-            },
+        result = ConnectivityCheckResponse.model_validate(
+            await tasks_api.post(
+                "/connectivity-check/",
+                json={
+                    "target": service.node.name,
+                    "host": service.node.address,
+                    "port": service.port,
+                    "service_type": service.type.name,
+                },
+            )
         )
-        if result.get("success"):
+        if result.success:
             messages.success(
                 request,
                 f"Connectivity check passed for {service.name}",
@@ -251,7 +254,7 @@ async def check_service_connectivity(
             messages.error(
                 request,
                 f"Connectivity check failed for {service.name}: "
-                f"{result.get('error', 'Unknown error')}",
+                f"{result.error or 'Unknown error'}",
             )
     except HTTPException as exc:
         logger.warning(
