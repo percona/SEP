@@ -41,7 +41,6 @@ from pydantic import (
 from sqlalchemy import Column, Index, JSON
 from sqlalchemy import Enum as EnumField
 from sqlalchemy.orm import column_property
-from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
@@ -49,6 +48,7 @@ from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.db.sql_types import AutoJSON
 from app.core.utils.fields import (
     EmptyStrToNone,
     EnumFieldMixin,
@@ -272,29 +272,28 @@ class TaskExecutionRequest(BaseModel):
         return self.payload
 
 
-class TaskExecutionRequestJSON(TypeDecorator):
-    """Define JSON column type that deserializes values into `TaskExecutionRequest`.
+class TaskExecutionRequestJSON(AutoJSON):
+    """Define JSON column type that deserializes values into ``TaskExecutionRequest``.
 
-    Use this on columns that should store and return `TaskExecutionRequest` objects
-    instead of plain dicts. Other JSON columns are unaffected.
+    Resolve to ``JSONB`` on PostgreSQL and ``JSON`` on other dialects via the
+    inherited ``AutoJSON.load_dialect_impl``, and additionally wrap deserialised
+    values in a ``TaskExecutionRequest`` instance when possible so ORM consumers
+    see the typed object instead of a plain dict.
 
-    :cvar impl: The underlying SQLAlchemy column type.
-    :vartype impl: type[JSON]
-    :cvar cache_ok: Whether this type is safe to cache.
+    :cvar cache_ok: Allow SQLAlchemy to cache compiled statements using this type.
     :vartype cache_ok: bool
     """
 
-    impl = JSON
     cache_ok = True
 
     def process_result_value(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
-        """Deserialize a JSON value into a `TaskExecutionRequest`.
+        """Deserialize a JSON value into a ``TaskExecutionRequest``.
 
         :param value: The raw value from the database.
         :type value: Any
         :param dialect: The SQLAlchemy dialect in use.
         :type dialect: Any
-        :return: A `TaskExecutionRequest` if valid, otherwise the raw value.
+        :return: A ``TaskExecutionRequest`` if valid, otherwise the raw value.
         :rtype: Any
         """
         if value is None:
@@ -305,7 +304,7 @@ class TaskExecutionRequestJSON(TypeDecorator):
             return value
 
     def process_bind_param(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
-        """Serialize a `TaskExecutionRequest` into a dict for storage.
+        """Serialize a ``TaskExecutionRequest`` into a dict for storage.
 
         :param value: The value to store in the database.
         :type value: Any

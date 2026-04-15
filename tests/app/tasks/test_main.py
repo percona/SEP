@@ -15,9 +15,12 @@
 
 """Define tests for the app.tasks.main module."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import HTTPException, status
 
+from app.tasks.db.seed import verify_taskhistory_execution_request_is_jsonb
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
@@ -178,3 +181,97 @@ async def test_task_data_not_found_handler_raises_410_without_structured_fields(
     assert exc_info.value.detail["detail"] == "Generic not found"
     assert "resource_type" not in exc_info.value.detail
     assert "resource_id" not in exc_info.value.detail
+
+
+def _make_schema_check_session_mock(bind_name: str, scalar_value):
+    """Build a mock async session whose execute returns ``scalar_value``.
+
+    :param bind_name: The dialect name reported by ``session.get_bind().name``.
+    :type bind_name: str
+    :param scalar_value: The value returned by ``result.scalar_one_or_none``.
+    :type scalar_value: Any
+    :return: A ``(session_maker, session, execute_mock)`` triple suitable for
+        patching ``app.tasks.main.get_async_session_maker``.
+    :rtype: tuple
+    """
+    session = AsyncMock()
+    bind = MagicMock()
+    bind.name = bind_name
+    session.get_bind = MagicMock(return_value=bind)
+    result = MagicMock()
+    result.scalar_one_or_none = MagicMock(return_value=scalar_value)
+    session.execute = AsyncMock(return_value=result)
+    session_cm = AsyncMock()
+    session_cm.__aenter__ = AsyncMock(return_value=session)
+    session_cm.__aexit__ = AsyncMock(return_value=False)
+    session_maker = MagicMock(return_value=session_cm)
+    return session_maker, session, session.execute
+
+
+class TestVerifyTaskHistoryExecutionRequestIsJsonb:
+    """Test the SEP-988 startup schema validation guard."""
+
+    @pytest.mark.asyncio
+    async def test_raises_when_pg_column_is_plain_json(self):
+        """Assert ``RuntimeError`` when PostgreSQL still reports ``json``.
+
+        Defend against a deploy that ships SEP-988 code without running the
+        Alembic migration that converts the column to ``jsonb``.
+        """
+        session_maker, _, execute_mock = _make_schema_check_session_mock(
+            "postgresql", "json"
+        )
+        with (
+            patch(
+                "app.tasks.db.seed.get_async_session_maker",
+                return_value=session_maker,
+            ),
+            pytest.raises(RuntimeError, match="jsonb") as exc_info,
+        ):
+            await verify_taskhistory_execution_request_is_jsonb()
+        assert "SEP-988" in str(exc_info.value)
+        execute_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_passes_when_pg_column_is_jsonb(self):
+        """Assert no exception when PostgreSQL reports ``jsonb`` for the column."""
+        session_maker, _, execute_mock = _make_schema_check_session_mock(
+            "postgresql", "jsonb"
+        )
+        with patch(
+            "app.tasks.db.seed.get_async_session_maker", return_value=session_maker
+        ):
+            await verify_taskhistory_execution_request_is_jsonb()
+        execute_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_is_noop_on_sqlite(self):
+        """Assert the guard short-circuits on SQLite without querying the catalogue.
+
+        SEP-988's migration is a no-op on SQLite, and SQLite has no
+        ``information_schema`` to query, so the function must return before
+        running the catalogue lookup.
+        """
+        session_maker, _, execute_mock = _make_schema_check_session_mock("sqlite", None)
+        with patch(
+            "app.tasks.db.seed.get_async_session_maker", return_value=session_maker
+        ):
+            await verify_taskhistory_execution_request_is_jsonb()
+        execute_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_raises_when_pg_returns_no_row(self):
+        """Assert ``RuntimeError`` when the catalogue lookup returns ``None``.
+
+        Cover the case where the table is missing entirely (e.g. migrations
+        never ran on a fresh database).
+        """
+        session_maker, _, _ = _make_schema_check_session_mock("postgresql", None)
+        with (
+            patch(
+                "app.tasks.db.seed.get_async_session_maker",
+                return_value=session_maker,
+            ),
+            pytest.raises(RuntimeError, match="jsonb"),
+        ):
+            await verify_taskhistory_execution_request_is_jsonb()

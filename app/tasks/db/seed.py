@@ -17,6 +17,7 @@
 
 import logging
 
+from sqlalchemy import text
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel import col
 
@@ -27,6 +28,7 @@ from app.core.celery.utils import (
     SystemPeriodicTaskSchedule,
 )
 from app.core.utils.date_time import utc_now
+from app.core.utils.fields import DatabaseDialect
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
@@ -480,3 +482,38 @@ async def init_tasks_db() -> None:
                 update_delete_result.rowcount,
             )
     await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "tasks__")
+
+
+async def verify_taskhistory_execution_request_is_jsonb() -> None:
+    """Fail fast if ``taskhistory.execution_request`` is not ``jsonb`` on PostgreSQL.
+
+    Defend against a deploy that ships SEP-988's ``@>`` dispatch dedup code
+    without running the corresponding Alembic migration. ``compare_type``
+    intentionally suppresses the ``json``/``jsonb`` diff during autogeneration,
+    so ``make checkmigrations`` cannot detect this skew. Without this guard,
+    the first dispatch hits ``operator does not exist: json @> jsonb`` at
+    runtime; with it, the Tasks app refuses to start until the column is
+    converted. The check is a no-op on SQLite and MySQL, where SEP-988's
+    migration is also a no-op.
+
+    :raises RuntimeError: If the PostgreSQL column type is not ``jsonb``.
+    """
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        bind = session.get_bind()
+        if not bind.name.startswith(DatabaseDialect.POSTGRESQL):
+            return
+        result = await session.execute(
+            text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name = 'taskhistory' "
+                "AND column_name = 'execution_request'"
+            )
+        )
+        data_type = result.scalar_one_or_none()
+        if data_type != "jsonb":
+            raise RuntimeError(
+                f"taskhistory.execution_request is {data_type!r}, expected 'jsonb'. "
+                "Run the Tasks API Alembic migrations (SEP-988) before starting "
+                "the app."
+            )

@@ -30,7 +30,8 @@ from celery.app.task import Context
 from celery.signals import task_revoked
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
-from sqlalchemy import cast, func, Text
+from sqlalchemy import cast, func, literal, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
@@ -48,6 +49,7 @@ from app.core.exceptions import (
     HTTPConflictException,
 )
 from app.core.utils import utc_now
+from app.core.utils.fields import DatabaseDialect
 from app.tasks.config import tasks_settings
 from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -302,20 +304,44 @@ async def _raise_if_identical_task_conflict(
     queue_item: TaskHistory, session: AsyncSession
 ) -> None:
     engine_name = session.get_bind().name
+    is_postgresql = engine_name.startswith(DatabaseDialect.POSTGRESQL)
     meta_where_clauses = []
     if queue_item.execution_request.meta:
-        for field, raw_value in queue_item.execution_request.meta.items():
-            extracted = func_json_extract(
-                engine_name, TaskHistory.execution_request, "meta", field
+        if is_postgresql:
+            scalar_subset = {}
+            container_items = []
+            for field, raw_value in queue_item.execution_request.meta.items():
+                if isinstance(raw_value, list | dict):
+                    container_items.append((field, raw_value))
+                else:
+                    scalar_subset[field] = raw_value
+            meta_jsonb = col(TaskHistory.execution_request).op("->")(
+                literal("meta", Text, literal_execute=True)
             )
-            if isinstance(raw_value, list | dict):
-                comparable = json.dumps(raw_value, separators=(",", ":"))
-                extracted = cast(extracted, Text)
-            else:
-                comparable = prepare_unsafe_value_for_json_comparison(
-                    engine_name, raw_value
+            if scalar_subset:
+                meta_where_clauses.append(
+                    meta_jsonb.op("@>")(
+                        cast(literal(json.dumps(scalar_subset), Text), JSONB)
+                    )
                 )
-            meta_where_clauses.append(extracted == comparable)
+            for field, raw_value in container_items:
+                meta_where_clauses.append(
+                    meta_jsonb.op("->")(literal(field, Text, literal_execute=True))
+                    == cast(literal(json.dumps(raw_value), Text), JSONB)
+                )
+        else:
+            for field, raw_value in queue_item.execution_request.meta.items():
+                extracted = func_json_extract(
+                    engine_name, TaskHistory.execution_request, "meta", field
+                )
+                if isinstance(raw_value, list | dict):
+                    comparable = json.dumps(raw_value, separators=(",", ":"))
+                    extracted = cast(extracted, Text)
+                else:
+                    comparable = prepare_unsafe_value_for_json_comparison(
+                        engine_name, raw_value
+                    )
+                meta_where_clauses.append(extracted == comparable)
     if identical_task := (
         await TaskHistoryManager.first(
             session,
