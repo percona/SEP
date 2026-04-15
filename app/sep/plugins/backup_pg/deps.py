@@ -23,7 +23,13 @@ import yaml
 from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
+from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
+from app.sep.connectivity import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+)
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -112,9 +118,9 @@ async def build_backup_task_payload(
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
-                "_connectivity_host": service.node.address,
-                "_connectivity_port": service.port or 5432,
-                "_connectivity_service_type": "POSTGRESQL",
+                CONNECTIVITY_META_HOST_KEY: service.node.address,
+                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_POSTGRESQL_PORT,
+                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
             },
             "payload": f"file://{payload_path}",
         },

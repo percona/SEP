@@ -43,7 +43,11 @@ from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
-from app.sep.connectivity import annotate_tasks_with_connectivity
+from app.sep.connectivity import (
+    annotate_tasks_with_connectivity,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+    CONNECTIVITY_TARGET_KEY,
+)
 from app.sep.db import get_async_session_maker
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import (
@@ -699,9 +703,11 @@ async def get_tasks_context(
         }
         task_info |= get_task_info_func(task)
         meta = task.get("data", {}).get("meta", {})
-        if "_connectivity_service_type" in meta:
-            task_info["_connectivity_target"] = meta.get("target", "")
-            task_info["_connectivity_service_type"] = meta["_connectivity_service_type"]
+        if CONNECTIVITY_META_SERVICE_TYPE_KEY in meta:
+            task_info[CONNECTIVITY_TARGET_KEY] = meta.get("target", "")
+            task_info[CONNECTIVITY_META_SERVICE_TYPE_KEY] = meta[
+                CONNECTIVITY_META_SERVICE_TYPE_KEY
+            ]
         tasks.append(task_info)
         history = await tasks_api.get(f"/{task['name']}/history/")
         for hist in history:

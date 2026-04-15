@@ -13,13 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Provide connectivity check helpers and in-memory cache for task creation."""
+"""Provide connectivity check helpers and an async LRU cache for task creation."""
 
 import logging
-import time
+from collections import OrderedDict
+from collections.abc import Iterable
 from typing import Any, cast
 
 from aiohttp import ClientError
+from async_lru import alru_cache
 from fastapi import HTTPException
 from starlette.requests import Request
 
@@ -30,51 +32,57 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = 600
 CHECK_TIMEOUT = 10
+CACHE_MAXSIZE = 128
 
-_connectivity_cache: dict[tuple[str, str], tuple[bool, str | None, float]] = {}
+CONNECTIVITY_META_HOST_KEY = "_connectivity_host"
+CONNECTIVITY_META_PORT_KEY = "_connectivity_port"
+CONNECTIVITY_META_SERVICE_TYPE_KEY = "_connectivity_service_type"
+CONNECTIVITY_TARGET_KEY = "_connectivity_target"
+CONNECTIVITY_WARNING_KEY = "_connectivity_warning"
+
+_LATEST_RESULTS: OrderedDict[tuple[str, str], bool] = OrderedDict()
 
 
-def get_connectivity_status(target: str, service_type: str) -> bool | None:
-    """Return cached connectivity status or ``None`` if not cached or expired.
+def _record_latest_result(target: str, service_type: str, *, success: bool) -> None:
+    """Record the most recent connectivity outcome for sync UI annotations.
+
+    Maintain a bounded LRU snapshot of the latest connectivity outcome per
+    ``(target, service_type)`` pair so the synchronous
+    ``annotate_tasks_with_connectivity`` can flag tasks without consulting
+    ``alru_cache`` (which exposes no public sync peek). The snapshot has no
+    TTL of its own; ``alru_cache`` remains the authoritative TTL store and
+    the snapshot is best-effort, refreshed each time
+    ``check_and_warn_connectivity`` runs.
 
     :param target: The Nomad node name.
     :type target: str
-    :param service_type: The database service type (e.g. ``MYSQL``).
+    :param service_type: The lowercase service type (e.g. ``mysql``).
     :type service_type: str
-    :return: ``True`` if connectivity succeeded, ``False`` if it failed,
-        or ``None`` if the cache entry is missing or expired.
-    :rtype: bool | None
+    :param success: Whether the most recent check succeeded.
+    :type success: bool
     """
     key = (target, service_type)
-    entry = _connectivity_cache.get(key)
-    if entry is None:
-        return None
-    success, _, timestamp = entry
-    if time.monotonic() - timestamp > CACHE_TTL:
-        del _connectivity_cache[key]
-        return None
-    return success
+    _LATEST_RESULTS[key] = success
+    _LATEST_RESULTS.move_to_end(key)
+    while len(_LATEST_RESULTS) > CACHE_MAXSIZE:
+        _LATEST_RESULTS.popitem(last=False)
 
 
-async def check_and_warn_connectivity(
-    request: Request,
+@alru_cache(maxsize=CACHE_MAXSIZE, ttl=CACHE_TTL)
+async def _fetch_connectivity_result(
     tasks_api: RemoteAPI,
-    *,
     target: str,
     host: str,
     port: int,
     service_type: str,
-) -> None:
-    """Run a connectivity check and flash a warning on failure.
+) -> tuple[bool, str | None]:
+    """Run the Tasks API connectivity check and return ``(success, error)``.
 
-    Short-circuit on a cache hit: if ``get_connectivity_status`` returns a
-    non-``None`` value for ``(target, service_type)``, skip the Tasks API
-    call entirely. On a cached failure, the previously-stored error message
-    is used to flash the warning; on a cached success, the helper returns
-    silently.
+    Memoize results by ``(tasks_api, target, host, port, service_type)`` so
+    repeated checks within ``CACHE_TTL`` seconds skip the API roundtrip.
+    ``RemoteAPI`` is hashable, so it participates in the cache key directly
+    without any contextvar indirection.
 
-    :param request: The HTTP request (for flash messages).
-    :type request: Request
     :param tasks_api: Authenticated Tasks API client.
     :type tasks_api: RemoteAPI
     :param target: The Nomad node name.
@@ -83,21 +91,12 @@ async def check_and_warn_connectivity(
     :type host: str
     :param port: The database port.
     :type port: int
-    :param service_type: One of ``MYSQL``, ``POSTGRESQL``, ``MONGODB``.
+    :param service_type: The lowercase service type (e.g. ``mysql``).
     :type service_type: str
+    :return: A tuple of ``(success, error)`` where ``error`` is ``None`` on
+        success or carries a human-readable message on failure.
+    :rtype: tuple[bool, str | None]
     """
-    cached = get_connectivity_status(target, service_type)
-    if cached is not None:
-        if not cached:
-            entry = _connectivity_cache.get((target, service_type))
-            cached_error = entry[1] if entry else None
-            messages.warning(
-                request,
-                f"Connectivity warning for {target} ({service_type}): "
-                f"{cached_error or 'check failed'}",
-            )
-        return
-
     try:
         result = cast(
             "dict[str, Any]",
@@ -112,22 +111,53 @@ async def check_and_warn_connectivity(
                 },
             ),
         )
-        success = result.get("success", False)
-        error = result.get("error")
+        return result.get("success", False), result.get("error")
     except HTTPException as exc:
         logger.debug(
             "Tasks API connectivity check returned error response", exc_info=True
         )
-        success = False
         error = (
             exc.detail if isinstance(exc.detail, str) else "Connectivity check failed"
         )
+        return False, error
     except (OSError, TimeoutError, ClientError):
         logger.debug("Could not reach Tasks API for connectivity check", exc_info=True)
-        success = False
-        error = "Could not reach the Tasks API"
+        return False, "Could not reach the Tasks API"
 
-    _connectivity_cache[(target, service_type)] = (success, error, time.monotonic())
+
+async def check_and_warn_connectivity(
+    request: Request,
+    tasks_api: RemoteAPI,
+    *,
+    target: str,
+    host: str,
+    port: int,
+    service_type: str,
+) -> None:
+    """Run a connectivity check and flash a warning on failure.
+
+    Delegate the actual Tasks API call to ``_fetch_connectivity_result`` so
+    its result is memoized via ``alru_cache``. Subsequent calls with the
+    same ``(tasks_api, target, host, port, service_type)`` tuple short-
+    circuit until ``CACHE_TTL`` seconds elapse.
+
+    :param request: The HTTP request (for flash messages).
+    :type request: Request
+    :param tasks_api: Authenticated Tasks API client.
+    :type tasks_api: RemoteAPI
+    :param target: The Nomad node name.
+    :type target: str
+    :param host: The database host address.
+    :type host: str
+    :param port: The database port.
+    :type port: int
+    :param service_type: The lowercase service type (e.g. ``mysql``).
+    :type service_type: str
+    """
+    success, error = await _fetch_connectivity_result(
+        tasks_api, target, host, port, service_type
+    )
+    _record_latest_result(target, service_type, success=success)
 
     if not success:
         messages.warning(
@@ -158,24 +188,22 @@ async def maybe_check_connectivity(
     :type meta: dict[str, Any]
     """
     target = meta.get("target")
-    host = meta.get("_connectivity_host")
-    port = meta.get("_connectivity_port")
-    service_type = meta.get("_connectivity_service_type")
-    if not target or not host or not port or not service_type:
-        return
-
-    await check_and_warn_connectivity(
-        request,
-        tasks_api,
-        target=target,
-        host=host,
-        port=port,
-        service_type=service_type,
-    )
+    host = meta.get(CONNECTIVITY_META_HOST_KEY)
+    port = meta.get(CONNECTIVITY_META_PORT_KEY)
+    service_type = meta.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
+    if target and host and port and service_type:
+        await check_and_warn_connectivity(
+            request,
+            tasks_api,
+            target=target,
+            host=host,
+            port=port,
+            service_type=service_type,
+        )
 
 
-def annotate_tasks_with_connectivity(tasks: list[dict[str, Any]]) -> None:
-    """Add ``_connectivity_warning`` flag to tasks based on cached check results.
+def annotate_tasks_with_connectivity(tasks: Iterable[dict[str, Any]]) -> None:
+    """Add ``_connectivity_warning`` flag to tasks based on the latest results.
 
     Support two task dict formats:
 
@@ -184,17 +212,17 @@ def annotate_tasks_with_connectivity(tasks: list[dict[str, Any]]) -> None:
     - Enriched ``task_info`` dicts with top-level ``_connectivity_target`` and
       ``_connectivity_service_type`` keys.
 
-    :param tasks: The list of task dictionaries to annotate in-place.
-    :type tasks: list[dict[str, Any]]
+    :param tasks: The iterable of task dictionaries to annotate in-place.
+    :type tasks: Iterable[dict[str, Any]]
     """
     for task in tasks:
-        target = task.get("_connectivity_target")
-        service_type = task.get("_connectivity_service_type")
+        target = task.get(CONNECTIVITY_TARGET_KEY)
+        service_type = task.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
         if target is None or service_type is None:
             meta = task.get("data", {}).get("meta", {})
             target = meta.get("target")
-            service_type = meta.get("_connectivity_service_type")
+            service_type = meta.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
         if target and service_type:
-            status = get_connectivity_status(target, service_type)
-            if status is not None:
-                task["_connectivity_warning"] = not status
+            success = _LATEST_RESULTS.get((target, service_type))
+            if success is not None:
+                task[CONNECTIVITY_WARNING_KEY] = not success

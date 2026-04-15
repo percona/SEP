@@ -22,7 +22,13 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
+from app.sep.connectivity import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+)
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -128,7 +134,8 @@ async def build_archives_task_payload(
 
     purge_config = PurgeConfig(
         all=PurgeConfigAll(
-            source_host=service.node.address, source_port=service.port or 3306
+            source_host=service.node.address,
+            source_port=service.port or DEFAULT_MYSQL_PORT,
         ),
         purge_list=[purge_item_data],
         alias=form.alias,
@@ -146,9 +153,9 @@ async def build_archives_task_payload(
                 ),
                 "target": form.hostname,
                 "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
-                "_connectivity_host": service.node.address,
-                "_connectivity_port": service.port or 3306,
-                "_connectivity_service_type": "MYSQL",
+                CONNECTIVITY_META_HOST_KEY: service.node.address,
+                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
+                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
             },
             "payload": f"file://{payload_path}",
         },
