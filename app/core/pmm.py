@@ -24,7 +24,6 @@ from app.tasks.models import TaskHistory
 
 logger = logging.getLogger(__name__)
 
-_ANNOTATION_TIMEOUT = 5
 _background_tasks = set()
 
 
@@ -38,7 +37,7 @@ async def create_pmm_annotation(
 
     Best-effort: errors are logged but never raised. Callers should
     schedule this via ``asyncio.create_task()`` for non-blocking behavior;
-    awaiting directly blocks for up to ``_ANNOTATION_TIMEOUT`` seconds.
+    awaiting directly blocks for up to ``settings.PMM.annotations_timeout`` seconds.
 
     :param text: Annotation text (e.g. ``"SEP backup_data - STARTED"``).
     :type text: str
@@ -74,7 +73,7 @@ async def create_pmm_annotation(
                         "service_names": service_names or [],
                     },
                 ),
-                timeout=_ANNOTATION_TIMEOUT,
+                timeout=settings.PMM.annotations_timeout,
             )
         logger.info("PMM annotation created: %s (node=%s)", text, node_name)
     except Exception:

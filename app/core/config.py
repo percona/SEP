@@ -274,6 +274,8 @@ class PMMSettings(BaseLowercaseModel):
     :param annotations_enabled: Whether to create PMM annotations for task lifecycle
         events.
     :type annotations_enabled: bool
+    :param annotations_timeout: Timeout in seconds for PMM annotation API calls.
+    :type annotations_timeout: float
     """
 
     endpoint: StrHttpUrl | None = None
@@ -282,6 +284,7 @@ class PMMSettings(BaseLowercaseModel):
     verify_ssl: bool = True
     execution_target: str | None = None
     annotations_enabled: bool = False
+    annotations_timeout: float = Field(default=5.0, gt=0)
 
     @model_validator(mode="after")
     def _default_frontend_to_endpoint(self) -> Self:

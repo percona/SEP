@@ -35,6 +35,7 @@ def pmm_settings_enabled():
     pmm.endpoint = "https://pmm.example.com"
     pmm.api_key = SecretStr("test-api-key")
     pmm.verify_ssl = True
+    pmm.annotations_timeout = 5.0
     return pmm
 
 
@@ -199,9 +200,9 @@ class TestCreatePmmAnnotation:
 
         with (
             patch("app.core.pmm.settings") as mock_settings,
-            patch("app.core.pmm._ANNOTATION_TIMEOUT", 0.01),
         ):
             mock_settings.PMM = pmm_settings_enabled
+            mock_settings.PMM.annotations_timeout = 0.01
             mock_settings.get_remote_api = AsyncMock(return_value=mock_remote_api)
 
             await create_pmm_annotation(

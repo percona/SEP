@@ -25,6 +25,7 @@ default:
     FRONTEND: null  # Optional: PMM frontend URL for links
     EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
     ANNOTATIONS_ENABLED: false
+    ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
   SEP:
     SNIPPETS:
       FILTER_EXTENSIONS:

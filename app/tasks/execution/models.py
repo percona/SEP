@@ -38,6 +38,12 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 _ONE_MEBIBYTE = 1024 * 1024
+_TERMINAL_STATUS_EVENT_MAP = {
+    TaskHistoryStatusEnum.SUCCESS: "COMPLETED",
+    TaskHistoryStatusEnum.FAILED: "FAILED",
+    TaskHistoryStatusEnum.STOPPED: "STOPPED",
+    TaskHistoryStatusEnum.LOST: "LOST",
+}
 
 
 class BaseExecutor(BaseCaseInsensitiveModel, ABC):
@@ -267,13 +273,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         if queue_item.task.alert_on_fail:
             await queue_item.alert_for_status()
         if was_running and queue_item.status != TaskHistoryStatusEnum.RUNNING:
-            event_map = {
-                TaskHistoryStatusEnum.SUCCESS: "COMPLETED",
-                TaskHistoryStatusEnum.FAILED: "FAILED",
-                TaskHistoryStatusEnum.STOPPED: "STOPPED",
-                TaskHistoryStatusEnum.LOST: "LOST",
-            }
-            event = event_map.get(queue_item.status)
+            event = _TERMINAL_STATUS_EVENT_MAP.get(queue_item.status)
             if event:
                 schedule_annotation(queue_item, event)
         return queue_item

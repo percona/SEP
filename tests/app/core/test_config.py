@@ -30,6 +30,9 @@ from app.core.config import (
     YamlPrefixConfigSettingsSource,
 )
 
+DEFAULT_ANNOTATIONS_TIMEOUT = 5.0
+CUSTOM_ANNOTATIONS_TIMEOUT = 7.0
+
 
 class DummySettings(BaseSettings):
     """Define dummy settings class for testing purposes."""
@@ -239,6 +242,7 @@ class TestPMMSettings:
         assert pmm.api_key is None
         assert pmm.verify_ssl is True
         assert pmm.execution_target is None
+        assert pmm.annotations_timeout == DEFAULT_ANNOTATIONS_TIMEOUT
 
     def test_hostname_extracted_from_endpoint(self):
         """Assert ``hostname`` extracts the host from the endpoint URL."""
@@ -263,10 +267,15 @@ class TestPMMSettings:
     def test_lowercases_yaml_keys(self):
         """Assert uppercase YAML keys are normalized to lowercase."""
         pmm = PMMSettings.model_validate(
-            {"ENDPOINT": "https://pmm.example.com", "VERIFY_SSL": False}
+            {
+                "ENDPOINT": "https://pmm.example.com",
+                "VERIFY_SSL": False,
+                "ANNOTATIONS_TIMEOUT": CUSTOM_ANNOTATIONS_TIMEOUT,
+            }
         )
         assert pmm.endpoint == "https://pmm.example.com"
         assert pmm.verify_ssl is False
+        assert pmm.annotations_timeout == CUSTOM_ANNOTATIONS_TIMEOUT
 
     def test_ignores_extra_fields(self):
         """Assert extra fields are silently ignored."""
