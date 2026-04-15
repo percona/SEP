@@ -20,7 +20,8 @@ from collections import OrderedDict
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import Request
+from aiohttp import ClientError
+from fastapi import HTTPException, Request
 
 from app.core.requests import RemoteAPI
 from app.sep.connectivity import (
@@ -29,6 +30,7 @@ from app.sep.connectivity import (
     CACHE_TTL,
     check_and_warn_connectivity,
     get_connectivity_status,
+    maybe_check_connectivity,
 )
 
 
@@ -52,7 +54,7 @@ def dummy_request():
     scope = {
         "type": "http",
         "headers": [],
-        "client": ("127.0.0.1", "80"),
+        "client": ("127.0.0.1", 80),
         "path": "/",
     }
     req = Request(scope)
@@ -157,12 +159,14 @@ class TestCheckAndWarnConnectivity:
         assert len(dummy_request.state.messages) == 1
 
     @pytest.mark.asyncio
-    async def test_success_clears_previous_failure(self, dummy_request, mock_tasks_api):
-        """Overwrite a cached failure with a success on a new check."""
+    async def test_success_clears_previous_failure_after_ttl(
+        self, dummy_request, mock_tasks_api
+    ):
+        """Overwrite an expired cached failure with a success on a new check."""
         _connectivity_cache[("node1", "MYSQL")] = (
             False,
             "old failure",
-            time.monotonic(),
+            time.monotonic() - CACHE_TTL - 1,
         )
         mock_tasks_api.post.return_value = {"success": True, "error": None}
 
@@ -200,6 +204,199 @@ class TestCheckAndWarnConnectivity:
                 "service_type": "MONGODB",
                 "timeout": 10,
             },
+        )
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_success_short_circuits(
+        self, dummy_request, mock_tasks_api
+    ):
+        """Skip the Tasks API call and warning when a cached success exists."""
+        _connectivity_cache[("node1", "MYSQL")] = (True, None, time.monotonic())
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="MYSQL",
+        )
+
+        mock_tasks_api.post.assert_not_called()
+        assert len(dummy_request.state.messages) == 0
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_failure_flashes_cached_error(
+        self, dummy_request, mock_tasks_api
+    ):
+        """Flash the cached error without re-contacting the Tasks API."""
+        _connectivity_cache[("node1", "MYSQL")] = (
+            False,
+            "previously refused",
+            time.monotonic(),
+        )
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="MYSQL",
+        )
+
+        mock_tasks_api.post.assert_not_called()
+        assert len(dummy_request.state.messages) == 1
+        flashed = next(iter(dummy_request.state.messages))
+        assert "previously refused" in flashed.text
+
+    @pytest.mark.asyncio
+    async def test_http_exception_uses_upstream_detail(
+        self, dummy_request, mock_tasks_api
+    ):
+        """Use ``HTTPException.detail`` as the flashed error when it is a string."""
+        mock_tasks_api.post.side_effect = HTTPException(
+            status_code=502, detail="upstream nomad error"
+        )
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="MYSQL",
+        )
+
+        assert get_connectivity_status("node1", "MYSQL") is False
+        entry = _connectivity_cache[("node1", "MYSQL")]
+        assert entry[1] == "upstream nomad error"
+        assert len(dummy_request.state.messages) == 1
+        flashed = next(iter(dummy_request.state.messages))
+        assert "upstream nomad error" in flashed.text
+
+    @pytest.mark.asyncio
+    async def test_http_exception_non_string_detail_uses_fallback(
+        self, dummy_request, mock_tasks_api
+    ):
+        """Fall back to a generic error when ``HTTPException.detail`` is non-string."""
+        mock_tasks_api.post.side_effect = HTTPException(
+            status_code=502, detail={"code": "upstream_error"}
+        )
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="MYSQL",
+        )
+
+        entry = _connectivity_cache[("node1", "MYSQL")]
+        assert entry[1] == "Connectivity check failed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            OSError("refused"),
+            TimeoutError("timeout"),
+            TimeoutError(),
+            ClientError("client error"),
+        ],
+    )
+    async def test_client_errors_cache_false_and_warn(
+        self, dummy_request, mock_tasks_api, exc
+    ):
+        """Cache failure for transport-level errors raised during the POST."""
+        mock_tasks_api.post.side_effect = exc
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="MYSQL",
+        )
+
+        assert get_connectivity_status("node1", "MYSQL") is False
+        entry = _connectivity_cache[("node1", "MYSQL")]
+        assert entry[1] == "Could not reach the Tasks API"
+        assert len(dummy_request.state.messages) == 1
+
+
+class TestMaybeCheckConnectivity:
+    """Test maybe_check_connectivity guard helper."""
+
+    @pytest.mark.asyncio
+    async def test_empty_meta_returns_without_calling(
+        self, dummy_request, mock_tasks_api, mocker
+    ):
+        """Skip the check entirely when ``meta`` is empty."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+
+        await maybe_check_connectivity(dummy_request, mock_tasks_api, {})
+
+        mock_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            {"target": "node1"},
+            {"target": "node1", "_connectivity_host": "10.0.0.1"},
+            {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": "3306",
+            },
+            {
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": "3306",
+                "_connectivity_service_type": "MYSQL",
+            },
+        ],
+    )
+    async def test_partial_meta_returns_without_calling(
+        self, dummy_request, mock_tasks_api, mocker, meta
+    ):
+        """Skip the check when any of the required meta keys are missing."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+
+        await maybe_check_connectivity(dummy_request, mock_tasks_api, meta)
+
+        mock_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_complete_meta_delegates_with_correct_kwargs(
+        self, dummy_request, mock_tasks_api, mocker
+    ):
+        """Delegate to ``check_and_warn_connectivity`` with parsed ``meta`` values."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+        meta = {
+            "target": "node1",
+            "_connectivity_host": "10.0.0.1",
+            "_connectivity_port": "3306",
+            "_connectivity_service_type": "MYSQL",
+        }
+
+        await maybe_check_connectivity(dummy_request, mock_tasks_api, meta)
+
+        mock_check.assert_awaited_once_with(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="MYSQL",
         )
 
 

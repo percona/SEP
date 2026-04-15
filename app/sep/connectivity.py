@@ -18,6 +18,7 @@
 import logging
 import time
 
+from aiohttp import ClientError
 from fastapi import HTTPException
 from starlette.requests import Request
 
@@ -65,6 +66,12 @@ async def check_and_warn_connectivity(
 ) -> None:
     """Run a connectivity check and flash a warning on failure.
 
+    Short-circuit on a cache hit: if ``get_connectivity_status`` returns a
+    non-``None`` value for ``(target, service_type)``, skip the Tasks API
+    call entirely. On a cached failure, the previously-stored error message
+    is used to flash the warning; on a cached success, the helper returns
+    silently.
+
     :param request: The HTTP request (for flash messages).
     :type request: Request
     :param tasks_api: Authenticated Tasks API client.
@@ -78,6 +85,18 @@ async def check_and_warn_connectivity(
     :param service_type: One of ``MYSQL``, ``POSTGRESQL``, ``MONGODB``.
     :type service_type: str
     """
+    cached = get_connectivity_status(target, service_type)
+    if cached is not None:
+        if not cached:
+            entry = _connectivity_cache.get((target, service_type))
+            cached_error = entry[1] if entry else None
+            messages.warning(
+                request,
+                f"Connectivity warning for {target} ({service_type}): "
+                f"{cached_error or 'check failed'}",
+            )
+        return
+
     try:
         result = await tasks_api.post(
             "/connectivity-check/",
@@ -91,13 +110,20 @@ async def check_and_warn_connectivity(
         )
         success = result.get("success", False)
         error = result.get("error")
-    except (HTTPException, OSError):
-        logger.debug("Connectivity check request failed", exc_info=True)
+    except HTTPException as exc:
+        logger.debug(
+            "Tasks API connectivity check returned error response", exc_info=True
+        )
+        success = False
+        error = (
+            exc.detail if isinstance(exc.detail, str) else "Connectivity check failed"
+        )
+    except (OSError, TimeoutError, ClientError):
+        logger.debug("Could not reach Tasks API for connectivity check", exc_info=True)
         success = False
         error = "Could not reach the Tasks API"
 
-    key = (target, service_type)
-    _connectivity_cache[key] = (success, error, time.monotonic())
+    _connectivity_cache[(target, service_type)] = (success, error, time.monotonic())
 
     if not success:
         messages.warning(
@@ -105,6 +131,43 @@ async def check_and_warn_connectivity(
             f"Connectivity warning for {target} ({service_type}): "
             f"{error or 'check failed'}",
         )
+
+
+async def maybe_check_connectivity(
+    request: Request,
+    tasks_api: RemoteAPI,
+    meta: dict,
+) -> None:
+    """Run ``check_and_warn_connectivity`` when ``meta`` carries connectivity data.
+
+    Extract ``target``, ``_connectivity_host``, ``_connectivity_port``, and
+    ``_connectivity_service_type`` from ``meta`` and delegate to
+    ``check_and_warn_connectivity``. Return silently when any of those keys
+    are missing or falsy, which lets task-creation routes invoke this helper
+    unconditionally without inspecting the task payload themselves.
+
+    :param request: The HTTP request (for flash messages).
+    :type request: Request
+    :param tasks_api: Authenticated Tasks API client.
+    :type tasks_api: RemoteAPI
+    :param meta: The ``task.data["meta"]`` mapping from the created task.
+    :type meta: dict
+    """
+    target = meta.get("target")
+    host = meta.get("_connectivity_host")
+    port = meta.get("_connectivity_port")
+    service_type = meta.get("_connectivity_service_type")
+    if not target or not host or not port or not service_type:
+        return
+
+    await check_and_warn_connectivity(
+        request,
+        tasks_api,
+        target=target,
+        host=host,
+        port=int(port),
+        service_type=service_type,
+    )
 
 
 def annotate_tasks_with_connectivity(tasks: list[dict]) -> None:
