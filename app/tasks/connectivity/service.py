@@ -19,6 +19,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
@@ -89,6 +90,8 @@ async def check_connectivity(
         raise RuntimeError("dispatch_queue_item returned a queue item without an ID")
     queue_item_id = queue_item.id
 
+    queue_item = await _expire_and_fetch(session, queue_item_id)
+
     executor = get_executor_for_task(task)
     elapsed = 0
     while (
@@ -102,6 +105,7 @@ async def check_connectivity(
         await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
         )
+        queue_item = await _expire_and_fetch(session, queue_item_id)
 
     if queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
@@ -149,25 +153,39 @@ async def _fetch_fresh_task_history(
 
 
 async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> TaskHistory:
-    """Commit, expunge, and re-fetch the task history to bypass the cache.
+    """Commit, expunge, and re-fetch the task history with ``execution_request`` loaded.
 
-    The executor's earlier ``sync_task_history`` mutates the in-memory
-    ``TaskExecutionRequest`` Pydantic object, which SQLAlchemy's refresh
-    does not fully re-hydrate for nested JSON columns. Commit to end the
-    open snapshot, then expunge the row from the identity map so the next
-    fetch does a genuine ``SELECT`` and builds a brand-new object.
+    Fulfill two goals needed by the polling loop:
+
+    - Force a brand-new instance materialisation. The executor's
+      ``sync_task_history`` mutates the in-memory ``TaskExecutionRequest``
+      Pydantic object, which SQLAlchemy's refresh does not fully re-hydrate
+      for nested JSON columns. Commit to end the open snapshot, then expunge
+      the row from the identity map so the next fetch does a genuine
+      ``SELECT`` and builds a brand-new object.
+    - Eagerly load the deferred ``TaskHistory.execution_request`` column.
+      Without ``undefer`` the column stays expired on the returned instance
+      and any subsequent synchronous attribute read (e.g. from
+      ``NomadExecutor.get_allocation_for_task_history``) triggers a
+      lazy-load SELECT outside the greenlet bridge, raising
+      ``MissingGreenlet`` on aiosqlite/asyncpg.
 
     :param session: The async database session.
     :type session: AsyncSession
     :param task_history_id: The ID of the task history row to reload.
     :type task_history_id: int
-    :return: A freshly-loaded task history row.
+    :return: A freshly-loaded task history row with
+        ``execution_request`` materialised.
     :rtype: TaskHistory
     """
     await session.commit()
     cached = await TaskHistoryManager.get_or_404(session, id=task_history_id)
     session.expunge(cached)
-    return await TaskHistoryManager.get_or_404(session, id=task_history_id)
+    return await TaskHistoryManager.get_or_404(
+        session,
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=task_history_id,
+    )
 
 
 def _has_run_script_logs(task_history: TaskHistory) -> bool:
