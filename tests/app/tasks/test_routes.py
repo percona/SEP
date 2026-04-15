@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 from fastapi import status
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.utils import utc_now
 from app.tasks.config import PreExecutionCheckMode
@@ -32,7 +33,6 @@ from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     ExecutionEvent,
     Task,
-    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskWrite,
@@ -669,24 +669,23 @@ CONNECTIVITY_META = {
 }
 
 
-def _make_queue_item(
-    task: Task,
-    target: str = "node1",
-    eta: str | None = None,
+async def _fake_dispatch_queue_item(
+    queue_item: TaskHistory, passed_session: AsyncSession
 ) -> TaskHistory:
-    """Build a TaskHistory queue item for execute endpoint tests."""
-    return TaskHistory(
-        task_id=task.id,
-        task=task,
-        execution_request=TaskExecutionRequest(
-            task=task.name,
-            target=target,
-            meta={"target": target},
-            tracking={"evaluation_id": ""},
-            eta=eta,
-        ),
-        status=TaskHistoryStatusEnum.PENDING,
-        executed_by="test-user",
+    """Persist the queue item so the route's ``session.refresh`` call succeeds.
+
+    :param queue_item: The ``TaskHistory`` queue item dispatched by the route.
+    :type queue_item: TaskHistory
+    :param passed_session: The async database session the route passes along.
+    :type passed_session: AsyncSession
+    :return: The persisted ``TaskHistory`` instance.
+    :rtype: TaskHistory
+    """
+    queue_item.status = TaskHistoryStatusEnum.RUNNING
+    return await TaskHistoryManager.save(
+        passed_session,
+        queue_item,
+        flag_modified_fields=["execution_request"],
     )
 
 
@@ -718,7 +717,6 @@ class TestPreExecutionConnectivityCheck:
         self, test_client, mocker, conn_task, mock_executor
     ):
         """Verify no connectivity check runs when mode is ``disabled``."""
-        queue_item = _make_queue_item(conn_task)
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.DISABLED,
@@ -729,7 +727,7 @@ class TestPreExecutionConnectivityCheck:
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
-            new=AsyncMock(return_value=queue_item),
+            side_effect=_fake_dispatch_queue_item,
         )
         mock_check = mocker.patch("app.tasks.routes.check_connectivity")
 
@@ -747,7 +745,6 @@ class TestPreExecutionConnectivityCheck:
         self, test_client, mocker, conn_task, mock_executor
     ):
         """Verify dispatch proceeds when warn-mode check passes."""
-        queue_item = _make_queue_item(conn_task)
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.WARN,
@@ -765,7 +762,7 @@ class TestPreExecutionConnectivityCheck:
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
-            new=AsyncMock(return_value=queue_item),
+            side_effect=_fake_dispatch_queue_item,
         )
 
         response = test_client.post(
@@ -781,7 +778,6 @@ class TestPreExecutionConnectivityCheck:
         self, test_client, mocker, conn_task, mock_executor
     ):
         """Verify dispatch proceeds with a warning when warn-mode check fails."""
-        queue_item = _make_queue_item(conn_task)
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.WARN,
@@ -799,7 +795,7 @@ class TestPreExecutionConnectivityCheck:
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
-            new=AsyncMock(return_value=queue_item),
+            side_effect=_fake_dispatch_queue_item,
         )
         mock_logger = mocker.patch("app.tasks.routes.logger")
 
@@ -818,7 +814,6 @@ class TestPreExecutionConnectivityCheck:
         self, test_client, mocker, conn_task, mock_executor
     ):
         """Verify dispatch proceeds when block-mode check passes."""
-        queue_item = _make_queue_item(conn_task)
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.BLOCK,
@@ -836,7 +831,7 @@ class TestPreExecutionConnectivityCheck:
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
-            new=AsyncMock(return_value=queue_item),
+            side_effect=_fake_dispatch_queue_item,
         )
 
         response = test_client.post(
@@ -890,7 +885,6 @@ class TestPreExecutionConnectivityCheck:
             session,
             TaskWrite.model_validate(TaskFactory.build(name="no-meta-task", data={})),
         )
-        queue_item = _make_queue_item(task)
 
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
@@ -903,7 +897,7 @@ class TestPreExecutionConnectivityCheck:
         mock_check = mocker.patch("app.tasks.routes.check_connectivity")
         mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
-            new=AsyncMock(return_value=queue_item),
+            side_effect=_fake_dispatch_queue_item,
         )
 
         response = test_client.post(
@@ -919,7 +913,6 @@ class TestPreExecutionConnectivityCheck:
         self, test_client, mocker, conn_task, mock_executor
     ):
         """Verify a cached success result skips the live connectivity check."""
-        queue_item = _make_queue_item(conn_task)
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.BLOCK,
@@ -935,7 +928,7 @@ class TestPreExecutionConnectivityCheck:
         mock_check = mocker.patch("app.tasks.routes.check_connectivity")
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
-            new=AsyncMock(return_value=queue_item),
+            side_effect=_fake_dispatch_queue_item,
         )
 
         response = test_client.post(
@@ -952,7 +945,6 @@ class TestPreExecutionConnectivityCheck:
         self, test_client, mocker, conn_task, mock_executor
     ):
         """Verify cached failure in warn mode logs warning and proceeds."""
-        queue_item = _make_queue_item(conn_task)
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.WARN,
@@ -967,7 +959,7 @@ class TestPreExecutionConnectivityCheck:
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
-            new=AsyncMock(return_value=queue_item),
+            side_effect=_fake_dispatch_queue_item,
         )
         mock_logger = mocker.patch("app.tasks.routes.logger")
 
@@ -1039,3 +1031,65 @@ class TestPreExecutionConnectivityCheck:
 
         assert response.status_code == status.HTTP_200_OK
         mock_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("bad_meta_override", "case_label"),
+        [
+            ({"_connectivity_port": "not-a-number"}, "invalid-port"),
+            ({"_connectivity_service_type": "bogus-service"}, "invalid-service-type"),
+        ],
+    )
+    async def test_malformed_meta_skips_check_and_dispatches(
+        self,
+        test_client,
+        session,
+        mocker,
+        mock_executor,
+        bad_meta_override,
+        case_label,
+    ):
+        """Verify malformed connectivity meta is logged and dispatch proceeds.
+
+        Regression guard: ``int(conn_port)`` and ``ConnectivityServiceType(conn_type)``
+        must not raise ``ValueError`` out to the caller — the route should log a
+        warning, skip the check, and dispatch normally even under ``block`` mode.
+        """
+        bad_meta = {**CONNECTIVITY_META, **bad_meta_override}
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=f"bad-meta-task-{case_label}",
+                    data={"Meta": bad_meta},
+                )
+            ),
+        )
+
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+        mock_logger = mocker.patch("app.tasks.routes.logger")
+
+        response = test_client.post(
+            f"/execute/{task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+        mock_dispatch.assert_called_once()
+        assert any(
+            "malformed connectivity metadata" in call.args[0]
+            for call in mock_logger.warning.call_args_list
+        )

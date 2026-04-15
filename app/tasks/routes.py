@@ -234,29 +234,42 @@ async def execute_task_name(
         and not queue_item.execution_request.eta
     ):
         target = queue_item.execution_request.target
-        cached = get_cached_result(target, conn_type)
-        if cached is not None:
-            success, error = cached
+        try:
+            parsed_conn_port = int(conn_port)
+            parsed_conn_type = ConnectivityServiceType(conn_type)
+        except ValueError:
+            logger.warning(
+                "Skipping pre-execution connectivity check for task %r on target %r "
+                "due to malformed connectivity metadata: port=%r, service_type=%r",
+                task_name,
+                target,
+                conn_port,
+                conn_type,
+            )
         else:
-            result = await check_connectivity(
-                session,
-                ConnectivityCheckWrite(
-                    target=target,
-                    host=conn_host,
-                    port=int(conn_port),
-                    service_type=ConnectivityServiceType(conn_type),
-                    timeout=10,
-                ),
-            )
-            success, error = result.success, result.error
-        if not success:
-            msg = (
-                f"Pre-execution connectivity check failed for {task_name!r} "
-                f"on target {target!r}: {error or 'unknown error'}"
-            )
-            if check_mode == PreExecutionCheckMode.BLOCK:
-                raise HTTPBadRequestException(msg)
-            logger.warning(msg)
+            cached = get_cached_result(target, parsed_conn_type)
+            if cached is not None:
+                success, error = cached
+            else:
+                result = await check_connectivity(
+                    session,
+                    ConnectivityCheckWrite(
+                        target=target,
+                        host=conn_host,
+                        port=parsed_conn_port,
+                        service_type=parsed_conn_type,
+                        timeout=10,
+                    ),
+                )
+                success, error = result.success, result.error
+            if not success:
+                msg = (
+                    f"Pre-execution connectivity check failed for {task_name!r} "
+                    f"on target {target!r}: {error or 'unknown error'}"
+                )
+                if check_mode == PreExecutionCheckMode.BLOCK:
+                    raise HTTPBadRequestException(msg)
+                logger.warning(msg)
 
     if queue_item.execution_request.eta:
         history_recorded = await TaskHistoryManager.save(session, queue_item)
