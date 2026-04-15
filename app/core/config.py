@@ -35,6 +35,7 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    PositiveInt,
     SecretStr,
     validate_call,
 )
@@ -275,7 +276,7 @@ class PMMSettings(BaseLowercaseModel):
         events.
     :type annotations_enabled: bool
     :param annotations_timeout: Timeout in seconds for PMM annotation API calls.
-    :type annotations_timeout: float
+    :type annotations_timeout: PositiveInt
     """
 
     endpoint: StrHttpUrl | None = None
@@ -284,7 +285,7 @@ class PMMSettings(BaseLowercaseModel):
     verify_ssl: bool = True
     execution_target: str | None = None
     annotations_enabled: bool = False
-    annotations_timeout: float = Field(default=5.0, gt=0)
+    annotations_timeout: PositiveInt = 5
 
     @model_validator(mode="after")
     def _default_frontend_to_endpoint(self) -> Self:

@@ -27,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Configuration Changes
 
 - SEP-491: Added `PMM.ANNOTATIONS_ENABLED` setting (default: `false`) to control PMM annotation creation
-- SEP-491: Added `PMM.ANNOTATIONS_TIMEOUT` setting (default: `5.0`) to configure PMM annotation request timeout
+- SEP-491: Added `PMM.ANNOTATIONS_TIMEOUT` setting (default: `5`) to configure PMM annotation request timeout
 - SEP-929: Added `UVICORN_EXTRA_RELOAD_DIRS`, `UVICORN_EXTRA_RELOAD_INCLUDES`, and `UVICORN_EXTRA_RELOAD_EXCLUDES` settings to extend uvicorn reload paths via `settings.yaml`
 
 ## [v0.11.0] - 2026-04-02

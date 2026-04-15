@@ -35,7 +35,7 @@ def pmm_settings_enabled():
     pmm.endpoint = "https://pmm.example.com"
     pmm.api_key = SecretStr("test-api-key")
     pmm.verify_ssl = True
-    pmm.annotations_timeout = 5.0
+    pmm.annotations_timeout = 5
     return pmm
 
 

@@ -30,8 +30,8 @@ from app.core.config import (
     YamlPrefixConfigSettingsSource,
 )
 
-DEFAULT_ANNOTATIONS_TIMEOUT = 5.0
-CUSTOM_ANNOTATIONS_TIMEOUT = 7.0
+DEFAULT_ANNOTATIONS_TIMEOUT = 5
+CUSTOM_ANNOTATIONS_TIMEOUT = 7
 
 
 class DummySettings(BaseSettings):
