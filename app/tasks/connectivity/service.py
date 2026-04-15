@@ -39,6 +39,8 @@ from app.tasks.models import (
 
 PAYLOAD_PATH = Path(__file__).parent / "payload.py"
 POLL_INTERVAL = 2
+FRESH_FETCH_MAX_ATTEMPTS = 3
+FRESH_FETCH_INTERVAL = 0.5
 
 
 async def check_connectivity(
@@ -85,6 +87,7 @@ async def check_connectivity(
     queue_item = await dispatch_queue_item(queue_item, session)
     if queue_item.id is None:
         raise RuntimeError("dispatch_queue_item returned a queue item without an ID")
+    queue_item_id = queue_item.id
 
     executor = get_executor_for_task(task)
     elapsed = 0
@@ -95,11 +98,10 @@ async def check_connectivity(
     ):
         await asyncio.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
-        if queue_item.status == TaskHistoryStatusEnum.RUNNING:
-            queue_item = await executor.sync_task_history(queue_item)
-            await TaskHistoryManager.save(
-                session, queue_item, flag_modified_fields=["execution_request"]
-            )
+        queue_item = await executor.sync_task_history(queue_item)
+        await TaskHistoryManager.save(
+            session, queue_item, flag_modified_fields=["execution_request"]
+        )
 
     if queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
@@ -108,10 +110,76 @@ async def check_connectivity(
         return ConnectivityCheckResponse(
             success=False,
             error=f"Connectivity check timed out after {request.timeout}s",
-            task_history_id=queue_item.id,
+            task_history_id=queue_item_id,
         )
 
-    return _parse_check_result(queue_item)
+    fresh_queue_item = await _fetch_fresh_task_history(session, queue_item_id)
+    return _parse_check_result(fresh_queue_item)
+
+
+async def _fetch_fresh_task_history(
+    session: AsyncSession, task_history_id: int
+) -> TaskHistory:
+    """Re-read the task history row from the database until its logs land.
+
+    The polling loop's last successful ``sync_task_history`` populates the
+    ``task_logs`` column of the DB row, but the in-memory
+    ``TaskExecutionRequest`` Pydantic object attached to ``queue_item`` is
+    NOT re-hydrated through a subsequent ``session.get``: the identity map
+    returns the existing object and SQLAlchemy's refresh leaves nested JSON
+    fields untouched. Expunge the row and fetch it again so a brand-new
+    object is materialised from the row as it exists in the database.
+    A small retry budget covers the narrow window where the final sync has
+    not yet committed by the time the handler reaches this point.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the task history row to refresh.
+    :type task_history_id: int
+    :return: The freshest task history row available within the retry budget.
+    :rtype: TaskHistory
+    """
+    task_history = await _expire_and_fetch(session, task_history_id)
+    for _ in range(FRESH_FETCH_MAX_ATTEMPTS - 1):
+        if _has_run_script_logs(task_history):
+            return task_history
+        await asyncio.sleep(FRESH_FETCH_INTERVAL)
+        task_history = await _expire_and_fetch(session, task_history_id)
+    return task_history
+
+
+async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> TaskHistory:
+    """Commit, expunge, and re-fetch the task history to bypass the cache.
+
+    The executor's earlier ``sync_task_history`` mutates the in-memory
+    ``TaskExecutionRequest`` Pydantic object, which SQLAlchemy's refresh
+    does not fully re-hydrate for nested JSON columns. Commit to end the
+    open snapshot, then expunge the row from the identity map so the next
+    fetch does a genuine ``SELECT`` and builds a brand-new object.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the task history row to reload.
+    :type task_history_id: int
+    :return: A freshly-loaded task history row.
+    :rtype: TaskHistory
+    """
+    await session.commit()
+    cached = await TaskHistoryManager.get_or_404(session, id=task_history_id)
+    session.expunge(cached)
+    return await TaskHistoryManager.get_or_404(session, id=task_history_id)
+
+
+def _has_run_script_logs(task_history: TaskHistory) -> bool:
+    """Return whether ``task_history`` has any ``run-script`` step output.
+
+    :param task_history: The task history record to inspect.
+    :type task_history: TaskHistory
+    :return: ``True`` if a non-empty stdout or stderr log exists for the
+        ``run-script`` step, ``False`` otherwise.
+    :rtype: bool
+    """
+    return any(log.msg for log in task_history.iter_logs(step="run-script"))
 
 
 def _parse_check_result(task_history: TaskHistory) -> ConnectivityCheckResponse:
