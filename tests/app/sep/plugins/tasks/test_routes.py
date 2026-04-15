@@ -54,7 +54,12 @@ def test_tasks_list(
 ):
     """Test listing tasks."""
     mock_task_api_dep.get.side_effect = [
-        {"items": [created_task.model_dump()], "total": 1, "offset": 0, "limit": 50},  # for /
+        {
+            "items": [created_task.model_dump()],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        },  # for /
         {"items": [], "total": 0, "offset": 0, "limit": 50},  # for /history/
     ]
     response = test_client.get("/tasks/")
@@ -119,8 +124,18 @@ def test_task_detail(
     mock_task_api_dep.get.side_effect = [
         {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
         [],  # for /{task_name}/periodic/
-        {"items": [], "total": 0, "offset": 0, "limit": 50},  # for /{task_name}/history/
-        {"items": [], "total": 0, "offset": 0, "limit": 50},  # for /{task_name}/history/?status=RUNNING
+        {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        },  # for /{task_name}/history/
+        {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        },  # for /{task_name}/history/?status=RUNNING
     ]
 
     response = test_client.get(f"/tasks/{created_task.name}")

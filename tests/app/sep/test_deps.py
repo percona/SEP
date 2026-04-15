@@ -447,7 +447,12 @@ class TestGetTasksContext:
             side_effect=[
                 [],
                 {"items": [task_data], "total": 1, "offset": 0, "limit": 50},
-                {"items": [pending_hist, running_hist, success_hist], "total": 3, "offset": 0, "limit": 50},
+                {
+                    "items": [pending_hist, running_hist, success_hist],
+                    "total": 3,
+                    "offset": 0,
+                    "limit": 50,
+                },
                 [],
             ]
         )
@@ -477,10 +482,25 @@ class TestGetTasksIndexContext:
         mock_tasks_api = AsyncMock()
         mock_tasks_api.get = AsyncMock(
             side_effect=[
-                {"items": [{"id": 1, "status": "running"}], "total": 1, "offset": 0, "limit": 50},
-                {"items": [{"id": 2, "status": "pending"}], "total": 1, "offset": 0, "limit": 50},
+                {
+                    "items": [{"id": 1, "status": "running"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
+                {
+                    "items": [{"id": 2, "status": "pending"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
                 [{"task": "backup-task", "enabled": True}],
-                {"items": [{"name": "backup-task", "owner": TaskOwner.BACKUPS}], "total": 1, "offset": 0, "limit": 50},
+                {
+                    "items": [{"name": "backup-task", "owner": TaskOwner.BACKUPS}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
             ]
         )
         mock_inv_api.get = AsyncMock(
@@ -544,7 +564,12 @@ class TestCheckForConflictedRunningTasks:
         mock_api = AsyncMock()
         mock_api.get = AsyncMock(
             side_effect=[
-                {"items": [{"id": 1, "status": "running"}], "total": 1, "offset": 0, "limit": 50},
+                {
+                    "items": [{"id": 1, "status": "running"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
                 {"items": [], "total": 0, "offset": 0, "limit": 50},
             ]
         )
@@ -558,7 +583,12 @@ class TestCheckForConflictedRunningTasks:
         mock_api.get = AsyncMock(
             side_effect=[
                 {"items": [], "total": 0, "offset": 0, "limit": 50},
-                {"items": [{"id": 2, "status": "pending"}], "total": 1, "offset": 0, "limit": 50},
+                {
+                    "items": [{"id": 2, "status": "pending"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
             ]
         )
         with pytest.raises(HTTPConflictException):
