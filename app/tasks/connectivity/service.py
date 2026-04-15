@@ -20,6 +20,7 @@ import json
 import time
 from pathlib import Path
 
+from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
@@ -139,6 +140,7 @@ async def check_connectivity(
     if queue_item.id is None:
         raise RuntimeError("dispatch_queue_item returned a queue item without an ID")
     queue_item_id = queue_item.id
+    await session.refresh(queue_item, attribute_names=["execution_request"])
 
     executor = get_executor_for_task(task)
     elapsed = 0
@@ -153,6 +155,7 @@ async def check_connectivity(
         await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
         )
+        await session.refresh(queue_item, attribute_names=["execution_request"])
 
     if queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
@@ -215,6 +218,13 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     open snapshot, then expunge the row from the identity map so the next
     fetch does a genuine ``SELECT`` and builds a brand-new object.
 
+    The ``execution_request`` column is declared as a deferred
+    ``column_property`` on :class:`TaskHistory`, so the re-fetch must
+    explicitly ``undefer`` it — otherwise the attribute is left unloaded
+    and any downstream sync-context read (e.g. ``iter_logs`` walking
+    ``self.execution_request.tracking``) would fire a lazy SELECT and
+    raise ``MissingGreenlet`` against the async driver.
+
     :param session: The async database session.
     :type session: AsyncSession
     :param task_history_id: The ID of the task history row to reload.
@@ -225,7 +235,11 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     await session.commit()
     cached = await TaskHistoryManager.get_or_404(session, id=task_history_id)
     session.expunge(cached)
-    return await TaskHistoryManager.get_or_404(session, id=task_history_id)
+    return await TaskHistoryManager.get_or_404(
+        session,
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=task_history_id,
+    )
 
 
 def _has_run_script_logs(task_history: TaskHistory) -> bool:
