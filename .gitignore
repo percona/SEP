@@ -218,6 +218,8 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+!app/tasks/logs/
+!tests/app/tasks/logs/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

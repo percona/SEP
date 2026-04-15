@@ -49,10 +49,12 @@ logger = logging.getLogger(__name__)
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Yield an asynchronous database session for FastAPI routes.
 
-    This function provides a dependency for FastAPI routes that yields an `AsyncSession`
-    for interacting with the database. The session is properly closed after use.
+    This function provides a dependency for FastAPI routes that yields an
+    ``AsyncSession`` for interacting with the database. The session is
+    properly closed after use.
 
-    :yield: An asynchronous session for database operations.
+    :return: An async generator yielding an asynchronous session for database
+        operations.
     :rtype: AsyncGenerator[AsyncSession, None]
     """
     async_session = get_async_session_maker()
@@ -298,3 +300,9 @@ def get_logs_offsets(request: Request) -> defaultdict[str, dict[str, int]]:
             except ValueError:
                 continue
     return offsets
+
+
+LogsOffsetsDep = Annotated[
+    defaultdict[str, dict[str, int]],
+    Depends(get_logs_offsets),
+]

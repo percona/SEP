@@ -45,6 +45,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 <tr id="{{ task.name }}">
                     <td>
                         <a href="{{ url_for('alters_detail', task_name=task.name) }}">{{ task.name }}</a>
+                        {% include "tasks/partials/connectivity-warning-icon.html.j2" %}
                     </td>
                     <td class="code">{{ task.hostname }}</td>
                     <td class="code">{{ task.table }}</td>
