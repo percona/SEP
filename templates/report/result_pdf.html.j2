@@ -1,0 +1,799 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="keywords" content="health, security, report">
+        <meta name="description" content="Health & Security Report">
+        <title>{{ report.metadata.title }}</title>
+        <style>
+        @page {
+            size: 370mm 445.5mm;
+            margin: 0;
+            background: rgb(0, 18, 34);
+        }
+        html {
+            background-color: rgb(0, 18, 34);
+            color: #fff;
+            padding: 20mm;
+            font-family: 'Noto Sans', Helvetica, Arial, Lucida, sans-serif;
+        }
+        body {
+            background-color: #fff;
+            color: rgb(0, 18, 34);
+            width: 90%;
+            max-width: 100rem;
+            min-width: 50rem;
+            margin: auto;
+            padding: 2rem;
+        }
+        body, .report-header, .report-section, .report-intro {
+            border: .2rem solid #01212d;
+            border-radius: 2rem;
+        }
+        .report-header, .report-section, .report-intro {
+            border-color: #ddd;
+            display: block;
+            padding: 1rem;
+            margin-bottom: 2rem;
+        }
+        .report-header h1 {
+            margin-bottom: 0.25rem;
+        }
+        .report-header .subtitle {
+            color: #666;
+            margin: 0.15rem 0;
+            font-size: 0.95rem;
+        }
+        .report-intro {
+            line-height: 1.6;
+        }
+        .report-grid dt, .report-grid dd {
+            display: inline-grid;
+        }
+        .report-grid dd {
+            margin-right: 2rem;
+        }
+        .report-section h2, .report-section h3 {
+            border-bottom: .1rem dotted #01212d;
+        }
+        .report-section h2 {
+            margin-top: 0;
+            font-size: 1.8rem;
+        }
+        .report-section h3 {
+            font-size: 1.2rem;
+        }
+        .report-section h4 {
+            font-size: 1rem;
+        }
+        .report-section table {
+            width: 100%;
+            margin-bottom: 1.5rem;
+        }
+        .report-section caption, .report-section th, .report-section td {
+            text-align: left;
+        }
+        .report-section thead th {
+            background-color: #eee;
+        }
+        .report-section tfoot p {
+            font-size: smaller;
+        }
+        .report-section th:first-child, .report-section td:first-child {
+            min-width: 20%;
+        }
+        .report-section th, .report-section td {
+            padding: .5rem;
+            vertical-align: top;
+            border: .2rem solid #fff;
+            border-radius: 2rem;
+        }
+        .report-section tfoot td {
+            padding-top: 0;
+        }
+        .report-section th.status, .report-section td.status {
+            max-width: 5rem;
+        }
+        .report-toc {
+            background-color: #fff;
+            border: .2rem solid #ddd;
+            border-radius: 2rem;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+        }
+        .report-toc h2 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            color: rgb(0, 18, 34);
+            border-bottom: .1rem dotted #01212d;
+            padding-bottom: .5rem;
+            font-size: 1.2rem;
+        }
+        .report-toc ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: .25rem;
+        }
+        .report-toc a {
+            display: block;
+            color: rgb(0, 18, 34);
+            text-decoration: none;
+            font-weight: 500;
+            padding: .75rem 1rem;
+            border-radius: 2rem;
+            transition: background-color .2s ease-in-out, color .2s ease-in-out;
+        }
+        .report-toc a:hover {
+            background-color: #eee;
+            color: #01212d;
+        }
+        .report-footer {
+            text-align: center;
+            padding: 1.5rem 0;
+            border-top: .1rem solid #ddd;
+            margin-top: 2rem;
+        }
+        .report-footer p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .report-header img {
+            width: 30%;
+            height: auto;
+        }
+        </style>
+    </head>
+    <body>
+        <div class="report-layout">
+            <header class="report-header">
+                <img src="{{ logo_data_uri }}" alt="Percona" width="552" height="118">
+                <h1>{{ report.metadata.title }}</h1>
+                <p class="subtitle">{{ report.metadata.report_week }}</p>
+                <p class="subtitle">{{ report.metadata.report_interval }}</p>
+            </header>
+            <section class="report-intro">
+                <p>
+                    This report presents a comprehensive overview of the current
+                    status of the database health, aiming to provide you with
+                    valuable insights into critical aspects of system performance.
+                </p>
+                <p>
+                    In the following sections, we delve into key metrics, including
+                    database alerts, uptime, health checks, and backup status, to
+                    offer a holistic perspective on the system's operational health.
+                    By examining these parameters, we seek to identify strengths
+                    and potential areas for enhancement. The ultimate goal is to
+                    present a clear picture of your database's reliability,
+                    scalability, overall health, and suggestions for improvements.
+                </p>
+                <p>
+                    Disclaimer: The Percona Managed Services team is here to assist
+                    with any database-related concerns. However, if you encounter
+                    issues related to the operating system, we kindly ask that you
+                    address those directly. We're happy to help with anything
+                    related to your database performance and functionality.
+                </p>
+            </section>
+            {# Monitored summary #}
+            <section class="report-section">
+                <h2>Monitored Infrastructure</h2>
+                <dl class="report-grid">
+                    <dt>Total nodes</dt>
+                    <dd>
+                        {{ report.monitored.total_nodes }}
+                    </dd>
+                    <dt>Total services</dt>
+                    <dd>
+                        {{ report.monitored.total_services }}
+                    </dd>
+                    {% for svc_type, count in report.monitored.services_by_type.items() %}
+                        <dt>{{ service_names.get(svc_type, svc_type) }}</dt>
+                        <dd>
+                            {{ count }}
+                        </dd>
+                    {% endfor %}
+                </dl>
+            </section>
+            {# Table of Contents #}
+            <nav class="report-toc">
+                <h2>Table of Contents</h2>
+                <ul>
+                    {% for section_name, label in sections %}
+                        <li>
+                            <a href="#section-{{ section_name }}">{{ label }}</a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </nav>
+            {# ================================================================ #}
+            {# Advisors                                                         #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-advisors">
+                <h2>Advisors</h2>
+                {% if not report.full %}
+                    <p>
+                        <strong>Please note that this report was configured to only report failed advisors.</strong>
+                    </p>
+                {% endif %}
+                <dl class="report-grid">
+                    <dt>Total checks</dt>
+                    <dd>
+                        {{ report.advisors.total_checks }}
+                    </dd>
+                    {% if report.refresh %}
+                        <dt>Total refresh timeouts</dt>
+                        <dd>
+                            {{ report.advisors.refresh_issues | length }}
+                        </dd>
+                    {% endif %}
+                    <dt>Total failed checks</dt>
+                    <dd>
+                        {{ report.advisors.total_failed }}
+                    </dd>
+                </dl>
+                {% for family in report.advisors.families %}
+                    <section>
+                        <h3>{{ family.display_name }} Advisors</h3>
+                        {% set ns = namespace(has_failures=false) %}
+                        {% for check in family.checks %}
+                            {% set check_failed = family.failed.get(check.name, []) %}
+                            {% if report.full or check_failed %}
+                                <table>
+                                    <caption>
+                                        <h4>{{ check.summary }} ({{ check.name }})</h4>
+                                    </caption>
+                                    <thead>
+                                        <tr>
+                                            <th>Host</th>
+                                            <th>Service</th>
+                                            <th class="status">Status</th>
+                                            <th>Reason</th>
+                                        </tr>
+                                    </thead>
+                                    <tfoot>
+                                        <tr>
+                                            <td colspan="4">
+                                                <p>{{ check.description }}</p>
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                    {% if check_failed %}
+                                        {% set ns.has_failures = true %}
+                                        <tbody>
+                                            {% for fc in check_failed %}
+                                                <tr class="{{ fc.severity.value }}">
+                                                    <th scope="row">{{ fc.node_name or "Unknown" }}</th>
+                                                    <td>{{ fc.service_name or "Unknown" }}</td>
+                                                    <td class="status">
+                                                        {% if fc.severity.value == "SEVERITY_NOTICE" %}
+                                                            ❗
+                                                        {% else %}
+                                                            ❌
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>{{ fc.summary }}</td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    {% else %}
+                                        <tbody>
+                                            <tr>
+                                                <td colspan="4">
+                                                    <p>✔ All services passed</p>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    {% endif %}
+                                </table>
+                            {% endif %}
+                        {% endfor %}
+                        {% if not ns.has_failures and not report.full %}<p>✔ No failed advisors.</p>{% endif %}
+                    </section>
+                {% endfor %}
+                {% if not report.advisors.families %}<p>No advisor data available.</p>{% endif %}
+            </section>
+            {# ================================================================ #}
+            {# Alerts                                                           #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-alerts">
+                <h2>Alerts</h2>
+                {% if not report.full %}
+                    <p>
+                        <strong>Please note that this report was configured to only report alert overview.</strong>
+                    </p>
+                {% endif %}
+                <dl class="report-grid">
+                    <dt>Total alerts</dt>
+                    <dd>
+                        {{ report.alerts.total_alerts }}
+                    </dd>
+                </dl>
+                {% if report.alerts.total_alerts > 0 %}
+                    {# Alerts per service #}
+                    {% if report.alerts.alerts_per_service %}
+                        <table>
+                            <caption>Total alerts per service</caption>
+                            <thead>
+                                <tr>
+                                    <th>Service Type</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for svc, count in report.alerts.alerts_per_service.items() | sort %}
+                                    <tr>
+                                        <th scope="row">{{ service_names.get(svc, svc) }}</th>
+                                        <td>{{ count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Alerts per rule #}
+                    {% if report.alerts.alerts_per_rule %}
+                        <table>
+                            <caption>Total alerts per rule</caption>
+                            <thead>
+                                <tr>
+                                    <th>Rule</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for rule, count in report.alerts.alerts_per_rule.items() | sort %}
+                                    <tr>
+                                        <th scope="row">{{ rule }}</th>
+                                        <td>{{ count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Alerts per host #}
+                    {% if report.alerts.alerts_per_host %}
+                        <table>
+                            <caption>Total alerts per host</caption>
+                            <thead>
+                                <tr>
+                                    <th>Host</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for host, count in report.alerts.alerts_per_host.items() | sort %}
+                                    <tr>
+                                        <th scope="row">{{ host }}</th>
+                                        <td>{{ count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Daily alerts #}
+                    {% if report.alerts.alerts_daily %}
+                        <table>
+                            <caption>Total daily alerts</caption>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for day, count in report.alerts.alerts_daily.items() %}
+                                    <tr>
+                                        <th scope="row">{{ day }}</th>
+                                        <td>{{ count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Daily alerts per host #}
+                    {% if report.alerts.alerts_daily_per_host %}
+                        <table>
+                            <caption>Total daily alerts per host</caption>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Host</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="3"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for host, days in report.alerts.alerts_daily_per_host.items() | sort %}
+                                    {% for day, count in days.items() %}
+                                        <tr>
+                                            <th scope="row">{{ day }}</th>
+                                            <td>{{ host }}</td>
+                                            <td>{{ count }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Alert history (full mode only) #}
+                    {% if report.full and report.alerts.alert_history %}
+                        <table>
+                            <caption>Alert history</caption>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Rule</th>
+                                    <th>Host</th>
+                                    <th>Service</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="4"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for alert in report.alerts.alert_history %}
+                                    {% set alert_ts = alert.time // 1000 %}
+                                    <tr>
+                                        <th scope="row">{{ alert_ts | timestamp_format }}</th>
+                                        <td>{{ alert.alertname.rsplit('_', 1)[-1] }}</td>
+                                        <td>{{ alert.node_name or "Unknown" }}</td>
+                                        <td>{{ service_names.get(alert.service_type) or service_names.get(alert.service) or "Unknown" }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                {% else %}
+                    <p>No alerts for this period.</p>
+                {% endif %}
+            </section>
+            {# ================================================================ #}
+            {# Backups                                                          #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-backups">
+                <h2>Backups</h2>
+                {% if not report.full %}
+                    <p>
+                        <strong>Please note that this report was configured to only report backup overview.</strong>
+                    </p>
+                {% endif %}
+                <dl class="report-grid">
+                    <dt>Total backups</dt>
+                    <dd>
+                        {{ report.backups.total_backups }}
+                    </dd>
+                </dl>
+                {% if report.backups.total_backups > 0 %}
+                    {# Backups by host #}
+                    {% if report.backups.backups_by_host %}
+                        <table>
+                            <caption>Total backups by host</caption>
+                            <thead>
+                                <tr>
+                                    <th>Host</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for host, count in report.backups.backups_by_host.items() | sort %}
+                                    <tr>
+                                        <th scope="row">{{ host }}</th>
+                                        <td>{{ count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Backups by status #}
+                    {% if report.backups.backups_by_status %}
+                        <table>
+                            <caption>Total backups by status</caption>
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for bk_status, count in report.backups.backups_by_status.items() | sort %}
+                                    <tr>
+                                        <th scope="row">{{ bk_status }}</th>
+                                        <td>{{ count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Backups by type #}
+                    {% if report.backups.backups_by_type %}
+                        <table>
+                            <caption>Total backups by type</caption>
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for bk_type, count in report.backups.backups_by_type.items() | sort %}
+                                    <tr>
+                                        <th scope="row">{{ bk_type }}</th>
+                                        <td>{{ count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Failed backups #}
+                    {% if report.backups.backups_by_status.get("fail", 0) > 0 and report.backups.failed_backups %}
+                        <table>
+                            <caption>Failed backups</caption>
+                            <thead>
+                                <tr>
+                                    <th>Host</th>
+                                    <th>Target</th>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="5">A non-zero exit code was produced by the backup. Sorted date in reverse order.</td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% for bk in report.backups.failed_backups | sort(attribute="period.start", reverse=true) %}
+                                    {% if bk.type != "Binlogs" %}
+                                        <tr>
+                                            <th scope="row">{{ bk.name }}</th>
+                                            <td>{{ bk.alias }}</td>
+                                            <td>{{ bk.period.start | backup_date }}</td>
+                                            <td>{{ bk.type }}</td>
+                                            <td>
+                                                {% if bk.estimated_data %}<p>Some data is estimated.</p>{% endif %}
+                                                {% if bk.enabled is false %}<p>Currently disabled.</p>{% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                    {# Backup history / Last 10 #}
+                    {% set non_binlog_backups = report.backups.all_backups | rejectattr("type", "equalto", "Binlogs") | list %}
+                    {% if non_binlog_backups %}
+                        <table>
+                            {% if report.full %}
+                                <caption>Full backup history</caption>
+                            {% else %}
+                                <caption>Last 10 Backups</caption>
+                            {% endif %}
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Host</th>
+                                    <th>Target</th>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Size</th>
+                                    <th>Duration</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="9">Sorted date in reverse order.</td>
+                                </tr>
+                            </tfoot>
+                            <tbody>
+                                {% set sorted_backups = non_binlog_backups | sort(attribute="period.start", reverse=true) %}
+                                {% if not report.full %}
+                                    {% set sorted_backups = sorted_backups[:10] %}
+                                {% endif %}
+                                {% for bk in sorted_backups %}
+                                    <tr>
+                                        <th scope="row">{{ bk.id }}</th>
+                                        <td>{{ bk.name }}</td>
+                                        <td>{{ bk.alias }}</td>
+                                        <td>{{ bk.period.start | backup_date }}</td>
+                                        <td>{{ bk.type }}</td>
+                                        <td>{{ bk.status.value }}</td>
+                                        <td>{{ bk.size | convert_bytes }}</td>
+                                        <td>{{ bk.period.duration }}</td>
+                                        <td>
+                                            {% if bk.estimated_data %}<p>Some data is estimated.</p>{% endif %}
+                                            {% if bk.enabled is false %}<p>Currently disabled.</p>{% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                {% else %}
+                    <p>No backup data for this period.</p>
+                {% endif %}
+            </section>
+            {# ================================================================ #}
+            {# Storage                                                          #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-storage">
+                <h2>Disk Usage</h2>
+                {% if report.storage.entries %}
+                    <table>
+                        <caption>Breakdown by host and mountpoint</caption>
+                        <thead>
+                            <tr>
+                                <th>Host</th>
+                                <th>Mountpoint</th>
+                                <th>Capacity</th>
+                                <th>Used space %</th>
+                                <th>Growth</th>
+                                <th>Peak usage</th>
+                            </tr>
+                        </thead>
+                        <tfoot>
+                            <tr>
+                                <td colspan="6">Sorted usage in reverse order.</td>
+                            </tr>
+                        </tfoot>
+                        <tbody>
+                            {% for e in report.storage.entries %}
+                                <tr>
+                                    <th scope="row">{{ e.node_name }}</th>
+                                    <td>{{ e.mountpoint }}</td>
+                                    <td>{{ "%.0f"|format(e.capacity_bytes / 1073741824) }}GB</td>
+                                    <td>{{ e.usage_percentage }}%</td>
+                                    <td>{{ "%.0f"|format((e.used_end_bytes - e.used_start_bytes) / 1048576) }}MB</td>
+                                    <td>{{ "%.0f"|format(e.used_peak_bytes / 1073741824) }}GB</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No storage data available.</p>
+                {% endif %}
+            </section>
+            {# ================================================================ #}
+            {# Uptime                                                           #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-uptime">
+                <h2>Service Uptime</h2>
+                {% if report.uptime.entries %}
+                    <table>
+                        <caption>All services</caption>
+                        <thead>
+                            <tr>
+                                <th>Service Name</th>
+                                <th>Uptime</th>
+                                <th>Since</th>
+                            </tr>
+                        </thead>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3">Sorted uptime in reverse order.</td>
+                            </tr>
+                        </tfoot>
+                        <tbody>
+                            {% for e in report.uptime.entries %}
+                                <tr>
+                                    <th scope="row">{{ e.service_name }}</th>
+                                    <td>{{ e.uptime }}</td>
+                                    <td>{{ e.since }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No uptime data available.</p>
+                {% endif %}
+            </section>
+            {# ================================================================ #}
+            {# Inventory                                                        #}
+            {# ================================================================ #}
+            <section class="report-section" id="section-inventory">
+                <h2>Included Services</h2>
+                {% if report.inventory.entries %}
+                    <table>
+                        <caption>All services</caption>
+                        <thead>
+                            <tr>
+                                <th>Service Name</th>
+                                <th>Service Type</th>
+                                <th>Node Name</th>
+                                <th>Agents Status</th>
+                            </tr>
+                        </thead>
+                        <tfoot>
+                            <tr>
+                                <td colspan="4">Sorted by Service Type and Service Name.</td>
+                            </tr>
+                        </tfoot>
+                        <tbody>
+                            {% for e in report.inventory.entries %}
+                                <tr>
+                                    <th scope="row">{{ e.service_name }}</th>
+                                    <td>{{ e.service_type }}</td>
+                                    <td>{{ e.node_name }}</td>
+                                    <td>
+                                        {% if e.status.value == "OK" %}
+                                            ✔
+                                        {% else %}
+                                            ✖
+                                        {% endif %}
+                                        {{ e.status.value }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>No inventory data available.</p>
+                {% endif %}
+            </section>
+            <footer class="report-footer">
+                <p>Generated {{ report.metadata.generated_at.strftime("%Y-%m-%d %H:%M:%S %Z") }}</p>
+            </footer>
+        </div>
+    </body>
+</html>

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 #}
 {% extends "base.html.j2" %}
 {% block title -%}
-    Health Report
+    Health & Security Report
 {%- endblock title %}
 {% block style %}
     <link rel="stylesheet"
@@ -55,32 +55,60 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     </div>
                     <div class="form-row">
                         <label for="until">To</label>
-                        <input type="text" name="until" id="until" value="now" readonly>
+                        <select name="until" id="until">
+                            <option value="now" selected>now</option>
+                            <option value="now-1d">1 day ago</option>
+                            <option value="now-3d">3 days ago</option>
+                            <option value="now-7d">7 days ago</option>
+                        </select>
                     </div>
                 </fieldset>
                 <fieldset>
                     <legend>Options</legend>
-                    <div class="form-row">
-                        <label for="full">
-                            <input type="checkbox" name="full" id="full" value="true">
-                            Full report - show all check results and full
-                            backup history instead of only failures/summaries
+                    <div class="form-row radio-group">
+                        <label class="radio">
+                            <input type="radio" name="full" value="true" checked>
+                            <div class="radiomark">
+                                <span class="material-symbols-outlined unchecked">radio_button_unchecked</span>
+                                <span class="material-symbols-outlined checked">radio_button_checked</span>
+                            </div>
+                            <span class="label">Full report</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="full" value="false">
+                            <div class="radiomark">
+                                <span class="material-symbols-outlined unchecked">radio_button_unchecked</span>
+                                <span class="material-symbols-outlined checked">radio_button_checked</span>
+                            </div>
+                            <span class="label">Summary only (failures and recent backups)</span>
                         </label>
                     </div>
-                    <div class="form-row">
-                        <label for="refresh">
-                            <input type="checkbox" name="refresh" id="refresh" value="true">
-                            Refresh - force a refresh of advisor checks
-                            before fetching results
+                    <div class="form-row radio-group">
+                        <label class="radio">
+                            <input type="radio" name="refresh" value="false" checked>
+                            <div class="radiomark">
+                                <span class="material-symbols-outlined unchecked">radio_button_unchecked</span>
+                                <span class="material-symbols-outlined checked">radio_button_checked</span>
+                            </div>
+                            <span class="label">Use cached advisor results</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="refresh" value="true">
+                            <div class="radiomark">
+                                <span class="material-symbols-outlined unchecked">radio_button_unchecked</span>
+                                <span class="material-symbols-outlined checked">radio_button_checked</span>
+                            </div>
+                            <span class="label">Refresh advisor checks before fetching results</span>
                         </label>
                     </div>
                 </fieldset>
                 <div class="form-actions">
-                    <button type="submit" class="btn primary">Generate Report</button>
-                    <a href="{{ request.url_for('report_generate_json') }}"
-                       class="btn"
-                       target="_blank"
-                       rel="noopener noreferrer">Download as JSON</a>
+                    <button type="submit" class="contained large">Generate Report</button>
+                    <button type="submit"
+                            class="outlined large"
+                            formaction="{{ request.url_for('report_generate_json') }}"
+                            formmethod="get"
+                            formtarget="_blank">Download as JSON</button>
                 </div>
             </form>
         {% endif %}

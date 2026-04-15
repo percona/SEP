@@ -129,6 +129,96 @@ def should_skip_snippet(snippet_path: Path) -> bool:
 
 
 @celery.task
+def generate_health_report(
+    since: str = "now-7d",
+    until: str = "now",
+    sections: list[str] | None = None,
+    *,
+    full: bool = True,
+    refresh: bool = False,
+    upload: bool = False,
+) -> None:
+    """Define Celery task to generate a periodic PMM health report."""
+    celery.loop.run_until_complete(
+        _generate_health_report(
+            since=since,
+            until=until,
+            full=full,
+            refresh=refresh,
+            sections=sections,
+            upload=upload,
+        )
+    )
+
+
+async def _generate_health_report(
+    *,
+    since: str = "now-7d",
+    until: str = "now",
+    full: bool = True,
+    refresh: bool = False,
+    sections: list[str] | None = None,
+    upload: bool = False,
+) -> None:
+    """Generate a health report from PMM, log it, and optionally upload to ServiceNow.
+
+    When *upload* is ``True`` and the global upload credentials are fully
+    configured the report is rendered to PDF and uploaded.  If *upload* is
+    requested but credentials are incomplete a warning is logged.  Upload
+    failures are logged but do not prevent the task from completing.
+    """
+    from app.sep.config import sep_settings
+    from app.sep.plugins.report.deps import get_pmm_api
+    from app.sep.plugins.report.service import (
+        generate_pdf_report,
+        generate_report,
+        upload_pdf_report,
+    )
+
+    pmm_api = await get_pmm_api()
+    if pmm_api is None:
+        logger.warning("PMM not configured, skipping health report generation")
+        return
+
+    try:
+        report = await generate_report(
+            pmm_api,
+            since=since,
+            until=until,
+            full=full,
+            refresh=refresh,
+            sections=sections,
+        )
+        logger.info(
+            "Health report generated: %s (%d nodes, %d services)",
+            report.metadata.title,
+            report.monitored.total_nodes,
+            report.monitored.total_services,
+        )
+    except (OSError, ValueError, LookupError, RuntimeError):
+        logger.exception("Failed to generate health report")
+        return
+
+    if not upload:
+        return
+
+    if not sep_settings.HEALTH_REPORT.is_upload_configured:
+        reasons = sep_settings.HEALTH_REPORT.upload_disabled_reasons
+        logger.warning(
+            "Scheduled upload requested but upload is not fully configured: %s",
+            "; ".join(reasons),
+        )
+        return
+
+    try:
+        pdf_bytes = await generate_pdf_report(report)
+        result = await upload_pdf_report(report, pdf_bytes)
+        logger.info("Health report uploaded to ServiceNow: %s", result)
+    except (OSError, ValueError, RuntimeError):
+        logger.exception("Failed to upload health report to ServiceNow")
+
+
+@celery.task
 def backup_alert_config() -> None:
     """Define Celery task to back up PMM alert configuration."""
     celery.loop.run_until_complete(_backup_alert_config())
