@@ -15,6 +15,8 @@
 
 """Define tests for the app.core.db.utils module."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from sqlalchemy import JSON
 from sqlalchemy.dialects import mysql, postgresql, sqlite
@@ -205,9 +207,9 @@ def test_compare_type_suppresses_diff_for_task_execution_request_json_against_js
     propose a no-op type change against an inspected ``JSON`` column.
     """
     result = compare_type(
-        context=None,  # type: ignore[arg-type]
-        inspected_column=None,  # type: ignore[arg-type]
-        metadata_column=None,  # type: ignore[arg-type]
+        context=MagicMock(),
+        inspected_column=MagicMock(),
+        metadata_column=MagicMock(),
         inspected_type=JSON(),
         metadata_type=TaskExecutionRequestJSON(),
     )
