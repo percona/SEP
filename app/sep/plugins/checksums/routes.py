@@ -25,6 +25,7 @@ from pydantic import FutureDatetime
 from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -118,6 +119,7 @@ async def checksums_create(
         "/",
         json=task.model_dump(),
     )
+    await maybe_check_connectivity(request, task_api, task.data.get("meta", {}))
 
     task_path = request.url_for("checksums_detail", task_name=task.name)
     return RedirectResponse(

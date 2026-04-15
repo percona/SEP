@@ -20,9 +20,10 @@ import contextvars
 import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any, cast
 
 from async_lru import alru_cache
-from sqlalchemy.orm import undefer
+from sqlalchemy.orm import QueryableAttribute, undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
@@ -177,6 +178,8 @@ async def check_connectivity(
     queue_item_id = queue_item.id
     await session.refresh(queue_item, attribute_names=["execution_request"])
 
+    queue_item = await _expire_and_fetch(session, queue_item_id)
+
     executor = get_executor_for_task(task)
     elapsed = 0
     while (
@@ -190,7 +193,7 @@ async def check_connectivity(
         await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
         )
-        await session.refresh(queue_item, attribute_names=["execution_request"])
+        queue_item = await _expire_and_fetch(session, queue_item_id)
 
     if queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
@@ -238,13 +241,22 @@ async def _fetch_fresh_task_history(
 
 
 async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> TaskHistory:
-    """Commit, expunge, and re-fetch the task history to bypass the cache.
+    """Commit, expunge, and re-fetch the task history with ``execution_request`` loaded.
 
-    The executor's earlier ``sync_task_history`` mutates the in-memory
-    ``TaskExecutionRequest`` Pydantic object, which SQLAlchemy's refresh
-    does not fully re-hydrate for nested JSON columns. Commit to end the
-    open snapshot, then expunge the row from the identity map so the next
-    fetch does a genuine ``SELECT`` and builds a brand-new object.
+    Fulfill two goals needed by the polling loop:
+
+    - Force a brand-new instance materialisation. The executor's
+      ``sync_task_history`` mutates the in-memory ``TaskExecutionRequest``
+      Pydantic object, which SQLAlchemy's refresh does not fully re-hydrate
+      for nested JSON columns. Commit to end the open snapshot, then expunge
+      the row from the identity map so the next fetch does a genuine
+      ``SELECT`` and builds a brand-new object.
+    - Eagerly load the deferred ``TaskHistory.execution_request`` column.
+      Without ``undefer`` the column stays expired on the returned instance
+      and any subsequent synchronous attribute read (e.g. from
+      ``NomadExecutor.get_allocation_for_task_history``) triggers a
+      lazy-load SELECT outside the greenlet bridge, raising
+      ``MissingGreenlet`` on aiosqlite/asyncpg.
 
     The ``execution_request`` column is declared as a deferred
     ``column_property`` on :class:`TaskHistory`, so the re-fetch must
@@ -257,7 +269,8 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     :type session: AsyncSession
     :param task_history_id: The ID of the task history row to reload.
     :type task_history_id: int
-    :return: A freshly-loaded task history row.
+    :return: A freshly-loaded task history row with
+        ``execution_request`` materialised.
     :rtype: TaskHistory
     """
     await session.commit()
@@ -265,7 +278,9 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     session.expunge(cached)
     return await TaskHistoryManager.get_or_404(
         session,
-        query_options=[undefer(TaskHistory.execution_request)],
+        query_options=[
+            undefer(cast("QueryableAttribute[Any]", TaskHistory.execution_request))
+        ],
         id=task_history_id,
     )
 
