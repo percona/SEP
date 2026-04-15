@@ -206,11 +206,11 @@ class TestBaseSQLModelManagerPagination:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_list_limit_zero_returns_empty_list(
+    async def test_list_limit_zero_returns_all_items(
         self,
         session: AsyncSession,
     ) -> None:
-        """Assert limit zero returns no records."""
+        """Assert limit zero disables the limit and returns all records."""
         await _create_item(
             session,
             name="item-0",
@@ -219,7 +219,8 @@ class TestBaseSQLModelManagerPagination:
 
         result = await PaginationItemManager.list(session, limit=0)
 
-        assert result == []
+        assert len(result) == 1
+        assert result[0].name == "item-0"
 
     @pytest.mark.asyncio
     async def test_list_negative_offset_raises_value_error(
