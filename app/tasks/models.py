@@ -36,7 +36,6 @@ from pydantic import (
 from sqlalchemy import (
     BigInteger,
     Column,
-    ForeignKey,
     func,
     Index,
     JSON,
@@ -776,11 +775,10 @@ class TaskHistoryLog(BaseSQLModel, table=True):
     )
 
     task_history_id: int = SQLField(
-        sa_column=Column(
-            ForeignKey("taskhistory.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        ),
+        foreign_key="taskhistory.id",
+        ondelete="CASCADE",
+        nullable=False,
+        index=True,
     )
     source: str = SQLField(sa_column=Column(String(64), nullable=False))
     stream: TaskLogType = SQLField(
@@ -836,11 +834,10 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
     )
 
     task_history_id: int = SQLField(
-        sa_column=Column(
-            ForeignKey("taskhistory.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        ),
+        foreign_key="taskhistory.id",
+        ondelete="CASCADE",
+        nullable=False,
+        index=True,
     )
     source: str = SQLField(sa_column=Column(String(64), nullable=False))
     stream: TaskLogType = SQLField(

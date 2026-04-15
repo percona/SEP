@@ -26,7 +26,7 @@ from sqlalchemy.sql.type_api import TypeEngine
 MAYBE_COMPRESSED_TEXT_RAW_PREFIX = b"\x00"
 MAYBE_COMPRESSED_TEXT_COMPRESSED_PREFIX = b"\x01"
 MAYBE_COMPRESSED_TEXT_MIN_BYTES = 256
-MAYBE_COMPRESSED_TEXT_MIN_SAVINGS_RATIO = 0.10
+MAYBE_COMPRESSED_TEXT_MIN_SAVINGS_RATIO = 0.1
 
 
 class AutoJSON(TypeDecorator):
@@ -72,13 +72,13 @@ class MaybeCompressedText(TypeDecorator):
     impl = LargeBinary
     cache_ok = True
 
-    def process_bind_param(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
+    def process_bind_param(self, value: Any, dialect: Dialect) -> Any:  # noqa: ARG002
         """Serialize UTF-8 text into a prefixed byte string for storage.
 
         :param value: The text value to store.
         :type value: Any
         :param dialect: The SQLAlchemy dialect in use.
-        :type dialect: Any
+        :type dialect: Dialect
         :return: The prefixed bytes ready for the underlying ``LargeBinary`` column,
             or ``None`` when the input is ``None``.
         :rtype: Any
@@ -95,13 +95,13 @@ class MaybeCompressedText(TypeDecorator):
             return MAYBE_COMPRESSED_TEXT_RAW_PREFIX + encoded
         return MAYBE_COMPRESSED_TEXT_COMPRESSED_PREFIX + compressed
 
-    def process_result_value(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
+    def process_result_value(self, value: Any, dialect: Dialect) -> Any:  # noqa: ARG002
         """Deserialize a prefixed byte string back into UTF-8 text.
 
         :param value: The raw bytes from the database.
         :type value: Any
         :param dialect: The SQLAlchemy dialect in use.
-        :type dialect: Any
+        :type dialect: Dialect
         :return: The decoded UTF-8 text, or ``None`` when the input is ``None``.
         :rtype: Any
         """

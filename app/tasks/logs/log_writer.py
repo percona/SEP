@@ -422,9 +422,7 @@ class TaskHistoryLogWriter:
         """
         if not staging:
             return False
-        if force_flush:
-            return True
-        if len(staging) >= MIN_FLUSH:
+        if force_flush or len(staging) >= MIN_FLUSH:
             return True
         if staging_updated_at is not None:
             aware_staging_updated_at = (
