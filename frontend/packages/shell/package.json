@@ -19,7 +19,7 @@
     "@mui/icons-material": "^7.0.0",
     "@mui/material": "^7.0.0",
     "@mui/x-date-pickers": "^9.0.0",
-    "@percona/percona-ui": "^1.0.14",
+    "@percona/percona-ui": "github:nachodd/percona-ui#ac9427577442678859fc3b948d802f413fed1092",
     "@sep/api": "workspace:*",
     "@sep/checksums": "workspace:*",
     "@sep/framework": "workspace:*",
