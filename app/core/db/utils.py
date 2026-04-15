@@ -18,7 +18,7 @@
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import cast, Column, ColumnClause, func, Function, JSON, Text
+from sqlalchemy import Column, ColumnClause, ColumnElement, func, JSON, literal, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
@@ -69,29 +69,52 @@ def json_join_path_elems(*path_elems: str) -> str:
 
 def func_json_extract(
     db_engine: str, json_column: SQLAlchemyColumn, *path_elems: str
-) -> Function:
-    """Extract a value from a JSON column using the specified path.
+) -> ColumnElement:
+    """Render a dialect-specific JSON scalar extraction expression.
 
-    :param db_engine: The database engine type (e.g., "postgresql").
+    Emit SQL whose shape matches the expression indexes created for
+    ``taskhistory.execution_request`` so the planner can use them:
+
+    - PostgreSQL: ``col->'a'->>'b'``. The final ``->>`` returns the value as
+      text. The expression is valid on both ``json`` and ``jsonb`` columns.
+      Path elements are inlined as SQL literals (via SQLAlchemy's
+      ``literal_execute``) instead of bound parameters so the planner can
+      syntactically match the expression against the functional indexes.
+    - SQLite: ``json_extract(col, '$.a.b')``. SQLite auto-unquotes scalars, so
+      the result is directly comparable to a string.
+    - MySQL: ``json_extract(col, '$.a.b')``. No functional index is created on
+      MySQL because a width-limited ``CAST`` would introduce comparison
+      truncation; MySQL dev environments fall back to non-indexed filtering.
+
+    :param db_engine: The database engine type (e.g., ``"postgresql"``).
     :type db_engine: str
     :param json_column: The JSON column to extract the value from.
     :type json_column: SQLAlchemyColumn
     :param path_elems: The JSON path elements to extract.
     :type path_elems: str
-    :return: The SQL function for extracting the value from the JSON column.
-    :rtype: Function
+    :return: A SQL expression whose value is comparable to a string.
+    :rtype: ColumnElement
     """
+    column = col(json_column)
     if db_engine.startswith(DatabaseDialect.POSTGRESQL):
-        return func.json_extract_path_text(cast(col(json_column), JSON), *path_elems)
-    return func.json_extract(col(json_column), json_join_path_elems(*path_elems))
+        expression = column
+        for elem in path_elems[:-1]:
+            expression = expression.op("->")(literal(elem, Text, literal_execute=True))
+        return expression.op("->>", return_type=Text)(
+            literal(path_elems[-1], Text, literal_execute=True)
+        )
+    return func.json_extract(
+        column,
+        literal(json_join_path_elems(*path_elems), Text, literal_execute=True),
+    )
 
 
 def prepare_unsafe_value_for_json_comparison(db_engine: str, value: Any) -> Any:
     """Prepare a value for JSON comparison based on the database engine.
 
-    Postgres `json_extract_path_text` treats all JSON values as strings, so we convert
-    the value to a string for comparison. For other databases, we return the value as
-    is.
+    On PostgreSQL the text operator ``->>`` returns JSON scalars as text, so we
+    convert the value to a string for comparison. For other databases, we return
+    the value as is.
 
     :param db_engine: The database engine type (e.g., "postgresql").
     :type db_engine: str
