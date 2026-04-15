@@ -1093,3 +1093,59 @@ class TestPreExecutionConnectivityCheck:
             "malformed connectivity metadata" in call.args[0]
             for call in mock_logger.warning.call_args_list
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "missing_field",
+        ["_connectivity_host", "_connectivity_port", "_connectivity_service_type"],
+    )
+    @pytest.mark.parametrize("empty_value", [None, ""])
+    async def test_partial_connectivity_meta_skips_check(
+        self,
+        test_client,
+        session,
+        mocker,
+        mock_executor,
+        missing_field,
+        empty_value,
+    ):
+        """Verify check is skipped when any connectivity meta field is empty or None.
+
+        Regression guard: the truthy short-circuit in ``execute_task_name`` is the
+        only defense against half-populated task definitions. If a refactor ever
+        replaces ``and conn_host`` with ``and conn_host is not None`` the empty
+        string case silently breaks.
+        """
+        partial_meta = {**CONNECTIVITY_META, missing_field: empty_value}
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=f"partial-meta-task-{missing_field}-{empty_value!r}",
+                    data={"Meta": partial_meta},
+                )
+            ),
+        )
+
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+
+        response = test_client.post(
+            f"/execute/{task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+        mock_dispatch.assert_called_once()
