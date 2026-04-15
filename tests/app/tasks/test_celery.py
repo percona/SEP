@@ -24,11 +24,19 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.tasks import celery as celery_module
 from app.tasks.celery import (
     _dispatch_chained_task,
+    _dispatch_queue_item,
     _MAX_CHAIN_DEPTH,
     _raise_if_identical_task_conflict,
+    delete_task_history,
+    dispatch_queue_item,
+    get_executor_for_task,
+    prepare_periodic_task_history,
     sync_queue_item,
+    sync_running_items,
+    task_revoked_handler,
 )
 from app.tasks.models import (
     DispatchLock,
@@ -141,8 +149,6 @@ class TestGetExecutorForTask:
 
     def test_nomad_backend_returns_executor(self):
         """Assert NOMAD backend returns an executor from get_executor."""
-        from app.tasks.celery import get_executor_for_task
-
         task = _make_task(backend=TaskBackendEnum.NOMAD)
         mock_executor = MagicMock()
         with patch(
@@ -155,8 +161,6 @@ class TestGetExecutorForTask:
 
     def test_unsupported_backend_raises_bad_request(self):
         """Assert unsupported backend raises HTTPBadRequestException."""
-        from app.tasks.celery import get_executor_for_task
-
         task = _make_task(backend=TaskBackendEnum.NOMAD)
         with (
             patch(
@@ -174,8 +178,6 @@ class TestDispatchQueueItem:
     @pytest.mark.asyncio
     async def test_with_session_provided(self):
         """Assert provided session is passed to _dispatch_queue_item."""
-        from app.tasks.celery import dispatch_queue_item
-
         queue_item = _make_history()
         session = _make_session_mock()
         expected = _make_history(status=TaskHistoryStatusEnum.RUNNING)
@@ -193,8 +195,6 @@ class TestDispatchQueueItem:
     @pytest.mark.asyncio
     async def test_without_session_creates_own(self):
         """Assert a new session is created when none is provided."""
-        from app.tasks.celery import dispatch_queue_item
-
         queue_item = _make_history()
         expected = _make_history(status=TaskHistoryStatusEnum.RUNNING)
 
@@ -221,8 +221,6 @@ class TestInternalDispatchQueueItem:
     @pytest.mark.asyncio
     async def test_non_pending_raises_conflict(self):
         """Assert non-PENDING status raises HTTPConflictException."""
-        from app.tasks.celery import _dispatch_queue_item
-
         queue_item = _make_history(status=TaskHistoryStatusEnum.RUNNING)
         session = _make_session_mock()
 
@@ -232,8 +230,6 @@ class TestInternalDispatchQueueItem:
     @pytest.mark.asyncio
     async def test_happy_path_dispatches_and_cleans_lock(self):
         """Assert happy path creates lock, dispatches, and cleans lock."""
-        from app.tasks.celery import _dispatch_queue_item
-
         task = _make_task()
         queue_item = _make_history(task=task)
         session = _make_session_mock()
@@ -282,8 +278,6 @@ class TestInternalDispatchQueueItem:
     @pytest.mark.asyncio
     async def test_integrity_error_on_lock_raises_conflict(self):
         """Assert IntegrityError on lock creation raises HTTPConflictException."""
-        from app.tasks.celery import _dispatch_queue_item
-
         queue_item = _make_history()
         session = _make_session_mock()
 
@@ -312,8 +306,6 @@ class TestInternalDispatchQueueItem:
     @pytest.mark.asyncio
     async def test_executor_failure_still_cleans_lock(self):
         """Assert lock is cleaned up even when executor dispatch fails."""
-        from app.tasks.celery import _dispatch_queue_item
-
         task = _make_task()
         queue_item = _make_history(task=task)
         session = _make_session_mock()
@@ -361,8 +353,6 @@ class TestInternalDispatchQueueItem:
     @pytest.mark.asyncio
     async def test_identical_task_conflict_raises(self):
         """Assert identical running task conflict raises HTTPConflictException."""
-        from app.tasks.celery import _dispatch_queue_item
-
         task = _make_task()
         queue_item = _make_history(task=task)
         session = _make_session_mock()
@@ -460,8 +450,6 @@ class TestRaiseIfIdenticalTaskConflict:
     @pytest.mark.asyncio
     async def test_no_identical_task_passes(self):
         """Assert no exception when no identical task exists."""
-        from app.tasks.celery import _raise_if_identical_task_conflict
-
         queue_item = _make_history()
         session = _make_session_mock()
 
@@ -475,8 +463,6 @@ class TestRaiseIfIdenticalTaskConflict:
     @pytest.mark.asyncio
     async def test_identical_task_raises_conflict(self):
         """Assert HTTPConflictException when identical task is found."""
-        from app.tasks.celery import _raise_if_identical_task_conflict
-
         queue_item = _make_history()
         session = _make_session_mock()
         identical = _make_history(id=99)
@@ -496,8 +482,6 @@ class TestRaiseIfIdenticalTaskConflict:
     @pytest.mark.asyncio
     async def test_no_meta_passes_empty_clauses(self):
         """Assert empty meta produces no extra where clauses."""
-        from app.tasks.celery import _raise_if_identical_task_conflict
-
         task = _make_task()
         queue_item = _make_history(
             task=task,
@@ -777,8 +761,6 @@ class TestDeleteTaskHistory:
     @pytest.mark.asyncio
     async def test_calls_delete_where_with_queue_id(self):
         """Assert TaskHistoryManager.delete_where is called with correct ID."""
-        from app.tasks.celery import delete_task_history
-
         mock_session = AsyncMock()
         mock_session_cm = AsyncMock()
         mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
@@ -806,8 +788,6 @@ class TestPreparePeriodicTaskHistory:
     @pytest.mark.asyncio
     async def test_with_execution_data(self):
         """Assert execution_data is validated via PeriodicTaskExecuteRequest."""
-        from app.tasks.celery import prepare_periodic_task_history
-
         task = _make_task()
         expected_history = _make_history(task=task)
 
@@ -847,8 +827,6 @@ class TestPreparePeriodicTaskHistory:
     @pytest.mark.asyncio
     async def test_without_execution_data(self):
         """Assert None execution_data passes None to prepare_task_history."""
-        from app.tasks.celery import prepare_periodic_task_history
-
         task = _make_task()
         expected_history = _make_history(task=task)
 
@@ -886,8 +864,6 @@ class TestSyncRunningItems:
     @pytest.mark.asyncio
     async def test_dispatches_sync_for_running_tasks(self):
         """Assert sync tasks are dispatched in chunks for running items."""
-        from app.tasks.celery import sync_running_items
-
         mock_chunks = MagicMock()
         mock_chunks.apply_async = MagicMock()
 
@@ -912,8 +888,6 @@ class TestSyncRunningItems:
     @pytest.mark.asyncio
     async def test_no_running_tasks_skips_dispatch(self):
         """Assert no dispatch happens when no running tasks found."""
-        from app.tasks.celery import sync_running_items
-
         with (
             patch(
                 "app.tasks.celery.get_async_session_maker",
@@ -936,8 +910,6 @@ class TestTaskRevokedHandler:
 
     def test_execute_task_queue_expired_deletes_history(self):
         """Assert expired execute_task_queue calls delete_task_history."""
-        from app.tasks.celery import task_revoked_handler
-
         request = MagicMock()
         request.args = [42]
         request.kwargs = {}
@@ -953,8 +925,6 @@ class TestTaskRevokedHandler:
 
     def test_not_execute_task_queue_is_noop(self):
         """Assert non-execute_task_queue task does not call delete."""
-        from app.tasks.celery import task_revoked_handler
-
         request = MagicMock()
         request.args = [42]
         request.kwargs = {}
@@ -970,8 +940,6 @@ class TestTaskRevokedHandler:
 
     def test_not_expired_is_noop(self):
         """Assert non-expired revocation does not call delete."""
-        from app.tasks.celery import task_revoked_handler
-
         request = MagicMock()
         request.args = [42]
         request.kwargs = {}
@@ -987,8 +955,6 @@ class TestTaskRevokedHandler:
 
     def test_queue_id_from_kwargs(self):
         """Assert queue_id is extracted from kwargs when args is empty."""
-        from app.tasks.celery import task_revoked_handler
-
         request = MagicMock()
         request.args = []
         request.kwargs = {"queue_id": 99}
@@ -1008,8 +974,6 @@ class TestExecuteTaskQueue:
 
     def test_executes_and_returns_encoded_result(self):
         """Assert execute_task_queue calls get_task_history and dispatch."""
-        from app.tasks import celery as celery_module
-
         task_obj = _make_task()
         queue_item = _make_history(task=task_obj)
         dispatched = _make_history(task=task_obj, status=TaskHistoryStatusEnum.RUNNING)
@@ -1058,8 +1022,6 @@ class TestSyncQueueItem:
     @pytest.mark.asyncio
     async def test_non_running_clears_sync_lock_via_update_where(self):
         """Assert non-running sync clears the lock via update_where, not ORM save."""
-        from app.tasks.celery import sync_queue_item
-
         task = _make_task()
         queue_item = _make_history(task=task, status=TaskHistoryStatusEnum.PENDING)
 
@@ -1098,8 +1060,6 @@ class TestSyncQueueItem:
     @pytest.mark.asyncio
     async def test_non_running_races_to_running_proceeds_with_sync(self):
         """Assert sync proceeds if task transitions to RUNNING between read and update."""
-        from app.tasks.celery import sync_queue_item
-
         task = _make_task()
         pending_item = _make_history(task=task, status=TaskHistoryStatusEnum.PENDING)
         running_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
@@ -1146,15 +1106,16 @@ class TestSyncQueueItem:
         ):
             result = await sync_queue_item(pending_item.id)
 
-        mock_executor.sync_task_history.assert_awaited_once_with(running_item)
+        mock_executor.sync_task_history.assert_awaited_once()
+        called_args, called_kwargs = mock_executor.sync_task_history.await_args
+        assert called_args == (running_item,)
+        assert "writer_session" in called_kwargs
         mock_save.assert_awaited_once()
         assert result is saved_item
 
     @pytest.mark.asyncio
     async def test_running_saves_via_orm_with_flag_modified(self):
         """Assert running sync saves via ORM save with flag_modified_fields."""
-        from app.tasks.celery import sync_queue_item
-
         task = _make_task()
         queue_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
         saved_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
@@ -1386,7 +1347,9 @@ class TestSyncQueueItemChainDispatch:
         session_maker, _ = _make_chain_session_mock()
         mock_save = AsyncMock()
 
-        async def sync_mutates_in_place(queue_item: TaskHistory) -> TaskHistory:
+        async def sync_mutates_in_place(
+            queue_item: TaskHistory, writer_session=None
+        ) -> TaskHistory:
             queue_item.status = TaskHistoryStatusEnum.FAILED
             queue_item.started_at = datetime(2026, 4, 1, 10, 1, 0, tzinfo=UTC)
             queue_item.finished_at = datetime(2026, 4, 1, 10, 2, 0, tzinfo=UTC)
