@@ -296,6 +296,8 @@ async def _iter_run_script_logs(
 async def _has_run_script_logs(session: AsyncSession, task_history: TaskHistory) -> bool:
     """Return whether ``task_history`` has any ``run-script`` step output.
 
+    :param session: The async database session.
+    :type session: AsyncSession
     :param task_history: The task history record to inspect.
     :type task_history: TaskHistory
     :return: ``True`` if a non-empty stdout or stderr log exists for the
@@ -313,6 +315,8 @@ async def _parse_check_result(
 ) -> ConnectivityCheckResponse:
     """Extract connectivity result from task logs.
 
+    :param session: The async database session.
+    :type session: AsyncSession
     :param task_history: The completed task history record.
     :type task_history: TaskHistory
     :return: The parsed connectivity check result.
