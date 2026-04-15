@@ -36,6 +36,9 @@ CHUNK_BYTES = 128 * 1024
 MIN_FLUSH = 16 * 1024
 MAX_AGE_SEC = 120
 _MAX_VERSION_RETRIES = 5
+_UTF8_MAX_LOOKBACK = 3
+_UTF8_ASCII_CEILING = 0x80
+_UTF8_LEADING_BYTE_FLOOR = 0xC0
 
 
 class LogWriterConflictError(RuntimeError):
@@ -172,6 +175,75 @@ class TaskHistoryLogWriter:
             f"task_history_id={task_history_id} source={source!r} stream={stream}"
         )
 
+    @classmethod
+    async def drain_and_reset_producer_offsets(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+    ) -> None:
+        """Force-flush every stream's staging buffer and zero ``producer_offset``.
+
+        Called when Nomad reschedules a task to a follow-up allocation: the
+        new allocation's log file starts at byte 0, so any cached
+        ``producer_offset`` from the previous allocation must be cleared, and
+        the leftover staging bytes from the previous allocation must be
+        emitted as their own chunk instead of being concatenated with the new
+        allocation's bytes.
+
+        :param session: The SQLAlchemy asynchronous session.
+        :type session: AsyncSession
+        :param task_history_id: The ``TaskHistory`` identifier whose state
+            rows should be drained and reset.
+        :type task_history_id: int
+        """
+        rows = await TaskHistoryLogStateManager.list_for_task(session, task_history_id)
+        for row in rows:
+            if row.staging:
+                now = utc_now()
+                _, new_persisted = await cls._flush_remainder(
+                    session=session,
+                    task_history_id=task_history_id,
+                    source=row.source,
+                    stream=row.stream,
+                    staging=row.staging,
+                    persisted_offset=row.persisted_offset,
+                    now=now,
+                )
+                drained_bytes = len(row.staging)
+                applied = await TaskHistoryLogStateManager.update_row_if_version(
+                    session,
+                    task_history_id=task_history_id,
+                    source=row.source,
+                    stream=row.stream,
+                    old_version=row.version,
+                    new_version=row.version + 1,
+                    persisted_offset=new_persisted,
+                    producer_offset=row.producer_offset,
+                    staging=b"",
+                    now=now,
+                )
+                if not applied:
+                    await session.rollback()
+                    raise LogWriterConflictError(
+                        "TaskHistoryLogWriter: lost version race while draining "
+                        f"task_history_id={task_history_id} source={row.source!r} "
+                        f"stream={row.stream}"
+                    )
+                logger.info(
+                    "taskhistory_log allocation switch drained",
+                    extra={
+                        "event": "taskhistory_log_allocation_switch_drained",
+                        "task_history_id": task_history_id,
+                        "source": row.source,
+                        "stream": row.stream.value,
+                        "drained_bytes": drained_bytes,
+                    },
+                )
+        await TaskHistoryLogStateManager.reset_producer_offsets(
+            session, task_history_id
+        )
+        await session.commit()
+
     @staticmethod
     def _effective_new_bytes(
         state: TaskHistoryLogState,
@@ -237,7 +309,8 @@ class TaskHistoryLogWriter:
         :rtype: tuple[bytes, int]
         """
         while len(staging) >= CHUNK_BYTES:
-            chunk = staging[:CHUNK_BYTES]
+            chunk_end = cls._utf8_safe_split(staging, CHUNK_BYTES)
+            chunk = staging[:chunk_end]
             await TaskHistoryLogManager.insert_chunk_idempotent(
                 session,
                 task_history_id=task_history_id,
@@ -248,8 +321,40 @@ class TaskHistoryLogWriter:
                 now=now,
             )
             persisted_offset += len(chunk)
-            staging = staging[CHUNK_BYTES:]
+            staging = staging[chunk_end:]
         return staging, persisted_offset
+
+    @staticmethod
+    def _utf8_safe_split(staging: bytes, target: int) -> int:
+        """Return a split index ``<= target`` that aligns with a UTF-8 boundary.
+
+        Walk back at most :data:`_UTF8_MAX_LOOKBACK` bytes from ``target`` to
+        find the first byte that starts a UTF-8 codepoint — either an ASCII
+        byte (``< 0x80``) or a leading byte (``>= 0xC0``). When no aligned
+        split is found inside the lookback window — which can only happen if
+        ``staging[target - 3 : target]`` contains nothing but continuation
+        bytes, i.e. the boundary falls inside a single codepoint whose start
+        is further back than the lookback window — return ``target`` so the
+        writer still makes progress. ``errors="replace"`` in the decode path
+        handles the resulting sliver without raising.
+
+        :param staging: The staging buffer being flushed.
+        :type staging: bytes
+        :param target: The preferred split index, normally ``CHUNK_BYTES``.
+        :type target: int
+        :return: The index at which to split ``staging`` into a chunk.
+        :rtype: int
+        """
+        if target >= len(staging):
+            return target
+        for offset in range(_UTF8_MAX_LOOKBACK + 1):
+            candidate = target - offset
+            if candidate <= 0:
+                break
+            byte = staging[candidate]
+            if byte < _UTF8_ASCII_CEILING or byte >= _UTF8_LEADING_BYTE_FLOOR:
+                return candidate
+        return target
 
     @classmethod
     async def _flush_remainder(
