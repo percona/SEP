@@ -683,35 +683,46 @@ class TestResultCache:
 
     def test_get_cached_result_miss(self):
         """Verify ``None`` is returned when no entry exists."""
-        assert get_cached_result("node1", "MYSQL") is None
+        assert get_cached_result("node1", ConnectivityServiceType.MYSQL) is None
 
-    def test_cache_and_get_success(self):
-        """Verify a cached success result is returned."""
-        cache_result("node1", "MYSQL", success=True, error=None)
-        cached = get_cached_result("node1", "MYSQL")
+    @pytest.mark.parametrize("service_type", list(ConnectivityServiceType))
+    def test_cache_and_get_success(self, service_type):
+        """Verify a cached success result is returned for every service type."""
+        cache_result("node1", service_type, success=True, error=None)
+        cached = get_cached_result("node1", service_type)
         assert cached == (True, None)
 
-    def test_cache_and_get_failure(self):
+    @pytest.mark.parametrize("service_type", list(ConnectivityServiceType))
+    def test_cache_and_get_failure(self, service_type):
         """Verify a cached failure result is returned with its error."""
-        cache_result("node1", "MYSQL", success=False, error="Connection refused")
-        cached = get_cached_result("node1", "MYSQL")
+        cache_result("node1", service_type, success=False, error="Connection refused")
+        cached = get_cached_result("node1", service_type)
         assert cached == (False, "Connection refused")
 
     def test_expired_entry_returns_none(self):
         """Verify expired cache entries are evicted and return ``None``."""
-        _result_cache[("node1", "MYSQL")] = (
+        key = ("node1", ConnectivityServiceType.MYSQL)
+        _result_cache[key] = (
             True,
             None,
             time.monotonic() - RESULT_CACHE_TTL - 1,
         )
-        assert get_cached_result("node1", "MYSQL") is None
-        assert ("node1", "MYSQL") not in _result_cache
+        assert get_cached_result("node1", ConnectivityServiceType.MYSQL) is None
+        assert key not in _result_cache
 
     def test_different_keys_are_independent(self):
         """Verify cache entries are keyed by ``(target, service_type)``."""
-        cache_result("node1", "MYSQL", success=True, error=None)
-        cache_result("node2", "POSTGRESQL", success=False, error="timeout")
+        cache_result("node1", ConnectivityServiceType.MYSQL, success=True, error=None)
+        cache_result(
+            "node2",
+            ConnectivityServiceType.POSTGRESQL,
+            success=False,
+            error="timeout",
+        )
 
-        assert get_cached_result("node1", "MYSQL") == (True, None)
-        assert get_cached_result("node2", "POSTGRESQL") == (False, "timeout")
-        assert get_cached_result("node1", "POSTGRESQL") is None
+        assert get_cached_result("node1", ConnectivityServiceType.MYSQL) == (True, None)
+        assert get_cached_result("node2", ConnectivityServiceType.POSTGRESQL) == (
+            False,
+            "timeout",
+        )
+        assert get_cached_result("node1", ConnectivityServiceType.POSTGRESQL) is None
