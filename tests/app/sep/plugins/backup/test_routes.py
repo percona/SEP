@@ -21,6 +21,7 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.sep.connectivity import _fetch_connectivity_result, CHECK_TIMEOUT
 from app.sep.main import sep_app
 from app.sep.plugins.backup.deps import (
     build_backup_task_payload,
@@ -124,6 +125,64 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
     assert called_args[0] == "/"
     assert called_kwargs["json"] == fake_task_write.model_dump()
 
+    sep_app.dependency_overrides = {}
+
+
+EXPECTED_CONNECTIVITY_POST_CALLS = 2
+
+
+def test_backups_create_triggers_connectivity_check(
+    test_client, mock_task_api_dep, backup_create
+):
+    """POST /backups/ runs a connectivity check when meta carries connectivity data."""
+    _fetch_connectivity_result.cache_clear()
+
+    fake_task_write = TaskWrite(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.BACKUPS,
+        data={
+            "task": "fake-task",
+            "meta": {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+            "payload": "",
+        },
+    )
+
+    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+
+    mock_task_api_dep.post.side_effect = [
+        None,
+        {"success": True, "error": None},
+    ]
+
+    response = test_client.post(
+        "/backups/", data=backup_create.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backups/{backup_create.task_name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == EXPECTED_CONNECTIVITY_POST_CALLS
+    first_call, second_call = mock_task_api_dep.post.call_args_list
+    assert first_call.args[0] == "/"
+    assert first_call.kwargs["json"] == fake_task_write.model_dump()
+    assert second_call.args[0] == "/connectivity-check/"
+    assert second_call.kwargs["json"] == {
+        "target": "node1",
+        "host": "10.0.0.1",
+        "port": 3306,
+        "service_type": "mysql",
+        "timeout": CHECK_TIMEOUT,
+    }
+
+    _fetch_connectivity_result.cache_clear()
     sep_app.dependency_overrides = {}
 
 

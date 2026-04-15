@@ -106,9 +106,9 @@ def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
 
 
 CHECKERS = {
-    "MYSQL": check_mysql,
-    "POSTGRESQL": check_postgresql,
-    "MONGODB": check_mongodb,
+    "mysql": check_mysql,
+    "postgresql": check_postgresql,
+    "mongodb": check_mongodb,
 }
 
 
