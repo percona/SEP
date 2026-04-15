@@ -129,7 +129,7 @@ endif
 ifndef MSG
 	$(error MSG is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
 endif
-	@$(PYTHON) scripts/changelog.py add --ticket "$(TICKET)" --section "$(SECTION)" --message "$(MSG)"
+	@$(PYTHON) scripts/changelog.py add --ticket "$(TICKET)" --section "$(SECTION)" --message "$(MSG)" $(if $(FORCE),--force,)
 
 changelog-check:
 	@$(PYTHON) scripts/changelog.py check

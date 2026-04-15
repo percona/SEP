@@ -14,6 +14,9 @@ security fix, or a config change), run:
 make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="Brief description"
 ```
 
+Pass `FORCE=1` to overwrite an existing fragment for the same
+`(ticket, section)` pair; without it the helper refuses to clobber.
+
 where `<section>` is one of:
 
 | Short name  | Renders as             |
@@ -58,6 +61,11 @@ make changelog-list     # print a CHANGELOG-style preview of what is pending
 
 `make changelog-check` is also wired into pre-commit and runs automatically
 whenever a file under `changelog.d/` is staged.
+
+`make changelog-list` prints only the `### <section>` headers and their
+bullets — it deliberately omits the `## [Unreleased]` header and the blank
+lines that frame the section in `CHANGELOG.md`, so the output is a content
+preview rather than a byte-for-byte slice of the old file.
 
 ## What happens at release time
 
