@@ -662,9 +662,9 @@ class TestCheckConnectivity:
         async def fake_dispatch(
             queue_item: TaskHistory, dispatch_session: AsyncSession
         ) -> TaskHistory:
-            queue_item.execution_request.tracking.update(
-                evaluation_id="eval-1", job_id="job-1"
-            )
+            tracking = queue_item.execution_request.tracking
+            assert tracking is not None
+            tracking.update(evaluation_id="eval-1", job_id="job-1")
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return await TaskHistoryManager.save(
                 dispatch_session,
@@ -681,12 +681,15 @@ class TestCheckConnectivity:
 
             def _get_allocation(self, queue_item: TaskHistory) -> dict:
                 tracking = queue_item.execution_request.tracking
+                assert tracking is not None
                 return {"eval_id": tracking.get("evaluation_id")}
 
             async def sync_task_history(self, queue_item: TaskHistory) -> TaskHistory:
                 self._get_allocation(queue_item)
                 queue_item.status = TaskHistoryStatusEnum.SUCCESS
-                queue_item.execution_request.tracking["task_logs"] = {
+                tracking = queue_item.execution_request.tracking
+                assert tracking is not None
+                tracking["task_logs"] = {
                     "run-script": {
                         TaskLogType.STDOUT: json.dumps({"success": True}),
                     }

@@ -18,8 +18,9 @@
 import asyncio
 import json
 from pathlib import Path
+from typing import Any, cast
 
-from sqlalchemy.orm import undefer
+from sqlalchemy.orm import QueryableAttribute, undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
@@ -183,7 +184,9 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     session.expunge(cached)
     return await TaskHistoryManager.get_or_404(
         session,
-        query_options=[undefer(TaskHistory.execution_request)],
+        query_options=[
+            undefer(cast("QueryableAttribute[Any]", TaskHistory.execution_request))
+        ],
         id=task_history_id,
     )
 
