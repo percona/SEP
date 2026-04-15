@@ -16,9 +16,11 @@
 """Define the task history log reader with a dual-read legacy fallback."""
 
 import base64
+import binascii
 import gzip
 import json
 import logging
+import zlib
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Generator
 from itertools import product
@@ -40,19 +42,38 @@ def decompress_legacy_logs(task_history: TaskHistory) -> dict:
 
     Handles both historical encodings: the base64+gzip string produced by old
     Nomad syncs and the plain dict stored by some early Celery paths. Returns
-    an empty dict when no legacy content exists.
+    an empty dict when no legacy content exists, and also returns an empty
+    dict (with a structured warning) when the blob is corrupted — a garbled
+    pre-migration record must not crash the sync loop.
 
     :param task_history: The task history whose legacy logs should be
         decompressed.
     :type task_history: TaskHistory
     :return: The legacy ``{step: {log_type: text, f"{log_type}_last_offset": int}}``
-        dict, or an empty dict when no legacy content exists.
+        dict, or an empty dict when no legacy content exists or the blob
+        cannot be decoded.
     :rtype: dict
     """
     tracking = task_history.execution_request.tracking or {}
     logs = tracking.get("task_logs") or {}
     if isinstance(logs, str):
-        return json.loads(gzip.decompress(base64.b64decode(logs)))
+        try:
+            return json.loads(gzip.decompress(base64.b64decode(logs)))
+        except (
+            binascii.Error,
+            zlib.error,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            OSError,
+        ):
+            logger.warning(
+                "taskhistory_log legacy decode failed",
+                extra={
+                    "event": "taskhistory_log_legacy_decode_failed",
+                    "task_history_id": task_history.id,
+                },
+            )
+            return {}
     return logs
 
 
@@ -106,10 +127,13 @@ async def iter_task_history_logs(
                 )
                 continue
             trim = start_offset - chunk.start_offset
+            trimmed = chunk.content.encode("utf-8")[trim:].decode(
+                "utf-8", errors="replace"
+            )
             yield TaskLog(
                 step=chunk.source,
                 type=chunk.stream,
-                msg=chunk.content[trim:],
+                msg=trimmed,
                 offset=chunk.end_offset,
             )
         return
