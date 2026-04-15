@@ -38,7 +38,7 @@ class CheckSeverity(StrEnum):
 class BackupStatus(StrEnum):
     """Status values for a backup entry."""
 
-    PASS = "pass"  # noqa: S105
+    PASS = "pass"  # noqa: S105 # nosec B105
     FAIL = "fail"
     INACTIVE = "inactive"
     UNKNOWN = "unknown"
