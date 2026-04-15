@@ -825,6 +825,7 @@ class TestCheckServiceConnectivity:
         finally:
             sep_app.dependency_overrides.pop(get_created_service, None)
 
+
 def _assert_available_syncers_context(template_spy):
     """Assert the spy captured an ``available_syncers`` context list of two stubs."""
     template_spy.assert_called_once()
