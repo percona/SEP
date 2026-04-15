@@ -54,10 +54,12 @@ async def tasks_list(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Homepage of Tasks Plugin."""
-    context["tasks"] = await tasks_api.get("/")
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get("/")
+    context["tasks"] = response["items"]
+    response = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    context["running_tasks"] = response["items"]
     context["available_backends"] = TaskBackendEnum
     context["available_owners"] = TaskOwner
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
@@ -104,10 +106,12 @@ async def tasks_detail(
     context["tasks"] = [task]
     if not task.is_template:
         context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
-        context["history"] = await tasks_api.get(f"/{task.name}/history/")
-        context["running_tasks"] = await tasks_api.get(
+        response = await tasks_api.get(f"/{task.name}/history/")
+        context["history"] = response["items"]
+        response = await tasks_api.get(
             f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
         )
+        context["running_tasks"] = response["items"]
     context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     context["executor_hosts"] = executor_hosts_ctx.as_template_list()
