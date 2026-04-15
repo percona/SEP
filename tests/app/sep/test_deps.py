@@ -391,9 +391,14 @@ class TestGetTasksContext:
         extra_data = {"success": True, "extra": "extra_data"}
         mock_remote_api.get = AsyncMock(
             side_effect=[
-                [created_service.model_dump()],
-                [task_data],
-                [],
+                {
+                    "items": [created_service.model_dump()],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
+                {"items": [task_data], "total": 1, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
                 [],
             ]
         )
@@ -445,9 +450,14 @@ class TestGetTasksContext:
 
         mock_api.get = AsyncMock(
             side_effect=[
-                [],
-                [task_data],
-                [pending_hist, running_hist, success_hist],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [task_data], "total": 1, "offset": 0, "limit": 50},
+                {
+                    "items": [pending_hist, running_hist, success_hist],
+                    "total": 3,
+                    "offset": 0,
+                    "limit": 50,
+                },
                 [],
             ]
         )
@@ -477,10 +487,25 @@ class TestGetTasksIndexContext:
         mock_tasks_api = AsyncMock()
         mock_tasks_api.get = AsyncMock(
             side_effect=[
-                [{"id": 1, "status": "running"}],
-                [{"id": 2, "status": "pending"}],
+                {
+                    "items": [{"id": 1, "status": "running"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
+                {
+                    "items": [{"id": 2, "status": "pending"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
                 [{"task": "backup-task", "enabled": True}],
-                [{"name": "backup-task", "owner": TaskOwner.BACKUPS}],
+                {
+                    "items": [{"name": "backup-task", "owner": TaskOwner.BACKUPS}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
             ]
         )
         mock_inv_api.get = AsyncMock(
@@ -513,10 +538,10 @@ class TestGetTasksIndexContext:
         mock_tasks_api = AsyncMock()
         mock_tasks_api.get = AsyncMock(
             side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
                 [],
-                [],
-                [],
-                [],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
             ]
         )
         mock_inv_api.get = AsyncMock(return_value={})
@@ -544,8 +569,13 @@ class TestCheckForConflictedRunningTasks:
         mock_api = AsyncMock()
         mock_api.get = AsyncMock(
             side_effect=[
-                [{"id": 1, "status": "running"}],
-                [],
+                {
+                    "items": [{"id": 1, "status": "running"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
             ]
         )
         with pytest.raises(HTTPConflictException):
@@ -557,8 +587,13 @@ class TestCheckForConflictedRunningTasks:
         mock_api = AsyncMock()
         mock_api.get = AsyncMock(
             side_effect=[
-                [],
-                [{"id": 2, "status": "pending"}],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {
+                    "items": [{"id": 2, "status": "pending"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
             ]
         )
         with pytest.raises(HTTPConflictException):
@@ -570,8 +605,8 @@ class TestCheckForConflictedRunningTasks:
         mock_api = AsyncMock()
         mock_api.get = AsyncMock(
             side_effect=[
-                [],
-                [],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
             ]
         )
         await check_for_conflicted_running_tasks("test-task", mock_api)
@@ -673,17 +708,22 @@ class TestGetExecutorHostsContext:
     async def test_returns_enriched_context_when_inventory_succeeds(self) -> None:
         """Assert inventory node names are used as display names."""
         executor_hosts = {"nomad-1": "10.0.0.1", "nomad-2": "10.0.0.2"}
-        inventory_nodes = [
-            {"name": "db-primary", "address": "10.0.0.1"},
-            {"name": "db-replica", "address": "10.0.0.2"},
-        ]
+        inventory_nodes = {
+            "items": [
+                {"name": "db-primary", "address": "10.0.0.1"},
+                {"name": "db-replica", "address": "10.0.0.2"},
+            ],
+            "total": 2,
+            "offset": 0,
+            "limit": 50,
+        }
         mock_inventory_api = AsyncMock()
         mock_inventory_api.get = AsyncMock(return_value=inventory_nodes)
 
         ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "db-replica"
-        mock_inventory_api.get.assert_called_once_with("/")
+        mock_inventory_api.get.assert_called_once_with("/", params={"limit": 0})
 
     @pytest.mark.asyncio
     async def test_returns_fallback_when_inventory_raises(self) -> None:
@@ -702,9 +742,12 @@ class TestGetExecutorHostsContext:
     async def test_matches_by_address(self) -> None:
         """Assert matching is done by address, not by node name."""
         executor_hosts = {"nomad-1": "10.0.0.1", "nomad-2": "10.0.0.2"}
-        inventory_nodes = [
-            {"name": "db-primary", "address": "10.0.0.1"},
-        ]
+        inventory_nodes = {
+            "items": [{"name": "db-primary", "address": "10.0.0.1"}],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
         mock_inventory_api = AsyncMock()
         mock_inventory_api.get = AsyncMock(return_value=inventory_nodes)
 

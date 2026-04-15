@@ -48,6 +48,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
+from app.core.pmm import schedule_annotation
 from app.core.utils import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.tasks.config import tasks_settings
@@ -141,14 +142,20 @@ def execute_task_by_name(
     try:
         task_history = celery.loop.run_until_complete(dispatch_queue_item(task_history))
     except BaseNomadException:
-        alert_msg = f"Failed to dispatch periodic task {periodic_task_name or task_name}: error getting a response from Nomad"
+        alert_msg = (
+            f"Failed to dispatch periodic task "
+            f"{periodic_task_name or task_name}: "
+            f"error getting a response from Nomad"
+        )
         logger.exception(alert_msg)
         if task_history.task.alert_on_fail:
+            dedup_key = f"task:{task_name}:{task_history.execution_request.target}"
             alert_data = {
                 "summary": alert_msg,
                 "source": f"{task_name}:{task_history.execution_request.target}",
                 "severity": AlertSeverity.ERROR,
                 "class": "task_dispatch_failure",
+                "dedup_key": dedup_key,
             }
             if periodic_task_name:
                 alert_data["source"] = f"{periodic_task_name}:{alert_data['source']}"
@@ -291,10 +298,13 @@ async def _dispatch_queue_item(
         await _raise_if_identical_task_conflict(queue_item, session)
         task = await TaskManager.get_root_task(session, queue_item.task)
         executor = get_executor_for_task(task)
-        return await executor.dispatch_task(session, queue_item, task)
+        result = await executor.dispatch_task(session, queue_item, task)
     except Exception:
         logger.exception("Failed to dispatch queue item")
         raise
+    else:
+        schedule_annotation(result, "STARTED")
+        return result
     finally:
         async with lock_session_maker() as async_session:
             await DispatchLockManager.delete(async_session, dispatch_lock)

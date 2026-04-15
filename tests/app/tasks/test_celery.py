@@ -401,6 +401,58 @@ class TestInternalDispatchQueueItem:
 
         mock_delete_lock.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_annotates_started_on_successful_dispatch(self):
+        """Assert annotate_task_event is called with STARTED after dispatch."""
+        from app.tasks.celery import _dispatch_queue_item
+
+        task = _make_task()
+        queue_item = _make_history(task=task)
+        session = _make_session_mock()
+        mock_executor = AsyncMock()
+        dispatched_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
+        mock_executor.dispatch_task.return_value = dispatched_item
+        mock_lock = MagicMock(spec=DispatchLock)
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_make_lock_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.delete_where",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.create",
+                new_callable=AsyncMock,
+                return_value=mock_lock,
+            ),
+            patch(
+                "app.tasks.celery._raise_if_identical_task_conflict",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.get_root_task",
+                new_callable=AsyncMock,
+                return_value=task,
+            ),
+            patch(
+                "app.tasks.celery.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.delete",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery.schedule_annotation",
+            ) as mock_schedule,
+        ):
+            await _dispatch_queue_item(queue_item, session)
+
+        mock_schedule.assert_called_once_with(dispatched_item, "STARTED")
+
 
 class TestRaiseIfIdenticalTaskConflict:
     """Test _raise_if_identical_task_conflict."""

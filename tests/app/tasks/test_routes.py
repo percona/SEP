@@ -22,6 +22,7 @@ import pytest
 import pytest_asyncio
 from fastapi import status
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
@@ -35,6 +36,7 @@ from app.tasks.models import (
 from tests.app.factories import TaskFactory
 
 MOCK_FILE_SIZE = 1024
+PAGINATION_TASK_COUNT = 3
 
 
 @pytest_asyncio.fixture
@@ -51,13 +53,19 @@ async def test_list_tasks_only_returns_active(test_client, session, created_task
     """Assert listing tasks only returns active (non-deleted) tasks."""
     response = test_client.get("/")
     assert response.status_code == status.HTTP_200_OK
-    assert [task["name"] for task in response.json()] == [created_task.name]
+    data = response.json()
+    assert [task["name"] for task in data["items"]] == [created_task.name]
+    assert data["total"] == 1
+    assert data["offset"] == 0
+    assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     await TaskManager.delete_by_name(session, created_task.name)
 
     response = test_client.get("/")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == []
+    data = response.json()
+    assert data["items"] == []
+    assert data["total"] == 0
 
 
 @pytest.mark.asyncio
@@ -150,48 +158,60 @@ async def test_update_task_not_found(test_client):
 
 @pytest.mark.asyncio
 async def test_list_task_history(test_client, created_task_with_history):
-    """Assert listing task history returns history records."""
+    """Assert listing task history returns paginated history records."""
     response = test_client.get("/history/")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == created_task_with_history.id
+    assert data["total"] == 1
+    assert data["offset"] == 0
+    assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+    assert len(data["items"]) == 1
+    assert data["items"][0]["id"] == created_task_with_history.id
 
 
 @pytest.mark.asyncio
 async def test_list_task_history_filter_by_status(
     test_client, created_task_with_history
 ):
-    """Assert filtering task history by status works."""
+    """Assert filtering task history by status works with pagination."""
     response = test_client.get("/history/", params={"status": "success"})
     assert response.status_code == status.HTTP_200_OK
-    assert len(response.json()) == 1
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
 
     response = test_client.get("/history/", params={"status": "failed"})
     assert response.status_code == status.HTTP_200_OK
-    assert len(response.json()) == 0
+    data = response.json()
+    assert data["total"] == 0
+    assert len(data["items"]) == 0
 
 
 @pytest.mark.asyncio
 async def test_get_task_history_by_task_name(test_client, created_task_with_history):
-    """Assert retrieving task history by task name returns matching records."""
+    """Assert retrieving task history by task name returns paginated records."""
     task_name = created_task_with_history.task.name
     response = test_client.get(f"/{task_name}/history/")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == created_task_with_history.id
+    assert data["total"] == 1
+    assert data["offset"] == 0
+    assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+    assert len(data["items"]) == 1
+    assert data["items"][0]["id"] == created_task_with_history.id
 
 
 @pytest.mark.asyncio
 async def test_get_task_history_by_task_name_filter_by_status(
     test_client, created_task_with_history
 ):
-    """Assert filtering task history by task name and status works."""
+    """Assert filtering task history by task name and status returns paginated results."""
     task_name = created_task_with_history.task.name
     response = test_client.get(f"/{task_name}/history/", params={"status": "running"})
     assert response.status_code == status.HTTP_200_OK
-    assert len(response.json()) == 0
+    data = response.json()
+    assert data["total"] == 0
+    assert len(data["items"]) == 0
 
 
 @pytest.mark.asyncio
@@ -566,6 +586,126 @@ async def test_task_data_with_execution_request_keys_returned_as_dict(
     task_json = response.json()
     assert task_json["data"] == conflicting_data
     assert isinstance(task_json["data"], dict)
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_custom_pagination(test_client, session):
+    """Assert custom offset and limit are respected for task listing."""
+    for i in range(PAGINATION_TASK_COUNT):
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name=f"task-{i}")),
+        )
+
+    response = test_client.get("/", params={"offset": 0, "limit": 1})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["total"] == PAGINATION_TASK_COUNT
+    assert data["offset"] == 0
+    assert data["limit"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_offset_beyond_total(test_client, created_task):
+    """Assert offset beyond total returns empty items with correct total."""
+    response = test_client.get("/", params={"offset": 999})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"] == []
+    assert data["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_custom_pagination(
+    test_client, created_task_with_history
+):
+    """Assert custom offset and limit are respected for task history listing."""
+    response = test_client.get("/history/", params={"offset": 0, "limit": 1})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["total"] == 1
+
+    response = test_client.get("/history/", params={"offset": 999})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"] == []
+    assert data["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_task_history_custom_pagination(
+    test_client, created_task_with_history
+):
+    """Assert custom offset and limit are respected for per-task history."""
+    task_name = created_task_with_history.task.name
+    response = test_client.get(
+        f"/{task_name}/history/", params={"offset": 0, "limit": 1}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["total"] == 1
+
+    response = test_client.get(f"/{task_name}/history/", params={"offset": 999})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"] == []
+    assert data["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_filter_with_pagination(test_client, session):
+    """Assert owner filter works together with pagination."""
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="backup-1", owner="BACKUPS")),
+    )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="alter-1", owner="ALTERS")),
+    )
+
+    response = test_client.get("/", params={"owner": "BACKUPS", "limit": 1})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["name"] == "backup-1"
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_status_filter_with_pagination(
+    test_client, created_task_with_history
+):
+    """Assert status filter and pagination work together for task history."""
+    response = test_client.get("/history/", params={"status": "success", "limit": 1})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+
+    response = test_client.get("/history/", params={"status": "failed", "offset": 0})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 0
+    assert data["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_task_history_status_filter_with_pagination(
+    test_client, created_task_with_history
+):
+    """Assert status filter and pagination work together for per-task history."""
+    task_name = created_task_with_history.task.name
+    response = test_client.get(
+        f"/{task_name}/history/", params={"status": "success", "limit": 1}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
 
 
 @pytest.mark.asyncio
