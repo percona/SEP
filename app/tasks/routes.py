@@ -206,7 +206,14 @@ async def execute_task_name(
     queue_item: PreparedTaskHistory,
     task_name: str,
 ) -> TaskHistory:
-    """Send a task for execution."""
+    """Send a task for execution.
+
+    When ``tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK`` is enabled and the
+    task carries ``_connectivity_*`` meta fields, run a Nomad-side connectivity
+    check against the target before dispatch. In ``block`` mode, dispatch is
+    rejected with HTTP 400 on failure; in ``warn`` mode, a warning is logged
+    and dispatch proceeds. ETA-scheduled tasks always skip the check.
+    """
     logger.debug(
         "Dispatching task %s at %s",
         task_name,
