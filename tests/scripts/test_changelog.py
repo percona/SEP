@@ -432,8 +432,8 @@ def test_assemble_multiline_fragment_produces_multiple_entries(repo):
     assert "- SEP-491: Second setting" in content
 
 
-def test_assemble_empty_ticket_list_is_noop(repo):
-    """Passing an empty ticket list leaves CHANGELOG.md and fragments unchanged.
+def test_assemble_empty_ticket_list_is_error(repo):
+    """Passing an empty ticket list is treated as an error and leaves files unchanged.
 
     :param repo: Test repo fixture.
     :type repo: pathlib.Path
