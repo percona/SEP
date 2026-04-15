@@ -49,7 +49,7 @@ repos:
         description: "Validate per-PR changelog fragments under changelog.d/"
         entry: python3 scripts/changelog.py check
         language: system
-        files: ^changelog\.d/.*\.md$
+        files: ^changelog\.d/
         pass_filenames: false
       - id: check-nomad-payload-size
         name: Check Nomad payload size
