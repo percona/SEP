@@ -15,15 +15,22 @@
 
 """Define tests for the app.core.db.utils module."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from sqlalchemy import JSON
 from sqlalchemy.dialects import mysql, postgresql, sqlite
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.sql import column
 from sqlmodel import col
 
-from app.core.db.utils import func_json_extract, get_async_session_maker_from_engine
-from app.tasks.models import TaskHistory
+from app.core.db.utils import (
+    compare_type,
+    func_json_extract,
+    get_async_session_maker_from_engine,
+)
+from app.tasks.models import TaskExecutionRequestJSON, TaskHistory
 
 
 @pytest.mark.asyncio
@@ -190,3 +197,37 @@ def test_func_json_extract_sqlite_path_is_inlined_for_index_match():
     rendered = _compile_postcompile(expression, sqlite.dialect())
     assert "'$.task'" in rendered
     assert "?" not in rendered
+
+
+def test_compare_type_suppresses_diff_for_task_execution_request_json_against_json():
+    """Suppress spurious Alembic diffs when ``TaskExecutionRequestJSON`` meets ``JSON``.
+
+    ``compare_type`` must recognise ``TaskExecutionRequestJSON`` as a subclass
+    of ``AutoJSON`` and return ``False`` so Alembic autogeneration does not
+    propose a no-op type change against an inspected ``JSON`` column.
+    """
+    result = compare_type(
+        context=MagicMock(),
+        inspected_column=MagicMock(),
+        metadata_column=MagicMock(),
+        inspected_type=JSON(),
+        metadata_type=TaskExecutionRequestJSON(),
+    )
+    assert result is False
+
+
+def test_compare_type_suppresses_diff_for_task_execution_request_json_against_jsonb():
+    """Suppress spurious Alembic diffs when ``TaskExecutionRequestJSON`` meets ``JSONB``.
+
+    Pin the contract that flipping ``TaskExecutionRequestJSON`` to inherit
+    from ``AutoJSON`` keeps autogeneration quiet against the ``jsonb`` column
+    that PostgreSQL exposes after the SEP-988 migration runs.
+    """
+    result = compare_type(
+        context=MagicMock(),
+        inspected_column=MagicMock(),
+        metadata_column=MagicMock(),
+        inspected_type=JSONB(),
+        metadata_type=TaskExecutionRequestJSON(),
+    )
+    assert result is False
