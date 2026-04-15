@@ -27,7 +27,7 @@ from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.core.utils import utc_now
 from app.tasks.config import PreExecutionCheckMode
 from app.tasks.connectivity.models import ConnectivityServiceType
-from app.tasks.connectivity.service import _result_cache
+from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.execution.models import BaseExecutor
@@ -835,9 +835,9 @@ class TestPreExecutionConnectivityCheck:
     @pytest.fixture(autouse=True)
     def _clear_cache(self):
         """Clear the connectivity result cache around each test."""
-        _result_cache.clear()
+        _cached_check_connectivity.cache_clear()
         yield
-        _result_cache.clear()
+        _cached_check_connectivity.cache_clear()
 
     @pytest_asyncio.fixture
     async def conn_task(self, session) -> Task:
@@ -869,7 +869,7 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.dispatch_queue_item",
             side_effect=_fake_dispatch_queue_item,
         )
-        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
 
         response = test_client.post(
             f"/execute/{conn_task.name}",
@@ -893,12 +893,9 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mock_response = MagicMock()
-        mock_response.success = True
-        mock_response.error = None
         mocker.patch(
-            "app.tasks.routes.check_connectivity",
-            new=AsyncMock(return_value=mock_response),
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(True, None)),
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
@@ -926,12 +923,9 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mock_response = MagicMock()
-        mock_response.success = False
-        mock_response.error = "Connection refused"
         mocker.patch(
-            "app.tasks.routes.check_connectivity",
-            new=AsyncMock(return_value=mock_response),
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(False, "Connection refused")),
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
@@ -962,12 +956,9 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mock_response = MagicMock()
-        mock_response.success = True
-        mock_response.error = None
         mocker.patch(
-            "app.tasks.routes.check_connectivity",
-            new=AsyncMock(return_value=mock_response),
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(True, None)),
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
@@ -995,12 +986,9 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mock_response = MagicMock()
-        mock_response.success = False
-        mock_response.error = "Connection refused"
         mocker.patch(
-            "app.tasks.routes.check_connectivity",
-            new=AsyncMock(return_value=mock_response),
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(False, "Connection refused")),
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
@@ -1034,7 +1022,7 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
         mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
             side_effect=_fake_dispatch_queue_item,
@@ -1049,10 +1037,10 @@ class TestPreExecutionConnectivityCheck:
         mock_check.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_cached_success_skips_live_check(
+    async def test_check_called_with_parsed_meta(
         self, test_client, mocker, conn_task, mock_executor
     ):
-        """Verify a cached success result skips the live connectivity check."""
+        """Verify ``check_connectivity_with_cache`` receives parsed meta args."""
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.BLOCK,
@@ -1061,11 +1049,10 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mocker.patch(
-            "app.tasks.routes.get_cached_result",
-            return_value=(True, None),
+        mock_check = mocker.patch(
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(True, None)),
         )
-        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
             side_effect=_fake_dispatch_queue_item,
@@ -1077,14 +1064,21 @@ class TestPreExecutionConnectivityCheck:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        mock_check.assert_not_called()
+        mock_check.assert_awaited_once()
+        kwargs = mock_check.await_args.kwargs
+        assert kwargs["target"] == "node1"
+        assert kwargs["host"] == CONNECTIVITY_META["_connectivity_host"]
+        assert kwargs["port"] == int(CONNECTIVITY_META["_connectivity_port"])
+        assert kwargs["service_type"] == ConnectivityServiceType(
+            CONNECTIVITY_META["_connectivity_service_type"]
+        )
         mock_dispatch.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_cached_failure_warn_logs_and_dispatches(
+    async def test_failure_warn_logs_and_dispatches(
         self, test_client, mocker, conn_task, mock_executor
     ):
-        """Verify cached failure in warn mode logs warning and proceeds."""
+        """Verify failure from ``check_connectivity_with_cache`` in warn mode logs and proceeds."""
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.WARN,
@@ -1094,8 +1088,8 @@ class TestPreExecutionConnectivityCheck:
             return_value=mock_executor,
         )
         mocker.patch(
-            "app.tasks.routes.get_cached_result",
-            return_value=(False, "Connection refused"),
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(False, "Connection refused")),
         )
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
@@ -1113,10 +1107,10 @@ class TestPreExecutionConnectivityCheck:
         mock_logger.warning.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_cached_failure_block_returns_400(
+    async def test_failure_block_returns_400(
         self, test_client, mocker, conn_task, mock_executor
     ):
-        """Verify cached failure in block mode returns 400 without live check."""
+        """Verify failure from ``check_connectivity_with_cache`` in block mode returns 400."""
         mocker.patch(
             "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
             PreExecutionCheckMode.BLOCK,
@@ -1126,10 +1120,9 @@ class TestPreExecutionConnectivityCheck:
             return_value=mock_executor,
         )
         mocker.patch(
-            "app.tasks.routes.get_cached_result",
-            return_value=(False, "Connection refused"),
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(False, "Connection refused")),
         )
-        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
             new=AsyncMock(),
@@ -1141,7 +1134,6 @@ class TestPreExecutionConnectivityCheck:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        mock_check.assert_not_called()
         mock_dispatch.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1157,7 +1149,7 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
         mocker.patch(
             "app.tasks.routes.execute_task_queue.apply_async",
             return_value=MagicMock(id="celery-123"),
@@ -1214,7 +1206,7 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
             side_effect=_fake_dispatch_queue_item,
@@ -1275,7 +1267,7 @@ class TestPreExecutionConnectivityCheck:
             "app.tasks.routes.get_executor_for_task",
             return_value=mock_executor,
         )
-        mock_check = mocker.patch("app.tasks.routes.check_connectivity")
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
         mock_dispatch = mocker.patch(
             "app.tasks.routes.dispatch_queue_item",
             side_effect=_fake_dispatch_queue_item,

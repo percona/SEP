@@ -42,11 +42,13 @@ from app.tasks.celery import (
     get_executor_for_task,
 )
 from app.tasks.config import PreExecutionCheckMode, tasks_settings
-from app.tasks.connectivity.models import (
-    ConnectivityCheckWrite,
-    ConnectivityServiceType,
+from app.tasks.connectivity.constants import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
-from app.tasks.connectivity.service import check_connectivity, get_cached_result
+from app.tasks.connectivity.models import ConnectivityServiceType
+from app.tasks.connectivity.service import check_connectivity_with_cache
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
@@ -241,9 +243,9 @@ async def execute_task_name(
 
     check_mode = tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK
     meta = queue_item.task.data.get("Meta", {})
-    conn_host = meta.get("_connectivity_host")
-    conn_port = meta.get("_connectivity_port")
-    conn_type = meta.get("_connectivity_service_type")
+    conn_host = meta.get(CONNECTIVITY_META_HOST_KEY)
+    conn_port = meta.get(CONNECTIVITY_META_PORT_KEY)
+    conn_type = meta.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
     if (
         check_mode != PreExecutionCheckMode.DISABLED
         and conn_host
@@ -265,21 +267,13 @@ async def execute_task_name(
                 conn_type,
             )
         else:
-            cached = get_cached_result(target, parsed_conn_type)
-            if cached is not None:
-                success, error = cached
-            else:
-                result = await check_connectivity(
-                    session,
-                    ConnectivityCheckWrite(
-                        target=target,
-                        host=conn_host,
-                        port=parsed_conn_port,
-                        service_type=parsed_conn_type,
-                        timeout=10,
-                    ),
-                )
-                success, error = result.success, result.error
+            success, error = await check_connectivity_with_cache(
+                session,
+                target=target,
+                host=conn_host,
+                port=parsed_conn_port,
+                service_type=parsed_conn_type,
+            )
             if not success:
                 msg = (
                     f"Pre-execution connectivity check failed for {task_name!r} "

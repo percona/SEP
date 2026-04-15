@@ -16,7 +16,6 @@
 """Test the connectivity check service function."""
 
 import json
-import time
 from itertools import product
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,13 +28,11 @@ from app.tasks.connectivity.models import (
     ConnectivityServiceType,
 )
 from app.tasks.connectivity.service import (
+    _cached_check_connectivity,
     _parse_check_result,
-    _result_cache,
-    cache_result,
     check_connectivity,
-    get_cached_result,
+    check_connectivity_with_cache,
     POLL_INTERVAL,
-    RESULT_CACHE_TTL,
 )
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.models import BaseExecutor
@@ -51,6 +48,15 @@ from app.tasks.models import (
 from tests.app.factories import TaskFactory
 
 MOCK_TASK_HISTORY_ID = 42
+EXPECTED_INDEPENDENT_CALL_COUNT = 2
+
+
+@pytest.fixture(autouse=True)
+def _clear_connectivity_cache():
+    """Clear the ``alru_cache`` before and after every test in this module."""
+    _cached_check_connectivity.cache_clear()
+    yield
+    _cached_check_connectivity.cache_clear()
 
 
 def _make_task(name: str = "run-python") -> MagicMock:
@@ -784,58 +790,64 @@ class TestParseCheckResult:
         assert result.error == "Failed to parse connectivity check output"
 
 
-class TestResultCache:
-    """Test the connectivity result cache functions."""
+class TestCheckConnectivityWithCache:
+    """Test :func:`check_connectivity_with_cache` caching behaviour."""
 
-    @pytest.fixture(autouse=True)
-    def _clear_cache(self):
-        """Clear the result cache before and after each test."""
-        _result_cache.clear()
-        yield
-        _result_cache.clear()
+    @pytest.mark.asyncio
+    async def test_second_call_is_cached(self):
+        """Verify a second identical call short-circuits via ``alru_cache``."""
+        session = MagicMock(spec=AsyncSession)
+        mock_response = MagicMock(success=True, error=None)
+        with patch(
+            "app.tasks.connectivity.service.check_connectivity",
+            new=AsyncMock(return_value=mock_response),
+        ) as mock_check:
+            first = await check_connectivity_with_cache(
+                session,
+                target="node1",
+                host="10.0.0.1",
+                port=3306,
+                service_type=ConnectivityServiceType.MYSQL,
+            )
+            second = await check_connectivity_with_cache(
+                session,
+                target="node1",
+                host="10.0.0.1",
+                port=3306,
+                service_type=ConnectivityServiceType.MYSQL,
+            )
 
-    def test_get_cached_result_miss(self):
-        """Verify ``None`` is returned when no entry exists."""
-        assert get_cached_result("node1", ConnectivityServiceType.MYSQL) is None
+        assert first == (True, None)
+        assert second == (True, None)
+        assert mock_check.await_count == 1
 
-    @pytest.mark.parametrize("service_type", list(ConnectivityServiceType))
-    def test_cache_and_get_success(self, service_type):
-        """Verify a cached success result is returned for every service type."""
-        cache_result("node1", service_type, success=True, error=None)
-        cached = get_cached_result("node1", service_type)
-        assert cached == (True, None)
+    @pytest.mark.asyncio
+    async def test_different_keys_are_independent(self):
+        """Verify entries are keyed by ``(target, host, port, service_type)``."""
+        session = MagicMock(spec=AsyncSession)
+        responses = [
+            MagicMock(success=True, error=None),
+            MagicMock(success=False, error="timeout"),
+        ]
+        with patch(
+            "app.tasks.connectivity.service.check_connectivity",
+            new=AsyncMock(side_effect=responses),
+        ) as mock_check:
+            first = await check_connectivity_with_cache(
+                session,
+                target="node1",
+                host="10.0.0.1",
+                port=3306,
+                service_type=ConnectivityServiceType.MYSQL,
+            )
+            second = await check_connectivity_with_cache(
+                session,
+                target="node2",
+                host="10.0.0.2",
+                port=5432,
+                service_type=ConnectivityServiceType.POSTGRESQL,
+            )
 
-    @pytest.mark.parametrize("service_type", list(ConnectivityServiceType))
-    def test_cache_and_get_failure(self, service_type):
-        """Verify a cached failure result is returned with its error."""
-        cache_result("node1", service_type, success=False, error="Connection refused")
-        cached = get_cached_result("node1", service_type)
-        assert cached == (False, "Connection refused")
-
-    def test_expired_entry_returns_none(self):
-        """Verify expired cache entries are evicted and return ``None``."""
-        key = ("node1", ConnectivityServiceType.MYSQL)
-        _result_cache[key] = (
-            True,
-            None,
-            time.monotonic() - RESULT_CACHE_TTL - 1,
-        )
-        assert get_cached_result("node1", ConnectivityServiceType.MYSQL) is None
-        assert key not in _result_cache
-
-    def test_different_keys_are_independent(self):
-        """Verify cache entries are keyed by ``(target, service_type)``."""
-        cache_result("node1", ConnectivityServiceType.MYSQL, success=True, error=None)
-        cache_result(
-            "node2",
-            ConnectivityServiceType.POSTGRESQL,
-            success=False,
-            error="timeout",
-        )
-
-        assert get_cached_result("node1", ConnectivityServiceType.MYSQL) == (True, None)
-        assert get_cached_result("node2", ConnectivityServiceType.POSTGRESQL) == (
-            False,
-            "timeout",
-        )
-        assert get_cached_result("node1", ConnectivityServiceType.POSTGRESQL) is None
+        assert first == (True, None)
+        assert second == (False, "timeout")
+        assert mock_check.await_count == EXPECTED_INDEPENDENT_CALL_COUNT
