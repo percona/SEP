@@ -127,12 +127,19 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :rtype: TaskHistory
         """
         await self._stop_task(queue_item)
+        was_running = queue_item.status == TaskHistoryStatusEnum.RUNNING
         # TODO(yan): Remove sync_task_history from here as it can keep the db session open for too long
         # SEP-554
         queue_item = await self.sync_task_history(queue_item)
+        sync_emitted_stopped = (
+            was_running and queue_item.status == TaskHistoryStatusEnum.STOPPED
+        )
         queue_item.status = TaskHistoryStatusEnum.STOPPED
         queue_item.finished_at = utc_now()
-        return await TaskHistoryManager.save(session, queue_item)
+        saved = await TaskHistoryManager.save(session, queue_item)
+        if not sync_emitted_stopped:
+            schedule_annotation(saved, "STOPPED")
+        return saved
 
     @abstractmethod
     async def _stop_task(self, queue_item: TaskHistory) -> None:
