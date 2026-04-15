@@ -26,6 +26,7 @@ from app.tasks.celery import dispatch_queue_item, get_executor_for_task
 from app.tasks.connectivity.models import (
     ConnectivityCheckResponse,
     ConnectivityCheckWrite,
+    ConnectivityServiceType,
     REQUIREMENTS_BY_SERVICE_TYPE,
 )
 from app.tasks.crud import TaskHistoryManager
@@ -44,16 +45,20 @@ FRESH_FETCH_MAX_ATTEMPTS = 3
 FRESH_FETCH_INTERVAL = 0.5
 RESULT_CACHE_TTL = 300
 
-_result_cache: dict[tuple[str, str], tuple[bool, str | None, float]] = {}
+_result_cache: dict[
+    tuple[str, ConnectivityServiceType], tuple[bool, str | None, float]
+] = {}
 
 
-def get_cached_result(target: str, service_type: str) -> tuple[bool, str | None] | None:
+def get_cached_result(
+    target: str, service_type: ConnectivityServiceType
+) -> tuple[bool, str | None] | None:
     """Return a cached connectivity check result, or ``None`` if expired or missing.
 
     :param target: The Nomad node name.
     :type target: str
     :param service_type: The database service type.
-    :type service_type: str
+    :type service_type: ConnectivityServiceType
     :return: A tuple of ``(success, error)`` if cached and fresh, otherwise ``None``.
     :rtype: tuple[bool, str | None] | None
     """
@@ -69,14 +74,18 @@ def get_cached_result(target: str, service_type: str) -> tuple[bool, str | None]
 
 
 def cache_result(
-    target: str, service_type: str, *, success: bool, error: str | None
+    target: str,
+    service_type: ConnectivityServiceType,
+    *,
+    success: bool,
+    error: str | None,
 ) -> None:
     """Cache a connectivity check result with the current timestamp.
 
     :param target: The Nomad node name.
     :type target: str
     :param service_type: The database service type.
-    :type service_type: str
+    :type service_type: ConnectivityServiceType
     :param success: Whether the connectivity check succeeded.
     :type success: bool
     :param error: Error message if the check failed.
