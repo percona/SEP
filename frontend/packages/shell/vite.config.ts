@@ -1,35 +1,10 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import path from 'path';
 
-/**
- * percona-ui inlines react-hook-form and creates its own React context for
- * useFormContext(). When no FormProvider wraps the tree the context is null,
- * causing `const { control } = useFormContext()` to throw — even though
- * every input also accepts an explicit `control` prop as fallback.
- *
- * This plugin patches the pre-bundled percona-ui code so the destructure
- * tolerates a null context (falls back to empty object), letting the
- * explicit `control` prop work as intended.
- */
-function perconaUiFormContextPatch(): Plugin {
-  return {
-    name: 'percona-ui-form-context-patch',
-    transform(code, id) {
-      if (!id.includes('@percona') && !id.includes('percona-ui')) return;
-      // Replace destructures of the form context that crash on null:
-      //   const { control: s } = mo()       → const { control: s } = mo() || {}
-      //   const { control: s, formState ... } = mo() → same with || {}
-      if (code.includes('mo()')) {
-        return code.replace(/=\s*mo\(\)/g, '= (mo() || {})');
-      }
-    },
-  };
-}
-
 export default defineConfig({
-  plugins: [perconaUiFormContextPatch(), react(), tsconfigPaths()],
+  plugins: [react(), tsconfigPaths()],
   resolve: {
     dedupe: [
       'react',
