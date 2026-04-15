@@ -33,14 +33,14 @@ from app.tasks.config import tasks_settings
 class AvailableSyncer(NamedTuple):
     """Provide template-facing metadata for an available syncer.
 
-    :ivar name: The fully qualified ``"module.ClassName"`` identifier matching
+    :param name: The fully qualified ``"module.ClassName"`` identifier matching
         ``BaseSyncer.get_name()`` and the value persisted in
         ``SyncInstance.syncer``. Used as the wire identifier in form payloads.
-    :vartype name: str
-    :ivar display_name: The human-readable label rendered in the dropdown
+    :type name: str
+    :param display_name: The human-readable label rendered in the dropdown
         (the syncer class's short name with any trailing ``Syncer`` suffix
         stripped).
-    :vartype display_name: str
+    :type display_name: str
     """
 
     name: str
