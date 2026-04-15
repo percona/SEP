@@ -875,3 +875,164 @@ class PMMRemoteAPI(RemoteAPI):
                         node,
                     )
         return nodes
+
+    async def get_advisor_checks(self) -> list[dict[str, Any]]:
+        """List all advisor checks (enabled and disabled).
+
+        :return: A list of check dictionaries.
+        :rtype: list[dict[str, Any]]
+        """
+        if await self.is_older_than_v3():
+            data = await self.post("/v1/management/SecurityChecks/List", json={})
+        else:
+            data = await self.get("/v1/advisors/checks")
+        return data.get("checks", [])
+
+    async def get_failed_advisor_checks(self) -> list[dict[str, Any]]:
+        """List advisor checks that have failed.
+
+        :return: A list of failed check result dictionaries.
+        :rtype: list[dict[str, Any]]
+        """
+        if await self.is_older_than_v3():
+            data = await self.post(
+                "/v1/management/SecurityChecks/FailedChecks", json={}
+            )
+        else:
+            data = await self.get("/v1/advisors/checks/failed")
+        return data.get("results", [])
+
+    async def start_advisor_checks(
+        self, names: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Trigger execution of advisor checks.
+
+        :param names: Optional list of check names to run. When ``None``, all
+            checks are started.
+        :type names: list[str] | None
+        :return: The API response.
+        :rtype: dict[str, Any]
+        """
+        payload = {"names": names} if names else {}
+        if await self.is_older_than_v3():
+            return await self.post("/v1/management/SecurityChecks/Start", json=payload)
+        return await self.post("/v1/advisors/checks:start", json=payload)
+
+    async def get_grafana_annotations(
+        self,
+        *,
+        type_: str = "alert",
+        from_ts: int | None = None,
+        to_ts: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Fetch Grafana annotations, paginating until all results are retrieved.
+
+        :param type_: Annotation type filter. Defaults to ``"alert"``.
+        :type type_: str
+        :param from_ts: Start timestamp in milliseconds.
+        :type from_ts: int | None
+        :param to_ts: End timestamp in milliseconds.
+        :type to_ts: int | None
+        :param limit: Page size for each request. Defaults to 100.
+        :type limit: int
+        :return: All matching annotations.
+        :rtype: list[dict[str, Any]]
+        """
+        all_annotations: list[dict[str, Any]] = []
+        current_limit = limit
+        last_item: dict[str, Any] | None = None
+
+        while True:
+            params: dict[str, Any] = {"type": type_, "limit": current_limit}
+            if from_ts is not None:
+                params["from"] = from_ts
+            if to_ts is not None:
+                params["to"] = to_ts
+
+            annotations = await self.get("/graph/api/annotations", params=params)
+            if not annotations:
+                break
+            all_annotations = annotations
+            new_last = annotations[-1]
+            if new_last == last_item or len(annotations) < current_limit:
+                break
+            last_item = new_last
+            current_limit += limit
+
+        return all_annotations
+
+    async def query_grafana_datasource(
+        self,
+        expressions: list[str],
+        *,
+        datasource_uid: str,
+        datasource_id: int,
+        from_ts: int | str,
+        to_ts: int | str,
+        max_data_points: int = 1000,
+        instant: bool = True,
+        range_: bool = False,
+    ) -> dict[str, Any]:
+        """Execute a Grafana datasource query with one or more PromQL expressions.
+
+        :param expressions: List of PromQL expressions (one per refId A, B, C ...).
+        :type expressions: list[str]
+        :param datasource_uid: UID of the Grafana datasource.
+        :type datasource_uid: str
+        :param datasource_id: Numeric ID of the Grafana datasource.
+        :type datasource_id: int
+        :param from_ts: Start of the query range (milliseconds or relative string).
+        :type from_ts: int | str
+        :param to_ts: End of the query range.
+        :type to_ts: int | str
+        :param max_data_points: Maximum data points per query. Defaults to 1000.
+        :type max_data_points: int
+        :param instant: Whether queries are instant. Defaults to True.
+        :type instant: bool
+        :param range_: Whether queries are range queries. Defaults to False.
+        :type range_: bool
+        :return: The ``results`` dict keyed by refId (A, B, ...).
+        :rtype: dict[str, Any]
+        """
+        ref_ids = [chr(ord("A") + i) for i in range(len(expressions))]
+        queries = [
+            {
+                "refId": ref_id,
+                "datasource": {"uid": datasource_uid},
+                "expr": expr,
+                "instant": instant,
+                "range": range_,
+                "format": "table",
+                "datasourceId": datasource_id,
+                "maxDataPoints": max_data_points,
+            }
+            for ref_id, expr in zip(ref_ids, expressions, strict=True)
+        ]
+        payload = {
+            "queries": queries,
+            "from": str(from_ts),
+            "to": str(to_ts),
+        }
+        data = await self.post("/graph/api/ds/query", json=payload)
+        return data.get("results", {})
+
+    async def get_grafana_datasources(self) -> list[dict[str, Any]]:
+        """List all Grafana datasources.
+
+        :return: A list of datasource dictionaries.
+        :rtype: list[dict[str, Any]]
+        """
+        return await self.get("/graph/api/datasources")
+
+    async def get_inventory_services_with_agents(self) -> list[dict[str, Any]]:
+        """List services including agent status, for the management endpoint.
+
+        :return: A list of service dicts with nested ``agents`` arrays.
+        :rtype: list[dict[str, Any]]
+        """
+        if await self.is_older_than_v3():
+            data = await self.post("/v1/management/Service/List", json={})
+        else:
+            data = await self.get("/v1/management/services")
+        return data.get("services", [])
