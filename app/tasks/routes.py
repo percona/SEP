@@ -41,6 +41,14 @@ from app.tasks.celery import (
     execute_task_queue,
     get_executor_for_task,
 )
+from app.tasks.config import PreExecutionCheckMode, tasks_settings
+from app.tasks.connectivity.constants import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+)
+from app.tasks.connectivity.models import ConnectivityServiceType
+from app.tasks.connectivity.service import check_connectivity_with_cache
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
@@ -211,7 +219,14 @@ async def execute_task_name(
     queue_item: PreparedTaskHistory,
     task_name: str,
 ) -> TaskHistory:
-    """Send a task for execution."""
+    """Send a task for execution.
+
+    When ``tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK`` is enabled and the
+    task carries ``_connectivity_*`` meta fields, run a Nomad-side connectivity
+    check against the target before dispatch. In ``block`` mode, dispatch is
+    rejected with HTTP 400 on failure; in ``warn`` mode, a warning is logged
+    and dispatch proceeds. ETA-scheduled tasks always skip the check.
+    """
     logger.debug(
         "Dispatching task %s at %s",
         task_name,
@@ -225,6 +240,49 @@ async def execute_task_name(
             f"Failed to dispatch task: Target {queue_item.execution_request.target!r}"
             f"is not available in {executor.__class__.__name__} for task {task_name!r}"
         )
+
+    check_mode = tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK
+    meta = queue_item.task.data.get("Meta", {})
+    conn_host = meta.get(CONNECTIVITY_META_HOST_KEY)
+    conn_port = meta.get(CONNECTIVITY_META_PORT_KEY)
+    conn_type = meta.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
+    if (
+        check_mode != PreExecutionCheckMode.DISABLED
+        and conn_host
+        and conn_port
+        and conn_type
+        and not queue_item.execution_request.eta
+    ):
+        target = queue_item.execution_request.target
+        try:
+            parsed_conn_port = int(conn_port)
+            parsed_conn_type = ConnectivityServiceType(conn_type)
+        except ValueError:
+            logger.warning(
+                "Skipping pre-execution connectivity check for task %r on target %r "
+                "due to malformed connectivity metadata: port=%r, service_type=%r",
+                task_name,
+                target,
+                conn_port,
+                conn_type,
+            )
+        else:
+            success, error = await check_connectivity_with_cache(
+                session,
+                target=target,
+                host=conn_host,
+                port=parsed_conn_port,
+                service_type=parsed_conn_type,
+            )
+            if not success:
+                msg = (
+                    f"Pre-execution connectivity check failed for {task_name!r} "
+                    f"on target {target!r}: {error or 'unknown error'}"
+                )
+                if check_mode == PreExecutionCheckMode.BLOCK:
+                    raise HTTPBadRequestException(msg)
+                logger.warning(msg)
+
     if queue_item.execution_request.eta:
         history_recorded = await TaskHistoryManager.save(session, queue_item)
         await session.refresh(history_recorded, attribute_names=["execution_request"])

@@ -20,6 +20,7 @@ from itertools import product
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.connectivity.models import (
@@ -27,19 +28,35 @@ from app.tasks.connectivity.models import (
     ConnectivityServiceType,
 )
 from app.tasks.connectivity.service import (
+    _cached_check_connectivity,
     _parse_check_result,
     check_connectivity,
+    check_connectivity_with_cache,
     POLL_INTERVAL,
 )
+from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskLog,
     TaskLogType,
+    TaskWrite,
 )
+from tests.app.factories import TaskFactory
 
 MOCK_TASK_HISTORY_ID = 42
+EXPECTED_INDEPENDENT_CALL_COUNT = 2
+
+
+@pytest.fixture(autouse=True)
+def _clear_connectivity_cache():
+    """Clear the ``alru_cache`` before and after every test in this module."""
+    _cached_check_connectivity.cache_clear()
+    yield
+    _cached_check_connectivity.cache_clear()
 
 
 def _make_task(name: str = "run-python") -> MagicMock:
@@ -602,6 +619,113 @@ class TestCheckConnectivity:
         assert "timed out" in result.error
 
 
+@pytest.mark.asyncio
+class TestCheckConnectivityRealSession:
+    """Exercise ``check_connectivity`` against a real ``AsyncSession``.
+
+    The unit tests above use ``AsyncMock(spec=AsyncSession)``, which hides a
+    class of greenlet-bridge bugs: the ``execution_request`` column on
+    ``TaskHistory`` is declared ``deferred=True`` (``app/tasks/models.py``),
+    so a plain ``session.refresh(instance)`` leaves the attribute unloaded.
+    If the executor's ``sync_task_history`` path then touches
+    ``queue_item.execution_request`` from plain sync code, SQLAlchemy fires
+    a lazy-load callable outside the async greenlet and raises
+    ``MissingGreenlet``. These tests run the service against a real
+    ``aiosqlite`` session so the regression is observable.
+    """
+
+    @pytest_asyncio.fixture
+    async def run_python_task(self, session: AsyncSession) -> Task:
+        """Persist a ``run-python`` task row in the test DB."""
+        task_write = TaskWrite.model_validate(
+            TaskFactory.build(
+                name="run-python",
+                backend=TaskBackendEnum.NOMAD,
+                is_template=False,
+                protected=False,
+                alert_on_fail=False,
+            )
+        )
+        return await TaskManager.create(session, task_write)
+
+    async def test_deferred_execution_request_survives_sync_executor(
+        self,
+        session: AsyncSession,
+        run_python_task: Task,
+    ) -> None:
+        """Verify the polling loop survives the deferred-column lazy-load race.
+
+        Reproduces the runtime bug surfaced by SEP-935 e2e QA: after the
+        production ``dispatch_queue_item`` commits and refreshes the fresh
+        ``TaskHistory``, the ``execution_request`` attribute is **unloaded**
+        because of the deferred ``column_property``. The very first polling
+        iteration then hands the stale ORM instance to
+        ``NomadExecutor._sync_task_history`` → ``get_allocation_for_task_history``,
+        which synchronously reads ``queue_item.execution_request.tracking``
+        and triggers ``MissingGreenlet`` against the async ``aiosqlite``
+        driver.
+
+        The mock executor here replicates that sync attribute touch. The
+        test must not raise ``MissingGreenlet`` and must return a
+        ``ConnectivityCheckResponse`` derived from the re-fetched DB row.
+        """
+        request = ConnectivityCheckWrite(
+            target="node1",
+            host="db-host",
+            port=3306,
+            service_type=ConnectivityServiceType.MYSQL,
+            timeout=POLL_INTERVAL,
+        )
+
+        async def real_dispatch(
+            queue_item: TaskHistory, db: AsyncSession
+        ) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.RUNNING
+            queue_item.execution_request.tracking.update(
+                evaluation_id="eval-1", job_id="job-1"
+            )
+            saved = await TaskHistoryManager.save(
+                db, queue_item, flag_modified_fields=["execution_request"]
+            )
+            # Production reload: deferred column_property is left unloaded
+            # so a plain attribute read would trip MissingGreenlet.
+            await db.refresh(saved)
+            return saved
+
+        captured_history_id = []
+
+        async def sync_task_history(queue_item: TaskHistory) -> TaskHistory:
+            # Simulates NomadExecutor._sync_task_history reading tracking
+            # from plain sync code within the async call chain — this is
+            # where the lazy-load raises MissingGreenlet pre-fix.
+            _ = queue_item.execution_request.tracking.get("allocation_id")
+            captured_history_id.append(queue_item.id)
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            queue_item.execution_request.tracking["allocation_id"] = "alloc-1"
+            return queue_item
+
+        mock_executor = MagicMock(spec=BaseExecutor)
+        mock_executor.sync_task_history = sync_task_history
+
+        with (
+            patch(
+                "app.tasks.connectivity.service.dispatch_queue_item",
+                side_effect=real_dispatch,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
+        ):
+            result = await check_connectivity(session, request)
+
+        assert captured_history_id, "sync_task_history was never invoked"
+        assert result.task_history_id == captured_history_id[0]
+        assert result.success is False
+        assert result.error == "Failed to parse connectivity check output"
+
+
 class TestParseCheckResult:
     """Test the _parse_check_result helper."""
 
@@ -664,3 +788,66 @@ class TestParseCheckResult:
         result = _parse_check_result(history)
         assert result.success is False
         assert result.error == "Failed to parse connectivity check output"
+
+
+class TestCheckConnectivityWithCache:
+    """Test :func:`check_connectivity_with_cache` caching behaviour."""
+
+    @pytest.mark.asyncio
+    async def test_second_call_is_cached(self):
+        """Verify a second identical call short-circuits via ``alru_cache``."""
+        session = MagicMock(spec=AsyncSession)
+        mock_response = MagicMock(success=True, error=None)
+        with patch(
+            "app.tasks.connectivity.service.check_connectivity",
+            new=AsyncMock(return_value=mock_response),
+        ) as mock_check:
+            first = await check_connectivity_with_cache(
+                session,
+                target="node1",
+                host="10.0.0.1",
+                port=3306,
+                service_type=ConnectivityServiceType.MYSQL,
+            )
+            second = await check_connectivity_with_cache(
+                session,
+                target="node1",
+                host="10.0.0.1",
+                port=3306,
+                service_type=ConnectivityServiceType.MYSQL,
+            )
+
+        assert first == (True, None)
+        assert second == (True, None)
+        assert mock_check.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_different_keys_are_independent(self):
+        """Verify entries are keyed by ``(target, host, port, service_type)``."""
+        session = MagicMock(spec=AsyncSession)
+        responses = [
+            MagicMock(success=True, error=None),
+            MagicMock(success=False, error="timeout"),
+        ]
+        with patch(
+            "app.tasks.connectivity.service.check_connectivity",
+            new=AsyncMock(side_effect=responses),
+        ) as mock_check:
+            first = await check_connectivity_with_cache(
+                session,
+                target="node1",
+                host="10.0.0.1",
+                port=3306,
+                service_type=ConnectivityServiceType.MYSQL,
+            )
+            second = await check_connectivity_with_cache(
+                session,
+                target="node2",
+                host="10.0.0.2",
+                port=5432,
+                service_type=ConnectivityServiceType.POSTGRESQL,
+            )
+
+        assert first == (True, None)
+        assert second == (False, "timeout")
+        assert mock_check.await_count == EXPECTED_INDEPENDENT_CALL_COUNT

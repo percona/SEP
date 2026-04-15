@@ -16,6 +16,7 @@
 """Define settings for the Tasks app."""
 
 from datetime import timedelta
+from enum import StrEnum
 from typing import ClassVar
 
 from app.core.config import BaseYamlAppSettings
@@ -23,6 +24,22 @@ from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.utils.lazy import LazyProxy
 from app.tasks.execution.executors.nomad import NomadExecutor
+
+
+class PreExecutionCheckMode(StrEnum):
+    """Define modes for the pre-execution connectivity check.
+
+    :cvar DISABLED: No connectivity check is performed before task dispatch.
+    :vartype DISABLED: str
+    :cvar WARN: Check runs before dispatch; logs a warning on failure but proceeds.
+    :vartype WARN: str
+    :cvar BLOCK: Check runs before dispatch; blocks dispatch on failure with an error.
+    :vartype BLOCK: str
+    """
+
+    DISABLED = "disabled"
+    WARN = "warn"
+    BLOCK = "block"
 
 
 class TasksSettings(BaseYamlAppSettings):
@@ -40,7 +57,7 @@ class TasksSettings(BaseYamlAppSettings):
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
     :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
-        Use `False` to disable the middleware completely.
+        Use ``False`` to disable the middleware completely.
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
     :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Defaults to 5
         minutes.
@@ -48,6 +65,9 @@ class TasksSettings(BaseYamlAppSettings):
     :param INVENTORY_SYNC_API_KEY: The PMM API key used for scheduled inventory sync
         execution. Defaults to None, meaning scheduled sync is not configured.
     :type INVENTORY_SYNC_API_KEY: str | None
+    :param PRE_EXECUTION_CONNECTIVITY_CHECK: The mode for pre-execution connectivity
+        checks. Defaults to ``PreExecutionCheckMode.WARN``.
+    :type PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -59,6 +79,8 @@ class TasksSettings(BaseYamlAppSettings):
     )
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
     INVENTORY_SYNC_API_KEY: str | None = None
+
+    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = PreExecutionCheckMode.WARN
 
 
 tasks_settings: TasksSettings = LazyProxy(TasksSettings)
