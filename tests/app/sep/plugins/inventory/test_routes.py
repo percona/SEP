@@ -445,6 +445,36 @@ class TestCheckServiceConnectivity:
     @pytest.mark.parametrize(
         "service_type",
         [
+            ServiceTypeEnum.PROXYSQL,
+            ServiceTypeEnum.HAPROXY,
+            ServiceTypeEnum.EXTERNAL,
+        ],
+    )
+    def test_connectivity_check_rejects_unsupported_service_type(
+        self,
+        test_client,
+        created_node,
+        mock_tasks_api_dep,
+        service_type,
+    ):
+        """Verify the route rejects unsupported service types server-side."""
+        service = CreatedServiceFactory.build(type=service_type, port=3306)
+        service.node = created_node
+        sep_app.dependency_overrides[get_created_service] = lambda: service
+        try:
+            response = test_client.post(
+                f"/inventory/services/{service.id}/check-connectivity/",
+                follow_redirects=False,
+            )
+        finally:
+            sep_app.dependency_overrides.pop(get_created_service, None)
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == f"/inventory/services/{service.id}"
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "service_type",
+        [
             ServiceTypeEnum.MYSQL,
             ServiceTypeEnum.POSTGRESQL,
             ServiceTypeEnum.MONGODB,

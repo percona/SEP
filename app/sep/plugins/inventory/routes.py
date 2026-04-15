@@ -213,6 +213,15 @@ async def check_service_connectivity(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Check database connectivity for a service via Nomad."""
+    if service.type not in CONNECTABLE_SERVICE_TYPES:
+        messages.error(
+            request,
+            f"Connectivity check is not supported for {service.type.name} services",
+        )
+        return RedirectResponse(
+            f"/inventory/services/{service.id}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
     if service.node is None or service.port is None:
         messages.error(
             request,
