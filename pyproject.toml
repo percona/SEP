@@ -269,7 +269,7 @@ order-by-type = false
 "app/core/config.py" = ["ARG003"]
 "app/core/utils/fields.py" = ["TRY004"] # Pydantic validation code should raise ValueError
 "celery.py" = ["ARG001"]
-"test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001", "PT018"]
+"test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
 "scripts/*.py" = ["T201"] # CLI scripts use print() for user-facing output
 
