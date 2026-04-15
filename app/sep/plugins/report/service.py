@@ -388,7 +388,10 @@ async def collect_backups(
 
     status_frames = results.get("A", {}).get("frames", [])
     by_host: dict[str, int] = defaultdict(int)
-    by_status: dict[str, int] = defaultdict(int, {"pass": 0, "fail": 0, "inactive": 0})
+    by_status: dict[str, int] = defaultdict(
+        int,
+        {BackupStatus.PASS: 0, BackupStatus.FAIL: 0, BackupStatus.INACTIVE: 0},
+    )
     by_type: dict[str, int] = defaultdict(int)
     failed: list[BackupEntry] = []
     all_backups: list[BackupEntry] = []
