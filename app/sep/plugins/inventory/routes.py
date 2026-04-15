@@ -214,25 +214,23 @@ async def check_service_connectivity(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Check database connectivity for a service via Nomad."""
+    redirect = RedirectResponse(
+        f"/inventory/services/{service.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
     if service.type not in CONNECTABLE_SERVICE_TYPES:
         messages.error(
             request,
             f"Connectivity check is not supported for {service.type.name} services",
         )
-        return RedirectResponse(
-            f"/inventory/services/{service.id}",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+        return redirect
     if service.node is None or service.port is None:
         messages.error(
             request,
             f"Connectivity check failed for {service.name}: "
             "missing node or port information",
         )
-        return RedirectResponse(
-            f"/inventory/services/{service.id}",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+        return redirect
     try:
         result = ConnectivityCheckResponse.model_validate(
             await tasks_api.post(
@@ -273,10 +271,7 @@ async def check_service_connectivity(
             f"Connectivity check failed for {service.name}: "
             "could not reach the Tasks API",
         )
-    return RedirectResponse(
-        f"/inventory/services/{service.id}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+    return redirect
 
 
 @router.post("/{node_id}/services/", dependencies=[IsAuthenticated, IsCsrfValidated])
