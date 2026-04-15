@@ -224,9 +224,9 @@ def test_compare_type_suppresses_diff_for_task_execution_request_json_against_js
     that PostgreSQL exposes after the SEP-988 migration runs.
     """
     result = compare_type(
-        context=None,  # type: ignore[arg-type]
-        inspected_column=None,  # type: ignore[arg-type]
-        metadata_column=None,  # type: ignore[arg-type]
+        context=MagicMock(),
+        inspected_column=MagicMock(),
+        metadata_column=MagicMock(),
         inspected_type=JSONB(),
         metadata_type=TaskExecutionRequestJSON(),
     )

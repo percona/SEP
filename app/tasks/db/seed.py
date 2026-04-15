@@ -506,7 +506,8 @@ async def verify_taskhistory_execution_request_is_jsonb() -> None:
         result = await session.execute(
             text(
                 "SELECT data_type FROM information_schema.columns "
-                "WHERE table_name = 'taskhistory' "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = 'taskhistory' "
                 "AND column_name = 'execution_request'"
             )
         )
