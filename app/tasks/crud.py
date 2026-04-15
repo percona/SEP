@@ -19,7 +19,7 @@ import logging
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 
-from sqlalchemy import CursorResult, update
+from sqlalchemy import CursorResult, literal, update
 from sqlalchemy.orm import aliased
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -295,6 +295,10 @@ class TaskHistoryLogManager(BaseSQLModelManager):
     async def exists_for_task(cls, session: AsyncSession, task_history_id: int) -> bool:
         """Return ``True`` when at least one chunk exists for the task history.
 
+        Uses a ``SELECT 1 ... LIMIT 1`` short-circuit query so the database
+        can stop scanning as soon as it finds the first matching row instead
+        of counting every chunk.
+
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
         :type session: AsyncSession
@@ -303,7 +307,45 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         :return: Whether any chunk rows exist for the task history.
         :rtype: bool
         """
-        return await cls.count(session, task_history_id=task_history_id) > 0
+        query = (
+            select(literal(1))
+            .where(col(TaskHistoryLog.task_history_id) == task_history_id)
+            .limit(1)
+        )
+        result = await session.execute(query)
+        return result.first() is not None
+
+    @classmethod
+    async def list_chunks_for_task(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+    ) -> list[TaskHistoryLog]:
+        """Return every chunk row for a task history eagerly, ordered for readback.
+
+        Eager helper intended for tests and one-shot admin tooling; the
+        streaming :meth:`iter_chunks` remains the API for production readers.
+        Rows are returned in ``(source, stream, start_offset)`` order.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :type session: AsyncSession
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :type task_history_id: int
+        :return: A list of chunk rows for the task history, oldest first.
+        :rtype: list[TaskHistoryLog]
+        """
+        query = (
+            select(TaskHistoryLog)
+            .where(col(TaskHistoryLog.task_history_id) == task_history_id)
+            .order_by(
+                col(TaskHistoryLog.source),
+                col(TaskHistoryLog.stream),
+                col(TaskHistoryLog.start_offset),
+            )
+        )
+        result = await cls._exec(session, query)
+        return list(result.all())
 
     @classmethod
     async def iter_chunks(
@@ -380,10 +422,10 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         stmt = idempotent_insert(session.get_bind().name, TaskHistoryLog).values(
             task_history_id=task_history_id,
             source=source,
-            stream=stream.value,
+            stream=stream,
             start_offset=start_offset,
             end_offset=start_offset + len(chunk),
-            content=chunk.decode("utf-8"),
+            content=chunk.decode("utf-8", errors="replace"),
             created_at=now,
         )
         await session.execute(stmt)
@@ -557,7 +599,7 @@ class TaskHistoryLogStateManager(BaseManager):
         stmt = idempotent_insert(session.get_bind().name, TaskHistoryLogState).values(
             task_history_id=task_history_id,
             source=source,
-            stream=stream.value,
+            stream=stream,
             persisted_offset=persisted_offset,
             producer_offset=producer_offset,
             staging=staging,
