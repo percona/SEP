@@ -1,0 +1,38 @@
+# Store main-branch coverage data so PR coverage comments can display
+# evolution (old% -> new%). The py-cov-action commits coverage JSON to
+# the python-coverage-comment-action-data branch on pushes to main, and
+# subsequent PR runs read from it to compute the delta.
+
+name: Coverage (main)
+
+on:
+  push:
+    branches:
+    - main
+
+permissions:
+  contents: write
+
+jobs:
+  store-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: "3.11.9"
+          cache: poetry
+
+      - name: Install test dependencies
+        run: poetry install --with syncmysql
+
+      - name: Run tests
+        run: make test
+
+      - name: Store coverage data on data branch
+        uses: py-cov-action/python-coverage-comment-action@7188638f871f721a365d644f505d1ff3df20d683 # v3.40
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
