@@ -18,7 +18,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import BackgroundTasks, status
+from fastapi import BackgroundTasks, HTTPException, status
 
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum, SourceEnum
@@ -471,6 +471,22 @@ class TestCheckServiceConnectivity:
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{service.id}"
         mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_http_exception_surfaces_detail(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Verify HTTPException from Tasks API is handled and does not blow up."""
+        mock_tasks_api_dep.post.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Nomad unavailable",
+        )
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
 
     @pytest.mark.parametrize(
         "service_type",

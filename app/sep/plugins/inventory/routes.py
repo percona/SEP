@@ -18,7 +18,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request, status
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.inventory.models import ServiceTypeEnum
@@ -253,6 +253,16 @@ async def check_service_connectivity(
                 f"Connectivity check failed for {service.name}: "
                 f"{result.get('error', 'Unknown error')}",
             )
+    except HTTPException as exc:
+        logger.warning(
+            "Connectivity check API error for service %s: %s",
+            service.id,
+            exc.detail,
+        )
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: {exc.detail}",
+        )
     except Exception:
         logger.exception("Connectivity check failed for service %s", service.id)
         messages.error(
