@@ -272,7 +272,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         queue_item = await self._sync_task_history(queue_item)
         if queue_item.task.alert_on_fail:
             await queue_item.alert_for_status()
-        if was_running and queue_item.status != TaskHistoryStatusEnum.RUNNING:
+        if was_running:
             event = _TERMINAL_STATUS_EVENT_MAP.get(queue_item.status)
             if event:
                 schedule_annotation(queue_item, event)
