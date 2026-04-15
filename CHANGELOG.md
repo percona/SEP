@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
 - SEP-928: Inventory Sync split button — the chevron next to the existing sync-all control opens a dropdown that lets DBAs run a single configured syncer instead of waiting for the full chain
 - SEP-932: Database connectivity check endpoint via Nomad task dispatch (MySQL, PostgreSQL, MongoDB)
+- SEP-933: Manual connectivity check button on inventory service detail page
 - SEP-935: Pre-execution connectivity check before Nomad task dispatch with configurable mode (disabled/warn/block) and result caching
 
 ### Changed
