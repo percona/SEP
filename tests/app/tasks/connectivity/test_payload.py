@@ -15,6 +15,7 @@
 
 """Test the connectivity check payload script."""
 
+import json
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -199,8 +200,15 @@ class TestCheckMongoDB:
 class TestMain:
     """Test the payload main entry point."""
 
-    def test_dispatches_to_correct_checker(self, mock_myloginpath, mock_pymysql):
-        """Verify main dispatches to the correct checker function."""
+    def test_reads_config_from_file_path(
+        self, tmp_path, mock_myloginpath, mock_pymysql
+    ):
+        """Verify main reads the JSON config from the path given by ``--config``.
+
+        The Nomad ``run-python`` task invokes the script with
+        ``--config ${NOMAD_TASK_DIR}/script_config`` — a file path, not an inline
+        JSON string. The script must open and parse that file.
+        """
         mock_myloginpath.parse.return_value = {}
         mock_conn = MagicMock()
         mock_pymysql.connect.return_value = mock_conn
@@ -208,21 +216,35 @@ class TestMain:
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        config = '{"service_type": "MYSQL", "host": "db-host", "port": 3306}'
-        with patch("sys.argv", ["payload.py", "--config", config]):
+        config_path = tmp_path / "script_config"
+        config_path.write_text(
+            json.dumps({"service_type": "MYSQL", "host": "db-host", "port": 3306})
+        )
+
+        with patch("sys.argv", ["payload.py", "--config", str(config_path)]):
             from app.tasks.connectivity.payload import main
 
             main()
 
-        mock_pymysql.connect.assert_called_once()
+        mock_pymysql.connect.assert_called_once_with(
+            host="db-host",
+            port=3306,
+            connect_timeout=10,
+            user=None,
+            password=None,
+        )
 
-    def test_unknown_service_type_raises(self):
+    def test_unknown_service_type_raises(self, tmp_path):
         """Verify KeyError raised for unsupported service type."""
         from app.tasks.connectivity.payload import main
 
-        config = '{"service_type": "REDIS", "host": "db-host", "port": 6379}'
+        config_path = tmp_path / "script_config"
+        config_path.write_text(
+            json.dumps({"service_type": "REDIS", "host": "db-host", "port": 6379})
+        )
+
         with (
-            patch("sys.argv", ["payload.py", "--config", config]),
+            patch("sys.argv", ["payload.py", "--config", str(config_path)]),
             pytest.raises(KeyError),
         ):
             main()
