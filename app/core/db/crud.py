@@ -217,8 +217,9 @@ class BaseManager:
         :param offset: The zero-based starting offset for the query results,
             or ``None`` when pagination is not requested.
         :type offset: int | None
-        :param limit: The maximum number of records to return, or ``None`` when
-            pagination is not requested.
+        :param limit: The maximum number of records to return, ``0`` to disable
+            the limit (return all rows), or ``None`` when pagination is not
+            requested.
         :type limit: int | None
         :raises ValueError: If ``offset`` or ``limit`` is negative.
         """
@@ -261,7 +262,7 @@ class BaseManager:
                 pk_query = pk_query.order_by(*ordering)
             if offset is not None:
                 pk_query = pk_query.offset(offset)
-            if limit is not None:
+            if limit:
                 pk_query = pk_query.limit(limit)
             pk_result = await cls._exec(session, pk_query)
             page_ids = list(pk_result.all())
@@ -283,7 +284,7 @@ class BaseManager:
                 query = query.order_by(*ordering)
             if offset is not None:
                 query = query.offset(offset)
-            if limit is not None:
+            if limit:
                 query = query.limit(limit)
 
         result = await cls._exec(session, query)

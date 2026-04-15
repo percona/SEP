@@ -212,7 +212,7 @@ def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    mock_inventory_api_dep.get.assert_any_await("/")
+    mock_inventory_api_dep.get.assert_any_await("/", params={"limit": 0})
     mock_task_api_dep.get.assert_any_await("/periodic/")
 
 
