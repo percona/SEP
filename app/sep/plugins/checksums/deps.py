@@ -261,7 +261,8 @@ async def get_checksums_task_names_by_status(
     :return: The set of checksum task names that have at least one matching history.
     :rtype: set[str]
     """
-    histories = await tasks_api.get("/history/", params={"status": status})
+    response = await tasks_api.get("/history/", params={"status": status})
+    histories = response["items"]
     return {
         history["task"]["name"]
         for history in histories
@@ -292,8 +293,8 @@ async def get_checksums_task_status(
     :return: The latest known task status, or ``None`` if no history exists.
     :rtype: TaskHistoryStatusEnum | None
     """
-    histories = await tasks_api.get(f"/{task_name}/history/")
-    return _extract_latest_task_status(histories)
+    response = await tasks_api.get(f"/{task_name}/history/")
+    return _extract_latest_task_status(response["items"])
 
 
 def build_checksums_api_task_response(
@@ -336,8 +337,8 @@ async def get_checksums_api_task_responses(
         return []
 
     params = {"owner": TaskOwner.CHECKSUMS.value}
-    raw_tasks = await tasks_api.get("/", params=params)
-    tasks = [Task.model_validate(task) for task in raw_tasks]
+    response = await tasks_api.get("/", params=params)
+    tasks = [Task.model_validate(task) for task in response["items"]]
     task_status_pairs = [
         (task, await get_checksums_task_status(task.name, tasks_api)) for task in tasks
     ]

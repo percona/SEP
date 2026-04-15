@@ -817,7 +817,7 @@ async def test_perform_service_sync(created_service, created_node, pmmsyncer):
         name="Remote Service",
     )
     pmmsyncer.inventory_api.get.side_effect = [
-        [created_node.model_dump()],
+        {"items": [created_node.model_dump()], "total": 1, "offset": 0, "limit": 50},
     ]
     pmmsyncer.inventory_api.put.side_effect = [created_service.model_dump()]
 
@@ -852,7 +852,9 @@ async def test_perform_node_sync(created_node, pmmsyncer, mocker):
 async def test_perform_inventory_sync(created_node, pmmsyncer, mocker):
     """Test performing the inventory synchronization process."""
     pmmsyncer.break_on_error = False
-    pmmsyncer.inventory_api.get.side_effect = [[created_node.model_dump()]]
+    pmmsyncer.inventory_api.get.side_effect = [
+        {"items": [created_node.model_dump()], "total": 1, "offset": 0, "limit": 50},
+    ]
 
     # No nodes returned from PMM -> inventory nodes should be deleted
     pmmsyncer.pmm_api.get_nodes = AsyncMock(return_value=[])
@@ -877,7 +879,9 @@ async def test_perform_inventory_sync_break_on_error_true_calls_get_nodes_with_s
 ):
     """Test perform_inventory_sync passes skip_failed=False when break_on_error=True."""
     pmmsyncer.break_on_error = True
-    pmmsyncer.inventory_api.get.side_effect = [[created_node.model_dump()]]
+    pmmsyncer.inventory_api.get.side_effect = [
+        {"items": [created_node.model_dump()], "total": 1, "offset": 0, "limit": 50},
+    ]
     pmmsyncer.pmm_api.get_nodes = AsyncMock(return_value=[])
 
     mocker.patch(

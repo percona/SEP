@@ -201,6 +201,7 @@ async def build_alters_task_payload(
                 "target": form.hostname,
                 "_schema_name": schema_name,
                 "_table_name": table_name,
+                "_service_name": service.name,
                 "_service_host": service.node.address,
                 "_service_port": service.port,
                 "_pre_checks_mysql_config_file": (

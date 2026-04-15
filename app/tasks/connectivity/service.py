@@ -16,17 +16,21 @@
 """Define the connectivity check service logic."""
 
 import asyncio
+import contextvars
 import json
 from pathlib import Path
 from typing import Any, cast
 
+from async_lru import alru_cache
 from sqlalchemy.orm import QueryableAttribute, undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
+from app.tasks.connectivity.constants import CONNECTIVITY_CHECK_TIMEOUT
 from app.tasks.connectivity.models import (
     ConnectivityCheckResponse,
     ConnectivityCheckWrite,
+    ConnectivityServiceType,
     REQUIREMENTS_BY_SERVICE_TYPE,
 )
 from app.tasks.crud import TaskHistoryManager
@@ -43,6 +47,85 @@ PAYLOAD_PATH = Path(__file__).parent / "payload.py"
 POLL_INTERVAL = 2
 FRESH_FETCH_MAX_ATTEMPTS = 3
 FRESH_FETCH_INTERVAL = 0.5
+RESULT_CACHE_TTL = 300
+RESULT_CACHE_MAXSIZE = 128
+
+_cached_check_session_ctx: contextvars.ContextVar[AsyncSession] = (
+    contextvars.ContextVar("_cached_check_session_ctx")
+)
+
+
+@alru_cache(maxsize=RESULT_CACHE_MAXSIZE, ttl=RESULT_CACHE_TTL)
+async def _cached_check_connectivity(
+    target: str,
+    host: str,
+    port: int,
+    service_type: ConnectivityServiceType,
+) -> tuple[bool, str | None]:
+    """Run ``check_connectivity`` and cache the (success, error) result.
+
+    The ``AsyncSession`` is NOT part of the cache key — it is resolved at
+    call time via :data:`_cached_check_session_ctx`, which the public
+    :func:`check_connectivity_with_cache` wrapper sets on each invocation.
+    Using ``alru_cache`` keeps the cache consistent with the rest of the
+    codebase (see ``app/core/auth/providers/casdoor.py``).
+
+    :param target: The Nomad node name.
+    :type target: str
+    :param host: The database host address.
+    :type host: str
+    :param port: The database port.
+    :type port: int
+    :param service_type: The database service type.
+    :type service_type: ConnectivityServiceType
+    :return: A tuple of ``(success, error)``.
+    :rtype: tuple[bool, str | None]
+    """
+    session = _cached_check_session_ctx.get()
+    request = ConnectivityCheckWrite(
+        target=target,
+        host=host,
+        port=port,
+        service_type=service_type,
+        timeout=CONNECTIVITY_CHECK_TIMEOUT,
+    )
+    result = await check_connectivity(session, request)
+    return result.success, result.error
+
+
+async def check_connectivity_with_cache(
+    session: AsyncSession,
+    *,
+    target: str,
+    host: str,
+    port: int,
+    service_type: ConnectivityServiceType,
+) -> tuple[bool, str | None]:
+    """Run :func:`check_connectivity` with results cached by target+type.
+
+    Results for a given ``(target, host, port, service_type)`` tuple are
+    cached for ``RESULT_CACHE_TTL`` seconds via :func:`async_lru.alru_cache`.
+    The session is passed through a :class:`~contextvars.ContextVar` so it
+    does not participate in the cache key.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param target: The Nomad node name.
+    :type target: str
+    :param host: The database host address.
+    :type host: str
+    :param port: The database port.
+    :type port: int
+    :param service_type: The database service type.
+    :type service_type: ConnectivityServiceType
+    :return: A tuple of ``(success, error)``.
+    :rtype: tuple[bool, str | None]
+    """
+    token = _cached_check_session_ctx.set(session)
+    try:
+        return await _cached_check_connectivity(target, host, port, service_type)
+    finally:
+        _cached_check_session_ctx.reset(token)
 
 
 async def check_connectivity(
@@ -90,6 +173,7 @@ async def check_connectivity(
     if queue_item.id is None:
         raise RuntimeError("dispatch_queue_item returned a queue item without an ID")
     queue_item_id = queue_item.id
+    await session.refresh(queue_item, attribute_names=["execution_request"])
 
     queue_item = await _expire_and_fetch(session, queue_item_id)
 
@@ -170,6 +254,13 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
       ``NomadExecutor.get_allocation_for_task_history``) triggers a
       lazy-load SELECT outside the greenlet bridge, raising
       ``MissingGreenlet`` on aiosqlite/asyncpg.
+
+    The ``execution_request`` column is declared as a deferred
+    ``column_property`` on :class:`TaskHistory`, so the re-fetch must
+    explicitly ``undefer`` it — otherwise the attribute is left unloaded
+    and any downstream sync-context read (e.g. ``iter_logs`` walking
+    ``self.execution_request.tracking``) would fire a lazy SELECT and
+    raise ``MissingGreenlet`` against the async driver.
 
     :param session: The async database session.
     :type session: AsyncSession

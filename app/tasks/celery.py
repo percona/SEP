@@ -30,7 +30,8 @@ from celery.app.task import Context
 from celery.signals import task_revoked
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
-from sqlalchemy import cast, func, Text
+from sqlalchemy import cast, func, literal, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
@@ -47,7 +48,9 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
+from app.core.pmm import schedule_annotation
 from app.core.utils import utc_now
+from app.core.utils.fields import DatabaseDialect
 from app.tasks.config import tasks_settings
 from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -139,14 +142,20 @@ def execute_task_by_name(
     try:
         task_history = celery.loop.run_until_complete(dispatch_queue_item(task_history))
     except BaseNomadException:
-        alert_msg = f"Failed to dispatch periodic task {periodic_task_name or task_name}: error getting a response from Nomad"
+        alert_msg = (
+            f"Failed to dispatch periodic task "
+            f"{periodic_task_name or task_name}: "
+            f"error getting a response from Nomad"
+        )
         logger.exception(alert_msg)
         if task_history.task.alert_on_fail:
+            dedup_key = f"task:{task_name}:{task_history.execution_request.target}"
             alert_data = {
                 "summary": alert_msg,
                 "source": f"{task_name}:{task_history.execution_request.target}",
                 "severity": AlertSeverity.ERROR,
                 "class": "task_dispatch_failure",
+                "dedup_key": dedup_key,
             }
             if periodic_task_name:
                 alert_data["source"] = f"{periodic_task_name}:{alert_data['source']}"
@@ -289,10 +298,13 @@ async def _dispatch_queue_item(
         await _raise_if_identical_task_conflict(queue_item, session)
         task = await TaskManager.get_root_task(session, queue_item.task)
         executor = get_executor_for_task(task)
-        return await executor.dispatch_task(session, queue_item, task)
+        result = await executor.dispatch_task(session, queue_item, task)
     except Exception:
         logger.exception("Failed to dispatch queue item")
         raise
+    else:
+        schedule_annotation(result, "STARTED")
+        return result
     finally:
         async with lock_session_maker() as async_session:
             await DispatchLockManager.delete(async_session, dispatch_lock)
@@ -302,20 +314,44 @@ async def _raise_if_identical_task_conflict(
     queue_item: TaskHistory, session: AsyncSession
 ) -> None:
     engine_name = session.get_bind().name
+    is_postgresql = engine_name.startswith(DatabaseDialect.POSTGRESQL)
     meta_where_clauses = []
     if queue_item.execution_request.meta:
-        for field, raw_value in queue_item.execution_request.meta.items():
-            extracted = func_json_extract(
-                engine_name, TaskHistory.execution_request, "meta", field
+        if is_postgresql:
+            scalar_subset = {}
+            container_items = []
+            for field, raw_value in queue_item.execution_request.meta.items():
+                if isinstance(raw_value, list | dict):
+                    container_items.append((field, raw_value))
+                else:
+                    scalar_subset[field] = raw_value
+            meta_jsonb = col(TaskHistory.execution_request).op("->")(
+                literal("meta", Text, literal_execute=True)
             )
-            if isinstance(raw_value, list | dict):
-                comparable = json.dumps(raw_value, separators=(",", ":"))
-                extracted = cast(extracted, Text)
-            else:
-                comparable = prepare_unsafe_value_for_json_comparison(
-                    engine_name, raw_value
+            if scalar_subset:
+                meta_where_clauses.append(
+                    meta_jsonb.op("@>")(
+                        cast(literal(json.dumps(scalar_subset), Text), JSONB)
+                    )
                 )
-            meta_where_clauses.append(extracted == comparable)
+            for field, raw_value in container_items:
+                meta_where_clauses.append(
+                    meta_jsonb.op("->")(literal(field, Text, literal_execute=True))
+                    == cast(literal(json.dumps(raw_value), Text), JSONB)
+                )
+        else:
+            for field, raw_value in queue_item.execution_request.meta.items():
+                extracted = func_json_extract(
+                    engine_name, TaskHistory.execution_request, "meta", field
+                )
+                if isinstance(raw_value, list | dict):
+                    comparable = json.dumps(raw_value, separators=(",", ":"))
+                    extracted = cast(extracted, Text)
+                else:
+                    comparable = prepare_unsafe_value_for_json_comparison(
+                        engine_name, raw_value
+                    )
+                meta_where_clauses.append(extracted == comparable)
     if identical_task := (
         await TaskHistoryManager.first(
             session,

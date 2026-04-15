@@ -20,10 +20,16 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
-from app.tasks.celery import _dispatch_chained_task, _MAX_CHAIN_DEPTH, sync_queue_item
+from app.tasks.celery import (
+    _dispatch_chained_task,
+    _MAX_CHAIN_DEPTH,
+    _raise_if_identical_task_conflict,
+    sync_queue_item,
+)
 from app.tasks.models import (
     DispatchLock,
     Task,
@@ -71,11 +77,11 @@ def _make_history(task=None, **overrides):
     return TaskHistory(**defaults)
 
 
-def _make_session_mock():
-    """Build a mock AsyncSession with a bind that returns a name."""
+def _make_session_mock(bind_name: str = "sqlite"):
+    """Build a mock AsyncSession with a bind that reports the given name."""
     session = AsyncMock()
     bind = MagicMock()
-    bind.name = "sqlite"
+    bind.name = bind_name
     session.get_bind = MagicMock(return_value=bind)
     return session
 
@@ -395,6 +401,58 @@ class TestInternalDispatchQueueItem:
 
         mock_delete_lock.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_annotates_started_on_successful_dispatch(self):
+        """Assert annotate_task_event is called with STARTED after dispatch."""
+        from app.tasks.celery import _dispatch_queue_item
+
+        task = _make_task()
+        queue_item = _make_history(task=task)
+        session = _make_session_mock()
+        mock_executor = AsyncMock()
+        dispatched_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
+        mock_executor.dispatch_task.return_value = dispatched_item
+        mock_lock = MagicMock(spec=DispatchLock)
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_make_lock_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.delete_where",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.create",
+                new_callable=AsyncMock,
+                return_value=mock_lock,
+            ),
+            patch(
+                "app.tasks.celery._raise_if_identical_task_conflict",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.get_root_task",
+                new_callable=AsyncMock,
+                return_value=task,
+            ),
+            patch(
+                "app.tasks.celery.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.delete",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery.schedule_annotation",
+            ) as mock_schedule,
+        ):
+            await _dispatch_queue_item(queue_item, session)
+
+        mock_schedule.assert_called_once_with(dispatched_item, "STARTED")
+
 
 class TestRaiseIfIdenticalTaskConflict:
     """Test _raise_if_identical_task_conflict."""
@@ -458,6 +516,259 @@ class TestRaiseIfIdenticalTaskConflict:
             return_value=None,
         ):
             await _raise_if_identical_task_conflict(queue_item, session)
+
+    @staticmethod
+    async def _capture_meta_clauses(queue_item, bind_name):
+        """Run the dispatch dedup helper and return its compiled meta clauses.
+
+        Patch ``TaskHistoryManager.first`` to capture every positional argument,
+        filter out the non-meta clauses (``task``/``target``/``payload``/
+        ``status``/``id``), then render each remaining clause against the
+        PostgreSQL dialect with literal binds so substring assertions can
+        inspect the inlined values.
+        """
+        session = _make_session_mock(bind_name=bind_name)
+        with patch(
+            "app.tasks.celery.TaskHistoryManager.first",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_first:
+            await _raise_if_identical_task_conflict(queue_item, session)
+        positional_args = mock_first.await_args.args[1:]
+        meta_clauses = positional_args[3:-2]
+        rendered = [
+            str(
+                clause.compile(
+                    dialect=postgresql.dialect(),
+                    compile_kwargs={"literal_binds": True},
+                )
+            )
+            for clause in meta_clauses
+        ]
+        return meta_clauses, rendered
+
+    @pytest.mark.asyncio
+    async def test_pg_scalar_only_meta_emits_single_containment_clause(self):
+        """Assert PG scalar meta produces exactly one ``@>`` containment clause."""
+        task = _make_task()
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"target": "node-1", "priority": 5},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
+
+        assert len(rendered) == 1
+        clause = rendered[0]
+        assert "@>" in clause
+        assert "'meta'" in clause
+        assert '"target": "node-1"' in clause
+        assert '"priority": 5' in clause
+
+    @pytest.mark.asyncio
+    async def test_pg_bool_scalar_is_type_strict(self):
+        """Assert PG bool scalar is rendered as jsonb ``true``, not Python ``"True"``.
+
+        Pin the latent-bug fix documented in the SEP-988 Breaking Changes
+        CHANGELOG entry: the previous text-equality path compared
+        ``->>`` output against ``str(True) == "True"``, which never matched
+        jsonb's lowercase ``true`` text form, leaving bool-meta dispatches
+        un-deduplicated.
+        """
+        task = _make_task()
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"flag": True},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
+
+        assert len(rendered) == 1
+        clause = rendered[0]
+        assert "@>" in clause
+        assert '"flag": true' in clause
+        assert '"True"' not in clause
+
+    @pytest.mark.asyncio
+    async def test_pg_none_scalar_is_type_strict(self):
+        """Assert PG None scalar is rendered as jsonb ``null``, not Python ``"None"``.
+
+        Pin the latent-bug fix: the previous text-equality path coerced
+        ``None`` to ``"None"`` via ``str(value)``, which never matched the
+        SQL ``NULL`` produced by ``->>`` on a jsonb null.
+        """
+        task = _make_task()
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"key": None},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
+
+        assert len(rendered) == 1
+        clause = rendered[0]
+        assert "@>" in clause
+        assert '"key": null' in clause
+        assert '"None"' not in clause
+
+    @pytest.mark.asyncio
+    async def test_pg_int_vs_string_scalar_is_distinct(self):
+        """Assert PG int and string-of-int scalars compile to distinct clauses.
+
+        Pin the intentional Breaking Changes shift: the previous text-equality
+        path treated ``1`` and ``"1"`` as duplicates because both serialised
+        to the text ``"1"``. The new ``@>`` path is type-strict, so the two
+        should never deduplicate against each other.
+        """
+        task = _make_task()
+        int_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"key": 1},
+                payload=None,
+            ),
+        )
+        str_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"key": "1"},
+                payload=None,
+            ),
+        )
+
+        _, int_rendered = await self._capture_meta_clauses(int_item, "postgresql")
+        _, str_rendered = await self._capture_meta_clauses(str_item, "postgresql")
+
+        assert int_rendered != str_rendered
+        assert '"key": 1' in int_rendered[0]
+        assert '"key": "1"' in str_rendered[0]
+
+    @pytest.mark.asyncio
+    async def test_pg_list_meta_uses_jsonb_equality_per_key(self):
+        """Assert PG list meta items render as per-key jsonb equality clauses."""
+        task = _make_task()
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"_chain_task_names": ["a", "b"]},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
+
+        assert len(rendered) == 1
+        clause = rendered[0]
+        assert "@>" not in clause
+        assert "'_chain_task_names'" in clause
+        assert '["a", "b"]' in clause
+        assert "JSONB" in clause.upper()
+
+    @pytest.mark.asyncio
+    async def test_pg_mixed_meta_uses_both_paths(self):
+        """Assert PG mixed scalar/list meta produces one ``@>`` and one equality clause."""
+        task = _make_task()
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"target": "node-1", "_chain_task_names": ["a"]},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
+
+        expected_clause_count = 2
+        assert len(rendered) == expected_clause_count
+        containment = [clause for clause in rendered if "@>" in clause]
+        equality = [clause for clause in rendered if "@>" not in clause]
+        assert len(containment) == 1
+        assert len(equality) == 1
+        assert '"target": "node-1"' in containment[0]
+        assert "'_chain_task_names'" in equality[0]
+        assert '["a"]' in equality[0]
+
+    @pytest.mark.asyncio
+    async def test_pg_scalar_subset_omits_at_clause_when_all_items_are_containers(self):
+        """Assert PG produces no ``@>`` clause when every meta value is a container."""
+        task = _make_task()
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"_chain_task_names": ["a"]},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
+
+        assert len(rendered) == 1
+        assert "@>" not in rendered[0]
+
+    @pytest.mark.asyncio
+    async def test_pg_empty_meta_produces_no_meta_clauses(self):
+        """Assert PG empty-dict meta produces zero meta clauses via the falsy guard."""
+        task = _make_task()
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
+
+        assert rendered == []
+
+    @pytest.mark.asyncio
+    async def test_sqlite_keeps_per_key_text_equality_loop(self):
+        """Assert SQLite mixed meta still uses ``json_extract`` text equality."""
+        task = _make_task()
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"target": "node-1", "_chain_task_names": ["a"]},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, "sqlite")
+
+        expected_clause_count = 2
+        assert len(rendered) == expected_clause_count
+        for clause in rendered:
+            assert "json_extract" in clause.lower()
+            assert "@>" not in clause
 
 
 class TestDeleteTaskHistory:

@@ -17,6 +17,8 @@
 
 import logging
 
+from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel import col
 
@@ -27,8 +29,10 @@ from app.core.celery.utils import (
     SystemPeriodicTaskSchedule,
 )
 from app.core.utils.date_time import utc_now
+from app.core.utils.fields import DatabaseDialect
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
+from app.tasks.db.engine import engine
 from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
 
 logger = logging.getLogger(__name__)
@@ -480,3 +484,43 @@ async def init_tasks_db() -> None:
                 update_delete_result.rowcount,
             )
     await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "tasks__")
+
+
+async def verify_taskhistory_execution_request_is_jsonb() -> None:
+    """Fail fast if ``taskhistory.execution_request`` is not ``jsonb`` on PostgreSQL.
+
+    Defend against a deploy that ships SEP-988's ``@>`` dispatch dedup code
+    without running the corresponding Alembic migration. ``compare_type``
+    intentionally suppresses the ``json``/``jsonb`` diff during autogeneration,
+    so ``make checkmigrations`` cannot detect this skew. Without this guard,
+    the first dispatch hits ``operator does not exist: json @> jsonb`` at
+    runtime; with it, the Tasks app refuses to start until the column is
+    converted. The check is a no-op on SQLite and MySQL, where SEP-988's
+    migration is also a no-op.
+
+    Use SQLAlchemy's reflection inspector rather than a raw
+    ``information_schema`` query so the dialect-specific type mapping is what
+    decides whether the column is ``JSONB`` or plain ``JSON``.
+
+    :raises RuntimeError: If the PostgreSQL column type is not ``jsonb``.
+    """
+    if not engine.dialect.name.startswith(DatabaseDialect.POSTGRESQL):
+        return
+    async with engine.connect() as conn:
+        columns = await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).get_columns("taskhistory")
+        )
+    for column in columns:
+        if column["name"] != "execution_request":
+            continue
+        if isinstance(column["type"], JSONB):
+            return
+        raise RuntimeError(
+            f"taskhistory.execution_request is {type(column['type']).__name__!r}, "
+            "expected 'JSONB'. Run the Tasks API Alembic migrations (SEP-988) "
+            "before starting the app."
+        )
+    raise RuntimeError(
+        "taskhistory.execution_request column not found. Run the Tasks API "
+        "Alembic migrations (SEP-988) before starting the app."
+    )

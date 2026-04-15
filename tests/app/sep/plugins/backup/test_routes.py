@@ -194,10 +194,10 @@ def test_backups_detail(
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
             {},  # /hosts/
-            {},  # history
-            {},  # running_tasks
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # history
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # running_tasks
             [],  # stats
-            [],  # chainable_tasks
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
         ]
     )
     mock_inventory_api_dep.get.return_value = AsyncMock()

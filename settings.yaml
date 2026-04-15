@@ -24,6 +24,8 @@ default:
     VERIFY_SSL: true
     FRONTEND: null  # Optional: PMM frontend URL for links
     EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
+    ANNOTATIONS_ENABLED: false
+    ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
   SEP:
     SNIPPETS:
       FILTER_EXTENSIONS:
@@ -165,6 +167,7 @@ default:
       PORT: null
       NAME: tasks.db
     SYNC_LOCK_TTL: 300  # TaskHistory sync lock timeout (seconds)
+    PRE_EXECUTION_CONNECTIVITY_CHECK: warn  # disabled | warn | block
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
       SECURE: False

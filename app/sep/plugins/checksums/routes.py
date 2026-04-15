@@ -161,9 +161,11 @@ async def checksums_detail(
     context["task"] = task_data
 
     try:
-        services = await inventory_api.get(
-            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        response = await inventory_api.get(
+            "/services/",
+            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
         )
+        services = response["items"]
     except HTTPException as exc:
         services = []
         logger.warning("Failed to get services: %s", exc)
@@ -174,10 +176,12 @@ async def checksums_detail(
     context["services"] = services
 
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    context["running_tasks"] = response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
