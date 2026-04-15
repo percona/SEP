@@ -67,6 +67,18 @@ jobs:
         run: poetry install --with syncmysql
       - name: Run tests
         run: make test
+      - name: Generate coverage comment data
+        id: coverage_comment
+        if: matrix.python == '3.11.9' && github.event_name == 'pull_request'
+        uses: py-cov-action/python-coverage-comment-action@7188638f871f721a365d644f505d1ff3df20d683 # v3.40
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload coverage comment artifact
+        if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-coverage-comment-action
+          path: python-coverage-comment-action.txt
 
   build:
     needs: [bandit, test, check_migrations]
