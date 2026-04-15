@@ -903,14 +903,18 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         allocation_switched = (
             previous_allocation_id is not None and previous_allocation_id != alloc_id
         )
+        if allocation_switched:
+            await TaskHistoryLogStateManager.reset_producer_offsets(
+                writer_session, queue_item.id
+            )
+            await writer_session.commit()
         state_rows = await TaskHistoryLogStateManager.list_for_task(
             writer_session, queue_item.id
         )
         initial_offsets = defaultdict(dict)
         for row in state_rows:
-            producer_offset = 0 if allocation_switched else row.producer_offset
             initial_offsets[row.source][f"{row.stream.value}_last_offset"] = (
-                producer_offset
+                row.producer_offset
             )
 
         task_logs = self.get_logs_for_allocation(

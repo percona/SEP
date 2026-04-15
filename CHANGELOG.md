@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - SEP-816: Reduce write amplification for `TaskHistory.execution_request` by using `JSONB` on Postgres, deferring the column by default, and clearing the sync lock via targeted `UPDATE` instead of a full ORM save
-- SEP-817: Move task logs out of `execution_request.tracking.task_logs` into a dedicated append-only `taskhistory_log` table; legacy records continue to render via a dual-read fallback until their eventual cleanup
+- SEP-817: Move task logs out of `execution_request.tracking.task_logs` into a dedicated append-only `taskhistory_log` table; legacy records continue to render via a dual-read fallback until their eventual cleanup. The `tracking.task_logs` field is no longer populated for new task histories and is no longer collapsed to a boolean in `TaskHistoryResponse` for pre-migration records — API consumers that relied on the field's presence should switch to streaming the `/history/{id}/logs/` endpoint.
 - SEP-937: PMM connection settings moved to top-level `PMM` config section (old `SEP.PMM` path still works with deprecation warning)
 
 ### Breaking Changes

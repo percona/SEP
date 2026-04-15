@@ -43,6 +43,7 @@ EXPECTED_LEGACY_STDERR_OFFSET = 5
 EXPECTED_PRE_EXISTING_STDOUT_OFFSET = 12
 EXPECTED_PRE_EXISTING_STDERR_OFFSET = 13
 EXPECTED_MULTI_STREAM_ROW_COUNT = 3
+ALLOC_B_PRODUCER_OFFSET = 1_000
 
 
 @pytest.mark.asyncio
@@ -390,6 +391,63 @@ async def test_append_multi_source_and_stream_independent(
     for source, stream, payload in tuples:
         row = by_key[(source, stream)]
         assert row.persisted_offset == len(payload)
+
+
+@pytest.mark.asyncio
+async def test_reset_producer_offsets_clears_db_and_allows_realloc_writes(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert producer_offset reset persists to the DB so alloc-switched bytes land.
+
+    Regression test for SEP-817: the in-memory ``initial_offsets`` reset on
+    Nomad follow-up allocation switch was not enough — the writer re-reads
+    the state row from the DB on every ``append`` and would otherwise drop
+    the new allocation's bytes via ``_effective_new_bytes``'s skip logic.
+    """
+    history = created_task_with_history
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"alloc-a content",
+        force_flush=True,
+        producer_offset_after=50_000,
+    )
+
+    await TaskHistoryLogStateManager.reset_producer_offsets(session, history.id)
+    await session.commit()
+
+    state = await TaskHistoryLogStateManager.get_for_stream(
+        session, history.id, "run-script", TaskLogType.STDOUT
+    )
+    assert state is not None
+    assert state.producer_offset == 0
+    persisted_after_alloc_a = state.persisted_offset
+
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"alloc-b content",
+        force_flush=True,
+        producer_offset_after=ALLOC_B_PRODUCER_OFFSET,
+    )
+    state = await TaskHistoryLogStateManager.get_for_stream(
+        session, history.id, "run-script", TaskLogType.STDOUT
+    )
+    assert state is not None
+    assert state.producer_offset == ALLOC_B_PRODUCER_OFFSET
+    assert state.persisted_offset == persisted_after_alloc_a + len(b"alloc-b content")
+    chunks = (
+        await session.exec(
+            select(TaskHistoryLog)
+            .where(col(TaskHistoryLog.task_history_id) == history.id)
+            .order_by(col(TaskHistoryLog.start_offset))
+        )
+    ).all()
+    assert [chunk.content for chunk in chunks] == ["alloc-a content", "alloc-b content"]
 
 
 @pytest.mark.asyncio

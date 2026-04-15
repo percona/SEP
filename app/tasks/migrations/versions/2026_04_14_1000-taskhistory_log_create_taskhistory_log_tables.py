@@ -72,12 +72,6 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "ix_taskhistory_log_lookup",
-        "taskhistory_log",
-        ["task_history_id", "source", "stream", "start_offset"],
-        unique=False,
-    )
-    op.create_index(
         op.f("ix_taskhistory_log_task_history_id"),
         "taskhistory_log",
         ["task_history_id"],
@@ -156,6 +150,7 @@ def downgrade() -> None:
         table_name="taskhistory_log_state",
     )
     op.drop_table("taskhistory_log_state")
-    op.drop_index("ix_taskhistory_log_task_history_id", table_name="taskhistory_log")
-    op.drop_index("ix_taskhistory_log_lookup", table_name="taskhistory_log")
+    op.drop_index(
+        op.f("ix_taskhistory_log_task_history_id"), table_name="taskhistory_log"
+    )
     op.drop_table("taskhistory_log")

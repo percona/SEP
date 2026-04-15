@@ -482,6 +482,35 @@ class TaskHistoryLogStateManager(BaseManager):
         return list(result.all())
 
     @classmethod
+    async def reset_producer_offsets(
+        cls, session: AsyncSession, task_history_id: int
+    ) -> None:
+        """Set ``producer_offset`` to ``0`` for every stream of a task history.
+
+        Called when Nomad reschedules a task to a follow-up allocation: the
+        new allocation's log file starts at byte 0, so any cached
+        ``producer_offset`` from the previous allocation must be cleared in
+        the database before the writer dedups based on it. Bumps ``version``
+        so concurrent writers re-read the row.
+
+        :param session: The SQLAlchemy asynchronous session.
+        :type session: AsyncSession
+        :param task_history_id: The ``TaskHistory`` identifier whose state
+            rows should be reset.
+        :type task_history_id: int
+        """
+        stmt = (
+            update(TaskHistoryLogState)
+            .where(col(TaskHistoryLogState.task_history_id) == task_history_id)
+            .values(
+                producer_offset=0,
+                version=col(TaskHistoryLogState.version) + 1,
+                updated_at=utc_now(),
+            )
+        )
+        await session.execute(stmt)
+
+    @classmethod
     async def insert_row_idempotent(
         cls,
         session: AsyncSession,
