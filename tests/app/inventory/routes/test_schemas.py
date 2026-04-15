@@ -18,20 +18,26 @@
 from starlette import status
 from starlette.testclient import TestClient
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import Schema, Service, Table
 from tests.app.factories import SchemaWriteFactory, TableWriteFactory
 
 SCHEMA_COUNT_WITH_SECOND = 2
+OFFSET_BEYOND_TOTAL = 999
 
 
 class TestListSchemas:
     """Test GET /schemas/ endpoint."""
 
     def test_list_schemas_empty(self, test_client: TestClient) -> None:
-        """Return an empty list when no schemas exist."""
+        """Return an empty paginated response when no schemas exist."""
         response = test_client.get("/schemas/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["offset"] == 0
+        assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     def test_list_schemas_multiple(
         self, test_client: TestClient, schema: Schema, service: Service
@@ -50,8 +56,31 @@ class TestListSchemas:
         assert response.status_code == status.HTTP_200_OK
 
         data = response.json()
-        assert len(data) == SCHEMA_COUNT_WITH_SECOND
-        assert all("tables" in s for s in data)
+        assert len(data["items"]) == SCHEMA_COUNT_WITH_SECOND
+        assert data["total"] == SCHEMA_COUNT_WITH_SECOND
+        assert all("tables" in s for s in data["items"])
+
+    def test_list_schemas_custom_offset(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Return empty items when offset is beyond total."""
+        response = test_client.get("/schemas/", params={"offset": OFFSET_BEYOND_TOTAL})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 1
+        assert data["offset"] == OFFSET_BEYOND_TOTAL
+
+    def test_list_schemas_custom_limit(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Return limited items while total remains unchanged."""
+        response = test_client.get("/schemas/", params={"limit": 1})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["limit"] == 1
 
 
 class TestRetrieveSchema:
@@ -127,10 +156,14 @@ class TestListTablesBySchema:
     def test_list_tables_by_schema_empty(
         self, test_client: TestClient, schema: Schema
     ) -> None:
-        """Return an empty list when schema has no tables."""
+        """Return an empty paginated response when schema has no tables."""
         response = test_client.get(f"/schemas/{schema.id}/tables/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["offset"] == 0
+        assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     def test_list_tables_by_schema(
         self, test_client: TestClient, schema: Schema, table: Table
@@ -140,8 +173,9 @@ class TestListTablesBySchema:
         assert response.status_code == status.HTTP_200_OK
 
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == table.id
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["items"][0]["id"] == table.id
 
     def test_list_tables_by_schema_search(
         self, test_client: TestClient, schema: Schema, table: Table
@@ -153,24 +187,63 @@ class TestListTablesBySchema:
         )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == table.id
+        assert len(data["items"]) == 1
+        assert data["items"][0]["id"] == table.id
 
     def test_list_tables_by_schema_search_no_match(
         self, test_client: TestClient, schema: Schema, table: Table
     ) -> None:
-        """Return empty list when search does not match any table."""
+        """Return empty paginated response when search does not match any table."""
         response = test_client.get(
             f"/schemas/{schema.id}/tables/",
             params={"search": "nonexistent_table_xyz"},
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     def test_list_tables_by_schema_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent schema."""
         response = test_client.get("/schemas/99999/tables/")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_list_tables_by_schema_custom_offset(
+        self, test_client: TestClient, schema: Schema, table: Table
+    ) -> None:
+        """Return empty items when offset is beyond total."""
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/", params={"offset": OFFSET_BEYOND_TOTAL}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 1
+        assert data["offset"] == OFFSET_BEYOND_TOTAL
+
+    def test_list_tables_by_schema_custom_limit(
+        self, test_client: TestClient, schema: Schema, table: Table
+    ) -> None:
+        """Return limited items while total remains unchanged."""
+        response = test_client.get(f"/schemas/{schema.id}/tables/", params={"limit": 1})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["limit"] == 1
+
+    def test_list_tables_by_schema_search_with_pagination(
+        self, test_client: TestClient, schema: Schema, table: Table
+    ) -> None:
+        """Return search-filtered total with pagination params."""
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"search": table.name[:3], "limit": 1},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] >= 1
+        assert len(data["items"]) <= 1
 
 
 class TestCreateTableForSchema:
