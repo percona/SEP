@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import ClientError
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, status
 
 from app.core.requests import RemoteAPI
 from app.sep.connectivity import (
@@ -256,7 +256,7 @@ class TestCheckAndWarnConnectivity:
     ):
         """Use ``HTTPException.detail`` as the flashed error when it is a string."""
         mock_tasks_api.post.side_effect = HTTPException(
-            status_code=502, detail="upstream nomad error"
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="upstream nomad error"
         )
 
         await check_and_warn_connectivity(
@@ -281,7 +281,7 @@ class TestCheckAndWarnConnectivity:
     ):
         """Fall back to a generic error when ``HTTPException.detail`` is non-string."""
         mock_tasks_api.post.side_effect = HTTPException(
-            status_code=502, detail={"code": "upstream_error"}
+            status_code=status.HTTP_502_BAD_GATEWAY, detail={"code": "upstream_error"}
         )
 
         await check_and_warn_connectivity(
