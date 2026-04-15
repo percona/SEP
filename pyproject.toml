@@ -294,6 +294,7 @@ env = [
 ]
 
 [tool.coverage.run]
+relative_files = true
 source = ["app"]
 omit = [
     "__init__.py",
