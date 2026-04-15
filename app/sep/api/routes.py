@@ -37,7 +37,7 @@ async def list_schemas(
     search: str | None = None,
 ) -> JSONResponse:
     """Return schemas for a service as JSON for AJAX dropdowns."""
-    params = {}
+    params = {"limit": 0}
     if search:
         params["search"] = search
     try:
@@ -46,7 +46,7 @@ async def list_schemas(
         )
     except HTTPException:
         return JSONResponse([])
-    return JSONResponse([{"id": s["id"], "name": s["name"]} for s in schemas])
+    return JSONResponse([{"id": s["id"], "name": s["name"]} for s in schemas["items"]])
 
 
 @router.get("/schemas/{schema_id}/tables", dependencies=[IsAuthenticated])
@@ -58,11 +58,11 @@ async def list_tables(
     search: str | None = None,
 ) -> JSONResponse:
     """Return tables for a schema as JSON for AJAX dropdowns."""
-    params = {}
+    params = {"limit": 0}
     if search:
         params["search"] = search
     try:
         tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
     except HTTPException:
         return JSONResponse([])
-    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in tables])
+    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in tables["items"]])

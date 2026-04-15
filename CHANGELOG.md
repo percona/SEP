@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-503: PagerDuty alert triggered on inventory sync item failure
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
 - SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
+- SEP-928: Inventory Sync split button — the chevron next to the existing sync-all control opens a dropdown that lets DBAs run a single configured syncer instead of waiting for the full chain
 - SEP-932: Database connectivity check endpoint via Nomad task dispatch (MySQL, PostgreSQL, MongoDB)
 
 ### Changed
@@ -22,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking Changes
 
+- SEP-924: Inventory list endpoints now return paginated responses with `offset`/`limit` query parameters
 - SEP-937: The `SEP__PMM_FRONTEND` environment variable has been removed. Use `PMM__FRONTEND` (top-level) or `SEP__PMM__FRONTEND` (nested under SEP.PMM) instead.
 
 ### Configuration Changes
