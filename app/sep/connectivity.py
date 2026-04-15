@@ -171,6 +171,8 @@ async def maybe_check_connectivity(
     request: Request,
     tasks_api: RemoteAPI,
     meta: dict[str, Any],
+    *,
+    check_connectivity: bool = True,
 ) -> None:
     """Run ``check_and_warn_connectivity`` when ``meta`` carries connectivity data.
 
@@ -186,7 +188,13 @@ async def maybe_check_connectivity(
     :type tasks_api: RemoteAPI
     :param meta: The ``task.data["meta"]`` mapping from the created task.
     :type meta: dict[str, Any]
+    :param check_connectivity: If ``False``, skip both the Tasks API call and
+        the ``_LATEST_RESULTS`` cache write. Honors the per-task opt-out from
+        the SEP task creation forms.
+    :type check_connectivity: bool
     """
+    if not check_connectivity:
+        return
     target = meta.get("target")
     host = meta.get(CONNECTIVITY_META_HOST_KEY)
     port = meta.get(CONNECTIVITY_META_PORT_KEY)
