@@ -19,3 +19,4 @@
 - [ ] Database migrations generated if models changed (`make makemigrations`)
 - [ ] User-facing changes documented (README, inline help, UI text)
 - [ ] Configuration changes documented with examples
+- [ ] Changelog fragment added under `changelog.d/` if the change is user-facing (`make changelog-add`), or confirmed N/A

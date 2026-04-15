@@ -119,6 +119,24 @@ checkmigrations: migrate
 test: venv
 	@"${VENV_BIN}"/pytest -v -r a --cov=app tests/
 
+changelog-add:
+ifndef TICKET
+	$(error TICKET is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
+endif
+ifndef SECTION
+	$(error SECTION is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
+endif
+ifndef MSG
+	$(error MSG is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
+endif
+	@python3 scripts/changelog.py add --ticket "$(TICKET)" --section "$(SECTION)" --message "$(MSG)"
+
+changelog-check:
+	@python3 scripts/changelog.py check
+
+changelog-list:
+	@python3 scripts/changelog.py list
+
 release-rc:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
