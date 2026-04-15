@@ -22,6 +22,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     {% with inventory_table_title = "Node List", inventory_sync_route = "/inventory/sync/" %}
         {% include "inventory/partials/sync-button.html.j2" %}
     {% endwith %}
+    {% include "inventory/partials/sync-status.html.j2" %}
     <br>
     <table data-table>
         <thead>

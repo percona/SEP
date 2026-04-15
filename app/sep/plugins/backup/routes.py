@@ -159,10 +159,11 @@ async def backups_detail(
     context["executor_hosts_dict"] = executor_hosts_ctx.hosts
 
     try:
-        services = await inventory_api.get(
-            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        response = await inventory_api.get(
+            "/services/",
+            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
         )
-        context["services"] = services
+        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

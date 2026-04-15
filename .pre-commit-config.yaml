@@ -44,6 +44,53 @@ repos:
         language: system
         files: ^sep_installer\.sh$
         pass_filenames: false
+      - id: check-nomad-payload-size
+        name: Check Nomad payload size
+        description: "Ensure dispatch payloads stay under Nomad 16 KiB limit after minify+gzip"
+        entry: python
+        args:
+          - -c
+          - |
+            import gzip, io, sys
+            from python_minifier import minify
+            NOMAD_PAYLOAD_SIZE_LIMIT = 16384
+            failed = []
+            for p in sys.argv[1:]:
+                with open(p, encoding="utf-8") as f:
+                    src = f.read()
+                try:
+                    src = minify(
+                        src,
+                        remove_annotations=True,
+                        remove_pass=True,
+                        remove_literal_statements=True,
+                        combine_imports=True,
+                        hoist_literals=True,
+                        rename_locals=True,
+                        rename_globals=True,
+                        remove_object_base=True,
+                        remove_asserts=True,
+                        remove_debug=True,
+                        remove_explicit_return_none=True,
+                        remove_builtin_exception_brackets=True,
+                    )
+                except SyntaxError:
+                    pass
+                buf = io.BytesIO()
+                with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
+                    gz.write(src.encode("utf-8"))
+                sz = len(buf.getvalue())
+                if sz > NOMAD_PAYLOAD_SIZE_LIMIT:
+                    failed.append((p, sz))
+            if failed:
+                print("ERROR: Payload(s) exceed Nomad 16 KiB dispatch limit:")
+                for p, sz in failed:
+                    print(f"  {p}: {sz:,} bytes (limit: {NOMAD_PAYLOAD_SIZE_LIMIT:,})")
+                sys.exit(1)
+        language: python
+        additional_dependencies: ["python-minifier==2.11.3"]
+        files: ^app/sep/plugins/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
+        pass_filenames: true
       - id: oxfmt
         name: oxfmt (frontend formatter)
         description: "Format frontend code with oxfmt (Prettier-compatible)"

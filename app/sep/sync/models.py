@@ -31,6 +31,8 @@ from async_lru import _LRUCacheWrapper, alru_cache
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.config import alert_service
+from app.core.alerts.models import AlertSeverity
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests import RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
@@ -58,6 +60,74 @@ from app.sep.sync.exceptions import SyncFailError, SyncItemAlreadyInProgressErro
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
+
+
+def inventory_sync_alert_address(entity: CreatedEntity) -> str | None:
+    """Return a host-style address for alerts when the entity or its parents expose one.
+
+    :param entity: The inventory entity that failed to sync.
+    :type entity: CreatedEntity
+    :return: Address string, or None if it cannot be resolved.
+    :rtype: str | None
+    """
+    if isinstance(entity, CreatedNode | CreatedService):
+        return entity.address
+    if isinstance(entity, CreatedSchema):
+        if entity.service is not None:
+            return entity.service.address
+        return None
+    if isinstance(entity, CreatedTable):
+        schema = entity.database
+        if schema is not None and schema.service is not None:
+            return schema.service.address
+        return None
+    return None
+
+
+def inventory_sync_alert_source_id_segment(entity: CreatedEntity) -> str:
+    """Return a stable id token for alert ``source`` / ``dedup_key``.
+
+    :param entity: The inventory entity that failed to sync.
+    :type entity: CreatedEntity
+    :return: Non-empty identifier string.
+    :rtype: str
+    """
+    ext = getattr(entity, "external_id", None)
+    if ext not in (None, ""):
+        return str(ext)
+    if entity.id is not None:
+        return str(entity.id)
+    return "unknown"
+
+
+def inventory_sync_alert_summary_scope(
+    entity_type: SyncInventoryEntityTypeEnum,
+    created_entity: CreatedEntity | None,
+) -> tuple[str, str]:
+    """Build the alert summary fragment and id segment for routing/dedup.
+
+    :param entity_type: Inventory level being synced.
+    :type entity_type: SyncInventoryEntityTypeEnum
+    :param created_entity: Entity instance, or None for top-level inventory sync.
+    :type created_entity: CreatedEntity | None
+    :return: ``(summary_scope, entity_id_repr)`` for the alert payload.
+    :rtype: tuple[str, str]
+    """
+    if created_entity is None:
+        if entity_type == SyncInventoryEntityTypeEnum.INVENTORY:
+            return "top-level inventory sync", "top_level"
+        return f"top-level {entity_type.name.lower()} sync", "top_level"
+    entity_id_repr = inventory_sync_alert_source_id_segment(created_entity)
+    parts = [
+        f"{entity_type.name} id {created_entity.id}",
+        f"name={created_entity.name!r}",
+    ]
+    if addr := inventory_sync_alert_address(created_entity):
+        parts.append(f"address={addr!r}")
+    ext = getattr(created_entity, "external_id", None)
+    if ext not in (None, ""):
+        parts.append(f"external_id={ext!r}")
+    return ", ".join(parts), entity_id_repr
 
 
 # TODO: Make it abstract  # noqa: TD002, TD003
@@ -366,6 +436,20 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self._session,
                 sync_item,
             )
+            syncer_name = self.get_name()
+            summary_scope, entity_id_repr = inventory_sync_alert_summary_scope(
+                entity_type, created_entity
+            )
+            alert_data = {
+                "summary": (
+                    f"Inventory sync failed for {syncer_name} ({summary_scope})."
+                ),
+                "source": f"{syncer_name}:{entity_type.name}:{entity_id_repr}",
+                "severity": AlertSeverity.ERROR,
+                "class": "inventory_sync_item_failure",
+                "dedup_key": f"{syncer_name}:{entity_type.name}:{entity_id_repr}",
+            }
+            await alert_service.trigger(alert_data)
             if self.break_on_error:
                 raise SyncFailError(
                     entity_type, self.sync_items[sync_item_entity]
@@ -432,11 +516,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             "node_type": node_type,
         }
         params = {key: value for key, value in params.items() if value is not None}
-        # TODO(yan): Results will be paginated
-        # SEP-134
+        params["limit"] = 0
+        response = await self.inventory_api.get("/", params=params)
         return [
-            CreatedNode.model_validate(node_data)
-            for node_data in await self.inventory_api.get("/", params=params)
+            CreatedNode.model_validate(node_data) for node_data in response["items"]
         ]
 
     @alru_cache
@@ -517,12 +600,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: A list of retrieved CreatedSchema instances.
         :rtype: list[CreatedSchema]
         """
+        response = await self.inventory_api.get(
+            f"/services/{service_id}/schemas/",
+            params={"include_tables": "true", "limit": 0},
+        )
         return [
             CreatedSchema.model_validate(schema_data)
-            for schema_data in await self.inventory_api.get(
-                f"/services/{service_id}/schemas/",
-                params={"include_tables": "true"},
-            )
+            for schema_data in response["items"]
         ]
 
     async def delete_node(self, created_node: CreatedNode) -> None:

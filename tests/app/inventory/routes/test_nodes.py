@@ -18,20 +18,26 @@
 from starlette import status
 from starlette.testclient import TestClient
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import Node, Service, SourceEnum
 from tests.app.factories import NodeWriteFactory, ServiceWriteFactory
 
 CREATED_NODE_COUNT = 2
+OFFSET_BEYOND_TOTAL = 999
 
 
 class TestListNodes:
     """Test the GET / endpoint."""
 
     def test_list_nodes_empty(self, test_client: TestClient) -> None:
-        """Return an empty list when no nodes exist."""
+        """Return an empty paginated response when no nodes exist."""
         response = test_client.get("/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["offset"] == 0
+        assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     def test_list_nodes_multiple(self, test_client: TestClient) -> None:
         """Return a list of nodes with services loaded."""
@@ -43,8 +49,9 @@ class TestListNodes:
         response = test_client.get("/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == CREATED_NODE_COUNT
-        assert "services" in data[0]
+        assert len(data["items"]) == CREATED_NODE_COUNT
+        assert data["total"] == CREATED_NODE_COUNT
+        assert "services" in data["items"][0]
 
     def test_list_nodes_filter_by_source(self, test_client: TestClient) -> None:
         """Return only nodes matching the given source filter."""
@@ -58,8 +65,8 @@ class TestListNodes:
         response = test_client.get("/", params={"source": "pmm"})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["source"] == "pmm"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["source"] == "pmm"
 
     def test_list_nodes_filter_by_external_id(self, test_client: TestClient) -> None:
         """Return only nodes matching the given external_id filter."""
@@ -71,8 +78,8 @@ class TestListNodes:
         response = test_client.get("/", params={"external_id": "abc"})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["external_id"] == "abc"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["external_id"] == "abc"
 
     def test_list_nodes_filter_by_node_type(self, test_client: TestClient) -> None:
         """Return only nodes matching the given node_type filter."""
@@ -84,8 +91,44 @@ class TestListNodes:
         response = test_client.get("/", params={"node_type": "generic"})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["type"] == "generic"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["type"] == "generic"
+
+    def test_list_nodes_custom_offset(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return empty items when offset is beyond total."""
+        response = test_client.get("/", params={"offset": OFFSET_BEYOND_TOTAL})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 1
+        assert data["offset"] == OFFSET_BEYOND_TOTAL
+
+    def test_list_nodes_custom_limit(self, test_client: TestClient, node: Node) -> None:
+        """Return limited items while total remains unchanged."""
+        response = test_client.get("/", params={"limit": 1})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["limit"] == 1
+
+    def test_list_nodes_filter_with_pagination(
+        self,
+        test_client: TestClient,
+    ) -> None:
+        """Return filtered total with pagination params."""
+        generic = NodeWriteFactory.build(type="generic")
+        remote = NodeWriteFactory.build(type="remote")
+        test_client.post("/", json=generic.model_dump(mode="json"))
+        test_client.post("/", json=remote.model_dump(mode="json"))
+
+        response = test_client.get("/", params={"node_type": "generic", "limit": 1})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
 
 
 class TestRetrieveNode:
@@ -188,10 +231,14 @@ class TestListServicesByNode:
     def test_list_services_by_node_empty(
         self, test_client: TestClient, node: Node
     ) -> None:
-        """Return an empty list when the node has no services."""
+        """Return an empty paginated response when the node has no services."""
         response = test_client.get(f"/{node.id}/services/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["offset"] == 0
+        assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     def test_list_services_by_node(
         self, test_client: TestClient, node: Node, service: Service
@@ -200,9 +247,10 @@ class TestListServicesByNode:
         response = test_client.get(f"/{node.id}/services/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == service.id
-        assert "schemas" in data[0]
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["items"][0]["id"] == service.id
+        assert "schemas" in data["items"][0]
 
     def test_list_services_by_node_filter_service_type(
         self, test_client: TestClient, node: Node, service: Service
@@ -214,13 +262,37 @@ class TestListServicesByNode:
         )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == service.id
+        assert len(data["items"]) == 1
+        assert data["items"][0]["id"] == service.id
 
     def test_list_services_by_node_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent node ID."""
         response = test_client.get("/99999/services/")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_list_services_by_node_custom_offset(
+        self, test_client: TestClient, node: Node, service: Service
+    ) -> None:
+        """Return empty items when offset is beyond total."""
+        response = test_client.get(
+            f"/{node.id}/services/", params={"offset": OFFSET_BEYOND_TOTAL}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 1
+        assert data["offset"] == OFFSET_BEYOND_TOTAL
+
+    def test_list_services_by_node_custom_limit(
+        self, test_client: TestClient, node: Node, service: Service
+    ) -> None:
+        """Return limited items while total remains unchanged."""
+        response = test_client.get(f"/{node.id}/services/", params={"limit": 1})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["limit"] == 1
 
 
 class TestCreateServiceForNode:

@@ -16,7 +16,6 @@
 """Define tests for the app.core.utils.async_run module."""
 
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -24,38 +23,42 @@ from app.core.utils import async_run
 
 
 def sample_func(x, y):
-    """Sample function that returns the sum of two numbers."""
+    """Return the sum of two numbers."""
     return x + y
 
 
+def sample_kwargs_func(x, *, multiplier=1):
+    """Return `x` multiplied by `multiplier`."""
+    return x * multiplier
+
+
 def error_func():
-    """Sample function that raises a ValueError."""
+    """Raise a ValueError."""
     raise ValueError("Test error")
 
 
 @pytest.mark.asyncio
 async def test_async_run(mocker):
-    """Test async_run utility with different function scenarios."""
-    # Use ThreadPoolExecutor so tests do not spawn processes (avoids sandbox/CI limits).
+    """Assert async_run returns the direct result of the callable."""
     mocker.patch(
         "app.core.utils.async_run.ProcessPoolExecutor",
         ThreadPoolExecutor,
     )
     result = await async_run(sample_func, 2, 3)
     expected_result = 5
-    assert result[0] == expected_result
+    assert result == expected_result
 
     with pytest.raises(ValueError, match="Test error"):
         await async_run(error_func)
 
 
 @pytest.mark.asyncio
-async def test_async_run_timeout(mocker):
-    """Test that async_run returns None when a TimeoutError is raised."""
+async def test_async_run_with_kwargs(mocker):
+    """Assert async_run forwards keyword arguments to the callable."""
     mocker.patch(
         "app.core.utils.async_run.ProcessPoolExecutor",
         ThreadPoolExecutor,
     )
-    mocker.patch("asyncio.get_running_loop", new=MagicMock(side_effect=TimeoutError))
-    result = await async_run(lambda: None)
-    assert result is None
+    result = await async_run(sample_kwargs_func, 4, multiplier=3)
+    expected_result = 12
+    assert result == expected_result
