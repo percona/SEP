@@ -201,7 +201,7 @@ async def build_alters_task_payload(
                     (form.pre_checks_mysql_config_file or "").strip() or "~/.my.cnf"
                 ),
                 "_connectivity_host": service.node.address,
-                "_connectivity_port": str(service.port or 3306),
+                "_connectivity_port": service.port or 3306,
                 "_connectivity_service_type": "MYSQL",
             },
         },

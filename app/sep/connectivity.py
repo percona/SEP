@@ -17,6 +17,7 @@
 
 import logging
 import time
+from typing import Any, cast
 
 from aiohttp import ClientError
 from fastapi import HTTPException
@@ -98,15 +99,18 @@ async def check_and_warn_connectivity(
         return
 
     try:
-        result = await tasks_api.post(
-            "/connectivity-check/",
-            json={
-                "target": target,
-                "host": host,
-                "port": port,
-                "service_type": service_type,
-                "timeout": CHECK_TIMEOUT,
-            },
+        result = cast(
+            "dict[str, Any]",
+            await tasks_api.post(
+                "/connectivity-check/",
+                json={
+                    "target": target,
+                    "host": host,
+                    "port": port,
+                    "service_type": service_type,
+                    "timeout": CHECK_TIMEOUT,
+                },
+            ),
         )
         success = result.get("success", False)
         error = result.get("error")
@@ -136,7 +140,7 @@ async def check_and_warn_connectivity(
 async def maybe_check_connectivity(
     request: Request,
     tasks_api: RemoteAPI,
-    meta: dict,
+    meta: dict[str, Any],
 ) -> None:
     """Run ``check_and_warn_connectivity`` when ``meta`` carries connectivity data.
 
@@ -151,7 +155,7 @@ async def maybe_check_connectivity(
     :param tasks_api: Authenticated Tasks API client.
     :type tasks_api: RemoteAPI
     :param meta: The ``task.data["meta"]`` mapping from the created task.
-    :type meta: dict
+    :type meta: dict[str, Any]
     """
     target = meta.get("target")
     host = meta.get("_connectivity_host")
@@ -165,12 +169,12 @@ async def maybe_check_connectivity(
         tasks_api,
         target=target,
         host=host,
-        port=int(port),
+        port=port,
         service_type=service_type,
     )
 
 
-def annotate_tasks_with_connectivity(tasks: list[dict]) -> None:
+def annotate_tasks_with_connectivity(tasks: list[dict[str, Any]]) -> None:
     """Add ``_connectivity_warning`` flag to tasks based on cached check results.
 
     Support two task dict formats:
@@ -181,7 +185,7 @@ def annotate_tasks_with_connectivity(tasks: list[dict]) -> None:
       ``_connectivity_service_type`` keys.
 
     :param tasks: The list of task dictionaries to annotate in-place.
-    :type tasks: list[dict]
+    :type tasks: list[dict[str, Any]]
     """
     for task in tasks:
         target = task.get("_connectivity_target")

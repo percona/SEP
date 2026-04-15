@@ -21,7 +21,7 @@ import pytest
 import yaml
 from fastapi import status
 
-from app.sep.connectivity import _connectivity_cache
+from app.sep.connectivity import _connectivity_cache, CHECK_TIMEOUT
 from app.sep.main import sep_app
 from app.sep.plugins.backup.deps import (
     build_backup_task_payload,
@@ -146,7 +146,7 @@ def test_backups_create_triggers_connectivity_check(
             "meta": {
                 "target": "node1",
                 "_connectivity_host": "10.0.0.1",
-                "_connectivity_port": "3306",
+                "_connectivity_port": 3306,
                 "_connectivity_service_type": "MYSQL",
             },
             "payload": "",
@@ -179,7 +179,7 @@ def test_backups_create_triggers_connectivity_check(
         "host": "10.0.0.1",
         "port": 3306,
         "service_type": "MYSQL",
-        "timeout": 10,
+        "timeout": CHECK_TIMEOUT,
     }
 
     _connectivity_cache.clear()

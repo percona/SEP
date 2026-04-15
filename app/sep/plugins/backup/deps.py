@@ -146,7 +146,7 @@ async def build_backup_task_payload(
                 "target": form.hostname,
                 "requirements": requirements,
                 "_connectivity_host": service.node.address,
-                "_connectivity_port": str(service.port or 3306),
+                "_connectivity_port": service.port or 3306,
                 "_connectivity_service_type": "MYSQL",
             },
             "payload": f"file://{payload_path}",

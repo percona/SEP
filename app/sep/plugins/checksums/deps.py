@@ -205,7 +205,7 @@ async def build_checksums_task_payload(
                 "_service_host": service.node.address,
                 "_service_port": service.port,
                 "_connectivity_host": service.node.address,
-                "_connectivity_port": str(service.port or 3306),
+                "_connectivity_port": service.port or 3306,
                 "_connectivity_service_type": "MYSQL",
             },
         },

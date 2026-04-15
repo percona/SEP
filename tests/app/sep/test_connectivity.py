@@ -352,11 +352,11 @@ class TestMaybeCheckConnectivity:
             {
                 "target": "node1",
                 "_connectivity_host": "10.0.0.1",
-                "_connectivity_port": "3306",
+                "_connectivity_port": 3306,
             },
             {
                 "_connectivity_host": "10.0.0.1",
-                "_connectivity_port": "3306",
+                "_connectivity_port": 3306,
                 "_connectivity_service_type": "MYSQL",
             },
         ],
@@ -384,7 +384,7 @@ class TestMaybeCheckConnectivity:
         meta = {
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
-            "_connectivity_port": "3306",
+            "_connectivity_port": 3306,
             "_connectivity_service_type": "MYSQL",
         }
 
