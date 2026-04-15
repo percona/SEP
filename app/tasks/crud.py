@@ -273,6 +273,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         select_related_task: bool = False,
         offset: int | None = None,
         limit: int | None = None,
+        query_options: Sequence = (),
     ) -> list[TaskHistory]:
         """List task histories by the task's name.
 
@@ -293,6 +294,8 @@ class TaskHistoryManager(BaseSQLModelManager):
         :type offset: int | None
         :param limit: The maximum number of records, or ``None`` for no limit.
         :type limit: int | None
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
         :return: A list of task histories for the specified task.
         :rtype: list[TaskHistory]
         """
@@ -313,6 +316,7 @@ class TaskHistoryManager(BaseSQLModelManager):
             query,
             *clauses,
             select_related=select_related,
+            query_options=query_options,
             status=status,
         )
         ordering = cls._get_ordering()
@@ -336,6 +340,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         select_related_task: bool = False,
         offset: int = DEFAULT_PAGINATION_OFFSET,
         limit: int = DEFAULT_PAGINATION_LIMIT,
+        query_options: Sequence = (),
     ) -> PaginatedResponse[TaskHistory]:
         """Return a paginated response of task histories by the task's name.
 
@@ -356,6 +361,8 @@ class TaskHistoryManager(BaseSQLModelManager):
         :type offset: int
         :param limit: The maximum number of records to return.
         :type limit: int
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
         :return: A paginated response containing task histories and metadata.
         :rtype: PaginatedResponse[TaskHistory]
         """
@@ -382,6 +389,7 @@ class TaskHistoryManager(BaseSQLModelManager):
             select_related_task=select_related_task,
             offset=offset,
             limit=limit,
+            query_options=query_options,
         )
         return PaginatedResponse(
             items=items,

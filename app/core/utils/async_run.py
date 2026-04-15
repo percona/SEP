@@ -18,29 +18,33 @@
 import asyncio
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
-from typing import Any
+from functools import partial
+from typing import ParamSpec, TypeVar
 
 __all__ = ["async_run"]
 
+P = ParamSpec("P")
+R = TypeVar("R")
 
-async def async_run(func: Callable, *args: Any) -> Any:
+
+async def async_run(
+    func: Callable[P, R],
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> R:
     """Execute a non-async function asynchronously.
 
     :param func: The function to execute.
-    :type func: Callable
+    :type func: Callable[P, R]
     :param args: Arguments to pass to the function.
-    :type args: Any
+    :type args: P.args
+    :param kwargs: Keyword arguments to pass to the function.
+    :type kwargs: P.kwargs
     :return: The result of the function execution.
-    :rtype: Any
+    :rtype: R
     """
-
-    async def _run_in_process(executor: ProcessPoolExecutor) -> Any:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(executor, func, *args)
+    loop = asyncio.get_running_loop()
+    call = partial(func, *args, **kwargs)
 
     with ProcessPoolExecutor(max_workers=1) as pool:
-        try:
-            result = await asyncio.gather(_run_in_process(pool))
-        except TimeoutError:
-            result = None
-    return result
+        return await loop.run_in_executor(pool, call)

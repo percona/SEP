@@ -178,14 +178,14 @@ def test_alters_detail(
     created_task.data = mock_data
     mock_task_api_dep.get.side_effect = [
         {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
         {},
-        {},
-        [],
-        [],
-        {},
-        {},
-        {},
-        [],  # chainable_tasks
+        {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
     ]
     expected_awaits = [
         call("/hosts/"),
@@ -381,6 +381,8 @@ def test_alters_detail_when_hosts_api_fails(
             raise HTTPException(status_code=503)
         if path.startswith("/stats/"):
             return {}
+        if "/history/" in path or path == "/":
+            return {"items": [], "total": 0, "offset": 0, "limit": 50}
         return []
 
     mock_task_api_dep.get = AsyncMock(side_effect=tasks_api_get)
@@ -415,6 +417,8 @@ def test_alters_detail_when_services_api_fails(
             return {}
         if path.startswith("/stats/"):
             return {}
+        if "/history/" in path or path == "/":
+            return {"items": [], "total": 0, "offset": 0, "limit": 50}
         return []
 
     async def inventory_api_get(path: str, *args, **kwargs) -> object:

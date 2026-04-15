@@ -103,6 +103,7 @@ async def tasks_detail(
 ) -> HTMLResponse:
     """Retrieve task."""
     context["task"] = task
+    context["tasks"] = [task]
     if not task.is_template:
         context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
         response = await tasks_api.get(f"/{task.name}/history/")

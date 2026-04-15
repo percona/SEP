@@ -58,8 +58,8 @@ def test_checksums_api_list_returns_data(test_client, mock_task_api_dep):
     task = build_checksum_task()
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
-            [task],
-            [{"status": TaskHistoryStatusEnum.SUCCESS.value}],
+            {"items": [task], "total": 1, "offset": 0, "limit": 50},
+            {"items": [{"status": TaskHistoryStatusEnum.SUCCESS.value}], "total": 1, "offset": 0, "limit": 50},
         ]
     )
 
@@ -77,7 +77,7 @@ def test_checksums_api_list_returns_data(test_client, mock_task_api_dep):
 
 def test_checksums_api_list_returns_empty_array(test_client, mock_task_api_dep):
     """Ensure the checksums API returns an empty list when no tasks exist."""
-    mock_task_api_dep.get.return_value = []
+    mock_task_api_dep.get.return_value = {"items": [], "total": 0, "offset": 0, "limit": 50}
 
     response = test_client.get("/checksums/api/")
 
@@ -106,8 +106,8 @@ def test_checksums_api_list_filters_by_service_type_and_status(
     task = build_checksum_task()
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
-            [task],
-            [{"status": TaskHistoryStatusEnum.RUNNING.value}],
+            {"items": [task], "total": 1, "offset": 0, "limit": 50},
+            {"items": [{"status": TaskHistoryStatusEnum.RUNNING.value}], "total": 1, "offset": 0, "limit": 50},
         ]
     )
 
@@ -137,7 +137,7 @@ def test_checksums_api_detail_returns_task(test_client, mock_task_api_dep):
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
             task,
-            [{"status": TaskHistoryStatusEnum.FAILED.value}],
+            {"items": [{"status": TaskHistoryStatusEnum.FAILED.value}], "total": 1, "offset": 0, "limit": 50},
         ]
     )
 

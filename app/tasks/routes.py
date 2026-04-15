@@ -24,6 +24,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
@@ -226,6 +227,7 @@ async def execute_task_name(
         )
     if queue_item.execution_request.eta:
         history_recorded = await TaskHistoryManager.save(session, queue_item)
+        await session.refresh(history_recorded, attribute_names=["execution_request"])
         celery_task = execute_task_queue.apply_async(
             args=[history_recorded.id],
             eta=history_recorded.execution_request.eta,
@@ -233,10 +235,13 @@ async def execute_task_name(
             + timedelta(seconds=settings.CELERY.global_expire_seconds),
         )
         history_recorded.execution_request.tracking["celery_task_id"] = celery_task.id
-        return await TaskHistoryManager.save(
+        history_recorded = await TaskHistoryManager.save(
             session, history_recorded, flag_modified_fields=["execution_request"]
         )
-    return await dispatch_queue_item(queue_item, session)
+    else:
+        history_recorded = await dispatch_queue_item(queue_item, session)
+    await session.refresh(history_recorded, attribute_names=["execution_request"])
+    return history_recorded
 
 
 @router.get(
@@ -255,6 +260,7 @@ async def list_task_history(
     return await TaskHistoryManager.list_paginated(
         session,
         select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
         offset=offset,
         limit=limit,
         status=task_status,
@@ -284,6 +290,7 @@ async def get_task_history(
         snippet_filename=snippet_filename,
         offset=offset,
         limit=limit,
+        query_options=[undefer(TaskHistory.execution_request)],
     )
 
 
@@ -419,7 +426,10 @@ async def sync_task_history(
         session, updated, flag_modified_fields=["execution_request"]
     )
     return await TaskHistoryManager.get_or_404(
-        session, select_related=(TaskHistory.task,), id=saved.id
+        session,
+        select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=saved.id,
     )
 
 

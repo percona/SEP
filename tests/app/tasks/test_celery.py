@@ -16,6 +16,7 @@
 """Define tests for the app.tasks.celery module."""
 
 import asyncio
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -740,6 +741,155 @@ class TestExecuteTaskQueue:
         assert ("dispatch_queue_item", queue_item.id) in call_order
 
 
+class TestSyncQueueItem:
+    """Test sync_queue_item."""
+
+    @pytest.mark.asyncio
+    async def test_non_running_clears_sync_lock_via_update_where(self):
+        """Assert non-running sync clears the lock via update_where, not ORM save."""
+        from app.tasks.celery import sync_queue_item
+
+        task = _make_task()
+        queue_item = _make_history(task=task, status=TaskHistoryStatusEnum.PENDING)
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_make_lock_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.get_or_404",
+                new_callable=AsyncMock,
+                return_value=queue_item,
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.get_root_task",
+                new_callable=AsyncMock,
+                return_value=task,
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.update_where",
+                new_callable=AsyncMock,
+                return_value=MagicMock(rowcount=1),
+            ) as mock_update_where,
+            patch(
+                "app.tasks.celery.TaskHistoryManager.save",
+                new_callable=AsyncMock,
+            ) as mock_save,
+        ):
+            await sync_queue_item(queue_item.id)
+
+        mock_update_where.assert_awaited_once()
+        call_kwargs = mock_update_where.call_args
+        assert call_kwargs[0][1] == {"sync_in_progress_started_at": None}
+        mock_save.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_non_running_races_to_running_proceeds_with_sync(self):
+        """Assert sync proceeds if task transitions to RUNNING between read and update."""
+        from app.tasks.celery import sync_queue_item
+
+        task = _make_task()
+        pending_item = _make_history(task=task, status=TaskHistoryStatusEnum.PENDING)
+        running_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
+        running_item.id = pending_item.id
+        saved_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
+
+        mock_executor = MagicMock()
+        mock_executor.sync_task_history = AsyncMock(return_value=running_item)
+
+        get_or_404_calls = [pending_item, running_item]
+
+        async def get_or_404_side_effect(*args, **kwargs):
+            return get_or_404_calls.pop(0)
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_make_lock_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.get_or_404",
+                new_callable=AsyncMock,
+                side_effect=get_or_404_side_effect,
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.get_root_task",
+                new_callable=AsyncMock,
+                return_value=task,
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.update_where",
+                new_callable=AsyncMock,
+                return_value=MagicMock(rowcount=0),
+            ),
+            patch(
+                "app.tasks.celery.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.save",
+                new_callable=AsyncMock,
+                return_value=saved_item,
+            ) as mock_save,
+        ):
+            result = await sync_queue_item(pending_item.id)
+
+        mock_executor.sync_task_history.assert_awaited_once_with(running_item)
+        mock_save.assert_awaited_once()
+        assert result is saved_item
+
+    @pytest.mark.asyncio
+    async def test_running_saves_via_orm_with_flag_modified(self):
+        """Assert running sync saves via ORM save with flag_modified_fields."""
+        from app.tasks.celery import sync_queue_item
+
+        task = _make_task()
+        queue_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
+        saved_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
+
+        mock_executor = MagicMock()
+        mock_executor.sync_task_history = AsyncMock(return_value=queue_item)
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_make_lock_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.get_or_404",
+                new_callable=AsyncMock,
+                return_value=queue_item,
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.get_root_task",
+                new_callable=AsyncMock,
+                return_value=task,
+            ),
+            patch(
+                "app.tasks.celery.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.save",
+                new_callable=AsyncMock,
+                return_value=saved_item,
+            ) as mock_save,
+        ):
+            result = await sync_queue_item(queue_item.id)
+
+        mock_save.assert_awaited_once()
+        call_kwargs = mock_save.call_args
+        assert set(call_kwargs.kwargs.get("flag_modified_fields")) == {
+            "execution_request",
+            "status",
+            "started_at",
+            "finished_at",
+            "sync_in_progress_started_at",
+        }
+        assert result is saved_item
+
+
 class TestDispatchChainedTask:
     """Test _dispatch_chained_task."""
 
@@ -902,6 +1052,81 @@ class TestDispatchChainedTask:
 
 class TestSyncQueueItemChainDispatch:
     """Test chain dispatch behavior in sync_queue_item."""
+
+    @pytest.mark.asyncio
+    async def test_save_flags_scalars_after_sync_task_history(self) -> None:
+        """Assert save receives flag_modified_fields for executor-updated scalars.
+
+        Cover the path where the load session closes before ``sync_task_history``
+        mutates the in-memory ``TaskHistory``. Flag those columns on save so merge
+        persists them; omitting them from ``flag_modified_fields`` skips the UPDATE,
+        leaves RUNNING in the database, and triggers 409 conflicts on redispatch.
+        """
+        main_task = _make_chain_task("mum-task")
+        running_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.RUNNING,
+            {},
+        )
+        running_history.sync_in_progress_started_at = datetime(
+            2026, 4, 1, 10, 0, 0, tzinfo=UTC
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+        mock_save = AsyncMock()
+
+        async def sync_mutates_in_place(queue_item: TaskHistory) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.FAILED
+            queue_item.started_at = datetime(2026, 4, 1, 10, 1, 0, tzinfo=UTC)
+            queue_item.finished_at = datetime(2026, 4, 1, 10, 2, 0, tzinfo=UTC)
+            return queue_item
+
+        async def save_returns_item(session, queue_item, **kwargs):
+            return queue_item
+
+        mock_save.side_effect = save_returns_item
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskHistoryManager.get_or_404",
+                new_callable=AsyncMock,
+                return_value=running_history,
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.get_root_task",
+                new_callable=AsyncMock,
+                return_value=main_task,
+            ),
+            patch("app.tasks.celery.get_executor_for_task") as mock_get_executor,
+            patch(
+                "app.tasks.celery.TaskHistoryManager.save",
+                new=mock_save,
+            ),
+        ):
+            executor = AsyncMock()
+            executor.sync_task_history = AsyncMock(side_effect=sync_mutates_in_place)
+            mock_get_executor.return_value = executor
+
+            result = await sync_queue_item(1)
+
+        mock_save.assert_awaited_once()
+        call_kw = mock_save.await_args.kwargs
+        assert set(call_kw["flag_modified_fields"]) == {
+            "execution_request",
+            "status",
+            "started_at",
+            "finished_at",
+            "sync_in_progress_started_at",
+        }
+        saved_arg = mock_save.await_args.args[1]
+        assert saved_arg is result
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.started_at == datetime(2026, 4, 1, 10, 1, 0, tzinfo=UTC)
+        assert result.finished_at == datetime(2026, 4, 1, 10, 2, 0, tzinfo=UTC)
+        assert result.sync_in_progress_started_at is None
 
     @pytest.mark.asyncio
     async def test_dispatches_chain_on_terminal_status(self) -> None:
