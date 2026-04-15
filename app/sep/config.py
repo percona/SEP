@@ -21,6 +21,7 @@ from functools import cached_property
 from pathlib import Path
 from string import Template
 from typing import Any, ClassVar, Literal, Self
+from urllib.parse import urlparse
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
@@ -38,7 +39,7 @@ from pydantic import (
 )
 
 from app import __summary__, __version__
-from app.core.celery.models import IntervalSchedule, Period
+from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
     settings,
@@ -236,6 +237,110 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
+class ReportScheduleEntry(BaseLowercaseModel):
+    """A single scheduled report generation with its own cadence and parameters.
+
+    :param schedule: When to run (interval or crontab).
+    :type schedule: IntervalSchedule | CrontabSchedule
+    :param since: Prometheus-style start offset for the report window.
+    :type since: str
+    :param until: Prometheus-style end offset for the report window.
+    :type until: str
+    :param full: Whether to generate a full report.
+    :type full: bool
+    :param refresh: Re-run advisor checks before collecting results.
+    :type refresh: bool
+    :param sections: Optional list of report sections to include.
+    :type sections: list[str] | None
+    :param upload: Upload the generated report to ServiceNow after generation.
+        Requires global upload credentials to be configured.
+    :type upload: bool
+    """
+
+    schedule: IntervalSchedule | CrontabSchedule
+    since: str = "now-7d"
+    until: str = "now"
+    full: bool = True
+    refresh: bool = False
+    sections: list[str] | None = None
+    upload: bool = False
+
+
+class HealthReportSettings(BaseLowercaseModel):
+    """Configuration for the Health & Security Report plugin.
+
+    :param schedules: List of report generation schedules, each with its own
+        cadence and parameters.  Empty by default (no periodic generation).
+    :type schedules: list[ReportScheduleEntry]
+    :param upload: Master toggle for ServiceNow upload.  When ``False``
+        (the default) uploading is disabled regardless of other fields.
+    :type upload: bool
+    :param endpoint: The ServiceNow upload API URL.
+    :type endpoint: str | None
+    :param api_key: API key for authenticating with the upload endpoint.
+    :type api_key: SecretStr | None
+    :param client_id: Customer identifier sent with each upload.
+    :type client_id: str | None
+    """
+
+    schedules: list[ReportScheduleEntry] = []
+    upload: bool = False
+    endpoint: str | None = None
+    api_key: SecretStr | None = None
+    client_id: str | None = None
+
+    @field_validator("endpoint", "client_id", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("endpoint", mode="after")
+    @classmethod
+    def _normalize_endpoint(cls, v: str | None) -> str | None:
+        if v is not None:
+            return v.rstrip("/")
+        return v
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _empty_secret_to_none(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        raw = v.get_secret_value() if isinstance(v, SecretStr) else v
+        if isinstance(raw, str) and not raw.strip():
+            return None
+        return v
+
+    @property
+    def upload_disabled_reasons(self) -> list[str]:
+        """Return a list of reasons why uploading is not possible.
+
+        An empty list means upload is fully configured and ready.
+        """
+        if not self.upload:
+            return ["Upload is disabled"]
+
+        reasons: list[str] = []
+        if self.endpoint is None:
+            reasons.append("Endpoint is not configured")
+        else:
+            parsed = urlparse(self.endpoint)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                reasons.append("Endpoint is not a valid HTTP/HTTPS address")
+        if self.api_key is None:
+            reasons.append("API key is not configured")
+        if self.client_id is None:
+            reasons.append("Client ID is not configured")
+        return reasons
+
+    @property
+    def is_upload_configured(self) -> bool:
+        """Return ``True`` when upload is enabled and all credentials are set."""
+        return not self.upload_disabled_reasons
+
+
 class SEPSettings(BaseYamlAppSettings):
     """Settings for SEP.
 
@@ -282,6 +387,9 @@ class SEPSettings(BaseYamlAppSettings):
         fields are forwarded to the top-level ``settings.PMM``; alerts fields are read
         by ``AlertsPMMConfig``.
     :type PMM: _DeprecatedPMMConfig
+    :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
+        Upload is disabled by default.
+    :type HEALTH_REPORT: HealthReportSettings
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
     :type FOOTER_TEMPLATE: Template
@@ -305,6 +413,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
     PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
+    HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
