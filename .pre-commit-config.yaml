@@ -44,6 +44,13 @@ repos:
         language: system
         files: ^sep_installer\.sh$
         pass_filenames: false
+      - id: changelog-fragments
+        name: Validate changelog.d/ fragments
+        description: "Validate per-PR changelog fragments under changelog.d/"
+        entry: python3 scripts/changelog.py check
+        language: system
+        files: ^changelog\.d/
+        pass_filenames: false
       - id: check-nomad-payload-size
         name: Check Nomad payload size
         description: "Ensure dispatch payloads stay under Nomad 16 KiB limit after minify+gzip"

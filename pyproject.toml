@@ -271,6 +271,7 @@ order-by-type = false
 "celery.py" = ["ARG001"]
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
+"scripts/*.py" = ["T201"] # CLI scripts use print() for user-facing output
 
 
 [tool.ruff.format]

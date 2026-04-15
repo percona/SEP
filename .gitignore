@@ -161,6 +161,8 @@ pyrightconfig.json
 [Ll]ib64
 [Ll]ocal
 [Ss]cripts
+!/scripts/
+!/tests/scripts/
 pyvenv.cfg
 pip-selfcheck.json
 
