@@ -12,10 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
 - SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
 - SEP-928: Inventory Sync split button — the chevron next to the existing sync-all control opens a dropdown that lets DBAs run a single configured syncer instead of waiting for the full chain
+- SEP-932: Database connectivity check endpoint via Nomad task dispatch (MySQL, PostgreSQL, MongoDB)
 
 ### Changed
 
 - SEP-816: Reduce write amplification for `TaskHistory.execution_request` by using `JSONB` on Postgres, deferring the column by default, and clearing the sync lock via targeted `UPDATE` instead of a full ORM save
+- SEP-818: Add PostgreSQL and SQLite expression indexes on `taskhistory.execution_request->>'task'`/`->>'target'` so dispatch dedup and task-history filter queries use index scans instead of scanning a narrowed candidate set
 - SEP-937: PMM connection settings moved to top-level `PMM` config section (old `SEP.PMM` path still works with deprecation warning)
 
 ### Breaking Changes
