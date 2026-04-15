@@ -24,6 +24,7 @@ from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, Create
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
     run_node_sync,
+    run_scheduled_inventory_sync,
     run_schema_sync,
     run_service_sync,
     run_table_sync,
@@ -144,3 +145,34 @@ async def test_run_table_sync(created_table, mock_base_syncer_factory):
 
     syncer1.sync_table.assert_awaited_once_with(created_table, refresh_at_start=False)
     syncer2.sync_table.assert_awaited_once_with(created_table, refresh_at_start=True)
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_inventory_sync(mocker, mock_base_syncer_factory):
+    """Assert run_scheduled_inventory_sync reads API key and constructs syncers."""
+    syncer = mock_base_syncer_factory()
+    mocker.patch(
+        "app.sep.plugins.inventory.sync.tasks_settings",
+        INVENTORY_SYNC_API_KEY="test-api-key",
+    )
+    mocker.patch(
+        "app.sep.plugins.inventory.sync.get_syncers_standalone",
+        return_value=[syncer],
+    )
+    mock_run = mocker.patch(
+        "app.sep.plugins.inventory.sync.run_inventory_sync",
+        new=AsyncMock(),
+    )
+    await run_scheduled_inventory_sync()
+    mock_run.assert_awaited_once_with("test-api-key", syncer)
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_inventory_sync_no_api_key(mocker):
+    """Assert run_scheduled_inventory_sync raises when no API key configured."""
+    mocker.patch(
+        "app.sep.plugins.inventory.sync.tasks_settings",
+        INVENTORY_SYNC_API_KEY=None,
+    )
+    with pytest.raises(ValueError, match="INVENTORY_SYNC_API_KEY"):
+        await run_scheduled_inventory_sync()

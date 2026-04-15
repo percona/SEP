@@ -68,6 +68,7 @@ async def node_list(
     request: Request,
     context: DefaultContext,
     inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """List Nodes."""
     context["inventory"] = await inventory_api.get("/")
@@ -77,6 +78,12 @@ async def node_list(
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
     context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
+    periodic_tasks = await tasks_api.get("/periodic/")
+    sync_schedule = next(
+        (pt for pt in periodic_tasks if pt.get("task") == "inventory-sync"),
+        None,
+    )
+    context["sync_schedule"] = sync_schedule
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html.j2",
