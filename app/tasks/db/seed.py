@@ -17,7 +17,8 @@
 
 import logging
 
-from sqlalchemy import text
+from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel import col
 
@@ -31,6 +32,7 @@ from app.core.utils.date_time import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
+from app.tasks.db.engine import engine
 from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
 
 logger = logging.getLogger(__name__)
@@ -496,25 +498,29 @@ async def verify_taskhistory_execution_request_is_jsonb() -> None:
     converted. The check is a no-op on SQLite and MySQL, where SEP-988's
     migration is also a no-op.
 
+    Use SQLAlchemy's reflection inspector rather than a raw
+    ``information_schema`` query so the dialect-specific type mapping is what
+    decides whether the column is ``JSONB`` or plain ``JSON``.
+
     :raises RuntimeError: If the PostgreSQL column type is not ``jsonb``.
     """
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        bind = session.get_bind()
-        if not bind.name.startswith(DatabaseDialect.POSTGRESQL):
-            return
-        result = await session.execute(
-            text(
-                "SELECT data_type FROM information_schema.columns "
-                "WHERE table_schema = current_schema() "
-                "AND table_name = 'taskhistory' "
-                "AND column_name = 'execution_request'"
-            )
+    if not engine.dialect.name.startswith(DatabaseDialect.POSTGRESQL):
+        return
+    async with engine.connect() as conn:
+        columns = await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).get_columns("taskhistory")
         )
-        data_type = result.scalar_one_or_none()
-        if data_type != "jsonb":
-            raise RuntimeError(
-                f"taskhistory.execution_request is {data_type!r}, expected 'jsonb'. "
-                "Run the Tasks API Alembic migrations (SEP-988) before starting "
-                "the app."
-            )
+    for column in columns:
+        if column["name"] != "execution_request":
+            continue
+        if isinstance(column["type"], JSONB):
+            return
+        raise RuntimeError(
+            f"taskhistory.execution_request is {type(column['type']).__name__!r}, "
+            "expected 'JSONB'. Run the Tasks API Alembic migrations (SEP-988) "
+            "before starting the app."
+        )
+    raise RuntimeError(
+        "taskhistory.execution_request column not found. Run the Tasks API "
+        "Alembic migrations (SEP-988) before starting the app."
+    )
