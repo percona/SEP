@@ -516,11 +516,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             "node_type": node_type,
         }
         params = {key: value for key, value in params.items() if value is not None}
-        # TODO(yan): Results will be paginated
-        # SEP-134
+        params["limit"] = 0
+        response = await self.inventory_api.get("/", params=params)
         return [
-            CreatedNode.model_validate(node_data)
-            for node_data in await self.inventory_api.get("/", params=params)
+            CreatedNode.model_validate(node_data) for node_data in response["items"]
         ]
 
     @alru_cache
@@ -601,12 +600,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: A list of retrieved CreatedSchema instances.
         :rtype: list[CreatedSchema]
         """
+        response = await self.inventory_api.get(
+            f"/services/{service_id}/schemas/",
+            params={"include_tables": "true", "limit": 0},
+        )
         return [
             CreatedSchema.model_validate(schema_data)
-            for schema_data in await self.inventory_api.get(
-                f"/services/{service_id}/schemas/",
-                params={"include_tables": "true"},
-            )
+            for schema_data in response["items"]
         ]
 
     async def delete_node(self, created_node: CreatedNode) -> None:
