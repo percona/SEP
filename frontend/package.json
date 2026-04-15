@@ -1,0 +1,27 @@
+{
+  "name": "@sep/root",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @sep/shell dev",
+    "build": "pnpm -r --filter '@sep/*' run build",
+    "preview": "pnpm --filter @sep/shell preview",
+    "lint": "oxlint --config oxlintrc.json .",
+    "lint:fix": "oxlint --config oxlintrc.json --fix .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "typecheck": "pnpm -r type-check",
+    "type-check": "pnpm -r type-check",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.45.0",
+    "oxlint": "^1.60.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
