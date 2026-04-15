@@ -81,6 +81,28 @@ async def test_send_alert_builds_correct_payload(mocker, mock_remote_api, sample
     )
 
 
+@pytest.mark.asyncio
+async def test_resolve_alert_builds_correct_payload(mocker, mock_remote_api):
+    """Verify that the resolve JSON payload sent to PagerDuty is correct."""
+    mock_remote_api.post.return_value = {"success": True}
+    mocker.patch.object(
+        PagerDutyEventsAlertProvider,
+        "get_api",
+        new=AsyncMock(return_value=mock_remote_api),
+    )
+    prov = PagerDutyEventsAlertProvider(routing_key="rk1")
+
+    await prov.resolve_alert("task:backup:node-1")
+    mock_remote_api.post.assert_awaited_once_with(
+        "enqueue",
+        json={
+            "routing_key": "rk1",
+            "event_action": "resolve",
+            "dedup_key": "task:backup:node-1",
+        },
+    )
+
+
 def test_pagerduty_routing_key_masked_in_repr():
     """Test that routing_key is masked in repr output."""
     prov = PagerDutyEventsAlertProvider(routing_key="secret-routing-key")

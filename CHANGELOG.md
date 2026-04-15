@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - SEP-491: Automatic PMM annotations for task lifecycle events (STARTED, COMPLETED, FAILED, STOPPED, LOST)
 - SEP-503: PagerDuty alert triggered on inventory sync item failure
+- SEP-882: Auto-resolve PagerDuty alerts when a failed backup task is re-executed and succeeds
 - SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
 - SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
 - SEP-928: Inventory Sync split button — the chevron next to the existing sync-all control opens a dropdown that lets DBAs run a single configured syncer instead of waiting for the full chain
