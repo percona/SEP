@@ -32,6 +32,7 @@ from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import cast, func, Text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -46,6 +47,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
+from app.core.pmm import schedule_annotation
 from app.core.utils import utc_now
 from app.tasks.config import tasks_settings
 from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
@@ -193,7 +195,10 @@ async def get_task_history(queue_id: int) -> TaskHistory:
     async_session = get_async_session_maker()
     async with async_session() as session:
         return await TaskHistoryManager.get_or_404(
-            session, select_related=[TaskHistory.task], id=queue_id
+            session,
+            select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=queue_id,
         )
 
 
@@ -285,10 +290,13 @@ async def _dispatch_queue_item(
         await _raise_if_identical_task_conflict(queue_item, session)
         task = await TaskManager.get_root_task(session, queue_item.task)
         executor = get_executor_for_task(task)
-        return await executor.dispatch_task(session, queue_item, task)
+        result = await executor.dispatch_task(session, queue_item, task)
     except Exception:
         logger.exception("Failed to dispatch queue item")
         raise
+    else:
+        schedule_annotation(result, "STARTED")
+        return result
     finally:
         async with lock_session_maker() as async_session:
             await DispatchLockManager.delete(async_session, dispatch_lock)
@@ -376,17 +384,44 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         queue_item = await TaskHistoryManager.get_or_404(
             session,
             select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
             id=queue_id,
         )
         task = await TaskManager.get_root_task(session, queue_item.task)
     was_running = queue_item.is_running
-    if was_running:
-        executor = get_executor_for_task(task)
-        queue_item = await executor.sync_task_history(queue_item)
+    if not was_running:
+        async with async_session() as session:
+            result = await TaskHistoryManager.update_where(
+                session,
+                {"sync_in_progress_started_at": None},
+                TaskHistory.status != TaskHistoryStatusEnum.RUNNING,
+                id=queue_id,
+            )
+            if result.rowcount == 0:
+                queue_item = await TaskHistoryManager.get_or_404(
+                    session,
+                    select_related=[TaskHistory.task],
+                    query_options=[undefer(TaskHistory.execution_request)],
+                    id=queue_id,
+                )
+                task = await TaskManager.get_root_task(session, queue_item.task)
+                was_running = True
+            else:
+                return queue_item
+    executor = get_executor_for_task(task)
+    queue_item = await executor.sync_task_history(queue_item)
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
         saved = await TaskHistoryManager.save(
-            session, queue_item, flag_modified_fields=["execution_request"]
+            session,
+            queue_item,
+            flag_modified_fields=[
+                "execution_request",
+                "status",
+                "started_at",
+                "finished_at",
+                "sync_in_progress_started_at",
+            ],
         )
     chain_on_failure = saved.execution_request.meta.get("_chain_on_failure", False)
     is_terminal = (

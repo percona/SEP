@@ -150,6 +150,7 @@ class BaseManager:
         query: W,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
+        query_options: Sequence = (),
         **equal_filters: Any,
     ) -> W:
         for clause in whereclause:
@@ -166,6 +167,8 @@ class BaseManager:
             query = query.where(cls._get_column(field_name) == value)
         if select_related:
             query = query.options(*[joinedload(attr) for attr in select_related])
+        if query_options:
+            query = query.options(*query_options)
         return query
 
     @classmethod
@@ -174,6 +177,7 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         builder: _QueryBuilder = _DEFAULT_SELECT_QUERY_BUILDER,
         select_related: Sequence = (),
+        query_options: Sequence = (),
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
     ) -> W:
@@ -181,6 +185,7 @@ class BaseManager:
             builder.function(*(builder.args or (cls.Model,))),
             *whereclause,
             select_related=select_related,
+            query_options=query_options,
             **equal_filters,
         )
         if returning is True:
@@ -212,8 +217,9 @@ class BaseManager:
         :param offset: The zero-based starting offset for the query results,
             or ``None`` when pagination is not requested.
         :type offset: int | None
-        :param limit: The maximum number of records to return, or ``None`` when
-            pagination is not requested.
+        :param limit: The maximum number of records to return, ``0`` to disable
+            the limit (return all rows), or ``None`` when pagination is not
+            requested.
         :type limit: int | None
         :raises ValueError: If ``offset`` or ``limit`` is negative.
         """
@@ -237,6 +243,7 @@ class BaseManager:
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
+        query_options: Sequence = (),
         offset: int | None = None,
         limit: int | None = None,
         **equal_filters: Any,
@@ -255,13 +262,14 @@ class BaseManager:
                 pk_query = pk_query.order_by(*ordering)
             if offset is not None:
                 pk_query = pk_query.offset(offset)
-            if limit is not None:
+            if limit:
                 pk_query = pk_query.limit(limit)
             pk_result = await cls._exec(session, pk_query)
             page_ids = list(pk_result.all())
             query = cls._build_query(
                 cls._get_column("id").in_(page_ids),
                 select_related=select_related,
+                query_options=query_options,
             )
             if ordering:
                 query = query.order_by(*ordering)
@@ -269,13 +277,14 @@ class BaseManager:
             query = cls._build_query(
                 *whereclause,
                 select_related=select_related,
+                query_options=query_options,
                 **equal_filters,
             )
             if ordering:
                 query = query.order_by(*ordering)
             if offset is not None:
                 query = query.offset(offset)
-            if limit is not None:
+            if limit:
                 query = query.limit(limit)
 
         result = await cls._exec(session, query)
@@ -506,6 +515,7 @@ class BaseManager:
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
+        query_options: Sequence = (),
         offset: int | None = None,
         limit: int | None = None,
         **equal_filters: Any,
@@ -519,6 +529,8 @@ class BaseManager:
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
         :param offset: The zero-based starting offset for the query results, or
             ``None`` (default) to return all matching records from the beginning.
         :type offset: int | None
@@ -535,6 +547,7 @@ class BaseManager:
             session,
             *whereclause,
             select_related=select_related,
+            query_options=query_options,
             offset=offset,
             limit=limit,
             **equal_filters,
@@ -593,6 +606,7 @@ class BaseManager:
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
+        query_options: Sequence = (),
         **equal_filters: Any,
     ) -> T | None:
         """Return the first record that matches the query.
@@ -604,6 +618,8 @@ class BaseManager:
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
@@ -614,6 +630,7 @@ class BaseManager:
             session,
             *whereclause,
             select_related=select_related,
+            query_options=query_options,
             **equal_filters,
         )
         return result.first()
@@ -624,6 +641,7 @@ class BaseManager:
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
+        query_options: Sequence = (),
         **equal_filters: Any,
     ) -> T:
         """Return the single record that matches the query.
@@ -635,6 +653,8 @@ class BaseManager:
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
@@ -646,6 +666,7 @@ class BaseManager:
             session,
             *whereclause,
             select_related=select_related,
+            query_options=query_options,
             **equal_filters,
         )
         return result.one()
@@ -656,6 +677,7 @@ class BaseManager:
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
+        query_options: Sequence = (),
         **equal_filters: Any,
     ) -> T:
         """Return the single record that matches the query, or raise a 404 error.
@@ -667,6 +689,8 @@ class BaseManager:
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
@@ -679,6 +703,7 @@ class BaseManager:
                 session,
                 *whereclause,
                 select_related=select_related,
+                query_options=query_options,
                 **equal_filters,
             )
         except NoResultFound:

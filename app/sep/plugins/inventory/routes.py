@@ -34,10 +34,15 @@ from app.sep.deps import (
     IsAuthenticated,
     IsCsrfValidated,
     SessionDep,
+    TaskAPI,
 )
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.inventory.deps import SyncersDep
+from app.sep.plugins.inventory.deps import (
+    build_available_syncers,
+    filter_syncers_by_name,
+    SyncersDep,
+)
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
     run_node_sync,
@@ -57,15 +62,27 @@ async def node_list(
     request: Request,
     context: DefaultContext,
     inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """List Nodes."""
-    context["inventory"] = await inventory_api.get("/")
+    response = await inventory_api.get("/", params={"limit": 0})
+    context["inventory"] = response["items"]
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
-    context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
+    context["available_syncers"] = build_available_syncers(
+        syncers,
+        lambda syncer: syncer.can_sync_inventory(),
+    )
+    context["can_sync"] = bool(context["available_syncers"])
+    periodic_tasks = await tasks_api.get("/periodic/")
+    sync_schedule = next(
+        (pt for pt in periodic_tasks if pt.get("task") == "inventory-sync"),
+        None,
+    )
+    context["sync_schedule"] = sync_schedule
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html.j2",
@@ -78,9 +95,15 @@ async def sync_inventory(
     user: CurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start inventory sync as a background task."""
-    background_tasks.add_task(run_inventory_sync, user.access_token, *syncers)
+    selected = filter_syncers_by_name(
+        syncers,
+        syncer_name,
+        lambda syncer: syncer.can_sync_inventory(),
+    )
+    background_tasks.add_task(run_inventory_sync, user.access_token, *selected)
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -98,7 +121,11 @@ async def node_detail(
         session,
         SyncInventoryEntityTypeEnum.NODE,
     )
-    context["can_sync"] = any(syncer.can_sync_node(node) for syncer in syncers)
+    context["available_syncers"] = build_available_syncers(
+        syncers,
+        lambda syncer: syncer.can_sync_node(node),
+    )
+    context["can_sync"] = bool(context["available_syncers"])
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-detail.html.j2",
@@ -112,9 +139,15 @@ async def sync_node(
     node: CreatedNodeDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start node sync as a background task."""
-    background_tasks.add_task(run_node_sync, node, user.access_token, *syncers)
+    selected = filter_syncers_by_name(
+        syncers,
+        syncer_name,
+        lambda syncer: syncer.can_sync_node(node),
+    )
+    background_tasks.add_task(run_node_sync, node, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/{node.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -159,7 +192,11 @@ async def service_detail(
         session,
         SyncInventoryEntityTypeEnum.SERVICE,
     )
-    context["can_sync"] = any(syncer.can_sync_service(service) for syncer in syncers)
+    context["available_syncers"] = build_available_syncers(
+        syncers,
+        lambda syncer: syncer.can_sync_service(service),
+    )
+    context["can_sync"] = bool(context["available_syncers"])
     return templates.TemplateResponse(
         request=request,
         name="inventory/service-detail.html.j2",
@@ -175,9 +212,15 @@ async def sync_service(
     service: CreatedServiceDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start service sync as a background task."""
-    background_tasks.add_task(run_service_sync, service, user.access_token, *syncers)
+    selected = filter_syncers_by_name(
+        syncers,
+        syncer_name,
+        lambda syncer: syncer.can_sync_service(service),
+    )
+    background_tasks.add_task(run_service_sync, service, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -234,7 +277,11 @@ async def schema_detail(
         session,
         SyncInventoryEntityTypeEnum.SCHEMA,
     )
-    context["can_sync"] = any(syncer.can_sync_schema(schema) for syncer in syncers)
+    context["available_syncers"] = build_available_syncers(
+        syncers,
+        lambda syncer: syncer.can_sync_schema(schema),
+    )
+    context["can_sync"] = bool(context["available_syncers"])
     return templates.TemplateResponse(
         request=request,
         name="inventory/schema-detail.html.j2",
@@ -250,9 +297,15 @@ async def sync_schema(
     schema: CreatedSchemaDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start schema sync as a background task."""
-    background_tasks.add_task(run_schema_sync, schema, user.access_token, *syncers)
+    selected = filter_syncers_by_name(
+        syncers,
+        syncer_name,
+        lambda syncer: syncer.can_sync_schema(schema),
+    )
+    background_tasks.add_task(run_schema_sync, schema, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/schemas/{schema.id}",
         status_code=status.HTTP_303_SEE_OTHER,

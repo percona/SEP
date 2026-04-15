@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.models import AlertService, AlertSeverity
 from app.inventory.models import ServiceTypeEnum
 from app.sep.crud import SyncInstanceManager
 from app.sep.inventory import (
@@ -35,6 +36,7 @@ from app.sep.models import (
     SyncItem,
     SyncItemWrite,
 )
+from app.sep.sync.exceptions import SyncFailError
 from app.sep.sync.models import BaseSyncer, BaseTaskSyncer
 from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import (
@@ -68,6 +70,7 @@ def created_node() -> CreatedNode:
     created_node = CreatedNodeFactory.build()
     created_node.id = MOCK_CREATED_NODE_ID
     created_node.address = "localhost"
+    created_node.external_id = "test-node-ext"
     return created_node
 
 
@@ -94,6 +97,44 @@ def created_table(created_schema) -> CreatedTable:
     created_table = CreatedTableFactory.build()
     created_table.database = created_schema
     return created_table
+
+
+def _manage_sync_item_failure_test_setup(
+    mock_remote_api,
+    mocker,
+    *,
+    entity_type: SyncInventoryEntityTypeEnum,
+    entity_id: int | None,
+    break_on_error: bool = False,
+):
+    """Return a syncer and patched mocks for ``manage_sync_item`` failure tests."""
+    mock_sync_instance = AsyncMock(spec=SyncInstance)
+    mock_sync_instance.id = uuid.uuid4()
+    mock_sync_item = AsyncMock(spec=SyncItem)
+    mock_sync_items = {(entity_type, entity_id): mock_sync_item}
+
+    class TestSyncer(BaseSyncer):
+        _session = AsyncMock(spec=AsyncSession)
+
+    syncer = TestSyncer(
+        inventory_api=mock_remote_api,
+        sync_instance=mock_sync_instance,
+        sync_items=mock_sync_items,
+        break_on_error=break_on_error,
+    )
+    mocker.patch(
+        "app.sep.sync.models.BaseSyncer.prepare_sync",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.sep.sync.models.SyncItemManager.start_sync", new_callable=AsyncMock
+    )
+    mock_fail_sync = mocker.patch(
+        "app.sep.sync.models.SyncItemManager.fail_sync", new_callable=AsyncMock
+    )
+    mock_trigger = mocker.patch.object(AlertService, "trigger", new_callable=AsyncMock)
+    syncer_name = TestSyncer.get_name()
+    return syncer, mock_fail_sync, mock_trigger, syncer_name
 
 
 @pytest.mark.asyncio
@@ -154,7 +195,9 @@ async def test_prepare_sync(created_node, mock_remote_api, mocker):
         new_callable=AsyncMock,
     )
     mock_get_sync_item.side_effect = [mock_sync_item, mock_sync_item]
-    mock_remote_api.get.side_effect = [[created_node.model_dump()]]
+    mock_remote_api.get.side_effect = [
+        {"items": [created_node.model_dump()], "total": 1, "offset": 0, "limit": 50},
+    ]
 
     await syncer.prepare_sync(SyncInventoryEntityTypeEnum.INVENTORY, None)
 
@@ -239,6 +282,80 @@ async def test_manage_sync_item(mock_remote_api, mocker):
     assert mock_prepare_sync.call_count == 0
     assert mock_start_sync.call_count == 1
     assert mock_finish_sync.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("entity_type", "use_created_node"),
+    [
+        (SyncInventoryEntityTypeEnum.INVENTORY, False),
+        (SyncInventoryEntityTypeEnum.NODE, True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_manage_sync_item_failure_triggers_alert(
+    mock_remote_api,
+    mocker,
+    entity_type,
+    use_created_node,
+    created_node,
+):
+    """Assert fail_sync runs and an ERROR alert fires with the expected dedup_key on failure."""
+    entity_id = created_node.id if use_created_node else None
+    created_entity = created_node if use_created_node else None
+
+    syncer, mock_fail_sync, mock_trigger, syncer_name = (
+        _manage_sync_item_failure_test_setup(
+            mock_remote_api,
+            mocker,
+            entity_type=entity_type,
+            entity_id=entity_id,
+        )
+    )
+    entity_id_repr = "top_level" if entity_id is None else str(created_node.external_id)
+
+    async with syncer.manage_sync_item(entity_type, created_entity):
+        raise RuntimeError(f"Simulate {entity_type.name.lower()} sync failure.")
+
+    mock_fail_sync.assert_awaited_once()
+    mock_trigger.assert_awaited_once()
+    alert_data = mock_trigger.call_args[0][0]
+    assert alert_data["severity"] == AlertSeverity.ERROR
+    assert alert_data["class"] == "inventory_sync_item_failure"
+    assert syncer_name in alert_data["summary"]
+    if entity_id is None:
+        assert "top-level inventory sync" in alert_data["summary"]
+    else:
+        assert f"{entity_type.name} id {entity_id}" in alert_data["summary"]
+        assert f"name={created_node.name!r}" in alert_data["summary"]
+        assert "address='localhost'" in alert_data["summary"]
+        assert f"external_id={created_node.external_id!r}" in alert_data["summary"]
+    assert alert_data["source"] == f"{syncer_name}:{entity_type.name}:{entity_id_repr}"
+    assert (
+        alert_data["dedup_key"] == f"{syncer_name}:{entity_type.name}:{entity_id_repr}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_manage_sync_item_failure_alert_when_break_on_error(
+    created_node, mock_remote_api, mocker
+):
+    """Assert the alert fires before ``SyncFailError`` when ``break_on_error`` is True."""
+    syncer, mock_fail_sync, mock_trigger, _ = _manage_sync_item_failure_test_setup(
+        mock_remote_api,
+        mocker,
+        entity_type=SyncInventoryEntityTypeEnum.NODE,
+        entity_id=created_node.id,
+        break_on_error=True,
+    )
+
+    with pytest.raises(SyncFailError):
+        async with syncer.manage_sync_item(
+            SyncInventoryEntityTypeEnum.NODE, created_node
+        ):
+            raise RuntimeError("Simulate node sync failure.")
+
+    mock_fail_sync.assert_awaited_once()
+    mock_trigger.assert_awaited_once()
 
 
 @pytest.mark.asyncio

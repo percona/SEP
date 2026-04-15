@@ -174,7 +174,7 @@ def test_archives_detail(
     mock_task_api_dep.get.assert_any_await(f"/stats/{created_task.name}")
     mock_task_api_dep.get.assert_any_await("/hosts/")
     mock_inventory_api_dep.get.assert_any_await(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0}
     )
 
 
