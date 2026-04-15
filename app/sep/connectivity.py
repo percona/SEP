@@ -178,9 +178,10 @@ async def maybe_check_connectivity(
 
     Extract ``target``, ``_connectivity_host``, ``_connectivity_port``, and
     ``_connectivity_service_type`` from ``meta`` and delegate to
-    ``check_and_warn_connectivity``. Return silently when any of those keys
-    are missing or falsy, which lets task-creation routes invoke this helper
-    unconditionally without inspecting the task payload themselves.
+    ``check_and_warn_connectivity``. Return silently when ``check_connectivity``
+    is ``False`` or when any of those keys are missing or falsy, which lets
+    task-creation routes invoke this helper unconditionally without inspecting
+    the task payload themselves.
 
     :param request: The HTTP request (for flash messages).
     :type request: Request
