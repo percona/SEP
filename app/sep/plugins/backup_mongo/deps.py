@@ -161,8 +161,8 @@ async def build_backup_task_payload(
 
     :param form: The form data for the Backups creation.
     :type form: BackupCreate
-    :return: A fully constructed `TaskWrite` object containing all the necessary
-        configuration to create the Backup task.
+    :return: A fully constructed ``TaskWrite`` object containing all the
+        necessary configuration to create the Backup task.
     :rtype: TaskWrite
     """
     pitr = _build_pitr_config(form)
@@ -287,3 +287,9 @@ async def get_backups_index_context(
         TaskOwner.BACKUP_MONGO,
         alert_on_fail_default=True,
     )
+
+
+BackupsIndexContextDep = Annotated[
+    dict[str, Any],
+    Depends(get_backups_index_context),
+]

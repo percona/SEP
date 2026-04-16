@@ -43,6 +43,11 @@ from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import (
+    annotate_tasks_with_connectivity,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+    CONNECTIVITY_TARGET_KEY,
+)
 from app.sep.db import get_async_session_maker
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import (
@@ -690,7 +695,8 @@ async def get_tasks_context(
     history_tasks = []
     scheduled_tasks = []
     running_tasks = []
-    for task in await tasks_api.get("/", params={"owner": owner}):
+    tasks_response = await tasks_api.get("/", params={"owner": owner})
+    for task in tasks_response["items"]:
         task_info = {
             "name": task["name"],
             "id": task["id"],
@@ -698,9 +704,15 @@ async def get_tasks_context(
             "last_updated_by": task.get("last_updated_by"),
         }
         task_info |= get_task_info_func(task)
+        meta = task.get("data", {}).get("meta", {})
+        if CONNECTIVITY_META_SERVICE_TYPE_KEY in meta:
+            task_info[CONNECTIVITY_TARGET_KEY] = meta.get("target", "")
+            task_info[CONNECTIVITY_META_SERVICE_TYPE_KEY] = meta[
+                CONNECTIVITY_META_SERVICE_TYPE_KEY
+            ]
         tasks.append(task_info)
-        history = await tasks_api.get(f"/{task['name']}/history/")
-        for hist in history:
+        response = await tasks_api.get(f"/{task['name']}/history/")
+        for hist in response["items"]:
             match TaskHistoryStatusEnum(hist["status"]):
                 case TaskHistoryStatusEnum.PENDING:
                     scheduled_tasks.append(hist)
@@ -708,6 +720,7 @@ async def get_tasks_context(
                     running_tasks.append(hist)
                 case _:
                     history_tasks.append(hist)
+    annotate_tasks_with_connectivity(tasks)
     periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
 
     alert_on_fail_available = bool(alert_settings.PROVIDERS)
@@ -751,8 +764,8 @@ async def get_chainable_tasks(
     :return: A list of chainable task dicts.
     :rtype: list[dict[str, Any]]
     """
-    all_tasks = await tasks_api.get("/", params={"owner": owner, "target": target})
-    return [t for t in all_tasks if t["name"] != exclude_task_name]
+    response = await tasks_api.get("/", params={"owner": owner, "target": target})
+    return [t for t in response["items"] if t["name"] != exclude_task_name]
 
 
 async def get_tasks_index_context(
@@ -778,15 +791,17 @@ async def get_tasks_index_context(
     :return: An updated context dictionary containing tasks' data.
     :rtype: dict[str, Any]
     """
-    running_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    scheduled_tasks = await tasks_api.get(
+    running_tasks = response["items"]
+    response = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
+    scheduled_tasks = response["items"]
     periodic_tasks = await tasks_api.get("/periodic/", params={"enabled": "True"})
-    tasks = await tasks_api.get("/")
-    task_owner_mapping = {task["name"]: task["owner"] for task in tasks}
+    response = await tasks_api.get("/")
+    task_owner_mapping = {task["name"]: task["owner"] for task in response["items"]}
     for periodic_task in periodic_tasks:
         task_name = periodic_task.get("task")
         periodic_task["owner"] = task_owner_mapping.get(task_name)
@@ -893,12 +908,14 @@ async def check_for_conflicted_running_tasks(
     :raises HTTPConflictException: If there are running or pending tasks with the same
         name.
     """
-    running_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    pending_tasks = await tasks_api.get(
+    running_tasks = response["items"]
+    response = await tasks_api.get(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
+    pending_tasks = response["items"]
     if running_tasks or pending_tasks:
         raise HTTPConflictException("Task is already running or pending.")
 

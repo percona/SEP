@@ -2,6 +2,7 @@
 
 - [Branching Strategy](#branching-strategy)
 - [Pull Requests](#pull-requests)
+- [Changelog Fragments](#changelog-fragments)
 - [Setting Up Your Development Environment](#setting-up-your-development-environment)
 - [Coding Standards](#coding-standards)
 - [Testing](#testing)
@@ -26,6 +27,22 @@ git checkout -b SEP-123
 When your feature or fix is ready, open a Pull Request (PR) from your feature branch (SEP-XXX) to the main branch. Ensure the PR description includes a representative summary of your changes.
 
 All PRs must be reviewed and approved by at least one of our [CODEOWNERS](https://github.com/percona/SEP/blob/main/.github/CODEOWNERS).
+
+## Changelog Fragments
+
+If your PR contains a **user-facing** change (a new feature, a bug fix, a behaviour change, a security fix, or a configuration change), add a **changelog fragment** so the entry is picked up in the next release notes. Fragments live under `changelog.d/` at the repo root — each PR writes its own file, which means parallel PRs never collide on `CHANGELOG.md`.
+
+To create a fragment, use the Makefile helper:
+
+```shell
+make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="Brief description"
+```
+
+`<section>` is one of `added`, `changed`, `breaking`, `config`, `fixed`, or `security`. If your change belongs in multiple sections (e.g. it is both a Change and a Breaking Change), run the command once per section.
+
+Skip the step entirely for purely internal changes (CI, refactoring, tooling, docs-only) that have no user-visible effect.
+
+See [`changelog.d/README.md`](changelog.d/README.md) for the full format and examples. A pre-commit hook validates any fragments you touch, and `make changelog-check` / `make changelog-list` are available to inspect or preview them locally.
 
 ## Setting Up Your Development Environment
 
