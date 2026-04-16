@@ -36,6 +36,14 @@
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 #  - GROUP_REPLICATION
+# service_type: mysql
+# alerts:
+#   - MySQLInstanceNotAvailable
+#   - MySQLDeadlock
+#   - MySQLReplicationBroken
+#   - MySQLPXCClusterStatus
+#   - MySQLPXCWsrepDesync
+#   - MySQLPXCFlowControl
 # ---
 
 # mysql_log_extractor.sh
