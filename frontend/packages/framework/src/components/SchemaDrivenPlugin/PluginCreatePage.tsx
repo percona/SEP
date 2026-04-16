@@ -10,12 +10,13 @@ import { SchemaFormRenderer } from '../SchemaFormRenderer';
 interface PluginCreatePageProps {
   schema: PluginSchema;
   pluginName: string;
+  mockTasks?: Record<string, unknown>[];
 }
 
-export function PluginCreatePage({ schema, pluginName }: PluginCreatePageProps) {
+export function PluginCreatePage({ schema, pluginName, mockTasks }: PluginCreatePageProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
-  const createTask = useCreatePluginTask(pluginName);
+  const createTask = useCreatePluginTask(pluginName, mockTasks);
 
   const handleSubmit = (data: Record<string, unknown>) => {
     createTask.mutate(data, {
