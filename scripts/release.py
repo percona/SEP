@@ -185,16 +185,16 @@ def _post_webhook(url_env: str, auth_env: str, version_tag: str) -> bool:
     if not url or not secret:
         return False
     payload = json.dumps({"data": {"versionName": version_tag}}).encode("utf-8")
-    request = urllib.request.Request(  # noqa: S310
-        url,
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "X-Automation-Webhook-Token": secret,
-        },
-        method="POST",
-    )
     try:
+        request = urllib.request.Request(  # noqa: S310
+            url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "X-Automation-Webhook-Token": secret,
+            },
+            method="POST",
+        )
         urllib.request.urlopen(request, timeout=WEBHOOK_TIMEOUT_SECONDS)  # noqa: S310
     except urllib.error.HTTPError as exc:
         print(
@@ -202,7 +202,7 @@ def _post_webhook(url_env: str, auth_env: str, version_tag: str) -> bool:
             file=sys.stderr,
         )
         return False
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         print(
             f"warning: Jira webhook dispatch failed ({url_env}): {type(exc).__name__}",
             file=sys.stderr,
@@ -379,6 +379,43 @@ def cmd_rc(version: str, rc: int) -> int:
     return 0
 
 
+def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
+    """Branch from ``origin/main``, bump to the next dev version, push and open a PR.
+
+    :param version: The X.Y.Z stable release version (no ``v`` prefix).
+    :type version: str
+    :param stable_tag: The stable release tag (with ``v`` prefix) for the PR body.
+    :type stable_tag: str
+    """
+    print("==> Creating dev version bump PR on main...")
+    parts = version.split(".")
+    dev_version = f"{parts[0]}.{int(parts[1]) + 1}.0.dev0"
+    dev_branch = f"bump-dev-version-{dev_version}"
+    _run(["git", "fetch", "origin", "main"])
+    _run(["git", "checkout", "-b", dev_branch, "origin/main"])
+    _bump_version(dev_version, f"v{dev_version}")
+    _run(["git", "commit", "-am", f"Bump version to v{dev_version}"])
+    _run(["git", "push", "-u", "origin", dev_branch])
+    if _gh_available():
+        _run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--base",
+                "main",
+                "--title",
+                f"Bump dev version to v{dev_version}",
+                "--body",
+                f"Automated dev version bump after {stable_tag} stable release.",
+            ],
+        )
+    else:
+        print(
+            f"Note: gh CLI not found. Manually create a PR from {dev_branch} to main.",
+        )
+
+
 def cmd_stable(version: str) -> int:
     """Promote ``release/vX.Y.Z`` to stable ``vX.Y.Z``.
 
@@ -431,33 +468,7 @@ def cmd_stable(version: str) -> int:
     else:
         print("Note: gh CLI not found, skipping GitHub release creation.")
 
-    print("==> Creating dev version bump PR on main...")
-    parts = version.split(".")
-    dev_version = f"{parts[0]}.{int(parts[1]) + 1}.0.dev0"
-    dev_branch = f"bump-dev-version-{dev_version}"
-    _run(["git", "fetch", "origin", "main"])
-    _run(["git", "checkout", "-b", dev_branch, "origin/main"])
-    _bump_version(dev_version, f"v{dev_version}")
-    _run(["git", "commit", "-am", f"Bump version to v{dev_version}"])
-    _run(["git", "push", "-u", "origin", dev_branch])
-    if _gh_available():
-        _run(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--base",
-                "main",
-                "--title",
-                f"Bump dev version to v{dev_version}",
-                "--body",
-                f"Automated dev version bump after {tag} stable release.",
-            ],
-        )
-    else:
-        print(
-            f"Note: gh CLI not found. Manually create a PR from {dev_branch} to main.",
-        )
+    _create_dev_version_bump_pr(version, tag)
 
     print("==> Deleting release branch...")
     _run(["git", "checkout", "main"])

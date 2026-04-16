@@ -249,6 +249,21 @@ def test_post_webhook_timeout_returns_false(monkeypatch, webhook_env, capsys):
     assert "TimeoutError" in capsys.readouterr().err
 
 
+def test_post_webhook_malformed_url_returns_false(monkeypatch, capsys):
+    """``_post_webhook`` returns False when the URL is malformed (``ValueError``)."""
+    monkeypatch.setenv(release.WEBHOOK_CREATE_URL_ENV, "not a valid url at all")
+    monkeypatch.setenv(release.WEBHOOK_CREATE_AUTH_ENV, WEBHOOK_SECRET)
+    assert (
+        release._post_webhook(
+            release.WEBHOOK_CREATE_URL_ENV,
+            release.WEBHOOK_CREATE_AUTH_ENV,
+            "v0.12.0",
+        )
+        is False
+    )
+    assert "ValueError" in capsys.readouterr().err
+
+
 def test_post_webhook_missing_url_env_var(monkeypatch):
     """``_post_webhook`` returns False and skips the call when URL is unset."""
     monkeypatch.delenv(release.WEBHOOK_CREATE_URL_ENV, raising=False)
@@ -569,11 +584,16 @@ def test_rc_with_rc_1_calls_webhook(monkeypatch, capsys):
     ]
 
 
-def test_rc_fires_webhook_before_build(monkeypatch):
-    """RC=1 fires the webhook before any ``git commit`` / ``git tag`` / ``make build``."""
+def test_rc_fires_webhook_after_branch_creation_and_before_build(monkeypatch):
+    """RC=1 webhook fires after ``git checkout -b`` and before commit/tag/build."""
     _, call_order = _patch_rc_ok(monkeypatch, rc=1, webhook_result=True)
     assert release.cmd_rc("0.12.0", 1) == 0
     webhook_idx = next(i for i, c in enumerate(call_order) if c[0] == "webhook")
+    checkout_idx = next(
+        i
+        for i, c in enumerate(call_order)
+        if c[0] == "run" and c[1][:3] == ("git", "checkout", "-b")
+    )
     commit_idx = next(
         i
         for i, c in enumerate(call_order)
@@ -589,7 +609,37 @@ def test_rc_fires_webhook_before_build(monkeypatch):
         for i, c in enumerate(call_order)
         if c[0] == "run" and c[1] == ("make", "build")
     )
-    assert webhook_idx < commit_idx < tag_idx < build_idx
+    assert checkout_idx < webhook_idx < commit_idx < tag_idx < build_idx
+
+
+# --- cmd_rc preconditions --------------------------------------------------
+
+
+def test_rc1_rejects_non_main_branch(monkeypatch, capsys):
+    """RC=1 aborts with exit 1 when the current branch is not ``main``."""
+    runner = _FakeRunner(_make_rc_preconditions(branch="feature/x"))
+    monkeypatch.setattr(release, "_run", runner)
+    assert release.cmd_rc("0.12.0", 1) == 1
+    assert "RC=1 requires being on the main branch" in capsys.readouterr().err
+
+
+def test_rc_rejects_dirty_working_tree(monkeypatch, capsys):
+    """``cmd_rc`` aborts when the working tree has uncommitted changes."""
+    responses = _make_rc_preconditions(branch="main")
+    responses[("git", "status", "--porcelain")] = " M some_file.py\n"
+    runner = _FakeRunner(responses)
+    monkeypatch.setattr(release, "_run", runner)
+    assert release.cmd_rc("0.12.0", 1) == 1
+    assert "Working tree is not clean" in capsys.readouterr().err
+
+
+def test_rc1_rejects_existing_local_branch(monkeypatch, capsys):
+    """RC=1 aborts when the target ``release/vX.Y.Z`` branch already exists locally."""
+    runner = _FakeRunner(_make_rc_preconditions(branch="main"))
+    monkeypatch.setattr(release, "_run", runner)
+    monkeypatch.setattr(release, "_local_branch_exists", lambda _branch: True)
+    assert release.cmd_rc("0.12.0", 1) == 1
+    assert "already exists locally" in capsys.readouterr().err
 
 
 # --- cmd_stable end-to-end -------------------------------------------------
