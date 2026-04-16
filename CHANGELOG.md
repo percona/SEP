@@ -6,42 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-
-- SEP-491: Automatic PMM annotations for task lifecycle events (STARTED, COMPLETED, FAILED, STOPPED, LOST)
-- SEP-503: PagerDuty alert triggered on inventory sync item failure
-- SEP-882: Auto-resolve PagerDuty alerts when a failed backup task is re-executed and succeeds
-- SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
-- SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
-- SEP-928: Inventory Sync split button — the chevron next to the existing sync-all control opens a dropdown that lets DBAs run a single configured syncer instead of waiting for the full chain
-- SEP-932: Database connectivity check endpoint via Nomad task dispatch (MySQL, PostgreSQL, MongoDB)
-- SEP-934: Automatic connectivity check on task creation with non-blocking warnings and visual indicators
-- SEP-933: Manual connectivity check button on inventory service detail page
-- SEP-935: Pre-execution connectivity check before Nomad task dispatch with configurable mode (disabled/warn/block) and result caching
-
-### Changed
-
-- SEP-816: Reduce write amplification for `TaskHistory.execution_request` by using `JSONB` on Postgres, deferring the column by default, and clearing the sync lock via targeted `UPDATE` instead of a full ORM save
-- SEP-817: Move task logs out of `execution_request.tracking.task_logs` into a dedicated append-only `taskhistory_log` table; legacy records continue to render via a dual-read fallback until their eventual cleanup. The `tracking.task_logs` field is no longer populated for new task histories and is no longer collapsed to a boolean in `TaskHistoryResponse` for pre-migration records — API consumers that relied on the field's presence should switch to streaming the `/history/{id}/logs/` endpoint.
-- SEP-818: Add PostgreSQL and SQLite expression indexes on `taskhistory.execution_request->>'task'`/`->>'target'` so dispatch dedup and task-history filter queries use index scans instead of scanning a narrowed candidate set
-- SEP-937: PMM connection settings moved to top-level `PMM` config section (old `SEP.PMM` path still works with deprecation warning)
-- SEP-988: Convert `taskhistory.execution_request` to `JSONB` on PostgreSQL, add a GIN index `ix_taskhistory_execution_request_meta` on `execution_request->'meta'` using `jsonb_path_ops`, and refactor `_raise_if_identical_task_conflict` to use jsonb-native operators on PostgreSQL (`@>` containment for scalar meta items, jsonb equality for list/dict meta items). MySQL and SQLite continue to use the per-key text-equality loop unchanged.
-
-### Breaking Changes
-
-- SEP-924: Inventory list endpoints now return paginated responses with `offset`/`limit` query parameters
-- SEP-925: Tasks list routes (`GET /`, `GET /history/`, `GET /{task}/history/`) now return paginated responses with `offset`/`limit` query parameters
-- SEP-937: The `SEP__PMM_FRONTEND` environment variable has been removed. Use `PMM__FRONTEND` (top-level) or `SEP__PMM__FRONTEND` (nested under SEP.PMM) instead.
-- SEP-988: `_raise_if_identical_task_conflict` dedup comparison on PostgreSQL is now type-strict for scalar meta values, replacing a type-loose `str(raw_value)` text comparison. A dispatch with `meta.key = 1` (int) no longer deduplicates against a pending task with `meta.key = "1"` (string), and vice versa. Bool and `None` scalar meta values were previously not deduplicated correctly on PostgreSQL (latent bugs in `str(True) == "True"` vs jsonb text output `"true"`, and `str(None) == "None"` vs jsonb `NULL`); they are now correctly deduplicated via jsonb containment.
-- SEP-988: `_raise_if_identical_task_conflict` dedup comparison on PostgreSQL is now order-insensitive for dict-valued meta items. Two dispatches whose dict-valued meta items contain the same keys/values in different insertion orders were previously considered distinct and are now considered duplicates. MySQL and SQLite dedup semantics are unchanged.
-
-### Configuration Changes
-
-- SEP-491: Added `PMM.ANNOTATIONS_ENABLED` setting (default: `false`) to control PMM annotation creation
-- SEP-491: Added `PMM.ANNOTATIONS_TIMEOUT` setting (default: `5`) to configure PMM annotation request timeout
-- SEP-929: Added `UVICORN_EXTRA_RELOAD_DIRS`, `UVICORN_EXTRA_RELOAD_INCLUDES`, and `UVICORN_EXTRA_RELOAD_EXCLUDES` settings to extend uvicorn reload paths via `settings.yaml`
-- SEP-935: Added `TASKS.PRE_EXECUTION_CONNECTIVITY_CHECK` setting (disabled/warn/block) to control pre-execution connectivity checks before task dispatch
-- SEP-988: Upgrades that cross this revision run `ALTER TABLE taskhistory ALTER COLUMN execution_request TYPE jsonb USING execution_request::jsonb`, which rewrites every row in the `taskhistory` table under an `ACCESS EXCLUSIVE` lock on PostgreSQL. Expected downtime impact is proportional to row count (approximately one minute per two million rows on typical production hardware); size the upgrade window accordingly for deployments with large `taskhistory` tables. The Tasks API also fail-fasts at startup if the column is still plain `json` after deploying SEP-988, with a clear remediation message pointing to the migration.
+<!--
+Entries under [Unreleased] are assembled from per-PR fragments under
+`changelog.d/` at release time. To land a user-facing change, add a fragment
+via `make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="..."` where
+<section> is one of: added, changed, breaking, config, fixed, security.
+See `changelog.d/README.md` for the full workflow.
+-->
 
 ## [v0.11.0] - 2026-04-02
 
