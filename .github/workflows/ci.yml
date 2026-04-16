@@ -83,6 +83,7 @@ jobs:
     if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.python == 'true' }}
     uses: ./.github/workflows/python.yaml
     needs:
+      - label-gate
       - changes
 
   build:
