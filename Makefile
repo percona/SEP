@@ -117,7 +117,7 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@"${VENV_BIN}"/pytest -v -r a --cov=app tests/
+	@"${VENV_BIN}"/pytest -v -r a -n auto --cov=app tests/
 
 changelog-add:
 ifndef TICKET
