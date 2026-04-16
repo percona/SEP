@@ -560,6 +560,7 @@ class BaseManager:
         session: AsyncSession,
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
+        query_options: Sequence = (),
         offset: int = DEFAULT_PAGINATION_OFFSET,
         limit: int = DEFAULT_PAGINATION_LIMIT,
         **equal_filters: Any,
@@ -573,6 +574,8 @@ class BaseManager:
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :type select_related: Sequence
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
         :param offset: The zero-based starting offset for the query results.
         :type offset: int
         :param limit: The maximum number of records to return.
@@ -589,6 +592,7 @@ class BaseManager:
             session,
             *whereclause,
             select_related=select_related,
+            query_options=query_options,
             offset=offset,
             limit=limit,
             **equal_filters,

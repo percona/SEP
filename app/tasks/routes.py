@@ -18,11 +18,11 @@
 import json
 import logging
 import os
-from collections import defaultdict
+from collections.abc import AsyncGenerator
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
@@ -30,7 +30,9 @@ from sqlalchemy_celery_beat import PeriodicTask
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.core.models import PaginatedResponse
 from app.core.utils import utc_now
 from app.core.utils.fields import NonEmptyStr
 from app.tasks.celery import (
@@ -39,11 +41,19 @@ from app.tasks.celery import (
     execute_task_queue,
     get_executor_for_task,
 )
+from app.tasks.config import PreExecutionCheckMode, tasks_settings
+from app.tasks.connectivity.constants import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+)
+from app.tasks.connectivity.models import ConnectivityServiceType
+from app.tasks.connectivity.service import check_connectivity_with_cache
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
     get_executor,
-    get_logs_offsets,
+    LogsOffsetsDep,
     PreparedTaskHistory,
     SessionDep,
     TaskDep,
@@ -52,6 +62,7 @@ from app.tasks.deps import (
     validate_chain_task_names,
 )
 from app.tasks.execution.utils import parse_payload
+from app.tasks.logs.log_reader import iter_task_history_logs
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
@@ -73,14 +84,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
 
 
-# TODO: Pagination  # noqa: TD002, TD003
-@router.get("/", dependencies=[IsAuthenticatedDep], response_model=list[TaskResponse])
+@router.get(
+    "/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PaginatedResponse[TaskResponse],
+)
 async def list_tasks(
-    session: SessionDep, owner: str | None = None, target: str | None = None
-) -> list[Task]:
+    session: SessionDep,
+    owner: str | None = None,
+    target: str | None = None,
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
-    return await TaskManager.list_active(session=session, owner=owner, target=target)
+    return await TaskManager.list_active_paginated(
+        session=session, owner=owner, target=target, offset=offset, limit=limit
+    )
 
 
 @router.delete(
@@ -200,7 +220,14 @@ async def execute_task_name(
     queue_item: PreparedTaskHistory,
     task_name: str,
 ) -> TaskHistory:
-    """Send a task for execution."""
+    """Send a task for execution.
+
+    When ``tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK`` is enabled and the
+    task carries ``_connectivity_*`` meta fields, run a Nomad-side connectivity
+    check against the target before dispatch. In ``block`` mode, dispatch is
+    rejected with HTTP 400 on failure; in ``warn`` mode, a warning is logged
+    and dispatch proceeds. ETA-scheduled tasks always skip the check.
+    """
     logger.debug(
         "Dispatching task %s at %s",
         task_name,
@@ -214,6 +241,49 @@ async def execute_task_name(
             f"Failed to dispatch task: Target {queue_item.execution_request.target!r}"
             f"is not available in {executor.__class__.__name__} for task {task_name!r}"
         )
+
+    check_mode = tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK
+    meta = queue_item.task.data.get("Meta", {})
+    conn_host = meta.get(CONNECTIVITY_META_HOST_KEY)
+    conn_port = meta.get(CONNECTIVITY_META_PORT_KEY)
+    conn_type = meta.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
+    if (
+        check_mode != PreExecutionCheckMode.DISABLED
+        and conn_host
+        and conn_port
+        and conn_type
+        and not queue_item.execution_request.eta
+    ):
+        target = queue_item.execution_request.target
+        try:
+            parsed_conn_port = int(conn_port)
+            parsed_conn_type = ConnectivityServiceType(conn_type)
+        except ValueError:
+            logger.warning(
+                "Skipping pre-execution connectivity check for task %r on target %r "
+                "due to malformed connectivity metadata: port=%r, service_type=%r",
+                task_name,
+                target,
+                conn_port,
+                conn_type,
+            )
+        else:
+            success, error = await check_connectivity_with_cache(
+                session,
+                target=target,
+                host=conn_host,
+                port=parsed_conn_port,
+                service_type=parsed_conn_type,
+            )
+            if not success:
+                msg = (
+                    f"Pre-execution connectivity check failed for {task_name!r} "
+                    f"on target {target!r}: {error or 'unknown error'}"
+                )
+                if check_mode == PreExecutionCheckMode.BLOCK:
+                    raise HTTPBadRequestException(msg)
+                logger.warning(msg)
+
     if queue_item.execution_request.eta:
         history_recorded = await TaskHistoryManager.save(session, queue_item)
         await session.refresh(history_recorded, attribute_names=["execution_request"])
@@ -233,17 +303,25 @@ async def execute_task_name(
     return history_recorded
 
 
-@router.get("/history/", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/history/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PaginatedResponse[TaskHistoryResponse],
+)
 async def list_task_history(
     session: SessionDep,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
-) -> list[TaskHistoryResponse]:
-    """Create a new task."""
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[TaskHistory]:
+    """List all task history records."""
     logger.debug("Listing task history")
-    return await TaskHistoryManager.list(
+    return await TaskHistoryManager.list_paginated(
         session,
         select_related=(TaskHistory.task,),
         query_options=[undefer(TaskHistory.execution_request)],
+        offset=offset,
+        limit=limit,
         status=task_status,
     )
 
@@ -251,22 +329,26 @@ async def list_task_history(
 @router.get(
     "/{task}/history/",
     dependencies=[IsAuthenticatedDep],
-    response_model=list[TaskHistoryResponse],
+    response_model=PaginatedResponse[TaskHistoryResponse],
 )
 async def get_task_history(
     session: SessionDep,
     task: str,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     snippet_filename: NonEmptyStr | None = None,
-) -> list[TaskHistory]:
-    """Retrieve a task history by task name."""
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> PaginatedResponse[TaskHistory]:
+    """Retrieve task history by task name."""
     logger.debug("Requesting task history for %s", task)
-    return await TaskHistoryManager.list_by_task_name(
+    return await TaskHistoryManager.list_by_task_name_paginated(
         session=session,
         task_name=task,
         status=task_status,
         select_related_task=True,
         snippet_filename=snippet_filename,
+        offset=offset,
+        limit=limit,
         query_options=[undefer(TaskHistory.execution_request)],
     )
 
@@ -296,9 +378,10 @@ async def list_task_history_events(
 
 @router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
 async def stream_task_history_logs(
+    session: SessionDep,
     executor: TaskExecutor,
     task_history: TaskHistoryWithTaskDep,
-    offsets: Annotated[defaultdict[str, dict[str, int]], Depends(get_logs_offsets)],
+    offsets: LogsOffsetsDep,
     step: str | None = None,
 ) -> StreamingResponse:
     """Stream a task history's logs."""
@@ -312,10 +395,14 @@ async def stream_task_history_logs(
             async for log_line in executor.stream_logs(task_history, offsets)
         )
     else:
-        stream_logs_generator = (
-            log.model_dump_json() + "\n"
-            for log in task_history.iter_logs(offsets, step=step)
-        )
+
+        async def _stream_finished_logs() -> AsyncGenerator[str, None]:
+            async for log in iter_task_history_logs(
+                session, task_history, offsets, source=step
+            ):
+                yield log.model_dump_json() + "\n"
+
+        stream_logs_generator = _stream_finished_logs()
     return StreamingResponse(
         stream_logs_generator,
         media_type="application/json",

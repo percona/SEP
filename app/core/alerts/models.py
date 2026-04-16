@@ -85,6 +85,17 @@ class BaseAlertProvider(BaseCaseInsensitiveModel, ABC):
         :type alert: Alert
         """
 
+    async def resolve_alert(self, dedup_key: NonEmptyStr) -> None:
+        """Resolve a previously triggered alert by dedup key.
+
+        Override in providers that support alert resolution (e.g. PagerDuty).
+        The default implementation is a no-op for providers without resolve
+        support.
+
+        :param dedup_key: The deduplication key of the alert to resolve.
+        :type dedup_key: NonEmptyStr
+        """
+
 
 class AlertService(BaseCaseInsensitiveModel):
     """Define service for managing and triggering alerts through registered providers.
@@ -127,4 +138,30 @@ class AlertService(BaseCaseInsensitiveModel):
                     "Failed to send alert via %s: %s",
                     provider.__class__.__name__,
                     alert,
+                )
+
+    @validate_call
+    async def resolve(self, dedup_key: NonEmptyStr) -> None:
+        """Resolve an alert through all registered providers.
+
+        :param dedup_key: The deduplication key of the alert to resolve.
+        :type dedup_key: NonEmptyStr
+        """
+        if not self.providers:
+            logger.warning("No alert providers registered.")
+            return
+
+        for provider in self.providers:
+            try:
+                await provider.resolve_alert(dedup_key)
+                logger.info(
+                    "Alert resolved via %s: dedup_key=%s",
+                    provider.__class__.__name__,
+                    dedup_key,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to resolve alert via %s: dedup_key=%s",
+                    provider.__class__.__name__,
+                    dedup_key,
                 )

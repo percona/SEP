@@ -25,6 +25,7 @@ from pydantic import FutureDatetime
 from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -118,6 +119,7 @@ async def checksums_create(
         "/",
         json=task.model_dump(),
     )
+    await maybe_check_connectivity(request, task_api, task.data.get("meta", {}))
 
     task_path = request.url_for("checksums_detail", task_name=task.name)
     return RedirectResponse(
@@ -174,10 +176,12 @@ async def checksums_detail(
     context["services"] = services
 
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    context["running_tasks"] = response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
     context["alert_on_fail_default"] = task_data["alert_on_fail"]
     context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)

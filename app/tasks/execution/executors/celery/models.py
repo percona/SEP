@@ -29,12 +29,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     FileMetadata,
     Task,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskLog,
+    TaskLogType,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,7 +49,7 @@ class CeleryExecutor(BaseExecutor):
 
     Unlike the NomadExecutor which dispatches jobs to a remote Nomad cluster,
     the CeleryExecutor imports and calls a Python callable synchronously within
-    `dispatch_task`, updating the TaskHistory to SUCCESS or FAILED before
+    ``dispatch_task``, updating the TaskHistory to SUCCESS or FAILED before
     returning.
 
     :param wait_interval: The interval in seconds between status checks.
@@ -63,13 +65,18 @@ class CeleryExecutor(BaseExecutor):
     ) -> TaskHistory:
         """Import and execute the callable specified in the task data.
 
+        Captured ``stdout`` and ``stderr`` are persisted into the
+        ``taskhistory_log`` chunk store via
+        :class:`~app.tasks.logs.log_writer.TaskHistoryLogWriter` instead of
+        being stuffed into ``execution_request.tracking``.
+
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
-        :param task: The task to be executed. If None, the queue_item's task will be
-            used.
+        :param task: The task to be executed. If ``None``, the queue_item's
+            task will be used.
         :type task: Task | None
         :return: The updated task history with execution details.
         :rtype: TaskHistory
@@ -90,25 +97,36 @@ class CeleryExecutor(BaseExecutor):
             queue_item.status = TaskHistoryStatusEnum.FAILED
         finally:
             queue_item.finished_at = utc_now()
-            queue_item.execution_request.tracking["task_logs"] = {
-                "execution": {
-                    "stdout": stdout_buffer.getvalue(),
-                    "stderr": stderr_buffer.getvalue(),
-                }
-            }
 
-        return await TaskHistoryManager.save(
-            session,
-            queue_item,
-            flag_modified_fields=["execution_request"],
-        )
+        saved = await TaskHistoryManager.save(session, queue_item)
+        stdout_value = stdout_buffer.getvalue()
+        stderr_value = stderr_buffer.getvalue()
+        if stdout_value:
+            await TaskHistoryLogWriter.append(
+                session,
+                saved.id,
+                source="execution",
+                stream=TaskLogType.STDOUT,
+                new_bytes=stdout_value.encode("utf-8"),
+                force_flush=True,
+            )
+        if stderr_value:
+            await TaskHistoryLogWriter.append(
+                session,
+                saved.id,
+                source="execution",
+                stream=TaskLogType.STDERR,
+                new_bytes=stderr_value.encode("utf-8"),
+                force_flush=True,
+            )
+        return saved
 
     async def _run_callable(
         self, task: Task, stdout_buffer: io.StringIO, stderr_buffer: io.StringIO
     ) -> Any:
         """Import and invoke the callable specified in the task data.
 
-        Redirect `sys.stdout` and `sys.stderr` into the provided buffers
+        Redirect ``sys.stdout`` and ``sys.stderr`` into the provided buffers
         so that output produced by the callable is captured in task logs.
         Support both async and sync callables: async callables are awaited
         directly while sync callables are executed via :func:`asyncio.to_thread`.
@@ -137,14 +155,20 @@ class CeleryExecutor(BaseExecutor):
     async def _sync_task_history(
         self,
         queue_item: TaskHistory,
+        writer_session: AsyncSession | None = None,  # noqa: ARG002
     ) -> TaskHistory:
         """Return the queue_item unchanged.
 
-        Celery tasks run synchronously within `dispatch_task`, so no
-        additional synchronization is needed.
+        Celery tasks run synchronously within ``dispatch_task``, so no
+        additional synchronization is needed. The ``writer_session`` parameter
+        is accepted to satisfy the base class contract and intentionally
+        ignored.
 
         :param queue_item: The task history record.
         :type queue_item: TaskHistory
+        :param writer_session: Ignored. Present only to match the
+            ``BaseExecutor`` signature.
+        :type writer_session: AsyncSession | None
         :return: The unchanged task history.
         :rtype: TaskHistory
         """
@@ -165,11 +189,11 @@ class CeleryExecutor(BaseExecutor):
         Enforce that the callable path starts with the allowed namespace prefix
         to prevent arbitrary code execution.
 
-        :param job: The job specification containing a `callable` key.
+        :param job: The job specification containing a ``callable`` key.
         :type job: dict[str, Any]
         :return: The original job specification if validation is successful.
         :rtype: dict[str, Any]
-        :raises ValueError: If `callable` is missing, outside the allowed
+        :raises ValueError: If ``callable`` is missing, outside the allowed
             namespace, or not importable.
         """
         callable_path = job.get("callable")
@@ -193,27 +217,34 @@ class CeleryExecutor(BaseExecutor):
     def get_hosts(self) -> dict[str, str]:
         """Return the local host as the only available executor host.
 
-        :return: A dictionary with a single `local` entry.
+        :return: A dictionary with a single ``local`` entry.
         :rtype: dict[str, str]
         """
         return {"local": "localhost"}
 
     async def stream_logs(
         self,
-        queue_item: TaskHistory,
-        start_offsets: dict[str, dict[str, int]] | None = None,
+        queue_item: TaskHistory,  # noqa: ARG002
+        start_offsets: dict[str, dict[str, int]] | None = None,  # noqa: ARG002
     ) -> AsyncGenerator[TaskLog, None]:
-        """Yield task logs from the stored task_logs in the execution request.
+        """Return an empty live-log stream for Celery tasks.
 
-        :param queue_item: The task history record.
+        Celery tasks finish synchronously inside ``dispatch_task``, so the
+        route's live-stream branch (``status == RUNNING``) is unreachable for
+        them in practice. Finished Celery log retrieval flows through the
+        route's non-``RUNNING`` branch, which now calls
+        :func:`iter_task_history_logs` against the chunk store.
+
+        :param queue_item: The task history record. Unused.
         :type queue_item: TaskHistory
-        :param start_offsets: Starting offsets for each step and log type.
+        :param start_offsets: Starting offsets. Unused.
         :type start_offsets: dict[str, dict[str, int]] | None
-        :yield: TaskLog instances containing log chunks.
+        :return: An empty async generator — Celery live-streaming is
+            unreachable.
         :rtype: AsyncGenerator[TaskLog, None]
         """
-        for log in queue_item.iter_logs(start_offsets=start_offsets):
-            yield log
+        return
+        yield  # pragma: no cover
 
     async def stream_file(
         self,

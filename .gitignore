@@ -109,7 +109,7 @@ celerybeat.pid
 # Environments
 .env*
 .venv
-env/
+env
 venv/
 ENV/
 env.bak/
@@ -161,6 +161,8 @@ pyrightconfig.json
 [Ll]ib64
 [Ll]ocal
 [Ss]cripts
+!/scripts/
+!/tests/scripts/
 pyvenv.cfg
 pip-selfcheck.json
 
@@ -216,6 +218,8 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+!app/tasks/logs/
+!tests/app/tasks/logs/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

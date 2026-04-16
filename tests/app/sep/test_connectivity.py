@@ -1,0 +1,445 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define tests for the app.sep.connectivity module."""
+
+from collections import OrderedDict
+from unittest.mock import AsyncMock
+
+import pytest
+from aiohttp import ClientError
+from fastapi import HTTPException, Request, status
+
+from app.core.requests import RemoteAPI
+from app.sep.connectivity import (
+    _fetch_connectivity_result,
+    _LATEST_RESULTS,
+    _record_latest_result,
+    annotate_tasks_with_connectivity,
+    check_and_warn_connectivity,
+    maybe_check_connectivity,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_caches():
+    """Clear the alru_cache and the latest-results snapshot between tests."""
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+    yield
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+
+
+@pytest.fixture
+def mock_tasks_api():
+    """Return a mock Tasks API client."""
+    return AsyncMock(spec=RemoteAPI)
+
+
+@pytest.fixture
+def dummy_request():
+    """Create a dummy Request with a messages attribute in its state."""
+    scope = {
+        "type": "http",
+        "headers": [],
+        "client": ("127.0.0.1", 80),
+        "path": "/",
+    }
+    req = Request(scope)
+    req.state.messages = OrderedDict()
+    return req
+
+
+class TestFetchConnectivityResult:
+    """Test the cached _fetch_connectivity_result helper."""
+
+    @pytest.mark.asyncio
+    async def test_caches_success(self, mock_tasks_api):
+        """Return the cached success result on a second call."""
+        mock_tasks_api.post.return_value = {"success": True, "error": None}
+
+        first = await _fetch_connectivity_result(
+            mock_tasks_api, "node1", "10.0.0.1", 3306, "mysql"
+        )
+        second = await _fetch_connectivity_result(
+            mock_tasks_api, "node1", "10.0.0.1", 3306, "mysql"
+        )
+
+        assert first == (True, None)
+        assert second == (True, None)
+        mock_tasks_api.post.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_caches_failure(self, mock_tasks_api):
+        """Return the cached failure result on a second call."""
+        mock_tasks_api.post.return_value = {
+            "success": False,
+            "error": "connection refused",
+        }
+
+        first = await _fetch_connectivity_result(
+            mock_tasks_api, "node1", "10.0.0.1", 3306, "mysql"
+        )
+        second = await _fetch_connectivity_result(
+            mock_tasks_api, "node1", "10.0.0.1", 3306, "mysql"
+        )
+
+        assert first == (False, "connection refused")
+        assert second == (False, "connection refused")
+        mock_tasks_api.post.assert_awaited_once()
+
+
+class TestCheckAndWarnConnectivity:
+    """Test check_and_warn_connectivity helper."""
+
+    @pytest.mark.asyncio
+    async def test_successful_check_no_warning(self, dummy_request, mock_tasks_api):
+        """Cache success and do not flash a warning when check passes."""
+        mock_tasks_api.post.return_value = {"success": True, "error": None}
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        assert _LATEST_RESULTS[("node1", "mysql")] is True
+        assert len(dummy_request.state.messages) == 0
+
+    @pytest.mark.asyncio
+    async def test_failed_check_warns(self, dummy_request, mock_tasks_api):
+        """Cache failure and flash a warning when check fails."""
+        mock_tasks_api.post.return_value = {
+            "success": False,
+            "error": "connection refused",
+        }
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        assert _LATEST_RESULTS[("node1", "mysql")] is False
+        assert len(dummy_request.state.messages) == 1
+
+    @pytest.mark.asyncio
+    async def test_api_unreachable_warns(self, dummy_request, mock_tasks_api):
+        """Cache failure and flash a warning when the Tasks API is unreachable."""
+        mock_tasks_api.post.side_effect = ConnectionError("timeout")
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=5432,
+            service_type="postgresql",
+        )
+
+        assert _LATEST_RESULTS[("node1", "postgresql")] is False
+        assert len(dummy_request.state.messages) == 1
+
+    @pytest.mark.asyncio
+    async def test_check_sends_correct_payload(self, dummy_request, mock_tasks_api):
+        """Verify the connectivity check request payload matches expectations."""
+        mock_tasks_api.post.return_value = {"success": True, "error": None}
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=27017,
+            service_type="mongodb",
+        )
+
+        mock_tasks_api.post.assert_awaited_once_with(
+            "/connectivity-check/",
+            json={
+                "target": "node1",
+                "host": "10.0.0.1",
+                "port": 27017,
+                "service_type": "mongodb",
+                "timeout": 10,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_short_circuits(self, dummy_request, mock_tasks_api):
+        """Skip the Tasks API call when the alru_cache already has a hit."""
+        mock_tasks_api.post.return_value = {"success": True, "error": None}
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        mock_tasks_api.post.assert_awaited_once()
+        assert len(dummy_request.state.messages) == 0
+
+    @pytest.mark.asyncio
+    async def test_http_exception_uses_upstream_detail(
+        self, dummy_request, mock_tasks_api
+    ):
+        """Use ``HTTPException.detail`` as the flashed error when it is a string."""
+        mock_tasks_api.post.side_effect = HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="upstream nomad error"
+        )
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        assert _LATEST_RESULTS[("node1", "mysql")] is False
+        assert len(dummy_request.state.messages) == 1
+        flashed = next(iter(dummy_request.state.messages))
+        assert "upstream nomad error" in flashed.text
+
+    @pytest.mark.asyncio
+    async def test_http_exception_non_string_detail_uses_fallback(
+        self, dummy_request, mock_tasks_api
+    ):
+        """Fall back to a generic error when ``HTTPException.detail`` is non-string."""
+        mock_tasks_api.post.side_effect = HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail={"code": "upstream_error"}
+        )
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        assert _LATEST_RESULTS[("node1", "mysql")] is False
+        flashed = next(iter(dummy_request.state.messages))
+        assert "Connectivity check failed" in flashed.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            OSError("refused"),
+            TimeoutError("timeout"),
+            TimeoutError(),
+            ClientError("client error"),
+        ],
+    )
+    async def test_client_errors_warn(self, dummy_request, mock_tasks_api, exc):
+        """Cache failure for transport-level errors raised during the POST."""
+        mock_tasks_api.post.side_effect = exc
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        assert _LATEST_RESULTS[("node1", "mysql")] is False
+        flashed = next(iter(dummy_request.state.messages))
+        assert "Could not reach the Tasks API" in flashed.text
+
+
+class TestMaybeCheckConnectivity:
+    """Test maybe_check_connectivity guard helper."""
+
+    @pytest.mark.asyncio
+    async def test_empty_meta_returns_without_calling(
+        self, dummy_request, mock_tasks_api, mocker
+    ):
+        """Skip the check entirely when ``meta`` is empty."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+
+        await maybe_check_connectivity(dummy_request, mock_tasks_api, {})
+
+        mock_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            {"target": "node1"},
+            {"target": "node1", "_connectivity_host": "10.0.0.1"},
+            {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+            },
+            {
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+        ],
+    )
+    async def test_partial_meta_returns_without_calling(
+        self, dummy_request, mock_tasks_api, mocker, meta
+    ):
+        """Skip the check when any of the required meta keys are missing."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+
+        await maybe_check_connectivity(dummy_request, mock_tasks_api, meta)
+
+        mock_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_complete_meta_delegates_with_correct_kwargs(
+        self, dummy_request, mock_tasks_api, mocker
+    ):
+        """Delegate to ``check_and_warn_connectivity`` with parsed ``meta`` values."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+        meta = {
+            "target": "node1",
+            "_connectivity_host": "10.0.0.1",
+            "_connectivity_port": 3306,
+            "_connectivity_service_type": "mysql",
+        }
+
+        await maybe_check_connectivity(dummy_request, mock_tasks_api, meta)
+
+        mock_check.assert_awaited_once_with(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+
+class TestAnnotateTasksWithConnectivity:
+    """Test annotate_tasks_with_connectivity helper."""
+
+    def test_annotates_tasks_with_recorded_failure(self):
+        """Set ``_connectivity_warning`` to ``True`` for tasks with cached failures."""
+        _record_latest_result("node1", "mysql", success=False)
+        tasks = [
+            {
+                "name": "task1",
+                "data": {
+                    "meta": {
+                        "target": "node1",
+                        "_connectivity_service_type": "mysql",
+                    }
+                },
+            }
+        ]
+        annotate_tasks_with_connectivity(tasks)
+        assert tasks[0]["_connectivity_warning"] is True
+
+    def test_annotates_tasks_with_recorded_success(self):
+        """Set ``_connectivity_warning`` to ``False`` for tasks with cached successes."""
+        _record_latest_result("node1", "mysql", success=True)
+        tasks = [
+            {
+                "name": "task1",
+                "data": {
+                    "meta": {
+                        "target": "node1",
+                        "_connectivity_service_type": "mysql",
+                    }
+                },
+            }
+        ]
+        annotate_tasks_with_connectivity(tasks)
+        assert tasks[0]["_connectivity_warning"] is False
+
+    def test_no_annotation_without_meta(self):
+        """Skip annotation for tasks without connectivity meta."""
+        tasks = [{"name": "task1", "data": {"meta": {"target": "node1"}}}]
+        annotate_tasks_with_connectivity(tasks)
+        assert "_connectivity_warning" not in tasks[0]
+
+    def test_no_annotation_when_not_recorded(self):
+        """Skip annotation when no snapshot entry exists."""
+        tasks = [
+            {
+                "name": "task1",
+                "data": {
+                    "meta": {
+                        "target": "node1",
+                        "_connectivity_service_type": "mysql",
+                    }
+                },
+            }
+        ]
+        annotate_tasks_with_connectivity(tasks)
+        assert "_connectivity_warning" not in tasks[0]
+
+    def test_handles_empty_task_list(self):
+        """Handle an empty task list gracefully."""
+        tasks = []
+        annotate_tasks_with_connectivity(tasks)
+        assert tasks == []
+
+    def test_handles_task_info_format(self):
+        """Annotate tasks in the ``task_info`` format used by ``get_tasks_context``."""
+        _record_latest_result("node1", "mysql", success=False)
+        tasks = [
+            {
+                "name": "task1",
+                "_connectivity_target": "node1",
+                "_connectivity_service_type": "mysql",
+            }
+        ]
+        annotate_tasks_with_connectivity(tasks)
+        assert tasks[0]["_connectivity_warning"] is True
+
+    def test_no_annotation_for_task_info_without_service_type(self):
+        """Skip annotation for task_info dicts lacking service type."""
+        tasks = [
+            {
+                "name": "task1",
+                "_connectivity_target": "node1",
+            }
+        ]
+        annotate_tasks_with_connectivity(tasks)
+        assert "_connectivity_warning" not in tasks[0]
