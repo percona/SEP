@@ -272,7 +272,11 @@ order-by-type = false
 "celery.py" = ["ARG001"]
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
-"scripts/*.py" = ["T201"] # CLI scripts use print() for user-facing output
+"scripts/*.py" = [
+    "T201",    # CLI scripts use print() for user-facing output
+    "S603",    # CLI scripts coordinate git/gh/make subprocesses with literal arg lists
+    "PLR0915", # release orchestration has many sequential git/build/push steps
+]
 
 
 [tool.ruff.format]
