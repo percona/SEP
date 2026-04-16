@@ -15,7 +15,7 @@
 
 """Define models for database connectivity checks."""
 
-from enum import StrEnum
+from enum import auto, StrEnum
 
 from pydantic import BaseModel, Field
 
@@ -31,9 +31,9 @@ class ConnectivityServiceType(StrEnum):
     :vartype MONGODB: str
     """
 
-    MYSQL = "MYSQL"
-    POSTGRESQL = "POSTGRESQL"
-    MONGODB = "MONGODB"
+    MYSQL = auto()
+    POSTGRESQL = auto()
+    MONGODB = auto()
 
 
 REQUIREMENTS_BY_SERVICE_TYPE = {

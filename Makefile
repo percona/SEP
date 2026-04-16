@@ -119,6 +119,24 @@ checkmigrations: migrate
 test: venv
 	@"${VENV_BIN}"/pytest -v -r a --cov=app tests/
 
+changelog-add:
+ifndef TICKET
+	$(error TICKET is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
+endif
+ifndef SECTION
+	$(error SECTION is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
+endif
+ifndef MSG
+	$(error MSG is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
+endif
+	@$(PYTHON) scripts/changelog.py add --ticket "$(TICKET)" --section "$(SECTION)" --message "$(MSG)" $(if $(FORCE),--force,)
+
+changelog-check:
+	@$(PYTHON) scripts/changelog.py check
+
+changelog-list:
+	@$(PYTHON) scripts/changelog.py list
+
 release-rc:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
@@ -276,4 +294,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations migrate checkmigrations test release-rc release-stable trigger-jenkins
+.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations migrate checkmigrations test release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list

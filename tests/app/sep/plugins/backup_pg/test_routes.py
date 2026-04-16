@@ -62,7 +62,15 @@ def test_backups_detail(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):
     """Test GET /backup-pg/{task_name} route."""
-    mock_task_api_dep.get = AsyncMock(side_effect=[{}, {}, {}, [], []])
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            [],
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+    )
     mock_inventory_api_dep.get = AsyncMock(
         return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
     )
@@ -88,7 +96,15 @@ def test_backups_detail_handles_inventory_error(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):
     """Test detail route continues when inventory service lookup fails."""
-    mock_task_api_dep.get = AsyncMock(side_effect=[{}, {}, {}, [], []])
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            [],
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+    )
     mock_inventory_api_dep.get = AsyncMock(side_effect=HTTPException(status_code=404))
 
     response = test_client.get(f"/backup-pg/{created_task.name}")

@@ -26,6 +26,7 @@ from pydantic import FutureDatetime
 from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -77,6 +78,7 @@ async def pg_backups_create(
         "/",
         json=task.model_dump(),
     )
+    await maybe_check_connectivity(request, task_api, task.data.get("meta", {}))
     task_path = request.url_for("pg_backups_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
@@ -121,10 +123,12 @@ async def pg_backups_detail(
     task_data.update(parsed_task_data)
 
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    context["running_tasks"] = response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     context["executor_hosts"] = executor_hosts_ctx.with_host(

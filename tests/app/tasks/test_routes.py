@@ -15,26 +15,38 @@
 
 """Define test cases for the task routes in the FastAPI application."""
 
+import base64
+import gzip
+import json as json_lib
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from fastapi import status
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.core.utils import utc_now
+from app.tasks.config import PreExecutionCheckMode
+from app.tasks.connectivity.models import ConnectivityServiceType
+from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     ExecutionEvent,
     Task,
+    TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLogType,
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
 
 MOCK_FILE_SIZE = 1024
+PAGINATION_TASK_COUNT = 3
 
 
 @pytest_asyncio.fixture
@@ -51,13 +63,19 @@ async def test_list_tasks_only_returns_active(test_client, session, created_task
     """Assert listing tasks only returns active (non-deleted) tasks."""
     response = test_client.get("/")
     assert response.status_code == status.HTTP_200_OK
-    assert [task["name"] for task in response.json()] == [created_task.name]
+    data = response.json()
+    assert [task["name"] for task in data["items"]] == [created_task.name]
+    assert data["total"] == 1
+    assert data["offset"] == 0
+    assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     await TaskManager.delete_by_name(session, created_task.name)
 
     response = test_client.get("/")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == []
+    data = response.json()
+    assert data["items"] == []
+    assert data["total"] == 0
 
 
 @pytest.mark.asyncio
@@ -150,48 +168,60 @@ async def test_update_task_not_found(test_client):
 
 @pytest.mark.asyncio
 async def test_list_task_history(test_client, created_task_with_history):
-    """Assert listing task history returns history records."""
+    """Assert listing task history returns paginated history records."""
     response = test_client.get("/history/")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == created_task_with_history.id
+    assert data["total"] == 1
+    assert data["offset"] == 0
+    assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+    assert len(data["items"]) == 1
+    assert data["items"][0]["id"] == created_task_with_history.id
 
 
 @pytest.mark.asyncio
 async def test_list_task_history_filter_by_status(
     test_client, created_task_with_history
 ):
-    """Assert filtering task history by status works."""
+    """Assert filtering task history by status works with pagination."""
     response = test_client.get("/history/", params={"status": "success"})
     assert response.status_code == status.HTTP_200_OK
-    assert len(response.json()) == 1
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
 
     response = test_client.get("/history/", params={"status": "failed"})
     assert response.status_code == status.HTTP_200_OK
-    assert len(response.json()) == 0
+    data = response.json()
+    assert data["total"] == 0
+    assert len(data["items"]) == 0
 
 
 @pytest.mark.asyncio
 async def test_get_task_history_by_task_name(test_client, created_task_with_history):
-    """Assert retrieving task history by task name returns matching records."""
+    """Assert retrieving task history by task name returns paginated records."""
     task_name = created_task_with_history.task.name
     response = test_client.get(f"/{task_name}/history/")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == created_task_with_history.id
+    assert data["total"] == 1
+    assert data["offset"] == 0
+    assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+    assert len(data["items"]) == 1
+    assert data["items"][0]["id"] == created_task_with_history.id
 
 
 @pytest.mark.asyncio
 async def test_get_task_history_by_task_name_filter_by_status(
     test_client, created_task_with_history
 ):
-    """Assert filtering task history by task name and status works."""
+    """Assert filtering task history by task name and status returns paginated results."""
     task_name = created_task_with_history.task.name
     response = test_client.get(f"/{task_name}/history/", params={"status": "running"})
     assert response.status_code == status.HTTP_200_OK
-    assert len(response.json()) == 0
+    data = response.json()
+    assert data["total"] == 0
+    assert len(data["items"]) == 0
 
 
 @pytest.mark.asyncio
@@ -265,6 +295,44 @@ async def test_stream_logs_finished_returns_logs(
     response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_reads_chunks_from_taskhistory_log(
+    test_client, session, created_task_with_history
+):
+    """Assert the finished branch streams from the chunk store when available."""
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk store output",
+        force_flush=True,
+        producer_offset_after=18,
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_200_OK
+    assert "chunk store output" in response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_falls_back_to_legacy_blob(
+    test_client, session, created_task_with_history
+):
+    """Assert the finished branch falls back to the legacy blob when no chunks exist."""
+    legacy = {"run-script": {"stdout": "legacy from tracking", "stderr": ""}}
+    encoded = base64.b64encode(gzip.compress(json_lib.dumps(legacy).encode())).decode()
+    created_task_with_history.execution_request.tracking["task_logs"] = encoded
+    await TaskHistoryManager.save(
+        session,
+        created_task_with_history,
+        flag_modified_fields=["execution_request"],
+    )
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_200_OK
+    assert "legacy from tracking" in response.text
 
 
 @pytest.mark.asyncio
@@ -569,6 +637,126 @@ async def test_task_data_with_execution_request_keys_returned_as_dict(
 
 
 @pytest.mark.asyncio
+async def test_list_tasks_custom_pagination(test_client, session):
+    """Assert custom offset and limit are respected for task listing."""
+    for i in range(PAGINATION_TASK_COUNT):
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name=f"task-{i}")),
+        )
+
+    response = test_client.get("/", params={"offset": 0, "limit": 1})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["total"] == PAGINATION_TASK_COUNT
+    assert data["offset"] == 0
+    assert data["limit"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_offset_beyond_total(test_client, created_task):
+    """Assert offset beyond total returns empty items with correct total."""
+    response = test_client.get("/", params={"offset": 999})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"] == []
+    assert data["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_custom_pagination(
+    test_client, created_task_with_history
+):
+    """Assert custom offset and limit are respected for task history listing."""
+    response = test_client.get("/history/", params={"offset": 0, "limit": 1})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["total"] == 1
+
+    response = test_client.get("/history/", params={"offset": 999})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"] == []
+    assert data["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_task_history_custom_pagination(
+    test_client, created_task_with_history
+):
+    """Assert custom offset and limit are respected for per-task history."""
+    task_name = created_task_with_history.task.name
+    response = test_client.get(
+        f"/{task_name}/history/", params={"offset": 0, "limit": 1}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["total"] == 1
+
+    response = test_client.get(f"/{task_name}/history/", params={"offset": 999})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"] == []
+    assert data["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_filter_with_pagination(test_client, session):
+    """Assert owner filter works together with pagination."""
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="backup-1", owner="BACKUPS")),
+    )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="alter-1", owner="ALTERS")),
+    )
+
+    response = test_client.get("/", params={"owner": "BACKUPS", "limit": 1})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["name"] == "backup-1"
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_status_filter_with_pagination(
+    test_client, created_task_with_history
+):
+    """Assert status filter and pagination work together for task history."""
+    response = test_client.get("/history/", params={"status": "success", "limit": 1})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+
+    response = test_client.get("/history/", params={"status": "failed", "offset": 0})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 0
+    assert data["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_task_history_status_filter_with_pagination(
+    test_client, created_task_with_history
+):
+    """Assert status filter and pagination work together for per-task history."""
+    task_name = created_task_with_history.task.name
+    response = test_client.get(
+        f"/{task_name}/history/", params={"status": "success", "limit": 1}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_execute_task_name_response_serializes_deferred_execution_request(
     test_client, session, mocker
 ):
@@ -655,3 +843,484 @@ async def test_execute_task_name_with_eta_serializes_deferred_execution_request(
     assert (
         data["execution_request"]["tracking"]["celery_task_id"] == "fake-celery-task-id"
     )
+
+
+CONNECTIVITY_META = {
+    "_connectivity_host": "db-host",
+    "_connectivity_port": "3306",
+    "_connectivity_service_type": ConnectivityServiceType.MYSQL.value,
+}
+
+
+async def _fake_dispatch_queue_item(
+    queue_item: TaskHistory, passed_session: AsyncSession
+) -> TaskHistory:
+    """Persist the queue item so the route's ``session.refresh`` call succeeds.
+
+    :param queue_item: The ``TaskHistory`` queue item dispatched by the route.
+    :type queue_item: TaskHistory
+    :param passed_session: The async database session the route passes along.
+    :type passed_session: AsyncSession
+    :return: The persisted ``TaskHistory`` instance.
+    :rtype: TaskHistory
+    """
+    queue_item.status = TaskHistoryStatusEnum.RUNNING
+    return await TaskHistoryManager.save(
+        passed_session,
+        queue_item,
+        flag_modified_fields=["execution_request"],
+    )
+
+
+class TestPreExecutionConnectivityCheck:
+    """Test the pre-execution connectivity check in execute_task_name."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        """Clear the connectivity result cache around each test."""
+        _cached_check_connectivity.cache_clear()
+        yield
+        _cached_check_connectivity.cache_clear()
+
+    @pytest_asyncio.fixture
+    async def conn_task(self, session) -> Task:
+        """Return a task with connectivity meta."""
+        return await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name="conn-task",
+                    data={"Meta": CONNECTIVITY_META},
+                )
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_disabled_skips_check(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify no connectivity check runs when mode is ``disabled``."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.DISABLED,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_warn_success_dispatches(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify dispatch proceeds when warn-mode check passes."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.WARN,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(True, None)),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_warn_failure_logs_warning_and_dispatches(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify dispatch proceeds with a warning when warn-mode check fails."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.WARN,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(False, "Connection refused")),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+        mock_logger = mocker.patch("app.tasks.routes.logger")
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_dispatch.assert_called_once()
+        mock_logger.warning.assert_called_once()
+        assert "Connection refused" in mock_logger.warning.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_block_success_dispatches(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify dispatch proceeds when block-mode check passes."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(True, None)),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_block_failure_returns_400(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify dispatch is blocked with 400 when block-mode check fails."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(False, "Connection refused")),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(),
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Connection refused" in response.json()["detail"]
+        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_connectivity_meta_skips_check(
+        self, test_client, session, mocker, mock_executor
+    ):
+        """Verify check is skipped when task has no connectivity meta fields."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="no-meta-task", data={})),
+        )
+
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
+        mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+
+        response = test_client.post(
+            f"/execute/{task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_check_called_with_parsed_meta(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify ``check_connectivity_with_cache`` receives parsed meta args."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch(
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(True, None)),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_awaited_once()
+        kwargs = mock_check.await_args.kwargs
+        assert kwargs["target"] == "node1"
+        assert kwargs["host"] == CONNECTIVITY_META["_connectivity_host"]
+        assert kwargs["port"] == int(CONNECTIVITY_META["_connectivity_port"])
+        assert kwargs["service_type"] == ConnectivityServiceType(
+            CONNECTIVITY_META["_connectivity_service_type"]
+        )
+        mock_dispatch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_failure_warn_logs_and_dispatches(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify failure from ``check_connectivity_with_cache`` in warn mode logs and proceeds."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.WARN,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(False, "Connection refused")),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+        mock_logger = mocker.patch("app.tasks.routes.logger")
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_dispatch.assert_called_once()
+        mock_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_failure_block_returns_400(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify failure from ``check_connectivity_with_cache`` in block mode returns 400."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mocker.patch(
+            "app.tasks.routes.check_connectivity_with_cache",
+            new=AsyncMock(return_value=(False, "Connection refused")),
+        )
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            new=AsyncMock(),
+        )
+
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_eta_task_skips_check(
+        self, test_client, mocker, conn_task, mock_executor
+    ):
+        """Verify check is skipped for ETA-scheduled tasks regardless of mode."""
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
+        mocker.patch(
+            "app.tasks.routes.execute_task_queue.apply_async",
+            return_value=MagicMock(id="celery-123"),
+        )
+
+        eta = utc_now()
+        response = test_client.post(
+            f"/execute/{conn_task.name}",
+            json={"meta": {"target": "node1"}, "eta": eta.isoformat()},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("bad_meta_override", "case_label"),
+        [
+            ({"_connectivity_port": "not-a-number"}, "invalid-port"),
+            ({"_connectivity_service_type": "bogus-service"}, "invalid-service-type"),
+        ],
+    )
+    async def test_malformed_meta_skips_check_and_dispatches(
+        self,
+        test_client,
+        session,
+        mocker,
+        mock_executor,
+        bad_meta_override,
+        case_label,
+    ):
+        """Verify malformed connectivity meta is logged and dispatch proceeds.
+
+        Regression guard: ``int(conn_port)`` and ``ConnectivityServiceType(conn_type)``
+        must not raise ``ValueError`` out to the caller — the route should log a
+        warning, skip the check, and dispatch normally even under ``block`` mode.
+        """
+        bad_meta = {**CONNECTIVITY_META, **bad_meta_override}
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=f"bad-meta-task-{case_label}",
+                    data={"Meta": bad_meta},
+                )
+            ),
+        )
+
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+        mock_logger = mocker.patch("app.tasks.routes.logger")
+
+        response = test_client.post(
+            f"/execute/{task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+        mock_dispatch.assert_called_once()
+        assert any(
+            "malformed connectivity metadata" in call.args[0]
+            for call in mock_logger.warning.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "missing_field",
+        ["_connectivity_host", "_connectivity_port", "_connectivity_service_type"],
+    )
+    @pytest.mark.parametrize("empty_value", [None, ""])
+    async def test_partial_connectivity_meta_skips_check(
+        self,
+        test_client,
+        session,
+        mocker,
+        mock_executor,
+        missing_field,
+        empty_value,
+    ):
+        """Verify check is skipped when any connectivity meta field is empty or None.
+
+        Regression guard: the truthy short-circuit in ``execute_task_name`` is the
+        only defense against half-populated task definitions. If a refactor ever
+        replaces ``and conn_host`` with ``and conn_host is not None`` the empty
+        string case silently breaks.
+        """
+        partial_meta = {**CONNECTIVITY_META, missing_field: empty_value}
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=f"partial-meta-task-{missing_field}-{empty_value!r}",
+                    data={"Meta": partial_meta},
+                )
+            ),
+        )
+
+        mocker.patch(
+            "app.tasks.routes.tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK",
+            PreExecutionCheckMode.BLOCK,
+        )
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task",
+            return_value=mock_executor,
+        )
+        mock_check = mocker.patch("app.tasks.routes.check_connectivity_with_cache")
+        mock_dispatch = mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=_fake_dispatch_queue_item,
+        )
+
+        response = test_client.post(
+            f"/execute/{task.name}",
+            json={"meta": {"target": "node1"}},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_check.assert_not_called()
+        mock_dispatch.assert_called_once()

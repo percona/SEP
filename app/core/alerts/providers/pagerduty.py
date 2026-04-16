@@ -16,7 +16,7 @@
 """Provide a PagerDuty alert provider."""
 
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any
 
 from pydantic import (
     ConfigDict,
@@ -88,13 +88,14 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
 
     This provider sends alerts to PagerDuty using the Events API v2.
 
-    :cvar API_ENDPOINT: The API endpoint for Events v2.
-    :vartype API_ENDPOINT: str
+    :param api_endpoint: The API endpoint for Events v2. Override to point at a
+        local capture server for end-to-end testing.
+    :type api_endpoint: str
     :param routing_key: The routing key used for API requests.
     :type routing_key: SecretStr
     """
 
-    API_ENDPOINT: ClassVar[str] = "https://events.pagerduty.com/v2/"
+    api_endpoint: str = "https://events.pagerduty.com/v2/"
     routing_key: SecretStr
 
     def __hash__(self) -> int:
@@ -106,16 +107,14 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         :return: The RemoteAPI client for PagerDuty.
         :rtype: RemoteAPI
         """
-        return await settings.get_remote_api(endpoint=self.API_ENDPOINT)
+        return await settings.get_remote_api(endpoint=self.api_endpoint)
 
     @validate_call
     async def send_alert(self, alert: PagerDutyAlert) -> None:
-        """Send an alert to PagerDuty.
-
-        This method sends an alert to PagerDuty using the Events API v2.
+        """Send an alert to PagerDuty using the Events API v2.
 
         :param alert: The alert to be sent.
-        :type alert: Alert
+        :type alert: PagerDutyAlert
         """
         pagerduty_api = await self.get_api()
         await pagerduty_api.post(
@@ -131,5 +130,26 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
                     exclude={"dedup_key", "images", "links"},
                     exclude_none=True,
                 ),
+            },
+        )
+
+    @validate_call
+    async def resolve_alert(self, dedup_key: NonEmptyStr) -> None:
+        """Resolve a PagerDuty alert by dedup key.
+
+        Send an ``event_action: "resolve"`` event to the PagerDuty Events API
+        v2. Resolving a non-existent incident is a harmless no-op (PD returns
+        202).
+
+        :param dedup_key: The deduplication key of the alert to resolve.
+        :type dedup_key: NonEmptyStr
+        """
+        pagerduty_api = await self.get_api()
+        await pagerduty_api.post(
+            "enqueue",
+            json={
+                "routing_key": self.routing_key.get_secret_value(),
+                "event_action": "resolve",
+                "dedup_key": dedup_key,
             },
         )
