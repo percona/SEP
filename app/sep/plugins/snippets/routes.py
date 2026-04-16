@@ -197,7 +197,7 @@ async def snippets_approve_batch(
     index_redirect = RedirectResponse(
         request.url_for("snippets_index"), status_code=status.HTTP_303_SEE_OTHER
     )
-    filenames = list(body.filenames)
+    filenames = body.filenames
     snippets = await SnippetManager.list(session, col(Snippet.filename).in_(filenames))
     found = {snippet.filename for snippet in snippets}
     missing_in_db = sorted(set(filenames) - found)
