@@ -243,13 +243,19 @@ class TestSnippetsApproveBatch:
         assert not existing.is_approved
 
     @pytest.mark.asyncio
-    async def test_concurrent_update_aborts_batch(
+    async def test_concurrent_partial_success_reports_accurate_counts(
         self,
         admin_client: TestClient,
         create_snippet,
         mocker: MockerFixture,
     ):
-        """Assert a rowcount mismatch signals a concurrent update and aborts."""
+        """Assert partial success reports actual rowcount + skipped count.
+
+        The UPDATE auto-commits, so once rows are persisted we cannot rollback.
+        Instead of falsely flashing "aborted" while leaving the committed rows
+        approved, the route reports the real outcome: N approved, M skipped
+        (because another admin approved them between the precheck and UPDATE).
+        """
         await create_snippet("a.sh")
         await create_snippet("b.sh")
         fake_result = AsyncMock()
@@ -257,6 +263,7 @@ class TestSnippetsApproveBatch:
         mocker.patch.object(
             SnippetManager, "update_where", new=AsyncMock(return_value=fake_result)
         )
+        success = mocker.patch("app.sep.plugins.snippets.routes.messages.success")
         error = mocker.patch("app.sep.plugins.snippets.routes.messages.error")
 
         response = admin_client.post(
@@ -266,8 +273,40 @@ class TestSnippetsApproveBatch:
         )
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
+        error.assert_not_called()
+        success.assert_called_once()
+        flashed = success.call_args.args[1]
+        assert "1 snippet(s) approved" in flashed
+        assert "1 skipped" in flashed
+
+    @pytest.mark.asyncio
+    async def test_concurrent_full_snipe_flashes_error(
+        self,
+        admin_client: TestClient,
+        create_snippet,
+        mocker: MockerFixture,
+    ):
+        """Assert a rowcount-zero result flashes an error and no success."""
+        await create_snippet("a.sh")
+        await create_snippet("b.sh")
+        fake_result = AsyncMock()
+        fake_result.rowcount = 0
+        mocker.patch.object(
+            SnippetManager, "update_where", new=AsyncMock(return_value=fake_result)
+        )
+        success = mocker.patch("app.sep.plugins.snippets.routes.messages.success")
+        error = mocker.patch("app.sep.plugins.snippets.routes.messages.error")
+
+        response = admin_client.post(
+            _BATCH_APPROVE_URL,
+            data={"filenames": ["a.sh", "b.sh"]},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        success.assert_not_called()
         error.assert_called_once()
-        assert "concurrent" in error.call_args.args[1].lower()
+        assert "No snippets were approved" in error.call_args.args[1]
 
     @pytest.mark.asyncio
     async def test_large_batch(

@@ -229,19 +229,29 @@ async def snippets_approve_batch(
         col(Snippet.filename).in_(filenames),
         col(Snippet.approved_at).is_(None),
     )
-    if result.rowcount != len(filenames):
-        messages.error(
-            request,
-            "Batch approval aborted — snippet state changed concurrently. Please retry.",
-        )
-        return index_redirect
+    updated_count = result.rowcount
     logger.info(
         "Batch-approved %d snippet(s) by %s: %s",
-        result.rowcount,
+        updated_count,
         user.username,
         filenames,
     )
-    messages.success(request, f"{result.rowcount} snippet(s) approved")
+    if updated_count == 0:
+        messages.error(
+            request,
+            "No snippets were approved — their state changed before the batch "
+            "was processed. Please reload and retry.",
+        )
+        return index_redirect
+    skipped = len(filenames) - updated_count
+    if skipped:
+        messages.success(
+            request,
+            f"{updated_count} snippet(s) approved "
+            f"({skipped} skipped — already approved by another admin)",
+        )
+        return index_redirect
+    messages.success(request, f"{updated_count} snippet(s) approved")
     return index_redirect
 
 
