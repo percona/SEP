@@ -109,6 +109,24 @@ class TestNormalizeAlertEntry:
         """Assert an empty string returns None."""
         assert normalize_alert_entry("") is None
 
+    def test_dict_with_service_type(self):
+        """Assert a dict with ``service_type`` carries it onto the AlertInfo."""
+        result = normalize_alert_entry({"name": "HighCPU", "service_type": "mysql"})
+        assert result is not None
+        assert result.service_type == AlertServiceType.MYSQL
+
+    def test_string_entry_has_no_service_type(self):
+        """Assert a plain string entry leaves ``service_type`` unset (None)."""
+        result = normalize_alert_entry("HighCPUUsage")
+        assert result is not None
+        assert result.service_type is None
+
+    def test_dict_with_invalid_service_type_returns_none(self):
+        """Assert an unknown ``service_type`` value rejects the entry."""
+        assert (
+            normalize_alert_entry({"name": "HighCPU", "service_type": "redis"}) is None
+        )
+
 
 class TestCollectGroupedAlerts:
     """Test the snippet-to-grouped-alerts collection logic."""
@@ -248,6 +266,47 @@ class TestCollectGroupedAlerts:
         result = collect_grouped_alerts([])
         assert len(result) == 0
 
+    def test_per_alert_service_type_overrides_snippet(self):
+        """Assert an alert-level ``service_type`` overrides the snippet-level one."""
+        snippets = [
+            self._make_snippet(
+                {
+                    "alerts": [
+                        {"name": "MySQLInstanceNotAvailable", "service_type": "mysql"},
+                        {"name": "PostgreSQLIsDown", "service_type": "postgresql"},
+                    ],
+                    "service_type": "generic",
+                }
+            ),
+        ]
+        result = collect_grouped_alerts(snippets)
+        assert AlertServiceType.MYSQL in result
+        assert AlertServiceType.POSTGRESQL in result
+        assert AlertServiceType.GENERIC not in result
+        mysql_names = {a.name for a in result[AlertServiceType.MYSQL]}
+        pg_names = {a.name for a in result[AlertServiceType.POSTGRESQL]}
+        assert mysql_names == {"MySQLInstanceNotAvailable"}
+        assert pg_names == {"PostgreSQLIsDown"}
+
+    def test_per_alert_service_type_mixed_with_plain_string(self):
+        """Assert plain-string alerts fall back to snippet-level service_type."""
+        snippets = [
+            self._make_snippet(
+                {
+                    "alerts": [
+                        {"name": "MySQLInstanceNotAvailable", "service_type": "mysql"},
+                        "HighCPUUsage",
+                    ],
+                    "service_type": "generic",
+                }
+            ),
+        ]
+        result = collect_grouped_alerts(snippets)
+        mysql_names = {a.name for a in result[AlertServiceType.MYSQL]}
+        generic_names = {a.name for a in result[AlertServiceType.GENERIC]}
+        assert mysql_names == {"MySQLInstanceNotAvailable"}
+        assert generic_names == {"HighCPUUsage"}
+
 
 class TestFilterSnippetsForAlert:
     """Test filtering snippets by alert name."""
@@ -315,6 +374,60 @@ class TestFilterSnippetsForAlert:
             [s_generic, s_mysql], "HighCPU", AlertServiceType.GENERIC
         )
         assert matched == [s_generic]
+
+    def test_per_alert_service_type_matches_service_filter(self):
+        """Assert per-alert ``service_type`` matches the service_type filter."""
+        s_generic_snippet = self._make_snippet(
+            {
+                "alerts": [
+                    {"name": "MySQLInstanceNotAvailable", "service_type": "mysql"},
+                ],
+                "service_type": "generic",
+            }
+        )
+        matched, _ = filter_snippets_for_alert(
+            [s_generic_snippet],
+            "MySQLInstanceNotAvailable",
+            AlertServiceType.MYSQL,
+        )
+        assert matched == [s_generic_snippet]
+
+    def test_per_alert_service_type_excludes_when_mismatched(self):
+        """Assert per-alert ``service_type`` excludes a snippet when it does not match."""
+        s = self._make_snippet(
+            {
+                "alerts": [{"name": "HighCPU", "service_type": "mysql"}],
+                "service_type": "generic",
+            }
+        )
+        with pytest.raises(HTTPNotFoundException):
+            filter_snippets_for_alert([s], "HighCPU", AlertServiceType.GENERIC)
+
+    def test_per_alert_overrides_only_target_alert(self):
+        """Assert an alert-level override only applies to its own entry.
+
+        Sibling alerts without an override continue to use the snippet-level
+        ``service_type``.
+        """
+        s = self._make_snippet(
+            {
+                "alerts": [
+                    {"name": "MySQLInstanceNotAvailable", "service_type": "mysql"},
+                    "HighCPUUsage",
+                ],
+                "service_type": "generic",
+            }
+        )
+        matched_mysql, _ = filter_snippets_for_alert(
+            [s], "MySQLInstanceNotAvailable", AlertServiceType.MYSQL
+        )
+        assert matched_mysql == [s]
+        matched_generic, _ = filter_snippets_for_alert(
+            [s], "HighCPUUsage", AlertServiceType.GENERIC
+        )
+        assert matched_generic == [s]
+        with pytest.raises(HTTPNotFoundException):
+            filter_snippets_for_alert([s], "HighCPUUsage", AlertServiceType.MYSQL)
 
 
 class TestFilterSnippetsForAlertAlertInfo:
