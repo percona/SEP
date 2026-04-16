@@ -117,7 +117,7 @@ jobs:
           -f Containerfile -t "sep:HEAD" .
 
       - name: Smoke test
-        run: docker run --rm --entrypoint /bin/sh "sep:HEAD" -c 'sleep 3'
+        run: docker run --rm --entrypoint /bin/sh "sep:HEAD" -c 'sleep 1'
 
   ci-success:
     if: always()
