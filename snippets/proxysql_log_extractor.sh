@@ -35,6 +35,9 @@
 #  - PROXYSQL_CRASH
 #  - CONNECTION_ISSUES
 #  - QUERY_ROUTING_PROBLEMS
+# service_type: mysql
+# alerts:
+#   - ProxySQLNotRunning
 # ---
 
 # proxysql_log_extractor.sh

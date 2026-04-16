@@ -47,6 +47,11 @@
 # service_type: generic
 # alerts:
 #   - HighDiskUsage
+#   - BackupFailed
+#   - StaleBackup
+#   - StaleBackupLog
+#   - StaleUpload
+#   - StaleUploadLog
 # ---
 
 usage() {

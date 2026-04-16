@@ -28,6 +28,14 @@
 #  - NATIVE_ASYNC_REPLICATION
 #  - GALERA
 #  - GROUP_REPLICATION
+# service_type: generic
+# alerts:
+#   - HighCPUUsage
+#   - HighMemoryUsage
+#   - HighIOUtilization
+#   - HighDiskUsage
+#   - MySQLInstanceNotAvailable
+#   - PostgreSQLIsDown
 # ---
 
 # Usage: ./pt-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]

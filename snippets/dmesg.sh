@@ -8,6 +8,12 @@
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 #  - NOT_RESPONDING
 #  - TEMPORARY_STALLS
+# service_type: generic
+# alerts:
+#   - MySQLInstanceNotAvailable
+#   - PostgreSQLIsDown
+#   - HighMemoryUsage
+#   - HighIOUtilization
 # ---
 
 # This script executes the 'dmesg -T' command with sudo.

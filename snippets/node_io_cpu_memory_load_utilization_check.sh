@@ -10,6 +10,16 @@
 #   - HighCPUUsage
 #   - HighMemoryUsage
 #   - HighIOUtilization
+#   - MySQLTooManyThreadsRunning
+#   - MySQLPXCFlowControl
+#   - MySQLReplicaLag
+#   - MongoDBHighFlowControl
+#   - MongoDBTicketExhaustion
+#   - MongoDBHighCacheMissRatio
+#   - MongoDBHighHeapUsage
+#   - MongoDBReadWriteQueueHigh
+#   - PostgreSQLTransactionDuration
+#   - PostgreSQLTooManyLocksAcquired
 # ---
 
 set -euo pipefail
