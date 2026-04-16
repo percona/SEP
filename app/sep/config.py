@@ -396,11 +396,12 @@ class SEPSettings(BaseYamlAppSettings):
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
     :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
-    :param CONNECTIVITY_CHECK_DEFAULT: Default value of the per-task-creation
-        "Check connectivity" checkbox. When ``True`` (the default), the Nomad
-        connectivity check runs automatically on task creation for plugins that
-        support it. Operators can set this to ``False`` in ``settings.yaml`` to
-        flip the default opt-in to opt-out across all affected plugins.
+    :param CONNECTIVITY_CHECK_DEFAULT: Initial state of the "Check connectivity"
+        checkbox on task creation forms. When ``True`` (the default), the checkbox
+        is pre-checked; when ``False``, it is unchecked. Because unchecked HTML
+        checkboxes submit no field, the route parameter defaults to ``False`` —
+        automated clients that omit ``check_connectivity`` will skip the check
+        regardless of this setting.
     :type CONNECTIVITY_CHECK_DEFAULT: bool
     """
 
