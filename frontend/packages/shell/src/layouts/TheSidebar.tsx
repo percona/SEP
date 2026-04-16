@@ -250,52 +250,69 @@ export default function TheSidebar() {
     t.breakpoints.down('md'),
   );
 
-  // Narrow: temporary overlay drawer (full-width content, backdrop)
-  // Wide: permanent mini-variant drawer (toggle between icons-only and full)
-  if (isNarrow) {
-    return (
-      <Drawer
-        variant="temporary"
-        open={nav.sidebarOpen}
-        onClose={nav.toggleSidebar}
-        ModalProps={{ keepMounted: true }}
-        sx={{
-          '& .MuiDrawer-paper': {
-            width: DRAWER_WIDTH_EXPANDED,
-            boxSizing: 'border-box',
-          },
-        }}
-      >
-        <Toolbar /> {/* spacer for AppBar */}
-        <DrawerContent collapsed={false} onNavigate={nav.toggleSidebar} />
-      </Drawer>
-    );
-  }
-
-  const collapsed = !nav.sidebarOpen;
+  // Narrow: permanent mini (icons-only) + temporary overlay when toggled open
+  // Wide: permanent drawer, toggle between mini and full
+  const collapsed = isNarrow || !nav.sidebarOpen;
   const width = collapsed ? DRAWER_WIDTH_COLLAPSED : DRAWER_WIDTH_EXPANDED;
 
   return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        width,
-        flexShrink: 0,
-        whiteSpace: 'nowrap',
-        '& .MuiDrawer-paper': {
-          width,
-          boxSizing: 'border-box',
-          overflowX: 'hidden',
-          transition: (theme) =>
-            theme.transitions.create('width', {
-              easing: theme.transitions.easing.sharp,
-              duration: theme.transitions.duration.enteringScreen,
-            }),
-        },
-      }}
-    >
-      <Toolbar /> {/* spacer for AppBar */}
-      <DrawerContent collapsed={collapsed} />
-    </Drawer>
+    <>
+      <Drawer
+        variant="permanent"
+        sx={{
+          width: DRAWER_WIDTH_COLLAPSED,
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+          display: isNarrow ? undefined : 'none',
+          '& .MuiDrawer-paper': {
+            width: DRAWER_WIDTH_COLLAPSED,
+            boxSizing: 'border-box',
+            overflowX: 'hidden',
+          },
+        }}
+      >
+        <Toolbar />
+        <DrawerContent collapsed />
+      </Drawer>
+      {isNarrow ? (
+        <Drawer
+          variant="temporary"
+          open={nav.sidebarOpen}
+          onClose={nav.toggleSidebar}
+          ModalProps={{ keepMounted: true }}
+          sx={{
+            '& .MuiDrawer-paper': {
+              width: DRAWER_WIDTH_EXPANDED,
+              boxSizing: 'border-box',
+            },
+          }}
+        >
+          <Toolbar />
+          <DrawerContent collapsed={false} onNavigate={nav.toggleSidebar} />
+        </Drawer>
+      ) : (
+        <Drawer
+          variant="permanent"
+          sx={{
+            width,
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+            '& .MuiDrawer-paper': {
+              width,
+              boxSizing: 'border-box',
+              overflowX: 'hidden',
+              transition: (theme) =>
+                theme.transitions.create('width', {
+                  easing: theme.transitions.easing.sharp,
+                  duration: theme.transitions.duration.enteringScreen,
+                }),
+            },
+          }}
+        >
+          <Toolbar />
+          <DrawerContent collapsed={collapsed} />
+        </Drawer>
+      )}
+    </>
   );
 }
