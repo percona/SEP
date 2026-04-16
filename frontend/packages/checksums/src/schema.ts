@@ -84,6 +84,6 @@ export const checksumsSchema: PluginSchema = {
       { key: 'differences', label: 'Differences' },
       { key: 'lastRun', label: 'Last Run', format: 'relative', sortable: true },
     ],
-    defaultSort: 'lastRun',
+    defaultSort: '-lastRun',
   },
 };

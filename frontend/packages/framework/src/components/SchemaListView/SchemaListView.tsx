@@ -91,7 +91,14 @@ export function SchemaListView({
       enableDensityToggle={false}
       enableFullScreenToggle={false}
       initialState={{
-        sorting: listView.defaultSort ? [{ id: listView.defaultSort, desc: true }] : [],
+        sorting: listView.defaultSort
+          ? [
+              {
+                id: listView.defaultSort.replace(/^-/, ''),
+                desc: listView.defaultSort.startsWith('-'),
+              },
+            ]
+          : [],
         density: 'compact',
       }}
       muiTableBodyRowProps={

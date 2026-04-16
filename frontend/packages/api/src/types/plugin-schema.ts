@@ -124,6 +124,7 @@ export interface ListColumn {
 
 export interface ListView {
   columns: ListColumn[];
+  /** Column key to sort by. Prefix with '-' for descending (e.g. '-lastRun'). */
   defaultSort?: string;
 }
 
