@@ -188,7 +188,7 @@ It owns:
 - `user`
 - `token`
 - auth flags such as `isAuthenticated`, `isAdmin`, `loading`, `ready`
-- actions: `login`, `logout`, `mockLogin`
+- actions: `login`, `logout`
 - token persistence in localStorage
 - token refresh scheduling
 - initial session bootstrap
@@ -218,13 +218,6 @@ During login:
 3. the provider stores access and refresh tokens
 4. it fetches `/api/users/me`
 5. it schedules token refresh before expiry
-
-There is also a mock path for development:
-
-- if backend auth is unavailable, the login page enables mock mode
-- `mockLogin()` creates a fake user and stores a fake token
-
-This is why the POC works even without a complete backend.
 
 ### `NavigationProvider`
 

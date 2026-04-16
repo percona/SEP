@@ -1,21 +1,25 @@
 import axios from 'axios';
 import applyCaseMiddleware from 'axios-case-converter';
 
-// ── In-memory token store ──────────────────────────────────────────────
-// Access token lives only in memory — never persisted to localStorage.
-// This limits XSS blast radius: a script can't just read storage to
-// steal the token. The refresh token is still in localStorage until the
-// backend provides an HttpOnly-cookie-based refresh endpoint.
-let _accessToken: string | null = null;
+// ── Token provider ─────────────────────────────────────────────────────
+// Instead of owning a copy of the access token, the API layer delegates
+// token retrieval to a provider injected by the auth layer (AuthProvider).
+// This ensures a single source of truth and prevents desync between
+// AuthProvider state and the API client.
+type TokenProvider = () => string | null;
+type OnUnauthorized = () => void;
 
-/** Set the in-memory access token. Called by AuthProvider on login/refresh. */
-export function setAccessToken(token: string | null) {
-  _accessToken = token;
+let _getToken: TokenProvider = () => null;
+let _onUnauthorized: OnUnauthorized = () => {};
+
+/** Inject a callback that returns the current access token. */
+export function setTokenProvider(provider: TokenProvider) {
+  _getToken = provider;
 }
 
-/** Read the current in-memory access token. */
-export function getAccessToken(): string | null {
-  return _accessToken;
+/** Inject a callback invoked when the API receives a 401/303 response. */
+export function setOnUnauthorized(handler: OnUnauthorized) {
+  _onUnauthorized = handler;
 }
 
 /**
@@ -34,15 +38,16 @@ export const apiClient = applyCaseMiddleware(
   }),
 );
 
-// Attach Bearer token from in-memory store on every request
+// Attach Bearer token via the injected provider on every request
 apiClient.interceptors.request.use((config) => {
-  if (_accessToken) {
-    config.headers.Authorization = `Bearer ${_accessToken}`;
+  const token = _getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
-// Handle 401 and 303 globally — clear token and redirect to login
+// Handle 401 and 303 globally — delegate to the injected handler
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -50,13 +55,7 @@ apiClient.interceptors.response.use(
       const status = error.response?.status;
       // 401 = invalid token, 303 = session expired (backend redirect to login)
       if (status === 401 || status === 303) {
-        _accessToken = null;
-        // TODO: once refresh token moves to HttpOnly cookie, remove this line
-        localStorage.removeItem('sep_refresh_token');
-        // Only redirect if not already on login page (avoid loops)
-        if (!window.location.pathname.startsWith('/login')) {
-          window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
-        }
+        _onUnauthorized();
       }
     }
     return Promise.reject(error);

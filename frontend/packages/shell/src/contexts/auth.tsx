@@ -8,7 +8,14 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { postLogin, postRefresh, fetchCurrentUser, setAccessToken, type User } from '@sep/api';
+import {
+  postLogin,
+  postRefresh,
+  fetchCurrentUser,
+  setTokenProvider,
+  setOnUnauthorized,
+  type User,
+} from '@sep/api';
 
 // ── Storage keys ────────────────────────────────────────────────────────
 // Only the refresh token is persisted (localStorage for now).
@@ -27,8 +34,6 @@ interface AuthState {
   ready: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
-  /** Dev-only: login without backend */
-  mockLogin: (username: string) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -36,9 +41,11 @@ const AuthContext = createContext<AuthState | null>(null);
 // ── Provider ────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  // Access token lives only in React state + the API client's module-level
-  // variable (via setAccessToken). Never written to localStorage.
+  // Access token lives only in React state. A ref mirrors the latest value
+  // so the token provider callback (injected into the API client) always
+  // reads the current token without stale closures.
   const [token, setToken] = useState<string | null>(null);
+  const tokenRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -49,13 +56,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Helpers ───────────────────────────────────────────────────────────
   const persistTokens = useCallback((accessToken: string, refreshToken: string) => {
     setToken(accessToken);
-    setAccessToken(accessToken); // sync to API client in-memory store
+    tokenRef.current = accessToken;
     localStorage.setItem(REFRESH_KEY, refreshToken);
   }, []);
 
   const clearTokens = useCallback(() => {
     setToken(null);
-    setAccessToken(null);
+    tokenRef.current = null;
     setUser(null);
     localStorage.removeItem(REFRESH_KEY);
     if (refreshTimerRef.current) {
@@ -116,28 +123,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearTokens();
   }, [clearTokens]);
 
-  // ── Mock login (dev without backend) ──────────────────────────────────
-  const mockLogin = useCallback((username: string) => {
-    const mockUser: User = {
-      id: '00000000-0000-0000-0000-000000000001',
-      username,
-      email: `${username}@percona.com`,
-      firstName: username.charAt(0).toUpperCase() + username.slice(1),
-      lastName: '',
-      fullName: username,
-      isAdmin: username === 'admin',
-      isActive: true,
-      isForbidden: false,
-      isDeleted: false,
-      owner: 'built-in',
-      createdTime: new Date().toISOString(),
-      updatedTime: new Date().toISOString(),
+  // ── Inject token provider & unauthorized handler into API client ────
+  // The API layer never owns the token — it calls back here to get it.
+  useEffect(() => {
+    setTokenProvider(() => tokenRef.current);
+    setOnUnauthorized(() => {
+      clearTokens();
+      // Redirect to login unless already there (avoid loops)
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+      }
+    });
+    return () => {
+      setTokenProvider(() => null);
+      setOnUnauthorized(() => {});
     };
-    const mockToken = 'mock-jwt-token';
-    setToken(mockToken);
-    setAccessToken(mockToken);
-    setUser(mockUser);
-  }, []);
+  }, [clearTokens]);
 
   // ── Session bootstrap (runs once on mount) ────────────────────────────
   // Access token is memory-only so it's lost on reload. Restore the
@@ -188,9 +189,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ready,
       login,
       logout,
-      mockLogin,
     }),
-    [user, token, isAuthenticated, isAdmin, loading, ready, login, logout, mockLogin],
+    [user, token, isAuthenticated, isAdmin, loading, ready, login, logout],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

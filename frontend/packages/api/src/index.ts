@@ -1,5 +1,5 @@
 // API client
-export { apiClient, setAccessToken, getAccessToken } from './client';
+export { apiClient, setTokenProvider, setOnUnauthorized } from './client';
 
 // Auth
 export { postLogin, postRefresh, fetchCurrentUser } from './auth';
