@@ -111,16 +111,10 @@ jobs:
         run: make pack
 
       - name: Build app image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          file: Containerfile
-          tags: sep:HEAD
-          load: true
-          build-contexts: |
-            localhost/sep:builder=docker-image://sep:builder
-          cache-from: type=gha,scope=app
-          cache-to: type=gha,mode=max,scope=app
+        run: >-
+          docker build
+          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          -f Containerfile -t "sep:HEAD" .
 
       - name: Smoke test
         run: docker run --rm --entrypoint /bin/sh "sep:HEAD" -c 'sleep 3'
