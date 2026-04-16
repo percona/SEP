@@ -114,7 +114,7 @@
 | app/sep/plugins/backup\_pg/deps.py                |       45 |        1 |     98% |       180 |
 | app/sep/plugins/backup\_pg/models.py              |       22 |        0 |    100% |           |
 | app/sep/plugins/backup\_pg/routes.py              |       58 |        0 |    100% |           |
-| app/sep/plugins/checksums/deps.py                 |      130 |       62 |     52% |65-76, 90-128, 158, 264-266, 280, 363-368, 384-411, 424-451, 462, 492 |
+| app/sep/plugins/checksums/deps.py                 |      130 |       63 |     52% |65-76, 90-128, 156, 158, 264-266, 280, 363-368, 384-411, 424-451, 462, 492 |
 | app/sep/plugins/checksums/models.py               |       33 |        0 |    100% |           |
 | app/sep/plugins/checksums/routes.py               |       74 |       33 |     55% |63-64, 148-198, 218-226, 241-247, 263-264 |
 | app/sep/plugins/dipper/constants.py               |       10 |        0 |    100% |           |
@@ -149,7 +149,7 @@
 | app/sep/sync/models.py                            |      348 |       60 |     83% |75-84, 98-100, 119, 267-269, 330, 390-391, 424, 478-480, 537, 567, 583, 603-607, 708, 722, 742-743, 823, 837, 859-860, 941, 954, 978-980, 1052, 1065, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py             |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py              |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                       |       93 |       20 |     78% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 344 |
+| app/sep/sync/syncers/pmm.py                       |       93 |       18 |     81% |83-87, 107-110, 121, 176-184, 236-252, 344 |
 | app/sep/tasks.py                                  |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                       |       10 |        0 |    100% |           |
 | app/sep/utils/jinja.py                            |       60 |       10 |     83% |103, 122, 133-138, 169-170 |
@@ -184,7 +184,7 @@
 | app/tasks/periodic/models.py                      |      101 |        5 |     95% |196, 231, 283, 299, 368 |
 | app/tasks/periodic/routes.py                      |       38 |        3 |     92% | 62-66, 97 |
 | app/tasks/routes.py                               |      182 |       19 |     90% |119-123, 180, 201-208, 240, 289-297, 302-303, 492, 505-506 |
-| **TOTAL**                                         | **12485** | **1930** | **85%** |           |
+| **TOTAL**                                         | **12485** | **1929** | **85%** |           |
 
 
 ## Setup coverage badge
