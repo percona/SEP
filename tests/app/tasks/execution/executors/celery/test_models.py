@@ -23,8 +23,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_asyncio
 from sqlalchemy.orm import undefer
+from sqlmodel import col, select
 
-from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.crud import (
+    TaskHistoryLogStateManager,
+    TaskHistoryManager,
+    TaskManager,
+)
 from app.tasks.execution.executors.celery.models import (
     CeleryExecutor,
 )
@@ -33,7 +38,9 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskExecutionRequest,
     TaskHistory,
+    TaskHistoryLog,
     TaskHistoryStatusEnum,
+    TaskLogType,
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
@@ -173,24 +180,25 @@ class TestCeleryExecutorDispatchTask:
 
     @pytest.mark.asyncio
     async def test_failed_dispatch(self, executor, session, celery_queue_item) -> None:
-        """Assert failed callable updates status to FAILED."""
-        with (
-            patch.object(
-                executor,
-                "_run_callable",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("boom"),
-            ),
-            patch(
-                "app.tasks.execution.executors.celery.models.TaskHistoryManager.save",
-                new_callable=AsyncMock,
-                side_effect=lambda _s, qi, **_kw: qi,
-            ),
+        """Assert failed callable updates status to FAILED and persists stderr chunks."""
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("boom"),
         ):
             result = await executor.dispatch_task(session, celery_queue_item)
         assert result.status == TaskHistoryStatusEnum.FAILED
         assert result.finished_at is not None
-        stderr = result.execution_request.tracking["task_logs"]["execution"]["stderr"]
+        stderr_chunks = (
+            await session.exec(
+                select(TaskHistoryLog)
+                .where(col(TaskHistoryLog.task_history_id) == result.id)
+                .where(col(TaskHistoryLog.stream) == TaskLogType.STDERR)
+                .order_by(col(TaskHistoryLog.start_offset))
+            )
+        ).all()
+        stderr = "".join(chunk.content for chunk in stderr_chunks)
         assert "boom" in stderr
         assert "RuntimeError" in stderr
 
@@ -198,25 +206,26 @@ class TestCeleryExecutorDispatchTask:
     async def test_dispatch_stores_logs(
         self, executor, session, celery_queue_item
     ) -> None:
-        """Assert dispatch stores captured logs in tracking."""
-        with (
-            patch.object(
-                executor,
-                "_run_callable",
-                new_callable=AsyncMock,
-                return_value="output data",
-            ),
-            patch(
-                "app.tasks.execution.executors.celery.models.TaskHistoryManager.save",
-                new_callable=AsyncMock,
-                side_effect=lambda _s, qi, **_kw: qi,
-            ),
+        """Assert dispatch stores captured stdout chunks in taskhistory_log."""
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            return_value="output data",
         ):
             result = await executor.dispatch_task(session, celery_queue_item)
-        task_logs = result.execution_request.tracking.get("task_logs", {})
-        assert task_logs
-        assert "stdout" in task_logs["execution"]
-        assert "stderr" in task_logs["execution"]
+        state_rows = await TaskHistoryLogStateManager.list_for_task(session, result.id)
+        assert {row.source for row in state_rows} == {"execution"}
+        assert TaskLogType.STDOUT in {row.stream for row in state_rows}
+        stdout_chunks = (
+            await session.exec(
+                select(TaskHistoryLog)
+                .where(col(TaskHistoryLog.task_history_id) == result.id)
+                .where(col(TaskHistoryLog.stream) == TaskLogType.STDOUT)
+            )
+        ).all()
+        assert stdout_chunks
+        assert "output data" in "".join(chunk.content for chunk in stdout_chunks)
 
 
 class TestCeleryExecutorRunCallable:
@@ -328,23 +337,22 @@ class TestCeleryExecutorStreamLogs:
     """Test CeleryExecutor.stream_logs."""
 
     @pytest.mark.asyncio
-    async def test_streams_stored_logs(self, executor) -> None:
-        """Assert stream_logs yields from stored task_logs."""
+    async def test_stream_logs_yields_nothing(self, executor) -> None:
+        """Assert stream_logs is an empty async generator.
+
+        Celery tasks complete synchronously inside ``dispatch_task``, so the
+        route's live-stream branch is unreachable in practice. Finished Celery
+        log retrieval goes through the chunk store via ``iter_task_history_logs``.
+        """
         queue_item = TaskHistory(
             task_id=1,
             execution_request=TaskExecutionRequest(
-                task="test",
-                target="local",
-                tracking={
-                    "task_logs": {"execution": {"stdout": "hello world", "stderr": ""}}
-                },
+                task="test", target="local", tracking={}
             ),
             status=TaskHistoryStatusEnum.SUCCESS,
         )
         logs = [log async for log in executor.stream_logs(queue_item)]
-        assert len(logs) > 0
-        stdout_logs = [entry for entry in logs if entry.type == "stdout" and entry.msg]
-        assert any("hello world" in entry.msg for entry in stdout_logs)
+        assert logs == []
 
 
 class TestCeleryExecutorUnsupportedOps:

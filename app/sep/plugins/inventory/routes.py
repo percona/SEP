@@ -18,9 +18,10 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request, status
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
@@ -37,6 +38,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
+from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.inventory.deps import (
     build_available_syncers,
@@ -49,10 +51,19 @@ from app.sep.plugins.inventory.sync import (
     run_schema_sync,
     run_service_sync,
 )
+from app.tasks.connectivity.models import ConnectivityCheckResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
+
+CONNECTABLE_SERVICE_TYPES = frozenset(
+    {
+        ServiceTypeEnum.MYSQL,
+        ServiceTypeEnum.POSTGRESQL,
+        ServiceTypeEnum.MONGODB,
+    }
+)
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -197,6 +208,7 @@ async def service_detail(
         lambda syncer: syncer.can_sync_service(service),
     )
     context["can_sync"] = bool(context["available_syncers"])
+    context["can_check_connectivity"] = service.type in CONNECTABLE_SERVICE_TYPES
     return templates.TemplateResponse(
         request=request,
         name="inventory/service-detail.html.j2",
@@ -225,6 +237,76 @@ async def sync_service(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
+
+
+@router.post(
+    "/services/{service_id}/check-connectivity/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+)
+async def check_service_connectivity(
+    request: Request,
+    service: CreatedServiceDep,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Check database connectivity for a service via Nomad."""
+    redirect = RedirectResponse(
+        f"/inventory/services/{service.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    if service.type not in CONNECTABLE_SERVICE_TYPES:
+        messages.error(
+            request,
+            f"Connectivity check is not supported for {service.type.name} services",
+        )
+        return redirect
+    if service.node is None or service.port is None:
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            "missing node or port information",
+        )
+        return redirect
+    try:
+        result = ConnectivityCheckResponse.model_validate(
+            await tasks_api.post(
+                "/connectivity-check/",
+                json={
+                    "target": service.node.name,
+                    "host": service.node.address,
+                    "port": service.port,
+                    "service_type": service.type.name,
+                },
+            )
+        )
+        if result.success:
+            messages.success(
+                request,
+                f"Connectivity check passed for {service.name}",
+            )
+        else:
+            messages.error(
+                request,
+                f"Connectivity check failed for {service.name}: "
+                f"{result.error or 'Unknown error'}",
+            )
+    except HTTPException as exc:
+        logger.warning(
+            "Connectivity check API error for service %s: %s",
+            service.id,
+            exc.detail,
+        )
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: {exc.detail}",
+        )
+    except Exception:
+        logger.exception("Connectivity check failed for service %s", service.id)
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            "could not reach the Tasks API",
+        )
+    return redirect
 
 
 @router.post("/{node_id}/services/", dependencies=[IsAuthenticated, IsCsrfValidated])

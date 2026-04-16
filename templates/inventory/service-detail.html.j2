@@ -22,6 +22,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     {% with inventory_table_title = "Service Details", inventory_sync_route = "/inventory/services/" ~ service.id ~ "/sync/" %}
         {% include "inventory/partials/sync-button.html.j2" %}
     {% endwith %}
+    {% include "inventory/partials/connectivity-check-button.html.j2" %}
     <dl>
         <dt>Name</dt>
         <dd>

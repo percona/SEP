@@ -19,9 +19,11 @@ from typing import Any
 
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Column, ColumnClause, ColumnElement, func, JSON, literal, Text
+from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
+from sqlalchemy.sql.dml import Insert as GenericInsert
 from sqlalchemy.sql.type_api import TypeEngine
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -107,6 +109,31 @@ def func_json_extract(
         column,
         literal(json_join_path_elems(*path_elems), Text, literal_execute=True),
     )
+
+
+def idempotent_insert(engine_name: str, table: Any) -> GenericInsert:
+    """Return a dialect-specific INSERT that ignores duplicate-key conflicts.
+
+    PostgreSQL and SQLite use ``INSERT ... ON CONFLICT DO NOTHING``; MySQL uses
+    ``INSERT IGNORE ...``. The caller chains ``.values(...)`` and passes the
+    result to ``session.execute``.
+
+    :param engine_name: SQLAlchemy engine ``name`` (``"postgresql"``, ``"sqlite"``,
+        or ``"mysql"``).
+    :type engine_name: str
+    :param table: The target table or ORM model class.
+    :type table: Any
+    :return: A dialect-specific insert construct.
+    :rtype: GenericInsert
+    :raises NotImplementedError: If the dialect is not supported.
+    """
+    if engine_name == DatabaseDialect.POSTGRESQL:
+        return postgresql.insert(table).on_conflict_do_nothing()
+    if engine_name == DatabaseDialect.SQLITE:
+        return sqlite.insert(table).on_conflict_do_nothing()
+    if engine_name == DatabaseDialect.MYSQL:
+        return mysql.insert(table).prefix_with("IGNORE")
+    raise NotImplementedError(f"idempotent_insert: unsupported dialect {engine_name!r}")
 
 
 def prepare_unsafe_value_for_json_comparison(db_engine: str, value: Any) -> Any:
