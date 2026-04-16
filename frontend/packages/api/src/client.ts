@@ -17,7 +17,7 @@ export function setTokenProvider(provider: TokenProvider) {
   _getToken = provider;
 }
 
-/** Inject a callback invoked when the API receives a 401/303 response. */
+/** Inject a callback invoked when the API receives an unauthorized response. */
 export function setOnUnauthorized(handler: OnUnauthorized) {
   _onUnauthorized = handler;
 }
@@ -32,8 +32,6 @@ export const apiClient = applyCaseMiddleware(
     headers: {
       'Content-Type': 'application/json',
     },
-    // Backend returns 303 for expired sessions — don't auto-follow redirects
-    maxRedirects: 0,
     validateStatus: (status) => status >= 200 && status < 300,
   }),
 );
@@ -47,13 +45,24 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 and 303 globally — delegate to the injected handler
+// Handle unauthorized responses globally — delegate to the injected handler.
+// In the browser, 303 redirects are followed automatically (maxRedirects is
+// Node-only), so the client may receive a 200 HTML login page instead of a
+// 303 status. We detect this by checking the response content-type.
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const ct = response.headers['content-type'] ?? '';
+    if (ct.includes('text/html')) {
+      // API endpoints should never return HTML — this means the browser
+      // followed a 303 redirect to the login page.
+      _onUnauthorized();
+      return Promise.reject(new Error('Session expired (redirected to login page)'));
+    }
+    return response;
+  },
   (error) => {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
-      // 401 = invalid token, 303 = session expired (backend redirect to login)
       if (status === 401 || status === 303) {
         _onUnauthorized();
       }
