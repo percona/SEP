@@ -12,6 +12,10 @@
 #    arg_format: --defaults-file=${value}
 # atw:
 #  - GROUP_REPLICATION
+# service_type: mysql
+# alerts:
+#   - MySQLReplicaLag
+#   - MySQLReplicationBroken
 # ---
 
 # Usage: ./mysql_gr_queries.sh [--defaults-file=path] [mysql_args...]

@@ -45,6 +45,10 @@
 #        label: Print to the terminal (default)
 #      - value: file
 #        label: Write the output to a file named by the timestamp
+# service_type: mysql
+# alerts:
+#   - ProxySQLNotRunning
+#   - MySQLTooManyConnections
 # ---
 
 declare DEFAULTS_FILE="/etc/proxysql-admin.cnf"
