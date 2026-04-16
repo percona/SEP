@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
 
+env:
+  POETRY: poetry
+
 jobs:
   store-coverage:
     runs-on: ubuntu-latest
