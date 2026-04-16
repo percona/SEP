@@ -10,16 +10,26 @@
 #   - HighCPUUsage
 #   - HighMemoryUsage
 #   - HighIOUtilization
-#   - MySQLTooManyThreadsRunning
-#   - MySQLPXCFlowControl
-#   - MySQLReplicaLag
-#   - MongoDBHighFlowControl
-#   - MongoDBTicketExhaustion
-#   - MongoDBHighCacheMissRatio
-#   - MongoDBHighHeapUsage
-#   - MongoDBReadWriteQueueHigh
-#   - PostgreSQLTransactionDuration
-#   - PostgreSQLTooManyLocksAcquired
+#   - name: MySQLTooManyThreadsRunning
+#     service_type: mysql
+#   - name: MySQLPXCFlowControl
+#     service_type: mysql
+#   - name: MySQLReplicaLag
+#     service_type: mysql
+#   - name: MongoDBHighFlowControl
+#     service_type: mongodb
+#   - name: MongoDBTicketExhaustion
+#     service_type: mongodb
+#   - name: MongoDBHighCacheMissRatio
+#     service_type: mongodb
+#   - name: MongoDBHighHeapUsage
+#     service_type: mongodb
+#   - name: MongoDBReadWriteQueueHigh
+#     service_type: mongodb
+#   - name: PostgreSQLTransactionDuration
+#     service_type: postgresql
+#   - name: PostgreSQLTooManyLocksAcquired
+#     service_type: postgresql
 # ---
 
 set -euo pipefail

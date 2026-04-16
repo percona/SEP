@@ -34,8 +34,10 @@
 #   - HighMemoryUsage
 #   - HighIOUtilization
 #   - HighDiskUsage
-#   - MySQLInstanceNotAvailable
-#   - PostgreSQLIsDown
+#   - name: MySQLInstanceNotAvailable
+#     service_type: mysql
+#   - name: PostgreSQLIsDown
+#     service_type: postgresql
 # ---
 
 # Usage: ./pt-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]

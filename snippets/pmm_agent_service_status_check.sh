@@ -7,7 +7,8 @@
 # sudo: always
 # service_type: generic
 # alerts:
-#   - PostgreSQLExporterError
+#   - name: PostgreSQLExporterError
+#     service_type: postgresql
 # ---
 
 set -euo pipefail

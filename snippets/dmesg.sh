@@ -10,8 +10,10 @@
 #  - TEMPORARY_STALLS
 # service_type: generic
 # alerts:
-#   - MySQLInstanceNotAvailable
-#   - PostgreSQLIsDown
+#   - name: MySQLInstanceNotAvailable
+#     service_type: mysql
+#   - name: PostgreSQLIsDown
+#     service_type: postgresql
 #   - HighMemoryUsage
 #   - HighIOUtilization
 # ---
