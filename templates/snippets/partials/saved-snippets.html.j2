@@ -15,7 +15,9 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses />.
 #}
 {% if snippets %}
-    {% if user.is_admin %}
+    {% set has_unapproved = snippets | rejectattr('is_approved') | list | length > 0 %}
+    {% set show_batch_ui = user.is_admin and has_unapproved %}
+    {% if show_batch_ui %}
         <form id="snippetsBulkApproveForm"
               method="post"
               action="{{ url_for('snippets_approve_batch') }}"
@@ -36,7 +38,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     <table class="snippets-tbl">
         <thead>
             <tr>
-                {% if user.is_admin %}
+                {% if show_batch_ui %}
                     <th style="width: 30px;">
                         <label class="checkbox">
                             <input type="checkbox"
@@ -62,7 +64,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             {% for snippet in snippets %}
                 <tr id="{{ snippet.filename }}"
                     {% if snippet.is_approved %}class="relativeTime" data-relative-date-value="{{ snippet.approved_at|utc_isoformat }}" data-relative-date-title-prefix="Approved "{% else %}title="Not approved"{% endif %}>
-                    {% if user.is_admin %}
+                    {% if show_batch_ui %}
                         <td>
                             {% if not snippet.is_approved %}
                                 <label class="checkbox">
