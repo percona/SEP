@@ -226,12 +226,12 @@ class TestSnippetsApproveBatch:
         await create_snippet("a.sh")
         error = mocker.patch("app.sep.main.messages.error")
         try:
-            with TestClient(sep_app, raise_server_exceptions=False) as client:
-                response = client.post(
-                    _BATCH_APPROVE_URL,
-                    data={"filenames": ["a.sh"]},
-                    follow_redirects=False,
-                )
+            client = TestClient(sep_app, raise_server_exceptions=False)
+            response = client.post(
+                _BATCH_APPROVE_URL,
+                data={"filenames": ["a.sh"]},
+                follow_redirects=False,
+            )
         finally:
             sep_app.dependency_overrides = {}
 
