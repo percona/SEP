@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.exceptions import (
     HTTPNotFoundException,
@@ -28,6 +28,7 @@ from app.core.exceptions import (
 )
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
+from app.core.utils.fields import NonEmptyStr, UniqueList
 from app.sep.deps import get_base_url, SessionDep
 from app.sep.middleware import messages
 from app.sep.routes.artifacts import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_SNIPPET
@@ -288,3 +289,20 @@ def get_snippet_execution_request_meta(
         args=execution_args.to_args_string(),
         requirements=snippet.requirements,
     )
+
+
+SnippetExecutionRequestMeta = Annotated[
+    SnippetExecutionMeta, Depends(get_snippet_execution_request_meta)
+]
+
+
+class SnippetBatchApproveForm(BaseModel):
+    """Validate the body of the batch snippet-approval endpoint.
+
+    :param filenames: Unique, non-empty list of snippet filenames to approve in a
+        single atomic operation. Duplicates in the submitted form are silently
+        deduplicated by ``UniqueList``.
+    :type filenames: UniqueList[NonEmptyStr]
+    """
+
+    filenames: UniqueList[NonEmptyStr] = Field(min_length=1)

@@ -16,12 +16,15 @@
 """Define routes for the Support Snippets plugin."""
 
 import logging
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlmodel import col
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.utils import utc_now
 from app.sep.celery import update_snippets
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -29,6 +32,7 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     IsAuthenticated,
+    IsCsrfValidated,
     SessionDep,
     TaskAPI,
 )
@@ -36,14 +40,14 @@ from app.sep.middleware import messages
 from app.sep.plugins.snippets.deps import (
     ApprovedSnippet,
     ExecutableSnippet,
-    get_snippet_execution_request_meta,
+    SnippetBatchApproveForm,
+    SnippetExecutionRequestMeta,
     UnapprovedSnippet,
     ValidatedSnippet,
 )
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
-from app.sep.snippets.models.snippet import SnippetExecutionMeta
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -166,14 +170,87 @@ async def snippets_refresh(request: Request, user: AdminUser) -> RedirectRespons
     )
 
 
+@router.post("/approve-batch", dependencies=[IsCsrfValidated])
+async def snippets_approve_batch(
+    request: Request,
+    user: AdminUser,
+    session: SessionDep,
+    body: Annotated[SnippetBatchApproveForm, Form()],
+) -> RedirectResponse:
+    """Approve multiple snippets in a single atomic bulk operation.
+
+    Reject the whole batch if any requested filename is unknown, its file is
+    missing on disk, or it is already approved. On success, flash a summary and
+    redirect back to the snippets index.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param user: The admin performing the action.
+    :type user: User
+    :param session: The active database session.
+    :type session: AsyncSession
+    :param body: The validated request body containing the filenames to approve.
+    :type body: SnippetBatchApproveForm
+    :return: A 303 redirect back to the snippets index.
+    :rtype: RedirectResponse
+    """
+    index_redirect = RedirectResponse(
+        request.url_for("snippets_index"), status_code=status.HTTP_303_SEE_OTHER
+    )
+    filenames = list(body.filenames)
+    snippets = await SnippetManager.list(session, col(Snippet.filename).in_(filenames))
+    found = {snippet.filename for snippet in snippets}
+    missing_in_db = sorted(set(filenames) - found)
+    if missing_in_db:
+        messages.error(request, f"Unknown snippet(s): {', '.join(missing_in_db)}")
+        return index_redirect
+    missing_on_disk = sorted(
+        snippet.filename for snippet in snippets if not Path(snippet).is_file()
+    )
+    if missing_on_disk:
+        messages.error(
+            request,
+            f"Snippet file(s) missing on disk: {', '.join(missing_on_disk)}",
+        )
+        return index_redirect
+    already_approved = sorted(
+        snippet.filename for snippet in snippets if snippet.is_approved
+    )
+    if already_approved:
+        messages.error(request, f"Already approved: {', '.join(already_approved)}")
+        return index_redirect
+    result = await SnippetManager.update_where(
+        session,
+        {
+            "approved_at": utc_now(),
+            "updated_by": str(user.id),
+            "reason": f"Batch approved by {user.username}",
+        },
+        col(Snippet.filename).in_(filenames),
+        col(Snippet.approved_at).is_(None),
+    )
+    if result.rowcount != len(filenames):
+        messages.error(
+            request,
+            "Batch approval aborted — snippet state changed concurrently. Please retry.",
+        )
+        return index_redirect
+    logger.info(
+        "Batch-approved %d snippet(s) by %s: %s",
+        result.rowcount,
+        user.username,
+        filenames,
+    )
+    messages.success(request, f"{result.rowcount} snippet(s) approved")
+    return index_redirect
+
+
 @router.post("/{snippet_filename}", dependencies=[IsAuthenticated])
 async def snippets_execute(
     request: Request,
     tasks_api: TaskAPI,
     snippet: ExecutableSnippet,
-    execution_request_meta: Annotated[
-        SnippetExecutionMeta, Depends(get_snippet_execution_request_meta)
-    ],
+    execution_request_meta: SnippetExecutionRequestMeta,
 ) -> RedirectResponse:
     """Execute a snippet."""
     logger.info(
