@@ -138,7 +138,8 @@ def normalize_alert_entry(entry: Any) -> AlertInfo | None:
     """Normalize a flexible alert frontmatter entry into an ``AlertInfo``.
 
     Accept either a plain string identifier or a dict with ``name`` (required)
-    and optional ``label``. Return ``None`` for invalid entries.
+    and optional ``label`` and ``service_type``. Return ``None`` for invalid
+    entries (including dicts whose ``service_type`` is not a known value).
 
     :param entry: The raw alert entry from snippet frontmatter.
     :type entry: Any

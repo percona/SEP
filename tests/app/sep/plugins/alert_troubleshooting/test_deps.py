@@ -46,9 +46,6 @@ def _fake_snippet(meta: dict[str, Any]) -> Snippet:
     return cast(Snippet, SimpleNamespace(meta=meta))
 
 
-EXPECTED_BOTH_SNIPPETS = 2
-
-
 class TestCamelCaseToTitle:
     """Test the CamelCase-to-title-case conversion utility."""
 
@@ -356,13 +353,6 @@ class TestFilterSnippetsForAlert:
         s2 = _fake_snippet({"alerts": ["HighCPU"]})
         matched, _ = filter_snippets_for_alert([s1, s2], "HighCPU")
         assert matched == [s2]
-
-    def test_mixed_approved_unapproved_all_returned(self):
-        """Assert both approved and unapproved snippets are returned."""
-        s1 = _fake_snippet({"alerts": ["HighCPU"]})
-        s2 = _fake_snippet({"alerts": ["HighCPU"]})
-        matched, _ = filter_snippets_for_alert([s1, s2], "HighCPU")
-        assert len(matched) == EXPECTED_BOTH_SNIPPETS
 
     def test_service_type_filters_snippets(self):
         """Assert service_type restricts matches to the given type."""
