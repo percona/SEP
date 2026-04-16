@@ -29,7 +29,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Not authenticated — redirect to login with return URL
   if (!isAuthenticated) {
-    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
+    const returnUrl = location.pathname + location.search + location.hash;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(returnUrl)}`} replace />;
   }
 
   return <>{children}</>;
