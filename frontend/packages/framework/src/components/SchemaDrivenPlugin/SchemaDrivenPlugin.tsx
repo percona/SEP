@@ -42,7 +42,10 @@ export function SchemaDrivenPlugin({ pluginName, mockSchema, mockTasks }: Schema
         index
         element={<PluginListPage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />}
       />
-      <Route path="new" element={<PluginCreatePage schema={schema} pluginName={pluginName} />} />
+      <Route
+        path="new"
+        element={<PluginCreatePage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />}
+      />
       <Route
         path=":id"
         element={<PluginDetailPage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />}

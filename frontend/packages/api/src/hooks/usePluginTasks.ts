@@ -47,16 +47,20 @@ export function usePluginTask<T extends Record<string, unknown>>(
   });
 }
 
-export function useCreatePluginTask<T extends Record<string, unknown>>(pluginName: string) {
+export function useCreatePluginTask<T extends Record<string, unknown>>(
+  pluginName: string,
+  mockTasks?: T[],
+) {
   const queryClient = useQueryClient();
 
   return useMutation<T, Error, Record<string, unknown>>({
     mutationFn: async (values) => {
-      // TODO: switch to real API
-      await new Promise((r) => setTimeout(r, 500));
-      return values as T;
-      // const { data } = await apiClient.post<T>(`/plugins/${pluginName}/`, values);
-      // return data;
+      if (mockTasks) {
+        await new Promise((r) => setTimeout(r, 500));
+        return values as T;
+      }
+      const { data } = await apiClient.post<T>(`/plugins/${pluginName}/`, values);
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks'] });
