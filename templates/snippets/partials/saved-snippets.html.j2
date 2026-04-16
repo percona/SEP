@@ -38,9 +38,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <tr>
                 {% if user.is_admin %}
                     <th style="width: 30px;">
-                        <input type="checkbox"
-                               id="selectAllSnippets"
-                               title="Select all unapproved snippets" />
+                        <label class="checkbox">
+                            <input type="checkbox"
+                                   id="selectAllSnippets"
+                                   aria-label="Select all unapproved snippets" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                        </label>
                     </th>
                 {% endif %}
                 <th style="width: 30px;"></th>
@@ -59,11 +65,18 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     {% if user.is_admin %}
                         <td>
                             {% if not snippet.is_approved %}
-                                <input type="checkbox"
-                                       class="snippetCheckbox"
-                                       name="filenames"
-                                       value="{{ snippet.filename }}"
-                                       form="snippetsBulkApproveForm" />
+                                <label class="checkbox">
+                                    <input type="checkbox"
+                                           class="snippetCheckbox"
+                                           name="filenames"
+                                           value="{{ snippet.filename }}"
+                                           form="snippetsBulkApproveForm"
+                                           aria-label="Select snippet {{ snippet.filename }}" />
+                                    <div class="checkmark">
+                                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                        <span class="material-symbols-outlined checked">check_box</span>
+                                    </div>
+                                </label>
                             {% endif %}
                         </td>
                     {% endif %}
