@@ -3,8 +3,32 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
-import type { FormSection } from '@sep/api';
+import type { FormSection, PluginField } from '@sep/api';
 import { FieldRenderer } from './FieldRenderer';
+
+function fieldDefault(field: PluginField): unknown {
+  switch (field.type) {
+    case 'bool':
+      return false;
+    case 'integer':
+    case 'float':
+      return field.default ?? undefined;
+    case 'choice':
+      return '';
+    case 'string':
+    case 'textarea':
+    case 'yaml':
+    case 'datetime':
+    case 'file':
+      return '';
+    case 'service':
+    case 'schema':
+    case 'table':
+      return undefined;
+    default:
+      return '';
+  }
+}
 
 interface SchemaFormRendererProps {
   sections: FormSection[];
@@ -23,7 +47,7 @@ export function SchemaFormRenderer({
 }: SchemaFormRendererProps) {
   const formDefaults = sections.reduce<Record<string, unknown>>((acc, section) => {
     section.fields.forEach((field) => {
-      acc[field.name] = defaultValues?.[field.name] ?? field.default ?? '';
+      acc[field.name] = defaultValues?.[field.name] ?? field.default ?? fieldDefault(field);
     });
     return acc;
   }, {});
