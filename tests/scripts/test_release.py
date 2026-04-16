@@ -160,6 +160,9 @@ def test_post_webhook_2xx_range(monkeypatch, webhook_env):
         def __exit__(self, *args):
             return False
 
+        def read(self):
+            return b""
+
     monkeypatch.setattr(
         release.urllib.request,
         "urlopen",
@@ -249,10 +252,13 @@ def test_post_webhook_timeout_returns_false(monkeypatch, webhook_env, capsys):
     assert "TimeoutError" in capsys.readouterr().err
 
 
-def test_post_webhook_malformed_url_returns_false(monkeypatch, capsys):
-    """``_post_webhook`` returns False when the URL is malformed (``ValueError``)."""
-    monkeypatch.setenv(release.WEBHOOK_CREATE_URL_ENV, "not a valid url at all")
-    monkeypatch.setenv(release.WEBHOOK_CREATE_AUTH_ENV, WEBHOOK_SECRET)
+def test_post_webhook_malformed_url_returns_false(monkeypatch, webhook_env, capsys):
+    """``_post_webhook`` returns False when ``urlopen`` raises ``ValueError``."""
+
+    def raise_value_error(request, timeout):
+        raise ValueError("unknown url type")
+
+    monkeypatch.setattr(release.urllib.request, "urlopen", raise_value_error)
     assert (
         release._post_webhook(
             release.WEBHOOK_CREATE_URL_ENV,
@@ -410,6 +416,34 @@ def test_post_webhook_does_not_log_url(monkeypatch, webhook_env, capsys):
         "v0.12.0",
     )
     assert WEBHOOK_URL not in capsys.readouterr().err
+
+
+def test_post_webhook_rejects_non_https_scheme(monkeypatch, capsys):
+    """``_post_webhook`` refuses to POST to an ``http://`` URL."""
+    http_url = "http://example.com/webhook"
+    monkeypatch.setenv(release.WEBHOOK_CREATE_URL_ENV, http_url)
+    monkeypatch.setenv(release.WEBHOOK_CREATE_AUTH_ENV, WEBHOOK_SECRET)
+    calls = []
+
+    def spy(request, timeout):
+        calls.append(request)
+        return _fake_ok_response()
+
+    monkeypatch.setattr(release.urllib.request, "urlopen", spy)
+    assert (
+        release._post_webhook(
+            release.WEBHOOK_CREATE_URL_ENV,
+            release.WEBHOOK_CREATE_AUTH_ENV,
+            "v0.12.0",
+        )
+        is False
+    )
+    assert calls == []
+    err = capsys.readouterr().err
+    assert release.WEBHOOK_CREATE_URL_ENV in err
+    assert "https" in err
+    assert http_url not in err
+    assert WEBHOOK_SECRET not in err
 
 
 # --- _bump_version ---------------------------------------------------------
@@ -757,3 +791,32 @@ def test_argparse_rc_rejects_negative(capsys):
     with pytest.raises(SystemExit) as exc_info:
         release.main(["rc", "--version", "0.12.0", "--rc", "-1"])
     assert exc_info.value.code == ARGPARSE_ERROR_EXIT_CODE
+
+
+# --- main (CalledProcessError handling) ------------------------------------
+
+
+def test_main_catches_called_process_error_with_list_cmd(monkeypatch, capsys):
+    """``main`` surfaces a failing subprocess as a single concise stderr line."""
+
+    def raise_cpe(version, rc):
+        raise subprocess.CalledProcessError(returncode=128, cmd=["git", "push"])
+
+    monkeypatch.setattr(release, "cmd_rc", raise_cpe)
+    assert release.main(["rc", "--version", "0.12.0", "--rc", "1"]) == 1
+    err = capsys.readouterr().err
+    assert "release: command failed (exit code 128): git push" in err
+    assert "Traceback" not in err
+
+
+def test_main_catches_called_process_error_with_string_cmd(monkeypatch, capsys):
+    """``main`` handles a ``CalledProcessError`` whose ``cmd`` is a plain string."""
+
+    def raise_cpe(version):
+        raise subprocess.CalledProcessError(returncode=1, cmd="make build")
+
+    monkeypatch.setattr(release, "cmd_stable", raise_cpe)
+    assert release.main(["stable", "--version", "0.12.0"]) == 1
+    err = capsys.readouterr().err
+    assert "release: command failed (exit code 1): make build" in err
+    assert "Traceback" not in err

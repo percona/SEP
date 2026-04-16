@@ -166,6 +166,13 @@ def _bump_version(pep440_version: str, tag_version: str) -> None:
 def _post_webhook(url_env: str, auth_env: str, version_tag: str) -> bool:
     """POST the Jira version-name payload to the webhook. Best-effort.
 
+    Silently skip the call when either env var is unset or empty — webhook
+    configuration is optional maintainer-side and the matching manual
+    reminder in the "Next steps" output is sufficient to cover that path.
+
+    Reject non-HTTPS URLs up front to avoid shipping the webhook token over
+    cleartext if the env var is misconfigured.
+
     Catch ``HTTPError`` before the broader transport-error branch because
     ``HTTPError`` is a subclass of ``URLError``; the reverse order would
     swallow the status code needed for the warning and tests.
@@ -177,12 +184,18 @@ def _post_webhook(url_env: str, auth_env: str, version_tag: str) -> bool:
     :param version_tag: The version-name payload value (e.g. ``v0.12.0``).
     :type version_tag: str
     :return: ``True`` on HTTP 2xx, ``False`` on any error (missing env var,
-        network failure, timeout, or non-2xx response).
+        non-HTTPS URL, network failure, timeout, or non-2xx response).
     :rtype: bool
     """
     url = os.environ.get(url_env)
     secret = os.environ.get(auth_env)
     if not url or not secret:
+        return False
+    if not url.startswith("https://"):
+        print(
+            f"warning: Jira webhook URL must use https:// scheme ({url_env})",
+            file=sys.stderr,
+        )
         return False
     payload = json.dumps({"data": {"versionName": version_tag}}).encode("utf-8")
     try:
@@ -195,7 +208,11 @@ def _post_webhook(url_env: str, auth_env: str, version_tag: str) -> bool:
             },
             method="POST",
         )
-        urllib.request.urlopen(request, timeout=WEBHOOK_TIMEOUT_SECONDS)  # noqa: S310
+        with urllib.request.urlopen(  # noqa: S310
+            request,
+            timeout=WEBHOOK_TIMEOUT_SECONDS,
+        ) as response:
+            response.read()
     except urllib.error.HTTPError as exc:
         print(
             f"warning: Jira webhook returned HTTP {exc.code} ({url_env})",
@@ -554,6 +571,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Dispatch to the requested subcommand.
 
+    Catch ``CalledProcessError`` so a failing ``git``/``gh``/``make`` call
+    surfaces as a single concise release-tool error line instead of a Python
+    stack trace.
+
     :param argv: Optional argv override for testing.
     :type argv: list[str] | None
     :return: Process exit code.
@@ -561,9 +582,21 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "rc":
-        return cmd_rc(args.version, args.rc)
-    return cmd_stable(args.version)
+    try:
+        if args.command == "rc":
+            return cmd_rc(args.version, args.rc)
+        return cmd_stable(args.version)
+    except subprocess.CalledProcessError as exc:
+        cmd = exc.cmd
+        if isinstance(cmd, list | tuple):
+            cmd_text = " ".join(str(part) for part in cmd)
+        else:
+            cmd_text = str(cmd)
+        print(
+            f"release: command failed (exit code {exc.returncode}): {cmd_text}",
+            file=sys.stderr,
+        )
+        return 1
 
 
 if __name__ == "__main__":
