@@ -8,10 +8,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { postLogin, postRefresh, fetchCurrentUser, type User } from '@sep/api';
+import { postLogin, postRefresh, fetchCurrentUser, setAccessToken, type User } from '@sep/api';
 
 // ── Storage keys ────────────────────────────────────────────────────────
-const TOKEN_KEY = 'sep_token';
+// Only the refresh token is persisted (localStorage for now).
+// TODO: move refresh token to HttpOnly cookie once backend supports it.
 const REFRESH_KEY = 'sep_refresh_token';
 
 // ── Context shape ───────────────────────────────────────────────────────
@@ -35,7 +36,9 @@ const AuthContext = createContext<AuthState | null>(null);
 // ── Provider ────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+  // Access token lives only in React state + the API client's module-level
+  // variable (via setAccessToken). Never written to localStorage.
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -46,14 +49,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Helpers ───────────────────────────────────────────────────────────
   const persistTokens = useCallback((accessToken: string, refreshToken: string) => {
     setToken(accessToken);
-    localStorage.setItem(TOKEN_KEY, accessToken);
+    setAccessToken(accessToken); // sync to API client in-memory store
     localStorage.setItem(REFRESH_KEY, refreshToken);
   }, []);
 
   const clearTokens = useCallback(() => {
     setToken(null);
+    setAccessToken(null);
     setUser(null);
-    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
@@ -130,32 +133,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       createdTime: new Date().toISOString(),
       updatedTime: new Date().toISOString(),
     };
-    setToken('mock-jwt-token');
+    const mockToken = 'mock-jwt-token';
+    setToken(mockToken);
+    setAccessToken(mockToken);
     setUser(mockUser);
-    localStorage.setItem(TOKEN_KEY, 'mock-jwt-token');
   }, []);
 
   // ── Session bootstrap (runs once on mount) ────────────────────────────
+  // Access token is memory-only so it's lost on reload. Restore the
+  // session by performing a silent refresh with the persisted refresh
+  // token, then fetch the user profile with the new access token.
   useEffect(() => {
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    if (!storedToken || storedToken === 'mock-jwt-token') {
+    const refreshToken = localStorage.getItem(REFRESH_KEY);
+    if (!refreshToken) {
       setReady(true);
       return;
     }
 
     setLoading(true);
-    fetchCurrentUser()
+    postRefresh(refreshToken)
+      .then((tokens) => {
+        persistTokens(tokens.accessToken, tokens.refreshToken);
+        scheduleRefresh(tokens.expiresIn);
+        return fetchCurrentUser();
+      })
       .then((profile) => {
         setUser(profile);
-        // If we have a refresh token, start the refresh cycle
-        // Assume ~30 min remaining since we don't know the exact expiry
-        const rt = localStorage.getItem(REFRESH_KEY);
-        if (rt) {
-          scheduleRefresh(1800);
-        }
       })
       .catch(() => {
-        // Session invalid — clear everything silently
+        // Refresh token invalid/expired — clear and require re-login
         clearTokens();
       })
       .finally(() => {
