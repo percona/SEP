@@ -136,7 +136,7 @@ def test_post_webhook_success(monkeypatch, webhook_env):
     monkeypatch.setattr(
         release.urllib.request,
         "urlopen",
-        lambda _request, _timeout: _fake_ok_response(),
+        lambda *_a, **_kw: _fake_ok_response(),
     )
     assert (
         release._post_webhook(
@@ -163,7 +163,7 @@ def test_post_webhook_2xx_range(monkeypatch, webhook_env):
     monkeypatch.setattr(
         release.urllib.request,
         "urlopen",
-        lambda _request, _timeout: NoContent(),
+        lambda *_a, **_kw: NoContent(),
     )
     assert (
         release._post_webhook(
