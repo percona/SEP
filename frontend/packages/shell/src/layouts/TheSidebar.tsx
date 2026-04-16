@@ -26,6 +26,17 @@ const DRAWER_WIDTH_COLLAPSED = 64;
 
 const PMM_URL = import.meta.env.VITE_PMM_URL;
 
+/** Check if `pathname` is active for a given nav `to` path. Exact match for `/`, prefix match for everything else. */
+function isActivePath(pathname: string, to: string | undefined): boolean {
+  if (!to) {
+    return false;
+  }
+  if (to === '/') {
+    return pathname === '/';
+  }
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
 function NavGroup({
   item,
   collapsed,
@@ -37,7 +48,7 @@ function NavGroup({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const isChildActive = item.children?.some((c) => c.to === location.pathname) ?? false;
+  const isChildActive = item.children?.some((c) => isActivePath(location.pathname, c.to)) ?? false;
   const [open, setOpen] = useState(isChildActive);
 
   // Auto-collapse groups when sidebar is in mini mode
@@ -84,7 +95,7 @@ function NavGroup({
           {item.children?.map((child) => (
             <ListItemButton
               key={child.title}
-              selected={location.pathname === child.to}
+              selected={isActivePath(location.pathname, child.to)}
               onClick={() => {
                 if (child.to) {
                   navigate(child.to);
@@ -119,7 +130,7 @@ function NavLeaf({
 
   const button = (
     <ListItemButton
-      selected={location.pathname === item.to}
+      selected={isActivePath(location.pathname, item.to)}
       onClick={() => {
         if (item.to) {
           navigate(item.to);
@@ -211,7 +222,7 @@ function DrawerContent({ collapsed, onNavigate }: { collapsed: boolean; onNaviga
       <Divider />
       <List sx={{ px: 1 }}>
         <ListItemButton
-          selected={location.pathname === '/settings'}
+          selected={isActivePath(location.pathname, '/settings')}
           onClick={() => handleNav('/settings')}
           sx={{ borderRadius: 2, justifyContent: collapsed ? 'center' : 'flex-start' }}
         >
