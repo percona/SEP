@@ -73,7 +73,9 @@ const NavigationContext = createContext<NavigationState | null>(null);
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const [items] = useState<NavItem[]>(defaultNavItems);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => window.matchMedia('(min-width: 900px)').matches,
+  );
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
