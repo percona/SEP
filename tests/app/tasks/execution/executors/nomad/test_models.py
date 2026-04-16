@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import ClientError, ClientTimeout
-from fastapi import HTTPException
+from fastapi import status
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 
 from app.core.exceptions import HTTPBadRequestException
@@ -1181,7 +1181,7 @@ class TestValidateJob:
     async def test_validate_job_success(self, mock_nomad_cls, mock_async_run):
         """Assert validate_job returns job when validation passes."""
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = status.HTTP_200_OK
         mock_response.text = json.dumps({"ValidationErrors": []})
         mock_async_run.return_value = mock_response
 
@@ -1196,7 +1196,7 @@ class TestValidateJob:
     async def test_validate_job_validation_errors(self, mock_nomad_cls, mock_async_run):
         """Assert validate_job raises HTTPBadRequestException on validation errors."""
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = status.HTTP_200_OK
         mock_response.text = json.dumps(
             {"ValidationErrors": ["missing required field"]}
         )
@@ -1210,13 +1210,13 @@ class TestValidateJob:
     @patch("app.tasks.execution.executors.nomad.models.async_run")
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_validate_job_non_200_raises(self, mock_nomad_cls, mock_async_run):
-        """Assert validate_job raises HTTPException on non-200 status."""
+        """Assert validate_job raises HTTPBadRequestException on non-200 status."""
         mock_response = MagicMock()
-        mock_response.status_code = 500
+        mock_response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         mock_async_run.return_value = mock_response
 
         executor = _build_executor()
-        with pytest.raises(HTTPException):
+        with pytest.raises(HTTPBadRequestException):
             await executor.validate_job({"ID": "error-job"})
 
 
@@ -1302,8 +1302,13 @@ class TestGetLogsForAllocation:
         mock_anonymize.assert_called()
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_get_logs_for_allocation_with_initial_logs(self, mock_nomad_cls):
-        """Assert get_logs_for_allocation merges initial_logs."""
+    def test_get_logs_for_allocation_with_initial_offsets(self, mock_nomad_cls):
+        """Assert get_logs_for_allocation starts Nomad reads at the given offsets.
+
+        The fetcher returns only the delta for this cycle — content keys in
+        ``initial_logs`` are ignored; only ``f"{log_type}_last_offset"`` keys
+        are read.
+        """
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.client.stream_logs.stream.return_value = ""
@@ -1314,16 +1319,25 @@ class TestGetLogsForAllocation:
         }
         initial_logs = {
             "step1": {
-                "stdout": "previous output",
                 "stdout_last_offset": INITIAL_LOG_OFFSET,
+                "stderr_last_offset": INITIAL_LOG_OFFSET,
             }
         }
 
         executor = _build_executor()
         result = executor.get_logs_for_allocation(alloc, initial_logs=initial_logs)
 
-        assert result["step1"]["stdout"] == "previous output"
+        assert result["step1"]["stdout"] == ""
+        assert result["step1"]["stderr"] == ""
         assert result["step1"]["stdout_last_offset"] == INITIAL_LOG_OFFSET
+        assert result["step1"]["stderr_last_offset"] == INITIAL_LOG_OFFSET
+        stream_call_kwargs = [
+            call.kwargs
+            for call in mock_backend.client.stream_logs.stream.call_args_list
+        ]
+        assert all(
+            kwargs["offset"] == INITIAL_LOG_OFFSET for kwargs in stream_call_kwargs
+        )
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_logs_for_allocation_skips_step_when_not_started(self, mock_nomad_cls):
@@ -1349,6 +1363,95 @@ class TestGetLogsForAllocation:
         types = {c.kwargs["type_"] for c in stream.call_args_list}
         assert tasks == {"ready-step"}
         assert types == {TaskLogType.STDOUT, TaskLogType.STDERR}
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_anonymized_offsets_track_producer_space(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert producer offset tracks anonymized bytes, not Nomad bytes.
+
+        Regression test for SEP-817: when anonymization replaces raw bytes
+        with a shorter or longer string, the producer-space offset returned
+        alongside the delta must track the post-anonymization byte length
+        so the writer dedup window does not mix Nomad-space and
+        anonymized-space counts on retry.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.return_value = "[REDACTED]"
+        raw_bytes = b"4111-1111-1111-1111"
+        raw_msg = b64encode(raw_bytes).decode()
+        log_data = json.dumps({"Data": raw_msg, "Offset": len(raw_bytes)})
+        mock_backend.client.stream_logs.stream.return_value = log_data
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        result = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+
+        assert result["run-script"]["stdout"] == "[REDACTED]"
+        assert result["run-script"]["stdout_last_offset"] == len(raw_bytes)
+        assert result["run-script"]["stdout_producer_offset"] == len("[REDACTED]")
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_anonymized_retry_dedups_correctly(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert a second fetch at the advanced offsets yields no new bytes.
+
+        Simulates a retry after a successful first fetch: the second cycle
+        starts at the advanced Nomad offset (so Nomad returns nothing new)
+        and passes the advanced producer offset through; the writer caller
+        therefore sees a zero-length delta and never re-writes already
+        persisted anonymized bytes.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.return_value = "[REDACTED]"
+        raw_bytes = b"4111-1111-1111-1111"
+        raw_msg = b64encode(raw_bytes).decode()
+        first_log_data = json.dumps({"Data": raw_msg, "Offset": len(raw_bytes)})
+        mock_backend.client.stream_logs.stream.side_effect = [
+            first_log_data,
+            "",
+            "",
+            "",
+        ]
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        first = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+        second = executor.get_logs_for_allocation(
+            alloc,
+            initial_logs={
+                "run-script": {
+                    "stdout_last_offset": first["run-script"]["stdout_last_offset"],
+                    "stdout_producer_offset": first["run-script"][
+                        "stdout_producer_offset"
+                    ],
+                    "stderr_last_offset": first["run-script"]["stderr_last_offset"],
+                    "stderr_producer_offset": first["run-script"][
+                        "stderr_producer_offset"
+                    ],
+                }
+            },
+            anonymize_entities={PIIEntity.CREDIT_CARD},
+        )
+
+        assert second["run-script"]["stdout"] == ""
+        assert second["run-script"]["stdout_last_offset"] == len(raw_bytes)
+        assert second["run-script"]["stdout_producer_offset"] == len("[REDACTED]")
 
 
 class TestNomadLogStreaming:

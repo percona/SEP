@@ -218,7 +218,7 @@ class TestMain:
 
         config_path = tmp_path / "script_config"
         config_path.write_text(
-            json.dumps({"service_type": "MYSQL", "host": "db-host", "port": 3306})
+            json.dumps({"service_type": "mysql", "host": "db-host", "port": 3306})
         )
 
         with patch("sys.argv", ["payload.py", "--config", str(config_path)]):

@@ -30,6 +30,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 <tr id="{{ task.name }}">
                     <td>
                         <a href="{{ url_for('pg_backups_detail', task_name=task.name) }}">{{ task.name }}</a>
+                        {% include "tasks/partials/connectivity-warning-icon.html.j2" %}
                     </td>
                     <td>{{ task.host }} ({{ task.port }})</td>
                     <td>{{ task.backup_type }}</td>

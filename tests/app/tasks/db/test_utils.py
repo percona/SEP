@@ -16,6 +16,8 @@
 """Define tests for the TaskExecutionRequestJSON type decorator."""
 
 import pytest
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.tasks.models import TaskExecutionRequest, TaskExecutionRequestJSON
 
@@ -103,3 +105,22 @@ class TestProcessBindParam:
         data = {"key": "value"}
         result = type_decorator.process_bind_param(data, dialect=None)
         assert result == data
+
+
+class TestLoadDialectImpl:
+    """Test dialect-specific type resolution for ``TaskExecutionRequestJSON``."""
+
+    def test_postgres_resolves_to_jsonb(self, type_decorator):
+        """Assert PostgreSQL dialect returns a ``JSONB`` instance."""
+        result = type_decorator.load_dialect_impl(postgresql.dialect())
+        assert isinstance(result, JSONB)
+
+    def test_sqlite_resolves_to_non_jsonb_json(self, type_decorator):
+        """Assert SQLite dialect returns a non-``JSONB`` JSON type.
+
+        Pin the contract that SQLite stays on plain JSON: asserting the exact
+        dialect-specific class is fragile, but asserting it is not ``JSONB``
+        is robust and expresses the intent.
+        """
+        result = type_decorator.load_dialect_impl(sqlite.dialect())
+        assert not isinstance(result, JSONB)

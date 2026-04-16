@@ -655,16 +655,7 @@ async def test_wait_for_task_output(mock_remote_api):
         {
             "id": "12345",
             "status": TaskHistoryStatusEnum.SUCCESS,
-            "execution_request": {
-                "tracking": {
-                    "task_logs": {
-                        step_name: {
-                            "stdout": "Task completed successfully.",
-                            "stderr": "",
-                        }
-                    }
-                }
-            },
+            "execution_request": {"tracking": {}},
         },
     ]
 

@@ -28,7 +28,10 @@ from nomad.api.exceptions import BaseNomadException
 from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
 from app.tasks.connectivity.routes import router as connectivity_router
-from app.tasks.db.seed import init_tasks_db
+from app.tasks.db.seed import (
+    init_tasks_db,
+    verify_taskhistory_execution_request_is_jsonb,
+)
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.periodic.routes import router as periodic_router
 from app.tasks.routes import router as tasks_router
@@ -51,6 +54,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :rtype: AsyncGenerator[None, None]
     """
     await init_tasks_db()
+    await verify_taskhistory_execution_request_is_jsonb()
     async with default_lifespan(app), tasks_settings.NOMAD:
         yield
 
