@@ -41,7 +41,7 @@ function DetailField({ label, value }: { label: string; value: unknown }) {
       <Typography variant="caption" color="text.secondary">
         {label}
       </Typography>
-      <Typography variant="body1">{display}</Typography>
+      {typeof value === 'object' ? display : <Typography variant="body1">{display}</Typography>}
     </Box>
   );
 }
