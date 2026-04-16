@@ -7,30 +7,15 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
-import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import axios from 'axios';
 import { useAuth } from '../contexts/auth';
 
 interface LoginFormValues {
   username: string;
   password: string;
-}
-
-/** True when the backend cannot handle the auth request (not running or route missing) */
-function isBackendUnavailable(err: unknown): boolean {
-  if (!axios.isAxiosError(err)) {
-    return false;
-  }
-  if (err.code === 'ERR_NETWORK') {
-    return true;
-  }
-  const status = err.response?.status;
-  // 404 = route doesn't exist, 502/503 = upstream down
-  return status === 404 || status === 502 || status === 503;
 }
 
 /** Extract a user-friendly error message from the backend response */
@@ -45,9 +30,6 @@ function getErrorMessage(err: unknown): string {
     if (status === 403) {
       return detail || 'Your account is not active. Contact an administrator.';
     }
-    if (isBackendUnavailable(err)) {
-      return 'Backend is not available. You can sign in with mock mode.';
-    }
     if (detail) {
       return detail;
     }
@@ -61,7 +43,6 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [useMock, setUseMock] = useState(false);
 
   const methods = useForm<LoginFormValues>({
     defaultValues: { username: '', password: '' },
@@ -79,21 +60,10 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      if (useMock) {
-        auth.mockLogin(data.username);
-      } else {
-        await auth.login(data.username, data.password);
-      }
+      await auth.login(data.username, data.password);
       navigate(redirect);
     } catch (err) {
-      const msg = getErrorMessage(err);
-
-      // If the backend can't handle auth, offer mock mode
-      if (isBackendUnavailable(err)) {
-        setUseMock(true);
-      }
-
-      setError(msg);
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -168,18 +138,6 @@ export default function LoginPage() {
                 </Button>
               </Box>
             </FormProvider>
-
-            {useMock && (
-              <Box sx={{ textAlign: 'center', mt: 2 }}>
-                <Chip
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                  icon={<InfoOutlinedIcon />}
-                  label="Backend unreachable — mock mode enabled"
-                />
-              </Box>
-            )}
           </CardContent>
         </Card>
 
