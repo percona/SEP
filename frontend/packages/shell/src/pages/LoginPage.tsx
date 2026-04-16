@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useForm, type Control, type FieldValues } from 'react-hook-form';
+import { useForm, FormProvider } from 'react-hook-form';
 import { TextInput } from '@percona/percona-ui';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -63,9 +63,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [useMock, setUseMock] = useState(false);
 
-  const { handleSubmit, watch, control } = useForm<LoginFormValues>({
+  const methods = useForm<LoginFormValues>({
     defaultValues: { username: '', password: '' },
   });
+
+  const { handleSubmit, watch } = methods;
 
   const username = watch('username');
   const password = watch('password');
@@ -119,53 +121,53 @@ export default function LoginPage() {
               </Typography>
             </Box>
 
-            <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ mt: 3 }}>
-              {error && (
-                <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>
-                  {error}
-                </Alert>
-              )}
+            <FormProvider {...methods}>
+              <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ mt: 3 }}>
+                {error && (
+                  <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>
+                    {error}
+                  </Alert>
+                )}
 
-              <TextInput
-                name="username"
-                label="Username"
-                isRequired
-                control={control as unknown as Control<FieldValues>}
-                textFieldProps={{
-                  autoComplete: 'username',
-                  fullWidth: true,
-                }}
-                controllerProps={{
-                  rules: { required: 'Username is required' },
-                }}
-              />
+                <TextInput
+                  name="username"
+                  label="Username"
+                  isRequired
+                  textFieldProps={{
+                    autoComplete: 'username',
+                    fullWidth: true,
+                  }}
+                  controllerProps={{
+                    rules: { required: 'Username is required' },
+                  }}
+                />
 
-              <TextInput
-                name="password"
-                label="Password"
-                isRequired
-                control={control as unknown as Control<FieldValues>}
-                textFieldProps={{
-                  type: 'password',
-                  autoComplete: 'current-password',
-                  fullWidth: true,
-                }}
-                controllerProps={{
-                  rules: { required: 'Password is required' },
-                }}
-              />
+                <TextInput
+                  name="password"
+                  label="Password"
+                  isRequired
+                  textFieldProps={{
+                    type: 'password',
+                    autoComplete: 'current-password',
+                    fullWidth: true,
+                  }}
+                  controllerProps={{
+                    rules: { required: 'Password is required' },
+                  }}
+                />
 
-              <Button
-                type="submit"
-                variant="contained"
-                size="large"
-                fullWidth
-                disabled={!username || !password || loading}
-                sx={{ mt: 2 }}
-              >
-                {loading ? <CircularProgress size={24} /> : 'Sign In'}
-              </Button>
-            </Box>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  size="large"
+                  fullWidth
+                  disabled={!username || !password || loading}
+                  sx={{ mt: 2 }}
+                >
+                  {loading ? <CircularProgress size={24} /> : 'Sign In'}
+                </Button>
+              </Box>
+            </FormProvider>
 
             {useMock && (
               <Box sx={{ textAlign: 'center', mt: 2 }}>
