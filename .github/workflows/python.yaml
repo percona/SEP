@@ -79,7 +79,6 @@ jobs:
           path: python-coverage-comment-action.txt
 
   build:
-    needs: [test]
     strategy:
       matrix:
         os: [ubuntu-latest]
