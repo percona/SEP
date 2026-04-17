@@ -47,6 +47,16 @@
 # service_type: generic
 # alerts:
 #   - HighDiskUsage
+#   - name: BackupFailed
+#     service_type: mysql
+#   - name: StaleBackup
+#     service_type: mysql
+#   - name: StaleBackupLog
+#     service_type: mysql
+#   - name: StaleUpload
+#     service_type: mysql
+#   - name: StaleUploadLog
+#     service_type: mysql
 # ---
 
 usage() {

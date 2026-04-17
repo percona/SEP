@@ -85,6 +85,8 @@ async def backups_create(
     request: Request,
     task: BackupGeneratedTask,
     task_api: TaskAPI,
+    *,
+    check_connectivity: Annotated[bool, Form()] = False,
 ) -> RedirectResponse:
     """Create new backups task."""
     logger.debug("Create backups task: %s", task)
@@ -92,7 +94,12 @@ async def backups_create(
         "/",
         json=task.model_dump(),
     )
-    await maybe_check_connectivity(request, task_api, task.data.get("meta", {}))
+    await maybe_check_connectivity(
+        request,
+        task_api,
+        task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
+    )
     task_path = request.url_for("backups_detail", task_name=task.name)
     return RedirectResponse(
         task_path,

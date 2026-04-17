@@ -24,3 +24,27 @@ $(document).ready(function() {
         $approveButton.attr("title", $approveButton.data("next-title"));
     })
 });
+
+$(document).ready(function() {
+    const $checkboxes = $('.snippetCheckbox');
+    const $selectAll = $('#selectAllSnippets');
+    const $bulkBar = $('#snippetsBulkBar');
+    if (!$checkboxes.length) {
+        return;
+    }
+
+    function updateBulkBar() {
+        const checkedCount = $checkboxes.filter(':checked').length;
+        const total = $checkboxes.length;
+        $bulkBar.prop('hidden', checkedCount === 0);
+        $selectAll.prop('checked', checkedCount > 0 && checkedCount === total);
+        $selectAll.prop('indeterminate', checkedCount > 0 && checkedCount < total);
+    }
+
+    $selectAll.on('change', function() {
+        $checkboxes.prop('checked', this.checked);
+        updateBulkBar();
+    });
+    $checkboxes.on('change', updateBulkBar);
+    updateBulkBar();
+});

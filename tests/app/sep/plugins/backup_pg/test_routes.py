@@ -21,7 +21,15 @@ import pytest
 from fastapi import HTTPException, status
 
 from app.inventory.models import ServiceTypeEnum
-from app.tasks.models import TaskHistoryStatusEnum
+from app.sep.connectivity import _fetch_connectivity_result, _LATEST_RESULTS
+from app.sep.main import sep_app
+from app.sep.plugins.backup_pg.deps import build_backup_task_payload
+from app.tasks.models import (
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 
 @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
@@ -55,6 +63,51 @@ def test_backups_create(
     called_args, called_kwargs = mock_task_api_dep.post.call_args
     assert called_args[0] == "/"
     assert called_kwargs["json"] == mock_build_backup_task_payload_dep.model_dump()
+
+
+def test_pg_backups_create_skips_connectivity_check_when_opted_out(
+    test_client, mock_task_api_dep, backup_create
+):
+    """POST /backup-pg/ skips the connectivity check when the checkbox is unchecked."""
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+
+    fake_task_write = TaskWrite(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.BACKUP_PG,
+        data={
+            "task": "fake-task",
+            "meta": {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 5432,
+                "_connectivity_service_type": "postgresql",
+            },
+            "payload": "",
+        },
+    )
+
+    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+
+    response = test_client.post(
+        "/backup-pg/", data=backup_create.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backup-pg/{backup_create.task_name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == 1
+    call = mock_task_api_dep.post.call_args_list[0]
+    assert call.args[0] == "/"
+    assert call.kwargs["json"] == fake_task_write.model_dump()
+    assert _LATEST_RESULTS == {}
+
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+    sep_app.dependency_overrides = {}
 
 
 @pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
