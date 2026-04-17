@@ -28,7 +28,7 @@ from app.core.security import crypto_timestamp_serializer
 from app.sep.config import sep_settings
 from app.sep.deps import IsCsrfValidated
 from app.sep.middleware import CSRFMiddleware
-from app.sep.middleware.csrf import CSRF_COOKIE_NAME
+from app.sep.middleware.csrf import CSRF_COOKIE_NAME, request_has_bearer_authorization
 from app.sep.utils.decorators import csrf_exempt
 
 SESSION_COOKIE_NAME = sep_settings.SESSION.COOKIE_NAME
@@ -328,3 +328,68 @@ def test_expired_csrf_cookie_regenerated_on_get(test_client: TestClient):
     new_token = response.json()["csrf_token"]
     assert new_token != original_token
     assert response.cookies.get(CSRF_COOKIE_NAME) is not None
+
+
+def test_bearer_post_without_csrf_token_passes(test_client: TestClient):
+    """Test POST with Authorization Bearer skips CSRF validation."""
+    response = test_client.post(
+        "/protected",
+        headers={"Authorization": "Bearer not-validated-here"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"detail": "OK"}
+
+
+def test_bearer_post_skips_csrf_when_session_cookie_present(test_client: TestClient):
+    """Test Bearer wins over cookie session when CSRF form field is absent."""
+    test_client.cookies[SESSION_COOKIE_NAME] = "signed-session-token"
+    response = test_client.post(
+        "/protected",
+        headers={"Authorization": "Bearer token"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"detail": "OK"}
+
+
+def test_bearer_scheme_prefix_is_case_insensitive(test_client: TestClient):
+    """Test lowercase ``bearer`` scheme prefix skips CSRF."""
+    response = test_client.post(
+        "/protected",
+        headers={"Authorization": "bearer token"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_get_with_bearer_skips_csrf_cookie(test_client: TestClient):
+    """Test GET with Bearer does not set CSRF cookie or generate a token."""
+    test_client.cookies[SESSION_COOKIE_NAME] = "signed-session-token"
+    response = test_client.get(
+        "/gen-token",
+        headers={"Authorization": "Bearer x"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["csrf_token"] == ""
+    assert response.cookies.get(CSRF_COOKIE_NAME) is None
+
+
+def test_request_has_bearer_authorization_helper() -> None:
+    """Test Bearer detection helper for common header shapes."""
+    scope = {"type": "http", "headers": [], "method": "GET", "path": "/"}
+    req = Request(scope)
+    assert request_has_bearer_authorization(req) is False
+
+    scope_bearer = {
+        "type": "http",
+        "headers": [(b"authorization", b"Bearer abc")],
+        "method": "GET",
+        "path": "/",
+    }
+    assert request_has_bearer_authorization(Request(scope_bearer)) is True
+
+    scope_basic = {
+        "type": "http",
+        "headers": [(b"authorization", b"Basic xyz")],
+        "method": "GET",
+        "path": "/",
+    }
+    assert request_has_bearer_authorization(Request(scope_basic)) is False
