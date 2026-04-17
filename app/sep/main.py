@@ -267,7 +267,9 @@ async def default_exception_handler(
     request: Request, exc: HTTPException
 ) -> RedirectResponse:
     """Define default exception handler."""
-    if request.url.path.startswith("/checksums/api/"):
+    if request.url.path.startswith("/checksums/api/") or request.headers.get(
+        "authorization", ""
+    ).lower().startswith("bearer "):
         return JSONResponse(
             {"detail": exc.detail},
             status_code=exc.status_code,
