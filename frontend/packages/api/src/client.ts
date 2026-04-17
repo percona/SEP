@@ -49,10 +49,15 @@ apiClient.interceptors.request.use((config) => {
 // In the browser, 303 redirects are followed automatically (maxRedirects is
 // Node-only), so the client may receive a 200 HTML login page instead of a
 // 303 status. We detect this by checking the response content-type.
+// Refresh endpoint is the recovery mechanism — its failures must not trigger
+// the global unauthorized handler, or a genuine refresh rejection would hard-
+// redirect instead of letting the AuthProvider bootstrap handle it cleanly.
+const isRefreshRequest = (url: string | undefined) => !!url && url.includes('/oauth/refresh');
+
 apiClient.interceptors.response.use(
   (response) => {
     const ct = response.headers['content-type'] ?? '';
-    if (ct.includes('text/html')) {
+    if (ct.includes('text/html') && !isRefreshRequest(response.config?.url)) {
       // API endpoints should never return HTML — this means the browser
       // followed a 303 redirect to the login page.
       _onUnauthorized();
@@ -63,7 +68,7 @@ apiClient.interceptors.response.use(
   (error) => {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
-      if (status === 401 || status === 303) {
+      if ((status === 401 || status === 303) && !isRefreshRequest(error.config?.url)) {
         _onUnauthorized();
       }
     }

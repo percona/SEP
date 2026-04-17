@@ -1,10 +1,9 @@
 import { Suspense, type ReactNode } from 'react';
-import { SnackbarProvider } from 'notistack';
-import { NotistackMuiSnackbar } from '@percona/percona-ui';
 import CircularProgress from '@mui/material/CircularProgress';
 import Box from '@mui/material/Box';
 import { AuthProvider } from './contexts/auth';
 import { NavigationProvider } from './contexts/navigation';
+import { NotificationProvider } from './contexts/notification';
 
 function LoadingFallback() {
   return (
@@ -18,22 +17,12 @@ function LoadingFallback() {
 
 export default function Providers({ children }: { children: ReactNode }) {
   return (
-    <SnackbarProvider
-      maxSnack={3}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      Components={{
-        default: NotistackMuiSnackbar,
-        success: NotistackMuiSnackbar,
-        error: NotistackMuiSnackbar,
-        warning: NotistackMuiSnackbar,
-        info: NotistackMuiSnackbar,
-      }}
-    >
+    <NotificationProvider>
       <AuthProvider>
         <NavigationProvider>
           <Suspense fallback={<LoadingFallback />}>{children}</Suspense>
         </NavigationProvider>
       </AuthProvider>
-    </SnackbarProvider>
+    </NotificationProvider>
   );
 }

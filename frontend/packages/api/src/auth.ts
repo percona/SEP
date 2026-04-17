@@ -21,12 +21,15 @@ export async function postLogin(username: string, password: string): Promise<OAu
 /**
  * POST /api/oauth/refresh
  *
- * Refresh an expired access token using the refresh token.
+ * Backend signature: `Annotated[str, Body()]` — expects a JSON-encoded string
+ * as the request body (not an object wrapping it).
  */
 export async function postRefresh(refreshToken: string): Promise<OAuthTokenResponse> {
-  const { data } = await apiClient.post<OAuthTokenResponse>('/oauth/refresh', {
-    token: refreshToken,
-  });
+  const { data } = await apiClient.post<OAuthTokenResponse>(
+    '/oauth/refresh',
+    JSON.stringify(refreshToken),
+    { headers: { 'Content-Type': 'application/json' } },
+  );
   return data;
 }
 
