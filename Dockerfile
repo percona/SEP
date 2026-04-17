@@ -17,7 +17,7 @@ ENV FASTAPI_ENV production_docker
 FROM docker.io/library/python:3.11.14-alpine
 
 # Install dependencies
-RUN apk update && apk add --no-cache g++
+RUN apk update && apk add --no-cache g++ pango fontconfig ttf-dejavu
 
 # Create the sep system user
 RUN addgroup --gid 1001 -S sep && \

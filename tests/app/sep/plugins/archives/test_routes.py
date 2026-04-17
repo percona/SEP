@@ -24,6 +24,7 @@ from fastapi import status
 
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
+from app.sep.connectivity import _fetch_connectivity_result, _LATEST_RESULTS
 from app.sep.deps import get_inventory_api
 from app.sep.main import sep_app
 from app.sep.plugins.archives.deps import (
@@ -33,8 +34,10 @@ from app.sep.plugins.archives.deps import (
 )
 from app.sep.plugins.archives.models import ArchivesCreate, SwapDropEnum
 from app.tasks.models import (
+    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
+    TaskWrite,
 )
 from tests.app.factories import TaskFactory
 
@@ -87,7 +90,8 @@ def _mock_get_archives_task_dep(created_task):
 def _mock_get_archives_index_context_dep():
     """Mock the get_archives_index_context dependency with default user context."""
     sep_app.dependency_overrides[get_archives_index_context] = lambda: {
-        "user": "default_user"
+        "user": "default_user",
+        "connectivity_check_default": True,
     }
     yield
     sep_app.dependency_overrides = {}
@@ -123,6 +127,51 @@ def test_archives_create(
         "/",
         json=generated_task.model_dump(),
     )
+
+
+def test_archives_create_skips_connectivity_check_when_opted_out(
+    test_client, mock_task_api_dep, created_archives
+):
+    """POST /archives/ skips the connectivity check when the checkbox is unchecked."""
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+
+    fake_task_write = TaskWrite(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.ARCHIVER,
+        data={
+            "task": "fake-task",
+            "meta": {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+            "payload": "",
+        },
+    )
+
+    sep_app.dependency_overrides[build_archives_task_payload] = lambda: fake_task_write
+
+    response = test_client.post(
+        "/archives/", data=created_archives.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/archives/{fake_task_write.name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == 1
+    call = mock_task_api_dep.post.call_args_list[0]
+    assert call.args[0] == "/"
+    assert call.kwargs["json"] == fake_task_write.model_dump()
+    assert _LATEST_RESULTS == {}
+
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+    sep_app.dependency_overrides = {}
 
 
 @pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")

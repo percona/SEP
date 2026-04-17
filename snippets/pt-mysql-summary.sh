@@ -27,6 +27,15 @@
 #  - NATIVE_ASYNC_REPLICATION
 #  - GALERA
 #  - GROUP_REPLICATION
+# service_type: mysql
+# alerts:
+#   - MySQLInstanceNotAvailable
+#   - MySQLTooManyConnections
+#   - MySQLTooManyThreadsRunning
+#   - MySQLPrimaryReadOnly
+#   - MySQLReplicationBroken
+#   - MySQLReplicaReadOnlyDisabled
+#   - MySQLPXCClusterStatus
 # ---
 
 # Usage: ./pt-mysql-summary.sh [--defaults-file=path] [--dest=path] [--save-samples] [--help] [-- other args...]
