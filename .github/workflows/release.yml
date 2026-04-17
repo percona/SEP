@@ -71,6 +71,10 @@ jobs:
           RELEASE_TYPE: ${{ inputs.release_type }}
           VERSION: ${{ inputs.version }}
           RC_NUMBER: ${{ inputs.rc_number }}
+          JIRA_VERSION_CREATE_WEBHOOK_URL: ${{ secrets.JIRA_VERSION_CREATE_WEBHOOK_URL }}
+          JIRA_VERSION_CREATE_WEBHOOK_SECRET: ${{ secrets.JIRA_VERSION_CREATE_WEBHOOK_SECRET }}
+          JIRA_VERSION_RELEASE_WEBHOOK_URL: ${{ secrets.JIRA_VERSION_RELEASE_WEBHOOK_URL }}
+          JIRA_VERSION_RELEASE_WEBHOOK_SECRET: ${{ secrets.JIRA_VERSION_RELEASE_WEBHOOK_SECRET }}
         run: |
           if [ "$RELEASE_TYPE" = "rc" ]; then
             make release-rc VERSION="$VERSION" RC="$RC_NUMBER"
