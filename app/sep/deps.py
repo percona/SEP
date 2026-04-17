@@ -26,6 +26,8 @@ from itsdangerous import BadSignature
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import get_current_user as get_current_user_api
+from app.api.deps import oauth2_scheme
 from app.core.alerts.config import alert_settings
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.utils import get_user_model
@@ -123,17 +125,18 @@ def get_access_token_from_cookie(
 AccessTokenCookie = Annotated[str, Depends(get_access_token_from_cookie)]
 
 
-async def get_current_user(
-    request: Request,
-) -> User:
-    """Return the authenticated user from a cookie token.
+async def get_current_user_from_cookie(request: Request) -> User:
+    """Return the authenticated user from the signed session cookie.
 
-    :param request: The HTTP request object from which the base URL is derived.
+    Loads and verifies the session cookie, decodes the JWT into a user, and
+    rejects inactive accounts with a login redirect (legacy Jinja2 behavior).
+
+    :param request: The incoming HTTP request.
     :type request: Request
     :return: The authenticated user.
     :rtype: User
-    :raises LoginRedirectException: If the token is invalid or the user is
-        inactive.
+    :raises LoginRedirectException: If the cookie or JWT is invalid or the user
+        is inactive.
     """
     token = get_access_token_from_cookie(request)
     try:
@@ -147,6 +150,37 @@ async def get_current_user(
         raise LoginRedirectException(request)
     set_log_context(user=user.username)
     return user
+
+
+async def get_current_user(
+    request: Request,
+) -> User:
+    """Return the authenticated user from a Bearer token or session cookie.
+
+    The ``Authorization: Bearer`` header is tried first (React SPA). If it is
+    absent or ``oauth2_scheme`` rejects the request, authentication falls back
+    to the signed session cookie (legacy Jinja2). When a Bearer token is
+    supplied, failures from :func:`app.api.deps.get_current_user` are raised as
+    HTTP API errors (401/403); they are not converted into a login redirect.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :return: The authenticated user.
+    :rtype: User
+    :raises HTTPUnauthorizedException: If a Bearer token is present but invalid.
+    :raises HTTPForbiddenException: If the user resolved from Bearer is inactive.
+    :raises LoginRedirectException: If cookie-based auth fails or the cookie user
+        is inactive.
+    """
+    try:
+        bearer_token = await oauth2_scheme(request)
+    except HTTPException:
+        bearer_token = None
+
+    if bearer_token:
+        return await get_current_user_api(bearer_token)
+
+    return await get_current_user_from_cookie(request)
 
 
 IsAuthenticated = Depends(get_current_user)
