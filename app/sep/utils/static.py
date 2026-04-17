@@ -15,12 +15,10 @@
 
 """Define utilities regarding static files."""
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from starlette.staticfiles import StaticFiles
 from starlette.types import Receive, Scope, Send
 
-from app.api.deps import get_current_user as get_current_user_api
-from app.api.deps import oauth2_scheme
 from app.sep.deps import get_current_user
 
 
@@ -43,9 +41,5 @@ class AuthenticatedStaticFiles(StaticFiles):
         """
         if scope["type"] == "http":
             request = Request(scope, receive, send)
-            try:
-                token = await oauth2_scheme(request)
-                await get_current_user_api(token)
-            except HTTPException:
-                await get_current_user(request)
+            await get_current_user(request)
         await super().__call__(scope, receive, send)
