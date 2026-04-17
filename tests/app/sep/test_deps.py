@@ -23,7 +23,10 @@ from fastapi import HTTPException, Request
 from itsdangerous import BadSignature
 from pydantic import ValidationError
 
-from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.auth.exceptions import (
+    HTTPForbiddenException,
+    HTTPUnauthorizedException,
+)
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.models import CasdoorUser
 from app.sep.config import sep_settings
@@ -97,6 +100,115 @@ class TestGetBaseUrl:
 
 class TestGetCurrentUser:
     """Test get_current_user dependency."""
+
+    @pytest.mark.asyncio
+    async def test_valid_bearer_returns_user(self) -> None:
+        """Assert a valid Bearer path returns the user from the API dependency."""
+        request = _make_request()
+        active_user = CasdoorUserFactory.build(is_forbidden=False)
+        mock_oauth2 = AsyncMock(return_value="bearer-token")
+        mock_api_user = AsyncMock(return_value=active_user)
+        with (
+            patch("app.sep.deps.oauth2_scheme", mock_oauth2),
+            patch("app.sep.deps.get_current_user_api", mock_api_user),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie",
+                side_effect=AssertionError(
+                    "cookie must not be read when Bearer succeeds"
+                ),
+            ),
+        ):
+            result = await get_current_user(request)
+        assert result is active_user
+        mock_oauth2.assert_awaited_once_with(request)
+        mock_api_user.assert_awaited_once_with("bearer-token")
+
+    @pytest.mark.asyncio
+    async def test_valid_cookie_returns_user(self) -> None:
+        """Assert cookie-only auth still returns an active user."""
+        request = _make_request()
+        active_user = CasdoorUserFactory.build(is_forbidden=False)
+        with (
+            patch(
+                "app.sep.deps.oauth2_scheme",
+                AsyncMock(side_effect=HTTPException(status_code=401)),
+            ),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie", return_value="cookie-token"
+            ),
+            patch.object(CasdoorUser, "from_jwt", return_value=active_user),
+        ):
+            result = await get_current_user(request)
+        assert result is active_user
+
+    @pytest.mark.asyncio
+    async def test_bearer_and_cookie_present_bearer_wins(self) -> None:
+        """Assert Authorization Bearer is preferred over session cookie."""
+        request = _make_request()
+        bearer_user = CasdoorUserFactory.build(username="bearer-user")
+        cookie_user = CasdoorUserFactory.build(username="cookie-user")
+        with (
+            patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bearer-token")),
+            patch(
+                "app.sep.deps.get_current_user_api", AsyncMock(return_value=bearer_user)
+            ),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie",
+                return_value="cookie-token",
+            ),
+            patch.object(
+                CasdoorUser,
+                "from_jwt",
+                return_value=cookie_user,
+            ),
+        ):
+            result = await get_current_user(request)
+        assert result.username == "bearer-user"
+
+    @pytest.mark.asyncio
+    async def test_neither_bearer_nor_cookie_raises_redirect(self) -> None:
+        """Assert missing Bearer and missing cookie raises LoginRedirectException."""
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.oauth2_scheme",
+                AsyncMock(side_effect=HTTPException(status_code=401)),
+            ),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie",
+                side_effect=LoginRedirectException(request),
+            ),
+            pytest.raises(LoginRedirectException),
+        ):
+            await get_current_user(request)
+
+    @pytest.mark.asyncio
+    async def test_invalid_bearer_raises_unauthorized(self) -> None:
+        """Assert invalid JWT via Bearer raises HTTPUnauthorizedException."""
+        request = _make_request()
+        with (
+            patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bad-token")),
+            patch(
+                "app.sep.deps.get_current_user_api",
+                AsyncMock(side_effect=HTTPUnauthorizedException),
+            ),
+            pytest.raises(HTTPUnauthorizedException),
+        ):
+            await get_current_user(request)
+
+    @pytest.mark.asyncio
+    async def test_inactive_user_via_bearer_raises_forbidden(self) -> None:
+        """Assert inactive user resolved via Bearer raises HTTPForbiddenException."""
+        request = _make_request()
+        with (
+            patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="token")),
+            patch(
+                "app.sep.deps.get_current_user_api",
+                AsyncMock(side_effect=HTTPForbiddenException("User is not active")),
+            ),
+            pytest.raises(HTTPForbiddenException),
+        ):
+            await get_current_user(request)
 
     @pytest.mark.asyncio
     async def test_bad_signature_raises_redirect(self) -> None:
