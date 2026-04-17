@@ -59,7 +59,11 @@ from app.sep.inventory import (
     ENTITY_MAPPING,
 )
 from app.sep.middleware import messages
-from app.sep.middleware.csrf import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
+from app.sep.middleware.csrf import (
+    CSRF_COOKIE_NAME,
+    CSRF_FORM_FIELD,
+    request_has_bearer_authorization,
+)
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
@@ -196,12 +200,19 @@ async def validate_csrf(request: Request) -> None:
     (login page), verify using a double-submit cookie comparison plus
     signature verification.
 
+    Requests with ``Authorization: Bearer ...`` skip CSRF validation; Bearer
+    tokens are not sent automatically by browsers, so CSRF protection is not
+    required for that path (authentication is enforced separately).
+
     :param request: The HTTP request object.
     :type request: Request
     :raises HTTPBadRequestException: If the CSRF token is missing from the
         form data.
     :raises HTTPForbiddenException: If the CSRF token fails validation.
     """
+    if request_has_bearer_authorization(request):
+        return
+
     form_data = await request.form()
     form_token = str(form_data.get(CSRF_FORM_FIELD, ""))
     if not form_token:

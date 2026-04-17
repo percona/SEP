@@ -43,7 +43,27 @@ if TYPE_CHECKING:
 CSRF_COOKIE_NAME = "_csrf"
 CSRF_FORM_FIELD = "csrf-token"
 
-__all__ = ["CSRF_COOKIE_NAME", "CSRF_FORM_FIELD", "CSRFMiddleware"]
+__all__ = [
+    "CSRF_COOKIE_NAME",
+    "CSRF_FORM_FIELD",
+    "CSRFMiddleware",
+    "request_has_bearer_authorization",
+]
+
+
+def request_has_bearer_authorization(request: Request) -> bool:
+    """Return True when the request carries an ``Authorization: Bearer`` header.
+
+    Matching is case-insensitive on the header name (via Starlette) and on the
+    ``Bearer`` scheme prefix. Token validation is performed elsewhere
+    (e.g. ``get_current_user``); this helper only gates CSRF logic.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :return: True if the client sent a Bearer authorization scheme.
+    :rtype: bool
+    """
+    return request.headers.get("authorization", "").lower().startswith("bearer ")
 
 
 def _get_sep_settings() -> SEPSettings:
@@ -67,6 +87,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     via ``request.state.csrf_token`` so templates can embed it in forms.  The
     token is also set as a cookie.  Subsequent GETs reuse the existing cookie
     value so multi-tab browsing remains stable.
+
+    GET requests that include ``Authorization: Bearer`` skip token generation and
+    cookie setting; those clients do not rely on CSRF cookies.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -89,34 +112,37 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         needs_cookie = False
 
         if method == "GET":
-            session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
-            existing_csrf = request.cookies.get(CSRF_COOKIE_NAME)
-            max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
+            if request_has_bearer_authorization(request):
+                request.state.csrf_token = ""
+            else:
+                session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
+                existing_csrf = request.cookies.get(CSRF_COOKIE_NAME)
+                max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
 
-            if existing_csrf:
-                try:
+                if existing_csrf:
+                    try:
+                        if session_cookie:
+                            crypto_timestamp_serializer.loads(
+                                existing_csrf, salt=session_cookie, max_age=max_age
+                            )
+                        else:
+                            crypto_timestamp_serializer.loads(
+                                existing_csrf, max_age=max_age
+                            )
+                        request.state.csrf_token = existing_csrf
+                    except BadSignature:
+                        existing_csrf = None
+
+                if not existing_csrf:
+                    nonce = secrets.token_hex(32)
                     if session_cookie:
-                        crypto_timestamp_serializer.loads(
-                            existing_csrf, salt=session_cookie, max_age=max_age
+                        token = crypto_timestamp_serializer.dumps(
+                            nonce, salt=session_cookie
                         )
                     else:
-                        crypto_timestamp_serializer.loads(
-                            existing_csrf, max_age=max_age
-                        )
-                    request.state.csrf_token = existing_csrf
-                except BadSignature:
-                    existing_csrf = None
-
-            if not existing_csrf:
-                nonce = secrets.token_hex(32)
-                if session_cookie:
-                    token = crypto_timestamp_serializer.dumps(
-                        nonce, salt=session_cookie
-                    )
-                else:
-                    token = crypto_timestamp_serializer.dumps(nonce)
-                request.state.csrf_token = token
-                needs_cookie = True
+                        token = crypto_timestamp_serializer.dumps(nonce)
+                    request.state.csrf_token = token
+                    needs_cookie = True
 
         response = await call_next(request)
 
