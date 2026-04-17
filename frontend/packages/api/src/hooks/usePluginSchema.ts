@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
+import { ApiError } from '../errors';
 import type { PluginSchema } from '../types/plugin-schema';
 
 /**
@@ -18,10 +19,8 @@ export function usePluginSchema(pluginName: string, mockSchema?: PluginSchema) {
         return data;
       } catch (error) {
         // Fall back to mock schema on 404 (not yet served) or network error
-        if (mockSchema) {
-          const status = (error as { response?: { status?: number } }).response?.status;
-          const hasNoResponse = !(error as { response?: unknown }).response;
-          if (status === 404 || hasNoResponse) {
+        if (mockSchema && error instanceof ApiError) {
+          if (error.status === 404 || error.kind === 'network') {
             return mockSchema;
           }
         }

@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { createQueryClient } from '@sep/api';
 import { ThemeProvider } from './contexts/theme';
 
 // Fonts — same set as PMM (Roboto for body, Poppins for headings, Roboto Mono for code)
@@ -15,14 +16,7 @@ import '@fontsource/roboto-mono/400.css';
 
 import App from './App';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
+const queryClient = createQueryClient();
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {

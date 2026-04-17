@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 import { apiClient } from '../client';
+import { ApiError } from '../errors';
 
 // Only allow mock fallback in development builds.
 // Vite (and most bundlers) statically replace process.env.NODE_ENV at build time,
@@ -9,8 +9,8 @@ declare const process: { env: { NODE_ENV?: string } };
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
 function isBackendUnavailable(error: unknown): boolean {
-  if (error instanceof AxiosError) {
-    return !error.response || error.response.status >= 500;
+  if (error instanceof ApiError) {
+    return error.kind === 'network' || (error.kind === 'http' && (error.status ?? 0) >= 500);
   }
   return false;
 }

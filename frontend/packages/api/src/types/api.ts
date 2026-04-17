@@ -1,6 +1,5 @@
-import type { AxiosError } from 'axios';
-
-// Common API response types — will be generated from OpenAPI later
+// Common API response types — will be generated from OpenAPI later.
+// The runtime ApiError class lives in ../errors.ts.
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -13,8 +12,6 @@ export interface ApiErrorResponse {
   detail: string;
   statusCode: number;
 }
-
-export type ApiError = AxiosError<ApiErrorResponse>;
 
 // ── Auth ────────────────────────────────────────────────────────────────
 
