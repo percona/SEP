@@ -138,8 +138,8 @@ importers:
         specifier: ^9.0.0
         version: 9.0.0(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@mui/material@7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@mui/system@7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(date-fns@4.1.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@percona/percona-ui':
-        specifier: github:nachodd/percona-ui#b1f784809aa20ee60b5ef4ab1b861236343735d7
-        version: https://codeload.github.com/nachodd/percona-ui/tar.gz/b1f784809aa20ee60b5ef4ab1b861236343735d7(5445d939df56f452e90e94cb21673e4c)
+        specifier: github:nachodd/percona-ui#a64cef665c8446438e8690a98db92be6f88e5a93
+        version: https://codeload.github.com/nachodd/percona-ui/tar.gz/a64cef665c8446438e8690a98db92be6f88e5a93(8a7245954ab232bd83e6f457eaa81c8a)
       '@sep/api':
         specifier: workspace:*
         version: link:../api
@@ -873,8 +873,8 @@ packages:
       react: ^18.3.1
       react-dom: ^18.3.1
 
-  '@percona/percona-ui@https://codeload.github.com/nachodd/percona-ui/tar.gz/b1f784809aa20ee60b5ef4ab1b861236343735d7':
-    resolution: {tarball: https://codeload.github.com/nachodd/percona-ui/tar.gz/b1f784809aa20ee60b5ef4ab1b861236343735d7}
+  '@percona/percona-ui@https://codeload.github.com/nachodd/percona-ui/tar.gz/a64cef665c8446438e8690a98db92be6f88e5a93':
+    resolution: {tarball: https://codeload.github.com/nachodd/percona-ui/tar.gz/a64cef665c8446438e8690a98db92be6f88e5a93}
     version: 1.0.14
     peerDependencies:
       '@emotion/react': ^11.11.4
@@ -885,6 +885,7 @@ packages:
       '@mui/x-date-pickers': ^7.6.2
       react: ^18.3.1
       react-dom: ^18.3.1
+      react-hook-form: ^7.50.0
 
   '@popperjs/core@2.11.8':
     resolution: {integrity: sha512-P1st0aksCrn9sGZhp8GMYwBnQsbvAWsZAX44oXNNvLHGqAOcoVxmjZiohstwQ7SqKnbR47akdNi+uleWD8+g6A==}
@@ -2306,7 +2307,7 @@ snapshots:
       react-hook-form: 7.72.1(react@19.2.5)
       react-is: 18.3.1
 
-  '@percona/percona-ui@https://codeload.github.com/nachodd/percona-ui/tar.gz/b1f784809aa20ee60b5ef4ab1b861236343735d7(5445d939df56f452e90e94cb21673e4c)':
+  '@percona/percona-ui@https://codeload.github.com/nachodd/percona-ui/tar.gz/a64cef665c8446438e8690a98db92be6f88e5a93(8a7245954ab232bd83e6f457eaa81c8a)':
     dependencies:
       '@emotion/react': 11.14.0(@types/react@19.2.14)(react@19.2.5)
       '@emotion/styled': 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5)
