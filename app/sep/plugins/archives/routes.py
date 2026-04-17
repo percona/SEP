@@ -70,6 +70,8 @@ async def archives_create(
     request: Request,
     task: ArchivesGeneratedTask,
     task_api: TaskAPI,
+    *,
+    check_connectivity: Annotated[bool, Form()] = False,
 ) -> RedirectResponse:
     """Create new archives task."""
     logger.debug("Create archives task: %s", task)
@@ -77,7 +79,12 @@ async def archives_create(
         "/",
         json=task.model_dump(),
     )
-    await maybe_check_connectivity(request, task_api, task.data.get("meta", {}))
+    await maybe_check_connectivity(
+        request,
+        task_api,
+        task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
+    )
     task_path = request.url_for("archives_detail", task_name=task.name)
     return RedirectResponse(
         task_path,

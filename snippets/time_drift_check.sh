@@ -8,6 +8,12 @@
 # service_type: generic
 # alerts:
 #   - TimeDrift
+#   - name: MySQLReplicationBroken
+#     service_type: mysql
+#   - name: MySQLReplicaLag
+#     service_type: mysql
+#   - name: PostgreSQLReplicationLag
+#     service_type: postgresql
 # ---
 
 set -euo pipefail
