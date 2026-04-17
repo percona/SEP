@@ -1,5 +1,6 @@
-import axios from 'axios';
+import axios, { type InternalAxiosRequestConfig } from 'axios';
 import applyCaseMiddleware from 'axios-case-converter';
+import { ApiError, normalizeAxiosError } from './errors';
 
 // ── Token provider ─────────────────────────────────────────────────────
 // Instead of owning a copy of the access token, the API layer delegates
@@ -22,9 +23,15 @@ export function setOnUnauthorized(handler: OnUnauthorized) {
   _onUnauthorized = handler;
 }
 
+// ── Dev logging flag ───────────────────────────────────────────────────
+// Vite (and most bundlers) statically replace process.env.NODE_ENV at build
+// time, so the logging paths are dead-code-eliminated in production.
+declare const process: { env: { NODE_ENV?: string } };
+const IS_DEV = process !== undefined && process.env?.NODE_ENV !== 'production';
+
 /**
- * Primary API client with automatic camelCase <-> snake_case conversion.
- * All SEP API requests go through this client.
+ * Primary API client. See README.md for the camelCase ↔ snake_case policy —
+ * axios-case-converter will be removed in Phase 2 once generated types land.
  */
 export const apiClient = applyCaseMiddleware(
   axios.create({
@@ -36,16 +43,21 @@ export const apiClient = applyCaseMiddleware(
   }),
 );
 
-// Attach Bearer token via the injected provider on every request
-apiClient.interceptors.request.use((config) => {
+// ── Request: attach Bearer token, optionally log ───────────────────────
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = _getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (IS_DEV) {
+    const method = config.method?.toUpperCase() ?? 'GET';
+    // eslint-disable-next-line no-console
+    console.debug(`[api] → ${method} ${config.url ?? ''}`);
+  }
   return config;
 });
 
-// Handle unauthorized responses globally — delegate to the injected handler.
+// ── Response: unauthorized handling, dev logging, error normalization ──
 // In the browser, 303 redirects are followed automatically (maxRedirects is
 // Node-only), so the client may receive a 200 HTML login page instead of a
 // 303 status. We detect this by checking the response content-type.
@@ -58,10 +70,21 @@ apiClient.interceptors.response.use(
   (response) => {
     const ct = response.headers['content-type'] ?? '';
     if (ct.includes('text/html') && !isRefreshRequest(response.config?.url)) {
-      // API endpoints should never return HTML — this means the browser
-      // followed a 303 redirect to the login page.
       _onUnauthorized();
-      return Promise.reject(new Error('Session expired (redirected to login page)'));
+      return Promise.reject(
+        new ApiError({
+          kind: 'http',
+          status: 401,
+          message: 'Session expired (redirected to login page)',
+          url: response.config?.url,
+          method: response.config?.method?.toUpperCase(),
+        }),
+      );
+    }
+    if (IS_DEV) {
+      const method = response.config?.method?.toUpperCase() ?? 'GET';
+      // eslint-disable-next-line no-console
+      console.debug(`[api] ← ${response.status} ${method} ${response.config?.url ?? ''}`);
     }
     return response;
   },
@@ -72,6 +95,14 @@ apiClient.interceptors.response.use(
         _onUnauthorized();
       }
     }
-    return Promise.reject(error);
+    const apiError = normalizeAxiosError(error);
+    if (IS_DEV) {
+      const loc = apiError.method && apiError.url ? `${apiError.method} ${apiError.url}` : '';
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[api] ✗ ${apiError.kind}${apiError.status ? ` ${apiError.status}` : ''} ${loc} — ${apiError.message}`,
+      );
+    }
+    return Promise.reject(apiError);
   },
 );
