@@ -2,12 +2,12 @@
 # BUILDER #
 ###########
 
-FROM localhost/sep:builder as builder
+FROM localhost/sep:builder AS builder
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-ENV FASTAPI_ENV production_docker
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV FASTAPI_ENV=production_docker
 
 #########
 # FINAL #
