@@ -16,6 +16,7 @@
 
 """Ensure Nomad dispatch payloads stay under the 16 KiB limit after minify+gzip."""
 
+import contextlib
 import gzip
 import io
 import sys
@@ -33,9 +34,9 @@ def check_payload(path: str) -> tuple[str, int] | None:
     compressed size is within :data:`NOMAD_PAYLOAD_SIZE_LIMIT`, returns
     ``None``; otherwise returns the path and offending size in bytes.
     """
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:  # noqa: PTH123
         src = f.read()
-    try:
+    with contextlib.suppress(SyntaxError):
         src = minify(
             src,
             remove_annotations=True,
@@ -51,8 +52,6 @@ def check_payload(path: str) -> tuple[str, int] | None:
             remove_explicit_return_none=True,
             remove_builtin_exception_brackets=True,
         )
-    except SyntaxError:
-        pass
     buf = io.BytesIO()
     with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
         gz.write(src.encode("utf-8"))
