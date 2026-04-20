@@ -152,16 +152,32 @@ async def get_current_user_from_cookie(request: Request) -> User:
     return user
 
 
+def is_bearer_authenticated(request: Request) -> bool:
+    """Return whether the request carries an ``Authorization: Bearer`` header.
+
+    Inspects only the ``Authorization`` header prefix — the token itself is not
+    validated. Intended as a routing signal to pick between Bearer and cookie
+    authentication, and to render API-style error responses for SPA clients.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :return: ``True`` when the header starts with ``Bearer ``, ``False`` otherwise.
+    :rtype: bool
+    """
+    return request.headers.get("authorization", "").lower().startswith("bearer ")
+
+
 async def get_current_user(
     request: Request,
 ) -> User:
     """Return the authenticated user from a Bearer token or session cookie.
 
-    The ``Authorization: Bearer`` header is tried first (React SPA). If it is
-    absent or ``oauth2_scheme`` rejects the request, authentication falls back
-    to the signed session cookie (legacy Jinja2). When a Bearer token is
-    supplied, failures from :func:`app.api.deps.get_current_user` are raised as
-    HTTP API errors (401/403); they are not converted into a login redirect.
+    The ``Authorization: Bearer`` header is tried first (React SPA) and, when
+    present, failures from :func:`app.api.deps.get_current_user` are raised as
+    HTTP API errors (401/403) rather than converted into a login redirect —
+    including the case of a malformed/empty Bearer token. When the header is
+    absent, authentication falls back to the signed session cookie (legacy
+    Jinja2).
 
     :param request: The incoming HTTP request.
     :type request: Request
@@ -172,12 +188,8 @@ async def get_current_user(
     :raises LoginRedirectException: If cookie-based auth fails or the cookie user
         is inactive.
     """
-    try:
+    if is_bearer_authenticated(request):
         bearer_token = await oauth2_scheme(request)
-    except HTTPException:
-        bearer_token = None
-
-    if bearer_token:
         return await get_current_user_api(bearer_token)
 
     return await get_current_user_from_cookie(request)

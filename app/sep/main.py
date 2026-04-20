@@ -45,6 +45,7 @@ from app.sep.deps import (
     get_current_user,
     get_default_context,
     get_tasks_index_context,
+    is_bearer_authenticated,
     IsAuthenticated,
     IsCsrfValidated,
     IsNotAuthenticated,
@@ -263,13 +264,11 @@ async def json_exception_handler(
 
 
 @sep_app.exception_handler(HTTPException)
-async def default_exception_handler(
-    request: Request, exc: HTTPException
-) -> RedirectResponse:
+async def default_exception_handler(request: Request, exc: HTTPException) -> Response:
     """Define default exception handler."""
-    if request.url.path.startswith("/checksums/api/") or request.headers.get(
-        "authorization", ""
-    ).lower().startswith("bearer "):
+    if request.url.path.startswith("/checksums/api/") or is_bearer_authenticated(
+        request
+    ):
         return JSONResponse(
             {"detail": exc.detail},
             status_code=exc.status_code,

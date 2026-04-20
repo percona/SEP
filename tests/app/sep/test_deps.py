@@ -71,11 +71,18 @@ SUCCESS_HISTORY_ID = 12
 EXPECTED_NODE_COUNT = 5
 
 
-def _make_request() -> Request:
-    """Build a minimal Request with messages state for testing."""
+def _make_request(authorization: str | None = None) -> Request:
+    """Build a minimal Request with messages state for testing.
+
+    :param authorization: Value for the ``Authorization`` header, if any.
+    :type authorization: str | None
+    """
+    headers = []
+    if authorization is not None:
+        headers.append((b"authorization", authorization.encode()))
     scope = {
         "type": "http",
-        "headers": [],
+        "headers": headers,
         "client": ("127.0.0.1", "80"),
         "path": "/",
         "app": MagicMock(),
@@ -104,7 +111,7 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_valid_bearer_returns_user(self) -> None:
         """Assert a valid Bearer path returns the user from the API dependency."""
-        request = _make_request()
+        request = _make_request(authorization="Bearer bearer-token")
         active_user = CasdoorUserFactory.build(is_forbidden=False)
         mock_oauth2 = AsyncMock(return_value="bearer-token")
         mock_api_user = AsyncMock(return_value=active_user)
@@ -131,7 +138,11 @@ class TestGetCurrentUser:
         with (
             patch(
                 "app.sep.deps.oauth2_scheme",
-                AsyncMock(side_effect=HTTPException(status_code=401)),
+                AsyncMock(
+                    side_effect=AssertionError(
+                        "oauth2_scheme must not be called without a Bearer header"
+                    )
+                ),
             ),
             patch(
                 "app.sep.deps.get_access_token_from_cookie", return_value="cookie-token"
@@ -144,7 +155,7 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_bearer_and_cookie_present_bearer_wins(self) -> None:
         """Assert Authorization Bearer is preferred over session cookie."""
-        request = _make_request()
+        request = _make_request(authorization="Bearer bearer-token")
         bearer_user = CasdoorUserFactory.build(username="bearer-user")
         cookie_user = CasdoorUserFactory.build(username="cookie-user")
         with (
@@ -171,10 +182,6 @@ class TestGetCurrentUser:
         request = _make_request()
         with (
             patch(
-                "app.sep.deps.oauth2_scheme",
-                AsyncMock(side_effect=HTTPException(status_code=401)),
-            ),
-            patch(
                 "app.sep.deps.get_access_token_from_cookie",
                 side_effect=LoginRedirectException(request),
             ),
@@ -185,7 +192,7 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_invalid_bearer_raises_unauthorized(self) -> None:
         """Assert invalid JWT via Bearer raises HTTPUnauthorizedException."""
-        request = _make_request()
+        request = _make_request(authorization="Bearer bad-token")
         with (
             patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bad-token")),
             patch(
@@ -199,7 +206,7 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_inactive_user_via_bearer_raises_forbidden(self) -> None:
         """Assert inactive user resolved via Bearer raises HTTPForbiddenException."""
-        request = _make_request()
+        request = _make_request(authorization="Bearer token")
         with (
             patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="token")),
             patch(
@@ -207,6 +214,25 @@ class TestGetCurrentUser:
                 AsyncMock(side_effect=HTTPForbiddenException("User is not active")),
             ),
             pytest.raises(HTTPForbiddenException),
+        ):
+            await get_current_user(request)
+
+    @pytest.mark.asyncio
+    async def test_malformed_bearer_header_does_not_fall_back_to_cookie(self) -> None:
+        """Assert a malformed Bearer header surfaces the 401 without cookie fallback."""
+        request = _make_request(authorization="Bearer ")
+        with (
+            patch(
+                "app.sep.deps.oauth2_scheme",
+                AsyncMock(side_effect=HTTPException(status_code=401)),
+            ),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie",
+                side_effect=AssertionError(
+                    "cookie must not be read for a Bearer-authenticated request"
+                ),
+            ),
+            pytest.raises(HTTPException),
         ):
             await get_current_user(request)
 
