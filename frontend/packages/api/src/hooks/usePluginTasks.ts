@@ -2,11 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';
 
-// Only allow mock fallback in development builds.
-// Vite (and most bundlers) statically replace process.env.NODE_ENV at build time,
-// so this entire code path is dead-code-eliminated in production.
-declare const process: { env: { NODE_ENV?: string } };
-const IS_DEV = process.env.NODE_ENV !== 'production';
+// Only allow mock fallback in development builds. Vite statically replaces
+// `import.meta.env.DEV` at build time, so this path is dead-code-eliminated
+// in production.
+const IS_DEV = import.meta.env.DEV;
 
 function isBackendUnavailable(error: unknown): boolean {
   if (error instanceof ApiError) {

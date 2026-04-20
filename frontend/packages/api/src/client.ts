@@ -24,10 +24,9 @@ export function setOnUnauthorized(handler: OnUnauthorized) {
 }
 
 // ── Dev logging flag ───────────────────────────────────────────────────
-// Vite (and most bundlers) statically replace process.env.NODE_ENV at build
-// time, so the logging paths are dead-code-eliminated in production.
-declare const process: { env: { NODE_ENV?: string } };
-const IS_DEV = process !== undefined && process.env?.NODE_ENV !== 'production';
+// Vite statically replaces `import.meta.env.DEV` at build time, so the
+// logging branches are dead-code-eliminated in production bundles.
+const IS_DEV = import.meta.env.DEV;
 
 /**
  * Primary API client. See README.md for the camelCase ↔ snake_case policy —
