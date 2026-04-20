@@ -26,7 +26,7 @@ from pydantic import FutureDatetime
 from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
-from app.sep.connectivity import maybe_check_connectivity
+from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -86,7 +86,7 @@ async def backups_create(
     task: BackupGeneratedTask,
     task_api: TaskAPI,
     *,
-    check_connectivity: Annotated[bool, Form()] = False,
+    check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
 ) -> RedirectResponse:
     """Create new backups task."""
     logger.debug("Create backups task: %s", task)

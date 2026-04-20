@@ -132,6 +132,32 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
     sep_app.dependency_overrides = {}
 
 
+def test_backups_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    backup_create,
+    created_service,
+):
+    """Test POST /backups/ route without overriding build_backup_task_payload."""
+    backup_create.service_id = created_service.id
+    mock_inventory_api_dep.get = AsyncMock(return_value=created_service.model_dump())
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/backups/",
+        data=backup_create.model_dump(),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/backups/{backup_create.task_name}")
+    mock_task_api_dep.post.assert_awaited_once()
+    assert mock_task_api_dep.post.await_args.args[0] == "/"
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["name"] == backup_create.task_name
+    assert posted["owner"] == TaskOwner.BACKUPS.value
+
+
 EXPECTED_CONNECTIVITY_POST_CALLS = 2
 
 
