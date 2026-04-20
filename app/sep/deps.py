@@ -202,21 +202,32 @@ CurrentUser = Annotated[User, IsAuthenticated]
 async def get_api_authenticated_user(request: Request) -> User:
     """Return the authenticated user for API surfaces.
 
-    Wrap :func:`get_current_user` so API callers receive an
-    ``HTTPUnauthorizedException`` (401) when credentials are missing or invalid
-    instead of the ``LoginRedirectException`` (303) used by Jinja pages.
+    Wrap :func:`get_current_user` so cookie-based API callers receive an
+    ``HTTPUnauthorizedException`` (401) instead of the
+    ``LoginRedirectException`` (303) used by Jinja pages. The
+    ``set-cookie`` header that ``LoginRedirectException`` uses to clear a
+    stale session cookie is preserved on the 401 response so the invalid
+    cookie does not linger on the client. Bearer-token failures from
+    :func:`get_current_user` (``HTTPUnauthorizedException`` /
+    ``HTTPForbiddenException``) propagate unchanged.
 
     :param request: The incoming HTTP request.
     :type request: Request
     :return: The authenticated user.
     :rtype: User
-    :raises HTTPUnauthorizedException: If cookie- or Bearer-based authentication
-        raises a redirect-style exception (e.g. missing or invalid credentials).
+    :raises HTTPUnauthorizedException: If cookie-based authentication fails
+        (converted from :class:`LoginRedirectException`), or if a Bearer
+        token is missing or invalid.
+    :raises HTTPForbiddenException: If the user resolved from the Bearer
+        token is inactive.
     """
     try:
         return await get_current_user(request)
-    except HTTPRedirectException:
-        raise HTTPUnauthorizedException from None
+    except HTTPRedirectException as exc:
+        unauthorized = HTTPUnauthorizedException()
+        if "set-cookie" in exc.headers:
+            unauthorized.headers = {"set-cookie": exc.headers["set-cookie"]}
+        raise unauthorized from None
 
 
 IsApiAuthenticated = Depends(get_api_authenticated_user)

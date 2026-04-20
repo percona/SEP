@@ -314,6 +314,30 @@ class TestGetApiAuthenticatedUser:
             await get_api_authenticated_user(request)
 
     @pytest.mark.asyncio
+    async def test_login_redirect_preserves_cookie_clearing_header(self) -> None:
+        """Assert the ``set-cookie`` header from ``LoginRedirectException`` is preserved.
+
+        ``LoginRedirectException`` emits a ``set-cookie`` header that clears the
+        stale session cookie. When the exception is converted to 401 for API
+        callers, that header must ride along so the invalid cookie does not
+        linger on the client.
+        """
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_current_user",
+                AsyncMock(side_effect=LoginRedirectException(request)),
+            ),
+            pytest.raises(HTTPUnauthorizedException) as exc_info,
+        ):
+            await get_api_authenticated_user(request)
+        assert exc_info.value.headers is not None
+        set_cookie = exc_info.value.headers.get("set-cookie")
+        assert set_cookie is not None
+        assert sep_settings.SESSION.COOKIE_NAME in set_cookie
+        assert f"{sep_settings.SESSION.COOKIE_NAME}=" in set_cookie
+
+    @pytest.mark.asyncio
     async def test_http_redirect_raises_unauthorized(self) -> None:
         """Assert a plain HTTPRedirectException is also converted to 401."""
         request = _make_request()
