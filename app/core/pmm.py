@@ -17,6 +17,7 @@
 
 import asyncio
 import logging
+from typing import Any
 
 from app.core.config import settings
 from app.core.requests.remote_api import RemoteAPI
@@ -84,7 +85,7 @@ async def annotate_task_event(
     *,
     task_name: str,
     target: str,
-    meta: dict | None,
+    meta: dict[str, Any] | None,
     event: str,
 ) -> None:
     """Create a PMM annotation for a task lifecycle event.
@@ -99,7 +100,7 @@ async def annotate_task_event(
     :param target: The execution target node (from ``TaskExecutionRequest.target``).
     :type target: str
     :param meta: The task execution metadata (from ``TaskExecutionRequest.meta``).
-    :type meta: dict | None
+    :type meta: dict[str, Any] | None
     :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``, ``"FAILED"``).
     :type event: str
     """
@@ -127,17 +128,25 @@ def schedule_annotation(
     coroutine never touches ORM attributes after the originating
     session has closed. See SEP-1009.
 
+    The caller must ensure ``queue_item.execution_request`` is already
+    loaded (the deferred ``column_property`` is typically eager-loaded
+    via ``undefer(TaskHistory.execution_request)`` in routes that emit
+    annotations). ``meta`` is shallow-copied into a new ``dict`` so the
+    background task observes the values at scheduling time even if the
+    originating request mutates the attribute afterwards.
+
     :param queue_item: The task history record.
     :type queue_item: TaskHistory
     :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``).
     :type event: str
     """
     execution_request = queue_item.execution_request
+    meta = dict(execution_request.meta) if execution_request.meta is not None else None
     task = asyncio.create_task(
         annotate_task_event(
             task_name=execution_request.task,
             target=execution_request.target,
-            meta=execution_request.meta,
+            meta=meta,
             event=event,
         )
     )
