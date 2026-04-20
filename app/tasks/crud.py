@@ -436,7 +436,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .where(col(TaskHistoryLog.task_history_id) == task_history_id)
             .limit(1)
         )
-        result = await session.execute(query)
+        result = await session.exec(query)
         return result.first() is not None
 
     @classmethod
@@ -552,7 +552,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             content=chunk.decode("utf-8", errors="replace"),
             created_at=now,
         )
-        await session.execute(stmt)
+        await session.exec(stmt)
 
 
 class TaskHistoryLogStateManager(BaseManager):
@@ -674,7 +674,7 @@ class TaskHistoryLogStateManager(BaseManager):
                 updated_at=utc_now(),
             )
         )
-        await session.execute(stmt)
+        await session.exec(stmt)
 
     @classmethod
     async def insert_row_idempotent(
@@ -731,7 +731,7 @@ class TaskHistoryLogStateManager(BaseManager):
             version=version,
             created_at=now,
         )
-        result = await session.execute(stmt)
+        result = await session.exec(stmt)
         return bool(result.rowcount == 1)
 
     @classmethod
@@ -798,7 +798,7 @@ class TaskHistoryLogStateManager(BaseManager):
                 updated_at=now,
             )
         )
-        result = await session.execute(stmt)
+        result = await session.exec(stmt)
         return bool(result.rowcount == 1)
 
 
