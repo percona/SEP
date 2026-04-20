@@ -493,7 +493,13 @@ class ListView(SchemaBaseModel):
 
     @model_validator(mode="after")
     def _validate_default_sort_references_column(self) -> Self:
-        """Ensure ``default_sort`` (stripped of any leading ``-``) matches a column.
+        """Ensure ``default_sort`` (stripped of one leading ``-``) matches a column.
+
+        Exactly one leading ``-`` is stripped to mirror the React consumer,
+        which strips a single leading ``-`` via ``replace(/^-/, '')`` when
+        deriving the initial sort column; a schema with multiple leading
+        dashes (for example, ``"--lastRun"``) would silently fail to match
+        a column at render time.
 
         :return: The validated list view instance.
         :rtype: ListView
@@ -502,7 +508,7 @@ class ListView(SchemaBaseModel):
         """
         if self.default_sort is None:
             return self
-        target = self.default_sort.lstrip("-")
+        target = self.default_sort.removeprefix("-")
         valid_keys = {column.key for column in self.columns}
         if target not in valid_keys:
             raise ValueError(

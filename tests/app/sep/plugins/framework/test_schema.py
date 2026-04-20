@@ -532,6 +532,20 @@ def test_list_view_rejects_descending_prefix_for_unknown_column():
         )
 
 
+def test_list_view_rejects_double_dash_prefix():
+    """Reject ``default_sort`` with multiple leading dashes to match the React consumer.
+
+    The React renderer strips exactly one leading ``-`` from ``defaultSort``
+    (``replace(/^-/, '')``), so a backend that strips more than one would
+    silently disable the default sort at render time.
+    """
+    with pytest.raises(ValidationError, match="references unknown column key"):
+        ListView(
+            columns=[Column(key="id", label="ID")],
+            default_sort="--id",
+        )
+
+
 # ── Discriminated-union rejection ────────────────────────────────────────
 
 
