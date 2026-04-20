@@ -70,10 +70,10 @@
 | app/sep/crud.py                                   |       47 |        0 |    100% |           |
 | app/sep/db/engine.py                              |        8 |        0 |    100% |           |
 | app/sep/db/seed.py                                |       37 |       23 |     38% |65-79, 101-110, 118 |
-| app/sep/deps.py                                   |      260 |       12 |     95% |148-149, 224, 227-228, 246, 711-712, 892-895 |
+| app/sep/deps.py                                   |      269 |       10 |     96% |270, 273-274, 292, 757-758, 938-941 |
 | app/sep/exceptions.py                             |       13 |        0 |    100% |           |
 | app/sep/inventory.py                              |       97 |        9 |     91% |81, 92, 229, 286, 304, 326, 363, 385, 419 |
-| app/sep/main.py                                   |      149 |       13 |     91% |69-72, 88-102, 271, 355-359 |
+| app/sep/main.py                                   |      149 |       12 |     92% |70-73, 89-103, 356-360 |
 | app/sep/middleware/csrf.py                        |       44 |        1 |     98% |       103 |
 | app/sep/middleware/messages/\_middleware.py       |       28 |        0 |    100% |           |
 | app/sep/middleware/messages/\_utils.py            |       53 |       10 |     81% |85, 118, 259-266 |
@@ -149,11 +149,11 @@
 | app/sep/sync/models.py                            |      348 |       60 |     83% |75-84, 98-100, 119, 267-269, 330, 390-391, 424, 478-480, 537, 567, 583, 603-607, 708, 722, 742-743, 823, 837, 859-860, 941, 954, 978-980, 1052, 1065, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py             |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py              |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                       |       93 |       19 |     80% |83-87, 107-110, 121, 176-184, 232, 236-252, 344 |
+| app/sep/sync/syncers/pmm.py                       |       93 |       22 |     76% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 291-294, 344 |
 | app/sep/tasks.py                                  |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                       |       10 |        0 |    100% |           |
 | app/sep/utils/jinja.py                            |       60 |       10 |     83% |103, 122, 133-138, 169-170 |
-| app/sep/utils/static.py                           |       16 |        0 |    100% |           |
+| app/sep/utils/static.py                           |       10 |        0 |    100% |           |
 | app/tasks/anonymizer/anonymize.py                 |       50 |        0 |    100% |           |
 | app/tasks/anonymizer/config.py                    |       27 |        1 |     96% |        68 |
 | app/tasks/anonymizer/entities.py                  |       28 |        0 |    100% |           |
@@ -184,7 +184,7 @@
 | app/tasks/periodic/models.py                      |      101 |        5 |     95% |196, 231, 283, 299, 368 |
 | app/tasks/periodic/routes.py                      |       38 |        3 |     92% | 62-66, 97 |
 | app/tasks/routes.py                               |      182 |       19 |     90% |119-123, 180, 201-208, 240, 289-297, 302-303, 492, 505-506 |
-| **TOTAL**                                         | **12493** | **1930** | **85%** |           |
+| **TOTAL**                                         | **12496** | **1930** | **85%** |           |
 
 
 ## Setup coverage badge
