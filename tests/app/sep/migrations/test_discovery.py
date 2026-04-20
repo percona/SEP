@@ -147,6 +147,7 @@ def test_discover_propagates_broken_models_import(isolated_plugins_path):
     )
     with pytest.raises(ModuleNotFoundError):
         discover_plugin_migrations_and_models()
+    assert "app.sep.plugins.broken_models_plugin.models" not in sys.modules
 
 
 def test_discover_does_not_trigger_plugin_init_py(isolated_plugins_path):

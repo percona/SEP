@@ -70,7 +70,11 @@ def _load_models_module(full_name: str, models_path: Path) -> None:
         return
     module = importlib.util.module_from_spec(spec)
     sys.modules[full_name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(full_name, None)
+        raise
 
 
 def discover_plugin_migrations_and_models() -> list[str]:
