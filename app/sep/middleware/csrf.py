@@ -55,8 +55,8 @@ def request_has_bearer_authorization(request: Request) -> bool:
     """Return True when the request carries an ``Authorization: Bearer`` header.
 
     Matching is case-insensitive on the header name (via Starlette) and on the
-    ``Bearer`` scheme prefix. Token validation is performed elsewhere
-    (e.g. ``get_current_user``); this helper only gates CSRF logic.
+    ``Bearer`` scheme prefix. Bearer/OAuth2 token validation is performed
+    elsewhere in the request handling stack; this helper only gates CSRF logic.
 
     :param request: The incoming HTTP request.
     :type request: Request
