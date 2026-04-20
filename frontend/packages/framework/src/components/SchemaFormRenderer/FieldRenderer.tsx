@@ -13,7 +13,16 @@ interface FieldRendererProps {
 
 export function FieldRenderer({ field, control }: FieldRendererProps) {
   switch (field.type) {
-    case 'string':
+    case 'string': {
+      let compiledPattern: RegExp | undefined;
+      if (field.pattern) {
+        try {
+          compiledPattern = new RegExp(field.pattern);
+        } catch {
+          // Malformed pattern from backend/plugin schema — skip validation
+          // rather than crash the form on render.
+        }
+      }
       return (
         <TextInput
           name={field.name}
@@ -40,13 +49,14 @@ export function FieldRenderer({ field, control }: FieldRendererProps) {
                   message: `Maximum ${field.maxLength} characters`,
                 },
               }),
-              ...(field.pattern && {
-                pattern: { value: new RegExp(field.pattern), message: `Invalid format` },
+              ...(compiledPattern && {
+                pattern: { value: compiledPattern, message: `Invalid format` },
               }),
             },
           }}
         />
       );
+    }
 
     case 'integer':
     case 'float':

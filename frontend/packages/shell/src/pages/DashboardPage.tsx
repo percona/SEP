@@ -22,7 +22,10 @@ import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/auth';
 
-// -- Mock data (will be replaced with React Query hooks against real API) --
+// Mock data — dev-only stopgap until /dashboard/stats endpoint lands. Vite
+// statically replaces `import.meta.env.DEV`, so these arrays are dead-code-
+// eliminated from production bundles.
+const IS_DEV = import.meta.env.DEV;
 
 interface StatCard {
   title: string;
@@ -32,7 +35,7 @@ interface StatCard {
   to: string;
 }
 
-const stats: StatCard[] = [
+const mockStats: StatCard[] = [
   { title: 'Nodes', value: 42, icon: DnsIcon, color: 'primary.main', to: '/inventory' },
   { title: 'Active Tasks', value: 7, icon: AssignmentIcon, color: 'warning.main', to: '/tasks' },
   { title: 'Snippets', value: 23, icon: CodeIcon, color: 'info.main', to: '/snippets' },
@@ -45,6 +48,21 @@ const stats: StatCard[] = [
   },
 ];
 
+const emptyStats: StatCard[] = [
+  { title: 'Nodes', value: 0, icon: DnsIcon, color: 'primary.main', to: '/inventory' },
+  { title: 'Active Tasks', value: 0, icon: AssignmentIcon, color: 'warning.main', to: '/tasks' },
+  { title: 'Snippets', value: 0, icon: CodeIcon, color: 'info.main', to: '/snippets' },
+  {
+    title: 'Alerts',
+    value: 0,
+    icon: NotificationsActiveIcon,
+    color: 'error.main',
+    to: '/alerts/templates',
+  },
+];
+
+const stats: StatCard[] = IS_DEV ? mockStats : emptyStats;
+
 interface RecentTask {
   id: number;
   name: string;
@@ -53,7 +71,7 @@ interface RecentTask {
   started: string;
 }
 
-const recentTasks: RecentTask[] = [
+const mockRecentTasks: RecentTask[] = [
   {
     id: 1,
     name: 'pt-online-schema-change',
@@ -71,6 +89,8 @@ const recentTasks: RecentTask[] = [
   },
   { id: 4, name: 'archive-tables', target: 'prod-db-02', status: 'failed', started: '3 hours ago' },
 ];
+
+const recentTasks: RecentTask[] = IS_DEV ? mockRecentTasks : [];
 
 const StatusIconMap = {
   running: PendingIcon,
