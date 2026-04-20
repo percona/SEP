@@ -280,7 +280,7 @@ Under the gateway pattern, the replacement would be:
 
 ### Frontend call sites — `static/js/alerts.js`
 
-These routes are **already plugin-level** routes (alerts plugin), not sub-app proxies. They are documented here for completeness as required by the ticket.
+These routes are **already plugin-level** routes (alerts plugin), not sub-app proxies. This script is loaded in `/templates/alerts/index.html.j2`.
 
 | Line | Mechanism | URL | HTTP method | Description |
 |---|---|---|---|---|
