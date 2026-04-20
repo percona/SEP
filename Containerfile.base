@@ -9,9 +9,9 @@ FROM docker.io/library/python:3.11.14-alpine AS builder
 WORKDIR /usr/src/sep
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-ENV FASTAPI_ENV production_docker
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV FASTAPI_ENV=production_docker
 
 # Install dependencies
 RUN apk update && apk add --no-cache g++ git
