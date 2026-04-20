@@ -27,12 +27,17 @@ from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPNotFoundException,
+    HTTPRedirectException,
+)
 from app.models import CasdoorUser
 from app.sep.config import sep_settings
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
+    get_api_authenticated_user,
     get_base_url,
     get_created_entity,
     get_created_node,
@@ -279,6 +284,60 @@ class TestGetCurrentUser:
             pytest.raises(LoginRedirectException),
         ):
             await get_current_user(request)
+
+
+class TestGetApiAuthenticatedUser:
+    """Test get_api_authenticated_user dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_user_when_authenticated(self) -> None:
+        """Assert the authenticated user is returned unchanged."""
+        request = _make_request()
+        active_user = CasdoorUserFactory.build(is_forbidden=False)
+        with patch(
+            "app.sep.deps.get_current_user", AsyncMock(return_value=active_user)
+        ):
+            result = await get_api_authenticated_user(request)
+        assert result is active_user
+
+    @pytest.mark.asyncio
+    async def test_login_redirect_raises_unauthorized(self) -> None:
+        """Assert LoginRedirectException is converted to HTTPUnauthorizedException."""
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_current_user",
+                AsyncMock(side_effect=LoginRedirectException(request)),
+            ),
+            pytest.raises(HTTPUnauthorizedException),
+        ):
+            await get_api_authenticated_user(request)
+
+    @pytest.mark.asyncio
+    async def test_http_redirect_raises_unauthorized(self) -> None:
+        """Assert a plain HTTPRedirectException is also converted to 401."""
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_current_user",
+                AsyncMock(side_effect=HTTPRedirectException("/login")),
+            ),
+            pytest.raises(HTTPUnauthorizedException),
+        ):
+            await get_api_authenticated_user(request)
+
+    @pytest.mark.asyncio
+    async def test_non_redirect_exception_propagates(self) -> None:
+        """Assert non-redirect auth exceptions propagate unchanged."""
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_current_user",
+                AsyncMock(side_effect=HTTPForbiddenException("User is not active")),
+            ),
+            pytest.raises(HTTPForbiddenException),
+        ):
+            await get_api_authenticated_user(request)
 
 
 class TestGetCurrentAdmin:

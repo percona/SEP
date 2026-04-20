@@ -29,7 +29,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import get_current_user as get_current_user_api
 from app.api.deps import oauth2_scheme
 from app.core.alerts.config import alert_settings
-from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -197,6 +197,30 @@ async def get_current_user(
 
 IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
+
+
+async def get_api_authenticated_user(request: Request) -> User:
+    """Return the authenticated user for API surfaces.
+
+    Wrap :func:`get_current_user` so API callers receive an
+    ``HTTPUnauthorizedException`` (401) when credentials are missing or invalid
+    instead of the ``LoginRedirectException`` (303) used by Jinja pages.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :return: The authenticated user.
+    :rtype: User
+    :raises HTTPUnauthorizedException: If cookie- or Bearer-based authentication
+        raises a redirect-style exception (e.g. missing or invalid credentials).
+    """
+    try:
+        return await get_current_user(request)
+    except HTTPRedirectException:
+        raise HTTPUnauthorizedException from None
+
+
+IsApiAuthenticated = Depends(get_api_authenticated_user)
+ApiCurrentUser = Annotated[User, IsApiAuthenticated]
 
 
 async def get_current_admin(current_user: CurrentUser) -> User:
