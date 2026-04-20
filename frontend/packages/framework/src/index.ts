@@ -5,6 +5,7 @@ export { SchemaDrivenPlugin } from './components/SchemaDrivenPlugin';
 export { ServiceSelector } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';
 export { TableSelector } from './components/TableSelector';
+export { HostSelector } from './components/HostSelector';
 export { TaskLogViewer } from './components/TaskLogViewer';
 export { TaskHistoryTable } from './components/TaskHistoryTable';
 export { ChainBuilder } from './components/ChainBuilder';

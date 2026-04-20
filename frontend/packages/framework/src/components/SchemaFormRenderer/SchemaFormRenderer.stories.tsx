@@ -1,0 +1,178 @@
+/**
+ * Storybook story for SchemaFormRenderer.
+ *
+ * NOTE: Storybook is not yet installed in this monorepo. This file is authored
+ * in CSF3 format so it can be picked up automatically when Storybook is wired
+ * in. Until then it doubles as a living fixture used by the unit tests.
+ */
+
+import type { Meta, StoryObj } from '@storybook/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { FormSection } from './types';
+import { SchemaFormRenderer } from './SchemaFormRenderer';
+
+const MULTI_SECTION_SCHEMA: FormSection[] = [
+  {
+    title: 'Task details',
+    description: 'Identify this task and where it should run.',
+    fields: [
+      {
+        type: 'string',
+        name: 'title',
+        label: 'Title',
+        required: true,
+        minLength: 3,
+        maxLength: 64,
+        placeholder: 'Nightly consistency check',
+      },
+      {
+        type: 'textarea',
+        name: 'notes',
+        label: 'Notes',
+        rows: 3,
+        description: 'Optional free-form notes for the runbook.',
+      },
+      {
+        type: 'choice',
+        name: 'priority',
+        label: 'Priority',
+        required: true,
+        choices: [
+          { label: 'Low', value: 'low' },
+          { label: 'Normal', value: 'normal' },
+          { label: 'High', value: 'high' },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Target',
+    description: 'Service → schema → table cascade (dependent selectors).',
+    fields: [
+      {
+        type: 'service',
+        name: 'serviceId',
+        label: 'Service',
+        required: true,
+        serviceTypes: ['mysql', 'postgresql'],
+      },
+      {
+        type: 'schema',
+        name: 'schemaName',
+        label: 'Schema',
+        required: true,
+        dependsOn: 'serviceId',
+      },
+      {
+        type: 'table',
+        name: 'tableName',
+        label: 'Table',
+        required: true,
+        dependsOn: 'schemaName',
+      },
+    ],
+  },
+  {
+    title: 'Execution',
+    fields: [
+      {
+        type: 'integer',
+        name: 'timeoutSeconds',
+        label: 'Timeout (seconds)',
+        ge: 1,
+        le: 3600,
+        default: 60,
+      },
+      {
+        type: 'float',
+        name: 'samplingRate',
+        label: 'Sampling rate',
+        ge: 0,
+        le: 1,
+        step: 0.01,
+        default: 0.1,
+      },
+      { type: 'bool', name: 'dryRun', label: 'Dry run', default: true },
+      {
+        type: 'multichoice',
+        name: 'tags',
+        label: 'Tags',
+        choices: [
+          { label: 'Production', value: 'prod' },
+          { label: 'Canary', value: 'canary' },
+          { label: 'Compliance', value: 'compliance' },
+        ],
+      },
+      {
+        type: 'datetime',
+        name: 'scheduledFor',
+        label: 'Scheduled for',
+      },
+      {
+        type: 'yaml',
+        name: 'overrides',
+        label: 'Config overrides',
+        rows: 6,
+        placeholder: 'key: value',
+      },
+    ],
+  },
+];
+
+const withQueryClient = (Story: React.ComponentType) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <QueryClientProvider client={client}>
+      <Story />
+    </QueryClientProvider>
+  );
+};
+
+const meta: Meta<typeof SchemaFormRenderer> = {
+  title: 'Framework/SchemaFormRenderer',
+  component: SchemaFormRenderer,
+  decorators: [withQueryClient],
+  parameters: { layout: 'padded' },
+};
+export default meta;
+
+type Story = StoryObj<typeof SchemaFormRenderer>;
+
+export const MultiSectionSchema: Story = {
+  args: {
+    sections: MULTI_SECTION_SCHEMA,
+    submitLabel: 'Create task',
+    onSubmit: (values) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', values);
+    },
+  },
+};
+
+export const WithSubmitError: Story = {
+  args: {
+    sections: MULTI_SECTION_SCHEMA.slice(0, 1),
+    submitLabel: 'Retry',
+    submitError: 'The API rejected this request: validation failed on the backend.',
+    onSubmit: () => {},
+  },
+};
+
+export const MinimalForm: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Signup',
+        fields: [
+          { type: 'string', name: 'name', label: 'Name', required: true },
+          { type: 'string', name: 'email', label: 'Email', required: true, pattern: '^.+@.+$' },
+        ],
+      },
+    ],
+    submitLabel: 'Submit',
+    onSubmit: (v) => {
+      // eslint-disable-next-line no-console
+      console.log(v);
+    },
+  },
+};

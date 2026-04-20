@@ -51,6 +51,13 @@ export interface ChoiceField extends BaseField {
   choices: Array<{ label: string; value: string }>;
 }
 
+export interface MultiChoiceField extends BaseField {
+  type: 'multichoice';
+  choices: Array<{ label: string; value: string }>;
+  minItems?: number;
+  maxItems?: number;
+}
+
 export interface TextAreaField extends BaseField {
   type: 'textarea';
   rows?: number;
@@ -89,6 +96,12 @@ export interface TableField extends BaseField {
   dependsOn: string;
 }
 
+export interface HostField extends BaseField {
+  type: 'host';
+  /** Optional upstream field name. When provided, available hosts are filtered by the selected service. */
+  dependsOn?: string;
+}
+
 // ── Discriminated union ─────────────────────────────────────────────────
 
 export type PluginField =
@@ -97,13 +110,15 @@ export type PluginField =
   | FloatField
   | BoolField
   | ChoiceField
+  | MultiChoiceField
   | TextAreaField
   | DateTimeField
   | FileField
   | YamlField
   | ServiceField
   | SchemaField
-  | TableField;
+  | TableField
+  | HostField;
 
 // ── Form structure ──────────────────────────────────────────────────────
 
