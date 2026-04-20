@@ -23,9 +23,11 @@ from typing import Any, cast
 from aiohttp import ClientError
 from async_lru import alru_cache
 from fastapi import HTTPException
+from pydantic import ValidationError
 from starlette.requests import Request
 
 from app.core.requests import RemoteAPI
+from app.core.utils import run_pydantic_type_validator
 from app.sep.middleware import messages
 
 logger = logging.getLogger(__name__)
@@ -40,20 +42,20 @@ CONNECTIVITY_META_SERVICE_TYPE_KEY = "_connectivity_service_type"
 CONNECTIVITY_TARGET_KEY = "_connectivity_target"
 CONNECTIVITY_WARNING_KEY = "_connectivity_warning"
 
-_CHECK_CONNECTIVITY_TRUTHY = frozenset({"1", "true", "yes", "on"})
-
 _LATEST_RESULTS: OrderedDict[tuple[str, str], bool] = OrderedDict()
 
 
 async def get_check_connectivity_flag(request: Request) -> bool:
     """Return whether the task creation form requested a connectivity check.
 
-    Reads ``check_connectivity`` from already-parsed form data. Starlette caches
+    Read ``check_connectivity`` from already-parsed form data. Starlette caches
     :meth:`starlette.requests.Request.form` on the request, so this coexists
     safely with CSRF validation and other dependencies that parse the body.
 
-    Truthy values (case-insensitive): ``true``, ``on``, ``1``, ``yes`` — matching
-    HTML checkbox submissions (``on``) and programmatic clients (``true``).
+    Delegate boolean coercion to Pydantic's built-in validator, which accepts
+    HTML checkbox submissions (``on``) and common programmatic values
+    (``true``/``false``, ``yes``/``no``, ``1``/``0``). Unparseable or missing
+    values fall back to ``False``.
 
     :param request: The incoming HTTP request.
     :type request: Request
@@ -61,12 +63,10 @@ async def get_check_connectivity_flag(request: Request) -> bool:
     :rtype: bool
     """
     form = await request.form()
-    raw = form.get("check_connectivity")
-    if raw is None:
+    try:
+        return run_pydantic_type_validator(bool, form.get("check_connectivity"))
+    except ValidationError:
         return False
-    if isinstance(raw, bool):
-        return raw
-    return str(raw).strip().lower() in _CHECK_CONNECTIVITY_TRUTHY
 
 
 def _record_latest_result(target: str, service_type: str, *, success: bool) -> None:
