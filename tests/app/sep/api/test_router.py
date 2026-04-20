@@ -15,6 +15,9 @@
 
 """Define tests for the shared SEP API router at ``/api/plugins/``."""
 
+from collections.abc import Iterator
+
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -22,6 +25,21 @@ from app.sep.api._stub import router as stub_router
 from app.sep.api.router import api_router, plugins_router
 from app.sep.deps import IsApiAuthenticated
 from app.sep.main import sep_app
+
+
+@pytest.fixture
+def unauthenticated_client() -> Iterator[TestClient]:
+    """Yield a ``TestClient`` with ``sep_app`` dependency overrides cleared.
+
+    Save and restore ``sep_app.dependency_overrides`` so the temporary removal
+    of auth overrides does not leak into subsequent tests.
+    """
+    previous = sep_app.dependency_overrides
+    sep_app.dependency_overrides = {}
+    try:
+        yield TestClient(sep_app, raise_server_exceptions=False)
+    finally:
+        sep_app.dependency_overrides = previous
 
 
 class TestApiRouterComposition:
@@ -101,20 +119,24 @@ class TestApiRouterAuthenticated:
 class TestApiRouterUnauthenticated:
     """Test unauthenticated access to the shared API router returns JSON 401."""
 
-    def test_unauthenticated_stub_returns_json_401(self) -> None:
+    def test_unauthenticated_stub_returns_json_401(
+        self, unauthenticated_client: TestClient
+    ) -> None:
         """Assert unauth GET on the stub returns 401 JSON, not 303 redirect."""
-        sep_app.dependency_overrides = {}
-        client = TestClient(sep_app, raise_server_exceptions=False)
-        response = client.get("/api/plugins/_stub/", follow_redirects=False)
+        response = unauthenticated_client.get(
+            "/api/plugins/_stub/", follow_redirects=False
+        )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
 
-    def test_unauthenticated_unknown_plugin_returns_json_404(self) -> None:
+    def test_unauthenticated_unknown_plugin_returns_json_404(
+        self, unauthenticated_client: TestClient
+    ) -> None:
         """Assert an unauth GET on an unknown plugin returns JSON 404 via the handler."""
-        sep_app.dependency_overrides = {}
-        client = TestClient(sep_app, raise_server_exceptions=False)
-        response = client.get("/api/plugins/does-not-exist/", follow_redirects=False)
+        response = unauthenticated_client.get(
+            "/api/plugins/does-not-exist/", follow_redirects=False
+        )
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
