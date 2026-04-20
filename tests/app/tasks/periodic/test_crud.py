@@ -19,6 +19,7 @@ import json
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.dialects import postgresql
 from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -146,3 +147,34 @@ class TestPeriodicTaskManagerBuildWhereClause:
         assert clause is not None
         compiled = str(clause.compile())
         assert "IN" in compiled
+
+    def test_renders_cast_on_postgres(self, mocker):
+        """Render ``CAST(kwargs AS JSON) ->> 'task_name'`` on PostgreSQL.
+
+        ``sqlalchemy-celery-beat`` defines ``PeriodicTask.kwargs`` as a plain
+        ``sa.Text()`` column. PostgreSQL's ``->>`` operator is not defined
+        on ``text``, so the helper must cast the column to ``JSON`` before
+        extracting. Without the cast, every call that reaches this WHERE
+        clause fails with ``operator does not exist: text ->> unknown`` on
+        PG deployments.
+        """
+        mocker.patch(
+            "app.tasks.periodic.crud.settings.CELERY.beat_dburi",
+            new="postgresql://user:pass@localhost/db",
+        )
+
+        clause = PeriodicTaskManager.build_where_clause_by_task_names(
+            "backup-daily", "restore-weekly"
+        )
+
+        rendered = str(
+            clause.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        assert "CAST(" in rendered.upper()
+        assert "AS JSON" in rendered.upper()
+        assert "->>" in rendered
+        assert "'task_name'" in rendered
+        assert "IN (" in rendered.upper()
