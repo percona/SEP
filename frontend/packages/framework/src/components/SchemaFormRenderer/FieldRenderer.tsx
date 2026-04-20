@@ -11,6 +11,16 @@ interface FieldRendererProps {
   control: Control;
 }
 
+function buildPatternRule(
+  pattern: string,
+): { pattern: { value: RegExp; message: string } } | Record<string, never> {
+  try {
+    return { pattern: { value: new RegExp(pattern), message: 'Invalid format' } };
+  } catch {
+    return {};
+  }
+}
+
 export function FieldRenderer({ field, control }: FieldRendererProps) {
   switch (field.type) {
     case 'string':
@@ -40,13 +50,7 @@ export function FieldRenderer({ field, control }: FieldRendererProps) {
                   message: `Maximum ${field.maxLength} characters`,
                 },
               }),
-              ...(field.pattern && (() => {
-                try {
-                  return { pattern: { value: new RegExp(field.pattern!), message: `Invalid format` } };
-                } catch {
-                  return {};
-                }
-              })()),
+              ...(field.pattern && buildPatternRule(field.pattern)),
             },
           }}
         />
