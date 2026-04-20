@@ -79,6 +79,7 @@ class TestScheduleAnnotationDetachedInstance:
             id=saved.id,
         )
 
+        _background_tasks.clear()
         with patch(
             "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
         ) as mock_create:
