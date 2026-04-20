@@ -61,14 +61,15 @@ def check_payload(path: str) -> tuple[str, int] | None:
     return None
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Check every file path passed as a CLI argument against the Nomad payload limit.
 
     Returns 0 when all payloads are within the limit, or 1 after printing
     a summary of the offending files.
     """
+    argv = sys.argv[1:] if argv is None else argv
     failed = []
-    for path in sys.argv[1:]:
+    for path in argv:
         result = check_payload(path)
         if result is not None:
             failed.append(result)
