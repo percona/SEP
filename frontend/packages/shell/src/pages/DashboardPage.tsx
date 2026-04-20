@@ -140,16 +140,30 @@ export default function DashboardPage() {
 
       {/* Stats Cards — using percona-ui's OverviewCard */}
       <LoadableChildren loading={loading}>
-        <Grid container spacing={3} sx={{ mb: 3 }}>
+        <Grid container spacing={3} alignItems="stretch" sx={{ mb: 3 }}>
           {stats.map((stat) => (
-            <Grid key={stat.title} size={{ xs: 12, sm: 6, lg: 3 }}>
+            <Grid
+              key={stat.title}
+              size={{ xs: 12, sm: 6, lg: 3 }}
+              sx={{
+                minWidth: 0,
+                display: 'flex',
+              }}
+            >
               <OverviewCard
                 dataTestId={`stat-${stat.title.toLowerCase().replace(/\s+/g, '-')}`}
                 cardHeaderProps={{
                   title: stat.title,
                   avatar: <DatabaseIcon sx={{ color: stat.color }} />,
                 }}
-                sx={{ cursor: 'pointer', '&:hover': { boxShadow: 4 } }}
+                sx={{
+                  cursor: 'pointer',
+                  width: '100%',
+                  height: '100%',
+                  flexGrow: 1,
+                  minWidth: 0,
+                  '&:hover': { boxShadow: 4 },
+                }}
                 onClick={() => navigate(stat.to)}
               >
                 <Typography variant="h3" fontWeight={700}>
