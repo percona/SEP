@@ -129,6 +129,47 @@ def test_archives_create(
     )
 
 
+def test_archives_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+    created_schema,
+    created_table,
+):
+    """Test POST /archives/ route without overriding build_archives_task_payload."""
+    created_archives = ArchivesCreate(
+        alias="arch_full_chain",
+        hostname="source_db",
+        service_id=created_service.id,
+        source_db_id=created_schema.id,
+        source_table_id=created_table.id,
+        swap_drop=SwapDropEnum.SWAP_DROP,
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    # Omit explicit null optional fields so multipart form values stay valid.
+    response = test_client.post(
+        "/archives/",
+        data=created_archives.model_dump(exclude_none=True),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    mock_task_api_dep.post.assert_awaited_once()
+    assert mock_task_api_dep.post.await_args.args[0] == "/"
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["name"] == created_archives.alias
+    assert posted["owner"] == TaskOwner.ARCHIVER.value
+
+
 def test_archives_create_skips_connectivity_check_when_opted_out(
     test_client, mock_task_api_dep, created_archives
 ):
