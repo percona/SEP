@@ -15,6 +15,7 @@
 # service_type: mysql
 # alerts:
 #   - MySQLReplicaLag
+#   - MySQLReplicationBroken
 # ---
 
 # Usage: ./mysql_replica_status.sh [--defaults-file=path] [mysql_args...]

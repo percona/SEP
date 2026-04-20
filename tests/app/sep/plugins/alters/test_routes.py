@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, call
 import pytest
 from fastapi import HTTPException, status
 
+from app.sep.connectivity import _fetch_connectivity_result, _LATEST_RESULTS
 from app.sep.main import sep_app
 from app.sep.plugins.alters.deps import (
     build_alters_task_payload,
@@ -32,6 +33,7 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
+    TaskWrite,
 )
 from tests.app.factories import (
     AltersCreateFactory,
@@ -72,7 +74,8 @@ def _mock_get_alters_task_dep(created_task):
 def _mock_get_alters_index_context_dep():
     """Mock the get_alters_index_context dependency with default user context."""
     sep_app.dependency_overrides[get_alters_index_context] = lambda: {
-        "user": "default_user"
+        "user": "default_user",
+        "connectivity_check_default": True,
     }
     yield
     sep_app.dependency_overrides = {}
@@ -104,6 +107,60 @@ def test_alters_create(
         response.headers["location"]
         == f"{test_client.base_url}/alters/{generated_task.name}"
     )
+
+
+EXPECTED_ALTERS_POST_CALLS = 3
+
+
+def test_alters_create_skips_connectivity_check_when_opted_out(
+    test_client, mock_task_api_dep, created_alters
+):
+    """POST /alters/ skips the connectivity check when the checkbox is unchecked."""
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+
+    fake_task_write = TaskWrite(
+        name="fake_alter",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.ALTERS,
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--alter=ADD COLUMN c INT --execute",
+                "target": "node1",
+                "_schema_name": "db",
+                "_table_name": "t",
+                "_service_host": "10.0.0.1",
+                "_service_port": 3306,
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+        },
+    )
+
+    sep_app.dependency_overrides[build_alters_task_payload] = lambda: fake_task_write
+    mock_task_api_dep.get = AsyncMock(return_value={})
+
+    response = test_client.post(
+        "/alters/", data=created_alters.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/alters/{fake_task_write.name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
+    first_call = mock_task_api_dep.post.call_args_list[0]
+    assert first_call.args[0] == "/"
+    assert first_call.kwargs["json"] == fake_task_write.model_dump()
+    assert _LATEST_RESULTS == {}
+
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+    sep_app.dependency_overrides = {}
 
 
 @pytest.mark.parametrize(

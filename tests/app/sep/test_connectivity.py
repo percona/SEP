@@ -354,6 +354,119 @@ class TestMaybeCheckConnectivity:
             service_type="mysql",
         )
 
+    @pytest.mark.asyncio
+    async def test_opt_out_skips_check_and_warn(
+        self, dummy_request, mock_tasks_api, mocker
+    ):
+        """Skip the Tasks API call and the cache write when opted out."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+        meta = {
+            "target": "node1",
+            "_connectivity_host": "10.0.0.1",
+            "_connectivity_port": 3306,
+            "_connectivity_service_type": "mysql",
+        }
+
+        await maybe_check_connectivity(
+            dummy_request, mock_tasks_api, meta, check_connectivity=False
+        )
+
+        mock_check.assert_not_called()
+        assert _LATEST_RESULTS == {}
+
+    @pytest.mark.asyncio
+    async def test_opt_out_preserves_existing_cache_entry(
+        self, dummy_request, mock_tasks_api, mocker
+    ):
+        """Preserve an existing ``_LATEST_RESULTS`` entry when opted out."""
+        mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+        _record_latest_result("node1", "mysql", success=True)
+        meta = {
+            "target": "node1",
+            "_connectivity_host": "10.0.0.1",
+            "_connectivity_port": 3306,
+            "_connectivity_service_type": "mysql",
+        }
+
+        await maybe_check_connectivity(
+            dummy_request, mock_tasks_api, meta, check_connectivity=False
+        )
+
+        assert _LATEST_RESULTS[("node1", "mysql")] is True
+        assert len(_LATEST_RESULTS) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("cached_success", [True, False])
+    async def test_opt_out_preserves_existing_failure_entry(
+        self, dummy_request, mock_tasks_api, mocker, cached_success
+    ):
+        """Preserve both success and failure cache entries when opted out."""
+        mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+        _record_latest_result("node1", "mysql", success=cached_success)
+        meta = {
+            "target": "node1",
+            "_connectivity_host": "10.0.0.1",
+            "_connectivity_port": 3306,
+            "_connectivity_service_type": "mysql",
+        }
+
+        await maybe_check_connectivity(
+            dummy_request, mock_tasks_api, meta, check_connectivity=False
+        )
+
+        assert _LATEST_RESULTS[("node1", "mysql")] is cached_success
+
+    @pytest.mark.asyncio
+    async def test_opt_in_explicit_true_still_runs_check(
+        self, dummy_request, mock_tasks_api, mocker
+    ):
+        """Run the check when ``check_connectivity=True`` is passed explicitly."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+        meta = {
+            "target": "node1",
+            "_connectivity_host": "10.0.0.1",
+            "_connectivity_port": 3306,
+            "_connectivity_service_type": "mysql",
+        }
+
+        await maybe_check_connectivity(
+            dummy_request, mock_tasks_api, meta, check_connectivity=True
+        )
+
+        mock_check.assert_awaited_once_with(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+    @pytest.mark.asyncio
+    async def test_opt_out_with_incomplete_meta_returns_cleanly(
+        self, dummy_request, mock_tasks_api, mocker
+    ):
+        """Short-circuit before meta extraction when opted out."""
+        mock_check = mocker.patch(
+            "app.sep.connectivity.check_and_warn_connectivity", new_callable=AsyncMock
+        )
+        meta = {"target": "node1"}
+
+        await maybe_check_connectivity(
+            dummy_request, mock_tasks_api, meta, check_connectivity=False
+        )
+
+        mock_check.assert_not_called()
+        assert _LATEST_RESULTS == {}
+
 
 class TestAnnotateTasksWithConnectivity:
     """Test annotate_tasks_with_connectivity helper."""

@@ -47,6 +47,9 @@
 # service_type: mysql
 # alerts:
 #   - MySQLSlowQueries
+#   - MySQLTooManyConnections
+#   - MySQLTooManyThreadsRunning
+#   - MySQLHistoryListLengthHigh
 # ---
 
 # Usage: ./mysql_query_tuning.sh [--defaults-file=path] --query=query_string|--file=path [--database=name] [--dest=path] [--execute] [--help]

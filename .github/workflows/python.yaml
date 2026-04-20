@@ -31,7 +31,6 @@ jobs:
         run: make bandit
 
   check_migrations:
-    needs: [bandit]
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -48,7 +47,6 @@ jobs:
         run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
 
   test:
-    needs: [bandit, check_migrations]
     name: test (${{ matrix.python }})
     strategy:
       matrix:
@@ -62,7 +60,7 @@ jobs:
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
-          cache: ${{ matrix.python == '3.11.9' && 'poetry' || '' }}
+          cache: poetry
       - name: Install test dependencies
         run: poetry install --with syncmysql
       - name: Run tests
@@ -81,7 +79,6 @@ jobs:
           path: python-coverage-comment-action.txt
 
   build:
-    needs: [bandit, test, check_migrations]
     strategy:
       matrix:
         os: [ubuntu-latest]

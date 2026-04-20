@@ -45,6 +45,7 @@ def _mock_get_backups_index_context_dep() -> None:
         "running_tasks": [],
         "alert_on_fail_default": False,
         "alert_on_fail_available": False,
+        "connectivity_check_default": True,
     }
     yield
     sep_app.dependency_overrides = {}

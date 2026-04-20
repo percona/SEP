@@ -15,9 +15,42 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses />.
 #}
 {% if snippets %}
+    {% set has_unapproved = snippets | rejectattr('is_approved') | list | length > 0 %}
+    {% set show_batch_ui = user.is_admin and has_unapproved %}
+    {% if show_batch_ui %}
+        <form id="snippetsBulkApproveForm"
+              method="post"
+              action="{{ url_for('snippets_approve_batch') }}"
+              class="confirmable-form"
+              data-confirm-message="Approve selected snippets? They will be approved WITHOUT being downloaded first — the per-row download-before-approve guard is bypassed for batch approval.">
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+        </form>
+        <div id="snippetsBulkBar" class="bulk-actions-bar" hidden>
+            <button type="submit"
+                    form="snippetsBulkApproveForm"
+                    class="submitButton approval-button"
+                    title="Approve selected snippets">
+                <span class="material-symbols-outlined">done_all</span>
+                Approve selected
+            </button>
+        </div>
+    {% endif %}
     <table class="snippets-tbl">
         <thead>
             <tr>
+                {% if show_batch_ui %}
+                    <th style="width: 30px;">
+                        <label class="checkbox">
+                            <input type="checkbox"
+                                   id="selectAllSnippets"
+                                   aria-label="Select all unapproved snippets" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                        </label>
+                    </th>
+                {% endif %}
                 <th style="width: 30px;"></th>
                 <th>Filename</th>
                 <th class="snippet-description-col">Description</th>
@@ -31,7 +64,25 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             {% for snippet in snippets %}
                 <tr id="{{ snippet.filename }}"
                     {% if snippet.is_approved %}class="relativeTime" data-relative-date-value="{{ snippet.approved_at|utc_isoformat }}" data-relative-date-title-prefix="Approved "{% else %}title="Not approved"{% endif %}>
-                    <td>
+                    {% if show_batch_ui %}
+                        <td>
+                            {% if not snippet.is_approved %}
+                                <label class="checkbox">
+                                    <input type="checkbox"
+                                           class="snippetCheckbox"
+                                           name="filenames"
+                                           value="{{ snippet.filename }}"
+                                           form="snippetsBulkApproveForm"
+                                           aria-label="Select snippet {{ snippet.filename }}" />
+                                    <div class="checkmark">
+                                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                        <span class="material-symbols-outlined checked">check_box</span>
+                                    </div>
+                                </label>
+                            {% endif %}
+                        </td>
+                    {% endif %}
+                    <td class="approval-icon-cell">
                         {% if snippet.is_approved %}
                             <i class="material-symbols-outlined unselectable"
                                style="color: var(--successMain)">check_circle</i>

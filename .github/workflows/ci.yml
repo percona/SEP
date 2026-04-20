@@ -83,7 +83,7 @@ jobs:
     if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.python == 'true' }}
     uses: ./.github/workflows/python.yaml
     needs:
-      - precommit
+      - label-gate
       - changes
 
   build:
@@ -95,21 +95,30 @@ jobs:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Prepare environment
-        run: |
-          sudo apt update -qqy
-          sudo apt install -qqy podman buildah
-          systemctl --user start podman
-          echo "DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock" >> "$GITHUB_ENV"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@35d5669990ec77242c5a5926b41381a3f26fa947 # v4.0.0
 
-      - name: Build container image
-        env:
-          RELEASE_VER: HEAD
-        run: |
-          buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
-          make pack
-          buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
-          podman run --rm --entrypoint /bin/sh --timeout 10 "sep:${RELEASE_VER}" -c 'sleep 3'
+      - name: Build base image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: Containerfile.base
+          tags: sep:builder
+          load: true
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
+
+      - name: Prepare app bundle
+        run: make pack
+
+      - name: Build app image
+        run: >-
+          docker build
+          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          -f Containerfile -t "sep:HEAD" .
+
+      - name: Smoke test
+        run: docker run --rm --entrypoint /bin/sh "sep:HEAD" -c 'sleep 1'
 
   ci-success:
     if: always()

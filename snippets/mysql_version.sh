@@ -20,6 +20,10 @@
 #    label: Show help message
 #    description: Show help message
 #    default: false
+# service_type: mysql
+# alerts:
+#   - MySQLInstanceNotAvailable
+#   - MySQLPXCClusterStatus
 # ---
 
 # Usage: ./mysql_version.sh [--basedir=path] [--output-format=format] [--help]
