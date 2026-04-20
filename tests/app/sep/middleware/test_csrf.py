@@ -340,15 +340,26 @@ def test_bearer_post_without_csrf_token_passes(test_client: TestClient):
     assert response.json() == {"detail": "OK"}
 
 
-def test_bearer_post_skips_csrf_when_session_cookie_present(test_client: TestClient):
-    """Test Bearer wins over cookie session when CSRF form field is absent."""
-    test_client.cookies[SESSION_COOKIE_NAME] = "signed-session-token"
+def test_bearer_post_skips_csrf_when_no_session_cookie(test_client: TestClient):
+    """Test Bearer without a session cookie skips CSRF validation."""
     response = test_client.post(
         "/protected",
         headers={"Authorization": "Bearer token"},
     )
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"detail": "OK"}
+
+
+def test_bearer_post_enforces_csrf_when_session_cookie_present(
+    test_client: TestClient,
+):
+    """Test Bearer does not skip CSRF when a session cookie is also present."""
+    test_client.cookies[SESSION_COOKIE_NAME] = "signed-session-token"
+    response = test_client.post(
+        "/protected",
+        headers={"Authorization": "Bearer token"},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 def test_bearer_scheme_prefix_is_case_insensitive(test_client: TestClient):

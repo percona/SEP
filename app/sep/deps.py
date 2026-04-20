@@ -195,9 +195,12 @@ IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 async def validate_csrf(request: Request) -> None:
     """Validate the CSRF token submitted in the request form data.
 
-    Requests with ``Authorization: Bearer ...`` skip CSRF validation; Bearer
-    tokens are not sent automatically by browsers, so CSRF protection is not
-    required for that path (authentication is enforced separately).
+    Requests with ``Authorization: Bearer ...`` that do *not* also carry a
+    session cookie skip CSRF validation; Bearer tokens are not sent
+    automatically by browsers, so CSRF protection is not required for that
+    path (authentication is enforced separately).  When a session cookie is
+    also present the request is treated as cookie-authenticated and CSRF
+    validation is enforced normally, regardless of any Bearer header.
 
     For authenticated requests (session cookie present), verify the HMAC
     signature using the session cookie as salt.  For unauthenticated requests
@@ -210,15 +213,14 @@ async def validate_csrf(request: Request) -> None:
         form data.
     :raises HTTPForbiddenException: If the CSRF token fails validation.
     """
-    if request_has_bearer_authorization(request):
+    session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
+    if request_has_bearer_authorization(request) and not session_cookie:
         return
 
     form_data = await request.form()
     form_token = str(form_data.get(CSRF_FORM_FIELD, ""))
     if not form_token:
         raise HTTPBadRequestException(detail="Missing CSRF token.")
-
-    session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
 
     max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
 
