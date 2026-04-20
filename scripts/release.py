@@ -59,6 +59,8 @@ WEBHOOK_CREATE_AUTH_ENV = "JIRA_VERSION_CREATE_WEBHOOK_SECRET"
 WEBHOOK_RELEASE_URL_ENV = "JIRA_VERSION_RELEASE_WEBHOOK_URL"
 WEBHOOK_RELEASE_AUTH_ENV = "JIRA_VERSION_RELEASE_WEBHOOK_SECRET"
 JENKINS_ENV_VARS: tuple[str, ...] = ("JENKINS_URL", "JENKINS_USER", "JENKINS_API_TOKEN")
+GITHUB_API_BASE = "https://api.github.com"
+GITHUB_API_TIMEOUT_SECONDS = 30
 
 _VERSION_LINE_RE: re.Pattern[str] = re.compile(r'^version = ".*"$', re.MULTILINE)
 _DUNDER_VERSION_LINE_RE: re.Pattern[str] = re.compile(
@@ -134,6 +136,270 @@ def _gh_available() -> bool:
     :rtype: bool
     """
     return shutil.which("gh") is not None
+
+
+def _gh_token() -> str:
+    """Return the GitHub token used to talk to the git-data API.
+
+    Prefer ``GH_TOKEN`` / ``GITHUB_TOKEN`` (set by ``release.yml``); fall back
+    to ``gh auth token`` for local runs when the ``gh`` CLI is installed and
+    authenticated.
+
+    :raises RuntimeError: When no token can be obtained.
+    :return: The token string.
+    :rtype: str
+    """
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        return token
+    if _gh_available():
+        result = _run(["gh", "auth", "token"], check=False, capture=True)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    msg = (
+        "No GitHub token available. Set GH_TOKEN/GITHUB_TOKEN or "
+        "run `gh auth login` before `make release-rc`/`make release-stable`."
+    )
+    raise RuntimeError(msg)
+
+
+def _repo_slug() -> str:
+    """Return the ``owner/repo`` slug.
+
+    Prefer ``GITHUB_REPOSITORY`` (set by GitHub Actions); fall back to parsing
+    the ``origin`` remote URL for local runs.
+
+    :raises RuntimeError: When the remote URL cannot be parsed.
+    :return: The ``owner/repo`` string.
+    :rtype: str
+    """
+    slug = os.environ.get("GITHUB_REPOSITORY")
+    if slug:
+        return slug
+    url = _run(["git", "remote", "get-url", "origin"], capture=True).stdout.strip()
+    if url.startswith("git@"):
+        slug = url.split(":", 1)[1]
+    elif "://" in url:
+        slug = "/".join(url.rsplit("/", 2)[-2:])
+    else:
+        msg = f"Cannot parse repo slug from origin URL: {url}"
+        raise RuntimeError(msg)
+    return slug.removesuffix(".git")
+
+
+def _github_api(
+    method: str,
+    path: str,
+    *,
+    token: str,
+    payload: dict | None = None,
+) -> dict:
+    """Make an authenticated GitHub API request and return the parsed JSON.
+
+    :param method: HTTP method (``GET``, ``POST``, ``PATCH``).
+    :type method: str
+    :param path: API path below ``api.github.com`` (e.g. ``repos/o/r/git/refs``).
+    :type path: str
+    :param token: Bearer token for the ``Authorization`` header.
+    :type token: str
+    :param payload: Optional JSON-serialisable body.
+    :type payload: dict | None
+    :return: Parsed JSON response body.
+    :rtype: dict
+    """
+    url = f"{GITHUB_API_BASE}/{path.lstrip('/')}"
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request = urllib.request.Request(  # noqa: S310
+        url,
+        data=body,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method=method,
+    )
+    with urllib.request.urlopen(  # noqa: S310
+        request,
+        timeout=GITHUB_API_TIMEOUT_SECONDS,
+    ) as response:
+        return json.loads(response.read())
+
+
+def _api_branch_head_sha(repo: str, branch: str, *, token: str) -> str:
+    """Return the head commit SHA for ``branch`` on the remote.
+
+    :param repo: ``owner/repo`` slug.
+    :type repo: str
+    :param branch: Branch name.
+    :type branch: str
+    :param token: GitHub token.
+    :type token: str
+    :return: Head commit SHA.
+    :rtype: str
+    """
+    ref = _github_api("GET", f"repos/{repo}/git/ref/heads/{branch}", token=token)
+    return ref["object"]["sha"]
+
+
+def _api_push_signed_commit(
+    repo: str,
+    branch: str,
+    *,
+    base_sha: str,
+    message: str,
+    files: dict[str, str],
+    token: str,
+    create_branch: bool,
+) -> str:
+    """Create a signed commit via the git-data API and publish it on ``branch``.
+
+    Commits produced via ``POST /repos/{o}/{r}/git/commits`` are auto-signed
+    by GitHub's ``web-flow`` GPG key, so a tag ref that subsequently points at
+    the returned SHA satisfies the ``required_signatures`` rule on the
+    ``refs/tags/v*`` ruleset without requiring any GPG key management in the
+    runner.
+
+    :param repo: ``owner/repo`` slug.
+    :type repo: str
+    :param branch: Target branch name.
+    :type branch: str
+    :param base_sha: Parent commit SHA for the new commit.
+    :type base_sha: str
+    :param message: Commit message.
+    :type message: str
+    :param files: Mapping of repository path → full new file content.
+    :type files: dict[str, str]
+    :param token: GitHub token.
+    :type token: str
+    :param create_branch: When ``True``, create the branch ref at the new
+        commit; otherwise update an existing branch ref.
+    :type create_branch: bool
+    :return: The new commit SHA.
+    :rtype: str
+    """
+    base_commit = _github_api(
+        "GET",
+        f"repos/{repo}/git/commits/{base_sha}",
+        token=token,
+    )
+    tree_entries = [
+        {"path": path, "mode": "100644", "type": "blob", "content": content}
+        for path, content in files.items()
+    ]
+    new_tree = _github_api(
+        "POST",
+        f"repos/{repo}/git/trees",
+        token=token,
+        payload={"base_tree": base_commit["tree"]["sha"], "tree": tree_entries},
+    )
+    new_commit = _github_api(
+        "POST",
+        f"repos/{repo}/git/commits",
+        token=token,
+        payload={
+            "message": message,
+            "tree": new_tree["sha"],
+            "parents": [base_sha],
+        },
+    )
+    new_sha = new_commit["sha"]
+    if create_branch:
+        _github_api(
+            "POST",
+            f"repos/{repo}/git/refs",
+            token=token,
+            payload={"ref": f"refs/heads/{branch}", "sha": new_sha},
+        )
+    else:
+        _github_api(
+            "PATCH",
+            f"repos/{repo}/git/refs/heads/{branch}",
+            token=token,
+            payload={"sha": new_sha},
+        )
+    return new_sha
+
+
+def _api_create_tag_ref(
+    repo: str,
+    tag: str,
+    target_sha: str,
+    *,
+    token: str,
+) -> None:
+    """Create a tag ref pointing at ``target_sha``.
+
+    The target commit was produced by :func:`_api_push_signed_commit` and is
+    therefore already signed by GitHub's ``web-flow`` key, satisfying the
+    ``required_signatures`` rule on ``refs/tags/v*``.
+
+    :param repo: ``owner/repo`` slug.
+    :type repo: str
+    :param tag: Tag name (e.g. ``v0.12.0rc1``).
+    :type tag: str
+    :param target_sha: Commit SHA to tag.
+    :type target_sha: str
+    :param token: GitHub token.
+    :type token: str
+    """
+    _github_api(
+        "POST",
+        f"repos/{repo}/git/refs",
+        token=token,
+        payload={"ref": f"refs/tags/{tag}", "sha": target_sha},
+    )
+
+
+def _publish_signed_release_commit_and_tag(
+    *,
+    branch: str,
+    base_branch: str,
+    tag: str,
+    commit_message: str,
+    create_branch: bool,
+) -> None:
+    """Create the bump commit + tag via the API, then sync the local branch.
+
+    Extracts the "API commit + tag + local sync" block shared by
+    :func:`cmd_rc` and :func:`cmd_stable`. The commit is signed by GitHub's
+    ``web-flow`` key, so the tag pointing at it satisfies the
+    ``required_signatures`` rule on ``refs/tags/v*``.
+
+    :param branch: Target branch to publish the bump commit on.
+    :type branch: str
+    :param base_branch: Branch whose head is the parent of the new commit
+        (equals ``branch`` except on RC=1, where it is ``main``).
+    :type base_branch: str
+    :param tag: Tag name to create (e.g. ``v0.12.0rc1``).
+    :type tag: str
+    :param commit_message: Commit message for the bump commit.
+    :type commit_message: str
+    :param create_branch: When ``True``, create ``branch`` on the remote at
+        the new commit; otherwise update an existing branch ref.
+    :type create_branch: bool
+    """
+    token = _gh_token()
+    repo = _repo_slug()
+    base_sha = _api_branch_head_sha(repo, base_branch, token=token)
+    commit_sha = _api_push_signed_commit(
+        repo,
+        branch,
+        base_sha=base_sha,
+        message=commit_message,
+        files={
+            "pyproject.toml": PYPROJECT.read_text(encoding="utf-8"),
+            "app/__init__.py": APP_INIT.read_text(encoding="utf-8"),
+        },
+        token=token,
+        create_branch=create_branch,
+    )
+    _api_create_tag_ref(repo, tag, commit_sha, token=token)
+
+    print("==> Syncing local state...")
+    _run(["git", "fetch", "origin", branch, "--tags"])
+    _run(["git", "reset", "--hard", f"origin/{branch}"])
 
 
 def _bump_version(pep440_version: str, tag_version: str) -> None:
@@ -347,10 +613,6 @@ def cmd_rc(version: str, rc: int) -> int:
 
     print(f"==> Bumping version to {rc_version}...")
     _bump_version(rc_version, rc_tag)
-    print("==> Committing version bump...")
-    _run(["git", "commit", "-am", f"Bump version to {rc_tag}"])
-    print(f"==> Tagging {rc_tag}...")
-    _run(["git", "tag", rc_tag])
 
     print("==> Building wheel...")
     _run(["make", "build"])
@@ -362,8 +624,14 @@ def cmd_rc(version: str, rc: int) -> int:
         )
         return 1
 
-    print("==> Pushing branch and tag...")
-    _run(["git", "push", "origin", branch, rc_tag])
+    print("==> Creating signed bump commit + tag via GitHub API...")
+    _publish_signed_release_commit_and_tag(
+        branch=branch,
+        base_branch="main" if rc == 1 else branch,
+        tag=rc_tag,
+        commit_message=f"Bump version to {rc_tag}",
+        create_branch=(rc == 1),
+    )
 
     if _gh_available():
         print("==> Creating GitHub pre-release...")
@@ -460,10 +728,6 @@ def cmd_stable(version: str) -> int:
 
     print(f"==> Bumping version to {version}...")
     _bump_version(version, tag)
-    print("==> Committing version bump...")
-    _run(["git", "commit", "-am", f"Bump version to {tag}"])
-    print(f"==> Tagging {tag}...")
-    _run(["git", "tag", tag])
 
     print("==> Building wheel...")
     _run(["make", "build"])
@@ -475,8 +739,14 @@ def cmd_stable(version: str) -> int:
         )
         return 1
 
-    print("==> Pushing branch and tag...")
-    _run(["git", "push", "origin", expected_branch, tag])
+    print("==> Creating signed bump commit + tag via GitHub API...")
+    _publish_signed_release_commit_and_tag(
+        branch=expected_branch,
+        base_branch=expected_branch,
+        tag=tag,
+        commit_message=f"Bump version to {tag}",
+        create_branch=False,
+    )
 
     if _gh_available():
         print("==> Creating GitHub release...")

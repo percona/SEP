@@ -571,10 +571,28 @@ def _patch_rc_ok(monkeypatch, *, rc=1, webhook_result=True, webhook_calls=None):
 
     monkeypatch.setattr(release, "_post_webhook", spy_webhook)
 
+    def spy_push_commit(*_a, **kwargs):
+        call_order.append(("api_commit", kwargs.get("message")))
+        return "fakecommitsha"
+
+    def spy_create_tag(_repo, tag, target_sha, *, token):
+        call_order.append(("api_tag", tag, target_sha))
+
+    monkeypatch.setattr(release, "_gh_token", lambda: "fake-token")
+    monkeypatch.setattr(release, "_repo_slug", lambda: "fake/repo")
+    monkeypatch.setattr(
+        release,
+        "_api_branch_head_sha",
+        lambda *_a, **_kw: "fakebasesha",
+    )
+    monkeypatch.setattr(release, "_api_push_signed_commit", spy_push_commit)
+    monkeypatch.setattr(release, "_api_create_tag_ref", spy_create_tag)
+
     def fake_wheel_exists(self):
         return True
 
     monkeypatch.setattr(release.Path, "exists", fake_wheel_exists)
+    monkeypatch.setattr(release.Path, "read_text", lambda _self, **_kw: "")
     return runner, call_order
 
 
@@ -619,7 +637,7 @@ def test_rc_with_rc_1_calls_webhook(monkeypatch, capsys):
 
 
 def test_rc_fires_webhook_after_branch_creation_and_before_build(monkeypatch):
-    """RC=1 webhook fires after ``git checkout -b`` and before commit/tag/build."""
+    """RC=1 webhook fires after ``git checkout -b`` and before build/API commit/tag."""
     _, call_order = _patch_rc_ok(monkeypatch, rc=1, webhook_result=True)
     assert release.cmd_rc("0.12.0", 1) == 0
     webhook_idx = next(i for i, c in enumerate(call_order) if c[0] == "webhook")
@@ -628,22 +646,14 @@ def test_rc_fires_webhook_after_branch_creation_and_before_build(monkeypatch):
         for i, c in enumerate(call_order)
         if c[0] == "run" and c[1][:3] == ("git", "checkout", "-b")
     )
-    commit_idx = next(
-        i
-        for i, c in enumerate(call_order)
-        if c[0] == "run" and c[1][:2] == ("git", "commit")
-    )
-    tag_idx = next(
-        i
-        for i, c in enumerate(call_order)
-        if c[0] == "run" and c[1][:2] == ("git", "tag")
-    )
     build_idx = next(
         i
         for i, c in enumerate(call_order)
         if c[0] == "run" and c[1] == ("make", "build")
     )
-    assert checkout_idx < webhook_idx < commit_idx < tag_idx < build_idx
+    api_commit_idx = next(i for i, c in enumerate(call_order) if c[0] == "api_commit")
+    api_tag_idx = next(i for i, c in enumerate(call_order) if c[0] == "api_tag")
+    assert checkout_idx < webhook_idx < build_idx < api_commit_idx < api_tag_idx
 
 
 # --- cmd_rc preconditions --------------------------------------------------
@@ -702,7 +712,22 @@ def _patch_stable_ok(monkeypatch, *, webhook_result=True, webhook_calls=None):
 
     monkeypatch.setattr(release, "_post_webhook", spy_webhook)
 
+    monkeypatch.setattr(release, "_gh_token", lambda: "fake-token")
+    monkeypatch.setattr(release, "_repo_slug", lambda: "fake/repo")
+    monkeypatch.setattr(
+        release,
+        "_api_branch_head_sha",
+        lambda *_a, **_kw: "fakebasesha",
+    )
+    monkeypatch.setattr(
+        release,
+        "_api_push_signed_commit",
+        lambda *_a, **_kw: "fakecommitsha",
+    )
+    monkeypatch.setattr(release, "_api_create_tag_ref", lambda *_a, **_kw: None)
+
     monkeypatch.setattr(release.Path, "exists", lambda _self: True)
+    monkeypatch.setattr(release.Path, "read_text", lambda _self, **_kw: "")
     return runner, call_order
 
 
