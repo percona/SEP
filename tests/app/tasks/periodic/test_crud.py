@@ -24,6 +24,7 @@ from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import settings
 from app.tasks.periodic.crud import PeriodicTaskManager
 
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
@@ -158,9 +159,8 @@ class TestPeriodicTaskManagerBuildWhereClause:
         clause fails with ``operator does not exist: text ->> unknown`` on
         PG deployments.
         """
-        mocker.patch(
-            "app.tasks.periodic.crud.settings.CELERY.beat_dburi",
-            new="postgresql://user:pass@localhost/db",
+        mocker.patch.object(
+            settings.CELERY, "beat_dburi", "postgresql://user:pass@localhost/db"
         )
 
         clause = PeriodicTaskManager.build_where_clause_by_task_names(
