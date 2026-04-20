@@ -16,6 +16,7 @@
 """PMM annotation helpers for task lifecycle events."""
 
 import asyncio
+import copy
 import logging
 from typing import Any
 
@@ -131,9 +132,9 @@ def schedule_annotation(
     The caller must ensure ``queue_item.execution_request`` is already
     loaded (the deferred ``column_property`` is typically eager-loaded
     via ``undefer(TaskHistory.execution_request)`` in routes that emit
-    annotations). ``meta`` is shallow-copied into a new ``dict`` so the
-    background task observes the values at scheduling time even if the
-    originating request mutates the attribute afterwards.
+    annotations). ``meta`` is deep-copied so the background task observes
+    the values at scheduling time even if the originating request mutates
+    nested structures inside the attribute afterwards.
 
     :param queue_item: The task history record.
     :type queue_item: TaskHistory
@@ -141,7 +142,7 @@ def schedule_annotation(
     :type event: str
     """
     execution_request = queue_item.execution_request
-    meta = dict(execution_request.meta) if execution_request.meta is not None else None
+    meta = copy.deepcopy(execution_request.meta)
     task = asyncio.create_task(
         annotate_task_event(
             task_name=execution_request.task,
