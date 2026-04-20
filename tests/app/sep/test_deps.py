@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.models import CasdoorUser
+from app.sep.config import sep_settings
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
@@ -424,6 +425,32 @@ class TestGetTasksContext:
         assert len(context["tasks"]) == 1
         task = context["tasks"][0]
         assert task == task_data | extra_data
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("default_value", [True, False])
+    async def test_exposes_connectivity_check_default(
+        self, monkeypatch, default_value
+    ) -> None:
+        """Expose ``sep_settings.CONNECTIVITY_CHECK_DEFAULT`` in the template context."""
+        monkeypatch.setattr(sep_settings, "CONNECTIVITY_CHECK_DEFAULT", default_value)
+        mock_api = AsyncMock()
+        mock_api.get = AsyncMock(
+            side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                [],
+            ]
+        )
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
+
+        context = await get_tasks_context(
+            mock_api,
+            mock_api,
+            lambda _: {},
+            executor_hosts_ctx,
+        )
+
+        assert context["connectivity_check_default"] is default_value
 
     @pytest.mark.asyncio
     async def test_status_branches(self) -> None:

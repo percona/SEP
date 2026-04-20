@@ -104,6 +104,8 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
     pre_checks_task: AltersPreChecksTask,
+    *,
+    check_connectivity: Annotated[bool, Form()] = False,
 ) -> RedirectResponse:
     """Create alter tasks - one for execution and one for dry run."""
     logger.debug("Create alters tasks: %s", task)
@@ -134,7 +136,12 @@ async def alters_create(
         json=pre_checks_task.model_dump(),
     )
 
-    await maybe_check_connectivity(request, task_api, task.data.get("meta", {}))
+    await maybe_check_connectivity(
+        request,
+        task_api,
+        task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
+    )
 
     # Redirect to the execute task detail page
     task_path = request.url_for("alters_detail", task_name=task.name)

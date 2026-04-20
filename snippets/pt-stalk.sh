@@ -43,6 +43,14 @@
 #  - NATIVE_ASYNC_REPLICATION
 #  - GALERA
 #  - GROUP_REPLICATION
+# service_type: mysql
+# alerts:
+#   - MySQLTooManyConnections
+#   - MySQLTooManyThreadsRunning
+#   - MySQLDeadlock
+#   - MySQLHistoryListLengthHigh
+#   - MySQLPXCFlowControl
+#   - MySQLPXCWsrepDesync
 # ---
 
 # Usage: ./pt-stalk.sh [--defaults-file=path]  start|stop [-- other args...]

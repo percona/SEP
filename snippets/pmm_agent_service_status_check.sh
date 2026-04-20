@@ -5,6 +5,10 @@
 # description: "This script checks the status of (user/system-level) pmm-agent service, and gathers relevant logs for troubleshooting."
 # allow_extra_args: false
 # sudo: always
+# service_type: generic
+# alerts:
+#   - name: PostgreSQLExporterError
+#     service_type: postgresql
 # ---
 
 set -euo pipefail

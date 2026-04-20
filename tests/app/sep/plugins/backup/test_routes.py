@@ -21,7 +21,11 @@ import pytest
 import yaml
 from fastapi import status
 
-from app.sep.connectivity import _fetch_connectivity_result, CHECK_TIMEOUT
+from app.sep.connectivity import (
+    _fetch_connectivity_result,
+    _LATEST_RESULTS,
+    CHECK_TIMEOUT,
+)
 from app.sep.main import sep_app
 from app.sep.plugins.backup.deps import (
     build_backup_task_payload,
@@ -136,6 +140,7 @@ def test_backups_create_triggers_connectivity_check(
 ):
     """POST /backups/ runs a connectivity check when meta carries connectivity data."""
     _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
 
     fake_task_write = TaskWrite(
         name="fake_task",
@@ -161,7 +166,9 @@ def test_backups_create_triggers_connectivity_check(
     ]
 
     response = test_client.post(
-        "/backups/", data=backup_create.model_dump(), follow_redirects=False
+        "/backups/",
+        data={**backup_create.model_dump(), "check_connectivity": "true"},
+        follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
@@ -183,6 +190,52 @@ def test_backups_create_triggers_connectivity_check(
     }
 
     _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+    sep_app.dependency_overrides = {}
+
+
+def test_backups_create_skips_connectivity_check_when_opted_out(
+    test_client, mock_task_api_dep, backup_create
+):
+    """POST /backups/ skips the connectivity check when the checkbox is unchecked."""
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+
+    fake_task_write = TaskWrite(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.BACKUPS,
+        data={
+            "task": "fake-task",
+            "meta": {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+            "payload": "",
+        },
+    )
+
+    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+
+    response = test_client.post(
+        "/backups/", data=backup_create.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backups/{backup_create.task_name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == 1
+    call = mock_task_api_dep.post.call_args_list[0]
+    assert call.args[0] == "/"
+    assert call.kwargs["json"] == fake_task_write.model_dump()
+    assert _LATEST_RESULTS == {}
+
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
     sep_app.dependency_overrides = {}
 
 

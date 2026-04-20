@@ -63,17 +63,23 @@ class AlertInfo(BaseModel):
     """Represent a normalized alert entry with its identifier and display label.
 
     Accept a plain string identifier, a dict with ``name`` (required) and
-    optional ``label``, or keyword arguments.  Invalid inputs raise
-    ``ValidationError``.
+    optional ``label`` and ``service_type``, or keyword arguments.  Invalid
+    inputs raise ``ValidationError``.  The ``service_type`` field is optional
+    and, when absent, callers fall back to the snippet-level ``service_type``.
 
     :param name: The alert identifier as declared in snippet frontmatter.
     :type name: NonEmptyStr
     :param label: The human-readable display label for the alert.
     :type label: str
+    :param service_type: The service type the alert applies to, overriding
+        the snippet-level ``service_type``.  ``None`` means "fall back to the
+        snippet-level value".
+    :type service_type: AlertServiceType | None
     """
 
     name: NonEmptyStr
     label: str
+    service_type: AlertServiceType | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -82,7 +88,8 @@ class AlertInfo(BaseModel):
 
         :param data: Raw alert entry — string, dict, or keyword dict.
         :type data: Any
-        :return: A dict with ``name`` and ``label`` keys.
+        :return: A dict with ``name``, ``label``, and optional
+            ``service_type`` keys.
         :rtype: Any
         """
         if isinstance(data, str):
@@ -90,7 +97,8 @@ class AlertInfo(BaseModel):
         if isinstance(data, dict):
             name = data.get("name", "")
             label = data.get("label") or (camel_case_to_title(name) if name else "")
-            return {"name": name, "label": label}
+            service_type = data.get("service_type")
+            return {"name": name, "label": label, "service_type": service_type}
         return data
 
 
@@ -130,7 +138,8 @@ def normalize_alert_entry(entry: Any) -> AlertInfo | None:
     """Normalize a flexible alert frontmatter entry into an ``AlertInfo``.
 
     Accept either a plain string identifier or a dict with ``name`` (required)
-    and optional ``label``. Return ``None`` for invalid entries.
+    and optional ``label`` and ``service_type``. Return ``None`` for invalid
+    entries (including dicts whose ``service_type`` is not a known value).
 
     :param entry: The raw alert entry from snippet frontmatter.
     :type entry: Any
@@ -160,14 +169,38 @@ def _parse_service_type(snippet: Snippet) -> AlertServiceType | None:
         return None
 
 
+def _resolve_alert_service_type(
+    alert_info: AlertInfo,
+    snippet: Snippet,
+) -> AlertServiceType | None:
+    """Resolve the effective service type for an alert on a snippet.
+
+    Prefer the alert-level ``service_type`` when set; otherwise fall back to
+    the snippet-level ``service_type``.
+
+    :param alert_info: The normalized alert entry.
+    :type alert_info: AlertInfo
+    :param snippet: The snippet declaring the alert.
+    :type snippet: Snippet
+    :return: The resolved service type, or ``None`` if neither resolves to a
+        valid value.
+    :rtype: AlertServiceType | None
+    """
+    if alert_info.service_type is not None:
+        return alert_info.service_type
+    return _parse_service_type(snippet)
+
+
 def collect_grouped_alerts(
     snippets: Iterable[Snippet],
 ) -> dict[AlertServiceType, list[AlertInfo]]:
     """Collect and group alerts from snippet metadata by service type.
 
-    Iterate over snippets, extract ``alerts`` and ``service_type`` from each
-    snippet's ``meta`` dict, normalize entries, deduplicate by alert name
-    within each service type, and return a mapping sorted by label.
+    Iterate over snippets, extract ``alerts`` from each snippet's ``meta``
+    dict, normalize entries, resolve each alert's effective ``service_type``
+    (alert-level override wins over the snippet-level default), deduplicate
+    by alert name within each service type, and return a mapping sorted by
+    label.
 
     :param snippets: An iterable of snippet objects with a ``meta`` attribute.
     :type snippets: Iterable[Snippet]
@@ -179,10 +212,10 @@ def collect_grouped_alerts(
         alerts = _get_normalized_alerts(snippet)
         if not alerts:
             continue
-        service_type = _parse_service_type(snippet)
-        if service_type is None:
-            continue
         for info in alerts:
+            service_type = _resolve_alert_service_type(info, snippet)
+            if service_type is None:
+                continue
             grouped.setdefault(service_type, {})[info.name] = info
     return {
         svc: sorted(alerts.values(), key=lambda a: a.label)
@@ -276,7 +309,10 @@ def filter_snippets_for_alert(
     """Filter snippets to those declaring a specific alert.
 
     Return the matched snippets and the ``AlertInfo`` from the first match,
-    avoiding a second traversal to extract the alert label.
+    avoiding a second traversal to extract the alert label.  When
+    ``service_type`` is provided, the effective service type of each alert
+    entry (alert-level override, else snippet-level) must equal it for the
+    snippet to match.
 
     :param snippets: An iterable of snippet objects with a ``meta`` attribute.
     :type snippets: Iterable[Snippet]
@@ -291,13 +327,17 @@ def filter_snippets_for_alert(
     matched = []
     first_alert_info = None
     for snippet in snippets:
-        if service_type is not None and _parse_service_type(snippet) != service_type:
-            continue
         info = _find_alert_in_snippet(snippet, alert_name)
-        if info is not None:
-            matched.append(snippet)
-            if first_alert_info is None:
-                first_alert_info = info
+        if info is None:
+            continue
+        if (
+            service_type is not None
+            and _resolve_alert_service_type(info, snippet) != service_type
+        ):
+            continue
+        matched.append(snippet)
+        if first_alert_info is None:
+            first_alert_info = info
     if not matched or first_alert_info is None:
         raise HTTPNotFoundException(detail=f"Alert '{alert_name}' not found")
     return matched, first_alert_info

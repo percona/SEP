@@ -112,6 +112,8 @@ async def checksums_create(
     request: Request,
     task: ChecksumsGeneratedTask,
     task_api: TaskAPI,
+    *,
+    check_connectivity: Annotated[bool, Form()] = False,
 ) -> RedirectResponse:
     """Create an checksum task."""
     logger.debug("Create checksums task: %s", task)
@@ -119,7 +121,12 @@ async def checksums_create(
         "/",
         json=task.model_dump(),
     )
-    await maybe_check_connectivity(request, task_api, task.data.get("meta", {}))
+    await maybe_check_connectivity(
+        request,
+        task_api,
+        task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
+    )
 
     task_path = request.url_for("checksums_detail", task_name=task.name)
     return RedirectResponse(

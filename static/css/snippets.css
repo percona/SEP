@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-.snippets-tbl tr>td:first-child>i {
+.snippets-tbl .approval-icon-cell>i {
     font-size: 1.5em;
     vertical-align: middle;
 }

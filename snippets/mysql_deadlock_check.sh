@@ -13,6 +13,7 @@
 # service_type: mysql
 # alerts:
 #   - MySQLDeadlock
+#   - MySQLHistoryListLengthHigh
 # ---
 
 # Usage: ./mysql_deadlock_check.sh [--defaults-file=path]

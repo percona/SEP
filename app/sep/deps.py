@@ -676,7 +676,9 @@ async def get_tasks_context(
     :type owner: TaskOwner | None
     :param alert_on_fail_default: Default value for the alert on failure setting.
     :type alert_on_fail_default: bool
-    :return: The assembled context dictionary containing tasks and services information.
+    :return: The assembled context dictionary containing tasks and services
+        information, including ``connectivity_check_default`` sourced from
+        ``sep_settings.CONNECTIVITY_CHECK_DEFAULT``.
     :rtype: dict[str, Any]
     """
     service_type = (
@@ -738,6 +740,7 @@ async def get_tasks_context(
             "AVAILABLE_TIMEZONES": AVAILABLE_TIMEZONES,
             "alert_on_fail_default": alert_on_fail_available and alert_on_fail_default,
             "alert_on_fail_available": alert_on_fail_available,
+            "connectivity_check_default": sep_settings.CONNECTIVITY_CHECK_DEFAULT,
         }
     )
     return context
