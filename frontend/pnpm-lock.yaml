@@ -74,34 +74,34 @@ importers:
         specifier: ^11.0.0
         version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5)
       '@mui/icons-material':
-        specifier: ^7.0.0
+        specifier: ^7.3.7
         version: 7.3.10(@mui/material@7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/react@19.2.14)(react@19.2.5)
       '@mui/material':
-        specifier: ^7.0.0
+        specifier: ^7.3.7
         version: 7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@percona/percona-ui':
-        specifier: ^1.0.14
-        version: 1.0.14(5445d939df56f452e90e94cb21673e4c)
+        specifier: ^1.0.15
+        version: 1.0.15(8a7245954ab232bd83e6f457eaa81c8a)
       '@sep/api':
         specifier: workspace:*
         version: link:../api
       '@tanstack/react-query':
-        specifier: ^5.0.0
+        specifier: ^5.75.0
         version: 5.99.0(react@19.2.5)
       material-react-table:
-        specifier: ^1.15.0
+        specifier: ^1.15.1
         version: 1.15.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@mui/icons-material@7.3.10(@mui/material@7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@mui/material@7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       notistack:
-        specifier: ^3.0.0
+        specifier: ^3.0.2
         version: 3.0.2(csstype@3.2.3)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       react:
-        specifier: ^19.0.0
+        specifier: ^19.1.0
         version: 19.2.5
       react-hook-form:
-        specifier: ^7.0.0
+        specifier: ^7.72.1
         version: 7.72.1(react@19.2.5)
       react-router-dom:
-        specifier: ^7.0.0
+        specifier: ^7.6.0
         version: 7.14.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
     devDependencies:
       '@types/react':
@@ -147,8 +147,8 @@ importers:
         specifier: ^7.6.2
         version: 7.29.4(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@mui/material@7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@mui/system@7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(date-fns@4.1.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@percona/percona-ui':
-        specifier: github:nachodd/percona-ui#a64cef665c8446438e8690a98db92be6f88e5a93
-        version: https://codeload.github.com/nachodd/percona-ui/tar.gz/a64cef665c8446438e8690a98db92be6f88e5a93(d6619dbd08417cf3f12dfc053758b6a4)
+        specifier: ^1.0.15
+        version: 1.0.15(d6619dbd08417cf3f12dfc053758b6a4)
       '@sep/api':
         specifier: workspace:*
         version: link:../api
@@ -964,21 +964,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@percona/percona-ui@1.0.14':
-    resolution: {integrity: sha512-ahDHoj3JXlsk8L13OOuswWbSTtk6ngGGSujX/xY3oKKRSSzLYAMlPA1ccty8is0d2rEpzQ1InDA/4wLXyET6IQ==}
-    peerDependencies:
-      '@emotion/react': ^11.11.4
-      '@emotion/styled': ^11.11.5
-      '@mui/icons-material': ^7.3.7
-      '@mui/material': ^7.3.7
-      '@mui/utils': ^7.3.7
-      '@mui/x-date-pickers': ^7.6.2
-      react: ^18.3.1
-      react-dom: ^18.3.1
-
-  '@percona/percona-ui@https://codeload.github.com/nachodd/percona-ui/tar.gz/a64cef665c8446438e8690a98db92be6f88e5a93':
-    resolution: {tarball: https://codeload.github.com/nachodd/percona-ui/tar.gz/a64cef665c8446438e8690a98db92be6f88e5a93}
-    version: 1.0.14
+  '@percona/percona-ui@1.0.15':
+    resolution: {integrity: sha512-4GP1yfETSda1qD3i7aGOvsdfnSc2Ijk0Em7kFjfNrShXk80jCjEnDfKqv41gES7Kuh/YS+JUqdEmq6i7pDghHw==}
     peerDependencies:
       '@emotion/react': ^11.11.4
       '@emotion/styled': ^11.11.5
@@ -2624,7 +2611,7 @@ snapshots:
   '@oxlint/binding-win32-x64-msvc@1.60.0':
     optional: true
 
-  '@percona/percona-ui@1.0.14(5445d939df56f452e90e94cb21673e4c)':
+  '@percona/percona-ui@1.0.15(8a7245954ab232bd83e6f457eaa81c8a)':
     dependencies:
       '@emotion/react': 11.14.0(@types/react@19.2.14)(react@19.2.5)
       '@emotion/styled': 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5)
@@ -2641,7 +2628,7 @@ snapshots:
       react-hook-form: 7.72.1(react@19.2.5)
       react-is: 18.3.1
 
-  '@percona/percona-ui@https://codeload.github.com/nachodd/percona-ui/tar.gz/a64cef665c8446438e8690a98db92be6f88e5a93(d6619dbd08417cf3f12dfc053758b6a4)':
+  '@percona/percona-ui@1.0.15(d6619dbd08417cf3f12dfc053758b6a4)':
     dependencies:
       '@emotion/react': 11.14.0(@types/react@19.2.14)(react@19.2.5)
       '@emotion/styled': 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5)
