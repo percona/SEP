@@ -100,23 +100,25 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         <table>
             <tbody>
                 {% for k, v in task.meta.items() %}
-                    <tr>
-                        <th>{{ k }}</th>
-                        <td>
-                            {% if v is mapping %}
-                                <ul>
-                                    {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
-                                </ul>
-                            {% elif v is iterable and v is not string %}
-                                {# TODO: Refactor all these weird tests #}
-                                <ul>
-                                    {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
-                                </ul>
-                            {% else %}
-                                {{ v|syntax_highlight(style="sas") |safe }}
-                            {% endif %}
-                        </td>
-                    </tr>
+                    {% if not k.startswith('_') %}
+                        <tr>
+                            <th>{{ k }}</th>
+                            <td>
+                                {% if v is mapping %}
+                                    <ul>
+                                        {% for j, w in v.items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                    </ul>
+                                {% elif v is iterable and v is not string %}
+                                    {# TODO: Refactor all these weird tests #}
+                                    <ul>
+                                        {% for j, w in v[0].items() %}<li>{{ j }}: {{ w }}</li>{% endfor %}
+                                    </ul>
+                                {% else %}
+                                    {{ v|syntax_highlight(style="sas") |safe }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
                 {% endfor %}
             </tbody>
         </table>
