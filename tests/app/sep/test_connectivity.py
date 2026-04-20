@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock
 import pytest
 from aiohttp import ClientError
 from fastapi import HTTPException, Request, status
+from starlette.datastructures import FormData
 
 from app.core.requests import RemoteAPI
 from app.sep.connectivity import (
@@ -29,8 +30,28 @@ from app.sep.connectivity import (
     _record_latest_result,
     annotate_tasks_with_connectivity,
     check_and_warn_connectivity,
+    get_check_connectivity_flag,
     maybe_check_connectivity,
 )
+
+
+def _make_request_with_form(form_data: FormData) -> Request:
+    """Build a minimal ``Request`` whose ``form()`` returns ``form_data``.
+
+    :param form_data: Pre-parsed form data to inject into the request.
+    :type form_data: FormData
+    :return: A bare ``Request`` with the supplied form data already cached.
+    :rtype: Request
+    """
+    scope = {
+        "type": "http",
+        "headers": [],
+        "client": ("127.0.0.1", 80),
+        "path": "/",
+    }
+    req = Request(scope)
+    req._form = form_data
+    return req
 
 
 @pytest.fixture(autouse=True)
@@ -556,3 +577,35 @@ class TestAnnotateTasksWithConnectivity:
         ]
         annotate_tasks_with_connectivity(tasks)
         assert "_connectivity_warning" not in tasks[0]
+
+
+class TestGetCheckConnectivityFlag:
+    """Test get_check_connectivity_flag form-coercion helper."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("on", True),
+            ("true", True),
+            ("True", True),
+            ("1", True),
+            ("yes", True),
+            ("off", False),
+            ("false", False),
+            ("0", False),
+            ("no", False),
+            ("", False),
+            ("garbage", False),
+        ],
+    )
+    async def test_parses_checkbox_values(self, raw, expected):
+        """Coerce form-submitted ``check_connectivity`` strings via Pydantic."""
+        request = _make_request_with_form(FormData([("check_connectivity", raw)]))
+        assert await get_check_connectivity_flag(request) is expected
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_field_missing(self):
+        """Return ``False`` when ``check_connectivity`` is absent from the form."""
+        request = _make_request_with_form(FormData())
+        assert await get_check_connectivity_flag(request) is False
