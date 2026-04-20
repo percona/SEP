@@ -236,6 +236,8 @@ def test_service_field_service_types_accepts_lowercase_strings():
         "foo!",
         "foo-",
         "",
+        "1foo",
+        "9",
     ],
 )
 def test_base_field_name_pattern_rejects_invalid_identifiers(invalid_name):
@@ -261,7 +263,7 @@ def test_base_field_name_pattern_accepts_valid_identifiers(valid_name):
     assert field.name == valid_name
 
 
-@pytest.mark.parametrize("invalid_name", ["-foo", "foo bar", ""])
+@pytest.mark.parametrize("invalid_name", ["-foo", "foo bar", "", "1foo", "9"])
 def test_plugin_schema_name_pattern_rejects_invalid_identifiers(invalid_name):
     """Reject ``PluginSchema.name`` values that violate the identifier pattern."""
     with pytest.raises(ValidationError):
@@ -277,6 +279,12 @@ def test_string_field_min_length_rejects_zero():
     """Reject ``StringField.min_length`` values below one."""
     with pytest.raises(ValidationError):
         StringField(name="x", label="L", min_length=0)
+
+
+def test_schema_base_model_rejects_unknown_keys():
+    """Reject unknown keys in schema inputs to surface typos at validation time."""
+    with pytest.raises(ValidationError):
+        StringField(name="x", label="L", minLenght=5)
 
 
 # ── JSON serialisation round-trip ────────────────────────────────────────

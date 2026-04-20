@@ -51,18 +51,22 @@ from pydantic.alias_generators import to_camel
 from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 
-_FIELD_NAME_PATTERN = r"^\w(?:[\w-]*\w)?$"
+_FIELD_NAME_PATTERN = r"^[A-Za-z_](?:[\w-]*\w)?$"
 
 
 class SchemaBaseModel(BaseModel):
     """Define the base model for every model in the plugin schema DSL.
 
-    :cvar model_config: Serialises to camelCase JSON and accepts either camelCase
-        or snake_case keys on input.
+    :cvar model_config: Serialises to camelCase JSON, accepts either camelCase
+        or snake_case keys on input, and forbids unknown keys.
     :vartype model_config: ConfigDict
     """
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
 
 
 class Choice(SchemaBaseModel):
