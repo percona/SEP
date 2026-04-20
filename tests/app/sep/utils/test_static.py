@@ -66,77 +66,36 @@ async def test_non_http_scope_skips_auth(
     mocker, static_files, websocket_scope, receive, send
 ):
     """Assert non-HTTP scopes bypass authentication and call parent directly."""
-    oauth2_mock = mocker.patch(
-        "app.sep.utils.static.oauth2_scheme", new_callable=AsyncMock
+    get_user_mock = mocker.patch(
+        "app.sep.utils.static.get_current_user", new_callable=AsyncMock
     )
     parent_call = mocker.patch.object(StaticFiles, "__call__", new_callable=AsyncMock)
 
     await static_files(websocket_scope, receive, send)
 
-    oauth2_mock.assert_not_called()
+    get_user_mock.assert_not_called()
     parent_call.assert_called_once_with(websocket_scope, receive, send)
 
 
 @pytest.mark.asyncio
-async def test_token_auth_success(mocker, static_files, http_scope, receive, send):
-    """Assert valid bearer token authenticates and serves the file."""
-    mocker.patch(
-        "app.sep.utils.static.oauth2_scheme",
-        new_callable=AsyncMock,
-        return_value="valid-token",
-    )
-    get_user_api_mock = mocker.patch(
-        "app.sep.utils.static.get_current_user_api", new_callable=AsyncMock
-    )
-    get_user_cookie_mock = mocker.patch(
-        "app.sep.utils.static.get_current_user", new_callable=AsyncMock
-    )
-    parent_call = mocker.patch.object(StaticFiles, "__call__", new_callable=AsyncMock)
-
-    await static_files(http_scope, receive, send)
-
-    get_user_api_mock.assert_called_once_with("valid-token")
-    get_user_cookie_mock.assert_not_called()
-    parent_call.assert_called_once_with(http_scope, receive, send)
-
-
-@pytest.mark.asyncio
-async def test_token_auth_fails_cookie_auth_succeeds(
+async def test_http_scope_authenticates_then_serves(
     mocker, static_files, http_scope, receive, send
 ):
-    """Assert cookie auth is used as fallback when token auth fails."""
-    mocker.patch(
-        "app.sep.utils.static.oauth2_scheme",
-        new_callable=AsyncMock,
-        side_effect=HTTPException(status_code=status.HTTP_401_UNAUTHORIZED),
-    )
-    mocker.patch(
-        "app.sep.utils.static.get_current_user_api",
-        new_callable=AsyncMock,
-    )
-    get_user_cookie_mock = mocker.patch(
+    """Assert HTTP requests await get_current_user before serving static files."""
+    get_user_mock = mocker.patch(
         "app.sep.utils.static.get_current_user", new_callable=AsyncMock
     )
     parent_call = mocker.patch.object(StaticFiles, "__call__", new_callable=AsyncMock)
 
     await static_files(http_scope, receive, send)
 
-    get_user_cookie_mock.assert_called_once()
+    get_user_mock.assert_awaited_once()
     parent_call.assert_called_once_with(http_scope, receive, send)
 
 
 @pytest.mark.asyncio
-async def test_both_auth_methods_fail(mocker, static_files, http_scope, receive, send):
-    """Assert HTTPException propagates when both auth methods fail."""
-    mocker.patch(
-        "app.sep.utils.static.oauth2_scheme",
-        new_callable=AsyncMock,
-        side_effect=HTTPException(status_code=status.HTTP_401_UNAUTHORIZED),
-    )
-    mocker.patch(
-        "app.sep.utils.static.get_current_user_api",
-        new_callable=AsyncMock,
-    )
+async def test_auth_failure_propagates(mocker, static_files, http_scope, receive, send):
+    """Assert HTTPException from get_current_user propagates."""
     mocker.patch(
         "app.sep.utils.static.get_current_user",
         new_callable=AsyncMock,
