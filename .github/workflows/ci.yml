@@ -72,6 +72,13 @@ jobs:
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
 
+      - name: Install pnpm
+        run: npm install -g pnpm@10.33.0
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
       - name: Perform pre-commit checks
         env:
           POETRY: poetry

@@ -22,7 +22,11 @@ from fastapi import HTTPException, status
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
-from app.core.auth.exceptions import BaseAuthProviderException
+from app.core.auth.exceptions import (
+    BaseAuthProviderException,
+    HTTPForbiddenException,
+    HTTPUnauthorizedException,
+)
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.config import sep_settings
 from app.sep.deps import get_access_token_from_cookie
@@ -278,6 +282,60 @@ class TestExceptionHandlers:
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == fake_referer
         messages_error_mock.assert_called_once_with(mocker.ANY, error_detail)
+
+    @pytest.mark.parametrize(
+        ("exc", "expected_status"),
+        [
+            pytest.param(
+                HTTPUnauthorizedException(),
+                status.HTTP_401_UNAUTHORIZED,
+                id="bearer_unauthorized",
+            ),
+            pytest.param(
+                HTTPForbiddenException("User is not active"),
+                status.HTTP_403_FORBIDDEN,
+                id="bearer_forbidden",
+            ),
+        ],
+    )
+    def test_default_error_handler_bearer_returns_json(
+        self, mocker, dummy_context, test_client, exc, expected_status
+    ):
+        """Test returning JSON for Bearer-authenticated HTTP exceptions."""
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=exc,
+        )
+
+        response = test_client.get(
+            "/",
+            headers={"Authorization": "Bearer any-token"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == expected_status
+        assert response.json()["detail"] == exc.detail
+
+    def test_default_error_handler_unauthorized_without_bearer_redirects(
+        self, mocker, dummy_context, test_client
+    ):
+        """Test using referer redirect when Authorization Bearer is absent."""
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=HTTPUnauthorizedException(),
+        )
+        messages_error_mock = mocker.patch("app.sep.main.messages.error")
+        fake_referer = "/some-page"
+
+        response = test_client.get(
+            "/",
+            headers={"Referer": fake_referer},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == fake_referer
+        messages_error_mock.assert_called_once()
 
     def test_auth_provider_exception_handler(
         self, mocker, dummy_access_token, dummy_context, test_client_with_session_cookie
