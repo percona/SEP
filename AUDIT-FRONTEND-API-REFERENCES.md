@@ -32,7 +32,7 @@ All proxy routes are conditionally registered in [app/sep/main.py](app/sep/main.
 | **[`/execution-events`](#4-execution-events)** ([L139](app/sep/main.py#L139)) | `app/sep/routes/execution_events.py` | Fetch full event logs for completed tasks | 
 | **[`/periodic`](#5-periodic-task-crud--periodic)** ([L140](app/sep/main.py#L140)) | `app/sep/routes/periodic_tasks.py` | Create, read, update, delete scheduled (periodic) tasks | 
 | **[`/stop-task`](#6-task-stop--stop-task)** ([L141](app/sep/main.py#L141)) | `app/sep/routes/stop_task.py` | Stop or cancel a running or pending task |
-| **[`/artifacts`](#7-artifact-download--artifacts)** ([L145](app/sep/main.py#L146)) | `app/sep/routes/artifacts.py` | It is used to download artifact files. |
+| **[`/artifacts`](#7-artifact-download--artifacts)** ([L146](app/sep/main.py#L146)) | `app/sep/routes/artifacts.py` | It is used to download artifact files. |
 
 ---
 
@@ -55,6 +55,16 @@ All proxy routes are conditionally registered in [app/sep/main.py](app/sep/main.
 `fetchSchemas` and `fetchTables` are **shared utilities**; they are not called here directly but are exported to every template that loads this script. The calls below trace through to these two functions.
 
 ### Template call sites (all indirect via `schema-selector.js`)
+
+All template files that use cascading selectors load the `fetchSchemas()` and `fetchTables()` functions from the shared utility `schema-selector.js` using the following script tag:
+
+```html
+<script src="{{ url_for('static', path='/js/schema-selector.js') }}"
+
+nonce="{{ request.state.csp_nonce }}"></script>
+```
+
+This script reference is included in all the templates listed below.
 
 | File | Line | Call | Context |
 |---|---|---|---|
@@ -132,7 +142,7 @@ If a shared selector component (SEP-968 `ServiceSelector` / `SchemaSelector` / `
 | Line | Mechanism | URL pattern | Trigger | Description |
 |---|---|---|---|---|
 | [~L621](https://github.com/percona/SEP/blob/main/static/js/logs.js#L621) | `fetch(...)` | `/files/${encodeURIComponent(taskId)}` | Inside `finish` SSE event handler | Lists files after task completes; populates file download modal |
-| [~L44–L46](https://github.com/percona/SEP/blob/main/static/js/logs.js#L44) | helper `filesApiUrl()` | `/files/${encodeURIComponent(taskId)}` |  |  URL helpe |
+| [~L44–L46](https://github.com/percona/SEP/blob/main/static/js/logs.js#L44) | helper `filesApiUrl()` | `/files/${encodeURIComponent(taskId)}` |  | URL helper |
 | [~L88-L90](https://github.com/percona/SEP/blob/main/static/js/logs.js#L88) | helper `fileDownloadUrl()` | `/files/${encodeURIComponent(taskId)}/download?path=...` |  | URL helper |
 | [~L218–L225](https://github.com/percona/SEP/blob/main/static/js/logs.js#L218) | `<a>` download trigger | `/files/${encodeURIComponent(taskId)}/download?path=...` | `.download-file-button` click handler | Triggers browser file download |
 
@@ -179,6 +189,11 @@ If a shared selector component (SEP-968 `ServiceSelector` / `SchemaSelector` / `
 ### Frontend call sites (server-rendered via `url_for()` in Jinja2)
 
 The periodic task routes are consumed as standard HTML form `action` attributes. They are **not** called via `fetch` or `XMLHttpRequest`; instead the browser submits the form directly. The URL is resolved server-side by Jinja2's `url_for()`.
+
+`static/js/scheduled.js` manages all interactivity for the scheduled tasks UI,
+rendered by `templates/tasks/partials/scheduled-tasks.html.j2`. The parent template
+`templates/tasks/view.html.j2` loads the script on [L64](https://github.com/percona/SEP/blob/main/templates/tasks/view.html.j2#L64) — before including the partial on [L117](https://github.com/percona/SEP/blob/main/templates/tasks/view.html.j2#L117)
+
 
 | File | Line | Jinja2 expression | HTTP method | Description |
 |---|---|---|---|---|
