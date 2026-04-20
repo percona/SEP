@@ -575,11 +575,9 @@ def _patch_rc_ok(monkeypatch, *, rc=1, webhook_result=True, webhook_calls=None):
         call_order.append(("api_commit", kwargs.get("message")))
         return "fakecommitsha"
 
-    def spy_create_tag(_repo, tag, target_sha, *, token):
+    def spy_create_tag(tag, target_sha):
         call_order.append(("api_tag", tag, target_sha))
 
-    monkeypatch.setattr(release, "_gh_token", lambda: "fake-token")
-    monkeypatch.setattr(release, "_repo_slug", lambda: "fake/repo")
     monkeypatch.setattr(
         release,
         "_api_branch_head_sha",
@@ -712,8 +710,6 @@ def _patch_stable_ok(monkeypatch, *, webhook_result=True, webhook_calls=None):
 
     monkeypatch.setattr(release, "_post_webhook", spy_webhook)
 
-    monkeypatch.setattr(release, "_gh_token", lambda: "fake-token")
-    monkeypatch.setattr(release, "_repo_slug", lambda: "fake/repo")
     monkeypatch.setattr(
         release,
         "_api_branch_head_sha",
