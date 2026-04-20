@@ -15,6 +15,8 @@
 
 """Define tests for the app.sep.plugins.checksums.routes module."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import status
 
@@ -34,6 +36,35 @@ def checksums_create():
         service_id=1,
         recursion_method="processlist",
     )
+
+
+def test_checksums_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+):
+    """Test POST /checksums/ route without overriding build_checksums_task_payload."""
+    checksums_create = ChecksumsCreate(
+        task_name="chk_full_chain",
+        hostname="localhost",
+        service_id=created_service.id,
+        recursion_method="processlist",
+    )
+    mock_inventory_api_dep.get = AsyncMock(return_value=created_service.model_dump())
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/checksums/",
+        data=checksums_create.model_dump(exclude_none=True),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith("/checksums/chk_full_chain")
+    mock_task_api_dep.post.assert_awaited_once()
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["name"] == "chk_full_chain"
+    assert posted["owner"] == TaskOwner.CHECKSUMS.value
 
 
 def test_checksums_create_skips_connectivity_check_when_opted_out(

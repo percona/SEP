@@ -30,6 +30,7 @@ from app.tasks.models import (
     TaskOwner,
     TaskWrite,
 )
+from tests.app.factories import CreatedServiceFactory
 
 
 @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
@@ -63,6 +64,38 @@ def test_backups_create(
     called_args, called_kwargs = mock_task_api_dep.post.call_args
     assert called_args[0] == "/"
     assert called_kwargs["json"] == mock_build_backup_task_payload_dep.model_dump()
+
+
+@pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
+def test_pg_backups_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    backup_create,
+    created_node,
+):
+    """Test POST /backup-pg/ route without overriding build_backup_task_payload."""
+    pg_service = CreatedServiceFactory.build(
+        node=created_node, type=ServiceTypeEnum.POSTGRESQL
+    )
+    backup_create.service_id = pg_service.id
+    mock_inventory_api_dep.get = AsyncMock(return_value=pg_service.model_dump())
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/backup-pg/",
+        data=backup_create.model_dump(),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(
+        f"/backup-pg/{backup_create.task_name}"
+    )
+    mock_task_api_dep.post.assert_awaited_once()
+    assert mock_task_api_dep.post.await_args.args[0] == "/"
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["name"] == backup_create.task_name
+    assert posted["owner"] == TaskOwner.BACKUP_PG.value
 
 
 def test_pg_backups_create_skips_connectivity_check_when_opted_out(
