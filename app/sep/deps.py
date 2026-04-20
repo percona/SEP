@@ -195,14 +195,14 @@ IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 async def validate_csrf(request: Request) -> None:
     """Validate the CSRF token submitted in the request form data.
 
+    Requests with ``Authorization: Bearer ...`` skip CSRF validation; Bearer
+    tokens are not sent automatically by browsers, so CSRF protection is not
+    required for that path (authentication is enforced separately).
+
     For authenticated requests (session cookie present), verify the HMAC
     signature using the session cookie as salt.  For unauthenticated requests
     (login page), verify using a double-submit cookie comparison plus
     signature verification.
-
-    Requests with ``Authorization: Bearer ...`` skip CSRF validation; Bearer
-    tokens are not sent automatically by browsers, so CSRF protection is not
-    required for that path (authentication is enforced separately).
 
     :param request: The HTTP request object.
     :type request: Request
