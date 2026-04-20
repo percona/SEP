@@ -109,6 +109,9 @@ def test_alters_create(
     )
 
 
+EXPECTED_ALTERS_POST_CALLS = 3
+
+
 def test_alters_create_full_form_dependency_chain_without_payload_override(
     test_client,
     mock_task_api_dep,
@@ -143,9 +146,6 @@ def test_alters_create_full_form_dependency_chain_without_payload_override(
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"].endswith(f"/alters/{created_alters.task_name}")
     assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
-
-
-EXPECTED_ALTERS_POST_CALLS = 3
 
 
 def test_alters_create_skips_connectivity_check_when_opted_out(
