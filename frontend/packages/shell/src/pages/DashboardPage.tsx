@@ -32,18 +32,26 @@ interface StatCard {
   to: string;
 }
 
-const stats: StatCard[] = [
-  { title: 'Nodes', value: 42, icon: DnsIcon, color: 'primary.main', to: '/inventory' },
-  { title: 'Active Tasks', value: 7, icon: AssignmentIcon, color: 'warning.main', to: '/tasks' },
-  { title: 'Snippets', value: 23, icon: CodeIcon, color: 'info.main', to: '/snippets' },
-  {
-    title: 'Alerts',
-    value: 3,
-    icon: NotificationsActiveIcon,
-    color: 'error.main',
-    to: '/alerts/templates',
-  },
-];
+const stats: StatCard[] = import.meta.env.DEV
+  ? [
+      { title: 'Nodes', value: 42, icon: DnsIcon, color: 'primary.main', to: '/inventory' },
+      {
+        title: 'Active Tasks',
+        value: 7,
+        icon: AssignmentIcon,
+        color: 'warning.main',
+        to: '/tasks',
+      },
+      { title: 'Snippets', value: 23, icon: CodeIcon, color: 'info.main', to: '/snippets' },
+      {
+        title: 'Alerts',
+        value: 3,
+        icon: NotificationsActiveIcon,
+        color: 'error.main',
+        to: '/alerts/templates',
+      },
+    ]
+  : [];
 
 interface RecentTask {
   id: number;
@@ -53,24 +61,38 @@ interface RecentTask {
   started: string;
 }
 
-const recentTasks: RecentTask[] = [
-  {
-    id: 1,
-    name: 'pt-online-schema-change',
-    target: 'prod-db-01',
-    status: 'running',
-    started: '2 min ago',
-  },
-  { id: 2, name: 'xtrabackup', target: 'prod-db-03', status: 'completed', started: '15 min ago' },
-  {
-    id: 3,
-    name: 'pt-table-checksum',
-    target: 'staging-db-01',
-    status: 'completed',
-    started: '1 hour ago',
-  },
-  { id: 4, name: 'archive-tables', target: 'prod-db-02', status: 'failed', started: '3 hours ago' },
-];
+const recentTasks: RecentTask[] = import.meta.env.DEV
+  ? [
+      {
+        id: 1,
+        name: 'pt-online-schema-change',
+        target: 'prod-db-01',
+        status: 'running',
+        started: '2 min ago',
+      },
+      {
+        id: 2,
+        name: 'xtrabackup',
+        target: 'prod-db-03',
+        status: 'completed',
+        started: '15 min ago',
+      },
+      {
+        id: 3,
+        name: 'pt-table-checksum',
+        target: 'staging-db-01',
+        status: 'completed',
+        started: '1 hour ago',
+      },
+      {
+        id: 4,
+        name: 'archive-tables',
+        target: 'prod-db-02',
+        status: 'failed',
+        started: '3 hours ago',
+      },
+    ]
+  : [];
 
 const StatusIconMap = {
   running: PendingIcon,

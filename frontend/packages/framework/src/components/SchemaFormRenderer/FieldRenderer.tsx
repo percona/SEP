@@ -40,9 +40,13 @@ export function FieldRenderer({ field, control }: FieldRendererProps) {
                   message: `Maximum ${field.maxLength} characters`,
                 },
               }),
-              ...(field.pattern && {
-                pattern: { value: new RegExp(field.pattern), message: `Invalid format` },
-              }),
+              ...(field.pattern && (() => {
+                try {
+                  return { pattern: { value: new RegExp(field.pattern!), message: `Invalid format` } };
+                } catch {
+                  return {};
+                }
+              })()),
             },
           }}
         />

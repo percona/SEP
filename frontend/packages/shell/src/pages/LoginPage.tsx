@@ -10,7 +10,7 @@ import CardContent from '@mui/material/CardContent';
 import CircularProgress from '@mui/material/CircularProgress';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import axios from 'axios';
+import { ApiError } from '@sep/api';
 import { useAuth } from '../contexts/auth';
 
 interface LoginFormValues {
@@ -20,19 +20,16 @@ interface LoginFormValues {
 
 /** Extract a user-friendly error message from the backend response */
 function getErrorMessage(err: unknown): string {
-  if (axios.isAxiosError(err)) {
-    const status = err.response?.status;
-    const detail = err.response?.data?.detail;
-
-    if (status === 401) {
-      return detail || 'Invalid username or password.';
-    }
-    if (status === 403) {
-      return detail || 'Your account is not active. Contact an administrator.';
-    }
-    if (detail) {
-      return detail;
-    }
+  if (err instanceof ApiError) {
+    const detail =
+      typeof err.data === 'object' && err.data !== null
+        ? (err.data as { detail?: unknown }).detail
+        : undefined;
+    const detailStr = typeof detail === 'string' ? detail : undefined;
+    if (err.status === 401) return detailStr || 'Invalid username or password.';
+    if (err.status === 403)
+      return detailStr || 'Your account is not active. Contact an administrator.';
+    if (detailStr) return detailStr;
   }
   return 'An unexpected error occurred. Please try again.';
 }
