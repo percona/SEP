@@ -26,10 +26,15 @@ function getErrorMessage(err: unknown): string {
         ? (err.data as { detail?: unknown }).detail
         : undefined;
     const detailStr = typeof detail === 'string' ? detail : undefined;
-    if (err.status === 401) return detailStr || 'Invalid username or password.';
-    if (err.status === 403)
+    if (err.status === 401) {
+      return detailStr || 'Invalid username or password.';
+    }
+    if (err.status === 403) {
       return detailStr || 'Your account is not active. Contact an administrator.';
-    if (detailStr) return detailStr;
+    }
+    if (detailStr) {
+      return detailStr;
+    }
   }
   return 'An unexpected error occurred. Please try again.';
 }
