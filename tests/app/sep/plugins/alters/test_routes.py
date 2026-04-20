@@ -109,6 +109,42 @@ def test_alters_create(
     )
 
 
+def test_alters_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+    created_schema,
+    created_table,
+):
+    """Test POST /alters/ route without overriding build_alters_task_payload."""
+    created_alters = AltersCreateFactory.build()
+    created_alters.service_id = created_service.id
+    created_alters.schema_id = created_schema.id
+    created_alters.table_id = created_table.id
+    created_alters.alter = "ADD COLUMN new_column INT"
+    created_alters.recursion_method = "dsn"
+
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    mock_task_api_dep.get = AsyncMock(return_value={})
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/alters/",
+        data=created_alters.model_dump(),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/alters/{created_alters.task_name}")
+    assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
+
+
 EXPECTED_ALTERS_POST_CALLS = 3
 
 
