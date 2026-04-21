@@ -1,3 +1,5 @@
+import './vite-env';
+
 // API client
 export { apiClient, setTokenProvider, setOnUnauthorized } from './client';
 
