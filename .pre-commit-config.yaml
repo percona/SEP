@@ -59,6 +59,22 @@ repos:
         additional_dependencies: ["python-minifier==2.11.3"]
         files: ^app/sep/plugins/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
         pass_filenames: true
+      - id: oxfmt
+        name: oxfmt (frontend formatter)
+        description: "Format frontend code with oxfmt (Prettier-compatible)"
+        entry: sh -c 'cd frontend && pnpm exec oxfmt --write .'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs|json|yaml|yml|md|css|scss)$
+        exclude: ^frontend/(node_modules|.*/dist)/
+        pass_filenames: false
+      - id: oxlint
+        name: oxlint (frontend linter)
+        description: "Lint frontend code with oxlint"
+        entry: sh -c 'cd frontend && pnpm exec oxlint --config oxlintrc.json --fix .'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs)$
+        exclude: ^frontend/(node_modules|.*/dist)/
+        pass_filenames: false
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: 745eface02aef23e168a8afb6b5737818efbea95  # v0.11.0.1
