@@ -94,9 +94,7 @@ jobs:
       - name: Perform pre-commit checks
         env:
           POETRY: poetry
-        run: |
-          sudo apt install -qy shellcheck
-          make run-pre-commit
+        run: make run-pre-commit
 
   python:
     if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.python == 'true' }}
