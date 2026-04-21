@@ -243,7 +243,7 @@ async def _skip_dispatch_unhealthy_target(
     reason = (
         f"Target host {target!r} is not ready on Nomad; "
         f"skipping dispatch of periodic task "
-        f"{periodic_task_name or task_name}."
+        f"{periodic_task_name or task_name!r}"
     )
     logger.warning(reason)
     task_history.status = TaskHistoryStatusEnum.FAILED
