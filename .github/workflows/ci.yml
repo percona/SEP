@@ -90,16 +90,6 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: frontend
 
-      - name: Cache Poetry virtualenv and wheel cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cache/pypoetry/virtualenvs
-            ~/.cache/pypoetry/cache
-          key: poetry-precommit-${{ runner.os }}-py3.11-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
-          restore-keys: |
-            poetry-precommit-${{ runner.os }}-py3.11-
-
       - name: Cache pre-commit hook environments
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
