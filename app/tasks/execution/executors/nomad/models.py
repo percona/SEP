@@ -50,6 +50,7 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
+from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskHistoryLogStateManager, TaskHistoryManager
@@ -115,6 +116,47 @@ def _nomad_event_exit_code(ev: dict) -> Any:
     if exit_code is None and isinstance(details, dict):
         return details.get("exit_code", details.get("ExitCode"))
     return exit_code
+
+
+_STALE_SKIP_TASK_NAME = "check-staleness"
+_STALE_SKIP_EXIT_CODE = 75
+
+
+def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
+    """Return ``True`` when the ``check-staleness`` prestart task exited 75.
+
+    Walk the Nomad ``TaskStates`` dict produced by an allocation sync and
+    look for a ``Terminated`` event on the ``check-staleness`` task whose
+    exit code matches the stale-skip sentinel. Shape drift across Nomad API
+    responses is tolerated — missing keys or unexpected types simply short
+    circuit to ``False``.
+
+    :param task_states: The ``TaskStates`` object from a Nomad allocation.
+    :type task_states: dict[str, Any] | None
+    :return: ``True`` when the allocation aborted because of the staleness
+        preamble; ``False`` otherwise.
+    :rtype: bool
+    """
+    if not isinstance(task_states, dict):
+        return False
+    state = task_states.get(_STALE_SKIP_TASK_NAME)
+    if not isinstance(state, dict):
+        return False
+    events = state.get("Events")
+    if not isinstance(events, list):
+        return False
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("Type") != "Terminated":
+            continue
+        exit_code = _nomad_event_exit_code(event)
+        try:
+            if int(exit_code) == _STALE_SKIP_EXIT_CODE:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 def _append_exit_code_suffix(
@@ -439,6 +481,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             }
             if queue_item.execution_request.meta
             else {}
+        )
+        filtered_meta["staleness_threshold_seconds"] = (
+            tasks_config.tasks_settings.STALENESS_THRESHOLD_SECONDS
         )
 
         custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
@@ -878,6 +923,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         alloc, job_id = resolved
 
         task_states = alloc["TaskStates"]
+        stale_skip = _detect_stale_skip(task_states)
 
         try:
             job = self.get_job(job_id)
@@ -893,11 +939,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 else:
                     queue_item.finished_at = utc_now()
 
-                queue_item.status = self.get_task_history_status_from_alloc_status(
-                    alloc["ClientStatus"],
-                    queue_item.status,
-                    stopped=job.get("Stop", False),
-                )
+                if stale_skip:
+                    queue_item.status = TaskHistoryStatusEnum.STALE
+                else:
+                    queue_item.status = self.get_task_history_status_from_alloc_status(
+                        alloc["ClientStatus"],
+                        queue_item.status,
+                        stopped=job.get("Stop", False),
+                    )
 
         if writer_session is not None:
             await self._persist_nomad_task_logs(

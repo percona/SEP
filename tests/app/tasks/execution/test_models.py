@@ -367,6 +367,7 @@ class TestSyncTaskHistory:
             (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.FAILED, "FAILED"),
             (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.STOPPED, "STOPPED"),
             (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.LOST, "LOST"),
+            (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.STALE, "STALE"),
         ],
     )
     async def test_annotates_terminal_transition(

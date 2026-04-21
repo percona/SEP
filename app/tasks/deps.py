@@ -28,6 +28,7 @@ from starlette.requests import Request
 
 from app.api.deps import CurrentUserID
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
+from app.core.utils import utc_now
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -205,6 +206,11 @@ async def prepare_task_history(
         raise HTTPBadRequestException(
             "Execution target is required in execution data meta."
         )
+
+    if execution_data.eta is not None:
+        execution_data.meta["scheduled_at"] = int(execution_data.eta.timestamp())
+    else:
+        execution_data.meta["scheduled_at"] = int(utc_now().timestamp())
 
     anonymize_mask = (
         execution_data.anonymize_mask

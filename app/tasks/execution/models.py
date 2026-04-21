@@ -43,6 +43,7 @@ _TERMINAL_STATUS_EVENT_MAP = {
     TaskHistoryStatusEnum.FAILED: "FAILED",
     TaskHistoryStatusEnum.STOPPED: "STOPPED",
     TaskHistoryStatusEnum.LOST: "LOST",
+    TaskHistoryStatusEnum.STALE: "STALE",
 }
 
 

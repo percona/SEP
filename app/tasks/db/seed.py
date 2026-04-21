@@ -16,6 +16,7 @@
 """Define the database initial data for the Tasks app."""
 
 import logging
+from copy import deepcopy
 
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
@@ -37,6 +38,37 @@ from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
 
 logger = logging.getLogger(__name__)
 
+STALENESS_PREAMBLE_SHELL = (
+    'if [ -n "$NOMAD_META_scheduled_at" ] && '
+    '[ -n "$NOMAD_META_staleness_threshold_seconds" ]; then '
+    "now=$(date +%s); "
+    "elapsed=$((now - NOMAD_META_scheduled_at)); "
+    'if [ "$elapsed" -gt "$NOMAD_META_staleness_threshold_seconds" ]; then '
+    'echo "SEP_STALE_SKIP: elapsed=${elapsed}s '
+    'threshold=${NOMAD_META_staleness_threshold_seconds}s"; '
+    "exit 75; "
+    "fi; "
+    "fi"
+)
+"""POSIX sh preamble that aborts a Nomad allocation when
+``now - scheduled_at`` exceeds the configured staleness threshold. Missing
+or empty meta values short-circuit to a no-op for rollback safety."""
+
+_CHECK_STALENESS_TASK = {
+    "Name": "check-staleness",
+    "Lifecycle": {"hook": "prestart", "sidecar": False},
+    "Driver": "raw_exec",
+    "User": "",
+    "Config": {
+        "command": "sh",
+        "args": ["-c", STALENESS_PREAMBLE_SHELL],
+    },
+    "Meta": {},
+    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+}
+
+_STALENESS_META_OPTIONAL = ["scheduled_at", "staleness_threshold_seconds"]
+
 NOMAD_RUN_COMMAND = {
     "ID": "run-command",
     "Name": "run-command",
@@ -52,7 +84,7 @@ NOMAD_RUN_COMMAND = {
     "ParameterizedJob": {
         "Payload": "forbidden",
         "MetaRequired": ["target", "command"],
-        "MetaOptional": ["args"],
+        "MetaOptional": ["args", *_STALENESS_META_OPTIONAL],
     },
     "TaskGroups": [
         {
@@ -60,6 +92,7 @@ NOMAD_RUN_COMMAND = {
             "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
                 {
                     "Name": "run-script",
                     "Driver": "raw_exec",
@@ -101,7 +134,7 @@ NOMAD_RUN_PYTHON = {
     "ParameterizedJob": {
         "Payload": "required",
         "MetaRequired": ["target"],
-        "MetaOptional": ["config", "requirements"],
+        "MetaOptional": ["config", "requirements", *_STALENESS_META_OPTIONAL],
     },
     "TaskGroups": [
         {
@@ -110,6 +143,7 @@ NOMAD_RUN_PYTHON = {
             "PreventRescheduleOnLost": True,
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
                 {
                     "Name": "prepare-env",
                     "Lifecycle": {"hook": "prestart", "sidecar": False},
@@ -119,6 +153,7 @@ NOMAD_RUN_PYTHON = {
                         "command": "sh",
                         "args": [
                             "-c",
+                            f"{STALENESS_PREAMBLE_SHELL}; "
                             "python3 -m venv --copies ${NOMAD_ALLOC_DIR}/venv;"
                             "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
                         ],
@@ -202,12 +237,13 @@ NOMAD_EXEC_ARTIFACT = {
             "interpreter",
             "md5_checksum",
         ],
-        "MetaOptional": ["args"],
+        "MetaOptional": ["args", *_STALENESS_META_OPTIONAL],
     },
     "TaskGroups": [
         {
             "Name": "execution",
             "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
                 {
                     "Name": "run-script",
                     "Driver": "raw_exec",
@@ -273,7 +309,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "interpreter",
             "md5_checksum",
         ],
-        "MetaOptional": ["args", "requirements"],
+        "MetaOptional": ["args", "requirements", *_STALENESS_META_OPTIONAL],
     },
     "TaskGroups": [
         {
@@ -282,6 +318,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "PreventRescheduleOnLost": True,
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
                 {
                     "Name": "prepare-env",
                     "Lifecycle": {"hook": "prestart", "sidecar": False},
@@ -291,6 +328,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                         "command": "sh",
                         "args": [
                             "-c",
+                            f"{STALENESS_PREAMBLE_SHELL}; "
                             "python3 -m venv --copies ${NOMAD_ALLOC_DIR}/venv;"
                             "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
                         ],

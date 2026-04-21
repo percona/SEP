@@ -845,6 +845,118 @@ async def test_execute_task_name_with_eta_serializes_deferred_execution_request(
     )
 
 
+@pytest.mark.asyncio
+async def test_execute_route_immediate_sets_scheduled_at_to_now(
+    test_client, session, mocker
+):
+    """Assert POST /execute/{task_name} without ETA sets ``scheduled_at`` to now."""
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="stale-immediate", anonymize_mask=0)
+        ),
+    )
+
+    async def fake_dispatch_queue_item(queue_item, passed_session):
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        return await TaskHistoryManager.save(
+            passed_session,
+            queue_item,
+            flag_modified_fields=["execution_request"],
+        )
+
+    fake_executor = MagicMock(spec=BaseExecutor)
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    mocker.patch(
+        "app.tasks.routes.dispatch_queue_item",
+        side_effect=fake_dispatch_queue_item,
+    )
+
+    before = int(utc_now().timestamp())
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1"},
+    )
+    after = int(utc_now().timestamp())
+
+    assert response.status_code == status.HTTP_200_OK
+    scheduled_at = response.json()["execution_request"]["meta"]["scheduled_at"]
+    assert isinstance(scheduled_at, int)
+    assert before <= scheduled_at <= after
+
+
+@pytest.mark.asyncio
+async def test_execute_route_with_eta_sets_scheduled_at_to_eta_epoch(
+    test_client, session, mocker
+):
+    """Assert POST /execute/{task_name} with ETA sets ``scheduled_at`` to the ETA epoch."""
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="stale-eta", anonymize_mask=0)),
+    )
+
+    fake_celery_result = MagicMock()
+    fake_celery_result.id = "fake-celery-task-id"
+    fake_executor = MagicMock(spec=BaseExecutor)
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    mocker.patch(
+        "app.tasks.routes.execute_task_queue.apply_async",
+        return_value=fake_celery_result,
+    )
+
+    eta = utc_now() + timedelta(hours=2)
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1", "eta": eta.isoformat()},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    scheduled_at = response.json()["execution_request"]["meta"]["scheduled_at"]
+    assert scheduled_at == int(eta.timestamp())
+
+
+@pytest.mark.asyncio
+async def test_execute_route_preserves_user_meta_with_scheduled_at(
+    test_client, session, mocker
+):
+    """Assert user-supplied meta keys survive alongside the injected ``scheduled_at``."""
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="stale-meta", anonymize_mask=0)
+        ),
+    )
+
+    async def fake_dispatch_queue_item(queue_item, passed_session):
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        return await TaskHistoryManager.save(
+            passed_session,
+            queue_item,
+            flag_modified_fields=["execution_request"],
+        )
+
+    fake_executor = MagicMock(spec=BaseExecutor)
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    mocker.patch(
+        "app.tasks.routes.dispatch_queue_item",
+        side_effect=fake_dispatch_queue_item,
+    )
+
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1", "meta_foo": "bar"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    meta = response.json()["execution_request"]["meta"]
+    assert meta["target"] == "node1"
+    assert meta["foo"] == "bar"
+    assert "scheduled_at" in meta
+
+
 CONNECTIVITY_META = {
     "_connectivity_host": "db-host",
     "_connectivity_port": "3306",
