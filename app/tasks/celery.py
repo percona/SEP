@@ -303,6 +303,7 @@ async def _dispatch_queue_item(
         logger.exception("Failed to dispatch queue item")
         raise
     else:
+        await session.refresh(result, attribute_names=["execution_request"])
         schedule_annotation(result, "STARTED")
         return result
     finally:
@@ -458,6 +459,7 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
                 "sync_in_progress_started_at",
             ],
         )
+        await session.refresh(saved, attribute_names=["execution_request"])
     chain_on_failure = saved.execution_request.meta.get("_chain_on_failure", False)
     is_terminal = (
         saved.status.is_finished() or saved.status == TaskHistoryStatusEnum.LOST

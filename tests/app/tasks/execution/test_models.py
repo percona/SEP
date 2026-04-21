@@ -20,15 +20,21 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import inspect as sa_inspect
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     FileMetadata,
+    TaskBackendEnum,
+    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskLog,
+    TaskWrite,
 )
+from tests.app.factories import TaskFactory
 
 
 class ConcreteExecutor(BaseExecutor):
@@ -467,3 +473,78 @@ class TestDefaultWaitInterval:
     def test_default_wait_interval(self, executor: ConcreteExecutor):
         """Assert default wait_interval is 5 seconds."""
         assert executor.wait_interval == _DEFAULT_WAIT_INTERVAL
+
+
+class TestStopTaskRegression:
+    """Regression suite for SEP-1017 — real-session ``stop_task``.
+
+    ``TaskHistoryManager.save(session, queue_item)`` inside
+    ``BaseExecutor.stop_task`` re-defers ``execution_request`` via its
+    internal ``session.refresh(instance)``. Before SEP-1017, the
+    subsequent ``schedule_annotation(saved, "STOPPED")`` in the
+    ``sync_emitted_stopped=False`` branch then touched that deferred
+    attribute synchronously and crashed with ``MissingGreenlet`` on
+    async drivers.
+    """
+
+    @pytest.mark.asyncio
+    async def test_stopped_annotation_has_execution_request_loaded(
+        self, executor: ConcreteExecutor, session: AsyncSession
+    ):
+        """Assert the STOPPED annotation receives a loaded instance.
+
+        Arrange a ``TaskHistory`` in RUNNING state, have
+        ``_sync_task_history`` keep it RUNNING (so ``sync_emitted_stopped``
+        is False), and exercise ``stop_task`` with the real session.
+        ``stop_task`` then forces the status to STOPPED and saves; the
+        save re-defers ``execution_request``; the explicit refresh
+        before ``schedule_annotation`` must reload it.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name="stop-task",
+                    backend=TaskBackendEnum.NOMAD,
+                    alert_on_fail=False,
+                )
+            ),
+        )
+        queue_item = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"_service_names": ["svc1"]},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+            executed_by="test-user",
+        )
+        saved_history = await TaskHistoryManager.save(session, queue_item)
+
+        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+            return item
+
+        captured = []
+
+        def capture_annotation(arg: TaskHistory, _event: str) -> None:
+            captured.append(arg)
+
+        with (
+            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
+            patch.object(
+                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
+            ),
+            patch(
+                "app.tasks.execution.models.schedule_annotation",
+                side_effect=capture_annotation,
+            ),
+        ):
+            result = await executor.stop_task(session, saved_history)
+
+        assert len(captured) == 1
+        annotated = captured[0]
+        assert "execution_request" not in sa_inspect(annotated).unloaded
+        assert annotated.execution_request.task == task.name
+        assert result.status == TaskHistoryStatusEnum.STOPPED
