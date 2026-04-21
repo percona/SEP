@@ -250,6 +250,20 @@ class TestSchemaEndpointRouterComposition:
         with pytest.raises(ValueError, match="schema_endpoint"):
             schema_endpoint(router, _TEST_SCHEMA)
 
+    def test_second_call_raises_value_error_on_prefixed_router(self) -> None:
+        """Assert the duplicate guard works when the router carries a prefix.
+
+        A prefix-bearing ``APIRouter`` records the route path as
+        ``{prefix}/schema``, so the guard must compare against the router's
+        effective path — not the bare ``/schema`` literal — or a second
+        registration would slip through silently.
+        """
+        router = APIRouter(prefix="/plugin-prefix")
+        schema_endpoint(router, _TEST_SCHEMA)
+
+        with pytest.raises(ValueError, match="schema_endpoint"):
+            schema_endpoint(router, _TEST_SCHEMA)
+
     def test_naked_app_unauth_returns_401(self) -> None:
         """Assert the per-route dep gates the route outside ``api_router``.
 

@@ -54,9 +54,13 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
     :type plugin_schema: PluginSchema
     :raises ValueError: If ``router`` already exposes a ``GET /schema`` route.
     """
+    router_prefix = getattr(router, "prefix", "") or ""
+    expected_path = f"{router_prefix}/schema"
     for existing in router.routes:
-        if getattr(existing, "path", None) == "/schema" and "GET" in getattr(
-            existing, "methods", set()
+        existing_methods = set(getattr(existing, "methods", None) or ())
+        if (
+            getattr(existing, "path", None) == expected_path
+            and "GET" in existing_methods
         ):
             raise ValueError(
                 "schema_endpoint: router already has a GET /schema route; "
