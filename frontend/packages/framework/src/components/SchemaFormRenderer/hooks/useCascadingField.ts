@@ -29,16 +29,19 @@ export function useCascadingField<T = unknown>({
   const { control, setValue } = useFormContext();
   const upstreamValue = useWatch({ control, name: dependsOn ?? '__noop__' }) as T | undefined;
   const previousRef = useRef<T | undefined>(dependsOn ? upstreamValue : undefined);
+  const didMountRef = useRef(false);
 
   useEffect(() => {
     if (!dependsOn) {
       return;
     }
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      previousRef.current = upstreamValue;
+      return;
+    }
     if (previousRef.current !== upstreamValue) {
-      // Skip the very first effect run so the initial value is preserved on mount.
-      if (previousRef.current !== undefined || upstreamValue === undefined) {
-        setValue(fieldName, undefined, { shouldValidate: false, shouldDirty: false });
-      }
+      setValue(fieldName, undefined, { shouldValidate: false, shouldDirty: false });
       previousRef.current = upstreamValue;
     }
   }, [upstreamValue, fieldName, dependsOn, setValue]);

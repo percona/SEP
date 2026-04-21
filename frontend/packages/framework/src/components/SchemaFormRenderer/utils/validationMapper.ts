@@ -23,10 +23,17 @@ export function buildValidationRules(field: PluginField): RegisterOptions {
         };
       }
       if (field.pattern) {
-        rules.pattern = {
-          value: new RegExp(field.pattern),
-          message: `${field.label} does not match the required format`,
-        };
+        try {
+          const compiled = new RegExp(field.pattern);
+          rules.pattern = {
+            value: compiled,
+            message: `${field.label} does not match the required format`,
+          };
+        } catch {
+          // Invalid regex from schema. Surface as a validate fn so the field
+          // shows an error instead of the whole form crashing on render.
+          rules.validate = () => `${field.label} has an invalid pattern in its schema`;
+        }
       }
       break;
     }
