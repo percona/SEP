@@ -27,7 +27,7 @@
 | app/core/db/crud.py                               |      268 |       39 |     85% |145, 192, 194, 325-342, 360, 365, 382, 384, 495-510, 735-740, 768-770, 832-834, 1073-1077 |
 | app/core/db/models.py                             |       14 |        0 |    100% |           |
 | app/core/db/sql\_types.py                         |       37 |        0 |    100% |           |
-| app/core/db/utils.py                              |       49 |        4 |     92% |66, 154, 183, 186 |
+| app/core/db/utils.py                              |       54 |        4 |     93% |76, 191, 220, 223 |
 | app/core/exceptions.py                            |       29 |        1 |     97% |        69 |
 | app/core/log.py                                   |       21 |        0 |    100% |           |
 | app/core/middleware/log\_context.py               |       26 |        0 |    100% |           |
@@ -184,7 +184,7 @@
 | app/tasks/periodic/models.py                      |      101 |        5 |     95% |196, 231, 283, 299, 368 |
 | app/tasks/periodic/routes.py                      |       38 |        3 |     92% | 62-66, 97 |
 | app/tasks/routes.py                               |      182 |       19 |     90% |119-123, 180, 201-208, 240, 289-297, 302-303, 492, 505-506 |
-| **TOTAL**                                         | **12496** | **1930** | **85%** |           |
+| **TOTAL**                                         | **12501** | **1930** | **85%** |           |
 
 
 ## Setup coverage badge
