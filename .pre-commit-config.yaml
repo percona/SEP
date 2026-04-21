@@ -62,7 +62,7 @@ repos:
       - id: oxfmt
         name: oxfmt (frontend formatter)
         description: "Format frontend code with oxfmt (Prettier-compatible)"
-        entry: sh -c 'cd frontend && pnpm exec oxfmt --write .'
+        entry: sh -c 'cd frontend && node ./node_modules/oxfmt/dist/cli.js --write .'
         language: system
         files: ^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs|json|yaml|yml|md|css|scss)$
         exclude: ^frontend/(node_modules|.*/dist)/
@@ -70,7 +70,7 @@ repos:
       - id: oxlint
         name: oxlint (frontend linter)
         description: "Lint frontend code with oxlint"
-        entry: sh -c 'cd frontend && pnpm exec oxlint --config oxlintrc.json --fix .'
+        entry: sh -c 'cd frontend && node ./node_modules/oxlint/dist/cli.js --config oxlintrc.json --fix .'
         language: system
         files: ^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs)$
         exclude: ^frontend/(node_modules|.*/dist)/
