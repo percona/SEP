@@ -16,7 +16,9 @@
 """PMM annotation helpers for task lifecycle events."""
 
 import asyncio
+import copy
 import logging
+from typing import Any
 
 from app.core.config import settings
 from app.core.requests.remote_api import RemoteAPI
@@ -81,29 +83,38 @@ async def create_pmm_annotation(
 
 
 async def annotate_task_event(
-    queue_item: TaskHistory,
+    *,
+    task_name: str,
+    target: str,
+    meta: dict[str, Any] | None,
     event: str,
 ) -> None:
     """Create a PMM annotation for a task lifecycle event.
 
-    Read ``_service_names`` (list) or ``_service_name`` (str) from
-    the task's execution request metadata.
+    Read ``_service_names`` (list) or ``_service_name`` (str) from the
+    task execution metadata. Accept primitives rather than an ORM
+    instance so the coroutine is safe to run after the originating
+    request session has closed (see SEP-1009).
 
-    :param queue_item: The task history record.
-    :type queue_item: TaskHistory
+    :param task_name: The task name (from ``TaskExecutionRequest.task``).
+    :type task_name: str
+    :param target: The execution target node (from ``TaskExecutionRequest.target``).
+    :type target: str
+    :param meta: The task execution metadata (from ``TaskExecutionRequest.meta``).
+    :type meta: dict[str, Any] | None
     :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``, ``"FAILED"``).
     :type event: str
     """
-    meta = queue_item.execution_request.meta or {}
-    service_names = meta.get("_service_names")
+    safe_meta = meta or {}
+    service_names = safe_meta.get("_service_names")
     if service_names is None:
-        single = meta.get("_service_name")
+        single = safe_meta.get("_service_name")
         service_names = [single] if single else []
 
     await create_pmm_annotation(
-        text=f"SEP {queue_item.execution_request.task} - {event}",
-        node_name=queue_item.execution_request.target,
-        tags=["sep", queue_item.execution_request.task, event.lower()],
+        text=f"SEP {task_name} - {event}",
+        node_name=target,
+        tags=["sep", task_name, event.lower()],
         service_names=service_names,
     )
 
@@ -114,14 +125,31 @@ def schedule_annotation(
 ) -> None:
     """Schedule a fire-and-forget PMM annotation as a background task.
 
-    Create a background ``asyncio.Task`` for the annotation and store a
-    reference in ``_background_tasks`` to prevent garbage collection.
+    Snapshot the request fields synchronously so the background
+    coroutine never touches ORM attributes after the originating
+    session has closed. See SEP-1009.
+
+    The caller must ensure ``queue_item.execution_request`` is already
+    loaded (the deferred ``column_property`` is typically eager-loaded
+    via ``undefer(TaskHistory.execution_request)`` in routes that emit
+    annotations). ``meta`` is deep-copied so the background task observes
+    the values at scheduling time even if the originating request mutates
+    nested structures inside the attribute afterwards.
 
     :param queue_item: The task history record.
     :type queue_item: TaskHistory
     :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``).
     :type event: str
     """
-    task = asyncio.create_task(annotate_task_event(queue_item, event))
+    execution_request = queue_item.execution_request
+    meta = copy.deepcopy(execution_request.meta)
+    task = asyncio.create_task(
+        annotate_task_event(
+            task_name=execution_request.task,
+            target=execution_request.target,
+            meta=meta,
+            event=event,
+        )
+    )
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
