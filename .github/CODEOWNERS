@@ -3,8 +3,10 @@
 app/ max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
 app/__init__.py @percona/gas-team
 
-static/ max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
-templates/ max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
+frontend/ max.bubenick@percona.com nacho.durand@percona.com peter.addo@percona.com yan.orestes@percona.com
+
+static/ max.bubenick@percona.com nacho.durand@percona.com yan.orestes@percona.com peter.addo@percona.com
+templates/ max.bubenick@percona.com nacho.durand@percona.com yan.orestes@percona.com peter.addo@percona.com
 settings.yaml max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
 
 .pre-commit-config.yaml max.bubenick@percona.com yan.orestes@percona.com
