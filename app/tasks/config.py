@@ -19,6 +19,8 @@ from datetime import timedelta
 from enum import StrEnum
 from typing import ClassVar
 
+from pydantic import PositiveInt
+
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
@@ -70,8 +72,8 @@ class TasksSettings(BaseYamlAppSettings):
     :type PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode
     :param STALENESS_THRESHOLD_SECONDS: The maximum seconds allowed between a
         dispatch's scheduled time and its Nomad-side execution start before
-        the allocation self-aborts as stale. Defaults to 3600.
-    :type STALENESS_THRESHOLD_SECONDS: int
+        the allocation self-aborts as stale. Must be positive. Defaults to 3600.
+    :type STALENESS_THRESHOLD_SECONDS: PositiveInt
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -85,7 +87,7 @@ class TasksSettings(BaseYamlAppSettings):
     INVENTORY_SYNC_API_KEY: str | None = None
 
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = PreExecutionCheckMode.WARN
-    STALENESS_THRESHOLD_SECONDS: int = 3600
+    STALENESS_THRESHOLD_SECONDS: PositiveInt = 3600
 
 
 tasks_settings: TasksSettings = LazyProxy(TasksSettings)
