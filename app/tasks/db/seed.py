@@ -38,6 +38,9 @@ from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
 
 logger = logging.getLogger(__name__)
 
+# POSIX sh preamble that aborts a Nomad allocation when
+# ``now - scheduled_at`` exceeds the configured staleness threshold. Missing
+# or empty meta values short-circuit to a no-op for rollback safety.
 STALENESS_PREAMBLE_SHELL = (
     'if [ -n "$NOMAD_META_scheduled_at" ] && '
     '[ -n "$NOMAD_META_staleness_threshold_seconds" ]; then '
@@ -50,9 +53,6 @@ STALENESS_PREAMBLE_SHELL = (
     "fi; "
     "fi"
 )
-"""POSIX sh preamble that aborts a Nomad allocation when
-``now - scheduled_at`` exceeds the configured staleness threshold. Missing
-or empty meta values short-circuit to a no-op for rollback safety."""
 
 _CHECK_STALENESS_TASK = {
     "Name": "check-staleness",
