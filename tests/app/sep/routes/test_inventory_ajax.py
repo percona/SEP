@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for SEP inventory API proxy routes."""
+"""Define tests for the legacy SEP inventory AJAX proxy routes."""
 
 from unittest.mock import AsyncMock
 
