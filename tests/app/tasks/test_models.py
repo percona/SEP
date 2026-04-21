@@ -35,6 +35,7 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryBase,
+    TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
@@ -573,6 +574,64 @@ class TestTaskHistory:
             trigger_dedup = mock_trigger.call_args[0][0]["dedup_key"]
             resolve_dedup = mock_resolve.call_args[0][0]
             assert trigger_dedup == resolve_dedup
+
+
+class TestTaskHistoryResponse:
+    """Test ``TaskHistoryResponse`` serialization of the ``has_logs`` attribute."""
+
+    @pytest.fixture
+    def task_instance(self) -> Task:
+        """Return a Task instance for TaskHistory construction."""
+        return TaskFactory.build(id=1, name="test-task", data={"key": "val"})
+
+    @pytest.fixture
+    def execution_request(self) -> TaskExecutionRequest:
+        """Return a TaskExecutionRequest for TaskHistory construction."""
+        return TaskExecutionRequest(
+            task="test-task",
+            target="node-1",
+            tracking={"allocation_id": None, "evaluation_id": None},
+        )
+
+    def test_has_logs_defaults_to_false(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``has_logs`` defaults to ``False`` when never populated."""
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+
+        response = TaskHistoryResponse.model_validate(history)
+
+        assert response.has_logs is False
+
+    def test_has_logs_true_propagates_via_object_setattr(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``object.__setattr__`` on the ORM instance propagates via ``model_validate``.
+
+        ``TaskHistory`` is a strict Pydantic model so ``history.has_logs = True``
+        raises ``ValueError``; routes use ``object.__setattr__`` to write the
+        value directly into ``__dict__``. ``TaskHistoryResponse`` then reads it
+        through the ``from_attributes=True`` path that SQLModel enables by
+        default.
+        """
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        object.__setattr__(history, "has_logs", True)
+
+        response = TaskHistoryResponse.model_validate(history)
+
+        assert response.has_logs is True
 
 
 class TestTaskStats:

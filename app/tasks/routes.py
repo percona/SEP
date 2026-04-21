@@ -18,7 +18,7 @@
 import json
 import logging
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from datetime import timedelta
 from typing import Annotated, Any
 
@@ -26,6 +26,7 @@ from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
@@ -49,7 +50,7 @@ from app.tasks.connectivity.constants import (
 )
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import check_connectivity_with_cache
-from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     ExecutableTaskDep,
     get_executor,
@@ -62,7 +63,7 @@ from app.tasks.deps import (
     validate_chain_task_names,
 )
 from app.tasks.execution.utils import parse_payload
-from app.tasks.logs.log_reader import iter_task_history_logs
+from app.tasks.logs.log_reader import decompress_legacy_logs, iter_task_history_logs
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
@@ -303,6 +304,55 @@ async def execute_task_name(
     return history_recorded
 
 
+def _set_has_logs(history: TaskHistory, *, value: bool) -> None:
+    """Stash ``has_logs`` on ``history`` for later ``model_validate`` pickup.
+
+    ``TaskHistory`` is a strict Pydantic model (SQLModel default), so a
+    plain ``history.has_logs = value`` raises ``ValueError`` for fields
+    that are not declared on the ORM. ``object.__setattr__`` writes
+    straight to the instance ``__dict__``; FastAPI's response coercion
+    then reads it via ``getattr`` because ``TaskHistoryResponse``
+    enables ``from_attributes=True`` through SQLModel.
+
+    :param history: The ORM instance to mutate.
+    :type history: TaskHistory
+    :param value: The boolean to store under ``has_logs``.
+    :type value: bool
+    """
+    object.__setattr__(history, "has_logs", value)
+
+
+async def _populate_has_logs(
+    session: AsyncSession,
+    histories: Sequence[TaskHistory],
+) -> None:
+    """Set ``has_logs`` on each history using chunk-store + legacy fallback.
+
+    Read the chunk store in one batched query so list endpoints avoid an
+    N+1 :meth:`TaskHistoryLogManager.exists_for_task` call per row, then
+    OR the result with the legacy ``tracking["task_logs"]`` blob so
+    pre-SEP-817 rows keep rendering the **View Logs** button until the
+    backfill lands.
+
+    :param session: The SQLAlchemy asynchronous session.
+    :type session: AsyncSession
+    :param histories: ``TaskHistory`` instances whose ``has_logs`` attribute
+        should be populated. Each instance must have ``execution_request``
+        already loaded (all callers undefer it).
+    :type histories: Sequence[TaskHistory]
+    """
+    if not histories:
+        return
+    chunk_ids = await TaskHistoryLogManager.ids_with_chunks(
+        session, [history.id for history in histories]
+    )
+    for history in histories:
+        _set_has_logs(
+            history,
+            value=history.id in chunk_ids or bool(decompress_legacy_logs(history)),
+        )
+
+
 @router.get(
     "/history/",
     dependencies=[IsAuthenticatedDep],
@@ -316,7 +366,7 @@ async def list_task_history(
 ) -> PaginatedResponse[TaskHistory]:
     """List all task history records."""
     logger.debug("Listing task history")
-    return await TaskHistoryManager.list_paginated(
+    response = await TaskHistoryManager.list_paginated(
         session,
         select_related=(TaskHistory.task,),
         query_options=[undefer(TaskHistory.execution_request)],
@@ -324,6 +374,8 @@ async def list_task_history(
         limit=limit,
         status=task_status,
     )
+    await _populate_has_logs(session, response.items)
+    return response
 
 
 @router.get(
@@ -341,7 +393,7 @@ async def get_task_history(
 ) -> PaginatedResponse[TaskHistory]:
     """Retrieve task history by task name."""
     logger.debug("Requesting task history for %s", task)
-    return await TaskHistoryManager.list_by_task_name_paginated(
+    response = await TaskHistoryManager.list_by_task_name_paginated(
         session=session,
         task_name=task,
         status=task_status,
@@ -351,14 +403,22 @@ async def get_task_history(
         limit=limit,
         query_options=[undefer(TaskHistory.execution_request)],
     )
+    await _populate_has_logs(session, response.items)
+    return response
 
 
 @router.get("/history/{task_history_id}", dependencies=[IsAuthenticatedDep])
 async def retrieve_task_history(
+    session: SessionDep,
     task_history: TaskHistoryWithTaskDep,
 ) -> TaskHistoryResponse:
     """Retrieve a task history by id."""
     logger.debug("Requesting task history %s", task_history.id)
+    _set_has_logs(
+        task_history,
+        value=await TaskHistoryLogManager.exists_for_task(session, task_history.id)
+        or bool(decompress_legacy_logs(task_history)),
+    )
     return task_history
 
 
@@ -474,7 +534,13 @@ async def stop_task_history(
             f"Cannot stop task history {task_history.id} ({task_history.task.name}): "
             f"task is not running (current status: {task_history.status})."
         )
-    return await executor.stop_task(session, task_history)
+    stopped = await executor.stop_task(session, task_history)
+    _set_has_logs(
+        stopped,
+        value=await TaskHistoryLogManager.exists_for_task(session, stopped.id)
+        or bool(decompress_legacy_logs(stopped)),
+    )
+    return stopped
 
 
 @router.post("/history/{task_history_id}/sync/", dependencies=[IsAuthenticatedDep])
@@ -489,12 +555,18 @@ async def sync_task_history(
     saved = await TaskHistoryManager.save(
         session, updated, flag_modified_fields=["execution_request"]
     )
-    return await TaskHistoryManager.get_or_404(
+    synced = await TaskHistoryManager.get_or_404(
         session,
         select_related=(TaskHistory.task,),
         query_options=[undefer(TaskHistory.execution_request)],
         id=saved.id,
     )
+    _set_has_logs(
+        synced,
+        value=await TaskHistoryLogManager.exists_for_task(session, synced.id)
+        or bool(decompress_legacy_logs(synced)),
+    )
+    return synced
 
 
 @router.post(
@@ -503,6 +575,8 @@ async def sync_task_history(
 async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHistory:
     """Create a new task history."""
     logger.debug("Creating task history %s", task.name)
+    # ``has_logs`` is not populated here -- newly-created rows never have
+    # any chunk-store entry or legacy tracking blob yet.
     return await TaskHistoryManager.save(session, task)
 
 

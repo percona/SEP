@@ -240,6 +240,195 @@ async def test_retrieve_task_history_by_id_not_found(test_client):
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
+async def _seed_legacy_blob(
+    session: AsyncSession, history: TaskHistory, legacy: dict
+) -> None:
+    """Encode ``legacy`` as gzip+base64 and persist it in ``tracking["task_logs"]``.
+
+    Mirrors the seeding pattern used by the stream-logs legacy fallback tests so
+    both code paths exercise the same blob shape.
+    """
+    encoded = base64.b64encode(gzip.compress(json_lib.dumps(legacy).encode())).decode()
+    history.execution_request.tracking["task_logs"] = encoded
+    await TaskHistoryManager.save(
+        session, history, flag_modified_fields=["execution_request"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_has_logs_false_by_default(
+    test_client, created_task_with_history
+):
+    """Assert ``has_logs`` is ``False`` when no chunks and no legacy blob exist."""
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["has_logs"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_has_logs_true_from_chunk_store(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is ``True`` when the chunk store has rows."""
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_has_logs_true_from_legacy_blob(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is ``True`` when only the legacy blob is present."""
+    await _seed_legacy_blob(
+        session,
+        created_task_with_history,
+        {"run-script": {"stdout": "legacy stdout", "stderr": ""}},
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_has_logs_mixed_rows(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is independently populated per row (chunk / legacy / none)."""
+    task = created_task_with_history.task
+    with_chunks = await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            execution_request={
+                "task": task.name,
+                "target": "node2",
+                "meta": {"target": "node2"},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by="test-user",
+        ),
+    )
+    await TaskHistoryLogWriter.append(
+        session,
+        with_chunks.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+    await _seed_legacy_blob(
+        session,
+        created_task_with_history,
+        {"run-script": {"stdout": "legacy", "stderr": ""}},
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    items_by_id = {item["id"]: item for item in response.json()["items"]}
+    assert items_by_id[with_chunks.id]["has_logs"] is True
+    assert items_by_id[created_task_with_history.id]["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_empty_does_not_crash(test_client):
+    """Assert the empty-list case returns 200 and no SQL from ``ids_with_chunks``."""
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_task_history_populates_has_logs(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is populated on the ``/{task}/history/`` list endpoint."""
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    response = test_client.get(f"/{created_task_with_history.task.name}/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["items"][0]["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_populates_has_logs_from_chunk_store(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is ``True`` on the retrieve-by-id endpoint for chunk rows."""
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_populates_has_logs_from_legacy_blob(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is ``True`` on the retrieve endpoint for legacy-only rows."""
+    await _seed_legacy_blob(
+        session,
+        created_task_with_history,
+        {"run-script": {"stdout": "legacy", "stderr": ""}},
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_has_logs_false_when_neither(
+    test_client, created_task_with_history
+):
+    """Assert ``has_logs`` is ``False`` when neither chunks nor legacy blob exist."""
+    response = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is False
+
+
 @pytest.mark.asyncio
 async def test_list_task_history_events(
     test_client, created_task_with_history, mock_executor
@@ -551,6 +740,59 @@ async def test_sync_task_history_not_running_skips_executor(
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
     mock_executor.sync_task_history.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_sync_task_history_populates_has_logs(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert the sync endpoint populates ``has_logs`` when chunks exist."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    async def fake_sync(item):
+        item.status = TaskHistoryStatusEnum.SUCCESS
+        item.finished_at = utc_now()
+        return item
+
+    mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_stop_task_running_populates_has_logs(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert the stop endpoint populates ``has_logs`` on the running → stopped response."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+    mock_executor.stop_task.return_value = created_task_with_history
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
 
 
 @pytest.mark.asyncio

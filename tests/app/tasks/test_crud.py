@@ -22,13 +22,20 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
-from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
+from app.tasks.crud import (
+    DispatchLockManager,
+    TaskHistoryLogManager,
+    TaskHistoryManager,
+    TaskManager,
+)
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
     Task,
     TaskBackendEnum,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLogType,
     TaskOwner,
     TaskWrite,
 )
@@ -711,3 +718,104 @@ class TestDispatchLockManager:
 
         remaining = await DispatchLockManager.list(session)
         assert len(remaining) == 0
+
+
+# ---------------------------------------------------------------------------
+# TaskHistoryLogManager.ids_with_chunks
+# ---------------------------------------------------------------------------
+
+
+async def _seed_task_history(
+    session: AsyncSession, task: Task, name: str
+) -> TaskHistory:
+    """Persist and return a SUCCESS task history for ``task``.
+
+    Helper for ``ids_with_chunks`` tests: each chunk-store row requires a
+    real ``TaskHistory`` FK.
+    """
+    history = TaskHistory(
+        task_id=task.id,
+        status=TaskHistoryStatusEnum.SUCCESS,
+        execution_request={
+            "task": task.name,
+            "target": name,
+            "meta": {},
+            "tracking": {"allocation_id": None, "evaluation_id": None},
+        },
+    )
+    return await TaskHistoryManager.save(session, history)
+
+
+async def _seed_chunk(
+    session: AsyncSession, task_history_id: int, payload: bytes = b"hello"
+) -> None:
+    """Write a single chunk-store row for ``task_history_id`` via the writer."""
+    await TaskHistoryLogWriter.append(
+        session,
+        task_history_id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        force_flush=True,
+        producer_offset_after=len(payload),
+    )
+
+
+class TestTaskHistoryLogManagerIdsWithChunks:
+    """Test ``TaskHistoryLogManager.ids_with_chunks``."""
+
+    @pytest.mark.asyncio
+    async def test_empty_input_returns_empty_set(self, session: AsyncSession) -> None:
+        """Assert an empty input returns ``set()`` without querying the DB."""
+        result = await TaskHistoryLogManager.ids_with_chunks(session, [])
+
+        assert result == set()
+
+    @pytest.mark.asyncio
+    async def test_no_matches_returns_empty_set(self, session: AsyncSession) -> None:
+        """Assert IDs with no chunks in the store come back as an empty set."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+
+        result = await TaskHistoryLogManager.ids_with_chunks(session, [history.id])
+
+        assert result == set()
+
+    @pytest.mark.asyncio
+    async def test_returns_only_ids_with_chunks(self, session: AsyncSession) -> None:
+        """Assert the subset with chunks is returned for a mixed input."""
+        task = await _create_task(session)
+        with_chunks_a = await _seed_task_history(session, task, "node-a")
+        with_chunks_b = await _seed_task_history(session, task, "node-b")
+        without_chunks = await _seed_task_history(session, task, "node-c")
+        await _seed_chunk(session, with_chunks_a.id)
+        await _seed_chunk(session, with_chunks_b.id)
+
+        result = await TaskHistoryLogManager.ids_with_chunks(
+            session,
+            [with_chunks_a.id, with_chunks_b.id, without_chunks.id],
+        )
+
+        assert result == {with_chunks_a.id, with_chunks_b.id}
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_multiple_chunk_rows_per_history(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a history with multiple chunks is reported once (DISTINCT)."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_chunk(session, history.id, payload=b"first")
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDERR,
+            new_bytes=b"second",
+            force_flush=True,
+            producer_offset_after=6,
+        )
+
+        result = await TaskHistoryLogManager.ids_with_chunks(session, [history.id])
+
+        assert result == {history.id}

@@ -32,7 +32,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </thead>
         <tbody>
             {% for task_history in history_tasks %}
-                {%- set task_logs = task_history.execution_request.tracking.task_logs or False -%}
+                {%- set task_logs = task_history.has_logs -%}
                 {% if task_history.status in ['success', 'failed', 'stopped', 'lost'] %}
                     <tr>
                         <td>{{ task_history.task.name }}</td>

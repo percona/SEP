@@ -911,9 +911,14 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     :type task: TaskResponse
     :param executed_by: The user ID of the user who executed the task.
     :type executed_by: str | None
+    :param has_logs: Whether this task history has any readable log content --
+        either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
+        Populated by list/retrieve routes; defaults to ``False``.
+    :type has_logs: bool
     """
 
     task: TaskResponse
+    has_logs: bool = False
 
 
 class TaskStats(BaseModel):
