@@ -46,6 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.filter.outputs.python }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -59,6 +60,9 @@ jobs:
               - '**/**.py'
               - 'pyproject.toml'
               - 'poetry.lock'
+            frontend:
+              - 'frontend/**'
+              - 'package.json'
 
   precommit:
     if: ${{ github.event.pull_request.draft == false }}
@@ -89,6 +93,13 @@ jobs:
   python:
     if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.python == 'true' }}
     uses: ./.github/workflows/python.yaml
+    needs:
+      - label-gate
+      - changes
+
+  frontend:
+    if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.frontend == 'true' }}
+    uses: ./.github/workflows/frontend.yaml
     needs:
       - label-gate
       - changes
@@ -134,6 +145,7 @@ jobs:
       - changes
       - precommit
       - python
+      - frontend
       - build
     runs-on: ubuntu-latest
     steps:
