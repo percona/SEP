@@ -23,6 +23,7 @@ from multiprocessing import Process
 
 from fastapi import FastAPI
 
+from app import __summary__, __version__
 from app.api.main import api_router
 from app.celery import celery as celery_app
 from app.core.config import create_app, settings
@@ -62,6 +63,13 @@ app = create_app(
     backend_cors_origins=sep_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
+    title="SEP HTTP API",
+    version=__version__,
+    description=(
+        f"{__summary__}\n\n"
+        "Core HTTP API (OAuth, users). Inventory and Tasks services are mounted "
+        "under ``/api/inventory`` and ``/api/tasks`` with separate OpenAPI documents."
+    ),
 )
 app.add_middleware(LogContextMiddleware)
 app.mount("/api/inventory", inventory_app)

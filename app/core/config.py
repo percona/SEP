@@ -18,7 +18,7 @@
 import logging.config
 import re
 import secrets
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import cached_property
@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, FastAPI
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 from pydantic import (
     computed_field,
     DirectoryPath,
@@ -68,6 +69,7 @@ from app.core.utils.fields import (
     URL,
 )
 from app.core.utils.lazy import LazyProxy
+from app.core.utils.openapi import generate_tag_prefixed_unique_id
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -543,6 +545,10 @@ def create_app(
     backend_cors_origins: list[StrHttpUrl] | None = None,
     allowed_hosts: list[str] | None = None,
     security_headers: SecurityHeadersOptions | None = None,
+    title: str | None = None,
+    version: str | None = None,
+    description: str | None = None,
+    generate_unique_id_function: Callable[[APIRoute], str] | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI app.
 
@@ -559,10 +565,26 @@ def create_app(
     :type allowed_hosts: list[str]
     :param security_headers: Options for the SecurityHeadersMiddleware. Defaults to
         None, meaning the middleware won't be added to the app.
+    :param title: Optional OpenAPI title for the generated spec.
+    :param version: Optional OpenAPI version string.
+    :param description: Optional OpenAPI description text.
+    :param generate_unique_id_function: Optional callback for stable ``operationId``
+        values. When omitted, :func:`app.core.utils.openapi.generate_tag_prefixed_unique_id`
+        is used so similarly named handlers across routers do not collide.
     :return: An instance of the FastAPI application with an attached Celery app.
     :rtype: FastAPI
     """
-    app = FastAPI(lifespan=lifespan)
+    openapi_kwargs: dict[str, Any] = {}
+    if title is not None:
+        openapi_kwargs["title"] = title
+    if version is not None:
+        openapi_kwargs["version"] = version
+    if description is not None:
+        openapi_kwargs["description"] = description
+    openapi_kwargs["generate_unique_id_function"] = (
+        generate_unique_id_function or generate_tag_prefixed_unique_id
+    )
+    app = FastAPI(lifespan=lifespan, **openapi_kwargs)
     if backend_cors_origins is not None:
         app.add_middleware(
             CORSMiddleware,
