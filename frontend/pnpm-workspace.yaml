@@ -1,0 +1,7 @@
+packages:
+  - 'packages/*'
+  - 'packages/plugins/*'
+onlyBuiltDependencies:
+  - '@swc/core'
+  - 'esbuild'
+  - '@percona/percona-ui'
