@@ -79,6 +79,9 @@ jobs:
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Full history so pre-commit can diff against the PR base ref
+          fetch-depth: 0
 
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
@@ -111,6 +114,14 @@ jobs:
       - name: Perform pre-commit checks
         env:
           POETRY: poetry
+          # On PRs, only lint files that changed vs the base branch. On
+          # workflow_call / workflow_dispatch runs, fall back to --all-files
+          PRE_COMMIT_ARGS: >-
+            ${{
+              github.event_name == 'pull_request'
+              && format('--from-ref origin/{0} --to-ref HEAD', github.base_ref)
+              || '--all-files'
+            }}
         run: make run-pre-commit
 
   python:
