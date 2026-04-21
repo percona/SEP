@@ -79,6 +79,14 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: frontend
 
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
       - name: Perform pre-commit checks
         env:
           POETRY: poetry
