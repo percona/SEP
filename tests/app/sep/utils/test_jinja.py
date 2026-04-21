@@ -91,6 +91,18 @@ def test_syntax_highlight_with_unknown_language(mocker, random_json):
     assert isinstance(highlight_mock.call_args.args[1], TextLexer)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [30, 30.5, True, False, None],
+    ids=["int", "float", "bool_true", "bool_false", "none"],
+)
+def test_syntax_highlight_coerces_non_string_input(value):
+    """Test that syntax_highlight coerces non-string scalar input to ``str``."""
+    result = syntax_highlight(value)
+    assert isinstance(result, str)
+    assert str(value) in result
+
+
 def test_timestamp_format_zero():
     """Test that epoch 0 formats to the Unix epoch date."""
     assert timestamp_format(0) == "01 January 1970 at 00:00:00"

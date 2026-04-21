@@ -36,8 +36,19 @@ make changelog-add TICKET=SEP-503 SECTION=added \
 ```
 
 This creates `changelog.d/SEP-503.added.md` containing just the description.
-Commit the file as part of your PR. Skip the step entirely for purely internal
-changes (CI, refactoring, tooling, docs) that have no user-visible effect.
+Commit the file as part of your PR.
+
+**Skip this step when either applies:**
+
+1. **Purely internal changes** — CI, refactoring, tooling, docs with no
+   user-visible effect.
+2. **Same-release-cycle fix** — the PR fixes a regression or behaviour
+   change introduced by another ticket that shares this PR's Jira `Fix
+   Version` and is itself still unreleased (no `[vX.Y.Z]` header for that
+   Fix Version in `CHANGELOG.md`). Usually surfaces as a Jira `is caused
+   by` link to a sibling ticket in the same version. The bug never
+   shipped to users, so a fragment would add confusing "regression fixed"
+   noise to release notes describing behaviour users never saw.
 
 ## File format
 
