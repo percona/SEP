@@ -1752,7 +1752,9 @@ class TestInternalDispatchQueueItemRegression:
     These tests use the real ``session`` fixture — NOT
     ``AsyncMock(spec=AsyncSession)`` — so a future regression that
     drops the explicit refresh will reproduce the production failure
-    mode. See ``tests/CLAUDE.md`` § "Mocking: Subjects vs. Boundaries".
+    mode. Mocking the subject's own session bypasses SQLAlchemy's
+    lifecycle and would let the test pass even if the refresh line
+    were deleted.
     """
 
     @pytest.mark.asyncio
