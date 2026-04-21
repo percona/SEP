@@ -24,7 +24,6 @@ from pydantic import SecretStr
 from app.core.config import PMMSettings
 from app.core.pmm import annotate_task_event, create_pmm_annotation
 from app.core.requests.remote_api import RemoteAPI
-from app.tasks.models import TaskExecutionRequest, TaskHistory, TaskHistoryStatusEnum
 
 
 @pytest.fixture
@@ -47,28 +46,6 @@ def mock_remote_api():
     api.auth.return_value.__enter__ = MagicMock(return_value=api)
     api.auth.return_value.__exit__ = MagicMock(return_value=False)
     return api
-
-
-@pytest.fixture
-def queue_item_factory():
-    """Return a factory for creating mock TaskHistory objects."""
-
-    def _make(
-        task="backup_data",
-        target="node-1",
-        status=TaskHistoryStatusEnum.RUNNING,
-        meta=None,
-    ):
-        queue_item = MagicMock(spec=TaskHistory)
-        queue_item.execution_request = TaskExecutionRequest(
-            task=task,
-            target=target,
-            meta=meta if meta is not None else {},
-        )
-        queue_item.status = status
-        return queue_item
-
-    return _make
 
 
 class TestCreatePmmAnnotation:
@@ -215,14 +192,17 @@ class TestAnnotateTaskEvent:
     """Test ``annotate_task_event()``."""
 
     @pytest.mark.asyncio
-    async def test_annotation_text_format(self, queue_item_factory):
+    async def test_annotation_text_format(self):
         """Assert annotation text follows 'SEP {task} - {event}' format."""
-        queue_item = queue_item_factory(task="backup_data", target="node-1")
-
         with patch(
             "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
         ) as mock_create:
-            await annotate_task_event(queue_item, "STARTED")
+            await annotate_task_event(
+                task_name="backup_data",
+                target="node-1",
+                meta={},
+                event="STARTED",
+            )
 
         mock_create.assert_awaited_once_with(
             text="SEP backup_data - STARTED",
@@ -232,74 +212,88 @@ class TestAnnotateTaskEvent:
         )
 
     @pytest.mark.asyncio
-    async def test_reads_service_names_list_from_meta(self, queue_item_factory):
+    async def test_reads_service_names_list_from_meta(self):
         """Assert ``_service_names`` list is passed through from meta."""
-        queue_item = queue_item_factory(meta={"_service_names": ["svc1", "svc2"]})
-
         with patch(
             "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
         ) as mock_create:
-            await annotate_task_event(queue_item, "COMPLETED")
+            await annotate_task_event(
+                task_name="backup_data",
+                target="node-1",
+                meta={"_service_names": ["svc1", "svc2"]},
+                event="COMPLETED",
+            )
 
         mock_create.assert_awaited_once()
         call_kwargs = mock_create.await_args.kwargs
         assert call_kwargs["service_names"] == ["svc1", "svc2"]
 
     @pytest.mark.asyncio
-    async def test_reads_single_service_name_from_meta(self, queue_item_factory):
+    async def test_reads_single_service_name_from_meta(self):
         """Assert ``_service_name`` string is wrapped in a list."""
-        queue_item = queue_item_factory(meta={"_service_name": "mysql-svc"})
-
         with patch(
             "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
         ) as mock_create:
-            await annotate_task_event(queue_item, "FAILED")
+            await annotate_task_event(
+                task_name="backup_data",
+                target="node-1",
+                meta={"_service_name": "mysql-svc"},
+                event="FAILED",
+            )
 
         mock_create.assert_awaited_once()
         call_kwargs = mock_create.await_args.kwargs
         assert call_kwargs["service_names"] == ["mysql-svc"]
 
     @pytest.mark.asyncio
-    async def test_empty_service_names_when_no_meta_keys(self, queue_item_factory):
+    async def test_empty_service_names_when_no_meta_keys(self):
         """Assert empty service_names when meta has no service keys."""
-        queue_item = queue_item_factory(meta={})
-
         with patch(
             "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
         ) as mock_create:
-            await annotate_task_event(queue_item, "STARTED")
+            await annotate_task_event(
+                task_name="backup_data",
+                target="node-1",
+                meta={},
+                event="STARTED",
+            )
 
         mock_create.assert_awaited_once()
         call_kwargs = mock_create.await_args.kwargs
         assert call_kwargs["service_names"] == []
 
     @pytest.mark.asyncio
-    async def test_service_names_list_takes_precedence_over_single(
-        self, queue_item_factory
-    ):
+    async def test_service_names_list_takes_precedence_over_single(self):
         """Assert ``_service_names`` list takes precedence over ``_service_name``."""
-        queue_item = queue_item_factory(
-            meta={"_service_names": ["svc-a", "svc-b"], "_service_name": "ignored-svc"}
-        )
-
         with patch(
             "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
         ) as mock_create:
-            await annotate_task_event(queue_item, "STARTED")
+            await annotate_task_event(
+                task_name="backup_data",
+                target="node-1",
+                meta={
+                    "_service_names": ["svc-a", "svc-b"],
+                    "_service_name": "ignored-svc",
+                },
+                event="STARTED",
+            )
 
         mock_create.assert_awaited_once()
         call_kwargs = mock_create.await_args.kwargs
         assert call_kwargs["service_names"] == ["svc-a", "svc-b"]
 
     @pytest.mark.asyncio
-    async def test_handles_none_meta(self, queue_item_factory):
+    async def test_handles_none_meta(self):
         """Assert ``None`` meta falls back to empty dict."""
-        queue_item = queue_item_factory(meta=None)
-
         with patch(
             "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
         ) as mock_create:
-            await annotate_task_event(queue_item, "STARTED")
+            await annotate_task_event(
+                task_name="backup_data",
+                target="node-1",
+                meta=None,
+                event="STARTED",
+            )
 
         mock_create.assert_awaited_once()
         call_kwargs = mock_create.await_args.kwargs
