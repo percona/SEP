@@ -63,10 +63,8 @@ lint: ruff djlint
 
 audit: bandit pip-audit
 
-PRE_COMMIT_ARGS?=--all-files
-
 run-pre-commit: venv
-	@"${VENV_BIN}"/pre-commit run ${PRE_COMMIT_ARGS} --show-diff-on-failure
+	@"${VENV_BIN}"/pre-commit run --all-files
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
