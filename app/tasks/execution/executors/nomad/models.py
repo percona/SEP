@@ -487,12 +487,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             parameterized_job.get("MetaRequired") or []
         )
         if "staleness_threshold_seconds" in declared_meta:
-            filtered_meta["staleness_threshold_seconds"] = (
+            filtered_meta["staleness_threshold_seconds"] = str(
                 tasks_config.tasks_settings.STALENESS_THRESHOLD_SECONDS
             )
         if "scheduled_at" in declared_meta:
             eta = queue_item.execution_request.eta
-            filtered_meta["scheduled_at"] = (
+            filtered_meta["scheduled_at"] = str(
                 int(eta.timestamp())
                 if eta is not None
                 else int(queue_item.created_at.timestamp())

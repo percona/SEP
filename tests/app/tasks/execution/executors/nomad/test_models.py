@@ -501,7 +501,7 @@ class TestDispatchJob:
             tasks_settings.STALENESS_THRESHOLD_SECONDS = original
 
         meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
-        assert meta["staleness_threshold_seconds"] == STALENESS_THRESHOLD_OVERRIDE
+        assert meta["staleness_threshold_seconds"] == str(STALENESS_THRESHOLD_OVERRIDE)
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_dispatch_job_strips_underscore_meta_but_preserves_staleness(
@@ -529,8 +529,9 @@ class TestDispatchJob:
         meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
         assert "_chain_task_names" not in meta
         assert "scheduled_at" in meta
-        assert isinstance(meta["scheduled_at"], int)
+        assert isinstance(meta["scheduled_at"], str)
         assert "staleness_threshold_seconds" in meta
+        assert isinstance(meta["staleness_threshold_seconds"], str)
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_dispatch_job_skips_staleness_meta_when_job_does_not_declare_it(
@@ -577,7 +578,7 @@ class TestDispatchJob:
         executor.dispatch_job(queue_item, task)
 
         meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
-        assert meta["scheduled_at"] == int(eta.timestamp())
+        assert meta["scheduled_at"] == str(int(eta.timestamp()))
 
 
 class TestDetectStaleSkip:
