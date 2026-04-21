@@ -159,3 +159,39 @@ class TestStalenessPreambleShell:
             }
         )
         assert result.returncode == 0
+
+    def test_no_unbraced_nomad_unknown_references(self) -> None:
+        """Assert the preamble has no ``${...}`` references Nomad cannot resolve.
+
+        Nomad interpolates ``${...}`` in raw_exec args via its own variable table
+        before spawning the shell. Any reference not known to Nomad (e.g. a shell
+        local like ``${elapsed}``) fails Nomad config validation and aborts the
+        whole task. Shell locals must therefore be referenced with the bareword
+        form ``$name`` so Nomad passes them through verbatim to ``/bin/sh``.
+        """
+        assert "${elapsed}" not in STALENESS_PREAMBLE_SHELL
+        assert "${NOMAD_META_staleness_threshold_seconds}" not in (
+            STALENESS_PREAMBLE_SHELL
+        )
+
+    def test_stale_skip_line_format(self) -> None:
+        """Assert the SEP_STALE_SKIP line renders with concrete threshold value.
+
+        Uses a past ``NOMAD_META_scheduled_at`` (1970) against a 5-second
+        threshold so elapsed > threshold, and checks the rendered line begins
+        with ``SEP_STALE_SKIP: elapsed=`` and contains ``threshold=5s``.
+        """
+        result = subprocess.run(
+            ["/bin/sh", "-c", STALENESS_PREAMBLE_SHELL],
+            env={
+                "PATH": "/usr/bin:/bin",
+                "NOMAD_META_scheduled_at": "100",
+                "NOMAD_META_staleness_threshold_seconds": "5",
+            },
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == STALE_EXIT_CODE
+        line = result.stdout.decode().strip()
+        assert line.startswith("SEP_STALE_SKIP: elapsed=")
+        assert "threshold=5s" in line

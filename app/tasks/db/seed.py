@@ -41,14 +41,22 @@ logger = logging.getLogger(__name__)
 # POSIX sh preamble that aborts a Nomad allocation when
 # ``now - scheduled_at`` exceeds the configured staleness threshold. Missing
 # or empty meta values short-circuit to a no-op for rollback safety.
+#
+# NOTE: shell variables are referenced with the bareword form (``$name``) and
+# never the brace form (``${name}``). Nomad interpolates ``${...}`` in
+# ``raw_exec`` args through its own variable table before spawning the shell,
+# and fails config validation for references it does not know (e.g. the shell
+# local ``${elapsed}``). The ``""s`` after each variable name disambiguates the
+# variable name from the trailing literal ``s`` so ``$elapseds`` is not parsed
+# as a single (unset) variable name.
 STALENESS_PREAMBLE_SHELL = (
     'if [ -n "$NOMAD_META_scheduled_at" ] && '
     '[ -n "$NOMAD_META_staleness_threshold_seconds" ]; then '
     "now=$(date +%s); "
     "elapsed=$((now - NOMAD_META_scheduled_at)); "
     'if [ "$elapsed" -gt "$NOMAD_META_staleness_threshold_seconds" ]; then '
-    'echo "SEP_STALE_SKIP: elapsed=${elapsed}s '
-    'threshold=${NOMAD_META_staleness_threshold_seconds}s"; '
+    'echo "SEP_STALE_SKIP: elapsed=$elapsed""s '
+    'threshold=$NOMAD_META_staleness_threshold_seconds""s"; '
     "exit 75; "
     "fi; "
     "fi"
