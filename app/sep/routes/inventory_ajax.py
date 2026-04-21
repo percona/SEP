@@ -13,7 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define AJAX proxy routes for inventory API schema/table data."""
+"""Define legacy AJAX proxy routes for inventory API schema/table data.
+
+Serve dynamic dropdown data to Jinja2 forms that predate the shared
+``/api/plugins/*`` surface. New plugin API endpoints should register under
+``app/sep/api/router.py`` instead of being added here.
+"""
 
 import logging
 
