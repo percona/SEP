@@ -743,6 +743,33 @@ async def test_sync_task_history_not_running_skips_executor(
 
 
 @pytest.mark.asyncio
+async def test_sync_task_history_not_running_still_populates_has_logs(
+    test_client, session, created_task_with_history
+):
+    """Assert the early-return branch (already-finished) still populates ``has_logs``.
+
+    Regression: the sync endpoint short-circuits when the task has already
+    finished. Before the fix, the early return skipped ``_populate_has_logs``
+    so the response always had ``has_logs=False`` even when chunks existed,
+    which broke the API contract relative to ``GET /history/{id}``.
+    """
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
+
+
+@pytest.mark.asyncio
 async def test_sync_task_history_populates_has_logs(
     test_client, session, mock_executor, created_task_with_history
 ):

@@ -550,6 +550,7 @@ async def sync_task_history(
     """Sync task history with the executor and persist the latest status."""
     logger.debug("Syncing task history %s", task_history.id)
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
+        await _populate_has_logs(session, [task_history])
         return task_history
     updated = await executor.sync_task_history(task_history)
     saved = await TaskHistoryManager.save(
@@ -573,10 +574,13 @@ async def sync_task_history(
     "/history/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
 )
 async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHistory:
-    """Create a new task history."""
+    """Create a new task history.
+
+    ``has_logs`` is not populated on this response -- a row that was just
+    created has no chunk-store entry or legacy tracking blob yet, so the
+    field defaults to ``False`` on serialization.
+    """
     logger.debug("Creating task history %s", task.name)
-    # ``has_logs`` is not populated here -- newly-created rows never have
-    # any chunk-store entry or legacy tracking blob yet.
     return await TaskHistoryManager.save(session, task)
 
 
