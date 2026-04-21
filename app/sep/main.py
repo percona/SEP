@@ -39,7 +39,7 @@ from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings
-from app.sep.db.seed import init_sep_db
+from app.sep.db.seed import create_plugin_tables, init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -67,10 +67,11 @@ JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/checksums/api/", "/api/plugins/")
 async def sep_startup() -> None:
     """Define actions to perform on SEP startup.
 
-    Initialize the SEP periodic task database and trigger the initial
-    synchronization of snippets if configured to do so.
+    Initialize the SEP periodic task database, create plugin-scoped tables, and trigger
+    the initial synchronization of snippets if configured to do so.
     """
     await init_sep_db()
+    await create_plugin_tables()
     if snippets_settings.SYNC_ON_STARTUP:
         sync_snippets.delay()
 

@@ -25,7 +25,6 @@ from alembic import context
 
 from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
-from app.sep.migrations._discovery import discover_plugin_migrations_and_models
 from app.sep.models import *
 from app.sep.snippets.models import *
 
@@ -36,9 +35,7 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name, disable_existing_loggers=False)
-
-discover_plugin_migrations_and_models()
+    fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

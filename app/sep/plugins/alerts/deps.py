@@ -29,10 +29,11 @@ from app.core.exceptions import (
 )
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 from app.sep.deps import DefaultContext, SessionDep
+from app.sep.plugins.alerts.backup import AlertBackup
 from app.sep.plugins.alerts.config import alerts_pmm_config
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.loader import get_alert_templates
-from app.sep.plugins.alerts.models import AlertBackup, AlertTemplate, ServiceType
+from app.sep.plugins.alerts.models import AlertTemplate, ServiceType
 
 logger = logging.getLogger(__name__)
 

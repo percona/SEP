@@ -19,8 +19,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from app.sep.plugins.alerts.backup import AlertBackup
 from app.sep.plugins.alerts.models import (
-    AlertBackup,
     AlertSeverity,
     AlertTemplate,
     ServiceType,

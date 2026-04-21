@@ -13,37 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the alerts plugin's DB model and Pydantic helpers."""
+"""Define Pydantic models and conversion helpers for alert templates."""
 
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated
 
 import yaml
 from pydantic import BaseModel, StringConstraints
-from sqlalchemy import Column, JSON
-from sqlmodel import Field as SQLField
 
-from app.core.db.models import BaseSQLModel
 from app.sep.models import AlertServiceType as ServiceType
-
-
-class AlertBackup(BaseSQLModel, table=True):
-    """Store a point-in-time snapshot of PMM alert configuration.
-
-    :param data: The full alert configuration data including templates,
-        rules, contact points, notification policies, and folders.
-    :type data: dict[str, Any]
-    :param metadata_: Summary counts for the backed-up configuration,
-        stored as the ``metadata`` column in the database.
-    :type metadata_: dict[str, Any]
-    """
-
-    __tablename__ = "alert_backup"
-
-    data: dict[str, Any] = SQLField(sa_column=Column(JSON, nullable=False))
-    metadata_: dict[str, Any] = SQLField(
-        sa_column=Column("metadata", JSON, nullable=False)
-    )
 
 
 class AlertSeverity(StrEnum):
@@ -73,8 +51,8 @@ class AlertTemplate(BaseModel):
         Whitespace is stripped and the value must be non-empty.
     :type expression: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     :param default_threshold: The default numeric threshold displayed and configured
-        in the UI. This is independent of ``expression`` — the bundled PromQL expression
-        may embed its own comparison value. ``default_threshold`` is UI metadata that
+        in the UI. This is independent of `expression` — the bundled PromQL expression
+        may embed its own comparison value. `default_threshold` is UI metadata that
         the alert management UI (SEP-779) uses to pre-populate the threshold input.
     :type default_threshold: float
     :param severity: The severity level of the alert.
