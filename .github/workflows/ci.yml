@@ -121,9 +121,22 @@ jobs:
       - changes
 
   build:
-    if: ${{ github.event.pull_request.draft == false }}
+    # Run when Python or Docker-relevant paths change. Use always() so the job
+    # still runs when `python` is skipped (no .py changes but Containerfile /
+    # bundle assets changed). Any failures in `python` still stops
+    if: >-
+      ${{
+        always() &&
+        github.event.pull_request.draft == false &&
+        needs.label-gate.result == 'success' &&
+        needs.changes.result == 'success' &&
+        (needs.python.result == 'success' || needs.python.result == 'skipped') &&
+        (needs.changes.outputs.python == 'true' || needs.changes.outputs.docker == 'true')
+      }}
     runs-on: ubuntu-latest
     needs:
+      - label-gate
+      - changes
       - python
     steps:
       - name: Checkout codebase
