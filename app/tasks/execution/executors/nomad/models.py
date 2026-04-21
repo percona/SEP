@@ -482,9 +482,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             if queue_item.execution_request.meta
             else {}
         )
-        filtered_meta["staleness_threshold_seconds"] = (
-            tasks_config.tasks_settings.STALENESS_THRESHOLD_SECONDS
+        parameterized_job = task.data.get("ParameterizedJob") or {}
+        declared_meta = set(parameterized_job.get("MetaOptional") or []) | set(
+            parameterized_job.get("MetaRequired") or []
         )
+        if "staleness_threshold_seconds" in declared_meta:
+            filtered_meta["staleness_threshold_seconds"] = (
+                tasks_config.tasks_settings.STALENESS_THRESHOLD_SECONDS
+            )
+        if "scheduled_at" in declared_meta:
+            eta = queue_item.execution_request.eta
+            filtered_meta["scheduled_at"] = (
+                int(eta.timestamp())
+                if eta is not None
+                else int(queue_item.created_at.timestamp())
+            )
 
         custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
         if custom_prefix:

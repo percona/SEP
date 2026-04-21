@@ -62,7 +62,6 @@ INITIAL_LOG_OFFSET = 50
 EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
-STALENESS_SCHEDULED_AT_OVERRIDE = 123
 
 
 def _build_task(
@@ -70,6 +69,7 @@ def _build_task(
     *,
     parameterized: bool = False,
     constraints: list | None = None,
+    declares_staleness_meta: bool = True,
 ) -> Task:
     """Build a minimal Task instance for testing.
 
@@ -79,12 +79,23 @@ def _build_task(
     :type parameterized: bool
     :param constraints: Optional constraints list.
     :type constraints: list | None
+    :param declares_staleness_meta: Whether the ParameterizedJob declares the
+        ``scheduled_at``/``staleness_threshold_seconds`` meta keys (matches the
+        shape of the centralized templates). Only effective when
+        ``parameterized=True``.
+    :type declares_staleness_meta: bool
     :return: A Task instance with minimal fields.
     :rtype: Task
     """
     data = {"ID": task_id, "Constraints": constraints or []}
     if parameterized:
-        data["ParameterizedJob"] = {"Payload": "required"}
+        parameterized_spec: dict = {"Payload": "required"}
+        if declares_staleness_meta:
+            parameterized_spec["MetaOptional"] = [
+                "scheduled_at",
+                "staleness_threshold_seconds",
+            ]
+        data["ParameterizedJob"] = parameterized_spec
     return Task(
         id=1,
         name="test-task",
@@ -493,10 +504,10 @@ class TestDispatchJob:
         assert meta["staleness_threshold_seconds"] == STALENESS_THRESHOLD_OVERRIDE
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_dispatch_job_strips_underscore_meta_but_preserves_threshold(
+    def test_dispatch_job_strips_underscore_meta_but_preserves_staleness(
         self, mock_nomad_cls
     ):
-        """Assert underscore keys are stripped while threshold is still injected."""
+        """Assert underscore keys are stripped while staleness meta is injected."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.job.dispatch_job.return_value = {
@@ -510,7 +521,6 @@ class TestDispatchJob:
             meta={
                 "target": "n",
                 "_chain_task_names": ["next"],
-                "scheduled_at": STALENESS_SCHEDULED_AT_OVERRIDE,
             },
         )
 
@@ -518,8 +528,56 @@ class TestDispatchJob:
 
         meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
         assert "_chain_task_names" not in meta
-        assert meta["scheduled_at"] == STALENESS_SCHEDULED_AT_OVERRIDE
+        assert "scheduled_at" in meta
+        assert isinstance(meta["scheduled_at"], int)
         assert "staleness_threshold_seconds" in meta
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_dispatch_job_skips_staleness_meta_when_job_does_not_declare_it(
+        self, mock_nomad_cls
+    ):
+        """Assert staleness meta is NOT injected into jobs that don't declare it.
+
+        Custom user-defined parameterized jobs that haven't been updated to
+        include the staleness meta keys would otherwise be rejected by Nomad,
+        so ``dispatch_job`` must preserve backward compatibility by only
+        injecting the staleness meta when the job spec declares it.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.job.dispatch_job.return_value = {
+            "DispatchedJobID": "d-1",
+            "EvalID": "e-1",
+        }
+        executor = _build_executor()
+        task = _build_task(parameterized=True, declares_staleness_meta=False)
+        queue_item = _build_queue_item(task=task, meta={"target": "n"})
+
+        executor.dispatch_job(queue_item, task)
+
+        meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
+        assert "scheduled_at" not in meta
+        assert "staleness_threshold_seconds" not in meta
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_dispatch_job_scheduled_at_uses_eta_when_set(self, mock_nomad_cls):
+        """Assert ``scheduled_at`` derives from ``eta`` when the ETA is set."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.job.dispatch_job.return_value = {
+            "DispatchedJobID": "d-1",
+            "EvalID": "e-1",
+        }
+        executor = _build_executor()
+        task = _build_task(parameterized=True)
+        queue_item = _build_queue_item(task=task, meta={"target": "n"})
+        eta = datetime(2030, 1, 1, tzinfo=UTC)
+        queue_item.execution_request.eta = eta
+
+        executor.dispatch_job(queue_item, task)
+
+        meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
+        assert meta["scheduled_at"] == int(eta.timestamp())
 
 
 class TestDetectStaleSkip:

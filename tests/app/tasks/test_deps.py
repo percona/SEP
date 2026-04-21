@@ -16,7 +16,6 @@
 """Define tests for the Tasks API dependency injection functions."""
 
 from collections import defaultdict
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -24,7 +23,6 @@ import pytest_asyncio
 from starlette.requests import Request
 
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
-from app.core.utils import utc_now
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.deps import (
@@ -351,30 +349,24 @@ class TestPrepareTaskHistory:
         mock_anonymizer_settings.get_anonymize_mask.assert_called_once_with("BACKUPS")
 
     @pytest.mark.asyncio
-    async def test_scheduled_at_uses_utc_now_when_no_eta(self, nomad_task) -> None:
-        """Assert scheduled_at falls back to utc_now when no ETA is set."""
-        before = int(utc_now().timestamp())
+    async def test_scheduled_at_not_injected_into_meta(self, nomad_task) -> None:
+        """Assert ``scheduled_at`` is never added to ``execution_request.meta``.
+
+        The dispatch lock hash and identical-task conflict query both iterate
+        every meta key, so adding a per-call timestamp to meta would silently
+        break duplicate-dispatch detection. The staleness value is instead
+        derived at dispatch time from ``eta``/``created_at`` and injected into
+        Nomad meta only for jobs that declare the key.
+        """
         execution_data = TaskExecuteRequest(meta={"target": "node-1"})
         result = await prepare_task_history(
             nomad_task, "user-1", AsyncMock(), execution_data
         )
-        scheduled_at = result.execution_request.meta["scheduled_at"]
-        assert isinstance(scheduled_at, int)
-        assert before <= scheduled_at <= before + 5
+        assert "scheduled_at" not in result.execution_request.meta
 
     @pytest.mark.asyncio
-    async def test_scheduled_at_uses_eta_when_provided(self, nomad_task) -> None:
-        """Assert scheduled_at equals ``int(eta.timestamp())`` when ETA is set."""
-        eta = utc_now() + timedelta(hours=2)
-        execution_data = TaskExecuteRequest(meta={"target": "node-1"}, eta=eta)
-        result = await prepare_task_history(
-            nomad_task, "user-1", AsyncMock(), execution_data
-        )
-        assert result.execution_request.meta["scheduled_at"] == int(eta.timestamp())
-
-    @pytest.mark.asyncio
-    async def test_scheduled_at_preserves_user_meta(self, nomad_task) -> None:
-        """Assert existing user meta keys survive the scheduled_at injection."""
+    async def test_prepare_preserves_user_meta(self, nomad_task) -> None:
+        """Assert user-supplied meta keys survive ``prepare_task_history``."""
         execution_data = TaskExecuteRequest(
             meta={"target": "node-1", "custom_key": "custom_value"}
         )
@@ -382,7 +374,6 @@ class TestPrepareTaskHistory:
             nomad_task, "user-1", AsyncMock(), execution_data
         )
         assert result.execution_request.meta["custom_key"] == "custom_value"
-        assert "scheduled_at" in result.execution_request.meta
 
     @pytest.mark.asyncio
     async def test_chain_task_names_injected_in_meta(self) -> None:
