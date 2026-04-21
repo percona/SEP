@@ -9,6 +9,20 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV FASTAPI_ENV=production_docker
 
+####################
+# FRONTEND BUILDER #
+####################
+
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+COPY frontend/ .
+
+RUN pnpm install --frozen-lockfile && pnpm build
+
 #########
 # FINAL #
 #########
@@ -48,6 +62,9 @@ RUN chmod +x $APP_HOME/entrypoint_celery.sh
 
 # Copy project
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
+
+# Copy frontend build artifacts
+COPY --from=frontend-builder /app/packages/shell/dist/ $APP_HOME/frontend/dist/
 
 # Chown all the files to the sep system user
 RUN chmod -R u+X,g+X $APP_HOME

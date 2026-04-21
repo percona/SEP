@@ -1,0 +1,17 @@
+# Frontend — exclude build artifacts and installed deps from build context
+frontend/node_modules/
+frontend/dist/
+frontend/packages/*/node_modules/
+frontend/packages/*/dist/
+frontend/packages/plugins/*/node_modules/
+frontend/packages/plugins/*/dist/
+
+# Python artifacts
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Misc
+.git/
+*.log
