@@ -113,7 +113,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         if method == "GET":
             if request_has_bearer_authorization(request):
-                request.state.csrf_token = ""
+                request.state.csrf_token = ""  # nosec B105
             else:
                 session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
                 existing_csrf = request.cookies.get(CSRF_COOKIE_NAME)
