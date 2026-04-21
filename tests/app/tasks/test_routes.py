@@ -327,6 +327,20 @@ async def test_list_task_history_has_logs_mixed_rows(
             executed_by="test-user",
         ),
     )
+    without_logs = await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            execution_request={
+                "task": task.name,
+                "target": "node3",
+                "meta": {"target": "node3"},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by="test-user",
+        ),
+    )
     await TaskHistoryLogWriter.append(
         session,
         with_chunks.id,
@@ -348,6 +362,7 @@ async def test_list_task_history_has_logs_mixed_rows(
     items_by_id = {item["id"]: item for item in response.json()["items"]}
     assert items_by_id[with_chunks.id]["has_logs"] is True
     assert items_by_id[created_task_with_history.id]["has_logs"] is True
+    assert items_by_id[without_logs.id]["has_logs"] is False
 
 
 @pytest.mark.asyncio

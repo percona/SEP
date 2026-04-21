@@ -63,7 +63,7 @@ from app.tasks.deps import (
     validate_chain_task_names,
 )
 from app.tasks.execution.utils import parse_payload
-from app.tasks.logs.log_reader import decompress_legacy_logs, iter_task_history_logs
+from app.tasks.logs.log_reader import has_legacy_logs, iter_task_history_logs
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
@@ -330,9 +330,8 @@ async def _populate_has_logs(
 
     Read the chunk store in one batched query so list endpoints avoid an
     N+1 :meth:`TaskHistoryLogManager.exists_for_task` call per row, then
-    OR the result with the legacy ``tracking["task_logs"]`` blob so
-    pre-SEP-817 rows keep rendering the **View Logs** button until the
-    backfill lands.
+    OR the result with :func:`has_legacy_logs` so pre-SEP-817 rows keep
+    rendering the **View Logs** button until the backfill lands.
 
     :param session: The SQLAlchemy asynchronous session.
     :type session: AsyncSession
@@ -349,7 +348,7 @@ async def _populate_has_logs(
     for history in histories:
         _set_has_logs(
             history,
-            value=history.id in chunk_ids or bool(decompress_legacy_logs(history)),
+            value=history.id in chunk_ids or has_legacy_logs(history),
         )
 
 
@@ -417,7 +416,7 @@ async def retrieve_task_history(
     _set_has_logs(
         task_history,
         value=await TaskHistoryLogManager.exists_for_task(session, task_history.id)
-        or bool(decompress_legacy_logs(task_history)),
+        or has_legacy_logs(task_history),
     )
     return task_history
 
@@ -538,7 +537,7 @@ async def stop_task_history(
     _set_has_logs(
         stopped,
         value=await TaskHistoryLogManager.exists_for_task(session, stopped.id)
-        or bool(decompress_legacy_logs(stopped)),
+        or has_legacy_logs(stopped),
     )
     return stopped
 
@@ -565,7 +564,7 @@ async def sync_task_history(
     _set_has_logs(
         synced,
         value=await TaskHistoryLogManager.exists_for_task(session, synced.id)
-        or bool(decompress_legacy_logs(synced)),
+        or has_legacy_logs(synced),
     )
     return synced
 
