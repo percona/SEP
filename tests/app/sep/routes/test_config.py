@@ -15,7 +15,7 @@
 
 """Define tests for the ``app.sep.routes.config`` module."""
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import pytest
 import yaml
@@ -30,11 +30,11 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 from app.sep.routes.config import (
-    REDACTED_PLACEHOLDER,
-    SENSITIVE_KEY_PATTERNS,
     _redact_string,
     collect_effective_config,
     redact,
+    REDACTED_PLACEHOLDER,
+    SENSITIVE_KEY_PATTERNS,
 )
 
 
@@ -101,9 +101,10 @@ class TestRedactHelper:
         assert _redact_string("redis://:secretpw@redis:6379/0") == (
             f"redis://{REDACTED_PLACEHOLDER}@redis:6379/0"
         )
-        assert _redact_string(
-            "https://service_token:glsa_xyz@192.168.122.10/nomad"
-        ) == f"https://{REDACTED_PLACEHOLDER}@192.168.122.10/nomad"
+        assert (
+            _redact_string("https://service_token:glsa_xyz@192.168.122.10/nomad")
+            == f"https://{REDACTED_PLACEHOLDER}@192.168.122.10/nomad"
+        )
 
     def test_redact_preserves_plain_urls(self):
         """Do not touch URLs that carry no credentials."""
@@ -161,7 +162,7 @@ class TestExportConfigEndpoint:
         response = admin_test_client.get("/admin/config/export")
         assert response.status_code == HTTP_200_OK
         assert response.headers["content-type"].startswith("application/yaml")
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         expected = f'attachment; filename="sep-config-{today}.yaml"'
         assert response.headers["content-disposition"] == expected
 
@@ -195,9 +196,7 @@ class TestExportConfigEndpoint:
 
     def test_non_admin_is_denied(self, test_client):
         """Regular users are redirected by the default exception handler."""
-        response = test_client.get(
-            "/admin/config/export", follow_redirects=False
-        )
+        response = test_client.get("/admin/config/export", follow_redirects=False)
         assert response.status_code == HTTP_303_SEE_OTHER
 
     def test_unauthenticated_redirects_to_login(self):

@@ -23,7 +23,7 @@ can audit, back up, or reuse the running configuration.
 import io
 import logging
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, UTC
 from enum import Enum
 from pathlib import PurePath
 from string import Template
@@ -267,7 +267,7 @@ async def export_config() -> StreamingResponse:
     :rtype: StreamingResponse
     """
     payload = _build_yaml_bytes()
-    filename = f"sep-config-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.yaml"
+    filename = f"sep-config-{datetime.now(UTC).strftime('%Y-%m-%d')}.yaml"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(
         io.BytesIO(payload),
