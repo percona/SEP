@@ -95,6 +95,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                             <span class="material-symbols-outlined">north_east</span>
                                         </a>
                                     </li>
+                                    <li role="none">
+                                        <a href="{{ url_for('export_config') }}"
+                                           role="menuitem"
+                                           class="list-item"
+                                           download>
+                                            <span class="label">Export YAML configuration</span>
+                                            <span class="material-symbols-outlined">download</span>
+                                        </a>
+                                    </li>
                                 {% endif %}
                                 <li role="none">
                                     <a class="list-item theme-change dark" role="menuitem">
