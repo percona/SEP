@@ -27,6 +27,7 @@ from fastapi import status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
+from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.tasks.config import PreExecutionCheckMode
 from app.tasks.connectivity.models import ConnectivityServiceType
@@ -36,6 +37,7 @@ from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundErr
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
+    DispatchLock,
     ExecutionEvent,
     Task,
     TaskHistory,
@@ -1173,6 +1175,90 @@ async def test_execute_route_keeps_scheduled_at_out_of_meta(
     assert meta["target"] == "node1"
     assert meta["foo"] == "bar"
     assert "scheduled_at" not in meta
+
+
+@pytest.mark.asyncio
+async def test_execute_task_name_refreshes_execution_request_before_annotation(
+    test_client, session, mock_executor, mocker
+):
+    """Assert the STARTED annotation fires against a loaded ``execution_request``.
+
+    Regression for SEP-1017. Exercise the full
+    ``POST /execute/{task_name}`` → ``_dispatch_queue_item`` →
+    ``schedule_annotation(result, "STARTED")`` flow with a real session
+    and a fake executor whose ``dispatch_task`` runs the real
+    ``TaskHistoryManager.save`` (which re-defers the deferred
+    ``execution_request`` ``column_property``). Let the real
+    ``schedule_annotation`` run so its precondition guard exercises
+    against the refreshed instance; mock only
+    ``create_pmm_annotation`` (the outermost HTTP boundary) and assert
+    the annotation was scheduled with the expected primitives.
+
+    Before the fix, this test reproduces ``MissingGreenlet`` against the
+    async ``aiosqlite`` driver.
+    """
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="annotation-task", anonymize_mask=0)
+        ),
+    )
+
+    async def fake_dispatch_task(passed_session, queue_item, _task=None):
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        return await TaskHistoryManager.save(
+            passed_session, queue_item, flag_modified_fields=["execution_request"]
+        )
+
+    mock_executor.dispatch_task = fake_dispatch_task
+
+    mocker.patch(
+        "app.tasks.celery.DispatchLockManager.delete_where",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.tasks.celery.DispatchLockManager.create",
+        new_callable=AsyncMock,
+        return_value=MagicMock(spec=DispatchLock),
+    )
+    mocker.patch("app.tasks.celery.DispatchLockManager.delete", new_callable=AsyncMock)
+    mocker.patch(
+        "app.tasks.celery._raise_if_identical_task_conflict", new_callable=AsyncMock
+    )
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=mock_executor)
+    mocker.patch("app.tasks.celery.get_executor_for_task", return_value=mock_executor)
+    mock_pmm_create = mocker.patch(
+        "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+    )
+    _background_tasks.clear()
+
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1"},
+    )
+
+    for bg_task in list(_background_tasks):
+        await bg_task
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["status"] == TaskHistoryStatusEnum.RUNNING.value
+    mock_pmm_create.assert_awaited_once()
+    assert mock_pmm_create.await_args.kwargs["text"].endswith("- STARTED")
+    assert mock_pmm_create.await_args.kwargs["node_name"] == "node1"
+
+
+# Note: the corresponding regression for ``POST /history/{id}/stop/`` →
+# ``BaseExecutor.stop_task`` → ``schedule_annotation(saved, "STOPPED")``
+# lives at helper level in
+# ``tests/app/tasks/execution/test_models.py::TestStopTaskRegression``.
+# That test exercises the real ``BaseExecutor.stop_task`` against a real
+# ``AsyncSession`` — the exact code path SEP-1017 fixes. An HTTP-level
+# peer would additionally exercise response-model serialization, which
+# hits a pre-existing deferred-relationship issue on ``TaskHistory.task``
+# that is out of scope for SEP-1017; the existing
+# ``test_stop_task_running_calls_executor`` already covers the route's
+# 200 contract.
 
 
 CONNECTIVITY_META = {

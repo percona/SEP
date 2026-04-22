@@ -22,11 +22,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from nomad.api.exceptions import BaseNomadException
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import undefer
 from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
 from app.core.alerts.models import AlertService
@@ -408,8 +410,6 @@ class TestInternalDispatchQueueItem:
     @pytest.mark.asyncio
     async def test_annotates_started_on_successful_dispatch(self):
         """Assert annotate_task_event is called with STARTED after dispatch."""
-        from app.tasks.celery import _dispatch_queue_item
-
         task = _make_task()
         queue_item = _make_history(task=task)
         session = _make_session_mock()
@@ -2203,3 +2203,252 @@ class TestExecuteTaskByName:
             assert result["status"] == TaskHistoryStatusEnum.FAILED.value
             assert result["execution_request"]["task"] == "test-task"
             assert result["execution_request"]["target"] == "node-1"
+
+
+def _noop_async_session_maker():
+    """Return a session maker whose sessions are no-op context managers.
+
+    Used to satisfy ``_dispatch_queue_item``'s lock-session helper
+    without touching a real database — the dispatch lock is patched out
+    separately. Keeping the session maker stub minimal avoids
+    duplicating the ``_make_lock_session_maker`` helper for the single
+    regression test that needs it.
+
+    :return: A callable returning an async-context-manager session stub.
+    :rtype: callable
+    """
+    lock_session = AsyncMock()
+    lock_session_cm = AsyncMock()
+    lock_session_cm.__aenter__ = AsyncMock(return_value=lock_session)
+    lock_session_cm.__aexit__ = AsyncMock(return_value=None)
+    return MagicMock(return_value=lock_session_cm)
+
+
+class TestInternalDispatchQueueItemRegression:
+    """Regression suite for SEP-1017 — real-session ``_dispatch_queue_item``.
+
+    ``TaskHistoryManager.save`` re-defers the ``execution_request``
+    ``column_property`` via its internal ``session.refresh(instance)``.
+    Before SEP-1017, ``schedule_annotation(result, "STARTED")`` then
+    touched that deferred attribute synchronously and crashed with
+    ``MissingGreenlet`` on async drivers (asyncpg, aiosqlite).
+
+    These tests use the real ``session`` fixture — NOT
+    ``AsyncMock(spec=AsyncSession)`` — so a future regression that
+    drops the explicit refresh will reproduce the production failure
+    mode. Mocking the subject's own session bypasses SQLAlchemy's
+    lifecycle and would let the test pass even if the refresh line
+    were deleted.
+    """
+
+    @pytest.mark.asyncio
+    async def test_started_annotation_has_execution_request_loaded(
+        self, session: AsyncSession
+    ):
+        """Assert ``schedule_annotation`` receives a loaded instance.
+
+        Reproduce the production flow: a fake ``dispatch_task`` runs
+        the real ``TaskHistoryManager.save`` (which re-defers the
+        deferred column), then control returns to ``_dispatch_queue_item``
+        which must explicitly refresh ``execution_request`` before
+        calling ``schedule_annotation``. The test captures the argument
+        passed to ``schedule_annotation`` and asserts the deferred
+        column is loaded.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="backup_data", backend=TaskBackendEnum.NOMAD)
+            ),
+        )
+        queue_item = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"_service_names": ["svc1"]},
+            ),
+            status=TaskHistoryStatusEnum.PENDING,
+            executed_by="test-user",
+        )
+
+        async def fake_dispatch_task(
+            passed_session: AsyncSession,
+            item: TaskHistory,
+            _task: Task | None = None,
+        ) -> TaskHistory:
+            item.status = TaskHistoryStatusEnum.RUNNING
+            return await TaskHistoryManager.save(
+                passed_session, item, flag_modified_fields=["execution_request"]
+            )
+
+        captured = []
+
+        def capture_annotation(arg: TaskHistory, _event: str) -> None:
+            captured.append(arg)
+
+        fake_executor = AsyncMock()
+        fake_executor.dispatch_task = fake_dispatch_task
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_noop_async_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.delete_where",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.create",
+                new_callable=AsyncMock,
+                return_value=MagicMock(spec=DispatchLock),
+            ),
+            patch(
+                "app.tasks.celery.DispatchLockManager.delete",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery._raise_if_identical_task_conflict",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.get_root_task",
+                new_callable=AsyncMock,
+                return_value=task,
+            ),
+            patch(
+                "app.tasks.celery.get_executor_for_task",
+                return_value=fake_executor,
+            ),
+            patch(
+                "app.tasks.celery.schedule_annotation",
+                side_effect=capture_annotation,
+            ),
+        ):
+            result = await _dispatch_queue_item(queue_item, session)
+
+        assert len(captured) == 1
+        annotated = captured[0]
+        assert "execution_request" not in sa_inspect(annotated).unloaded
+        assert annotated.execution_request.task == task.name
+        assert annotated.execution_request.target == "node-1"
+        assert result.status == TaskHistoryStatusEnum.RUNNING
+
+
+class _SharedSessionContextManager:
+    """Wrap an ``AsyncSession`` as a reusable async context manager.
+
+    ``sync_queue_item`` opens several ``async with async_session() as s:``
+    blocks in sequence; to let the real save path run against the test
+    DB, each block must yield the same session without closing it.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        """Store the shared session.
+
+        :param session: The test session to yield from each ``__aenter__``.
+        :type session: AsyncSession
+        """
+        self._session = session
+
+    async def __aenter__(self) -> AsyncSession:
+        """Yield the shared session without opening a new one.
+
+        :return: The shared session.
+        :rtype: AsyncSession
+        """
+        return self._session
+
+    async def __aexit__(self, *_exc: object) -> None:
+        """Do nothing — the pytest fixture owns the session lifetime.
+
+        :param _exc: The exception info tuple passed by the runtime.
+        :type _exc: object
+        """
+
+
+class TestSyncQueueItemRegression:
+    """Regression suite for SEP-1017 — real-session ``sync_queue_item``.
+
+    After ``TaskHistoryManager.save`` inside the ``async with
+    async_session()`` block, ``saved.execution_request`` is re-deferred
+    by the save's internal ``session.refresh(instance)``. Chain-dispatch
+    logic reads ``saved.execution_request.meta`` twice **after** the
+    ``async with`` exits, at which point ``saved`` is also detached.
+    Before SEP-1017, that read raised ``DetachedInstanceError`` on sync
+    drivers or ``MissingGreenlet`` on async drivers.
+    """
+
+    @pytest.mark.asyncio
+    async def test_chain_dispatch_reads_survive_detached_session(
+        self, session: AsyncSession
+    ):
+        """Assert chain-dispatch reads succeed after the save-block exits.
+
+        Arrange a ``TaskHistory`` whose sync transitions it to SUCCESS
+        with ``_chain_task_names`` set; exercise ``sync_queue_item``
+        end-to-end and assert ``_dispatch_chained_task`` was invoked
+        (which is only possible if the ``saved.execution_request.meta``
+        reads at the end of ``sync_queue_item`` did not crash).
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name="parent-task",
+                    backend=TaskBackendEnum.NOMAD,
+                    alert_on_fail=False,
+                )
+            ),
+        )
+        chain_task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name="next-task",
+                    backend=TaskBackendEnum.NOMAD,
+                    alert_on_fail=False,
+                )
+            ),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"_chain_task_names": [chain_task.name]},
+                tracking={"evaluation_id": ""},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved_history = await TaskHistoryManager.save(session, history)
+
+        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+            item.status = TaskHistoryStatusEnum.SUCCESS
+            return item
+
+        fake_executor = MagicMock()
+        fake_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+
+        shared_session_maker = MagicMock(
+            return_value=_SharedSessionContextManager(session)
+        )
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=shared_session_maker,
+            ),
+            patch("app.tasks.celery.get_executor_for_task", return_value=fake_executor),
+            patch(
+                "app.tasks.celery._dispatch_chained_task", new_callable=AsyncMock
+            ) as mock_chain,
+        ):
+            await sync_queue_item(saved_history.id)
+
+        mock_chain.assert_awaited_once()
+        parent_arg = mock_chain.await_args.args[1]
+        assert "execution_request" not in sa_inspect(parent_arg).unloaded
