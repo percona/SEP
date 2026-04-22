@@ -19,3 +19,23 @@ The endpoint dumps every loaded Pydantic settings instance, redacts sensitive
 fields, and serves the result as a downloadable YAML file so administrators
 can audit, back up, or reuse the running configuration.
 """
+import logging
+import re
+from fastapi import APIRouter
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+REDACTED_PLACEHOLDER = "***REDACTED***"
+
+SENSITIVE_KEY_PATTERNS: tuple[str, ...] = (
+    "secret",
+    "password",
+    "api_key",
+    "token",
+)
+
+URL_CREDENTIALS_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+@")
+
+_CORE_SETTINGS_EXCLUDE: set[str] = {"LOGGING_CONFIG", "BASE_DIR"}
