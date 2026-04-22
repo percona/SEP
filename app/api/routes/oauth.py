@@ -36,7 +36,9 @@ User = get_user_model()
 
 _REFRESH_REJECTION_DETAIL = "Refresh token is missing, invalid, expired, or revoked"
 
-RefreshTokenCookie = Annotated[str | None, Cookie(alias="refreshToken")]
+RefreshTokenCookie = Annotated[
+    str | None, Cookie(alias=sep_settings.SESSION_REFRESH.COOKIE_NAME)
+]
 
 
 class SPALoginBody(BaseModel):
@@ -177,6 +179,8 @@ async def refresh_token(
     try:
         oauth_token = await User.get_oauth_token(refresh_token=refresh_token)
     except HTTPException as exc:
+        if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+            raise
         logger.debug(
             "Casdoor rejected refresh token (status=%s)",
             exc.status_code,

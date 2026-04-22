@@ -23,6 +23,7 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.api.routes.oauth import RefreshTokenCookie
 from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
 from app.main import app
@@ -304,6 +305,35 @@ def test_refresh_cookie_rejected_by_casdoor(test_client, mocker):
     assert not _set_cookies_matching(
         response.headers.get_list("set-cookie"), "refreshToken"
     )
+
+
+def test_refresh_upstream_failure_propagates(test_client, mocker):
+    """Assert /refresh surfaces auth-provider 5xx instead of masking as 401."""
+    mocker.patch.object(
+        User,
+        "get_oauth_token",
+        new=AsyncMock(
+            spec=User.get_oauth_token,
+            side_effect=HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Casdoor unavailable",
+            ),
+        ),
+    )
+
+    test_client.cookies.set("refreshToken", "valid-but-upstream-down")
+    response = test_client.post("/api/oauth/refresh")
+
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_refresh_cookie_alias_matches_settings():
+    """Assert the /refresh Cookie alias tracks SESSION_REFRESH.COOKIE_NAME."""
+    cookie_marker = RefreshTokenCookie.__metadata__[0]
+    assert cookie_marker.alias == sep_settings.SESSION_REFRESH.COOKIE_NAME
 
 
 def test_refresh_body_ignored(test_client):
