@@ -27,7 +27,11 @@ export function useCascadingField<T = unknown>({
   dependsOn,
 }: UseCascadingFieldArgs): UseCascadingFieldResult<T> {
   const { control, setValue } = useFormContext();
-  const upstreamValue = useWatch({ control, name: dependsOn ?? '__noop__' }) as T | undefined;
+  const upstreamValue = useWatch({
+    control,
+    name: dependsOn ?? '',
+    disabled: !dependsOn,
+  }) as T | undefined;
   const previousRef = useRef<T | undefined>(dependsOn ? upstreamValue : undefined);
   const didMountRef = useRef(false);
 

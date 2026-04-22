@@ -7,6 +7,7 @@
  */
 
 import type { Meta, StoryObj } from '@storybook/react';
+import type { ComponentType } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { FormSection } from './types';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
@@ -119,7 +120,7 @@ const MULTI_SECTION_SCHEMA: FormSection[] = [
   },
 ];
 
-const withQueryClient = (Story: React.ComponentType) => {
+const withQueryClient = (Story: ComponentType) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
     <QueryClientProvider client={client}>

@@ -22,6 +22,7 @@ export function ChoiceField({ field }: ChoiceFieldProps) {
         label={field.label}
         isRequired={field.required}
         control={control}
+        labelProps={{ caption: field.description }}
         options={field.choices}
         controllerProps={{ rules }}
       />

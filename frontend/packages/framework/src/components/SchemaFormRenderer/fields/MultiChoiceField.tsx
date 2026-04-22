@@ -1,4 +1,4 @@
-import { useFormContext } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import MenuItem from '@mui/material/MenuItem';
 import Checkbox from '@mui/material/Checkbox';
 import ListItemText from '@mui/material/ListItemText';
@@ -11,8 +11,8 @@ interface MultiChoiceFieldProps {
 }
 
 export function MultiChoiceField({ field }: MultiChoiceFieldProps) {
-  const { control, watch } = useFormContext();
-  const selected = (watch(field.name) as string[] | undefined) ?? [];
+  const { control } = useFormContext();
+  const selected = (useWatch({ control, name: field.name }) as string[] | undefined) ?? [];
 
   return (
     <SelectInput
