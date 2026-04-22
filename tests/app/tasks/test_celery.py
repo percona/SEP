@@ -16,14 +16,23 @@
 """Define tests for the app.tasks.celery module."""
 
 import asyncio
+from contextlib import contextmanager
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from nomad.api.exceptions import BaseNomadException
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.orm import undefer
+from sqlmodel import SQLModel
+from sqlmodel.pool import StaticPool
 
+from app.core.alerts.models import AlertService
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.core.utils import json_serializer
 from app.tasks import celery as celery_module
 from app.tasks.celery import (
     _dispatch_chained_task,
@@ -38,6 +47,9 @@ from app.tasks.celery import (
     sync_running_items,
     task_revoked_handler,
 )
+from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.execution.models import BaseExecutor
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
     Task,
@@ -45,6 +57,8 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLogType,
+    TaskWrite,
 )
 from tests.app.factories import TaskFactory
 
@@ -1719,3 +1733,473 @@ class TestSyncQueueItemChainDispatch:
             await sync_queue_item(1)
 
         mock_chain.assert_not_awaited()
+
+
+async def _create_tables(engine):
+    """Create the Tasks metadata tables on ``engine``."""
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+
+@contextmanager
+def _sync_db_harness(mocker):
+    """Stand up an in-memory aiosqlite engine and wire ``get_async_session_maker``.
+
+    Yields ``(test_loop, async_session_maker)``. The loop is test-owned and is
+    the same loop that the Celery wrapper's ``run_until_complete`` calls must
+    use — pass it via ``patch.object(celery_module.celery, "loop", test_loop)``.
+    """
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    test_loop = asyncio.new_event_loop()
+    try:
+        test_loop.run_until_complete(_create_tables(engine))
+        async_session_maker = get_async_session_maker_from_engine(engine)
+        mocker.patch(
+            "app.tasks.celery.get_async_session_maker",
+            return_value=async_session_maker,
+        )
+        yield test_loop, async_session_maker
+    finally:
+        test_loop.run_until_complete(engine.dispose())
+        test_loop.close()
+
+
+async def _seed_task(
+    async_session_maker,
+    *,
+    name: str,
+    backend: TaskBackendEnum = TaskBackendEnum.NOMAD,
+    alert_on_fail: bool = False,
+    protected: bool = False,
+    data: dict | None = None,
+) -> Task:
+    """Insert a Task row via ``TaskManager.create`` and return the persisted instance."""
+    if data is None:
+        if backend == TaskBackendEnum.CELERY:
+            data = {"target": "local", "callable": "app.tasks.noop"}
+        elif backend == TaskBackendEnum.PROXY:
+            data = {"task": "wrapped"}
+        else:
+            data = {"Constraints": [{"RTarget": "node-1"}]}
+    async with async_session_maker() as session:
+        return await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=name,
+                    backend=backend,
+                    alert_on_fail=alert_on_fail,
+                    protected=protected,
+                    data=data,
+                )
+            ),
+        )
+
+
+async def _list_histories(async_session_maker, task_id: int) -> list[TaskHistory]:
+    """Return all TaskHistory rows for ``task_id`` with ``execution_request`` loaded."""
+    async with async_session_maker() as session:
+        return await TaskHistoryManager.list(
+            session,
+            task_id=task_id,
+            query_options=[undefer(TaskHistory.execution_request)],
+        )
+
+
+async def _list_log_chunks(async_session_maker, task_history_id: int):
+    """Return all TaskHistoryLog chunks for ``task_history_id``."""
+    async with async_session_maker() as session:
+        return await TaskHistoryLogManager.list(
+            session, task_history_id=task_history_id
+        )
+
+
+async def _fake_dispatch_mark_running(queue_item: TaskHistory) -> TaskHistory:
+    """Minimal dispatch stand-in: mark the item RUNNING and return it."""
+    queue_item.status = TaskHistoryStatusEnum.RUNNING
+    return queue_item
+
+
+def _run_skip_gate(
+    test_loop: asyncio.AbstractEventLoop,
+    *,
+    task_name: str,
+    periodic_task_name: str | None = "periodic-test-task",
+    target: str = "node-1",
+) -> dict:
+    """Invoke ``execute_task_by_name.__wrapped__`` under ``test_loop``."""
+    with patch.object(celery_module.celery, "loop", test_loop):
+        return celery_module.execute_task_by_name.__wrapped__(
+            task_name=task_name,
+            periodic_task_name=periodic_task_name,
+            execution_data={"meta": {"target": target}},
+        )
+
+
+class TestExecuteTaskByName:
+    """Test the pre-dispatch Nomad host-health gate in ``execute_task_by_name``."""
+
+    def test_healthy_target_dispatches(self, mocker):
+        """Assert dispatch proceeds when the target is in ``get_hosts()``."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=True)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {"node-1": "10.0.0.1"}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            assert mock_dispatch.call_count == 1
+            mock_alert.assert_not_awaited()
+
+    def test_unhealthy_target_skips_and_alerts(self, mocker):
+        """Assert the gate persists a FAILED row, writes a stderr chunk, and alerts."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=True)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            result = _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_dispatch.assert_not_called()
+            mock_alert.assert_awaited_once()
+            alert_payload = mock_alert.await_args.args[0]
+            assert alert_payload["dedup_key"] == "task:test-task:node-1"
+            assert alert_payload["class"] == "task_dispatch_failure"
+            assert alert_payload["source"] == "periodic-test-task:test-task:node-1"
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            saved = rows[0]
+            assert saved.status == TaskHistoryStatusEnum.FAILED
+            assert saved.finished_at is not None
+            assert saved.execution_request.target == "node-1"
+            assert result["status"] == TaskHistoryStatusEnum.FAILED.value
+            assert result["execution_request"]["target"] == "node-1"
+
+            chunks = test_loop.run_until_complete(
+                _list_log_chunks(async_session_maker, saved.id)
+            )
+            stderr_chunks = [c for c in chunks if c.stream == TaskLogType.STDERR]
+            assert stderr_chunks
+            assert "not ready on Nomad" in stderr_chunks[0].content
+            assert stderr_chunks[0].source == "execution"
+
+    def test_unhealthy_target_no_alert_when_alert_on_fail_false(self, mocker):
+        """Assert the FAILED row + log chunk are written but no alert fires."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=False)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_alert.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            chunks = test_loop.run_until_complete(
+                _list_log_chunks(async_session_maker, rows[0].id)
+            )
+            assert any(c.stream == TaskLogType.STDERR for c in chunks)
+
+    def test_recovered_target_dispatches_on_next_tick(self, mocker):
+        """Assert a second tick with a healthy target dispatches without a new FAILED row."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=True)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.side_effect = [{}, {"node-1": "10.0.0.1"}]
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mocker.patch.object(AlertService, "trigger", new_callable=AsyncMock)
+
+            _run_skip_gate(test_loop, task_name="test-task")
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            assert mock_dispatch.call_count == 1
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            failed_rows = [r for r in rows if r.status == TaskHistoryStatusEnum.FAILED]
+            assert len(failed_rows) == 1
+
+    def test_get_hosts_raises_base_nomad_exception(self, mocker):
+        """Assert a ``BaseNomadException`` from ``get_hosts`` falls into the existing handler."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=True)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.side_effect = BaseNomadException("nomad down")
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_dispatch.assert_not_called()
+            mock_alert.assert_awaited_once()
+            alert_payload = mock_alert.await_args.args[0]
+            assert alert_payload["class"] == "task_dispatch_failure"
+            assert alert_payload["dedup_key"] == "task:test-task:node-1"
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert all(r.status != TaskHistoryStatusEnum.FAILED for r in rows)
+
+    def test_celery_backend_skips_gate(self, mocker):
+        """Assert a resolved Celery backend bypasses the host-health gate."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="celery-task",
+                    backend=TaskBackendEnum.CELERY,
+                    protected=True,
+                    alert_on_fail=True,
+                )
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {"local": "localhost"}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            _run_skip_gate(test_loop, task_name="celery-task", target="not-in-hosts")
+
+            assert mock_dispatch.call_count == 1
+            mock_executor.get_hosts.assert_not_called()
+            mock_alert.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert all(r.status != TaskHistoryStatusEnum.FAILED for r in rows)
+
+    def test_log_writer_failure_still_alerts_and_returns(self, mocker):
+        """Assert a log-writer failure rolls back, does not propagate, and alert still fires."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=True)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+            mocker.patch.object(
+                TaskHistoryLogWriter,
+                "append",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("disk full"),
+            )
+
+            result = _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_alert.assert_awaited_once()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            assert result["execution_request"]["target"] == "node-1"
+
+    def test_proxy_wrapped_nomad_unhealthy_target_skips_and_alerts(self, mocker):
+        """Assert a proxy-wrapped Nomad task's root backend drives the gate."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            inner = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="inner-nomad-task",
+                    alert_on_fail=True,
+                )
+            )
+            wrapper = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="wrapper-proxy",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=True,
+                    data={"task": "inner-nomad-task"},
+                )
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            _run_skip_gate(test_loop, task_name="wrapper-proxy")
+
+            mock_dispatch.assert_not_called()
+            mock_alert.assert_awaited_once()
+            wrapper_rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, wrapper.id)
+            )
+            inner_rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, inner.id)
+            )
+            assert len(wrapper_rows) == 1
+            assert wrapper_rows[0].status == TaskHistoryStatusEnum.FAILED
+            assert inner_rows == []
+
+    def test_unhealthy_target_takes_precedence_over_identical_conflict(self, mocker):
+        """Assert the gate fires before ``_dispatch_queue_item``'s conflict check."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=True)
+            )
+
+            async def _seed_pending():
+                async with async_session_maker() as session:
+                    pending = TaskHistory(
+                        task_id=task.id,
+                        task=task,
+                        execution_request=TaskExecutionRequest(
+                            task=task.name,
+                            target="node-1",
+                            meta={"target": "node-1"},
+                            payload=None,
+                            tracking={"evaluation_id": ""},
+                        ),
+                        status=TaskHistoryStatusEnum.PENDING,
+                        executed_by="seed",
+                    )
+                    return await TaskHistoryManager.save(session, pending)
+
+            existing = test_loop.run_until_complete(_seed_pending())
+
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mocker.patch.object(AlertService, "trigger", new_callable=AsyncMock)
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_dispatch.assert_not_called()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            statuses = sorted(r.status for r in rows)
+            assert statuses == sorted(
+                [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.FAILED]
+            )
+            assert any(r.id == existing.id for r in rows)
+
+    def test_returned_payload_is_serializable_after_skip(self, mocker):
+        """Assert the returned dict exposes ``execution_request`` without a lazy-load fault."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=True)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mocker.patch.object(AlertService, "trigger", new_callable=AsyncMock)
+
+            result = _run_skip_gate(test_loop, task_name="test-task")
+
+            assert isinstance(result, dict)
+            assert result["status"] == TaskHistoryStatusEnum.FAILED.value
+            assert result["execution_request"]["task"] == "test-task"
+            assert result["execution_request"]["target"] == "node-1"
