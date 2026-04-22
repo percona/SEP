@@ -13,11 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Regression tests for SEP-1009.
-
-PMM annotation must not touch ORM attributes after the originating
-session has closed.
-"""
+"""Define regression tests for PMM task annotations (SEP-1009, SEP-562)."""
 
 from unittest.mock import AsyncMock, patch
 
@@ -25,6 +21,7 @@ import pytest
 from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pmm import _background_tasks, schedule_annotation
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.models import (
@@ -34,6 +31,7 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
+from tests.app.tasks.execution.test_models import ConcreteExecutor
 
 
 class TestScheduleAnnotationDetachedInstance:
@@ -96,3 +94,63 @@ class TestScheduleAnnotationDetachedInstance:
             tags=["sep", "backup_data", "started"],
             service_names=["svc1"],
         )
+
+
+class _SuccessAfterRunExecutor(ConcreteExecutor):
+    """Minimal executor that marks the task history as SUCCESS in _sync_task_history."""
+
+    async def _sync_task_history(
+        self,
+        queue_item: TaskHistory,
+        writer_session: AsyncSession | None = None,
+    ) -> TaskHistory:
+        queue_item.status = TaskHistoryStatusEnum.SUCCESS
+        return queue_item
+
+
+class TestSyncTaskHistoryPmmRegressionSep562:
+    """Test terminal PMM on a detached TaskHistory with a separate writer session."""
+
+    @pytest.mark.asyncio
+    async def test_detached_item_terminal_pmm_with_writer_session(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert sync_task_history schedules a COMPLETED PMM event for a detached row."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="sep562-pmm-chain")),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-z",
+                meta={"_service_names": ["svc1"]},
+                tracking={},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+        await session.commit()
+
+        engine = session.bind
+        if engine is None:  # pragma: no cover
+            raise RuntimeError("expected AsyncSession.bind to be set")
+        maker = get_async_session_maker_from_engine(engine)
+        async with maker() as load_session:
+            loaded = await TaskHistoryManager.get_or_404(
+                load_session,
+                select_related=[TaskHistory.task],
+                query_options=[undefer(TaskHistory.execution_request)],
+                id=saved.id,
+            )
+
+        async with maker() as writer_session:
+            executor = _SuccessAfterRunExecutor()
+            with patch("app.tasks.execution.models.schedule_annotation") as mock_sched:
+                await executor.sync_task_history(loaded, writer_session=writer_session)
+            mock_sched.assert_called_once()
+            assert mock_sched.call_args[0][1] == "COMPLETED"
+
+        assert loaded.status == TaskHistoryStatusEnum.SUCCESS
