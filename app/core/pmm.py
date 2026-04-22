@@ -178,7 +178,6 @@ def schedule_annotation(
     :raises RuntimeError: If ``execution_request`` is not loaded on
         ``queue_item``.
     """
-    execution_request = execution_request_for_pmm_snapshot(queue_item)
     if _EXECUTION_REQUEST_ATTR in sa_inspect(queue_item).unloaded:
         raise RuntimeError(
             "schedule_annotation requires queue_item.execution_request "
@@ -189,7 +188,7 @@ def schedule_annotation(
             "asyncpg/aiosqlite (or DetachedInstanceError once the session "
             "has closed)."
         )
-    execution_request = queue_item.execution_request
+    execution_request = execution_request_for_pmm_snapshot(queue_item)
     meta = copy.deepcopy(execution_request.meta)
     task = asyncio.create_task(
         annotate_task_event(
