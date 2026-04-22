@@ -15,6 +15,7 @@
 
 """Tests for the snippets plugin routes."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -24,12 +25,17 @@ from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models import CasdoorUser
-from app.sep.deps import get_current_user, get_session
+from app.sep.config import sep_settings
+from app.sep.deps import (
+    get_current_user,
+    get_session,
+)
 from app.sep.main import sep_app
 from app.sep.snippets.crud import SnippetManager
 
 _BATCH_APPROVE_URL = "/snippets/approve-batch"
 _INDEX_URL_PATH = "/snippets/"
+_COMPLETED_TASKS_PARTIAL = "tasks/partials/completed-tasks.html.j2"
 
 
 class TestSnippetsApproveBatch:
@@ -352,3 +358,47 @@ class TestSnippetsApproveBatch:
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"].endswith(_INDEX_URL_PATH)
+
+
+class TestCompletedTasksPartialHasLogs:
+    """Render the shared completed-tasks partial to verify the ``has_logs`` gating.
+
+    Renders the template directly via the SEP Jinja environment instead of
+    spinning up the full snippets-detail HTTP flow. The template change is
+    the actual user-visible fix for SEP-1020 -- a Jinja typo on the gating
+    line would silently swallow the **View Logs** button across every
+    plugin that includes the partial.
+    """
+
+    @staticmethod
+    def _make_history(*, history_id: int, has_logs: bool) -> SimpleNamespace:
+        """Build a minimal history namespace matching the template's attribute reads."""
+        return SimpleNamespace(
+            id=history_id,
+            status="success",
+            task=SimpleNamespace(name="snippet-task"),
+            started_at="2026-01-01T00:00:00Z",
+            finished_at="2026-01-01T00:00:01Z",
+            duration=1,
+            executed_by="alice",
+            execution_request=SimpleNamespace(meta={}),
+            available_files={},
+            has_logs=has_logs,
+        )
+
+    def _render(self, history: SimpleNamespace) -> str:
+        template = sep_settings.JINJA_ENVIRONMENT.get_template(_COMPLETED_TASKS_PARTIAL)
+        return template.render(history_tasks=[history], user_id_to_username={})
+
+    def test_view_logs_button_rendered_when_has_logs_true(self) -> None:
+        """Assert the View Logs button appears when ``has_logs`` is ``True``."""
+        rendered = self._render(self._make_history(history_id=1, has_logs=True))
+
+        assert "view-logs-button" in rendered
+        assert 'data-task-id="1"' in rendered
+
+    def test_view_logs_button_absent_when_has_logs_false(self) -> None:
+        """Assert the View Logs button is absent when ``has_logs`` is ``False``."""
+        rendered = self._render(self._make_history(history_id=1, has_logs=False))
+
+        assert "view-logs-button" not in rendered
