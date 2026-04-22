@@ -18,11 +18,11 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ValidationError
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentUser, RefreshTokenCookie
 from app.core.auth.exceptions import HTTPUnauthorizedException, InactiveUserException
 from app.core.auth.models import OAuthToken, SPAOAuthTokenResponse
 from app.core.auth.utils import get_user_model
@@ -35,10 +35,6 @@ router = APIRouter()
 User = get_user_model()
 
 _REFRESH_REJECTION_DETAIL = "Refresh token is missing, invalid, expired, or revoked"
-
-RefreshTokenCookie = Annotated[
-    str | None, Cookie(alias=sep_settings.SESSION_REFRESH.COOKIE_NAME)
-]
 
 
 class SPALoginBody(BaseModel):
@@ -75,15 +71,17 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
 def _clear_refresh_cookie(response: Response) -> None:
     """Delete the refresh-token cookie.
 
-    Pass ``path`` explicitly because the cookie is set with
-    ``path=/api/oauth``; a path-less ``delete_cookie`` call would not match.
+    Pass ``path`` from ``SESSION_REFRESH.PATH`` so deletion mirrors how
+    the cookie was set: when a ``Path`` is configured, both set and delete
+    emit the same ``Path``; when ``PATH`` is ``None``, both omit the
+    attribute and the browser's default-path rules apply symmetrically.
 
     :param response: The response on which to delete the cookie.
     :type response: Response
     """
     response.delete_cookie(
         key=sep_settings.SESSION_REFRESH.COOKIE_NAME,
-        path=sep_settings.SESSION_REFRESH.PATH or "/",
+        path=sep_settings.SESSION_REFRESH.PATH,
     )
 
 

@@ -23,7 +23,7 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.api.routes.oauth import RefreshTokenCookie
+from app.api.deps import RefreshTokenCookie
 from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
 from app.main import app

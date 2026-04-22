@@ -151,7 +151,7 @@ class SessionOptions(BaseModel):
     :param PATH: Cookie ``Path`` attribute. When ``None`` (the default), the
         cookie is not scoped to a specific path and the browser applies its
         default. When set, the value must start with ``/``.
-    :type PATH: str | None
+    :type PATH: URIPath | None
     """
 
     model_config = ConfigDict(
@@ -163,7 +163,7 @@ class SessionOptions(BaseModel):
     MAX_AGE: TimedeltaSeconds = timedelta(days=7)
     SAMESITE: Literal["lax", "strict", "none"] = "lax"
     SECURE: bool = True
-    PATH: str | None = None
+    PATH: URIPath | None = None
 
 
 class _DeprecatedPMMConfig(BaseLowercaseModel):
