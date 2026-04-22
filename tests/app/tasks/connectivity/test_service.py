@@ -23,6 +23,7 @@ import pytest
 import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.tasks.connectivity.models import (
     ConnectivityCheckWrite,
     ConnectivityServiceType,
@@ -34,8 +35,9 @@ from app.tasks.connectivity.service import (
     check_connectivity_with_cache,
     POLL_INTERVAL,
 )
-from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -49,6 +51,7 @@ from tests.app.factories import TaskFactory
 
 MOCK_TASK_HISTORY_ID = 42
 EXPECTED_INDEPENDENT_CALL_COUNT = 2
+MIN_POLL_ITERATIONS = 2
 
 
 @pytest.fixture(autouse=True)
@@ -152,7 +155,7 @@ class TestCheckConnectivity:
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(_queue_item):
+        async def mock_sync(_queue_item, writer_session=None):
             return completed_history
 
         mock_executor.sync_task_history = mock_sync
@@ -204,7 +207,7 @@ class TestCheckConnectivity:
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(_queue_item):
+        async def mock_sync(_queue_item, writer_session=None):
             return completed_history
 
         mock_executor.sync_task_history = mock_sync
@@ -255,7 +258,7 @@ class TestCheckConnectivity:
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(_queue_item):
+        async def mock_sync(_queue_item, writer_session=None):
             return completed_history
 
         mock_executor.sync_task_history = mock_sync
@@ -302,7 +305,7 @@ class TestCheckConnectivity:
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(queue_item):
+        async def mock_sync(queue_item, writer_session=None):
             return queue_item
 
         mock_executor.sync_task_history = mock_sync
@@ -360,7 +363,7 @@ class TestCheckConnectivity:
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(_queue_item):
+        async def mock_sync(_queue_item, writer_session=None):
             return completed_history
 
         mock_executor.sync_task_history = mock_sync
@@ -421,7 +424,7 @@ class TestCheckConnectivity:
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(_queue_item):
+        async def mock_sync(_queue_item, writer_session=None):
             # Every executor sync returns the stale (empty-logs) copy,
             # mimicking the early-return in NomadExecutor._sync_task_history.
             return stale_failed_history
@@ -483,7 +486,7 @@ class TestCheckConnectivity:
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(_queue_item):
+        async def mock_sync(_queue_item, writer_session=None):
             return stale_success_history
 
         mock_executor.sync_task_history = mock_sync
@@ -553,7 +556,7 @@ class TestCheckConnectivity:
             queue_item.status = TaskHistoryStatusEnum.RUNNING
             return queue_item
 
-        async def mock_sync(_queue_item):
+        async def mock_sync(_queue_item, writer_session=None):
             return stale_history
 
         mock_executor.sync_task_history = mock_sync
@@ -609,7 +612,7 @@ class TestCheckConnectivity:
 
         mock_executor = AsyncMock(spec=BaseExecutor)
 
-        async def mock_sync(queue_item):
+        async def mock_sync(queue_item, writer_session=None):
             return queue_item
 
         mock_executor.sync_task_history = mock_sync
@@ -698,7 +701,11 @@ class TestCheckConnectivity:
                 assert tracking is not None
                 return {"eval_id": tracking.get("evaluation_id")}
 
-            async def sync_task_history(self, queue_item: TaskHistory) -> TaskHistory:
+            async def sync_task_history(
+                self,
+                queue_item: TaskHistory,
+                writer_session: AsyncSession | None = None,
+            ) -> TaskHistory:
                 self._get_allocation(queue_item)
                 queue_item.status = TaskHistoryStatusEnum.SUCCESS
                 tracking = queue_item.execution_request.tracking
@@ -809,7 +816,10 @@ class TestCheckConnectivityRealSession:
 
         captured_history_id = []
 
-        async def sync_task_history(queue_item: TaskHistory) -> TaskHistory:
+        async def sync_task_history(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
             # Simulates NomadExecutor._sync_task_history reading tracking
             # from plain sync code within the async call chain — this is
             # where the lazy-load raises MissingGreenlet pre-fix.
@@ -839,6 +849,103 @@ class TestCheckConnectivityRealSession:
         assert result.task_history_id == captured_history_id[0]
         assert result.success is False
         assert result.error == "Failed to parse connectivity check output"
+
+    async def test_connectivity_success_persists_run_script_logs(
+        self,
+        session: AsyncSession,
+        run_python_task: Task,
+    ) -> None:
+        """Regression for SEP-1034: supply a writer session to log persistence.
+
+        ``check_connectivity`` calls ``executor.sync_task_history`` inside its
+        polling loop; the Nomad executor persists ``run-script`` stdout into
+        ``taskhistory_log`` only when a ``writer_session`` is supplied. Without
+        a writer session no log chunks land, ``_parse_check_result`` reads an
+        empty stdout, and ``json.loads("")`` falls through to the generic
+        ``Failed to parse connectivity check output`` error — regardless of
+        what the underlying task actually produced.
+
+        The fake executor here writes a ``{"success": true}`` stdout chunk
+        through the caller-supplied ``writer_session`` on the second polling
+        iteration, then flips the queue item to ``SUCCESS``. The test asserts
+        the chunk landed in ``taskhistory_log`` and the parsed response is
+        ``success=True``.
+        """
+        test_session_maker = get_async_session_maker_from_engine(session.bind)
+        request = ConnectivityCheckWrite(
+            target="node1",
+            host="db-host",
+            port=3306,
+            service_type=ConnectivityServiceType.MYSQL,
+            timeout=POLL_INTERVAL * 4,
+        )
+
+        async def real_dispatch(
+            queue_item: TaskHistory, db: AsyncSession
+        ) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.RUNNING
+            queue_item.execution_request.tracking.update(
+                evaluation_id="eval-1", job_id="job-1"
+            )
+            saved = await TaskHistoryManager.save(
+                db, queue_item, flag_modified_fields=["execution_request"]
+            )
+            await db.refresh(saved)
+            return saved
+
+        stdout_bytes = b'{"success": true}'
+        call_count = {"n": 0}
+
+        async def sync_task_history(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            call_count["n"] += 1
+            assert writer_session is not None, (
+                "check_connectivity must supply a writer_session"
+            )
+            if call_count["n"] == 1:
+                return queue_item
+            await TaskHistoryLogWriter.append(
+                writer_session,
+                queue_item.id,
+                source="run-script",
+                stream=TaskLogType.STDOUT,
+                new_bytes=stdout_bytes,
+                force_flush=True,
+                producer_offset_after=len(stdout_bytes),
+            )
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            return queue_item
+
+        mock_executor = MagicMock(spec=BaseExecutor)
+        mock_executor.sync_task_history = sync_task_history
+
+        with (
+            patch(
+                "app.tasks.connectivity.service.dispatch_queue_item",
+                side_effect=real_dispatch,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_async_session_maker",
+                return_value=test_session_maker,
+            ),
+            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
+        ):
+            result = await check_connectivity(session, request)
+
+        assert call_count["n"] >= MIN_POLL_ITERATIONS, (
+            "polling loop must iterate at least twice"
+        )
+        assert result.success is True
+        assert result.error is None
+        assert await TaskHistoryLogManager.exists_for_task(
+            session, result.task_history_id
+        )
 
 
 @pytest.mark.asyncio
