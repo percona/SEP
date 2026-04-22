@@ -83,7 +83,7 @@ def _coerce_yaml_safe(value: Any) -> Any:
         return value
     if isinstance(value, Enum):
         return _coerce_yaml_safe(value.value)
-    if isinstance(value, (int, float, str)):
+    if isinstance(value, int | float | str):
         return value
     if isinstance(value, SecretStr):
         return str(value)
@@ -91,15 +91,15 @@ def _coerce_yaml_safe(value: Any) -> Any:
         return _coerce_yaml_safe(value.model_dump(mode="python"))
     if isinstance(value, dict):
         return {str(k): _coerce_yaml_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_coerce_yaml_safe(item) for item in value]
-    if isinstance(value, (set, frozenset)):
+    if isinstance(value, set | frozenset):
         return [_coerce_yaml_safe(item) for item in sorted(value, key=repr)]
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, datetime | date):
         return value.isoformat()
     if isinstance(value, timedelta):
         return value.total_seconds()
-    if isinstance(value, (PurePath, UUID)):
+    if isinstance(value, PurePath | UUID):
         return str(value)
     if isinstance(value, Template):
         return value.template
