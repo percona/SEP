@@ -150,7 +150,7 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
         await session.commit()
 
         engine = session.bind
-        if engine is None:  # pragma: no cover
+        if engine is None:
             raise RuntimeError("expected AsyncSession.bind to be set")
         maker = get_async_session_maker_from_engine(engine)
         async with maker() as load_session:
