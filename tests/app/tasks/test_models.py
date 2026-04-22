@@ -35,6 +35,7 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryBase,
+    TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
@@ -76,8 +77,16 @@ class TestTaskHistoryStatusEnum:
     """Test TaskHistoryStatusEnum values and is_finished method."""
 
     def test_all_values_exist(self) -> None:
-        """Assert all six status values exist."""
-        expected = {"FAILED", "PENDING", "RUNNING", "SUCCESS", "STOPPED", "LOST"}
+        """Assert all seven status values exist."""
+        expected = {
+            "FAILED",
+            "PENDING",
+            "RUNNING",
+            "SUCCESS",
+            "STOPPED",
+            "LOST",
+            "STALE",
+        }
         assert {s.name for s in TaskHistoryStatusEnum} == expected
 
     @pytest.mark.parametrize(
@@ -86,6 +95,7 @@ class TestTaskHistoryStatusEnum:
             TaskHistoryStatusEnum.FAILED,
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
+            TaskHistoryStatusEnum.STALE,
         ],
     )
     def test_is_finished_true(self, status: TaskHistoryStatusEnum) -> None:
@@ -503,7 +513,7 @@ class TestTaskHistory:
     async def test_alert_for_status_success_resolves(
         self, task_instance: Task, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert alert_for_status resolves the alert on SUCCESS status."""
+        """Assert alert_for_status resolves both the base and stale alerts on SUCCESS."""
         history = TaskHistory(
             id=1,
             task_id=task_instance.id,
@@ -519,7 +529,33 @@ class TestTaskHistory:
         ):
             await history.alert_for_status()
             mock_trigger.assert_not_called()
-            mock_resolve.assert_called_once_with("task:test-task:node-1")
+            resolved_keys = [call.args[0] for call in mock_resolve.call_args_list]
+            assert resolved_keys == [
+                "task:test-task:node-1",
+                "task:test-task:node-1:stale",
+            ]
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_stale(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert alert_for_status triggers WARNING task_stale alert with :stale suffix."""
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.STALE,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            mock_trigger.assert_called_once()
+            alert_data = mock_trigger.call_args[0][0]
+            assert alert_data["severity"] == AlertSeverity.WARNING
+            assert alert_data["class"] == "task_stale"
+            assert alert_data["dedup_key"] == "task:test-task:node-1:stale"
+            assert "stale" in alert_data["summary"].lower()
 
     @pytest.mark.asyncio
     async def test_alert_for_status_stopped_no_action(
@@ -571,8 +607,66 @@ class TestTaskHistory:
             await failed_history.alert_for_status()
             await success_history.alert_for_status()
             trigger_dedup = mock_trigger.call_args[0][0]["dedup_key"]
-            resolve_dedup = mock_resolve.call_args[0][0]
-            assert trigger_dedup == resolve_dedup
+            resolved_keys = [call.args[0] for call in mock_resolve.call_args_list]
+            assert trigger_dedup in resolved_keys
+
+
+class TestTaskHistoryResponse:
+    """Test ``TaskHistoryResponse`` serialization of the ``has_logs`` attribute."""
+
+    @pytest.fixture
+    def task_instance(self) -> Task:
+        """Return a Task instance for TaskHistory construction."""
+        return TaskFactory.build(id=1, name="test-task", data={"key": "val"})
+
+    @pytest.fixture
+    def execution_request(self) -> TaskExecutionRequest:
+        """Return a TaskExecutionRequest for TaskHistory construction."""
+        return TaskExecutionRequest(
+            task="test-task",
+            target="node-1",
+            tracking={"allocation_id": None, "evaluation_id": None},
+        )
+
+    def test_has_logs_defaults_to_false(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``has_logs`` defaults to ``False`` when never populated."""
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+
+        response = TaskHistoryResponse.model_validate(history)
+
+        assert response.has_logs is False
+
+    def test_has_logs_true_propagates_via_object_setattr(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``object.__setattr__`` on the ORM instance propagates via ``model_validate``.
+
+        ``TaskHistory`` is a strict Pydantic model so ``history.has_logs = True``
+        raises ``ValueError``; routes use ``object.__setattr__`` to write the
+        value directly into ``__dict__``. ``TaskHistoryResponse`` then reads it
+        through the ``from_attributes=True`` path that SQLModel enables by
+        default.
+        """
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        object.__setattr__(history, "has_logs", True)
+
+        response = TaskHistoryResponse.model_validate(history)
+
+        assert response.has_logs is True
 
 
 class TestTaskStats:

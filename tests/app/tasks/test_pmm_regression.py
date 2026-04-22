@@ -13,7 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define regression tests for PMM task annotations (SEP-1009, SEP-1021)."""
+"""Define regression tests for SEP-1009 and SEP-1017.
+
+PMM annotation must not touch ORM attributes after the originating
+session has closed (SEP-1009), and ``schedule_annotation`` must
+reject callers that pass an instance whose deferred
+``execution_request`` column is still unloaded (SEP-1017).
+"""
 
 from unittest.mock import AsyncMock, patch
 
@@ -85,6 +91,84 @@ class TestScheduleAnnotationDetachedInstance:
             session.sync_session.expire(fetched)
             await session.close()
 
+            for bg_task in list(_background_tasks):
+                await bg_task
+
+        mock_create.assert_awaited_once_with(
+            text="SEP backup_data - STARTED",
+            node_name="node-1",
+            tags=["sep", "backup_data", "started"],
+            service_names=["svc1"],
+        )
+
+
+class TestScheduleAnnotationPrecondition:
+    """Regression suite for SEP-1017 — guard against unloaded ``execution_request``."""
+
+    @pytest.mark.asyncio
+    async def test_raises_when_execution_request_unloaded(self, session: AsyncSession):
+        """Assert ``schedule_annotation`` rejects a deferred instance.
+
+        Reproduce the SEP-1017 caller pattern: save a ``TaskHistory``
+        via ``TaskHistoryManager.save`` (which re-defers
+        ``execution_request`` via its internal plain ``session.refresh``),
+        then call ``schedule_annotation`` without first refreshing the
+        deferred column. The guard must raise ``RuntimeError`` with a
+        message that names the required fix.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="backup_data")),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task="backup_data",
+                target="node-1",
+                meta={},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+
+        with pytest.raises(
+            RuntimeError,
+            match="execution_request to be loaded",
+        ):
+            schedule_annotation(saved, "STARTED")
+
+    @pytest.mark.asyncio
+    async def test_passes_after_explicit_refresh(self, session: AsyncSession):
+        """Assert the guard does not fire when callers refresh the column.
+
+        The fix pattern is
+        ``await session.refresh(obj, attribute_names=["execution_request"])``
+        immediately before ``schedule_annotation``. With that call, the
+        deferred column is loaded and the guard passes.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="backup_data")),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task="backup_data",
+                target="node-1",
+                meta={"_service_names": ["svc1"]},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+        await session.refresh(saved, attribute_names=["execution_request"])
+
+        _background_tasks.clear()
+        with patch(
+            "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+        ) as mock_create:
+            schedule_annotation(saved, "STARTED")
             for bg_task in list(_background_tasks):
                 await bg_task
 
