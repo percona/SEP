@@ -39,3 +39,15 @@ SENSITIVE_KEY_PATTERNS: tuple[str, ...] = (
 URL_CREDENTIALS_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+@")
 
 _CORE_SETTINGS_EXCLUDE: set[str] = {"LOGGING_CONFIG", "BASE_DIR"}
+
+
+def _key_is_sensitive(key: str) -> bool:
+    """Return ``True`` when ``key`` matches a sensitive-field substring pattern.
+
+    :param key: The dictionary key to classify.
+    :type key: str
+    :return: Whether the key looks like it holds a secret.
+    :rtype: bool
+    """
+    lowered = key.lower()
+    return any(pattern in lowered for pattern in SENSITIVE_KEY_PATTERNS)
