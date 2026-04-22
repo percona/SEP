@@ -1129,6 +1129,52 @@ async def test_execute_task_name_with_eta_serializes_deferred_execution_request(
     )
 
 
+@pytest.mark.asyncio
+async def test_execute_route_keeps_scheduled_at_out_of_meta(
+    test_client, session, mocker
+):
+    """Assert POST /execute/{task_name} never writes ``scheduled_at`` to meta.
+
+    The dispatch dedup path iterates every meta key to identify identical
+    pending/running tasks, so a per-call timestamp would silently disable
+    the guard. The staleness value is derived at dispatch time from ``eta``
+    / ``created_at`` instead.
+    """
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="stale-meta-free", anonymize_mask=0)
+        ),
+    )
+
+    async def fake_dispatch_queue_item(queue_item, passed_session):
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        return await TaskHistoryManager.save(
+            passed_session,
+            queue_item,
+            flag_modified_fields=["execution_request"],
+        )
+
+    fake_executor = MagicMock(spec=BaseExecutor)
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    mocker.patch(
+        "app.tasks.routes.dispatch_queue_item",
+        side_effect=fake_dispatch_queue_item,
+    )
+
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1", "meta_foo": "bar"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    meta = response.json()["execution_request"]["meta"]
+    assert meta["target"] == "node1"
+    assert meta["foo"] == "bar"
+    assert "scheduled_at" not in meta
+
+
 CONNECTIVITY_META = {
     "_connectivity_host": "db-host",
     "_connectivity_port": "3306",

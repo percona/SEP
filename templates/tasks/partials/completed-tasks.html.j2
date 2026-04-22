@@ -33,7 +33,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         <tbody>
             {% for task_history in history_tasks %}
                 {%- set task_logs = task_history.has_logs -%}
-                {% if task_history.status in ['success', 'failed', 'stopped', 'lost'] %}
+                {% if task_history.status in ['success', 'failed', 'stopped', 'lost', 'stale'] %}
                     <tr>
                         <td>{{ task_history.task.name }}</td>
                         <td>
@@ -66,6 +66,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                 <div class="lost">
                                     <span class="badge material-symbols-outlined">question_mark</span>
                                     <span class="label">Lost</span>
+                                </div>
+                            {% elif task_history.status == 'stale' %}
+                                <div class="stale">
+                                    <span class="badge material-symbols-outlined">hourglass_disabled</span>
+                                    <span class="label">Stale</span>
                                 </div>
                             {% else %}
                                 <div class="error">

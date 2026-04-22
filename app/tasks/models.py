@@ -151,6 +151,9 @@ class TaskHistoryStatusEnum(StrEnum):
     :vartype STOPPED: str
     :cvar LOST: Enum value for tasks that are lost.
     :vartype LOST: str
+    :cvar STALE: Enum value for tasks skipped because Nomad placement
+        exceeded the configured staleness threshold.
+    :vartype STALE: str
     """
 
     FAILED = auto()
@@ -159,18 +162,20 @@ class TaskHistoryStatusEnum(StrEnum):
     SUCCESS = auto()
     STOPPED = auto()
     LOST = auto()
+    STALE = auto()
 
     def is_finished(self) -> bool:
         """Check if the task status indicates that it is finished.
 
-        :return: True if the task status is one of FAILED, SUCCESS, or STOPPED;
-            False otherwise.
+        :return: True if the task status is one of FAILED, SUCCESS, STOPPED,
+            or STALE; False otherwise.
         :rtype: bool
         """
         return self in [
             TaskHistoryStatusEnum.FAILED,
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
+            TaskHistoryStatusEnum.STALE,
         ]
 
 
@@ -722,24 +727,35 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
 
         Generate a deterministic dedup key from the task name and target so
         that PagerDuty deduplicates successive failures into a single incident
-        and can resolve it when the task succeeds.
+        and can resolve it when the task succeeds. The stale-skip alert uses
+        a ``:stale`` suffix on the same base key so it is a distinct
+        incident from a plain failure while still being scoped to the same
+        task/target pair.
         """
-        dedup_key = (
+        base_dedup_key = (
             f"task:{self.execution_request.task}:{self.execution_request.target}"
         )
 
         if self.status == TaskHistoryStatusEnum.SUCCESS:
-            await alert_service.resolve(dedup_key)
+            await alert_service.resolve(base_dedup_key)
+            await alert_service.resolve(f"{base_dedup_key}:stale")
             return
 
         if self.status == TaskHistoryStatusEnum.FAILED:
+            dedup_key = base_dedup_key
             summary_action = "failed"
             severity = AlertSeverity.ERROR
             alert_class = "task_failure"
         elif self.status == TaskHistoryStatusEnum.LOST:
+            dedup_key = base_dedup_key
             summary_action = "execution tracking lost"
             severity = AlertSeverity.WARNING
             alert_class = "task_lost"
+        elif self.status == TaskHistoryStatusEnum.STALE:
+            dedup_key = f"{base_dedup_key}:stale"
+            summary_action = "skipped as stale (Nomad placement delayed past threshold)"
+            severity = AlertSeverity.WARNING
+            alert_class = "task_stale"
         else:
             return
 
