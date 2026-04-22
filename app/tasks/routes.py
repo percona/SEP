@@ -20,7 +20,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from datetime import timedelta
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
@@ -75,6 +75,7 @@ from app.tasks.models import (
     TaskStats,
     TaskWrite,
     TransformPayloadRequest,
+    TransformPayloadResponse,
 )
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
@@ -353,10 +354,14 @@ async def get_task_history(
     )
 
 
-@router.get("/history/{task_history_id}", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/history/{task_history_id}",
+    dependencies=[IsAuthenticatedDep],
+    response_model=TaskHistoryResponse,
+)
 async def retrieve_task_history(
     task_history: TaskHistoryWithTaskDep,
-) -> TaskHistoryResponse:
+) -> TaskHistory:
     """Retrieve a task history by id."""
     logger.debug("Requesting task history %s", task_history.id)
     return task_history
@@ -376,7 +381,11 @@ async def list_task_history_events(
     return executor.get_events(task_history)
 
 
-@router.get("/history/{task_history_id}/logs/", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/history/{task_history_id}/logs/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=None,
+)
 async def stream_task_history_logs(
     session: SessionDep,
     executor: TaskExecutor,
@@ -429,7 +438,11 @@ async def list_task_history_files(
     return await executor.list_files(task_history, task_history.task.output_files_path)
 
 
-@router.get("/history/{task_history_id}/file/", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/history/{task_history_id}/file/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=None,
+)
 async def stream_task_history_file(
     executor: TaskExecutor,
     task_history: TaskHistoryWithTaskDep,
@@ -452,10 +465,14 @@ async def stream_task_history_file(
     )
 
 
-@router.post("/history/{task_history_id}/stop/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/history/{task_history_id}/stop/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=TaskHistoryResponse,
+)
 async def stop_task_history(
     session: SessionDep, executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
-) -> TaskHistoryResponse:
+) -> TaskHistory:
     """Stop a task history."""
     logger.debug("Stopping task history %s", task_history.id)
     if task_history.status == TaskHistoryStatusEnum.PENDING:
@@ -477,10 +494,14 @@ async def stop_task_history(
     return await executor.stop_task(session, task_history)
 
 
-@router.post("/history/{task_history_id}/sync/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/history/{task_history_id}/sync/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=TaskHistoryResponse,
+)
 async def sync_task_history(
     session: SessionDep, executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
-) -> TaskHistoryResponse:
+) -> TaskHistory:
     """Sync task history with the executor and persist the latest status."""
     logger.debug("Syncing task history %s", task_history.id)
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
@@ -498,7 +519,10 @@ async def sync_task_history(
 
 
 @router.post(
-    "/history/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
+    "/history/",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_201_CREATED,
+    response_model=TaskHistoryResponse,
 )
 async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHistory:
     """Create a new task history."""
@@ -525,13 +549,20 @@ async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
     return executor.get_hosts()
 
 
-@router.post("/transform/", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/transform/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=TransformPayloadResponse,
+)
 async def transform_payload(
     data: TransformPayloadRequest,
     backend: TaskBackendEnum = TaskBackendEnum.NOMAD,
-) -> dict[str, Any]:
+) -> TransformPayloadResponse:
     """Transform a payload string into a dictionary."""
     if backend == TaskBackendEnum.PROXY:
-        return parse_payload(data.payload, data.fmt)
+        return TransformPayloadResponse.model_validate(
+            parse_payload(data.payload, data.fmt)
+        )
     executor = get_executor(backend)
-    return await executor.transform_payload(data.payload, data.fmt)
+    raw = await executor.transform_payload(data.payload, data.fmt)
+    return TransformPayloadResponse.model_validate(raw)
