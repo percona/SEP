@@ -18,7 +18,17 @@
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import Column, ColumnClause, ColumnElement, func, JSON, literal, Text
+from sqlalchemy import (
+    cast,
+    Column,
+    ColumnClause,
+    ColumnElement,
+    func,
+    JSON,
+    literal,
+    Text,
+    TypeDecorator,
+)
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
@@ -69,6 +79,26 @@ def json_join_path_elems(*path_elems: str) -> str:
     return json_path
 
 
+def _column_resolves_to_json(column: ColumnElement) -> bool:
+    """Return True when the column's declared SQLAlchemy type is JSON-semantic.
+
+    Unwrap ``TypeDecorator`` chains so columns typed with ``AutoJSON`` (or
+    subclasses like ``TaskExecutionRequestJSON``) are recognised as JSON via
+    their ``impl`` type and do not receive a redundant ``CAST(... AS JSON)``
+    wrapper that would break expression-index matches on ``jsonb`` columns.
+
+    :param column: The SQLAlchemy column element to inspect.
+    :type column: ColumnElement
+    :return: ``True`` if the column resolves to ``JSON`` or ``JSONB`` (directly
+        or through a ``TypeDecorator`` chain), ``False`` otherwise.
+    :rtype: bool
+    """
+    type_obj = column.type
+    while isinstance(type_obj, TypeDecorator):
+        type_obj = type_obj.impl_instance
+    return isinstance(type_obj, JSON)
+
+
 def func_json_extract(
     db_engine: str, json_column: SQLAlchemyColumn, *path_elems: str
 ) -> ColumnElement:
@@ -82,6 +112,13 @@ def func_json_extract(
       Path elements are inlined as SQL literals (via SQLAlchemy's
       ``literal_execute``) instead of bound parameters so the planner can
       syntactically match the expression against the functional indexes.
+      Columns whose declared type is not JSON-semantic (e.g.
+      ``celery_periodictask.kwargs`` which the third-party
+      ``sqlalchemy-celery-beat`` library defines as ``sa.Text()``) are wrapped
+      in ``CAST(... AS JSON)`` first, because PostgreSQL does not define
+      ``->>`` on ``text``. JSON, JSONB, and ``TypeDecorator`` chains whose
+      underlying impl is JSON (e.g. ``AutoJSON``) are left unwrapped so their
+      expression indexes keep matching.
     - SQLite: ``json_extract(col, '$.a.b')``. SQLite auto-unquotes scalars, so
       the result is directly comparable to a string.
     - MySQL: ``json_extract(col, '$.a.b')``. No functional index is created on
@@ -99,7 +136,7 @@ def func_json_extract(
     """
     column = col(json_column)
     if db_engine.startswith(DatabaseDialect.POSTGRESQL):
-        expression = column
+        expression = column if _column_resolves_to_json(column) else cast(column, JSON)
         for elem in path_elems[:-1]:
             expression = expression.op("->")(literal(elem, Text, literal_execute=True))
         return expression.op("->>", return_type=Text)(

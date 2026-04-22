@@ -92,27 +92,6 @@ if _report_plugin_enabled:
         )
 
 
-async def create_plugin_tables() -> None:
-    """Create database tables for plugin-scoped models when the corresponding plugin is enabled.
-
-    Safe to call repeatedly as ``checkfirst=True`` is the default for
-    ``create_all``.
-    """
-    if not _alerts_plugin_enabled:
-        return
-
-    from sqlmodel import SQLModel
-
-    from app.sep.db.engine import engine
-    from app.sep.plugins.alerts.backup import AlertBackup
-
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            SQLModel.metadata.create_all,
-            tables=[AlertBackup.__table__],
-        )
-
-
 async def init_sep_db() -> None:
     """Initialize the SEP database with periodic tasks."""
     await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "sep__")

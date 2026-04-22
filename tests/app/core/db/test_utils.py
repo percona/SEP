@@ -18,7 +18,7 @@
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import Column, Integer, JSON, MetaData, Table
+from sqlalchemy import Column, Integer, JSON, MetaData, Table, Text
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -119,6 +119,82 @@ def test_func_json_extract_postgresql_nested_path_renders_arrow_chain():
     assert "->>" in rendered[meta_index:key_index]
     assert meta_index < key_index
     assert "json_extract_path_text" not in rendered
+
+
+def test_func_json_extract_postgresql_text_column_wraps_in_cast():
+    """Wrap ``text``-typed columns in ``CAST(... AS JSON)`` on PostgreSQL.
+
+    PostgreSQL does not define the ``->>`` operator on ``text``, so text
+    columns must be cast to ``json`` before the arrow chain is applied.
+    Without the cast, queries raise ``operator does not exist: text ->>
+    unknown`` at execution time — the exact failure mode this ticket fixes
+    for ``celery_periodictask.kwargs``.
+    """
+    text_column = column("kwargs", type_=Text())
+
+    expression = func_json_extract("postgresql", text_column, "task_name")
+
+    rendered = _compile(expression, postgresql.dialect())
+    assert "CAST" in rendered.upper()
+    assert "AS JSON" in rendered.upper()
+    assert "->>" in rendered
+    assert "'task_name'" in rendered
+
+
+def test_func_json_extract_postgresql_text_column_nested_path_wraps_in_cast():
+    """Wrap the root column once and chain the arrow operators on top.
+
+    For a nested path ``(a, b)`` on a ``text`` column the expected shape is
+    ``(CAST(col AS JSON) -> 'a') ->> 'b'`` — the cast sits on the root
+    column so every subsequent operator sees a JSON-typed LHS.
+    """
+    text_column = column("kwargs", type_=Text())
+
+    expression = func_json_extract("postgresql", text_column, "meta", "key")
+
+    rendered = _compile(expression, postgresql.dialect())
+    assert "CAST" in rendered.upper()
+    assert "AS JSON" in rendered.upper()
+    meta_index = rendered.index("'meta'")
+    key_index = rendered.index("'key'")
+    assert "->" in rendered[:meta_index]
+    assert "->>" in rendered[meta_index:key_index]
+
+
+def test_func_json_extract_postgresql_jsonb_column_does_not_wrap_in_cast():
+    """Keep ``jsonb`` columns unwrapped so the SEP-818 expression indexes match.
+
+    ``taskhistory.execution_request`` is ``jsonb`` post SEP-988 and carries
+    functional expression indexes on ``(execution_request ->> 'task')`` etc.
+    Adding a ``CAST`` wrapper would change the expression shape and stop the
+    planner from matching those indexes — this test pins that contract.
+    """
+    jsonb_column = column("execution_request", type_=JSONB())
+
+    expression = func_json_extract("postgresql", jsonb_column, "task")
+
+    rendered = _compile(expression, postgresql.dialect())
+    assert "->>" in rendered
+    assert "'task'" in rendered
+    assert "CAST" not in rendered.upper()
+
+
+def test_func_json_extract_postgresql_auto_json_column_does_not_wrap_in_cast():
+    """Unwrap ``TypeDecorator`` chains (``AutoJSON``) before the JSON check.
+
+    ``TaskHistory.execution_request`` is declared as ``TaskExecutionRequestJSON``,
+    a subclass of ``AutoJSON`` which is itself a ``TypeDecorator`` whose impl
+    is ``JSON``. A naive ``isinstance(col.type, JSON)`` check would return
+    ``False`` and add an unwanted ``CAST``. Pin that unwrapping recognises
+    the underlying JSON impl and emits the index-compatible shape.
+    """
+    mapped_column = col(TaskHistory.execution_request)
+
+    expression = func_json_extract("postgresql", mapped_column, "task")
+
+    rendered = _compile(expression, postgresql.dialect())
+    assert "->>" in rendered
+    assert "CAST" not in rendered.upper()
 
 
 def test_func_json_extract_sqlite_single_key_renders_json_extract():
