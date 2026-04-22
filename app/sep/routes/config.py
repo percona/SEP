@@ -66,7 +66,7 @@ URL_CREDENTIALS_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+
 _CORE_SETTINGS_EXCLUDE: set[str] = {"LOGGING_CONFIG", "BASE_DIR"}
 
 
-def _coerce_yaml_safe(value: Any) -> Any:
+def _coerce_yaml_safe(value: Any) -> Any:  # noqa: C901, PLR0911
     """Recursively convert ``value`` into YAML-serializable primitives.
 
     Walks dicts, lists, tuples, sets, and Pydantic models, coercing custom
