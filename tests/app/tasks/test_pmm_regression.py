@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define regression tests for PMM task annotations (SEP-1009, SEP-562)."""
+"""Define regression tests for PMM task annotations (SEP-1009, SEP-1021)."""
 
 from unittest.mock import AsyncMock, patch
 
@@ -108,17 +108,32 @@ class _SuccessAfterRunExecutor(ConcreteExecutor):
         return queue_item
 
 
-class TestSyncTaskHistoryPmmRegressionSep562:
+class TestSyncTaskHistoryPmmRegressionSep1021:
     """Test terminal PMM on a detached TaskHistory with a separate writer session."""
 
     @pytest.mark.asyncio
     async def test_detached_item_terminal_pmm_with_writer_session(
         self, session: AsyncSession
     ) -> None:
-        """Assert sync_task_history schedules a COMPLETED PMM event for a detached row."""
+        """Assert schedule_annotation survives the load→writer session boundary.
+
+        Reproduce the SEP-1021 production flow: ``sync_queue_item`` loads the
+        ``TaskHistory`` with ``undefer(TaskHistory.execution_request)`` in a
+        reader session, closes that session, then calls
+        ``executor.sync_task_history(queue_item, writer_session=...)`` inside
+        a fresh writer session. Without the fix, ``schedule_annotation``
+        reads the deferred column through the attribute getter across the
+        session boundary and raises ``MissingGreenlet`` on async drivers,
+        aborting ``sync_task_history`` before chain dispatch is reached.
+
+        Patch ``create_pmm_annotation`` (the HTTP boundary) so the real
+        ``schedule_annotation`` — and therefore ``execution_request_for_pmm_snapshot``
+        — run, and assert the background annotation fires with the
+        primitives captured from the detached instance.
+        """
         task = await TaskManager.create(
             session,
-            TaskWrite.model_validate(TaskFactory.build(name="sep562-pmm-chain")),
+            TaskWrite.model_validate(TaskFactory.build(name="sep1021-pmm-chain")),
         )
         history = TaskHistory(
             task_id=task.id,
@@ -146,11 +161,20 @@ class TestSyncTaskHistoryPmmRegressionSep562:
                 id=saved.id,
             )
 
+        _background_tasks.clear()
         async with maker() as writer_session:
             executor = _SuccessAfterRunExecutor()
-            with patch("app.tasks.execution.models.schedule_annotation") as mock_sched:
+            with patch(
+                "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+            ) as mock_create:
                 await executor.sync_task_history(loaded, writer_session=writer_session)
-            mock_sched.assert_called_once()
-            assert mock_sched.call_args[0][1] == "COMPLETED"
+                for bg_task in list(_background_tasks):
+                    await bg_task
 
         assert loaded.status == TaskHistoryStatusEnum.SUCCESS
+        mock_create.assert_awaited_once_with(
+            text=f"SEP {task.name} - COMPLETED",
+            node_name="node-z",
+            tags=["sep", task.name, "completed"],
+            service_names=["svc1"],
+        )
