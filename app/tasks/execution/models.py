@@ -43,6 +43,7 @@ _TERMINAL_STATUS_EVENT_MAP = {
     TaskHistoryStatusEnum.FAILED: "FAILED",
     TaskHistoryStatusEnum.STOPPED: "STOPPED",
     TaskHistoryStatusEnum.LOST: "LOST",
+    TaskHistoryStatusEnum.STALE: "STALE",
 }
 
 
@@ -144,6 +145,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         queue_item.finished_at = utc_now()
         saved = await TaskHistoryManager.save(session, queue_item)
         if not sync_emitted_stopped:
+            await session.refresh(saved, attribute_names=["execution_request"])
             schedule_annotation(saved, "STOPPED")
         return saved
 

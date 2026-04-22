@@ -37,6 +37,25 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 
+def has_legacy_logs(task_history: TaskHistory) -> bool:
+    """Return ``True`` when ``tracking["task_logs"]`` has any non-empty content.
+
+    Cheap predicate variant of :func:`decompress_legacy_logs` for callers
+    that only need a boolean -- skips the base64/gzip/JSON decode so
+    list endpoints stay O(N) in row count instead of
+    O(total_legacy_log_bytes). Treats a corrupted blob as "has logs"
+    because the string is non-empty; the download endpoint will surface
+    the decode error to the user.
+
+    :param task_history: The task history to check.
+    :type task_history: TaskHistory
+    :return: Whether any legacy log content exists in ``tracking``.
+    :rtype: bool
+    """
+    tracking = task_history.execution_request.tracking or {}
+    return bool(tracking.get("task_logs"))
+
+
 def decompress_legacy_logs(task_history: TaskHistory) -> dict:
     """Return the decompressed legacy ``tracking["task_logs"]`` payload.
 
