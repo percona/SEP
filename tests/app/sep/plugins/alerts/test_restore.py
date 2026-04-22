@@ -32,8 +32,12 @@ from app.sep.clients.pmm import (
 from app.sep.clients.pmm import (
     AlertTemplate as PMMAlertTemplate,
 )
-from app.sep.plugins.alerts.backup import AlertBackup
-from app.sep.plugins.alerts.models import AlertSeverity, AlertTemplate, ServiceType
+from app.sep.plugins.alerts.models import (
+    AlertBackup,
+    AlertSeverity,
+    AlertTemplate,
+    ServiceType,
+)
 from app.sep.plugins.alerts.restore import restore_from_backup
 
 _SAMPLE_TEMPLATE_COUNT = 2

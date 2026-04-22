@@ -19,7 +19,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
-from app.sep.plugins.alerts.backup import AlertBackup
+from app.sep.plugins.alerts.models import AlertBackup
 
 
 class AlertBackupManager(BaseSQLModelManager):
