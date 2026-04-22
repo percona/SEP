@@ -71,11 +71,11 @@
 | app/sep/crud.py                                                                                             |       47 |        0 |    100% |           |
 | app/sep/db/engine.py                                                                                        |        8 |        0 |    100% |           |
 | app/sep/db/seed.py                                                                                          |       29 |       16 |     45% | 65-79, 97 |
-| app/sep/deps.py                                                                                             |      279 |       10 |     96% |305, 308-309, 327, 792-793, 973-976 |
+| app/sep/deps.py                                                                                             |      281 |       10 |     96% |318, 321-322, 340, 805-806, 986-989 |
 | app/sep/exceptions.py                                                                                       |       13 |        0 |    100% |           |
 | app/sep/inventory.py                                                                                        |       97 |        9 |     91% |81, 92, 229, 286, 304, 326, 363, 385, 419 |
 | app/sep/main.py                                                                                             |      151 |       11 |     93% |73-75, 91-105, 360-364 |
-| app/sep/middleware/csrf.py                                                                                  |       44 |        1 |     98% |       103 |
+| app/sep/middleware/csrf.py                                                                                  |       48 |        1 |     98% |       129 |
 | app/sep/middleware/messages/\_middleware.py                                                                 |       28 |        0 |    100% |           |
 | app/sep/middleware/messages/\_utils.py                                                                      |       53 |       10 |     81% |85, 118, 259-266 |
 | app/sep/middleware/messages/config.py                                                                       |        9 |        0 |    100% |           |
@@ -121,7 +121,7 @@
 | app/sep/plugins/backup\_pg/deps.py                                                                          |       45 |        1 |     98% |       180 |
 | app/sep/plugins/backup\_pg/models.py                                                                        |       22 |        0 |    100% |           |
 | app/sep/plugins/backup\_pg/routes.py                                                                        |       58 |        0 |    100% |           |
-| app/sep/plugins/checksums/deps.py                                                                           |      130 |       63 |     52% |65-76, 90-128, 156, 158, 264-266, 280, 363-368, 384-411, 424-451, 462, 492 |
+| app/sep/plugins/checksums/deps.py                                                                           |      130 |       62 |     52% |65-76, 90-128, 158, 264-266, 280, 363-368, 384-411, 424-451, 462, 492 |
 | app/sep/plugins/checksums/models.py                                                                         |       33 |        0 |    100% |           |
 | app/sep/plugins/checksums/routes.py                                                                         |       74 |       33 |     55% |63-64, 148-198, 218-226, 241-247, 263-264 |
 | app/sep/plugins/dipper/constants.py                                                                         |       10 |        0 |    100% |           |
@@ -194,7 +194,7 @@
 | app/tasks/periodic/models.py                                                                                |      101 |        5 |     95% |196, 231, 283, 299, 368 |
 | app/tasks/periodic/routes.py                                                                                |       38 |        3 |     92% | 62-66, 97 |
 | app/tasks/routes.py                                                                                         |      182 |       19 |     90% |119-123, 180, 201-208, 240, 289-297, 302-303, 492, 505-506 |
-| **TOTAL**                                                                                                   | **12790** | **1942** | **85%** |           |
+| **TOTAL**                                                                                                   | **12796** | **1941** | **85%** |           |
 
 
 ## Setup coverage badge
