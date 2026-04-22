@@ -41,6 +41,26 @@ URL_CREDENTIALS_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+
 _CORE_SETTINGS_EXCLUDE: set[str] = {"LOGGING_CONFIG", "BASE_DIR"}
 
 
+def _dump(obj: Any, exclude: set[str] | None = None) -> dict[str, Any]:
+    """Return a YAML-safe dump of a Pydantic settings instance.
+
+    Uses ``mode="python"`` so custom types survive serialization, then
+    coerces the resulting structure through :func:`_coerce_yaml_safe` to
+    produce primitives that ``yaml.safe_dump`` can handle.
+
+    :param obj: The settings instance to dump.
+    :type obj: Any
+    :param exclude: Optional set of top-level field names to omit.
+    :type exclude: set[str] | None
+    :return: A dict representation of the settings suitable for YAML export.
+    :rtype: dict[str, Any]
+    """
+    kwargs: dict[str, Any] = {"mode": "python"}
+    if exclude:
+        kwargs["exclude"] = exclude
+    return _coerce_yaml_safe(obj.model_dump(**kwargs))
+
+
 def _redact_string(value: str) -> str:
     """Strip credentials baked into URL-like strings.
 
