@@ -87,6 +87,7 @@ describe('SchemaFormRenderer — field rendering', () => {
       fields: [
         { type: 'string', name: 'title', label: 'Title', required: true, minLength: 3 },
         { type: 'integer', name: 'count', label: 'Count', ge: 1, le: 10 },
+        { type: 'float', name: 'rate', label: 'Rate', ge: 0, le: 1, step: 0.01 },
         { type: 'bool', name: 'active', label: 'Active' },
         {
           type: 'choice',
@@ -99,9 +100,21 @@ describe('SchemaFormRenderer — field rendering', () => {
             { label: 'Extra', value: 'xl' },
           ],
         },
+        {
+          type: 'multichoice',
+          name: 'tags',
+          label: 'Tags',
+          choices: [
+            { label: 'Alpha', value: 'a' },
+            { label: 'Beta', value: 'b' },
+          ],
+        },
         { type: 'textarea', name: 'notes', label: 'Notes' },
         { type: 'datetime', name: 'when', label: 'When' },
         { type: 'yaml', name: 'cfg', label: 'Config' },
+        { type: 'file', name: 'upload', label: 'Upload' },
+        { type: 'table', name: 'tbl', label: 'Table', dependsOn: 'schemaName' },
+        { type: 'host', name: 'hostId', label: 'Host' },
       ],
     },
   ];
@@ -110,13 +123,18 @@ describe('SchemaFormRenderer — field rendering', () => {
     renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
     expect(screen.getByLabelText(/Title/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Count/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Rate/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Active/)).toBeInTheDocument();
     // percona-ui's SelectInput does not expose the label as accessible name;
     // identify by the stable MUI-generated id instead.
     expect(document.getElementById('mui-component-select-size')).not.toBeNull();
+    expect(document.getElementById('mui-component-select-tags')).not.toBeNull();
     expect(screen.getByLabelText(/Notes/)).toBeInTheDocument();
     expect(screen.getByLabelText(/When/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Config/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Upload/)).toBeInTheDocument();
+    expect(document.getElementById('mui-component-select-tbl')).not.toBeNull();
+    expect(document.getElementById('mui-component-select-hostId')).not.toBeNull();
   });
 
   it('groups fields under section titles as fieldset legends', () => {
@@ -175,6 +193,60 @@ describe('SchemaFormRenderer — validation + submission', () => {
       />,
     );
     expect(screen.getByText('Server exploded')).toBeInTheDocument();
+  });
+});
+
+describe('SchemaFormRenderer — multichoice minItems', () => {
+  it('blocks submission when selection count is below minItems', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'tags',
+            label: 'Tags',
+            choices: [
+              { label: 'Alpha', value: 'a' },
+              { label: 'Beta', value: 'b' },
+            ],
+            minItems: 1,
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Fix the highlighted fields/)).toBeInTheDocument();
+    // percona-ui's SelectInput does not render the validate message visibly,
+    // but it does flip aria-invalid on the native input — use that as the
+    // end-to-end proof that the minItems validate fn ran and blocked submit.
+    await waitFor(() =>
+      expect(screen.getByTestId('select-input-tags')).toHaveAttribute('aria-invalid', 'true'),
+    );
+  });
+});
+
+describe('SchemaFormRenderer — file required', () => {
+  it('blocks submission when a required file field is empty', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [{ type: 'file', name: 'upload', label: 'Upload', required: true }],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Fix the highlighted fields/)).toBeInTheDocument();
+    expect(screen.getByText(/Upload is required/)).toBeInTheDocument();
   });
 });
 
