@@ -35,7 +35,7 @@ User = get_user_model()
 
 # TODO(yan): Prevent malicious account lockout
 # SEP-277
-@router.post("/token")
+@router.post("/token", response_model=OAuthToken)
 async def create_oauth_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> OAuthToken:
@@ -58,7 +58,7 @@ async def create_oauth_token(
     return oauth_token
 
 
-@router.post("/refresh")
+@router.post("/refresh", response_model=OAuthToken)
 async def refresh_token(token: Annotated[str, Body()]) -> OAuthToken:
     """Generate an OAuth token for a user from a refresh token.
 
