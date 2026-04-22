@@ -139,6 +139,7 @@ services:
       - ./data/nginx.conf:/etc/nginx/conf.d/default.conf
       - ./data/certs/sep/localhost-cert.pem:/etc/nginx/ssl/localhost-cert.pem
       - ./data/certs/sep/localhost-cert-key.pem:/etc/nginx/ssl/localhost-cert-key.pem
+      - ./frontend/packages/shell/dist:/home/sep/app/frontend/dist:ro
     depends_on:
       - sep
 
