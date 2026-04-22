@@ -1,4 +1,4 @@
-import './vite-env';
+/// <reference path="./vite-env.d.ts" />
 
 // API client
 export { apiClient, setTokenProvider, setOnUnauthorized } from './client';
