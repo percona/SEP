@@ -41,6 +41,23 @@ URL_CREDENTIALS_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+
 _CORE_SETTINGS_EXCLUDE: set[str] = {"LOGGING_CONFIG", "BASE_DIR"}
 
 
+def _redact_string(value: str) -> str:
+    """Strip credentials baked into URL-like strings.
+
+    Matches ``scheme://user[:pass]@host`` prefixes (e.g. Celery brokers,
+    Nomad endpoints, DB URLs) and replaces the userinfo portion with
+    :data:`REDACTED_PLACEHOLDER`.
+
+    :param value: The string to sanitize.
+    :type value: str
+    :return: The sanitized string, unchanged if no credentials were found.
+    :rtype: str
+    """
+    return URL_CREDENTIALS_RE.sub(
+        lambda m: f"{m.group('scheme')}{REDACTED_PLACEHOLDER}@", value
+    )
+
+
 def _key_is_sensitive(key: str) -> bool:
     """Return ``True`` when ``key`` matches a sensitive-field substring pattern.
 
