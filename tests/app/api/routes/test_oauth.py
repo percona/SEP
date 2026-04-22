@@ -57,12 +57,16 @@ def test_create_oauth_token_success(
 ):
     """Assert /token returns the full OAuthToken on valid credentials."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
     mocker.patch.object(
         User,
         "from_jwt",
-        new=AsyncMock(return_value=_build_user(faker, valid_username)),
+        new=AsyncMock(
+            spec=User.from_jwt, return_value=_build_user(faker, valid_username)
+        ),
     )
 
     data = {
@@ -79,12 +83,17 @@ def test_create_oauth_token_inactive_user(
 ):
     """Assert /token returns 403 when the user is inactive."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
     mocker.patch.object(
         User,
         "from_jwt",
-        new=AsyncMock(return_value=_build_user(faker, valid_username, active=False)),
+        new=AsyncMock(
+            spec=User.from_jwt,
+            return_value=_build_user(faker, valid_username, active=False),
+        ),
     )
 
     data = {
@@ -101,12 +110,16 @@ def test_spa_login_success(
 ):
     """Assert /login returns the slim response and sets the refresh cookie."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
     mocker.patch.object(
         User,
         "from_jwt",
-        new=AsyncMock(return_value=_build_user(faker, valid_username)),
+        new=AsyncMock(
+            spec=User.from_jwt, return_value=_build_user(faker, valid_username)
+        ),
     )
 
     response = test_client.post(
@@ -139,12 +152,17 @@ def test_spa_login_inactive_user(
 ):
     """Assert /login returns 403 and does not set the refresh cookie."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
     mocker.patch.object(
         User,
         "from_jwt",
-        new=AsyncMock(return_value=_build_user(faker, valid_username, active=False)),
+        new=AsyncMock(
+            spec=User.from_jwt,
+            return_value=_build_user(faker, valid_username, active=False),
+        ),
     )
 
     response = test_client.post(
@@ -165,7 +183,8 @@ def test_spa_login_invalid_credentials(test_client, valid_username, mocker):
         User,
         "get_oauth_token",
         new=AsyncMock(
-            side_effect=HTTPUnauthorizedException("Invalid username or password.")
+            spec=User.get_oauth_token,
+            side_effect=HTTPUnauthorizedException("Invalid username or password."),
         ),
     )
 
@@ -191,12 +210,16 @@ def test_refresh_from_cookie_success(
 ):
     """Assert /refresh returns the slim response and rotates the cookie."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
     mocker.patch.object(
         User,
         "from_jwt",
-        new=AsyncMock(return_value=_build_user(faker, valid_username)),
+        new=AsyncMock(
+            spec=User.from_jwt, return_value=_build_user(faker, valid_username)
+        ),
     )
 
     test_client.cookies.set("refreshToken", "prior-valid-refresh")
@@ -235,9 +258,10 @@ def test_refresh_invalid_cookie_validation_error(test_client, mocker):
         User,
         "get_oauth_token",
         new=AsyncMock(
+            spec=User.get_oauth_token,
             side_effect=ValidationError.from_exception_data(
                 title="Validation Error", line_errors=[]
-            )
+            ),
         ),
     )
 
@@ -260,11 +284,12 @@ def test_refresh_cookie_rejected_by_casdoor(test_client, mocker):
         User,
         "get_oauth_token",
         new=AsyncMock(
+            spec=User.get_oauth_token,
             side_effect=HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="invalid_grant",
                 headers={"X-Error-Code": "invalid_grant"},
-            )
+            ),
         ),
     )
 
@@ -295,12 +320,17 @@ def test_refresh_inactive_user(
 ):
     """Assert /refresh returns 403 for inactive users and does not rotate the cookie."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
     mocker.patch.object(
         User,
         "from_jwt",
-        new=AsyncMock(return_value=_build_user(faker, valid_username, active=False)),
+        new=AsyncMock(
+            spec=User.from_jwt,
+            return_value=_build_user(faker, valid_username, active=False),
+        ),
     )
 
     test_client.cookies.set("refreshToken", "valid")
@@ -318,9 +348,15 @@ def test_logout_success(test_client, valid_username, mocker, faker: Faker):
     access_token = "bearer-access-token"
     logged_in_user = _build_user(faker, valid_username)
     logged_in_user.access_token = access_token
-    mocker.patch.object(User, "from_jwt", new=AsyncMock(return_value=logged_in_user))
+    mocker.patch.object(
+        User,
+        "from_jwt",
+        new=AsyncMock(spec=User.from_jwt, return_value=logged_in_user),
+    )
     invalidate_mock = mocker.patch.object(
-        User, "invalidate_oauth_token", new=AsyncMock(return_value=None)
+        User,
+        "invalidate_oauth_token",
+        new=AsyncMock(spec=User.invalidate_oauth_token, return_value=None),
     )
 
     response = test_client.post(
@@ -347,11 +383,15 @@ def test_logout_invalidate_fails_still_clears_cookie(
     access_token = "bearer-access-token"
     logged_in_user = _build_user(faker, valid_username)
     logged_in_user.access_token = access_token
-    mocker.patch.object(User, "from_jwt", new=AsyncMock(return_value=logged_in_user))
+    mocker.patch.object(
+        User,
+        "from_jwt",
+        new=AsyncMock(spec=User.from_jwt, return_value=logged_in_user),
+    )
     mocker.patch.object(
         User,
         "invalidate_oauth_token",
-        new=AsyncMock(side_effect=KeyError("jti")),
+        new=AsyncMock(spec=User.invalidate_oauth_token, side_effect=KeyError("jti")),
     )
 
     response = test_client.post(
