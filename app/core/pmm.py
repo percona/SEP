@@ -38,16 +38,16 @@ def execution_request_for_pmm_snapshot(queue_item: TaskHistory) -> TaskExecution
     The deferred ``TaskHistory.execution_request`` (SEP-816) can raise
     ``MissingGreenlet`` on async engines if read through the attribute after the load
     session has closed. When the column is already in memory, use the ORM
-    :attr:`loaded_value` (see SEP-562); otherwise read ``queue_item.execution_request``.
+    :attr:`loaded_value` (see SEP-1021); otherwise read ``queue_item.execution_request``.
 
     :param queue_item: The task history record.
     :type queue_item: TaskHistory
     :return: The request whose ``task``, ``target``, and ``meta`` are snapshotted.
     :rtype: TaskExecutionRequest
     """
-    st = sa_inspect(queue_item).attrs.execution_request
-    if st.loaded_value is not NO_VALUE:
-        return st.loaded_value
+    state = sa_inspect(queue_item).attrs.execution_request
+    if state.loaded_value is not NO_VALUE:
+        return state.loaded_value
     return queue_item.execution_request
 
 
@@ -154,7 +154,7 @@ def schedule_annotation(
     The deferred ``TaskHistory.execution_request`` is typically eager-loaded via
     ``undefer`` in the requesting route. When a load session has already closed, the
     ORM's attribute :attr:`loaded_value` is used to avoid a lazy load that can fail
-    on async engines. See SEP-562.
+    on async engines. See SEP-1021.
 
     ``meta`` is deep-copied so the background task observes the values at scheduling
     time even if the originating request mutates nested structures afterwards.
