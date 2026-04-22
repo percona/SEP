@@ -55,6 +55,7 @@ from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
+from app.sep.routes.config import router as config_router
 from app.sep.snippets.config import snippets_settings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
@@ -147,6 +148,8 @@ if {"snippets", "dipper"} & imported_plugins:
     from app.sep.routes.artifacts import router as artifacts_router
 
     sep_app.include_router(artifacts_router, prefix="/artifacts")
+
+sep_app.include_router(config_router, prefix="/admin/config")
 
 sep_app.include_router(api_router)
 
