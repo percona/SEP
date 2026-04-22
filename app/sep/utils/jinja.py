@@ -68,22 +68,23 @@ def syntax_highlight_css(
 
 
 def syntax_highlight(
-    code: str,
+    code: Any,
     language: str | None = None,
     *,
     stripall: bool = True,
     **fmt_options: Any,
 ) -> str:
-    """Apply syntax highlighting to the provided source code using Pygments.
+    """Apply syntax highlighting to the provided value using Pygments.
 
-    This function defines a jinja2 filter that applies syntax highlighting to a block
-    of code using Pygments. If a specific language is provided, it will attempt to
-    retrieve the corresponding lexer. If the lexer for the given language is not found,
-    or if no language is specified, it will either guess the lexer based on the
-    code content or default to a plain text lexer.
+    Coerce ``code`` to ``str`` before tokenising so that arbitrary scalar
+    values (e.g. integers from ``task.meta``) do not reach Pygments' decode
+    path and raise ``AttributeError``. If a specific language is provided,
+    retrieve the corresponding lexer. If the lexer for the given language
+    is not found, or if no language is specified, guess the lexer based on
+    the coerced content or fall back to a plain text lexer.
 
-    :param code: The source code that is to be highlighted.
-    :type code: str
+    :param code: The value to be highlighted. Coerced to ``str`` internally.
+    :type code: Any
     :param language: The programming language of the code. If not provided, the lexer is
         guessed.
     :type language: str or None
@@ -98,6 +99,7 @@ def syntax_highlight(
     :return: A string containing HTML markup with syntax-highlighted code.
     :rtype: str
     """
+    code = str(code)
     lexer_options = {"stripall": stripall}
     if not stripall:
         lexer_options["stripnl"] = False
