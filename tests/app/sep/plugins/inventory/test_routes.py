@@ -653,23 +653,48 @@ class TestCheckServiceConnectivity:
         yield
         sep_app.dependency_overrides = {}
 
-    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    @pytest.mark.parametrize(
+        "service_type",
+        [
+            ServiceTypeEnum.MYSQL,
+            ServiceTypeEnum.POSTGRESQL,
+            ServiceTypeEnum.MONGODB,
+        ],
+    )
     def test_connectivity_check_success(
-        self, test_client, mysql_service, mock_tasks_api_dep
+        self,
+        test_client,
+        created_node,
+        mock_tasks_api_dep,
+        service_type,
     ):
-        """Verify redirect with success flash on a passing connectivity check."""
+        """Verify redirect, success flash, and lowercase ``service_type`` in payload."""
+        service = CreatedServiceFactory.build(type=service_type, port=3306)
+        service.node = created_node
+        sep_app.dependency_overrides[get_created_service] = lambda: service
         mock_tasks_api_dep.post.return_value = {
             "success": True,
             "error": None,
             "task_history_id": 42,
         }
-        response = test_client.post(
-            f"/inventory/services/{mysql_service.id}/check-connectivity/",
-            follow_redirects=False,
-        )
+        try:
+            response = test_client.post(
+                f"/inventory/services/{service.id}/check-connectivity/",
+                follow_redirects=False,
+            )
+        finally:
+            sep_app.dependency_overrides.pop(get_created_service, None)
         assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
-        mock_tasks_api_dep.post.assert_awaited_once()
+        assert response.headers["location"] == f"/inventory/services/{service.id}"
+        mock_tasks_api_dep.post.assert_awaited_once_with(
+            "/connectivity-check/",
+            json={
+                "target": service.node.name,
+                "host": service.node.address,
+                "port": service.port,
+                "service_type": service_type.value,
+            },
+        )
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep")
     def test_connectivity_check_failure(
