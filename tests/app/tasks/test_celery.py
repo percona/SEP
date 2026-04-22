@@ -1571,6 +1571,7 @@ class TestSyncQueueItemChainDispatch:
             TaskHistoryStatusEnum.FAILED,
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.LOST,
+            TaskHistoryStatusEnum.STALE,
         ],
     )
     async def test_dispatches_chain_on_failure_with_flag(self, status) -> None:
@@ -1630,6 +1631,7 @@ class TestSyncQueueItemChainDispatch:
             TaskHistoryStatusEnum.FAILED,
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.LOST,
+            TaskHistoryStatusEnum.STALE,
         ],
     )
     async def test_no_chain_on_failure_without_flag(self, status) -> None:
