@@ -36,9 +36,10 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
+from app.sep.api.router import api_router
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings
-from app.sep.db.seed import create_plugin_tables, init_sep_db
+from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -60,15 +61,16 @@ from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
+JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/checksums/api/", "/api/plugins/")
+
 
 async def sep_startup() -> None:
     """Define actions to perform on SEP startup.
 
-    Initialize the SEP periodic task database, create plugin-scoped tables, and trigger
-    the initial synchronization of snippets if configured to do so.
+    Initialize the SEP periodic task database and trigger the initial
+    synchronization of snippets if configured to do so.
     """
     await init_sep_db()
-    await create_plugin_tables()
     if snippets_settings.SYNC_ON_STARTUP:
         sync_snippets.delay()
 
@@ -127,14 +129,14 @@ if {
     "backup_mongo",
     "checksums",
 } & imported_plugins:
-    from app.sep.api.routes import router as inventory_api_router
     from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.execution_events import router as execution_events_router
+    from app.sep.routes.inventory_ajax import router as inventory_ajax_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
     from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
-    sep_app.include_router(inventory_api_router, prefix="/inventory-api")
+    sep_app.include_router(inventory_ajax_router, prefix="/inventory-api")
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
     sep_app.include_router(download_files_router, prefix="/files")
     sep_app.include_router(execution_events_router, prefix="/execution-events")
@@ -145,6 +147,8 @@ if {"snippets", "dipper"} & imported_plugins:
     from app.sep.routes.artifacts import router as artifacts_router
 
     sep_app.include_router(artifacts_router, prefix="/artifacts")
+
+sep_app.include_router(api_router)
 
 if "snippets" in imported_plugins:
     sep_app.mount(
@@ -195,7 +199,7 @@ async def custom_404_handler(
     exc: BaseException,
 ) -> Response:
     """Load custom 404 page."""
-    if request.url.path.startswith("/checksums/api/"):
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES):
         detail = getattr(exc, "detail", "Not Found")
         headers = getattr(exc, "headers", None)
         return JSONResponse(
@@ -266,7 +270,7 @@ async def json_exception_handler(
 @sep_app.exception_handler(HTTPException)
 async def default_exception_handler(request: Request, exc: HTTPException) -> Response:
     """Define default exception handler."""
-    if request.url.path.startswith("/checksums/api/") or is_bearer_authenticated(
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES) or is_bearer_authenticated(
         request
     ):
         return JSONResponse(
