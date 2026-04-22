@@ -20,13 +20,35 @@ import copy
 import logging
 from typing import Any
 
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.orm.attributes import NO_VALUE
+
 from app.core.config import settings
 from app.core.requests.remote_api import RemoteAPI
-from app.tasks.models import TaskHistory
+from app.tasks.models import TaskExecutionRequest, TaskHistory
 
 logger = logging.getLogger(__name__)
 
 _background_tasks = set()
+
+
+def execution_request_for_pmm_snapshot(queue_item: TaskHistory) -> TaskExecutionRequest:
+    """Return the task execution request used to build a PMM annotation.
+
+    The deferred ``TaskHistory.execution_request`` (SEP-816) can raise
+    ``MissingGreenlet`` on async engines if read through the attribute after the load
+    session has closed. When the column is already in memory, use the ORM
+    :attr:`loaded_value` (see SEP-562); otherwise read ``queue_item.execution_request``.
+
+    :param queue_item: The task history record.
+    :type queue_item: TaskHistory
+    :return: The request whose ``task``, ``target``, and ``meta`` are snapshotted.
+    :rtype: TaskExecutionRequest
+    """
+    st = sa_inspect(queue_item).attrs.execution_request
+    if st.loaded_value is not NO_VALUE:
+        return st.loaded_value
+    return queue_item.execution_request
 
 
 async def create_pmm_annotation(
@@ -129,19 +151,20 @@ def schedule_annotation(
     coroutine never touches ORM attributes after the originating
     session has closed. See SEP-1009.
 
-    The caller must ensure ``queue_item.execution_request`` is already
-    loaded (the deferred ``column_property`` is typically eager-loaded
-    via ``undefer(TaskHistory.execution_request)`` in routes that emit
-    annotations). ``meta`` is deep-copied so the background task observes
-    the values at scheduling time even if the originating request mutates
-    nested structures inside the attribute afterwards.
+    The deferred ``TaskHistory.execution_request`` is typically eager-loaded via
+    ``undefer`` in the requesting route. When a load session has already closed, the
+    ORM's attribute :attr:`loaded_value` is used to avoid a lazy load that can fail
+    on async engines. See SEP-562.
+
+    ``meta`` is deep-copied so the background task observes the values at scheduling
+    time even if the originating request mutates nested structures afterwards.
 
     :param queue_item: The task history record.
     :type queue_item: TaskHistory
     :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``).
     :type event: str
     """
-    execution_request = queue_item.execution_request
+    execution_request = execution_request_for_pmm_snapshot(queue_item)
     meta = copy.deepcopy(execution_request.meta)
     task = asyncio.create_task(
         annotate_task_event(
