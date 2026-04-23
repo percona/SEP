@@ -274,7 +274,7 @@ async def check_service_connectivity(
                     "target": service.node.name,
                     "host": service.node.address,
                     "port": service.port,
-                    "service_type": service.type.name,
+                    "service_type": service.type.value,
                 },
             )
         )
