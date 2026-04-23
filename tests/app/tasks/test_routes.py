@@ -862,10 +862,22 @@ async def test_get_task_stats_empty(test_client, created_task):
 
 @pytest.mark.asyncio
 async def test_get_executor_hosts(test_client, mock_executor):
-    """Assert retrieving executor hosts returns the expected hosts dict."""
+    """Assert retrieving executor hosts returns the enriched HostInfo shape.
+
+    ``healthy`` and ``last_checked`` default to ``None`` when no
+    ``NodeHealthCheck`` row has been upserted yet; that state is rendered
+    as "Unknown" on the homepage.
+    """
     response = test_client.get("/hosts/")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {"node1": "10.0.0.1"}
+    assert response.json() == {
+        "node1": {
+            "address": "10.0.0.1",
+            "healthy": None,
+            "last_checked": None,
+            "error_message": None,
+        }
+    }
 
 
 @pytest.mark.asyncio
