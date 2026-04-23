@@ -613,6 +613,11 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
 CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 
 
+HOST_STATUS_HEALTHY = "healthy"
+HOST_STATUS_UNHEALTHY = "unhealthy"
+HOST_STATUS_UNKNOWN = "unknown"
+
+
 class ExecutorHostsContext:
     """Wrap executor hosts with inventory-based display name mapping.
 
@@ -620,11 +625,69 @@ class ExecutorHostsContext:
     :type hosts: dict[str, str]
     :param display_names: Mapping from addresses to inventory node names.
     :type display_names: dict[str, str]
+    :param health: Optional mapping from Nomad node name to health metadata
+        ``{"healthy": bool | None, "last_checked": str | None, "error_message":
+        str | None}``. Missing entries render as ``HOST_STATUS_UNKNOWN``.
+    :type health: dict[str, dict[str, Any]] | None
     """
 
-    def __init__(self, hosts: dict[str, str], display_names: dict[str, str]) -> None:
+    def __init__(
+        self,
+        hosts: dict[str, str],
+        display_names: dict[str, str],
+        health: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         self._hosts = hosts
         self._display_names = display_names
+        self._health = health or {}
+
+    def health_status(self, nomad_name: str) -> str:
+        """Return the health status bucket for a Nomad node.
+
+        :param nomad_name: The Nomad node name to look up.
+        :type nomad_name: str
+        :return: ``HOST_STATUS_HEALTHY`` when the most recent probe
+            succeeded, ``HOST_STATUS_UNHEALTHY`` when it failed, or
+            ``HOST_STATUS_UNKNOWN`` when no probe has run yet.
+        :rtype: str
+        """
+        row = self._health.get(nomad_name)
+        if not row:
+            return HOST_STATUS_UNKNOWN
+        healthy = row.get("healthy")
+        if healthy is True:
+            return HOST_STATUS_HEALTHY
+        if healthy is False:
+            return HOST_STATUS_UNHEALTHY
+        return HOST_STATUS_UNKNOWN
+
+    def health_error(self, nomad_name: str) -> str | None:
+        """Return the latest probe error message for a Nomad node.
+
+        :param nomad_name: The Nomad node name to look up.
+        :type nomad_name: str
+        :return: The error message, or ``None`` when the latest probe
+            succeeded or no probe has run yet.
+        :rtype: str | None
+        """
+        row = self._health.get(nomad_name)
+        if not row:
+            return None
+        return row.get("error_message")
+
+    def last_checked(self, nomad_name: str) -> str | None:
+        """Return the ISO timestamp of the latest probe for a Nomad node.
+
+        :param nomad_name: The Nomad node name to look up.
+        :type nomad_name: str
+        :return: The ``last_checked`` string from ``/hosts/`` (already ISO
+            serialized by FastAPI), or ``None`` when no probe has run yet.
+        :rtype: str | None
+        """
+        row = self._health.get(nomad_name)
+        if not row:
+            return None
+        return row.get("last_checked")
 
     @property
     def hosts(self) -> dict[str, str]:
@@ -667,14 +730,27 @@ class ExecutorHostsContext:
         """
         return frozenset((name, self.display_name(name)) for name in self._hosts)
 
-    def as_host_metrics(self) -> list[tuple[str, str]]:
-        """Return a sorted list of (display_name, address) tuples for host metrics.
+    def as_host_metrics(self) -> list[tuple[str, str, str, str | None]]:
+        """Return sorted host rows for the homepage Targets table.
 
-        :return: List of tuples with display name and address, sorted by display name.
-        :rtype: list[tuple[str, str]]
+        Each tuple is ``(display_name, address, health_status, error_message)``
+        where ``health_status`` is one of ``HOST_STATUS_HEALTHY``,
+        ``HOST_STATUS_UNHEALTHY`` or ``HOST_STATUS_UNKNOWN`` and
+        ``error_message`` is the latest probe failure description or
+        ``None``. Rows are sorted by display name so the template output is
+        stable.
+
+        :return: List of host-metric rows sorted by display name.
+        :rtype: list[tuple[str, str, str, str | None]]
         """
         return sorted(
-            (self.display_name(name), address) for name, address in self._hosts.items()
+            (
+                self.display_name(name),
+                address,
+                self.health_status(name),
+                self.health_error(name),
+            )
+            for name, address in self._hosts.items()
         )
 
     def with_host(self, hostname: str) -> "ExecutorHostsContext":
@@ -691,42 +767,24 @@ class ExecutorHostsContext:
         return ExecutorHostsContext(hosts=new_hosts, display_names=self._display_names)
 
 
-async def get_executor_hosts_context(
-    executor_hosts: "ExecutorHosts",
-    inventory_api: InventoryAPI,
-) -> ExecutorHostsContext:
-    """Build an enriched executor hosts context with inventory display names.
+async def get_executor_hosts_raw(
+    request: Request, tasks_api: TaskAPI
+) -> dict[str, dict[str, Any]]:
+    """Retrieve the enriched executor hosts payload from the Tasks API.
 
-    :param executor_hosts: The raw executor hosts dictionary.
-    :type executor_hosts: dict[str, str]
-    :param inventory_api: The Inventory API client.
-    :type inventory_api: RemoteAPI
-    :return: An executor hosts context with display name mapping.
-    :rtype: ExecutorHostsContext
-    """
-    try:
-        response = await inventory_api.get("/", params={"limit": 0})
-        display_names = {node["address"]: node["name"] for node in response["items"]}
-    except (HTTPException, TypeError, KeyError, OSError):
-        logger.warning(
-            "Failed to fetch inventory nodes for display names", exc_info=True
-        )
-        display_names = {}
-    return ExecutorHostsContext(hosts=executor_hosts, display_names=display_names)
-
-
-ExecutorHostsCtx = Annotated[ExecutorHostsContext, Depends(get_executor_hosts_context)]
-
-
-async def get_executor_hosts(request: Request, tasks_api: TaskAPI) -> dict[str, str]:
-    """Retrieve executor hosts from the Tasks API.
+    The Tasks API ``/hosts/`` endpoint returns a mapping of Nomad node name
+    to a ``HostInfo`` dict (``{address, healthy, last_checked,
+    error_message}``). Every SEP consumer that needs either the raw address
+    mapping (:func:`get_executor_hosts`) or the full health data
+    (:func:`get_executor_hosts_context`) derives from this single fetch.
 
     :param request: The HTTP request object.
     :type request: Request
     :param tasks_api: The API client used to interact with the tasks service.
     :type tasks_api: TaskAPI
-    :return: A dictionary of executor hosts.
-    :rtype: dict[str, str]
+    :return: The enriched executor hosts payload, or an empty dict when the
+        upstream call fails.
+    :rtype: dict[str, dict[str, Any]]
     """
     try:
         return await tasks_api.get("/hosts/")
@@ -735,7 +793,91 @@ async def get_executor_hosts(request: Request, tasks_api: TaskAPI) -> dict[str, 
     return {}
 
 
+ExecutorHostsRaw = Annotated[dict[str, dict[str, Any]], Depends(get_executor_hosts_raw)]
+
+
+def _flatten_host_address(info: Any) -> str:
+    """Return the address from either the enriched or legacy ``/hosts/`` value.
+
+    Tolerates the pre-SEP-1020 plain-string shape so test fixtures and older
+    clients keep working; real Tasks API responses always return a
+    ``HostInfo`` dict.
+
+    :param info: A value from the ``/hosts/`` payload -- either the legacy
+        address string or the enriched ``HostInfo`` dict.
+    :type info: Any
+    :return: The node address (possibly empty when missing).
+    :rtype: str
+    """
+    if isinstance(info, dict):
+        return info.get("address") or ""
+    if isinstance(info, str):
+        return info
+    return ""
+
+
+async def get_executor_hosts(
+    executor_hosts_raw: ExecutorHostsRaw,
+) -> dict[str, str]:
+    """Flatten the enriched ``/hosts/`` payload back into ``{name: address}``.
+
+    Legacy callers that only care about the address mapping keep their
+    existing ``dict[str, str]`` contract; only the homepage reads the full
+    health data via :class:`ExecutorHostsContext`.
+
+    :param executor_hosts_raw: The enriched payload returned by
+        :func:`get_executor_hosts_raw`.
+    :type executor_hosts_raw: dict[str, dict[str, Any]]
+    :return: A mapping of Nomad node name to address.
+    :rtype: dict[str, str]
+    """
+    return {
+        name: _flatten_host_address(info) for name, info in executor_hosts_raw.items()
+    }
+
+
 ExecutorHosts = Annotated[dict[str, str], Depends(get_executor_hosts)]
+
+
+async def get_executor_hosts_context(
+    executor_hosts_raw: ExecutorHostsRaw,
+    inventory_api: InventoryAPI,
+) -> ExecutorHostsContext:
+    """Build an enriched executor hosts context with display names and health.
+
+    :param executor_hosts_raw: The enriched ``/hosts/`` payload keyed by
+        Nomad node name.
+    :type executor_hosts_raw: dict[str, dict[str, Any]]
+    :param inventory_api: The Inventory API client.
+    :type inventory_api: RemoteAPI
+    :return: An executor hosts context with display name mapping and
+        per-node health data.
+    :rtype: ExecutorHostsContext
+    """
+    hosts = {
+        name: _flatten_host_address(info) for name, info in executor_hosts_raw.items()
+    }
+    health = {
+        name: {
+            "healthy": info.get("healthy"),
+            "last_checked": info.get("last_checked"),
+            "error_message": info.get("error_message"),
+        }
+        for name, info in executor_hosts_raw.items()
+        if isinstance(info, dict)
+    }
+    try:
+        response = await inventory_api.get("/", params={"limit": 0})
+        display_names = {node["address"]: node["name"] for node in response["items"]}
+    except (HTTPException, TypeError, KeyError, OSError):
+        logger.warning(
+            "Failed to fetch inventory nodes for display names", exc_info=True
+        )
+        display_names = {}
+    return ExecutorHostsContext(hosts=hosts, display_names=display_names, health=health)
+
+
+ExecutorHostsCtx = Annotated[ExecutorHostsContext, Depends(get_executor_hosts_context)]
 
 
 async def get_tasks_context(
