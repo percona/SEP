@@ -32,7 +32,7 @@ from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import cast, func, literal, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -52,14 +52,19 @@ from app.core.pmm import schedule_annotation
 from app.core.utils import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.tasks.config import tasks_settings
-from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
+from app.tasks.crud import (
+    DispatchLockManager,
+    NodeHealthCheckManager,
+    TaskHistoryManager,
+    TaskManager,
+)
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import (
     get_executable_task_by_name,
     get_executor,
     prepare_task_history,
 )
-from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution.models import BaseExecutor, HealthCheckResult
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
@@ -293,6 +298,59 @@ async def _skip_dispatch_unhealthy_target(
 def sync_running_tasks() -> None:
     """Define Celery task to sync running tasks."""
     celery.loop.run_until_complete(sync_running_items())
+
+
+@celery.task
+def probe_node_health() -> None:
+    """Probe every Nomad executor host and persist the result to the DB.
+
+    Beat-scheduled via :data:`app.tasks.db.seed.SYSTEM_PERIODIC_TASKS` at
+    :attr:`tasks_settings.HEALTH_CHECK_INTERVAL`. The dispatched
+    ``health-probe`` child jobs are created and purged inside
+    :meth:`NomadExecutor.check_host_health`; this task only handles the
+    per-host loop and database persistence.
+    """
+    celery.loop.run_until_complete(_probe_all_nodes())
+
+
+async def _probe_all_nodes() -> None:
+    """Iterate healthy Nomad hosts and upsert probe results.
+
+    Exceptions raised by :meth:`BaseExecutor.check_host_health` are captured
+    as unhealthy results so one slow or misbehaving host does not abort the
+    whole cycle. A missing ``nodehealthcheck`` table (pre-migration deploy)
+    is caught once and the cycle is aborted, because every subsequent upsert
+    would fail identically.
+    """
+    executor = get_executor(TaskBackendEnum.NOMAD)
+    try:
+        hosts = executor.get_hosts()
+    except Exception:
+        logger.exception("Failed to fetch executor hosts for health probe")
+        return
+    async_session = get_async_session_maker()
+    now = utc_now()
+    for name, address in hosts.items():
+        try:
+            result = await executor.check_host_health(name, address)
+        except Exception as exc:
+            logger.exception("Health probe raised for node %s", name)
+            result = HealthCheckResult(healthy=False, error=str(exc))
+        try:
+            async with async_session() as session:
+                await NodeHealthCheckManager.upsert(
+                    session,
+                    node_name=name,
+                    healthy=result.healthy,
+                    error_message=result.error,
+                    now=now,
+                )
+        except OperationalError:
+            logger.warning(
+                "nodehealthcheck table missing; skipping health-probe upserts",
+                exc_info=True,
+            )
+            return
 
 
 @celery.task
