@@ -51,6 +51,7 @@ from app.tasks.connectivity.constants import (
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import check_connectivity_with_cache
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.db import get_async_session_maker
 from app.tasks.deps import (
     ExecutableTaskDep,
     get_executor,
@@ -551,7 +552,11 @@ async def sync_task_history(
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
         await _populate_has_logs(session, [task_history])
         return task_history
-    updated = await executor.sync_task_history(task_history)
+    async_session = get_async_session_maker()
+    async with async_session() as writer_session:
+        updated = await executor.sync_task_history(
+            task_history, writer_session=writer_session
+        )
     saved = await TaskHistoryManager.save(
         session, updated, flag_modified_fields=["execution_request"]
     )
