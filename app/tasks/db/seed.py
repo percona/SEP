@@ -441,6 +441,15 @@ NOMAD_HEALTH_PROBE = {
                     "Config": {"command": "true"},
                     "Meta": {},
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    # Nomad's default task resources (100 MHz CPU + 300 MiB
+                    # RAM) are wildly oversized for a ``true`` call and
+                    # cause parallel probes (or accumulated orphans from
+                    # crashed workers) to park in ``pending`` on small
+                    # clusters when the node runs out of allocatable
+                    # capacity. Reserve the minimum allowed by the Nomad
+                    # schedulable-cgroup defaults instead so placement
+                    # never blocks on resource exhaustion.
+                    "Resources": {"CPU": 10, "MemoryMB": 10},
                 },
             ],
         },
