@@ -58,7 +58,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
 )
-from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution.models import BaseExecutor, HealthCheckResult
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.logs.log_reader import decompress_legacy_logs
 from app.tasks.logs.log_writer import (
@@ -570,6 +570,71 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
         }
 
+    async def check_host_health(
+        self,
+        host_name: str,
+        host_address: str,  # noqa: ARG002
+    ) -> HealthCheckResult:
+        """Probe a Nomad node by dispatching a minimal ``true`` batch job.
+
+        Dispatch the pre-registered ``health-probe`` parameterized batch job
+        with ``meta={"target": host_name}`` so its constraints land the
+        allocation on the requested node, poll the dispatched child until it
+        reaches the ``dead`` status or the :attr:`health_check_timeout`
+        deadline elapses, then purge the child with ``purge=True`` so the
+        Nomad garbage collector does not accumulate probe jobs.
+
+        The parent ``health-probe`` template is seeded via
+        :func:`app.tasks.db.seed.init_tasks_db`; if it is missing when the
+        first probe runs the method returns a descriptive unhealthy result
+        instead of raising.
+
+        :param host_name: The Nomad node name (key returned by
+            :meth:`get_hosts`).
+        :type host_name: str
+        :param host_address: The Nomad node address (unused; kept to match
+            the :class:`BaseExecutor` signature).
+        :type host_address: str
+        :return: The probe result with an ``error`` description on failure.
+        :rtype: HealthCheckResult
+        """
+        try:
+            dispatched = await async_run(
+                self.backend.job.dispatch_job,
+                "health-probe",
+                meta={"target": host_name},
+            )
+        except URLNotFoundNomadException:
+            return HealthCheckResult(
+                healthy=False,
+                error="health-probe template not registered in Nomad",
+            )
+        except BaseNomadException as exc:
+            return HealthCheckResult(
+                healthy=False,
+                error=f"dispatch failed: {exc}",
+            )
+
+        dispatched_id = dispatched.get("DispatchedJobID")
+        if not dispatched_id:
+            return HealthCheckResult(
+                healthy=False,
+                error="Nomad did not return a DispatchedJobID for health-probe",
+            )
+
+        try:
+            return await self._poll_health_probe(dispatched_id)
+        finally:
+            try:
+                await async_run(
+                    self.backend.job.deregister_job, dispatched_id, purge=True
+                )
+            except BaseNomadException:
+                logger.warning(
+                    "Failed to purge health-probe child %s",
+                    dispatched_id,
+                    exc_info=True,
+                )
     def get_allocation_for_task_history(
         self, queue_item: TaskHistory
     ) -> dict[str, Any]:
