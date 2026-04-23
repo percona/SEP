@@ -181,6 +181,7 @@ default:
       LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
     ANONYMIZER:
       DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
+    HEALTH_CHECK_INTERVAL: 900  # Health check interval (seconds)
 
 development:
   PMM:
