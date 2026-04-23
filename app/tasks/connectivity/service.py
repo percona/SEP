@@ -35,6 +35,7 @@ from app.tasks.connectivity.models import (
     REQUIREMENTS_BY_SERVICE_TYPE,
 )
 from app.tasks.crud import TaskHistoryManager
+from app.tasks.db import get_async_session_maker
 from app.tasks.deps import get_executable_task_by_name
 from app.tasks.logs.log_reader import iter_task_history_logs
 from app.tasks.models import (
@@ -181,6 +182,7 @@ async def check_connectivity(
     queue_item = await _expire_and_fetch(session, queue_item_id)
 
     executor = get_executor_for_task(task)
+    async_session = get_async_session_maker()
     elapsed = 0
     while (
         queue_item.status
@@ -189,7 +191,10 @@ async def check_connectivity(
     ):
         await asyncio.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
-        queue_item = await executor.sync_task_history(queue_item)
+        async with async_session() as writer_session:
+            queue_item = await executor.sync_task_history(
+                queue_item, writer_session=writer_session
+            )
         await TaskHistoryManager.save(
             session, queue_item, flag_modified_fields=["execution_request"]
         )
@@ -295,7 +300,7 @@ async def _iter_run_script_logs(
     :type session: AsyncSession
     :param task_history: The task history row being inspected.
     :type task_history: TaskHistory
-    :yield: Log chunks for the ``run-script`` source.
+    :return: An async generator yielding log chunks for the ``run-script`` source.
     :rtype: AsyncGenerator[TaskLog, None]
     """
     iter_logs = getattr(task_history, "iter_logs", None)
