@@ -24,6 +24,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -50,7 +51,12 @@ from app.tasks.connectivity.constants import (
 )
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import check_connectivity_with_cache
-from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.crud import (
+    NodeHealthCheckManager,
+    TaskHistoryLogManager,
+    TaskHistoryManager,
+    TaskManager,
+)
 from app.tasks.deps import (
     ExecutableTaskDep,
     get_executor,
@@ -67,6 +73,7 @@ from app.tasks.logs.log_reader import has_legacy_logs, iter_task_history_logs
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
+    HostInfo,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -596,10 +603,41 @@ async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
     )
 
 
-@router.get("/hosts/", dependencies=[IsAuthenticatedDep])
-async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
-    """Return the executor hosts from the executor."""
-    return executor.get_hosts()
+@router.get(
+    "/hosts/",
+    dependencies=[IsAuthenticatedDep],
+    response_model=dict[str, HostInfo],
+)
+async def get_executor_hosts(
+    session: SessionDep, executor: TaskExecutor
+) -> dict[str, HostInfo]:
+    """Return the executor hosts enriched with their latest probe outcome.
+
+    Missing ``nodehealthcheck`` rows -- including the case where the
+    Alembic migration has not yet been applied -- yield ``HostInfo`` entries
+    with ``healthy``, ``last_checked`` and ``error_message`` set to
+    ``None``, which the homepage renders as "Unknown".
+    """
+    hosts = executor.get_hosts()
+    health_by_name: dict[str, object] = {}
+    try:
+        health_rows = await NodeHealthCheckManager.list_by_names(session, list(hosts))
+    except OperationalError:
+        logger.warning(
+            "nodehealthcheck table missing; returning /hosts/ without health data",
+            exc_info=True,
+        )
+    else:
+        health_by_name = {row.node_name: row for row in health_rows}
+    return {
+        name: HostInfo(
+            address=addr,
+            healthy=getattr(health_by_name.get(name), "healthy", None),
+            last_checked=getattr(health_by_name.get(name), "last_checked", None),
+            error_message=getattr(health_by_name.get(name), "error_message", None),
+        )
+        for name, addr in hosts.items()
+    }
 
 
 @router.post("/transform/", dependencies=[IsAuthenticatedDep])
