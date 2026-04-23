@@ -20,6 +20,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 
 from sqlalchemy import CursorResult, func, literal, update
+from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.orm import aliased
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -35,8 +36,10 @@ from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
 from app.core.models import PaginatedResponse
 from app.core.utils.date_time import utc_now
+from app.core.utils.fields import DatabaseDialect
 from app.tasks.models import (
     DispatchLock,
+    NodeHealthCheck,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -842,3 +845,94 @@ class DispatchLockManager(BaseSQLModelManager):
     """
 
     Model = DispatchLock
+
+
+class NodeHealthCheckManager(BaseSQLModelManager):
+    """Manage per-node health check records.
+
+    Upsert keyed by ``node_name`` so every probe cycle refreshes a single row
+    per executor node. Reads are typically batched via :meth:`list_by_names`
+    when enriching the ``/hosts/`` response.
+
+    :ivar Model: The SQLModel class this manager is responsible for
+        (``NodeHealthCheck``).
+    :vartype Model: type[NodeHealthCheck]
+    """
+
+    Model = NodeHealthCheck
+
+    @classmethod
+    async def upsert(
+        cls,
+        session: AsyncSession,
+        *,
+        node_name: str,
+        healthy: bool,
+        error_message: str | None,
+        now: datetime,
+    ) -> None:
+        """Insert or update the health check row for a node.
+
+        Uses a dialect-specific ``INSERT ... ON CONFLICT/DUPLICATE KEY``
+        statement so the call is atomic: concurrent probes on the same node
+        collapse into a single row instead of raising on the unique
+        ``node_name`` index. PostgreSQL and SQLite use
+        ``ON CONFLICT (node_name) DO UPDATE``; MySQL uses
+        ``ON DUPLICATE KEY UPDATE``.
+
+        :param session: The SQLAlchemy asynchronous session.
+        :type session: AsyncSession
+        :param node_name: The executor node name (unique key).
+        :type node_name: str
+        :param healthy: Whether the probe succeeded.
+        :type healthy: bool
+        :param error_message: Optional failure description; pass ``None`` on
+            healthy probes.
+        :type error_message: str | None
+        :param now: The timestamp assigned to ``last_checked`` and to the
+            audit columns.
+        :type now: datetime
+        :raises NotImplementedError: If the database dialect is unsupported.
+        """
+        engine_name = session.get_bind().name
+        values = {
+            "node_name": node_name,
+            "healthy": healthy,
+            "last_checked": now,
+            "error_message": error_message,
+            "created_at": now,
+            "updated_at": now,
+        }
+        update_values = {
+            "healthy": healthy,
+            "last_checked": now,
+            "error_message": error_message,
+            "updated_at": now,
+        }
+        if engine_name == DatabaseDialect.POSTGRESQL:
+            stmt = (
+                postgresql.insert(NodeHealthCheck)
+                .values(**values)
+                .on_conflict_do_update(
+                    index_elements=["node_name"],
+                    set_=update_values,
+                )
+            )
+        elif engine_name == DatabaseDialect.SQLITE:
+            stmt = (
+                sqlite.insert(NodeHealthCheck)
+                .values(**values)
+                .on_conflict_do_update(
+                    index_elements=["node_name"],
+                    set_=update_values,
+                )
+            )
+        elif engine_name == DatabaseDialect.MYSQL:
+            insert_stmt = mysql.insert(NodeHealthCheck).values(**values)
+            stmt = insert_stmt.on_duplicate_key_update(**update_values)
+        else:
+            raise NotImplementedError(
+                f"NodeHealthCheckManager.upsert: unsupported dialect {engine_name!r}"
+            )
+        await session.exec(stmt)
+        await session.commit()
