@@ -27,6 +27,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
+from app import __summary__, __version__
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
@@ -110,6 +111,13 @@ sep_app = create_app(
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
+    title="SEP Web Application API",
+    version=__version__,
+    description=(
+        f"{__summary__}\n\n"
+        "Browser-oriented SEP routes (HTML, redirects, proxies, streams). "
+        "JSON REST APIs for inventory and tasks live on the mounted sub-apps."
+    ),
 )
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
