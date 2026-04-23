@@ -936,3 +936,29 @@ class NodeHealthCheckManager(BaseSQLModelManager):
             )
         await session.exec(stmt)
         await session.commit()
+
+    @classmethod
+    async def list_by_names(
+        cls,
+        session: AsyncSession,
+        names: Sequence[str],
+    ) -> list[NodeHealthCheck]:
+        """Return the health rows for the given node names in a single query.
+
+        Emit no SQL when ``names`` is empty to avoid the ``IN ()`` SQLAlchemy
+        warning.
+
+        :param session: The SQLAlchemy asynchronous session.
+        :type session: AsyncSession
+        :param names: The executor node names to look up.
+        :type names: Sequence[str]
+        :return: The matching health rows in arbitrary order.
+        :rtype: list[NodeHealthCheck]
+        """
+        if not names:
+            return []
+        query = select(NodeHealthCheck).where(
+            col(NodeHealthCheck.node_name).in_(list(names))
+        )
+        result = await cls._exec(session, query)
+        return list(result.all())
