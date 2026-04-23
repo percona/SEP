@@ -608,7 +608,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         friendly-fire when two probe cycles overlap (e.g. a manual
         ``celery call`` firing while the periodic beat tick is still in
         flight): the later cycle's sweep must not destroy the earlier
-        cycle's in-flight job. ``2 × timeout`` is a comfortable margin
+        cycle's in-flight job. ``2x timeout`` is a comfortable margin
         above the worst-case honest lifetime (``timeout`` followed by the
         purge in the ``finally`` block) while still cleaning up anything a
         crash left behind.
