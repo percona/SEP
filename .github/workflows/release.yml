@@ -78,7 +78,7 @@ jobs:
           JIRA_VERSION_RELEASE_WEBHOOK_SECRET: ${{ secrets.JIRA_VERSION_RELEASE_WEBHOOK_SECRET }}
         run: |
           if [ "$RELEASE_TYPE" = "rc" ]; then
-            make release-rc VERSION="$VERSION" RC="$RC_NUMBER"
+            make release-rc VERSION="$VERSION" RC="$RC_NUMBER" SIGN_VIA_API=1
           else
-            make release-stable VERSION="$VERSION"
+            make release-stable VERSION="$VERSION" SIGN_VIA_API=1
           fi

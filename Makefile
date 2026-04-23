@@ -149,6 +149,8 @@ changelog-check:
 changelog-list:
 	@$(PYTHON) scripts/changelog.py list
 
+SIGN_FLAG := $(if $(SIGN_VIA_API),--sign-via-github-api,)
+
 release-rc:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
@@ -156,13 +158,13 @@ endif
 ifndef RC
 	$(error RC is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
 endif
-	@$(PYTHON) scripts/release.py rc --version "$(VERSION)" --rc "$(RC)"
+	@$(PYTHON) scripts/release.py rc --version "$(VERSION)" --rc "$(RC)" $(SIGN_FLAG)
 
 release-stable:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-stable VERSION=X.Y.Z)
 endif
-	@$(PYTHON) scripts/release.py stable --version "$(VERSION)"
+	@$(PYTHON) scripts/release.py stable --version "$(VERSION)" $(SIGN_FLAG)
 
 trigger-jenkins:
 ifndef TAG

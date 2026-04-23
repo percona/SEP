@@ -319,6 +319,57 @@ def _publish_signed_release_commit_and_tag(
     _run(["git", "reset", "--hard", f"origin/{branch}"])
 
 
+def _publish_release_commit_and_tag(
+    *,
+    branch: str,
+    base_branch: str,
+    tag: str,
+    commit_message: str,
+    create_branch: bool,
+    via_github_api: bool,
+) -> None:
+    """Publish the bump commit + tag, dispatching on the signing mode.
+
+    When ``via_github_api`` is ``True``, delegate to
+    :func:`_publish_signed_release_commit_and_tag` (commit signed by
+    GitHub's ``web-flow`` key, required by the ``refs/tags/v*`` ruleset).
+    Otherwise commit, tag, and push via local ``git`` — ``base_branch``
+    and ``create_branch`` are unused in that path because the local
+    branch already tracks the intended history.
+
+    :param branch: Target branch to publish the bump commit on.
+    :type branch: str
+    :param base_branch: API-path parent branch (ignored in the git path).
+    :type base_branch: str
+    :param tag: Tag name to create (e.g. ``v0.12.0rc1``).
+    :type tag: str
+    :param commit_message: Commit message for the bump commit.
+    :type commit_message: str
+    :param create_branch: API-path branch-creation flag (ignored in the
+        git path).
+    :type create_branch: bool
+    :param via_github_api: When ``True``, use the GitHub git-data API;
+        otherwise use local ``git commit``/``tag``/``push``.
+    :type via_github_api: bool
+    """
+    if via_github_api:
+        print("==> Creating signed bump commit + tag via GitHub API...")
+        _publish_signed_release_commit_and_tag(
+            branch=branch,
+            base_branch=base_branch,
+            tag=tag,
+            commit_message=commit_message,
+            create_branch=create_branch,
+        )
+        return
+    print("==> Committing version bump...")
+    _run(["git", "commit", "-am", commit_message])
+    print(f"==> Tagging {tag}...")
+    _run(["git", "tag", tag])
+    print("==> Pushing branch and tag...")
+    _run(["git", "push", "origin", branch, tag])
+
+
 def _bump_version(pep440_version: str, tag_version: str) -> None:
     """Rewrite the version string in ``pyproject.toml`` and ``app/__init__.py``.
 
@@ -475,13 +526,20 @@ def _print_stable_next_steps(
     print(f"  {step}. Merge the dev version bump PR")
 
 
-def cmd_rc(version: str, rc: int) -> int:
+def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
     """Cut release candidate ``vX.Y.ZrcN``.
 
     :param version: The X.Y.Z release version (no ``v`` prefix).
     :type version: str
     :param rc: The RC number (positive integer).
     :type rc: int
+    :param sign_via_github_api: When ``True``, create the bump commit + tag
+        via the GitHub git-data API, producing a ``web-flow``-signed target
+        that satisfies the ``refs/tags/v*`` ``required_signatures`` rule.
+        Requires the ``gh`` CLI. When ``False`` (the default for local
+        runs), commit, tag, and push via local ``git`` — relies on the
+        user's own git signing setup.
+    :type sign_via_github_api: bool
     :return: Process exit code (``0`` on success).
     :rtype: int
     """
@@ -499,6 +557,14 @@ def cmd_rc(version: str, rc: int) -> int:
     if not _working_tree_clean():
         print(
             "Error: Working tree is not clean. Commit or stash changes first.",
+            file=sys.stderr,
+        )
+        return 1
+    if sign_via_github_api and not _gh_available():
+        print(
+            "Error: --sign-via-github-api requires the gh CLI "
+            "(https://cli.github.com/). Omit the flag to use local git "
+            "commit/tag/push instead.",
             file=sys.stderr,
         )
         return 1
@@ -541,13 +607,13 @@ def cmd_rc(version: str, rc: int) -> int:
         )
         return 1
 
-    print("==> Creating signed bump commit + tag via GitHub API...")
-    _publish_signed_release_commit_and_tag(
+    _publish_release_commit_and_tag(
         branch=branch,
         base_branch="main" if rc == 1 else branch,
         tag=rc_tag,
         commit_message=f"Bump version to {rc_tag}",
         create_branch=(rc == 1),
+        via_github_api=sign_via_github_api,
     )
 
     if _gh_available():
@@ -618,11 +684,18 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
         )
 
 
-def cmd_stable(version: str) -> int:
+def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
     """Promote ``release/vX.Y.Z`` to stable ``vX.Y.Z``.
 
     :param version: The X.Y.Z release version (no ``v`` prefix).
     :type version: str
+    :param sign_via_github_api: When ``True``, create the bump commit + tag
+        via the GitHub git-data API, producing a ``web-flow``-signed target
+        that satisfies the ``refs/tags/v*`` ``required_signatures`` rule.
+        Requires the ``gh`` CLI. When ``False`` (the default for local
+        runs), commit, tag, and push via local ``git`` — relies on the
+        user's own git signing setup.
+    :type sign_via_github_api: bool
     :return: Process exit code (``0`` on success).
     :rtype: int
     """
@@ -642,6 +715,14 @@ def cmd_stable(version: str) -> int:
             file=sys.stderr,
         )
         return 1
+    if sign_via_github_api and not _gh_available():
+        print(
+            "Error: --sign-via-github-api requires the gh CLI "
+            "(https://cli.github.com/). Omit the flag to use local git "
+            "commit/tag/push instead.",
+            file=sys.stderr,
+        )
+        return 1
 
     print(f"==> Bumping version to {version}...")
     _bump_version(version, tag)
@@ -656,13 +737,13 @@ def cmd_stable(version: str) -> int:
         )
         return 1
 
-    print("==> Creating signed bump commit + tag via GitHub API...")
-    _publish_signed_release_commit_and_tag(
+    _publish_release_commit_and_tag(
         branch=expected_branch,
         base_branch=expected_branch,
         tag=tag,
         commit_message=f"Bump version to {tag}",
         create_branch=False,
+        via_github_api=sign_via_github_api,
     )
 
     if _gh_available():
@@ -745,12 +826,30 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         help="RC number (positive integer).",
     )
+    rc_parser.add_argument(
+        "--sign-via-github-api",
+        action="store_true",
+        help=(
+            "Create the bump commit and tag via the GitHub git-data API "
+            "(signed by web-flow). Requires the gh CLI; intended for CI "
+            "runs against repositories that require signed tags."
+        ),
+    )
 
     stable_parser = subparsers.add_parser(
         "stable",
         help="Promote the release/vX.Y.Z branch to stable vX.Y.Z.",
     )
     stable_parser.add_argument("--version", required=True, help="X.Y.Z")
+    stable_parser.add_argument(
+        "--sign-via-github-api",
+        action="store_true",
+        help=(
+            "Create the bump commit and tag via the GitHub git-data API "
+            "(signed by web-flow). Requires the gh CLI; intended for CI "
+            "runs against repositories that require signed tags."
+        ),
+    )
 
     return parser
 
@@ -771,8 +870,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "rc":
-            return cmd_rc(args.version, args.rc)
-        return cmd_stable(args.version)
+            return cmd_rc(
+                args.version,
+                args.rc,
+                sign_via_github_api=args.sign_via_github_api,
+            )
+        return cmd_stable(
+            args.version,
+            sign_via_github_api=args.sign_via_github_api,
+        )
     except subprocess.CalledProcessError as exc:
         cmd = exc.cmd
         if isinstance(cmd, list | tuple):
