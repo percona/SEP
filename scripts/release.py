@@ -153,7 +153,7 @@ def _gh_api(
     :type method: str
     :param path: API path, with ``{owner}``/``{repo}`` placeholders.
     :type path: str
-    :param payload: Optional JSON-serialisable body (sent on stdin with
+    :param payload: Optional JSON-serializable body (sent on stdin with
         ``--input -``).
     :type payload: dict | None
     :return: Parsed JSON response body, or ``{}`` when the response is empty.
