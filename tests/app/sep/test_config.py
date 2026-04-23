@@ -19,10 +19,39 @@ from string import Template
 from unittest.mock import patch
 
 from app.core.config import PMMSettings
-from app.sep.config import _DeprecatedPMMConfig, SEPSettings
+from app.sep.config import _DeprecatedPMMConfig, SEPSettings, SessionOptions
 
 PMM_ENDPOINT = "https://pmm.example.com"
 CORE_PMM_ENDPOINT = "https://core.example.com"
+
+
+class TestSessionOptions:
+    """Define tests for the SessionOptions model."""
+
+    def test_default_dump_has_none_path(self):
+        """Assert legacy SessionOptions dump keeps ``path=None`` (no explicit path)."""
+        dumped = SessionOptions().model_dump(by_alias=True)
+        assert dumped["key"] == "authToken"
+        assert dumped["path"] is None
+
+    def test_refresh_dump_carries_path(self):
+        """Assert a SESSION_REFRESH-style instance exposes the configured path."""
+        dumped = SessionOptions(
+            COOKIE_NAME="refreshToken", PATH="/api/oauth"
+        ).model_dump(by_alias=True)
+        assert dumped["key"] == "refreshToken"
+        assert dumped["path"] == "/api/oauth"
+
+
+class TestSessionRefreshDefault:
+    """Define tests for the ``SEPSettings.SESSION_REFRESH`` default instance."""
+
+    def test_session_refresh_defaults(self):
+        """Assert the default SESSION_REFRESH instance targets /api/oauth."""
+        settings = SEPSettings()
+        assert settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
+        assert settings.SESSION_REFRESH.PATH == "/api/oauth"
+        assert settings.SESSION.PATH is None
 
 
 class TestFooterTemplate:
