@@ -46,6 +46,7 @@ from app.sep.deps import (
     get_current_user,
     get_executor_hosts,
     get_executor_hosts_context,
+    get_executor_hosts_raw,
     get_inventory_api,
     get_task_by_name,
     get_task_history,
@@ -457,18 +458,45 @@ class TestGetTasksApi:
 
 
 class TestGetExecutorHosts:
-    """Test get_executor_hosts dependency."""
+    """Test get_executor_hosts_raw and get_executor_hosts dependencies."""
 
     @pytest.mark.asyncio
-    async def test_api_failure_returns_empty_dict(self) -> None:
+    async def test_raw_api_failure_returns_empty_dict(self) -> None:
         """Assert HTTPException from API returns empty dict and logs error."""
         request = _make_request()
         mock_api = AsyncMock()
         mock_api.get.side_effect = HTTPException(
             status_code=500, detail="Service unavailable"
         )
-        result = await get_executor_hosts(request, mock_api)
+        result = await get_executor_hosts_raw(request, mock_api)
         assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_adapter_flattens_enriched_payload(self) -> None:
+        """Assert the adapter strips the ``HostInfo`` wrapper to ``{name: address}``."""
+        raw = {
+            "node-a": {
+                "address": "10.0.0.1",
+                "healthy": True,
+                "last_checked": None,
+                "error_message": None,
+            },
+            "node-b": {
+                "address": "10.0.0.2",
+                "healthy": False,
+                "last_checked": None,
+                "error_message": "boom",
+            },
+        }
+        result = await get_executor_hosts(raw)
+        assert result == {"node-a": "10.0.0.1", "node-b": "10.0.0.2"}
+
+    @pytest.mark.asyncio
+    async def test_adapter_tolerates_legacy_string_values(self) -> None:
+        """Assert the adapter keeps working when a mock returns the old shape."""
+        raw = {"node-a": "10.0.0.1"}
+        result = await get_executor_hosts(raw)
+        assert result == {"node-a": "10.0.0.1"}
 
 
 class TestGetCreatedEntity:
@@ -909,20 +937,48 @@ class TestExecutorHostsContext:
         result = ctx.as_form_hosts()
         assert result == frozenset({("nomad-node", "My DB")})
 
-    def test_as_host_metrics_returns_sorted_display_name_address_tuples(self) -> None:
-        """Assert host metrics returns sorted (display_name, address) tuples."""
+    def test_as_host_metrics_returns_sorted_tuples_with_status(self) -> None:
+        """Assert host metrics returns sorted tuples enriched with health status.
+
+        When no ``health`` mapping is supplied, every row falls back to the
+        ``"unknown"`` bucket with ``None`` for the error message.
+        """
         hosts = {"beta-node": "10.0.0.2", "alpha-node": "10.0.0.1"}
         display_names = {"10.0.0.1": "Alpha DB", "10.0.0.2": "Beta DB"}
         ctx = ExecutorHostsContext(hosts=hosts, display_names=display_names)
         result = ctx.as_host_metrics()
-        assert result == [("Alpha DB", "10.0.0.1"), ("Beta DB", "10.0.0.2")]
+        assert result == [
+            ("Alpha DB", "10.0.0.1", "unknown", None),
+            ("Beta DB", "10.0.0.2", "unknown", None),
+        ]
+
+    def test_as_host_metrics_reflects_health_mapping(self) -> None:
+        """Assert health mapping drives the status bucket and error message."""
+        hosts = {"alpha-node": "10.0.0.1", "beta-node": "10.0.0.2"}
+        health = {
+            "alpha-node": {
+                "healthy": True,
+                "last_checked": "2026-04-23T00:00:00Z",
+                "error_message": None,
+            },
+            "beta-node": {
+                "healthy": False,
+                "last_checked": "2026-04-23T00:00:00Z",
+                "error_message": "probe timeout",
+            },
+        }
+        ctx = ExecutorHostsContext(hosts=hosts, display_names={}, health=health)
+        assert ctx.as_host_metrics() == [
+            ("alpha-node", "10.0.0.1", "healthy", None),
+            ("beta-node", "10.0.0.2", "unhealthy", "probe timeout"),
+        ]
 
     def test_as_host_metrics_falls_back_to_nomad_name(self) -> None:
         """Assert host metrics uses nomad name when no inventory match."""
         hosts = {"nomad-node": "10.0.0.1"}
         ctx = ExecutorHostsContext(hosts=hosts, display_names={})
         result = ctx.as_host_metrics()
-        assert result == [("nomad-node", "10.0.0.1")]
+        assert result == [("nomad-node", "10.0.0.1", "unknown", None)]
 
     def test_with_host_adds_new_host(self) -> None:
         """Assert with_host returns new context with the additional host."""
