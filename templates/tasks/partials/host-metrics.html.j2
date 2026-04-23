@@ -29,17 +29,34 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 <tr>
                     <th>Address</th>
                     <th>Hostname</th>
+                    <th>Status</th>
                 </tr>
                 {% if executor_hosts %}
-                    {% for targetname, ip in executor_hosts %}
+                    {% for targetname, ip, status, error_message in executor_hosts %}
                         <tr>
                             <td>{{ ip }}</td>
                             <td>{{ targetname }}</td>
+                            <td>
+                                {% if status == "healthy" %}
+                                    <span class="host-status host-status-healthy" title="Last probe succeeded">
+                                        <span class="host-status-dot"></span>Healthy
+                                    </span>
+                                {% elif status == "unhealthy" %}
+                                    <span class="host-status host-status-unhealthy"
+                                          title="{{ error_message or 'Last probe failed' }}">
+                                        <span class="host-status-dot"></span>Unhealthy
+                                    </span>
+                                {% else %}
+                                    <span class="host-status host-status-unknown" title="No probe result yet">
+                                        <span class="host-status-dot"></span>Unknown
+                                    </span>
+                                {% endif %}
+                            </td>
                         </tr>
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="2" class="no-tasks">No targets available.</td>
+                        <td colspan="3" class="no-tasks">No targets available.</td>
                     </tr>
                 {% endif %}
             </thead>

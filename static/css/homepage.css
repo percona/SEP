@@ -106,3 +106,30 @@
 .targets-table th {
     padding: 0.8em 1em;
 }
+
+.host-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.9em;
+}
+
+.host-status-dot {
+    display: inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    border-radius: 50%;
+    background-color: currentColor;
+}
+
+.host-status-healthy {
+    color: #2e7d32;
+}
+
+.host-status-unhealthy {
+    color: #c62828;
+}
+
+.host-status-unknown {
+    color: #9e9e9e;
+}
