@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
@@ -47,6 +48,20 @@ _TERMINAL_STATUS_EVENT_MAP = {
 }
 
 
+class HealthCheckResult(BaseModel):
+    """Represent the outcome of an executor host-health probe.
+
+    :param healthy: Whether the target host responded successfully to the probe.
+    :type healthy: bool
+    :param error: Optional human-readable description of the failure when the
+        probe did not succeed. ``None`` on healthy results.
+    :type error: str | None
+    """
+
+    healthy: bool
+    error: str | None = None
+
+
 class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     """Define the blueprint of a task executor.
 
@@ -56,6 +71,29 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     """
 
     wait_interval: int = 5
+
+    async def check_host_health(
+        self,
+        host_name: str,  # noqa: ARG002
+        host_address: str,  # noqa: ARG002
+    ) -> HealthCheckResult:
+        """Probe a single executor host and return the outcome.
+
+        Default implementation assumes the host is healthy; executors that
+        can reach the target host (for instance the Nomad executor)
+        override this to perform a real probe.
+
+        :param host_name: Executor-specific node name (key returned by
+            :meth:`get_hosts`).
+        :type host_name: str
+        :param host_address: Executor-specific node address (value returned
+            by :meth:`get_hosts`).
+        :type host_address: str
+        :return: The probe result; the default implementation always reports
+            the host as healthy with no error.
+        :rtype: HealthCheckResult
+        """
+        return HealthCheckResult(healthy=True)
 
     async def transform_payload(
         self,
