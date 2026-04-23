@@ -3,9 +3,13 @@ import { vi } from 'vitest';
 type Listener = (event: MessageEvent<string>) => void;
 
 export class MockEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   static instances: MockEventSource[] = [];
   readonly url: string;
   readonly withCredentials: boolean;
+  readyState: number = MockEventSource.OPEN;
   onmessage: Listener | null = null;
   onerror: ((ev: Event) => void) | null = null;
   onopen: ((ev: Event) => void) | null = null;
@@ -37,6 +41,7 @@ export class MockEventSource {
 
   close(): void {
     this.closed = true;
+    this.readyState = MockEventSource.CLOSED;
   }
 
   // Test helpers

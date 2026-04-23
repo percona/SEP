@@ -65,6 +65,17 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
 
     src.onopen = () => setStreamStatus('streaming');
 
+    src.onerror = () => {
+      // EventSource auto-reconnects while readyState is CONNECTING.
+      // Only surface a terminal error when the stream is permanently closed.
+      if (src.readyState === EventSource.CLOSED) {
+        setError({ detail: { message: 'Task log stream connection closed.' } });
+        setStreamStatus('error');
+      } else {
+        setStreamStatus('connecting');
+      }
+    };
+
     src.onmessage = (event: MessageEvent<string>) => {
       let payload: IncomingLog;
       try {
@@ -73,11 +84,12 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
         return;
       }
       const { msg, step, type, offset } = payload;
-      if (!msg || !step || !type || typeof offset !== 'number') {
+      if (typeof msg !== 'string' || !step || !type || typeof offset !== 'number') {
         return;
       }
       const key = `${step}_${type}`;
-      if (offset <= (offsetsRef.current[key] ?? 0)) {
+      const previousOffset = offsetsRef.current[key];
+      if (previousOffset !== undefined && offset <= previousOffset) {
         return;
       }
       offsetsRef.current[key] = offset;

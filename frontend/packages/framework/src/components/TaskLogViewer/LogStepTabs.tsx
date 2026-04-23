@@ -14,9 +14,14 @@ export function LogStepTabs({ steps, activeStep, unreadSteps, onSelect }: LogSte
     return null;
   }
 
+  // Clamp to a valid step so MUI Tabs doesn't warn when activeStep tracks a
+  // different set (e.g. log steps vs execution-event steps).
+  const resolvedValue =
+    activeStep !== undefined && steps.includes(activeStep) ? activeStep : steps[0];
+
   return (
     <Tabs
-      value={activeStep ?? steps[0]}
+      value={resolvedValue}
       onChange={(_, value: string) => onSelect(value)}
       variant="scrollable"
       scrollButtons="auto"

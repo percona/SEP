@@ -99,6 +99,15 @@ export function useExecutionEvents(
       withCredentials: true,
     });
 
+    src.onerror = () => {
+      if (src.readyState === EventSource.CLOSED) {
+        setError({ message: 'Execution events stream connection closed.' });
+        setIsLoading(false);
+      }
+      // Transient errors (readyState === CONNECTING) trigger browser auto-retry;
+      // leave state unchanged.
+    };
+
     src.onmessage = (event: MessageEvent<string>) => {
       let payload: ExecutionEvent;
       try {

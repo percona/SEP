@@ -36,6 +36,36 @@ describe('useTaskLogs', () => {
     expect(result.current.stepOrder).toEqual(['step1', 'step2']);
   });
 
+  it('accepts the initial message when its offset is 0', () => {
+    const { result } = renderHook(() => useTaskLogs(1));
+    const src = MockEventSource.instances[0];
+
+    act(() => {
+      src.emitMessage({ msg: 'first ', step: 's', type: 'stdout', offset: 0 });
+      src.emitMessage({ msg: 'second', step: 's', type: 'stdout', offset: 1 });
+    });
+
+    expect(result.current.textByStep.s.stdout).toBe('first second');
+  });
+
+  it('preserves empty-string log chunks', () => {
+    const { result } = renderHook(() => useTaskLogs(1));
+    const src = MockEventSource.instances[0];
+
+    act(() => {
+      src.emitMessage({ msg: 'a', step: 's', type: 'stdout', offset: 0 });
+      src.emitMessage({ msg: '', step: 's', type: 'stdout', offset: 1 });
+      src.emitMessage({ msg: 'b', step: 's', type: 'stdout', offset: 2 });
+    });
+
+    expect(result.current.textByStep.s.stdout).toBe('ab');
+    // Offset 1 was accepted (dedup state advanced) even though the msg was empty
+    act(() => {
+      src.emitMessage({ msg: 'dup', step: 's', type: 'stdout', offset: 1 });
+    });
+    expect(result.current.textByStep.s.stdout).toBe('ab');
+  });
+
   it('dedupes messages whose offset is not greater than the last seen', () => {
     const { result } = renderHook(() => useTaskLogs(1));
     const src = MockEventSource.instances[0];
@@ -55,9 +85,10 @@ describe('useTaskLogs', () => {
     const src = MockEventSource.instances[0];
 
     act(() => {
-      src.emitMessage({ msg: '', step: 's', type: 'stdout', offset: 1 });
-      src.emitMessage({ step: 's', type: 'stdout', offset: 2 });
-      src.emitMessage({ msg: 'x', step: 's', type: 'stdout' });
+      src.emitMessage({ step: 's', type: 'stdout', offset: 2 }); // missing msg
+      src.emitMessage({ msg: 'x', step: 's', type: 'stdout' }); // missing offset
+      src.emitMessage({ msg: 'x', step: '', type: 'stdout', offset: 1 }); // empty step
+      src.emitMessage({ msg: 'x', step: 's', type: '', offset: 1 }); // empty type
     });
 
     expect(result.current.textByStep).toEqual({});
@@ -90,6 +121,32 @@ describe('useTaskLogs', () => {
     expect(result.current.error?.code).toBe(410);
     expect(result.current.streamStatus).toBe('error');
     expect(src.closed).toBe(true);
+  });
+
+  it('surfaces a terminal error when the stream closes via onerror', () => {
+    const { result } = renderHook(() => useTaskLogs(1));
+    const src = MockEventSource.instances[0];
+
+    act(() => {
+      src.readyState = 2; // EventSource.CLOSED
+      src.onerror?.(new Event('error'));
+    });
+
+    expect(result.current.streamStatus).toBe('error');
+    expect(result.current.error).toBeDefined();
+  });
+
+  it('does not set error for transient onerror while browser is reconnecting', () => {
+    const { result } = renderHook(() => useTaskLogs(1));
+    const src = MockEventSource.instances[0];
+
+    act(() => {
+      src.readyState = 0; // EventSource.CONNECTING
+      src.onerror?.(new Event('error'));
+    });
+
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.streamStatus).toBe('connecting');
   });
 
   it('closes the EventSource on unmount', () => {
