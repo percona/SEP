@@ -604,8 +604,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :rtype: HealthCheckResult
         """
         try:
-            dispatched = await async_run(
-                self.backend.job.dispatch_job,
+            dispatched = self.backend.job.dispatch_job(
                 "health-probe",
                 meta={"target": host_name},
             )
@@ -631,9 +630,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             return await self._poll_health_probe(dispatched_id)
         finally:
             try:
-                await async_run(
-                    self.backend.job.deregister_job, dispatched_id, purge=True
-                )
+                self.backend.job.deregister_job(dispatched_id, purge=True)
             except BaseNomadException:
                 logger.warning(
                     "Failed to purge health-probe child %s",
@@ -655,7 +652,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         deadline = time.monotonic() + self.health_check_timeout
         while time.monotonic() < deadline:
             try:
-                job = await async_run(self.get_job, dispatched_id)
+                job = self.get_job(dispatched_id)
             except JobNotFoundError:
                 return HealthCheckResult(
                     healthy=False,
@@ -680,7 +677,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :rtype: HealthCheckResult
         """
         try:
-            alloc = await async_run(self.get_last_allocation, dispatched_id)
+            alloc = self.get_last_allocation(dispatched_id)
         except AllocationNotFoundError:
             return HealthCheckResult(
                 healthy=False,
