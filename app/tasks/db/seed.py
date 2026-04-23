@@ -411,6 +411,42 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
     ],
 }
 
+NOMAD_HEALTH_PROBE = {
+    "ID": "health-probe",
+    "Name": "health-probe",
+    "Type": "batch",
+    "Datacenters": ["*"],
+    "Constraints": [
+        {
+            "LTarget": "${node.unique.name}",
+            "RTarget": "${NOMAD_META_target}",
+            "Operand": "=",
+        },
+    ],
+    "ParameterizedJob": {
+        "Payload": "forbidden",
+        "MetaRequired": ["target"],
+    },
+    "TaskGroups": [
+        {
+            "Name": "probe",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
+            "Tasks": [
+                {
+                    "Name": "probe",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {"command": "true"},
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                },
+            ],
+        },
+    ],
+}
+
+
 SYSTEM_TASKS = [
     Task(
         name="run-command",
