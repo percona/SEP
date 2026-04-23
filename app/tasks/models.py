@@ -1060,6 +1060,33 @@ class TransformPayloadRequest(BaseModel):
     fmt: Literal["hcl", "json", "yaml"]
 
 
+class HostInfo(BaseModel):
+    """Represent an executor host enriched with its latest probe outcome.
+
+    ``healthy`` and ``last_checked`` are ``None`` when no
+    :class:`NodeHealthCheck` row exists yet (fresh deployment, or the
+    periodic probe has not completed its first cycle). Consumers render
+    that state as "Unknown".
+
+    :param address: The executor-reported node address.
+    :type address: str
+    :param healthy: The outcome of the latest probe, or ``None`` when no
+        probe has run yet.
+    :type healthy: bool | None
+    :param last_checked: When the latest probe completed, or ``None`` when
+        no probe has run yet.
+    :type last_checked: UTCDatetime | None
+    :param error_message: Optional human-readable description of the latest
+        probe failure.
+    :type error_message: str | None
+    """
+
+    address: str
+    healthy: bool | None = None
+    last_checked: UTCDatetime | None = None
+    error_message: str | None = None
+
+
 class DispatchLock(BaseSQLModel, table=True):
     """Define a task dispatch lock.
 
@@ -1068,3 +1095,28 @@ class DispatchLock(BaseSQLModel, table=True):
     """
 
     name: str = SQLField(max_length=255, index=True, unique=True)
+
+
+class NodeHealthCheck(BaseSQLModel, table=True):
+    """Persist the latest health-probe outcome for a single executor node.
+
+    One row per executor node, upserted every health-check cycle. The table
+    lives in the Tasks database so the Celery worker (producer) and the Tasks
+    API ``/hosts/`` endpoint (consumer) can share data even when they run in
+    separate containers.
+
+    :param node_name: The executor node name (matches a key returned by
+        :meth:`BaseExecutor.get_hosts`). Must be unique.
+    :type node_name: str
+    :param healthy: Whether the most recent probe succeeded.
+    :type healthy: bool
+    :param last_checked: When the most recent probe finished.
+    :type last_checked: UTCDatetime
+    :param error_message: Optional failure description for unhealthy probes.
+    :type error_message: str | None
+    """
+
+    node_name: str = SQLField(max_length=255, index=True, unique=True)
+    healthy: bool = SQLField(default=False, nullable=False)
+    last_checked: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone, nullable=False)
+    error_message: str | None = SQLField(default=None, max_length=1024)
