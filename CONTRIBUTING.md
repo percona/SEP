@@ -40,7 +40,19 @@ make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="Brief description"
 
 `<section>` is one of `added`, `changed`, `breaking`, `config`, `fixed`, or `security`. If your change belongs in multiple sections (e.g. it is both a Change and a Breaking Change), run the command once per section.
 
-Skip the step entirely for purely internal changes (CI, refactoring, tooling, docs-only) that have no user-visible effect.
+**Skip this step when either applies:**
+
+1. **Purely internal changes** — CI, refactoring, tooling, docs with no
+   user-visible effect.
+2. **Same-release-cycle fix** — the PR fixes a regression or behaviour
+   change introduced by another ticket that shares this PR's Jira `Fix
+   Version` and is itself still unreleased (no `[vX.Y.Z]` header for that
+   Fix Version in `CHANGELOG.md`). Usually surfaces as a Jira `is caused
+   by` link to a sibling ticket in the same version. The bug never
+   shipped to users, so a fragment would add confusing "regression fixed"
+   noise to release notes describing behaviour users never saw.
+
+See [`changelog.d/README.md` § "TL;DR — adding an entry"](changelog.d/README.md#tldr--adding-an-entry) for the canonical rule.
 
 See [`changelog.d/README.md`](changelog.d/README.md) for the full format and examples. A pre-commit hook validates any fragments you touch, and `make changelog-check` / `make changelog-list` are available to inspect or preview them locally.
 
