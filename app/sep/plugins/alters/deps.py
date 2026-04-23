@@ -363,7 +363,15 @@ async def build_pre_checks_task(
     meta = pre_checks_task.data["meta"]
     db_host = meta.get("_service_host", "")
     db_port = meta.get("_service_port")
-    executor_hosts = await task_api.get("/hosts/")
+    executor_hosts_raw = await task_api.get("/hosts/")
+    executor_hosts: Any
+    if isinstance(executor_hosts_raw, dict):
+        executor_hosts = {
+            name: (info.get("address") or "") if isinstance(info, dict) else info
+            for name, info in executor_hosts_raw.items()
+        }
+    else:
+        executor_hosts = executor_hosts_raw
     skip_fs_checks = not alters_executor_matches_service_host(
         base_task.data["meta"], executor_hosts
     )
