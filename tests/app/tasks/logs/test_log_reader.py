@@ -27,6 +27,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.logs.log_reader import (
     decompress_legacy_logs,
+    has_legacy_logs,
     iter_task_history_logs,
 )
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
@@ -302,3 +303,42 @@ def test_decompress_legacy_logs_handles_both_shapes():
 
     assert decompress_legacy_logs(dict_history) == payload
     assert decompress_legacy_logs(str_history) == payload
+
+
+def test_has_legacy_logs_skips_decode_for_truthy_blob():
+    """Assert ``has_legacy_logs`` reports ``True`` without decoding the blob.
+
+    Passes a "corrupted" blob (non-empty string that cannot be decoded) and
+    asserts ``True`` -- if the helper were decoding the payload, the corrupted
+    blob would return ``False`` (mirroring :func:`decompress_legacy_logs`).
+    """
+    corrupted_history = TaskHistory.model_construct(
+        id=1,
+        execution_request=TaskHistory.model_fields["execution_request"].annotation(
+            task="t", target="n", tracking={"task_logs": "not-valid-base64!!!"}
+        ),
+    )
+    assert has_legacy_logs(corrupted_history) is True
+
+
+def test_has_legacy_logs_returns_false_for_empty_or_missing_blob():
+    """Assert empty / missing / empty-dict ``task_logs`` all return ``False``."""
+    missing = TaskHistory.model_construct(
+        execution_request=TaskHistory.model_fields["execution_request"].annotation(
+            task="t", target="n", tracking={}
+        )
+    )
+    empty_string = TaskHistory.model_construct(
+        execution_request=TaskHistory.model_fields["execution_request"].annotation(
+            task="t", target="n", tracking={"task_logs": ""}
+        )
+    )
+    empty_dict = TaskHistory.model_construct(
+        execution_request=TaskHistory.model_fields["execution_request"].annotation(
+            task="t", target="n", tracking={"task_logs": {}}
+        )
+    )
+
+    assert has_legacy_logs(missing) is False
+    assert has_legacy_logs(empty_string) is False
+    assert has_legacy_logs(empty_dict) is False
