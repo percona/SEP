@@ -1310,10 +1310,19 @@ class BaseTaskSyncer(BaseSyncer):
     async def get_available_hosts(self) -> dict[str, str]:
         """Return the available hosts from the Tasks API.
 
-        :return: The available hosts.
+        Flattens the enriched ``/hosts/`` payload (name -> ``HostInfo``) back
+        into a ``{name: address}`` mapping so existing consumers that only
+        need the address continue to work.
+
+        :return: The available hosts keyed by Nomad node name with the
+            node address as value.
         :rtype: dict[str, str]
         """
-        return await self.tasks_api.get("/hosts/")
+        response = await self.tasks_api.get("/hosts/")
+        return {
+            name: (info.get("address") or "") if isinstance(info, dict) else info
+            for name, info in response.items()
+        }
 
     async def wait_for_task_output(
         self,

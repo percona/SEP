@@ -298,12 +298,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param log_socket_read_timeout: Socket read timeout in seconds for log streaming.
         Defaults to 10.
     :type log_socket_read_timeout: int
+    :param health_check_timeout: Maximum seconds :meth:`check_host_health` waits
+        for a dispatched ``health-probe`` job to finish before declaring the
+        target unhealthy. Defaults to 30.
+    :type health_check_timeout: int
     """
 
     secure: bool = False
     timeout: int = 10
     minify_payload: bool = True
     log_socket_read_timeout: int = 10
+    health_check_timeout: int = 30
 
     @cached_property
     def backend(self) -> Nomad:
@@ -635,6 +640,60 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     dispatched_id,
                     exc_info=True,
                 )
+
+    async def _poll_health_probe(self, dispatched_id: str) -> HealthCheckResult:
+        """Wait for a dispatched ``health-probe`` child to terminate.
+
+        :param dispatched_id: The ``DispatchedJobID`` returned by the Nomad
+            dispatch call.
+        :type dispatched_id: str
+        :return: ``HealthCheckResult`` reflecting the probe outcome or a
+            timeout failure when the job does not terminate within
+            :attr:`health_check_timeout` seconds.
+        :rtype: HealthCheckResult
+        """
+        deadline = time.monotonic() + self.health_check_timeout
+        while time.monotonic() < deadline:
+            try:
+                job = await async_run(self.get_job, dispatched_id)
+            except JobNotFoundError:
+                return HealthCheckResult(
+                    healthy=False,
+                    error="health-probe child job disappeared before completing",
+                )
+            if job.get("Status") == NOMAD_DEAD_JOB_STATUS:
+                return await self._evaluate_probe_job(dispatched_id)
+            await asyncio.sleep(self.wait_interval)
+        return HealthCheckResult(
+            healthy=False,
+            error=f"probe did not complete within {self.health_check_timeout}s",
+        )
+
+    async def _evaluate_probe_job(self, dispatched_id: str) -> HealthCheckResult:
+        """Inspect the latest allocation of a dead probe job.
+
+        :param dispatched_id: The ``DispatchedJobID`` of the terminated probe.
+        :type dispatched_id: str
+        :return: ``HealthCheckResult`` with ``healthy=True`` when the
+            allocation completed cleanly, otherwise ``healthy=False`` with
+            an error carrying the final allocation ``ClientStatus``.
+        :rtype: HealthCheckResult
+        """
+        try:
+            alloc = await async_run(self.get_last_allocation, dispatched_id)
+        except AllocationNotFoundError:
+            return HealthCheckResult(
+                healthy=False,
+                error="no allocation found for health-probe child job",
+            )
+        client_status = alloc.get("ClientStatus")
+        if client_status == NomadAllocStatusEnum.COMPLETE:
+            return HealthCheckResult(healthy=True)
+        return HealthCheckResult(
+            healthy=False,
+            error=f"probe allocation finished with ClientStatus={client_status!r}",
+        )
+
     def get_allocation_for_task_history(
         self, queue_item: TaskHistory
     ) -> dict[str, Any]:
