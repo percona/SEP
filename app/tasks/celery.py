@@ -328,14 +328,33 @@ async def _probe_all_nodes() -> None:
     except Exception:
         logger.exception("Failed to fetch executor hosts for health probe")
         return
+    logger.info("Health probe cycle starting for %d host(s): %s", len(hosts), list(hosts))
+    if not hosts:
+        return
+    purged = 0
+    purge_orphans = getattr(executor, "purge_health_probe_orphans", None)
+    if callable(purge_orphans):
+        try:
+            purged = purge_orphans()
+        except Exception:
+            logger.exception("Orphan sweep failed before health probe cycle")
+    if purged:
+        logger.info("Purged %d stale health-probe dispatches before probe cycle", purged)
     async_session = get_async_session_maker()
     now = utc_now()
     for name, address in hosts.items():
+        logger.info("Health-probing node %s (%s)", name, address)
         try:
             result = await executor.check_host_health(name, address)
         except Exception as exc:
             logger.exception("Health probe raised for node %s", name)
             result = HealthCheckResult(healthy=False, error=str(exc))
+        logger.info(
+            "Health-probe result for %s: healthy=%s error=%r",
+            name,
+            result.healthy,
+            result.error,
+        )
         try:
             async with async_session() as session:
                 await NodeHealthCheckManager.upsert(
@@ -351,6 +370,8 @@ async def _probe_all_nodes() -> None:
                 exc_info=True,
             )
             return
+        except Exception:
+            logger.exception("Failed to upsert health-probe result for %s", name)
 
 
 @celery.task

@@ -412,62 +412,10 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
     ],
 }
 
-NOMAD_HEALTH_PROBE = {
-    "ID": "health-probe",
-    "Name": "health-probe",
-    "Type": "batch",
-    "Datacenters": ["*"],
-    "Constraints": [
-        {
-            "LTarget": "${node.unique.name}",
-            "RTarget": "${NOMAD_META_target}",
-            "Operand": "=",
-        },
-    ],
-    "ParameterizedJob": {
-        "Payload": "forbidden",
-        "MetaRequired": ["target"],
-    },
-    "TaskGroups": [
-        {
-            "Name": "probe",
-            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
-            "ReschedulePolicy": {"Attempts": 0},
-            "Tasks": [
-                {
-                    "Name": "probe",
-                    "Driver": "raw_exec",
-                    "User": "",
-                    "Config": {"command": "true"},
-                    "Meta": {},
-                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
-                    # Nomad's default task resources (100 MHz CPU + 300 MiB
-                    # RAM) are wildly oversized for a ``true`` call and
-                    # cause parallel probes (or accumulated orphans from
-                    # crashed workers) to park in ``pending`` on small
-                    # clusters when the node runs out of allocatable
-                    # capacity. Reserve the minimum allowed by the Nomad
-                    # schedulable-cgroup defaults instead so placement
-                    # never blocks on resource exhaustion.
-                    "Resources": {"CPU": 10, "MemoryMB": 10},
-                },
-            ],
-        },
-    ],
-}
-
-
 SYSTEM_TASKS = [
     Task(
         name="run-command",
         data=NOMAD_RUN_COMMAND,
-        protected=True,
-        anonymize_mask=None,
-        created_by=SYSTEM_USER,
-    ),
-    Task(
-        name="health-probe",
-        data=NOMAD_HEALTH_PROBE,
         protected=True,
         anonymize_mask=None,
         created_by=SYSTEM_USER,

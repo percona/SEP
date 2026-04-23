@@ -83,6 +83,16 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
 
+_PROBE_JOB_ID_PREFIX = "sep-probe-"
+"""Prefix for dispatched per-host health-probe job IDs.
+
+Each probe cycle registers a one-shot concrete batch job whose ID starts
+with this prefix, so :meth:`NomadExecutor.purge_health_probe_orphans` can
+find orphans left by crashed workers without colliding with
+user-registered jobs whose names happen to start with ``health-probe``.
+"""
+
+
 _LOG_FETCH_OFFSETS: dict[tuple[int, str, str, TaskLogType], int] = {}
 """Process-local Nomad-space fetch cursors keyed by
 ``(task_history_id, allocation_id, step, log_type)``. Kept separate from the
@@ -302,6 +312,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         for a dispatched ``health-probe`` job to finish before declaring the
         target unhealthy. Defaults to 30.
     :type health_check_timeout: int
+    :param health_check_poll_interval: Seconds between two ``get_job`` polls
+        while waiting for the dispatched ``health-probe`` child to reach
+        ``dead`` status. The probe runs a trivial ``true`` command that
+        completes in milliseconds, so a 1 s default wastes far less of the
+        :attr:`health_check_timeout` budget than the generic
+        :attr:`wait_interval` (5 s) used elsewhere. Defaults to 1.
+    :type health_check_poll_interval: int
     """
 
     secure: bool = False
@@ -309,6 +326,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     minify_payload: bool = True
     log_socket_read_timeout: int = 10
     health_check_timeout: int = 30
+    health_check_poll_interval: int = 1
 
     @cached_property
     def backend(self) -> Nomad:
@@ -575,24 +593,153 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
         }
 
+    def purge_health_probe_orphans(self) -> int:
+        """Purge stale ``pending``/``running`` health-probe jobs from prior cycles.
+
+        Each probe cycle finishes by calling ``deregister_job(..., purge=True)``
+        on the job it registered. A crashed worker (or any non-graceful
+        shutdown between ``register_job`` and the ``finally`` block) skips
+        that cleanup and leaves orphans that keep reserving allocation
+        capacity, so the next probe cycle on a small cluster parks its own
+        allocations in ``pending`` behind them.
+
+        Only purge jobs whose ``SubmitTime`` is older than twice the
+        :attr:`health_check_timeout`. A smaller age window would risk
+        friendly-fire when two probe cycles overlap (e.g. a manual
+        ``celery call`` firing while the periodic beat tick is still in
+        flight): the later cycle's sweep must not destroy the earlier
+        cycle's in-flight job. ``2 × timeout`` is a comfortable margin
+        above the worst-case honest lifetime (``timeout`` followed by the
+        purge in the ``finally`` block) while still cleaning up anything a
+        crash left behind.
+
+        :return: The number of orphans successfully purged. Used by the
+            Celery task for diagnostic logging; a runaway count is a
+            strong signal that workers are crashing mid-probe.
+        :rtype: int
+        """
+        try:
+            candidates = self.backend.jobs.get_jobs(prefix=_PROBE_JOB_ID_PREFIX)
+        except BaseNomadException:
+            logger.warning(
+                "Failed to list %r jobs for orphan sweep",
+                _PROBE_JOB_ID_PREFIX,
+                exc_info=True,
+            )
+            return 0
+        max_age_ns = self.health_check_timeout * 2 * 10**9
+        threshold_ns = time.time_ns() - max_age_ns
+        purged = 0
+        for candidate in candidates or []:
+            if candidate.get("Status") in (None, NOMAD_DEAD_JOB_STATUS):
+                continue
+            job_id = candidate.get("ID")
+            if not job_id or not job_id.startswith(_PROBE_JOB_ID_PREFIX):
+                continue
+            submit_time = candidate.get("SubmitTime")
+            try:
+                submit_time_ns = int(submit_time) if submit_time is not None else 0
+            except (TypeError, ValueError):
+                submit_time_ns = 0
+            if submit_time_ns > threshold_ns:
+                continue
+            try:
+                self.backend.job.deregister_job(job_id, purge=True)
+                purged += 1
+            except BaseNomadException:
+                logger.warning(
+                    "Failed to purge orphan health-probe job %s",
+                    job_id,
+                    exc_info=True,
+                )
+        return purged
+
+    def _build_probe_job_spec(self, host_name: str) -> tuple[str, dict[str, Any]]:
+        """Return ``(job_id, spec)`` for a one-shot health-probe batch job.
+
+        Nomad's constraint interpolation does not expand ``${NOMAD_META_*}``
+        placeholders (that syntax is only valid as a task runtime env var),
+        which is why the regular task path relies on
+        :meth:`prepare_task` to rewrite ``${NOMAD_META_target}`` in
+        constraints to the concrete target name client-side. The probe
+        bypasses :meth:`prepare_task` entirely, so the spec is built with
+        the host name already baked into the constraint ``RTarget``.
+
+        The job ID is prefixed with :data:`_PROBE_JOB_ID_PREFIX` and
+        suffixed with the current monotonic-ish timestamp so
+        :meth:`purge_health_probe_orphans` can positively identify
+        orphaned probes by ID without colliding with user-registered jobs
+        whose names happen to begin with ``health-probe``.
+
+        Uses :attr:`health_check_poll_interval` and 10 MiB / 10 MHz
+        resource reservations -- the tiniest values that still reliably
+        place on Nomad ``raw_exec`` clients -- so the probe cannot block
+        legitimate workload placements even on small clusters.
+
+        :param host_name: Executor node name (key returned by
+            :meth:`get_hosts`), already validated as a reachable target.
+        :type host_name: str
+        :return: A 2-tuple ``(job_id, spec)`` where ``spec`` is a concrete
+            batch job dict ready to pass to
+            :meth:`Nomad.job.register_job`.
+        :rtype: tuple[str, dict[str, Any]]
+        """
+        job_id = f"{_PROBE_JOB_ID_PREFIX}{slugify(host_name)}-{time.time_ns()}"
+        spec: dict[str, Any] = {
+            "ID": job_id,
+            "Name": job_id,
+            "Type": "batch",
+            "Datacenters": ["*"],
+            "Constraints": [
+                {
+                    "LTarget": "${node.unique.name}",
+                    "RTarget": host_name,
+                    "Operand": "=",
+                },
+            ],
+            "TaskGroups": [
+                {
+                    "Name": "probe",
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "ReschedulePolicy": {"Attempts": 0},
+                    "Tasks": [
+                        {
+                            "Name": "probe",
+                            "Driver": "raw_exec",
+                            "User": "",
+                            "Config": {"command": "true"},
+                            "Meta": {},
+                            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                            "Resources": {"CPU": 10, "MemoryMB": 10},
+                        },
+                    ],
+                },
+            ],
+        }
+        return job_id, spec
+
     async def check_host_health(
         self,
         host_name: str,
         host_address: str,  # noqa: ARG002
     ) -> HealthCheckResult:
-        """Probe a Nomad node by dispatching a minimal ``true`` batch job.
+        """Probe a Nomad node by registering a minimal ``true`` batch job.
 
-        Dispatch the pre-registered ``health-probe`` parameterized batch job
-        with ``meta={"target": host_name}`` so its constraints land the
-        allocation on the requested node, poll the dispatched child until it
-        reaches the ``dead`` status or the :attr:`health_check_timeout`
-        deadline elapses, then purge the child with ``purge=True`` so the
-        Nomad garbage collector does not accumulate probe jobs.
+        Build a concrete batch job with a single ``raw_exec`` task running
+        ``true``, constrained to ``${node.unique.name} = <host_name>``
+        (baked literal, because Nomad does not expand
+        ``${NOMAD_META_target}`` inside constraints). Register it with a
+        unique ``sep-probe-<host>-<ts>`` ID so
+        :meth:`purge_health_probe_orphans` can identify stranded jobs from
+        crashed workers, poll until the job's ``Status`` reaches ``dead``
+        or :attr:`health_check_timeout` elapses, then deregister with
+        ``purge=True`` so Nomad garbage-collects the record immediately.
 
-        The parent ``health-probe`` template is seeded via
-        :func:`app.tasks.db.seed.init_tasks_db`; if it is missing when the
-        first probe runs the method returns a descriptive unhealthy result
-        instead of raising.
+        A dedicated per-probe job -- rather than dispatching a
+        pre-registered parameterized template -- sidesteps the
+        ``${NOMAD_META_*}`` interpolation limitation entirely and keeps
+        each probe isolated: there is no shared state to drift between
+        deploys and no parent template to keep clean.
 
         :param host_name: The Nomad node name (key returned by
             :meth:`get_hosts`).
@@ -603,47 +750,35 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :return: The probe result with an ``error`` description on failure.
         :rtype: HealthCheckResult
         """
+        job_id, spec = self._build_probe_job_spec(host_name)
+
         try:
-            dispatched = self.backend.job.dispatch_job(
-                "health-probe",
-                meta={"target": host_name},
-            )
-        except URLNotFoundNomadException:
-            return HealthCheckResult(
-                healthy=False,
-                error="health-probe template not registered in Nomad",
-            )
+            self.backend.job.register_job(id_=job_id, job={"Job": spec})
         except BaseNomadException as exc:
             return HealthCheckResult(
                 healthy=False,
-                error=f"dispatch failed: {exc}",
-            )
-
-        dispatched_id = dispatched.get("DispatchedJobID")
-        if not dispatched_id:
-            return HealthCheckResult(
-                healthy=False,
-                error="Nomad did not return a DispatchedJobID for health-probe",
+                error=f"Failed to register probe job: {exc}",
             )
 
         try:
-            return await self._poll_health_probe(dispatched_id)
+            return await self._poll_health_probe(job_id)
         finally:
             try:
-                self.backend.job.deregister_job(dispatched_id, purge=True)
+                self.backend.job.deregister_job(job_id, purge=True)
             except BaseNomadException:
                 logger.warning(
-                    "Failed to purge health-probe child %s",
-                    dispatched_id,
+                    "Failed to purge health-probe job %s",
+                    job_id,
                     exc_info=True,
                 )
 
-    async def _poll_health_probe(self, dispatched_id: str) -> HealthCheckResult:
-        """Wait for a dispatched ``health-probe`` child to terminate.
+    async def _poll_health_probe(self, probe_job_id: str) -> HealthCheckResult:
+        """Wait for a registered probe job to terminate.
 
-        :param dispatched_id: The ``DispatchedJobID`` returned by the Nomad
-            dispatch call.
-        :type dispatched_id: str
+        :param probe_job_id: The ``ID`` returned by
+            :meth:`_build_probe_job_spec` and passed to
+            :meth:`Nomad.job.register_job`.
+        :type probe_job_id: str
         :return: ``HealthCheckResult`` reflecting the probe outcome or a
             timeout failure when the job does not terminate within
             :attr:`health_check_timeout` seconds.
@@ -652,43 +787,48 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         deadline = time.monotonic() + self.health_check_timeout
         while time.monotonic() < deadline:
             try:
-                job = self.get_job(dispatched_id)
+                job = self.get_job(probe_job_id)
             except JobNotFoundError:
                 return HealthCheckResult(
                     healthy=False,
-                    error="health-probe child job disappeared before completing",
+                    error="Probe job disappeared before completing",
+                )
+            except BaseNomadException as exc:
+                return HealthCheckResult(
+                    healthy=False,
+                    error=f"Poll failed while waiting for probe job: {exc}",
                 )
             if job.get("Status") == NOMAD_DEAD_JOB_STATUS:
-                return await self._evaluate_probe_job(dispatched_id)
-            await asyncio.sleep(self.wait_interval)
+                return await self._evaluate_probe_job(probe_job_id)
+            await asyncio.sleep(self.health_check_poll_interval)
         return HealthCheckResult(
             healthy=False,
-            error=f"probe did not complete within {self.health_check_timeout}s",
+            error=f"Probe did not complete within {self.health_check_timeout}s",
         )
 
-    async def _evaluate_probe_job(self, dispatched_id: str) -> HealthCheckResult:
+    async def _evaluate_probe_job(self, probe_job_id: str) -> HealthCheckResult:
         """Inspect the latest allocation of a dead probe job.
 
-        :param dispatched_id: The ``DispatchedJobID`` of the terminated probe.
-        :type dispatched_id: str
+        :param probe_job_id: The ``ID`` of the terminated probe job.
+        :type probe_job_id: str
         :return: ``HealthCheckResult`` with ``healthy=True`` when the
             allocation completed cleanly, otherwise ``healthy=False`` with
             an error carrying the final allocation ``ClientStatus``.
         :rtype: HealthCheckResult
         """
         try:
-            alloc = self.get_last_allocation(dispatched_id)
+            alloc = self.get_last_allocation(probe_job_id)
         except AllocationNotFoundError:
             return HealthCheckResult(
                 healthy=False,
-                error="no allocation found for health-probe child job",
+                error="No allocation found for probe job",
             )
         client_status = alloc.get("ClientStatus")
         if client_status == NomadAllocStatusEnum.COMPLETE:
             return HealthCheckResult(healthy=True)
         return HealthCheckResult(
             healthy=False,
-            error=f"probe allocation finished with ClientStatus={client_status!r}",
+            error=f"Probe allocation finished with ClientStatus={client_status!r}",
         )
 
     def get_allocation_for_task_history(
