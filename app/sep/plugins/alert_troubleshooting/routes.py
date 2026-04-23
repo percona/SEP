@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
-_TERMINAL_STATUSES = frozenset({"success", "failed", "stopped"})
+_TERMINAL_STATUSES = frozenset({"success", "failed", "stopped", "stale"})
 
 
 async def _collect_output(
