@@ -21,6 +21,7 @@ else
 endif
 PIP?="${VENV_BIN}/pip"
 APPS=tasks inventory sep
+PYTEST_WORKERS?=auto
 
 venv: pyproject.toml poetry.lock
 	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "venv" ] || "${PYTHON}" -m venv "${VENV}"
@@ -129,7 +130,7 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@"${VENV_BIN}"/pytest -v -r a -n auto --cov=app tests/
+	@"${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app tests/
 
 changelog-add:
 ifndef TICKET
