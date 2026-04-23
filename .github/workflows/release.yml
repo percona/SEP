@@ -59,6 +59,7 @@ jobs:
         with:
           ref: ${{ inputs.release_type == 'stable' && format('release/v{0}', inputs.version) || 'main' }}
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Configure git user
         run: |
@@ -67,7 +68,7 @@ jobs:
 
       - name: Run release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           RELEASE_TYPE: ${{ inputs.release_type }}
           VERSION: ${{ inputs.version }}
           RC_NUMBER: ${{ inputs.rc_number }}
@@ -77,7 +78,7 @@ jobs:
           JIRA_VERSION_RELEASE_WEBHOOK_SECRET: ${{ secrets.JIRA_VERSION_RELEASE_WEBHOOK_SECRET }}
         run: |
           if [ "$RELEASE_TYPE" = "rc" ]; then
-            make release-rc VERSION="$VERSION" RC="$RC_NUMBER"
+            make release-rc VERSION="$VERSION" RC="$RC_NUMBER" SIGN_VIA_API=1
           else
-            make release-stable VERSION="$VERSION"
+            make release-stable VERSION="$VERSION" SIGN_VIA_API=1
           fi

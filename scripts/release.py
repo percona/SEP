@@ -136,6 +136,240 @@ def _gh_available() -> bool:
     return shutil.which("gh") is not None
 
 
+def _gh_api(
+    method: str,
+    path: str,
+    *,
+    payload: dict | None = None,
+) -> dict:
+    """Call ``gh api`` and return the parsed JSON response.
+
+    Uses the ``gh`` CLI's built-in auth (``GH_TOKEN`` / ``GITHUB_TOKEN`` env
+    or ``gh auth login``) and the ``{owner}``/``{repo}`` placeholders in
+    ``path`` are substituted by ``gh`` from the current repository context,
+    so callers pass them literally (e.g. ``repos/{owner}/{repo}/git/refs``).
+
+    :param method: HTTP method (``GET``, ``POST``, ``PATCH``).
+    :type method: str
+    :param path: API path, with ``{owner}``/``{repo}`` placeholders.
+    :type path: str
+    :param payload: Optional JSON-serializable body (sent on stdin with
+        ``--input -``).
+    :type payload: dict | None
+    :return: Parsed JSON response body, or ``{}`` when the response is empty.
+    :rtype: dict
+    """
+    cmd = ["gh", "api", "--method", method, path]
+    input_text = None
+    if payload is not None:
+        cmd.extend(["--input", "-"])
+        input_text = json.dumps(payload)
+    result = subprocess.run(
+        cmd,
+        check=True,
+        text=True,
+        capture_output=True,
+        input=input_text,
+    )
+    return json.loads(result.stdout) if result.stdout.strip() else {}
+
+
+def _api_branch_head_sha(branch: str) -> str:
+    """Return the head commit SHA for ``branch`` on the remote.
+
+    :param branch: Branch name.
+    :type branch: str
+    :return: Head commit SHA.
+    :rtype: str
+    """
+    ref = _gh_api("GET", f"repos/{{owner}}/{{repo}}/git/ref/heads/{branch}")
+    return ref["object"]["sha"]
+
+
+def _api_push_signed_commit(
+    branch: str,
+    *,
+    base_sha: str,
+    message: str,
+    files: dict[str, str],
+    create_branch: bool,
+) -> str:
+    """Create a signed commit via the git-data API and publish it on ``branch``.
+
+    Commits produced via ``POST /repos/{o}/{r}/git/commits`` are auto-signed
+    by GitHub's ``web-flow`` GPG key, so a tag ref that subsequently points at
+    the returned SHA satisfies the ``required_signatures`` rule on the
+    ``refs/tags/v*`` ruleset without requiring any GPG key management in the
+    runner.
+
+    :param branch: Target branch name.
+    :type branch: str
+    :param base_sha: Parent commit SHA for the new commit.
+    :type base_sha: str
+    :param message: Commit message.
+    :type message: str
+    :param files: Mapping of repository path → full new file content.
+    :type files: dict[str, str]
+    :param create_branch: When ``True``, create the branch ref at the new
+        commit; otherwise update an existing branch ref.
+    :type create_branch: bool
+    :return: The new commit SHA.
+    :rtype: str
+    """
+    base_commit = _gh_api(
+        "GET",
+        f"repos/{{owner}}/{{repo}}/git/commits/{base_sha}",
+    )
+    tree_entries = [
+        {"path": path, "mode": "100644", "type": "blob", "content": content}
+        for path, content in files.items()
+    ]
+    new_tree = _gh_api(
+        "POST",
+        "repos/{owner}/{repo}/git/trees",
+        payload={"base_tree": base_commit["tree"]["sha"], "tree": tree_entries},
+    )
+    new_commit = _gh_api(
+        "POST",
+        "repos/{owner}/{repo}/git/commits",
+        payload={
+            "message": message,
+            "tree": new_tree["sha"],
+            "parents": [base_sha],
+        },
+    )
+    new_sha = new_commit["sha"]
+    if create_branch:
+        _gh_api(
+            "POST",
+            "repos/{owner}/{repo}/git/refs",
+            payload={"ref": f"refs/heads/{branch}", "sha": new_sha},
+        )
+    else:
+        _gh_api(
+            "PATCH",
+            f"repos/{{owner}}/{{repo}}/git/refs/heads/{branch}",
+            payload={"sha": new_sha},
+        )
+    return new_sha
+
+
+def _api_create_tag_ref(tag: str, target_sha: str) -> None:
+    """Create a tag ref pointing at ``target_sha``.
+
+    The target commit was produced by :func:`_api_push_signed_commit` and is
+    therefore already signed by GitHub's ``web-flow`` key, satisfying the
+    ``required_signatures`` rule on ``refs/tags/v*``.
+
+    :param tag: Tag name (e.g. ``v0.12.0rc1``).
+    :type tag: str
+    :param target_sha: Commit SHA to tag.
+    :type target_sha: str
+    """
+    _gh_api(
+        "POST",
+        "repos/{owner}/{repo}/git/refs",
+        payload={"ref": f"refs/tags/{tag}", "sha": target_sha},
+    )
+
+
+def _publish_signed_release_commit_and_tag(
+    *,
+    branch: str,
+    base_branch: str,
+    tag: str,
+    commit_message: str,
+    create_branch: bool,
+) -> None:
+    """Create the bump commit + tag via the API, then sync the local branch.
+
+    Extracts the "API commit + tag + local sync" block shared by
+    :func:`cmd_rc` and :func:`cmd_stable`. The commit is signed by GitHub's
+    ``web-flow`` key, so the tag pointing at it satisfies the
+    ``required_signatures`` rule on ``refs/tags/v*``.
+
+    :param branch: Target branch to publish the bump commit on.
+    :type branch: str
+    :param base_branch: Branch whose head is the parent of the new commit
+        (equals ``branch`` except on RC=1, where it is ``main``).
+    :type base_branch: str
+    :param tag: Tag name to create (e.g. ``v0.12.0rc1``).
+    :type tag: str
+    :param commit_message: Commit message for the bump commit.
+    :type commit_message: str
+    :param create_branch: When ``True``, create ``branch`` on the remote at
+        the new commit; otherwise update an existing branch ref.
+    :type create_branch: bool
+    """
+    base_sha = _api_branch_head_sha(base_branch)
+    commit_sha = _api_push_signed_commit(
+        branch,
+        base_sha=base_sha,
+        message=commit_message,
+        files={
+            "pyproject.toml": PYPROJECT.read_text(encoding="utf-8"),
+            "app/__init__.py": APP_INIT.read_text(encoding="utf-8"),
+        },
+        create_branch=create_branch,
+    )
+    _api_create_tag_ref(tag, commit_sha)
+
+    print("==> Syncing local state...")
+    _run(["git", "fetch", "origin", branch, "--tags"])
+    _run(["git", "reset", "--hard", f"origin/{branch}"])
+
+
+def _publish_release_commit_and_tag(
+    *,
+    branch: str,
+    base_branch: str,
+    tag: str,
+    commit_message: str,
+    create_branch: bool,
+    via_github_api: bool,
+) -> None:
+    """Publish the bump commit + tag, dispatching on the signing mode.
+
+    When ``via_github_api`` is ``True``, delegate to
+    :func:`_publish_signed_release_commit_and_tag` (commit signed by
+    GitHub's ``web-flow`` key, required by the ``refs/tags/v*`` ruleset).
+    Otherwise commit, tag, and push via local ``git`` — ``base_branch``
+    and ``create_branch`` are unused in that path because the local
+    branch already tracks the intended history.
+
+    :param branch: Target branch to publish the bump commit on.
+    :type branch: str
+    :param base_branch: API-path parent branch (ignored in the git path).
+    :type base_branch: str
+    :param tag: Tag name to create (e.g. ``v0.12.0rc1``).
+    :type tag: str
+    :param commit_message: Commit message for the bump commit.
+    :type commit_message: str
+    :param create_branch: API-path branch-creation flag (ignored in the
+        git path).
+    :type create_branch: bool
+    :param via_github_api: When ``True``, use the GitHub git-data API;
+        otherwise use local ``git commit``/``tag``/``push``.
+    :type via_github_api: bool
+    """
+    if via_github_api:
+        print("==> Creating signed bump commit + tag via GitHub API...")
+        _publish_signed_release_commit_and_tag(
+            branch=branch,
+            base_branch=base_branch,
+            tag=tag,
+            commit_message=commit_message,
+            create_branch=create_branch,
+        )
+        return
+    print("==> Committing version bump...")
+    _run(["git", "commit", "-am", commit_message])
+    print(f"==> Tagging {tag}...")
+    _run(["git", "tag", tag])
+    print("==> Pushing branch and tag...")
+    _run(["git", "push", "origin", branch, tag])
+
+
 def _bump_version(pep440_version: str, tag_version: str) -> None:
     """Rewrite the version string in ``pyproject.toml`` and ``app/__init__.py``.
 
@@ -292,13 +526,20 @@ def _print_stable_next_steps(
     print(f"  {step}. Merge the dev version bump PR")
 
 
-def cmd_rc(version: str, rc: int) -> int:
+def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
     """Cut release candidate ``vX.Y.ZrcN``.
 
     :param version: The X.Y.Z release version (no ``v`` prefix).
     :type version: str
     :param rc: The RC number (positive integer).
     :type rc: int
+    :param sign_via_github_api: When ``True``, create the bump commit + tag
+        via the GitHub git-data API, producing a ``web-flow``-signed target
+        that satisfies the ``refs/tags/v*`` ``required_signatures`` rule.
+        Requires the ``gh`` CLI. When ``False`` (the default for local
+        runs), commit, tag, and push via local ``git`` — relies on the
+        user's own git signing setup.
+    :type sign_via_github_api: bool
     :return: Process exit code (``0`` on success).
     :rtype: int
     """
@@ -316,6 +557,14 @@ def cmd_rc(version: str, rc: int) -> int:
     if not _working_tree_clean():
         print(
             "Error: Working tree is not clean. Commit or stash changes first.",
+            file=sys.stderr,
+        )
+        return 1
+    if sign_via_github_api and not _gh_available():
+        print(
+            "Error: --sign-via-github-api requires the gh CLI "
+            "(https://cli.github.com/). Omit the flag to use local git "
+            "commit/tag/push instead.",
             file=sys.stderr,
         )
         return 1
@@ -347,10 +596,6 @@ def cmd_rc(version: str, rc: int) -> int:
 
     print(f"==> Bumping version to {rc_version}...")
     _bump_version(rc_version, rc_tag)
-    print("==> Committing version bump...")
-    _run(["git", "commit", "-am", f"Bump version to {rc_tag}"])
-    print(f"==> Tagging {rc_tag}...")
-    _run(["git", "tag", rc_tag])
 
     print("==> Building wheel...")
     _run(["make", "build"])
@@ -362,8 +607,14 @@ def cmd_rc(version: str, rc: int) -> int:
         )
         return 1
 
-    print("==> Pushing branch and tag...")
-    _run(["git", "push", "origin", branch, rc_tag])
+    _publish_release_commit_and_tag(
+        branch=branch,
+        base_branch="main" if rc == 1 else branch,
+        tag=rc_tag,
+        commit_message=f"Bump version to {rc_tag}",
+        create_branch=(rc == 1),
+        via_github_api=sign_via_github_api,
+    )
 
     if _gh_available():
         print("==> Creating GitHub pre-release...")
@@ -433,11 +684,18 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
         )
 
 
-def cmd_stable(version: str) -> int:
+def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
     """Promote ``release/vX.Y.Z`` to stable ``vX.Y.Z``.
 
     :param version: The X.Y.Z release version (no ``v`` prefix).
     :type version: str
+    :param sign_via_github_api: When ``True``, create the bump commit + tag
+        via the GitHub git-data API, producing a ``web-flow``-signed target
+        that satisfies the ``refs/tags/v*`` ``required_signatures`` rule.
+        Requires the ``gh`` CLI. When ``False`` (the default for local
+        runs), commit, tag, and push via local ``git`` — relies on the
+        user's own git signing setup.
+    :type sign_via_github_api: bool
     :return: Process exit code (``0`` on success).
     :rtype: int
     """
@@ -457,13 +715,17 @@ def cmd_stable(version: str) -> int:
             file=sys.stderr,
         )
         return 1
+    if sign_via_github_api and not _gh_available():
+        print(
+            "Error: --sign-via-github-api requires the gh CLI "
+            "(https://cli.github.com/). Omit the flag to use local git "
+            "commit/tag/push instead.",
+            file=sys.stderr,
+        )
+        return 1
 
     print(f"==> Bumping version to {version}...")
     _bump_version(version, tag)
-    print("==> Committing version bump...")
-    _run(["git", "commit", "-am", f"Bump version to {tag}"])
-    print(f"==> Tagging {tag}...")
-    _run(["git", "tag", tag])
 
     print("==> Building wheel...")
     _run(["make", "build"])
@@ -475,8 +737,14 @@ def cmd_stable(version: str) -> int:
         )
         return 1
 
-    print("==> Pushing branch and tag...")
-    _run(["git", "push", "origin", expected_branch, tag])
+    _publish_release_commit_and_tag(
+        branch=expected_branch,
+        base_branch=expected_branch,
+        tag=tag,
+        commit_message=f"Bump version to {tag}",
+        create_branch=False,
+        via_github_api=sign_via_github_api,
+    )
 
     if _gh_available():
         print("==> Creating GitHub release...")
@@ -558,12 +826,30 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         help="RC number (positive integer).",
     )
+    rc_parser.add_argument(
+        "--sign-via-github-api",
+        action="store_true",
+        help=(
+            "Create the bump commit and tag via the GitHub git-data API "
+            "(signed by web-flow). Requires the gh CLI; intended for CI "
+            "runs against repositories that require signed tags."
+        ),
+    )
 
     stable_parser = subparsers.add_parser(
         "stable",
         help="Promote the release/vX.Y.Z branch to stable vX.Y.Z.",
     )
     stable_parser.add_argument("--version", required=True, help="X.Y.Z")
+    stable_parser.add_argument(
+        "--sign-via-github-api",
+        action="store_true",
+        help=(
+            "Create the bump commit and tag via the GitHub git-data API "
+            "(signed by web-flow). Requires the gh CLI; intended for CI "
+            "runs against repositories that require signed tags."
+        ),
+    )
 
     return parser
 
@@ -584,8 +870,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "rc":
-            return cmd_rc(args.version, args.rc)
-        return cmd_stable(args.version)
+            return cmd_rc(
+                args.version,
+                args.rc,
+                sign_via_github_api=args.sign_via_github_api,
+            )
+        return cmd_stable(
+            args.version,
+            sign_via_github_api=args.sign_via_github_api,
+        )
     except subprocess.CalledProcessError as exc:
         cmd = exc.cmd
         if isinstance(cmd, list | tuple):
