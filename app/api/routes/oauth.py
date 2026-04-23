@@ -87,7 +87,7 @@ def _clear_refresh_cookie(response: Response) -> None:
 
 # TODO(yan): Prevent malicious account lockout
 # SEP-277
-@router.post("/token")
+@router.post("/token", response_model=OAuthToken)
 async def create_oauth_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> OAuthToken:
