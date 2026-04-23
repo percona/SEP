@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from multiprocessing import Process
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app import __summary__, __version__
 from app.api.main import api_router
@@ -67,11 +68,35 @@ app = create_app(
     version=__version__,
     description=(
         f"{__summary__}\n\n"
-        "Core HTTP API (OAuth, users). Inventory and Tasks services are mounted "
-        "under ``/api/inventory`` and ``/api/tasks`` with separate OpenAPI documents."
+        "This spec is the **core** API only (OAuth, users). Mounted services publish "
+        "separate OpenAPI JSON on the same host: "
+        "``/api/inventory/openapi.json``, ``/api/tasks/openapi.json``, and "
+        "``/api/sep/openapi.json`` (the SEP web app: ``sep_app`` — shared routes, "
+        "plugins, etc.; not merged into this document)."
     ),
 )
 app.add_middleware(LogContextMiddleware)
+
+
+@app.get(
+    "/api/sep/openapi.json",
+    tags=["sep"],
+    summary="SEP web application OpenAPI schema",
+    response_model=None,
+)
+def sep_openapi_json() -> JSONResponse:
+    """Return the OpenAPI document for the SEP web application (``sep_app``).
+
+    Same pattern as the mounted Inventory and Tasks apps (each exposes its own
+    ``/api/.../openapi.json``; the top-level ``/openapi.json`` on this app remains the
+    core API only and does not merge other sub-applications).
+
+    :return: The OpenAPI 3.x JSON schema produced by ``sep_app.openapi()``.
+    :rtype: JSONResponse
+    """
+    return JSONResponse(sep_app.openapi())
+
+
 app.mount("/api/inventory", inventory_app)
 app.mount("/api/tasks", tasks_app)
 app.mount("/", sep_app)
