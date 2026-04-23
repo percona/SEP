@@ -35,7 +35,7 @@ from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["sep", "tasks", "streaming"])
 
 
 @router.get("/{task_history_id}/execution-events", dependencies=[IsAuthenticated])
