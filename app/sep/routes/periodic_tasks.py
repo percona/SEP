@@ -30,7 +30,7 @@ from app.sep.tasks import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["sep", "periodic-tasks"])
 
 
 @router.post(
