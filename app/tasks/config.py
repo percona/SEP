@@ -74,6 +74,10 @@ class TasksSettings(BaseYamlAppSettings):
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
     :type STALENESS_THRESHOLD_SECONDS: PositiveInt
+    :param HEALTH_CHECK_INTERVAL: How often the Celery periodic task probes
+        every executor host and persists the result to ``NodeHealthCheck``.
+        Defaults to 15 minutes.
+    :type HEALTH_CHECK_INTERVAL: timedelta
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -88,6 +92,7 @@ class TasksSettings(BaseYamlAppSettings):
 
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = PreExecutionCheckMode.WARN
     STALENESS_THRESHOLD_SECONDS: PositiveInt = 3600
+    HEALTH_CHECK_INTERVAL: timedelta = timedelta(minutes=15)
 
 
 tasks_settings: TasksSettings = LazyProxy(TasksSettings)
