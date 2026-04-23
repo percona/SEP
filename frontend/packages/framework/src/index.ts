@@ -20,13 +20,7 @@ export { AlertOnFailField } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
 
 // Hooks
-export {
-  useTaskLogs,
-  useExecutionEvents,
-  useLogSearch,
-  useLogDownload,
-  useTaskHistory,
-} from './hooks';
+export { useTaskLogs, useExecutionEvents, useLogDownload, useTaskHistory } from './hooks';
 export type {
   TaskLogsState,
   StepText,
@@ -36,6 +30,5 @@ export type {
   StreamStatus,
   ExecutionEvent,
   ExecutionEventsState,
-  LogSearchState,
   DownloadLog,
 } from './hooks';

@@ -11,9 +11,6 @@ export type {
 export { useExecutionEvents } from './useExecutionEvents';
 export type { ExecutionEvent, ExecutionEventsState } from './useExecutionEvents';
 
-export { useLogSearch } from './useLogSearch';
-export type { LogSearchState } from './useLogSearch';
-
 export { useLogDownload } from './useLogDownload';
 export type { DownloadLog } from './useLogDownload';
 

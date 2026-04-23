@@ -148,12 +148,10 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
     });
   };
 
-  const stepsForTabs = useMemo(() => {
-    if (topTab === 'events') {
-      return eventStepOrder.filter((s) => s !== '');
-    }
-    return stepOrder;
-  }, [topTab, eventStepOrder, stepOrder]);
+  const stepsForTabs = useMemo(
+    () => (topTab === 'events' ? eventStepOrder : stepOrder),
+    [topTab, eventStepOrder, stepOrder],
+  );
 
   const currentPaneText = useMemo(() => {
     if (topTab === 'events' || !activeStep) {

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface ExecutionEvent {
   timestamp: string;
@@ -39,11 +40,21 @@ function groupByStep(events: ExecutionEvent[]): {
   return { eventsByStep, stepOrder };
 }
 
+async function fetchExecutionEvents(taskHistoryId: string): Promise<ExecutionEvent[]> {
+  const res = await fetch(`/execution-events/${taskHistoryId}`, { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error(`Execution events request failed with status ${res.status}`);
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? (data as ExecutionEvent[]) : [];
+}
+
 /**
  * Execution events for a task history.
  *
  * Running tasks stream via SSE /stream-logs/{id}/execution-events.
- * Completed tasks fetch REST /execution-events/{id}.
+ * Completed tasks fetch REST /execution-events/{id} through react-query for
+ * consistent error/loading/cache semantics with the rest of @sep/framework.
  *
  * Both endpoints are cookie-authenticated (same-origin). See useTaskLogs for
  * the auth rationale.
@@ -52,48 +63,34 @@ export function useExecutionEvents(
   taskHistoryId: number | string | undefined,
   isRunning: boolean,
 ): ExecutionEventsState {
-  const [events, setEvents] = useState<ExecutionEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<unknown>(undefined);
+  const idStr =
+    taskHistoryId === undefined || taskHistoryId === null || taskHistoryId === ''
+      ? undefined
+      : encodeURIComponent(String(taskHistoryId));
+
+  // ── Completed tasks: REST via react-query ─────────────────────────────
+  const query = useQuery<ExecutionEvent[]>({
+    queryKey: ['execution-events', idStr],
+    queryFn: () => fetchExecutionEvents(idStr as string),
+    enabled: !isRunning && idStr !== undefined,
+  });
+
+  // ── Running tasks: SSE ────────────────────────────────────────────────
+  const [sseEvents, setSseEvents] = useState<ExecutionEvent[]>([]);
+  const [sseError, setSseError] = useState<unknown>(undefined);
+  const [sseLoading, setSseLoading] = useState(false);
 
   const seenKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (taskHistoryId === undefined || taskHistoryId === null || taskHistoryId === '') {
+    if (!isRunning || idStr === undefined) {
       return;
     }
 
     seenKeysRef.current = new Set();
-    setEvents([]);
-    setError(undefined);
-    setIsLoading(true);
-
-    const idStr = encodeURIComponent(String(taskHistoryId));
-
-    if (!isRunning) {
-      const controller = new AbortController();
-      fetch(`/execution-events/${idStr}`, {
-        credentials: 'include',
-        signal: controller.signal,
-      })
-        .then((res) => (res.ok ? (res.json() as Promise<ExecutionEvent[]>) : []))
-        .then((data) => {
-          const list = Array.isArray(data) ? data : [];
-          for (const ev of list) {
-            seenKeysRef.current.add(compositeKey(ev));
-          }
-          setEvents(list);
-          setIsLoading(false);
-        })
-        .catch((err: unknown) => {
-          if ((err as { name?: string } | null)?.name === 'AbortError') {
-            return;
-          }
-          setError(err);
-          setIsLoading(false);
-        });
-      return () => controller.abort();
-    }
+    setSseEvents([]);
+    setSseError(undefined);
+    setSseLoading(true);
 
     const src = new EventSource(`/stream-logs/${idStr}/execution-events`, {
       withCredentials: true,
@@ -101,11 +98,9 @@ export function useExecutionEvents(
 
     src.onerror = () => {
       if (src.readyState === EventSource.CLOSED) {
-        setError({ message: 'Execution events stream connection closed.' });
-        setIsLoading(false);
+        setSseError({ message: 'Execution events stream connection closed.' });
+        setSseLoading(false);
       }
-      // Transient errors (readyState === CONNECTING) trigger browser auto-retry;
-      // leave state unchanged.
     };
 
     src.onmessage = (event: MessageEvent<string>) => {
@@ -120,12 +115,12 @@ export function useExecutionEvents(
         return;
       }
       seenKeysRef.current.add(key);
-      setEvents((prev) => [...prev, payload]);
-      setIsLoading(false);
+      setSseEvents((prev) => [...prev, payload]);
+      setSseLoading(false);
     };
 
     const handleFinish = () => {
-      setIsLoading(false);
+      setSseLoading(false);
       src.close();
     };
 
@@ -136,8 +131,8 @@ export function useExecutionEvents(
       } catch {
         // keep raw
       }
-      setError(payload);
-      setIsLoading(false);
+      setSseError(payload);
+      setSseLoading(false);
       src.close();
     };
 
@@ -149,9 +144,13 @@ export function useExecutionEvents(
       src.removeEventListener('sep-error', handleSepError as EventListener);
       src.close();
     };
-  }, [taskHistoryId, isRunning]);
+  }, [idStr, isRunning]);
 
-  const { eventsByStep, stepOrder } = groupByStep(events);
+  const events = isRunning ? sseEvents : (query.data ?? []);
+  const error = isRunning ? sseError : (query.error ?? undefined);
+  const isLoading = isRunning ? sseLoading : query.isLoading;
+
+  const { eventsByStep, stepOrder } = useMemo(() => groupByStep(events), [events]);
 
   return { events, eventsByStep, stepOrder, isLoading, error };
 }

@@ -12,6 +12,8 @@ export function useLogDownload(): DownloadLog {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    URL.revokeObjectURL(url);
+    // Defer revocation: Safari can race the anchor-triggered download if the
+    // blob URL is revoked in the same tick as .click().
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }, []);
 }

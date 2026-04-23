@@ -1,12 +1,17 @@
 import Badge from '@mui/material/Badge';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
+import { STEPLESS_STEP_KEY, STEPLESS_STEP_LABEL } from './ExecutionEventsPanel';
 
 export interface LogStepTabsProps {
   steps: string[];
   activeStep: string | undefined;
   unreadSteps: Set<string>;
   onSelect: (step: string) => void;
+}
+
+function stepLabel(step: string): string {
+  return step === STEPLESS_STEP_KEY ? STEPLESS_STEP_LABEL : step;
 }
 
 export function LogStepTabs({ steps, activeStep, unreadSteps, onSelect }: LogStepTabsProps) {
@@ -38,7 +43,7 @@ export function LogStepTabs({ steps, activeStep, unreadSteps, onSelect }: LogSte
               invisible={!unreadSteps.has(step) || step === activeStep}
               sx={{ '& .MuiBadge-badge': { right: -8, top: 2 } }}
             >
-              <span>{step}</span>
+              <span>{stepLabel(step)}</span>
             </Badge>
           }
         />

@@ -2,6 +2,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installMockEventSource, MockEventSource } from '../../../../tests/eventSourceStub';
+import { QueryWrapper } from '../../../../tests/queryWrapper';
 import { TaskLogViewer } from '../TaskLogViewer';
 
 // Stub the log-viewer lib: real one depends on DOM APIs jsdom lacks.
@@ -32,7 +33,11 @@ describe('TaskLogViewer', () => {
   });
 
   it('renders accumulated stdout for the first step by default', () => {
-    render(<TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />);
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
     const src = getLogSource('7');
 
     act(() => {
@@ -43,7 +48,11 @@ describe('TaskLogViewer', () => {
   });
 
   it('marks the stderr top tab as unread when stderr arrives while on stdout', async () => {
-    render(<TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />);
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
     const src = getLogSource('1');
 
     act(() => {
@@ -64,7 +73,11 @@ describe('TaskLogViewer', () => {
   });
 
   it('switches pane when clicking the Execution events tab', async () => {
-    render(<TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />);
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
     const src = getLogSource('1');
     act(() => {
       src.emitMessage({ msg: 'out\n', step: 'setup', type: 'stdout', offset: 1 });
@@ -84,7 +97,11 @@ describe('TaskLogViewer', () => {
     vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 
-    render(<TaskLogViewer taskHistoryId="99" taskStatus="RUNNING" />);
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="99" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
     const src = getLogSource('99');
     act(() => {
       src.emitMessage({ msg: 'payload', step: 'run', type: 'stdout', offset: 1 });
@@ -99,7 +116,11 @@ describe('TaskLogViewer', () => {
   });
 
   it('renders a status badge when the stream finishes', () => {
-    render(<TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />);
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
     const src = getLogSource('1');
     act(() => {
       src.emitNamed('finish', { status: 'success' });
@@ -108,14 +129,22 @@ describe('TaskLogViewer', () => {
   });
 
   it('resets active step and unread state when taskHistoryId changes', () => {
-    const { rerender } = render(<TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />);
+    const { rerender } = render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
     const first = getLogSource('1');
     act(() => {
       first.emitMessage({ msg: 'a\n', step: 'alpha', type: 'stdout', offset: 1 });
     });
     expect(screen.getByTestId('log-output').textContent).toBe('a\n');
 
-    rerender(<TaskLogViewer taskHistoryId="2" taskStatus="RUNNING" />);
+    rerender(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="2" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
     // Previous step alpha no longer exists; empty state until new data arrives
     expect(screen.queryByTestId('log-output')).not.toBeInTheDocument();
     expect(screen.getByText(/no output yet/i)).toBeInTheDocument();
@@ -131,7 +160,11 @@ describe('TaskLogViewer', () => {
   });
 
   it('renders the executor-gone error block for 410', () => {
-    render(<TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />);
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
     const src = getLogSource('1');
     act(() => {
       src.emitNamed('sep-error', {
