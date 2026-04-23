@@ -83,6 +83,7 @@ app.add_middleware(LogContextMiddleware)
     tags=["sep"],
     summary="SEP web application OpenAPI schema",
     response_model=None,
+    include_in_schema=False,
 )
 def sep_openapi_json() -> JSONResponse:
     """Return the OpenAPI document for the SEP web application (``sep_app``).
