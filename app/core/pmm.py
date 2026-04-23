@@ -21,16 +21,36 @@ import logging
 from typing import Any
 
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.orm.attributes import NO_VALUE
 
 from app.core.config import settings
 from app.core.requests.remote_api import RemoteAPI
-from app.tasks.models import TaskHistory
+from app.tasks.models import TaskExecutionRequest, TaskHistory
 
 _EXECUTION_REQUEST_ATTR = "execution_request"
 
 logger = logging.getLogger(__name__)
 
 _background_tasks = set()
+
+
+def execution_request_for_pmm_snapshot(queue_item: TaskHistory) -> TaskExecutionRequest:
+    """Return the task execution request used to build a PMM annotation.
+
+    The deferred ``TaskHistory.execution_request`` (SEP-816) can raise
+    ``MissingGreenlet`` on async engines if read through the attribute after the load
+    session has closed. When the column is already in memory, use the ORM
+    :attr:`loaded_value` (see SEP-1021); otherwise read ``queue_item.execution_request``.
+
+    :param queue_item: The task history record.
+    :type queue_item: TaskHistory
+    :return: The request whose ``task``, ``target``, and ``meta`` are snapshotted.
+    :rtype: TaskExecutionRequest
+    """
+    state = sa_inspect(queue_item).attrs.execution_request
+    if state.loaded_value is not NO_VALUE:
+        return state.loaded_value
+    return queue_item.execution_request
 
 
 async def create_pmm_annotation(
@@ -168,7 +188,7 @@ def schedule_annotation(
             "asyncpg/aiosqlite (or DetachedInstanceError once the session "
             "has closed)."
         )
-    execution_request = queue_item.execution_request
+    execution_request = execution_request_for_pmm_snapshot(queue_item)
     meta = copy.deepcopy(execution_request.meta)
     task = asyncio.create_task(
         annotate_task_event(
