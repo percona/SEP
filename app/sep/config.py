@@ -408,8 +408,8 @@ class SEPSettings(BaseYamlAppSettings):
         tokens. Defaults to 600.
     :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
     :param CONNECTIVITY_CHECK_DEFAULT: Initial state of the "Check connectivity"
-        checkbox on task creation forms. When ``True`` (the default), the checkbox
-        is pre-checked; when ``False``, it is unchecked. Because unchecked HTML
+        checkbox on task creation forms. When ``True``, the checkbox is pre-checked;
+        when ``False`` (default), it is unchecked. Because unchecked HTML
         checkboxes submit no field, the route parameter defaults to ``False`` —
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
