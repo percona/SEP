@@ -31,6 +31,7 @@ from app.core.celery.utils import (
 )
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import DatabaseDialect
+from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.db.engine import engine
@@ -456,6 +457,13 @@ SYSTEM_TASKS = [
         created_by=SYSTEM_USER,
     ),
     Task(
+        name="health-probe",
+        data=NOMAD_HEALTH_PROBE,
+        protected=True,
+        anonymize_mask=None,
+        created_by=SYSTEM_USER,
+    ),
+    Task(
         name="run-python",
         data=NOMAD_RUN_PYTHON,
         protected=True,
@@ -501,7 +509,19 @@ SYSTEM_PERIODIC_TASKS = [
                 extra_kwargs={"expire_seconds": 30},
             ),
         ],
-    )
+    ),
+    SystemPeriodicTaskSchedule(
+        schedule=IntervalSchedule(
+            every=max(1, int(tasks_settings.HEALTH_CHECK_INTERVAL.total_seconds())),
+            period=Period.SECONDS,
+        ),
+        tasks=[
+            SystemPeriodicTaskData(
+                name="tasks__probe_node_health",
+                task_name="app.tasks.celery.probe_node_health",
+            ),
+        ],
+    ),
 ]
 
 
