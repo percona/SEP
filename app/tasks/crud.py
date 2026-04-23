@@ -440,6 +440,38 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         return result.first() is not None
 
     @classmethod
+    async def ids_with_chunks(
+        cls,
+        session: AsyncSession,
+        task_history_ids: Sequence[int],
+    ) -> set[int]:
+        """Return the subset of ``task_history_ids`` that have at least one chunk.
+
+        Emit a single ``SELECT DISTINCT task_history_id FROM taskhistory_log
+        WHERE task_history_id IN (:ids)`` so list endpoints avoid an N+1
+        :meth:`exists_for_task` call per paginated row. Return an empty set
+        for empty input without emitting any SQL -- an empty ``IN ()``
+        predicate triggers a SQLAlchemy warning and is a no-op anyway.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :type session: AsyncSession
+        :param task_history_ids: The ``TaskHistory`` identifiers to check.
+        :type task_history_ids: Sequence[int]
+        :return: The subset of ``task_history_ids`` with at least one chunk row.
+        :rtype: set[int]
+        """
+        if not task_history_ids:
+            return set()
+        query = (
+            select(col(TaskHistoryLog.task_history_id))
+            .where(col(TaskHistoryLog.task_history_id).in_(task_history_ids))
+            .distinct()
+        )
+        result = await session.exec(query)
+        return set(result.all())
+
+    @classmethod
     async def list_chunks_for_task(
         cls,
         session: AsyncSession,
