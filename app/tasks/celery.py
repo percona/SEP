@@ -328,7 +328,9 @@ async def _probe_all_nodes() -> None:
     except Exception:
         logger.exception("Failed to fetch executor hosts for health probe")
         return
-    logger.info("Health probe cycle starting for %d host(s): %s", len(hosts), list(hosts))
+    logger.info(
+        "Health probe cycle starting for %d host(s): %s", len(hosts), list(hosts)
+    )
     if not hosts:
         return
     purged = 0
@@ -339,7 +341,9 @@ async def _probe_all_nodes() -> None:
         except Exception:
             logger.exception("Orphan sweep failed before health probe cycle")
     if purged:
-        logger.info("Purged %d stale health-probe dispatches before probe cycle", purged)
+        logger.info(
+            "Purged %d stale health-probe dispatches before probe cycle", purged
+        )
     async_session = get_async_session_maker()
     now = utc_now()
     for name, address in hosts.items():
