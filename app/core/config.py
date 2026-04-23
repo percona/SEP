@@ -566,15 +566,19 @@ def create_app(
     :param security_headers: Options for the SecurityHeadersMiddleware. Defaults to
         None, meaning the middleware won't be added to the app.
     :param title: Optional OpenAPI title for the generated spec.
+    :type title: str | None
     :param version: Optional OpenAPI version string.
+    :type version: str | None
     :param description: Optional OpenAPI description text.
+    :type description: str | None
     :param generate_unique_id_function: Optional callback for stable ``operationId``
         values. When omitted, :func:`app.core.utils.openapi.generate_tag_prefixed_unique_id`
         is used so similarly named handlers across routers do not collide.
+    :type generate_unique_id_function: Callable[[APIRoute], str] | None
     :return: An instance of the FastAPI application with an attached Celery app.
     :rtype: FastAPI
     """
-    openapi_kwargs: dict[str, Any] = {}
+    openapi_kwargs = {}
     if title is not None:
         openapi_kwargs["title"] = title
     if version is not None:
