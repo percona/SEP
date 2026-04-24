@@ -135,6 +135,7 @@ if {
     "tasks",
     "backup",
     "backup_mongo",
+    "backup_pg",
     "checksums",
 } & imported_plugins:
     from app.sep.routes.download_files import router as download_files_router
