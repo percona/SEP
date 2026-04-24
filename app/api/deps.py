@@ -18,7 +18,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Cookie, Depends
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import ValidationError
 
@@ -29,6 +29,7 @@ from app.core.auth.exceptions import (
 )
 from app.core.auth.utils import get_user_model
 from app.core.log import set_log_context
+from app.sep.config import sep_settings
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -36,6 +37,10 @@ User = get_user_model()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/oauth/token")
 
 AuthToken = Annotated[str, Depends(oauth2_scheme)]
+
+RefreshTokenCookie = Annotated[
+    str | None, Cookie(alias=sep_settings.SESSION_REFRESH.COOKIE_NAME)
+]
 
 
 async def get_current_user(token: AuthToken) -> User:

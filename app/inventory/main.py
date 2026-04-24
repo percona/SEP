@@ -19,6 +19,7 @@ import logging.config
 
 from fastapi import APIRouter, Request, status
 
+from app import __summary__, __version__
 from app.api.deps import IsAuthenticatedDep
 from app.core.config import create_app, default_lifespan, settings
 from app.inventory.config import inventory_settings
@@ -57,6 +58,9 @@ inventory_app = create_app(
     backend_cors_origins=inventory_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=inventory_settings.ALLOWED_HOSTS,
     security_headers=inventory_settings.SECURITY_HEADERS,
+    title="SEP Inventory API",
+    version=__version__,
+    description=f"{__summary__} — inventory (nodes, services, schemas, tables).",
 )
 
 
