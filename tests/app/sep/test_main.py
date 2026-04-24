@@ -259,6 +259,7 @@ def test_read_root_renders_homepage(mocker, dummy_context, test_client):
     assert kwargs.get("name") == "homepage.html.j2"
     assert kwargs.get("context") == dummy_context
 
+
 def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     """Regression: task-infrastructure routers must be mounted for backup_pg-only installs.
 
@@ -285,6 +286,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     route_names = {r.name for r in main_module.sep_app.routes}
     assert "periodic_task_create" in route_names
     assert "stop_task_execution" in route_names
+
 
 class TestExceptionHandlers:
     """Define test suite for exception handlers."""
