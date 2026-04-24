@@ -38,6 +38,7 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
+from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.checksums.models import (
     ChecksumsCreate,
@@ -133,7 +134,7 @@ async def process_schema_and_table_ids(
 
 
 def _assemble_checksum_payload(
-    service: Any,
+    service: CreatedService,
     *,
     task_name: str,
     hostname: str,
