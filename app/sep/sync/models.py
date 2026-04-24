@@ -57,7 +57,7 @@ from app.sep.models import (
     SyncItemWrite,
 )
 from app.sep.sync.exceptions import SyncFailError, SyncItemAlreadyInProgressError
-from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
+from app.tasks.models import extract_host_address, TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
 
@@ -1319,10 +1319,7 @@ class BaseTaskSyncer(BaseSyncer):
         :rtype: dict[str, str]
         """
         response = await self.tasks_api.get("/hosts/")
-        return {
-            name: (info.get("address") or "") if isinstance(info, dict) else info
-            for name, info in response.items()
-        }
+        return {name: extract_host_address(info) for name, info in response.items()}
 
     async def wait_for_task_output(
         self,

@@ -1097,6 +1097,29 @@ class HostInfo(BaseModel):
     error_message: str | None = None
 
 
+def extract_host_address(info: Any) -> str:
+    """Return the address from either enriched or legacy ``/hosts/`` values.
+
+    Tolerates three shapes so every ``/hosts/`` consumer can share one
+    flattener: a :class:`HostInfo` instance, the JSON dict the Tasks API
+    actually returns, or the pre-SEP-1020 plain address string (kept for
+    test fixtures and older clients).
+
+    :param info: A value from the ``/hosts/`` payload.
+    :type info: Any
+    :return: The node address, or ``""`` when the shape is unrecognized
+        or the address key is missing.
+    :rtype: str
+    """
+    if isinstance(info, HostInfo):
+        return info.address
+    if isinstance(info, dict):
+        return info.get("address") or ""
+    if isinstance(info, str):
+        return info
+    return ""
+
+
 class DispatchLock(BaseSQLModel, table=True):
     """Define a task dispatch lock.
 

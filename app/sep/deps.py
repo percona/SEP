@@ -69,6 +69,7 @@ from app.sep.middleware.csrf import (
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
+    extract_host_address,
     Task,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
@@ -800,26 +801,6 @@ async def get_executor_hosts_raw(
 ExecutorHostsRaw = Annotated[dict[str, dict[str, Any]], Depends(get_executor_hosts_raw)]
 
 
-def _flatten_host_address(info: Any) -> str:
-    """Return the address from either the enriched or legacy ``/hosts/`` value.
-
-    Tolerates the pre-SEP-1020 plain-string shape so test fixtures and older
-    clients keep working; real Tasks API responses always return a
-    ``HostInfo`` dict.
-
-    :param info: A value from the ``/hosts/`` payload -- either the legacy
-        address string or the enriched ``HostInfo`` dict.
-    :type info: Any
-    :return: The node address (possibly empty when missing).
-    :rtype: str
-    """
-    if isinstance(info, dict):
-        return info.get("address") or ""
-    if isinstance(info, str):
-        return info
-    return ""
-
-
 async def get_executor_hosts(
     executor_hosts_raw: ExecutorHostsRaw,
 ) -> dict[str, str]:
@@ -836,7 +817,7 @@ async def get_executor_hosts(
     :rtype: dict[str, str]
     """
     return {
-        name: _flatten_host_address(info) for name, info in executor_hosts_raw.items()
+        name: extract_host_address(info) for name, info in executor_hosts_raw.items()
     }
 
 
@@ -859,7 +840,7 @@ async def get_executor_hosts_context(
     :rtype: ExecutorHostsContext
     """
     hosts = {
-        name: _flatten_host_address(info) for name, info in executor_hosts_raw.items()
+        name: extract_host_address(info) for name, info in executor_hosts_raw.items()
     }
     health = {
         name: {

@@ -41,7 +41,13 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import (
+    extract_host_address,
+    Task,
+    TaskBackendEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -364,10 +370,9 @@ async def build_pre_checks_task(
     db_host = meta.get("_service_host", "")
     db_port = meta.get("_service_port")
     executor_hosts_raw = await task_api.get("/hosts/")
-    executor_hosts: Any
     if isinstance(executor_hosts_raw, dict):
         executor_hosts = {
-            name: (info.get("address") or "") if isinstance(info, dict) else info
+            name: extract_host_address(info)
             for name, info in executor_hosts_raw.items()
         }
     else:
