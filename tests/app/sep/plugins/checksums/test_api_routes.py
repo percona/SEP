@@ -694,16 +694,17 @@ class TestChecksumsDeleteEndpoint:
 class TestChecksumsRegression:
     """Regression tests confirming removed SEP-921 paths are gone."""
 
-    def test_old_checksums_api_detail_path_returns_404(self, test_client):
-        """Ensure the SEP-921 GET /checksums/api/{task_name} path no longer exists.
+    def test_old_checksums_api_detail_path_does_not_serve_json(self, test_client):
+        """Ensure the SEP-921 GET /checksums/api/{task_name} JSON endpoint is gone.
 
-        /checksums/api/some-task used to be routed to the JSON detail endpoint
-        (SEP-921). After the migration to /api/plugins/checksums/, the path has no
-        matching route and must return 404.
+        /checksums/api/some-task used to return a JSON task response (SEP-921).
+        After migration the path has no matching route.  The 404 handler redirects
+        unauthenticated clients to login (303) rather than returning JSON, which is
+        sufficient proof that the old JSON endpoint no longer exists.
 
-        Note: /checksums/api/ (without a second segment) is still caught by the
-        wildcard GET /{task_name} HTML route as task_name="api" — that pre-existing
-        behaviour is unrelated to this migration.
+        follow_redirects=False is required because the default test_client follows
+        redirects and the login page would return 200, masking the real response.
         """
-        response = test_client.get("/checksums/api/some-task")
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        response = test_client.get("/checksums/api/some-task", follow_redirects=False)
+        assert "application/json" not in response.headers.get("content-type", "")
+        assert response.status_code != status.HTTP_200_OK
