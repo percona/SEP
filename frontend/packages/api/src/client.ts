@@ -1,5 +1,5 @@
+/// <reference path="./vite-env.d.ts" />
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import applyCaseMiddleware from 'axios-case-converter';
 import { ApiError, normalizeAxiosError } from './errors';
 
 // ── Token provider ─────────────────────────────────────────────────────
@@ -34,28 +34,36 @@ export function setOnRefreshed(handler: OnRefreshed) {
   _onRefreshed = handler;
 }
 
+/** Read the currently registered token provider. Used by the typed client. */
+export function getToken(): string | null {
+  return _getToken();
+}
+
+/** Invoke the currently registered unauthorized handler. */
+export function emitUnauthorized(): void {
+  _onUnauthorized();
+}
+
 // ── Dev logging flag ───────────────────────────────────────────────────
 // Vite statically replaces `import.meta.env.DEV` at build time, so the
 // logging branches are dead-code-eliminated in production bundles.
 const IS_DEV = import.meta.env.DEV;
 
 /**
- * Primary API client. See README.md for the camelCase ↔ snake_case policy —
- * axios-case-converter will be removed in Phase 2 once generated types land.
+ * Primary API client. Request/response payloads are passed through verbatim —
+ * field casing matches the OpenAPI spec (see `src/generated/`).
  */
-export const apiClient = applyCaseMiddleware(
-  axios.create({
-    baseURL: '/api',
-    // Send the HttpOnly refresh cookie on /api/oauth/* requests (same-origin
-    // requests already send cookies, but make the intent explicit so tests
-    // and any future cross-origin config keep working).
-    withCredentials: true,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    validateStatus: (status) => status >= 200 && status < 300,
-  }),
-);
+export const apiClient = axios.create({
+  baseURL: '/api',
+  // Send the HttpOnly refresh cookie on /api/oauth/* requests (same-origin
+  // requests already send cookies, but make the intent explicit so tests
+  // and any future cross-origin config keep working).
+  withCredentials: true,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  validateStatus: (status) => status >= 200 && status < 300,
+});
 
 // ── Request: attach Bearer token, optionally log ───────────────────────
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -111,9 +119,9 @@ export function refreshAccessToken(): Promise<string | null> {
       // from the externally-injected _onRefreshed handler must NOT be reported
       // as a failed refresh, otherwise the auth layer would force-logout a
       // user whose cookie rotation succeeded on the backend.
-      let data: { accessToken: string; expiresIn: number };
+      let data: { access_token: string; expires_in: number };
       try {
-        const response = await apiClient.post<{ accessToken: string; expiresIn: number }>(
+        const response = await apiClient.post<{ access_token: string; expires_in: number }>(
           '/oauth/refresh',
         );
         data = response.data;
@@ -126,8 +134,8 @@ export function refreshAccessToken(): Promise<string | null> {
           refreshInFlight = null;
         });
       }
-      _onRefreshed(data.accessToken, data.expiresIn);
-      return data.accessToken;
+      _onRefreshed(data.access_token, data.expires_in);
+      return data.access_token;
     })();
   }
   return refreshInFlight;

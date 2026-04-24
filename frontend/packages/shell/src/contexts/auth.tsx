@@ -16,7 +16,7 @@ import {
   setOnRefreshed,
   setOnUnauthorized,
   setTokenProvider,
-  type OAuthTokenResponse,
+  type SPAOAuthTokenResponse,
   type User,
 } from '@sep/api';
 import { useSilentRefresh } from '../hooks/useSilentRefresh';
@@ -38,6 +38,9 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 // ── Provider ────────────────────────────────────────────────────────────
+// Access token lives only in React state. The refresh token lives in an
+// `HttpOnly` cookie set by the backend — JS never sees it and never
+// persists anything to localStorage/sessionStorage.
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   // Access token lives only in React state. A ref mirrors the latest value
@@ -52,10 +55,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = !!accessToken;
   const isAdmin = user?.isAdmin ?? false;
 
-  const applyTokens = useCallback((tokens: OAuthTokenResponse) => {
-    tokenRef.current = tokens.accessToken;
-    setAccessToken(tokens.accessToken);
-    setExpiresIn(tokens.expiresIn);
+  const applyTokens = useCallback((tokens: SPAOAuthTokenResponse) => {
+    tokenRef.current = tokens.access_token;
+    setAccessToken(tokens.access_token);
+    setExpiresIn(tokens.expires_in);
   }, []);
 
   const clearAuth = useCallback(() => {

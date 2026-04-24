@@ -62,6 +62,43 @@ describe('apiClient — Bearer token injection', () => {
   });
 });
 
+describe('apiClient — payload pass-through (no case conversion)', () => {
+  it('sends snake_case request bodies verbatim', async () => {
+    const received = vi.fn();
+
+    server.use(
+      http.post(`${BASE}/api/widgets`, async ({ request }) => {
+        received(await request.json());
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+
+    await apiClient.post('/widgets', { chunk_size: 1, replicate_check: true });
+
+    expect(received).toHaveBeenCalledWith({ chunk_size: 1, replicate_check: true });
+  });
+
+  it('returns snake_case response bodies verbatim', async () => {
+    server.use(
+      http.get(`${BASE}/api/token`, () =>
+        HttpResponse.json({
+          access_token: 'tok',
+          refresh_token: 'rtok',
+          expires_in: 3600,
+        }),
+      ),
+    );
+
+    const { data } = await apiClient.get('/token');
+
+    expect(data).toEqual({
+      access_token: 'tok',
+      refresh_token: 'rtok',
+      expires_in: 3600,
+    });
+  });
+});
+
 describe('apiClient — error normalization', () => {
   it('maps a 404 response to ApiError with kind "http"', async () => {
     server.use(
