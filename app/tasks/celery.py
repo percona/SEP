@@ -32,7 +32,7 @@ from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import cast, func, literal, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -368,7 +368,12 @@ async def _probe_all_nodes() -> None:
                     error_message=result.error,
                     now=now,
                 )
-        except OperationalError:
+        except (OperationalError, ProgrammingError):
+            # SQLite / MySQL raise ``OperationalError`` for "no such table";
+            # PostgreSQL raises ``ProgrammingError`` for ``UndefinedTable``.
+            # Either way the Alembic migration has not been applied yet --
+            # abort the cycle (every subsequent upsert would fail the same
+            # way) rather than crashing the periodic probe task.
             logger.warning(
                 "nodehealthcheck table missing; skipping health-probe upserts",
                 exc_info=True,

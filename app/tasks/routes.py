@@ -24,7 +24,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -651,7 +651,12 @@ async def get_executor_hosts(
     health_by_name = {}
     try:
         health_rows = await NodeHealthCheckManager.list_by_names(session, list(hosts))
-    except OperationalError:
+    except (OperationalError, ProgrammingError):
+        # SQLite / MySQL raise ``OperationalError`` for "no such table";
+        # PostgreSQL raises ``ProgrammingError`` for ``UndefinedTable``.
+        # Either way the Alembic migration has not been applied yet -- fall
+        # back to address-only entries so the endpoint does not 500 on
+        # fresh deploys.
         logger.warning(
             "nodehealthcheck table missing; returning /hosts/ without health data",
             exc_info=True,
