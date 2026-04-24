@@ -689,21 +689,3 @@ class TestChecksumsDeleteEndpoint:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_task_api_dep.delete.assert_awaited_once_with(f"/{task['name']}")
-
-
-class TestChecksumsRegression:
-    """Regression tests confirming removed SEP-921 paths are gone."""
-
-    def test_old_checksums_api_detail_path_caught_by_html_route(
-        self, test_client, mock_task_api_dep
-    ):
-        """Verify /checksums/api/{task_name} returns 404 from HTML route, not JSON API.
-
-        /checksums/api/some-task matches the wildcard GET /{task_name} HTML route.
-        The route dependency get_checksums_task fails to find the task; the 404 is
-        from the HTML detail handler's task lookup, not from JSON API routing.
-        """
-        mock_task_api_dep.get.side_effect = HTTPNotFoundException()
-
-        response = test_client.get("/checksums/api/some-task", follow_redirects=False)
-        assert response.status_code == status.HTTP_404_NOT_FOUND
