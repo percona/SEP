@@ -125,16 +125,26 @@ async def update_periodic_task(
             "UPDATE PERIODIC TASK - Reconstructed execute_request from existing data"
         )
 
-    # Validate only if chain is being added or modified (not when it's unchanged)
-    if updated_chain and updated_chain != existing_chain:
-        logger.debug("UPDATE PERIODIC TASK - VALIDATING CHAIN (changed)")
+    effective_chain = updated_chain if updated_chain is not None else existing_chain
+
+    # Validate whenever the effective chain exists and either the chain changed
+    # or the effective parent task changed.
+    if effective_chain and (
+        effective_chain != existing_chain
+        or task_name != existing_kwargs["task_name"]
+    ):
+        logger.debug(
+            "UPDATE PERIODIC TASK - VALIDATING CHAIN (chain or parent changed)"
+        )
         await validate_chain_task_names(
             tasks_session,
-            updated_chain,
+            effective_chain,
             await get_executable_task_by_name(tasks_session, task_name),
         )
     else:
-        logger.debug("UPDATE PERIODIC TASK - SKIPPING CHAIN VALIDATION (unchanged)")
+        logger.debug(
+            "UPDATE PERIODIC TASK - SKIPPING CHAIN VALIDATION (effective chain and parent unchanged)"
+        )
 
     logger.debug("Updating periodic task %s", existing_task.id)
     return await PeriodicTaskManager.update(session, existing_task, updated_task)
