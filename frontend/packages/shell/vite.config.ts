@@ -36,6 +36,14 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/stream-logs': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/execution-events': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   optimizeDeps: {

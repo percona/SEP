@@ -25,6 +25,7 @@ from celery.utils.log import get_task_logger
 from fastapi import FastAPI, HTTPException, Request, status
 from nomad.api.exceptions import BaseNomadException
 
+from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
 from app.tasks.connectivity.routes import router as connectivity_router
@@ -68,6 +69,9 @@ tasks_app = create_app(
     backend_cors_origins=tasks_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,
     security_headers=tasks_settings.SECURITY_HEADERS,
+    title="SEP Tasks API",
+    version=__version__,
+    description=f"{__summary__} — task execution, history, periodic jobs, connectivity.",
 )
 
 

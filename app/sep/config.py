@@ -148,6 +148,10 @@ class SessionOptions(BaseModel):
     :param SECURE: Whether the session cookie should be accessible only via HTTPS.
         Defaults to True.
     :type SECURE: bool
+    :param PATH: Cookie ``Path`` attribute. When ``None`` (the default), the
+        cookie is not scoped to a specific path and the browser applies its
+        default. When set, the value must start with ``/``.
+    :type PATH: URIPath | None
     """
 
     model_config = ConfigDict(
@@ -159,6 +163,7 @@ class SessionOptions(BaseModel):
     MAX_AGE: TimedeltaSeconds = timedelta(days=7)
     SAMESITE: Literal["lax", "strict", "none"] = "lax"
     SECURE: bool = True
+    PATH: URIPath | None = None
 
 
 class _DeprecatedPMMConfig(BaseLowercaseModel):
@@ -349,8 +354,14 @@ class SEPSettings(BaseYamlAppSettings):
     :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
     :type UVICORN_PORT: int
-    :param SESSION: Session configuration options.
+    :param SESSION: Session configuration options for the legacy ``authToken``
+        cookie used by the Jinja UI.
     :type SESSION: SessionOptions
+    :param SESSION_REFRESH: Session configuration options for the SPA
+        ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
+        ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
+        vars, the value must start with ``/``.
+    :type SESSION_REFRESH: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
         `Path("templates")`.
     :type TEMPLATES_DIR: RelativeDirectoryPathField
@@ -408,6 +419,10 @@ class SEPSettings(BaseYamlAppSettings):
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
     SESSION: SessionOptions = SessionOptions()
+    SESSION_REFRESH: SessionOptions = SessionOptions(
+        COOKIE_NAME="refreshToken",
+        PATH="/api/oauth",
+    )
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
