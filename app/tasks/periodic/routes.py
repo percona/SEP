@@ -93,12 +93,49 @@ async def update_periodic_task(
     task_name = updated_kwargs.get("task_name") or existing_kwargs["task_name"]
     if task_name != existing_kwargs["task_name"]:
         await get_executable_task_by_name(tasks_session, task_name)
-    if updated_task.execute_request and updated_task.execute_request.chain_task_names:
+
+    updated_chain = (
+        updated_task.execute_request.chain_task_names
+        if updated_task.execute_request
+        and updated_task.execute_request.chain_task_names
+        else None
+    )
+    existing_execution_data = existing_kwargs.get("execution_data") or {}
+    existing_chain = existing_execution_data.get("chain_task_names")
+
+    if updated_chain:
+        seen = set()
+        unique_chain = []
+        for item in updated_chain:
+            if item not in seen:
+                unique_chain.append(item)
+                seen.add(item)
+
+        if updated_task.execute_request:
+            updated_task.execute_request.chain_task_names = unique_chain
+        updated_chain = unique_chain
+
+    if updated_task.execute_request is None and existing_execution_data:
+        from app.tasks.periodic.models import PeriodicTaskExecuteRequest
+
+        updated_task.execute_request = PeriodicTaskExecuteRequest(
+            **existing_execution_data
+        )
+        logger.debug(
+            "UPDATE PERIODIC TASK - Reconstructed execute_request from existing data"
+        )
+
+    # Validate only if chain is being added or modified (not when it's unchanged)
+    if updated_chain and updated_chain != existing_chain:
+        logger.debug("UPDATE PERIODIC TASK - VALIDATING CHAIN (changed)")
         await validate_chain_task_names(
             tasks_session,
-            updated_task.execute_request.chain_task_names,
+            updated_chain,
             await get_executable_task_by_name(tasks_session, task_name),
         )
+    else:
+        logger.debug("UPDATE PERIODIC TASK - SKIPPING CHAIN VALIDATION (unchanged)")
+
     logger.debug("Updating periodic task %s", existing_task.id)
     return await PeriodicTaskManager.update(session, existing_task, updated_task)
 

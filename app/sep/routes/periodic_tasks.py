@@ -78,6 +78,15 @@ async def periodic_task_update(
     updated_task_data = updated_task.model_dump(exclude_unset=True)
     if updated_task_data:
         periodic_task_data = await tasks_api.get(f"/periodic/{periodic_task_id}")
+        if "execute_request" in updated_task_data:
+            new_chain = updated_task_data["execute_request"].get("chain_task_names")
+            if new_chain:
+                updated_task_data["execute_request"]["chain_task_names"] = list(
+                    dict.fromkeys(new_chain)
+                )
+            periodic_task_data["execute_request"] = updated_task_data.pop(
+                "execute_request"
+            )
         deep_dict_update(periodic_task_data, updated_task_data)
         await tasks_api.put(f"/periodic/{periodic_task_id}", json=periodic_task_data)
     return RedirectResponse(referer, status_code=status.HTTP_303_SEE_OTHER)
