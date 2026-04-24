@@ -231,7 +231,7 @@ def main() -> None:
     if failed_aliases:
         logger.error(
             "One or more purges failed: %s. Exiting with non-zero status.",
-            ", ".join(failed_aliases),
+            ", ".join(str(alias) for alias in failed_aliases),
         )
         sys.exit(1)
 
