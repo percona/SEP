@@ -229,7 +229,7 @@ importers:
         specifier: ~5.8.0
         version: 5.8.3
       vite:
-        specifier: ^8.0.0
+        specifier: ^8.0.10
         version: 8.0.10(@types/node@20.19.39)
       vite-tsconfig-paths:
         specifier: ^4.3.0
