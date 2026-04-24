@@ -774,7 +774,7 @@ class ExecutorHostsContext:
 
 async def get_executor_hosts_raw(
     request: Request, tasks_api: TaskAPI
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, Any]:
     """Retrieve the enriched executor hosts payload from the Tasks API.
 
     The Tasks API ``/hosts/`` endpoint returns a mapping of Nomad node name
@@ -783,13 +783,19 @@ async def get_executor_hosts_raw(
     mapping (:func:`get_executor_hosts`) or the full health data
     (:func:`get_executor_hosts_context`) derives from this single fetch.
 
+    The return annotation is kept loose (``dict[str, Any]``) so legacy
+    ``/hosts/`` clients -- and test fixtures that still mock the
+    pre-SEP-1020 ``dict[str, str]`` shape -- typecheck cleanly; runtime
+    coercion happens in :func:`extract_host_address` and in
+    :class:`ExecutorHostsContext`.
+
     :param request: The HTTP request object.
     :type request: Request
     :param tasks_api: The API client used to interact with the tasks service.
     :type tasks_api: TaskAPI
     :return: The enriched executor hosts payload, or an empty dict when the
         upstream call fails.
-    :rtype: dict[str, dict[str, Any]]
+    :rtype: dict[str, Any]
     """
     try:
         return await tasks_api.get("/hosts/")
@@ -798,7 +804,7 @@ async def get_executor_hosts_raw(
     return {}
 
 
-ExecutorHostsRaw = Annotated[dict[str, dict[str, Any]], Depends(get_executor_hosts_raw)]
+ExecutorHostsRaw = Annotated[dict[str, Any], Depends(get_executor_hosts_raw)]
 
 
 async def get_executor_hosts(
