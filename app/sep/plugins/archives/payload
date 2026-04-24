@@ -97,6 +97,7 @@ def main() -> None:
 
     pt_archiver_bin = config.get("PT_ARCHIVER_BIN") or "pt-archiver"
 
+    failed_aliases: list[str] = []
     try:
         purge_data_list = []
         default_purge = {}
@@ -204,6 +205,8 @@ def main() -> None:
                 if ret != 0:
                     logger.error("<%s> ERROR: Purge Failed", conf["prg_alias"])
                     error_on_alias.append(conf["prg_alias"])
+                    if conf["prg_alias"] not in failed_aliases:
+                        failed_aliases.append(conf["prg_alias"])
                     logger.info(">>>>>>>>>>>>>>>>>> Purge failed.")
                     if config.get("STOP_ON_ERROR"):
                         sys.exit(1)
@@ -224,6 +227,13 @@ def main() -> None:
         sys.exit(1)
     finally:
         lock.release()
+
+    if failed_aliases:
+        logger.error(
+            "One or more purges failed: %s. Exiting with non-zero status.",
+            ", ".join(str(alias) for alias in failed_aliases),
+        )
+        sys.exit(1)
 
 
 def run_cmd(cmd: str, *args: str) -> int:
