@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import type { ApiError } from '../errors';
 import type { components } from '../generated/main';
 import { mainApi, throwOnApiError } from '../typed-client';
 
@@ -12,7 +13,7 @@ import { mainApi, throwOnApiError } from '../typed-client';
 type CurrentUser = components['schemas']['CasdoorUser'];
 
 export function useCurrentUser() {
-  return useQuery<CurrentUser>({
+  return useQuery<CurrentUser, ApiError>({
     queryKey: ['users', 'me'],
     queryFn: () => throwOnApiError(mainApi.GET('/api/users/me')),
   });
