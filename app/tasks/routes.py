@@ -658,15 +658,19 @@ async def get_executor_hosts(
         )
     else:
         health_by_name = {row.node_name: row for row in health_rows}
-    return {
-        name: HostInfo(
-            address=addr,
-            healthy=getattr(health_by_name.get(name), "healthy", None),
-            last_checked=getattr(health_by_name.get(name), "last_checked", None),
-            error_message=getattr(health_by_name.get(name), "error_message", None),
-        )
-        for name, addr in hosts.items()
-    }
+    result: dict[str, HostInfo] = {}
+    for name, addr in hosts.items():
+        row = health_by_name.get(name)
+        if row is None:
+            result[name] = HostInfo(address=addr)
+        else:
+            result[name] = HostInfo(
+                address=addr,
+                healthy=row.healthy,
+                last_checked=row.last_checked,
+                error_message=row.error_message,
+            )
+    return result
 
 
 @router.post(
