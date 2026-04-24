@@ -15,14 +15,10 @@ export interface ApiErrorResponse {
 
 // ── Auth ────────────────────────────────────────────────────────────────
 
-/** Response from POST /api/oauth/token and /api/oauth/refresh */
+/** Response from POST /api/oauth/login and /api/oauth/refresh (SPA shape). */
 export interface OAuthTokenResponse {
   accessToken: string;
-  idToken: string;
-  refreshToken: string;
-  tokenType: string;
   expiresIn: number;
-  scope: string;
 }
 
 /** User profile returned by GET /api/users/me */

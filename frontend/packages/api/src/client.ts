@@ -1,4 +1,4 @@
-import axios, { type InternalAxiosRequestConfig } from 'axios';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import applyCaseMiddleware from 'axios-case-converter';
 import { ApiError, normalizeAxiosError } from './errors';
 
@@ -9,9 +9,11 @@ import { ApiError, normalizeAxiosError } from './errors';
 // AuthProvider state and the API client.
 type TokenProvider = () => string | null;
 type OnUnauthorized = () => void;
+type OnRefreshed = (accessToken: string, expiresIn: number) => void;
 
 let _getToken: TokenProvider = () => null;
 let _onUnauthorized: OnUnauthorized = () => {};
+let _onRefreshed: OnRefreshed = () => {};
 
 /** Inject a callback that returns the current access token. */
 export function setTokenProvider(provider: TokenProvider) {
@@ -21,6 +23,15 @@ export function setTokenProvider(provider: TokenProvider) {
 /** Inject a callback invoked when the API receives an unauthorized response. */
 export function setOnUnauthorized(handler: OnUnauthorized) {
   _onUnauthorized = handler;
+}
+
+/**
+ * Inject a callback invoked after a successful silent refresh triggered by
+ * the 401 retry interceptor. Lets the auth layer sync state + re-schedule
+ * its own refresh timer without owning the refresh network call.
+ */
+export function setOnRefreshed(handler: OnRefreshed) {
+  _onRefreshed = handler;
 }
 
 // ── Dev logging flag ───────────────────────────────────────────────────
@@ -35,6 +46,10 @@ const IS_DEV = import.meta.env.DEV;
 export const apiClient = applyCaseMiddleware(
   axios.create({
     baseURL: '/api',
+    // Send the HttpOnly refresh cookie on /api/oauth/* requests (same-origin
+    // requests already send cookies, but make the intent explicit so tests
+    // and any future cross-origin config keep working).
+    withCredentials: true,
     headers: {
       'Content-Type': 'application/json',
     },
@@ -56,14 +71,55 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
-// ── Response: unauthorized handling, dev logging, error normalization ──
-// In the browser, 303 redirects are followed automatically (maxRedirects is
-// Node-only), so the client may receive a 200 HTML login page instead of a
-// 303 status. We detect this by checking the response content-type.
+// ── Response: 401 refresh-retry, unauthorized handling, error normalization ──
 // Refresh endpoint is the recovery mechanism — its failures must not trigger
-// the global unauthorized handler, or a genuine refresh rejection would hard-
-// redirect instead of letting the AuthProvider bootstrap handle it cleanly.
+// the retry loop or the global unauthorized handler, or a genuine refresh
+// rejection would hard-redirect instead of letting the AuthProvider bootstrap
+// handle it cleanly.
 const isRefreshRequest = (url: string | undefined) => !!url && url.includes('/oauth/refresh');
+const isLoginRequest = (url: string | undefined) => !!url && url.includes('/oauth/login');
+
+// Internal marker so retried requests don't loop through the refresh path
+// again on a second 401.
+type RetriableConfig = InternalAxiosRequestConfig & { _retried?: boolean };
+
+// Single-flight refresh: concurrent callers (401 retry path + background
+// timer + bootstrap) share one in-flight /oauth/refresh call. The promise
+// resolves to the new access token on success and null on failure so
+// callers can decide whether to retry, surface the 401, or force logout.
+//
+// All refresh traffic must funnel through here — the refresh token cookie
+// rotates on every successful call, so parallel refreshes from different
+// code paths would invalidate each other.
+let refreshInFlight: Promise<string | null> | null = null;
+
+/**
+ * Trigger (or join) the shared silent refresh. Resolves with the new
+ * access token, or null if the refresh failed (missing/invalid cookie,
+ * network error, Casdoor rejection).
+ */
+export function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const { data } = await apiClient.post<{ accessToken: string; expiresIn: number }>(
+          '/oauth/refresh',
+        );
+        _onRefreshed(data.accessToken, data.expiresIn);
+        return data.accessToken;
+      } catch {
+        return null;
+      } finally {
+        // Clear after the microtask so all concurrent awaiters see the same
+        // resolved value before a fresh attempt becomes possible.
+        queueMicrotask(() => {
+          refreshInFlight = null;
+        });
+      }
+    })();
+  }
+  return refreshInFlight;
+}
 
 apiClient.interceptors.response.use(
   (response) => {
@@ -87,10 +143,32 @@ apiClient.interceptors.response.use(
     }
     return response;
   },
-  (error) => {
+  async (error: AxiosError) => {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
-      if ((status === 401 || status === 303) && !isRefreshRequest(error.config?.url)) {
+      const config = error.config as RetriableConfig | undefined;
+      const url = config?.url;
+
+      // 401 on a normal request: attempt one silent refresh, then retry.
+      // Skip the refresh/login endpoints themselves and already-retried requests.
+      if (
+        status === 401 &&
+        config &&
+        !config._retried &&
+        !isRefreshRequest(url) &&
+        !isLoginRequest(url)
+      ) {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          config._retried = true;
+          // Request interceptor re-reads the token provider on replay, so
+          // no need to mutate headers here beyond marking the config.
+          return apiClient.request(config);
+        }
+        // Refresh failed — treat as unauthorized.
+        _onUnauthorized();
+      } else if ((status === 401 || status === 303) && !isRefreshRequest(url)) {
+        // Retried request still 401, or non-retriable 401 (e.g. login itself).
         _onUnauthorized();
       }
     }

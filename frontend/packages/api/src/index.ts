@@ -1,5 +1,11 @@
 // API client
-export { apiClient, setTokenProvider, setOnUnauthorized } from './client';
+export {
+  apiClient,
+  refreshAccessToken,
+  setTokenProvider,
+  setOnUnauthorized,
+  setOnRefreshed,
+} from './client';
 
 // Query client
 export { createQueryClient, defaultQueryClientConfig } from './queryClient';
@@ -9,7 +15,7 @@ export { ApiError, normalizeAxiosError } from './errors';
 export type { ApiErrorDetails, ApiErrorKind } from './errors';
 
 // Auth
-export { postLogin, postRefresh, fetchCurrentUser } from './auth';
+export { postLogin, postLogout, fetchCurrentUser } from './auth';
 
 // Types
 export type { PaginatedResponse, ApiErrorResponse, OAuthTokenResponse, User } from './types/api';
