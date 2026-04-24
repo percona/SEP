@@ -58,22 +58,31 @@ export default defineConfig({
       output: {
         manualChunks: (id: string) => {
           if (
-            id.includes('/react/') ||
-            id.includes('/react-dom/') ||
-            id.includes('/react-router-dom/')
+            id.includes('/node_modules/react/') ||
+            id.includes('/node_modules/react-dom/') ||
+            id.includes('/node_modules/react-router-dom/')
           ) {
             return 'vendor-react';
           }
-          if (id.includes('/@mui/material/') || id.includes('/@mui/icons-material/')) {
+          if (
+            id.includes('/node_modules/@mui/material/') ||
+            id.includes('/node_modules/@mui/icons-material/')
+          ) {
             return 'vendor-mui';
           }
-          if (id.includes('/@emotion/react/') || id.includes('/@emotion/styled/')) {
+          if (
+            id.includes('/node_modules/@emotion/react/') ||
+            id.includes('/node_modules/@emotion/styled/')
+          ) {
             return 'vendor-emotion';
           }
-          if (id.includes('/@percona/percona-ui/') || id.includes('/material-react-table/')) {
+          if (
+            id.includes('/node_modules/@percona/percona-ui/') ||
+            id.includes('/node_modules/material-react-table/')
+          ) {
             return 'vendor-percona';
           }
-          if (id.includes('/@tanstack/react-query/')) {
+          if (id.includes('/node_modules/@tanstack/react-query/')) {
             return 'vendor-query';
           }
         },
