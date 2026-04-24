@@ -278,14 +278,19 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     mock_plugin.uri_path = "/backup_pg"
     mock_plugin.module_name = "app.sep.plugins.backup_pg"
 
+    original_plugins = sep_settings.PLUGINS
     mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
-    mocker.patch("app.core.utils.import_var", return_value=mocker.MagicMock())
+    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
 
-    importlib.reload(main_module)
+    try:
+        importlib.reload(main_module)
 
-    route_names = {r.name for r in main_module.sep_app.routes}
-    assert "periodic_task_create" in route_names
-    assert "stop_task_execution" in route_names
+        route_names = {r.name for r in main_module.sep_app.routes}
+        assert "periodic_task_create" in route_names
+        assert "stop_task_execution" in route_names
+    finally:
+        sep_settings.PLUGINS = original_plugins
+        importlib.reload(main_module)
 
 
 class TestExceptionHandlers:
