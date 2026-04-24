@@ -9,7 +9,7 @@ export { ApiError, normalizeAxiosError } from './errors';
 export type { ApiErrorDetails, ApiErrorKind } from './errors';
 
 // Auth
-export { postLogin, postRefresh, fetchCurrentUser } from './auth';
+export { postLogin, postRefresh, postLogout, fetchCurrentUser } from './auth';
 
 // Types (re-exported from generated OpenAPI schemas)
 export type { OAuthTokenResponse, SPAOAuthTokenResponse, User } from './types/api';

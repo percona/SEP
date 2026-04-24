@@ -11,6 +11,7 @@ import {
 import {
   postLogin,
   postRefresh,
+  postLogout,
   fetchCurrentUser,
   setTokenProvider,
   setOnUnauthorized,
@@ -109,8 +110,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   // ── Logout ────────────────────────────────────────────────────────────
+  // Clear local state immediately so the UI reflects the logout even if the
+  // server round-trip is slow. Fire `/oauth/logout` in the background to
+  // clear the `HttpOnly` refresh cookie — without it, a page reload would
+  // bootstrap a fresh session from the still-valid cookie. A failed request
+  // just means the cookie will expire naturally; local state is gone either
+  // way.
   const logout = useCallback(() => {
     clearAuth();
+    postLogout().catch(() => {
+      /* already logged out locally — cookie may linger until it expires */
+    });
   }, [clearAuth]);
 
   // ── Inject token provider & unauthorized handler into API client ────

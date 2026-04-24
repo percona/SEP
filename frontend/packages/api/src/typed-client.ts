@@ -9,8 +9,10 @@
  *   - `sepApi`       — SEP app
  *
  * The generated `paths` keys include the mount prefix (e.g. `/api/users/me`),
- * so every client uses `baseUrl: ''` and relies on the browser's same-origin
- * resolution — identical behaviour to the axios `apiClient`.
+ * so every client uses `baseUrl: CLIENT_BASE_URL`, which resolves to the
+ * current origin in the browser and falls back to a `http://localhost`
+ * sentinel under Node/test environments — identical same-origin behaviour
+ * to the axios `apiClient` in the browser.
  *
  * We share auth state with `apiClient` via `getToken()`/`emitUnauthorized()`
  * from `./client` — both the axios and fetch transports observe the same
@@ -76,10 +78,11 @@ const authMiddleware: Middleware = {
   },
 };
 
-// openapi-fetch builds absolute URLs as `new URL(baseUrl + path)`. In the
-// browser `baseUrl: ''` lets fetch resolve against the document origin, but
-// under Node (tests, SSR) there is no implicit origin — fall back to
-// `location.origin` if it exists, otherwise a sentinel localhost origin.
+// openapi-fetch builds absolute URLs as `new URL(baseUrl + path)`, which
+// requires an absolute base — `baseUrl: ''` throws under Node because there
+// is no implicit document origin to resolve against. Read `location.origin`
+// when available (browser, jsdom-style tests), otherwise use a
+// `http://localhost` sentinel; MSW intercepts by URL in either case.
 const CLIENT_BASE_URL =
   typeof globalThis !== 'undefined' &&
   typeof (globalThis as { location?: Location }).location?.origin === 'string'

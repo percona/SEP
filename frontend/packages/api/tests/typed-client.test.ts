@@ -6,12 +6,19 @@ import { mainApi, throwOnApiError } from '../src/typed-client';
 import { server } from './msw-server';
 
 // openapi-fetch builds absolute URLs from a `baseUrl`. The generated paths
-// already include the `/api/...` prefix, and our clients use `baseUrl: ''`,
-// so in the browser the Request resolves against the document origin.
-// Under Node we need to stub `globalThis.location` so `new URL(path)` works.
+// already include the `/api/...` prefix, and our typed clients set
+// `baseUrl` to an absolute origin. Under Node we stub `globalThis.location`
+// so the client's origin fallback resolves to `http://localhost` in these
+// tests — matching the MSW handler URLs below.
+//
+// `typed-client.ts` evaluates `CLIENT_BASE_URL` at module load (i.e. before
+// `beforeEach` runs), but the fallback path kicks in when `location` is
+// absent — which it is the first time the module is imported under Node —
+// so the computed base is already `http://localhost`. The stub here is
+// belt-and-braces in case another test suite has set `location` first.
+const ORIGINAL_LOCATION_DESCRIPTOR = Object.getOwnPropertyDescriptor(globalThis, 'location');
+
 beforeEach(() => {
-  // Node vitest ships a jsdom-like `location` via `happy-dom`/`jsdom` envs,
-  // but this test runs under the default Node env — set it explicitly.
   Object.defineProperty(globalThis, 'location', {
     configurable: true,
     value: { origin: 'http://localhost', href: 'http://localhost/' } as Location,
@@ -23,6 +30,13 @@ beforeEach(() => {
 afterEach(() => {
   setTokenProvider(() => null);
   setOnUnauthorized(() => {});
+  if (ORIGINAL_LOCATION_DESCRIPTOR) {
+    Object.defineProperty(globalThis, 'location', ORIGINAL_LOCATION_DESCRIPTOR);
+  } else {
+    // Node default: no `location` property at all. Remove the stub so other
+    // test files observing `typeof location === 'undefined'` aren't fooled.
+    delete (globalThis as { location?: unknown }).location;
+  }
 });
 
 describe('typed-client — auth middleware', () => {

@@ -37,6 +37,18 @@ export async function postRefresh(): Promise<SPAOAuthTokenResponse> {
 }
 
 /**
+ * POST /api/oauth/logout
+ *
+ * End the SPA session server-side: clears/rotates the `HttpOnly` refresh
+ * cookie so a subsequent bootstrap refresh cannot mint a new access token.
+ * Returns 204 on success; callers should still clear local state even if
+ * this request fails.
+ */
+export async function postLogout(): Promise<void> {
+  await apiClient.post('/oauth/logout', undefined, { withCredentials: true });
+}
+
+/**
  * GET /api/users/me
  *
  * Fetch the currently authenticated user profile.
