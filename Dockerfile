@@ -64,7 +64,7 @@ RUN chmod +x $APP_HOME/entrypoint_celery.sh
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 
 # Copy frontend build artifacts
-COPY --from=frontend-builder /app/packages/shell/dist/ $APP_HOME/frontend/dist/
+COPY --from=frontend-builder --chown=0:1001 /app/packages/shell/dist/ $APP_HOME/frontend/dist/
 
 # Chown all the files to the sep system user
 RUN chmod -R u+X,g+X $APP_HOME
