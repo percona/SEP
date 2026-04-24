@@ -764,7 +764,11 @@ class ExecutorHostsContext:
         if hostname in self._hosts:
             return self
         new_hosts = {**self._hosts, hostname: ""}
-        return ExecutorHostsContext(hosts=new_hosts, display_names=self._display_names)
+        return ExecutorHostsContext(
+            hosts=new_hosts,
+            display_names=self._display_names,
+            health=self._health,
+        )
 
 
 async def get_executor_hosts_raw(
