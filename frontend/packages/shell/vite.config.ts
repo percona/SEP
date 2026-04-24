@@ -56,12 +56,26 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-mui': ['@mui/material', '@mui/icons-material'],
-          'vendor-emotion': ['@emotion/react', '@emotion/styled'],
-          'vendor-percona': ['@percona/percona-ui', 'material-react-table'],
-          'vendor-query': ['@tanstack/react-query'],
+        manualChunks: (id: string) => {
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('/react-router-dom/')
+          ) {
+            return 'vendor-react';
+          }
+          if (id.includes('/@mui/material/') || id.includes('/@mui/icons-material/')) {
+            return 'vendor-mui';
+          }
+          if (id.includes('/@emotion/react/') || id.includes('/@emotion/styled/')) {
+            return 'vendor-emotion';
+          }
+          if (id.includes('/@percona/percona-ui/') || id.includes('/material-react-table/')) {
+            return 'vendor-percona';
+          }
+          if (id.includes('/@tanstack/react-query/')) {
+            return 'vendor-query';
+          }
         },
       },
     },
