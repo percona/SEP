@@ -96,9 +96,9 @@ jobs:
           path: |
             ~/.cache/pypoetry/virtualenvs
             ~/.cache/pypoetry/cache
-          key: poetry-precommit-${{ runner.os }}-py3.11-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
+          key: poetry-precommit-${{ runner.os }}-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
           restore-keys: |
-            poetry-precommit-${{ runner.os }}-py3.11-
+            poetry-precommit-${{ runner.os }}-
 
       - name: Cache pre-commit hook environments
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -123,7 +123,7 @@ jobs:
   build:
     # Run when Python or Docker-relevant paths change. Use always() so the job
     # still runs when `python` is skipped (no .py changes but Containerfile /
-    # bundle assets changed). Any failures in `python` still stops
+    # bundle assets changed). Any `python` failures will stop the run
     if: >-
       ${{
         always() &&
