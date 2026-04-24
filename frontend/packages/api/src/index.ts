@@ -1,3 +1,5 @@
+/// <reference path="./vite-env.d.ts" />
+
 // API client
 export { apiClient, setTokenProvider, setOnUnauthorized } from './client';
 
@@ -43,6 +45,7 @@ export type {
   FloatField,
   BoolField,
   ChoiceField,
+  MultiChoiceField,
   TextAreaField,
   DateTimeField,
   FileField,
@@ -50,6 +53,7 @@ export type {
   ServiceField,
   SchemaField,
   TableField,
+  HostField,
 } from './types/plugin-schema';
 
 // Hooks
