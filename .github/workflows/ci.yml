@@ -50,6 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.filter.outputs.python }}
+      frontend: ${{ steps.filter.outputs.frontend }}
       docker: ${{ steps.filter.outputs.docker }}
     steps:
       - name: Checkout codebase
@@ -64,6 +65,9 @@ jobs:
               - '**/**.py'
               - 'pyproject.toml'
               - 'poetry.lock'
+            frontend:
+              - 'frontend/**'
+              - 'package.json'
             docker:
               - '**'
               - '!**/*.md'
@@ -116,6 +120,13 @@ jobs:
   python:
     if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.python == 'true' }}
     uses: ./.github/workflows/python.yaml
+    needs:
+      - label-gate
+      - changes
+
+  frontend:
+    if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.frontend == 'true' }}
+    uses: ./.github/workflows/frontend.yaml
     needs:
       - label-gate
       - changes
@@ -174,6 +185,7 @@ jobs:
       - changes
       - precommit
       - python
+      - frontend
       - build
     runs-on: ubuntu-latest
     steps:
