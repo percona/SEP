@@ -61,6 +61,23 @@ class OAuthToken(BaseModel):
     scope: str
 
 
+class SPAOAuthTokenResponse(BaseModel):
+    """Represent the slim OAuth token response returned to SPA clients.
+
+    Omit ``refresh_token``, ``id_token``, ``token_type``, and ``scope``. The
+    SPA keeps the refresh token in an ``HttpOnly`` cookie and derives nothing
+    from the other fields.
+
+    :param access_token: The token used to access protected resources.
+    :type access_token: str
+    :param expires_in: The time duration after which the access token expires.
+    :type expires_in: TimedeltaSeconds
+    """
+
+    access_token: str
+    expires_in: TimedeltaSeconds
+
+
 class BaseTokenPayload(BaseModel, ABC):
     """Base abstract class representing the payload of a JWT token.
 

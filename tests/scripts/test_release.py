@@ -571,17 +571,33 @@ def _patch_rc_ok(monkeypatch, *, rc=1, webhook_result=True, webhook_calls=None):
 
     monkeypatch.setattr(release, "_post_webhook", spy_webhook)
 
+    def spy_push_commit(*_a, **kwargs):
+        call_order.append(("api_commit", kwargs.get("message")))
+        return "fakecommitsha"
+
+    def spy_create_tag(tag, target_sha):
+        call_order.append(("api_tag", tag, target_sha))
+
+    monkeypatch.setattr(
+        release,
+        "_api_branch_head_sha",
+        lambda *_a, **_kw: "fakebasesha",
+    )
+    monkeypatch.setattr(release, "_api_push_signed_commit", spy_push_commit)
+    monkeypatch.setattr(release, "_api_create_tag_ref", spy_create_tag)
+
     def fake_wheel_exists(self):
         return True
 
     monkeypatch.setattr(release.Path, "exists", fake_wheel_exists)
+    monkeypatch.setattr(release.Path, "read_text", lambda _self, **_kw: "")
     return runner, call_order
 
 
 def test_rc_webhook_success_omits_reminder(monkeypatch, capsys):
     """With RC=1 and a successful webhook, the reminder is omitted."""
     _patch_rc_ok(monkeypatch, rc=1, webhook_result=True)
-    assert release.cmd_rc("0.12.0", 1) == 0
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 0
     out = capsys.readouterr().out
     assert "Create Jira version" not in out
 
@@ -589,7 +605,7 @@ def test_rc_webhook_success_omits_reminder(monkeypatch, capsys):
 def test_rc_webhook_failure_includes_reminder(monkeypatch, capsys):
     """With RC=1 and a failed webhook, the reminder is present."""
     _patch_rc_ok(monkeypatch, rc=1, webhook_result=False)
-    assert release.cmd_rc("0.12.0", 1) == 0
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 0
     out = capsys.readouterr().out
     assert "Create Jira version 0.12.0" in out
 
@@ -598,7 +614,7 @@ def test_rc_with_rc_gt_1_skips_webhook(monkeypatch, capsys):
     """RC > 1 never calls the webhook nor emits the reminder."""
     calls = []
     _patch_rc_ok(monkeypatch, rc=2, webhook_result=True, webhook_calls=calls)
-    assert release.cmd_rc("0.12.0", 2) == 0
+    assert release.cmd_rc("0.12.0", 2, sign_via_github_api=True) == 0
     out = capsys.readouterr().out
     assert calls == []
     assert "Create Jira version" not in out
@@ -608,7 +624,7 @@ def test_rc_with_rc_1_calls_webhook(monkeypatch, capsys):
     """RC=1 calls the webhook exactly once with the create-URL env vars."""
     calls = []
     _patch_rc_ok(monkeypatch, rc=1, webhook_result=True, webhook_calls=calls)
-    assert release.cmd_rc("0.12.0", 1) == 0
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 0
     assert calls == [
         (
             release.WEBHOOK_CREATE_URL_ENV,
@@ -619,31 +635,23 @@ def test_rc_with_rc_1_calls_webhook(monkeypatch, capsys):
 
 
 def test_rc_fires_webhook_after_branch_creation_and_before_build(monkeypatch):
-    """RC=1 webhook fires after ``git checkout -b`` and before commit/tag/build."""
+    """RC=1 webhook fires after ``git checkout -b`` and before build/API commit/tag."""
     _, call_order = _patch_rc_ok(monkeypatch, rc=1, webhook_result=True)
-    assert release.cmd_rc("0.12.0", 1) == 0
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 0
     webhook_idx = next(i for i, c in enumerate(call_order) if c[0] == "webhook")
     checkout_idx = next(
         i
         for i, c in enumerate(call_order)
         if c[0] == "run" and c[1][:3] == ("git", "checkout", "-b")
     )
-    commit_idx = next(
-        i
-        for i, c in enumerate(call_order)
-        if c[0] == "run" and c[1][:2] == ("git", "commit")
-    )
-    tag_idx = next(
-        i
-        for i, c in enumerate(call_order)
-        if c[0] == "run" and c[1][:2] == ("git", "tag")
-    )
     build_idx = next(
         i
         for i, c in enumerate(call_order)
         if c[0] == "run" and c[1] == ("make", "build")
     )
-    assert checkout_idx < webhook_idx < commit_idx < tag_idx < build_idx
+    api_commit_idx = next(i for i, c in enumerate(call_order) if c[0] == "api_commit")
+    api_tag_idx = next(i for i, c in enumerate(call_order) if c[0] == "api_tag")
+    assert checkout_idx < webhook_idx < build_idx < api_commit_idx < api_tag_idx
 
 
 # --- cmd_rc preconditions --------------------------------------------------
@@ -653,7 +661,7 @@ def test_rc1_rejects_non_main_branch(monkeypatch, capsys):
     """RC=1 aborts with exit 1 when the current branch is not ``main``."""
     runner = _FakeRunner(_make_rc_preconditions(branch="feature/x"))
     monkeypatch.setattr(release, "_run", runner)
-    assert release.cmd_rc("0.12.0", 1) == 1
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 1
     assert "RC=1 requires being on the main branch" in capsys.readouterr().err
 
 
@@ -663,7 +671,7 @@ def test_rc_rejects_dirty_working_tree(monkeypatch, capsys):
     responses[("git", "status", "--porcelain")] = " M some_file.py\n"
     runner = _FakeRunner(responses)
     monkeypatch.setattr(release, "_run", runner)
-    assert release.cmd_rc("0.12.0", 1) == 1
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 1
     assert "Working tree is not clean" in capsys.readouterr().err
 
 
@@ -672,8 +680,36 @@ def test_rc1_rejects_existing_local_branch(monkeypatch, capsys):
     runner = _FakeRunner(_make_rc_preconditions(branch="main"))
     monkeypatch.setattr(release, "_run", runner)
     monkeypatch.setattr(release, "_local_branch_exists", lambda _branch: True)
-    assert release.cmd_rc("0.12.0", 1) == 1
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 1
     assert "already exists locally" in capsys.readouterr().err
+
+
+def test_rc_via_git_commits_tags_and_pushes(monkeypatch):
+    """``sign_via_github_api=False`` uses local ``git commit``/``tag``/``push``."""
+    _, call_order = _patch_rc_ok(monkeypatch, rc=1, webhook_result=True)
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=False) == 0
+
+    run_cmds = [c[1] for c in call_order if c[0] == "run"]
+    assert ("git", "commit", "-am", "Bump version to v0.12.0rc1") in run_cmds
+    assert ("git", "tag", "v0.12.0rc1") in run_cmds
+    assert (
+        "git",
+        "push",
+        "origin",
+        "release/v0.12.0",
+        "v0.12.0rc1",
+    ) in run_cmds
+    assert not any(c[0] == "api_commit" for c in call_order)
+    assert not any(c[0] == "api_tag" for c in call_order)
+
+
+def test_rc_via_github_api_errors_without_gh(monkeypatch, capsys):
+    """``--sign-via-github-api`` aborts when the ``gh`` CLI is not installed."""
+    runner = _FakeRunner(_make_rc_preconditions(branch="main"))
+    monkeypatch.setattr(release, "_run", runner)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 1
+    assert "--sign-via-github-api requires the gh CLI" in capsys.readouterr().err
 
 
 # --- cmd_stable end-to-end -------------------------------------------------
@@ -702,14 +738,27 @@ def _patch_stable_ok(monkeypatch, *, webhook_result=True, webhook_calls=None):
 
     monkeypatch.setattr(release, "_post_webhook", spy_webhook)
 
+    monkeypatch.setattr(
+        release,
+        "_api_branch_head_sha",
+        lambda *_a, **_kw: "fakebasesha",
+    )
+    monkeypatch.setattr(
+        release,
+        "_api_push_signed_commit",
+        lambda *_a, **_kw: "fakecommitsha",
+    )
+    monkeypatch.setattr(release, "_api_create_tag_ref", lambda *_a, **_kw: None)
+
     monkeypatch.setattr(release.Path, "exists", lambda _self: True)
+    monkeypatch.setattr(release.Path, "read_text", lambda _self, **_kw: "")
     return runner, call_order
 
 
 def test_stable_webhook_success_omits_reminder(monkeypatch, jenkins_env, capsys):
     """With Jenkins configured + webhook success, the reminder is omitted."""
     _patch_stable_ok(monkeypatch, webhook_result=True)
-    assert release.cmd_stable("0.12.0") == 0
+    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
     out = capsys.readouterr().out
     assert "Mark Jira version" not in out
 
@@ -717,7 +766,7 @@ def test_stable_webhook_success_omits_reminder(monkeypatch, jenkins_env, capsys)
 def test_stable_webhook_failure_includes_reminder(monkeypatch, jenkins_env, capsys):
     """With Jenkins configured + webhook failure, the reminder is present."""
     _patch_stable_ok(monkeypatch, webhook_result=False)
-    assert release.cmd_stable("0.12.0") == 0
+    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
     out = capsys.readouterr().out
     assert "Mark Jira version 0.12.0 as released" in out
 
@@ -726,7 +775,7 @@ def test_stable_calls_webhook_with_release_env_vars(monkeypatch, jenkins_env):
     """Stable flow calls the webhook exactly once with the release env vars."""
     calls = []
     _patch_stable_ok(monkeypatch, webhook_result=True, webhook_calls=calls)
-    assert release.cmd_stable("0.12.0") == 0
+    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
     assert calls == [
         (
             release.WEBHOOK_RELEASE_URL_ENV,
@@ -741,7 +790,7 @@ def test_stable_skips_webhook_when_jenkins_url_unset(monkeypatch, jenkins_env, c
     monkeypatch.delenv("JENKINS_URL")
     calls = []
     _patch_stable_ok(monkeypatch, webhook_result=True, webhook_calls=calls)
-    assert release.cmd_stable("0.12.0") == 0
+    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
     captured = capsys.readouterr()
     assert calls == []
     assert "Mark Jira version 0.12.0 as released" in captured.out
@@ -754,10 +803,30 @@ def test_stable_skips_webhook_when_all_jenkins_env_vars_unset(monkeypatch, capsy
         monkeypatch.delenv(name, raising=False)
     calls = []
     _patch_stable_ok(monkeypatch, webhook_result=True, webhook_calls=calls)
-    assert release.cmd_stable("0.12.0") == 0
+    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
     captured = capsys.readouterr()
     assert calls == []
     assert "Mark Jira version 0.12.0 as released" in captured.out
+
+
+def test_stable_via_git_commits_tags_and_pushes(monkeypatch, jenkins_env):
+    """``sign_via_github_api=False`` uses local ``git commit``/``tag``/``push``."""
+    _, call_order = _patch_stable_ok(monkeypatch, webhook_result=True)
+    assert release.cmd_stable("0.12.0", sign_via_github_api=False) == 0
+
+    run_cmds = [c[1] for c in call_order if c[0] == "run"]
+    assert ("git", "commit", "-am", "Bump version to v0.12.0") in run_cmds
+    assert ("git", "tag", "v0.12.0") in run_cmds
+    assert ("git", "push", "origin", "release/v0.12.0", "v0.12.0") in run_cmds
+
+
+def test_stable_via_github_api_errors_without_gh(monkeypatch, capsys):
+    """``--sign-via-github-api`` aborts when the ``gh`` CLI is not installed."""
+    runner = _FakeRunner(_make_stable_preconditions("0.12.0"))
+    monkeypatch.setattr(release, "_run", runner)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 1
+    assert "--sign-via-github-api requires the gh CLI" in capsys.readouterr().err
 
 
 # --- argparse --------------------------------------------------------------
@@ -799,7 +868,7 @@ def test_argparse_rc_rejects_negative(capsys):
 def test_main_catches_called_process_error_with_list_cmd(monkeypatch, capsys):
     """``main`` surfaces a failing subprocess as a single concise stderr line."""
 
-    def raise_cpe(version, rc):
+    def raise_cpe(version, rc, *, sign_via_github_api):
         raise subprocess.CalledProcessError(returncode=128, cmd=["git", "push"])
 
     monkeypatch.setattr(release, "cmd_rc", raise_cpe)
@@ -812,7 +881,7 @@ def test_main_catches_called_process_error_with_list_cmd(monkeypatch, capsys):
 def test_main_catches_called_process_error_with_string_cmd(monkeypatch, capsys):
     """``main`` handles a ``CalledProcessError`` whose ``cmd`` is a plain string."""
 
-    def raise_cpe(version):
+    def raise_cpe(version, *, sign_via_github_api):
         raise subprocess.CalledProcessError(returncode=1, cmd="make build")
 
     monkeypatch.setattr(release, "cmd_stable", raise_cpe)

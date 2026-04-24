@@ -22,11 +22,11 @@ from fastapi import status
 from fastapi.exceptions import HTTPException
 
 from app.sep.clients.pmm import AlertRule, Folder, NotificationPolicy, PMMRemoteAPI
-from app.sep.plugins.alerts.backup import AlertBackup
 from app.sep.plugins.alerts.config import alerts_pmm_config
 from app.sep.plugins.alerts.deps import find_or_create_alert_folder
 from app.sep.plugins.alerts.loader import get_alert_templates
 from app.sep.plugins.alerts.models import (
+    AlertBackup,
     AlertTemplate,
     DEFAULT_FOR_DURATION,
     to_pmm_template_yaml,

@@ -27,6 +27,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
+from app import __summary__, __version__
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
@@ -39,7 +40,7 @@ from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings
-from app.sep.db.seed import create_plugin_tables, init_sep_db
+from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -67,11 +68,10 @@ JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/checksums/api/", "/api/plugins/")
 async def sep_startup() -> None:
     """Define actions to perform on SEP startup.
 
-    Initialize the SEP periodic task database, create plugin-scoped tables, and trigger
-    the initial synchronization of snippets if configured to do so.
+    Initialize the SEP periodic task database and trigger the initial
+    synchronization of snippets if configured to do so.
     """
     await init_sep_db()
-    await create_plugin_tables()
     if snippets_settings.SYNC_ON_STARTUP:
         sync_snippets.delay()
 
@@ -111,6 +111,13 @@ sep_app = create_app(
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
+    title="SEP Web Application API",
+    version=__version__,
+    description=(
+        f"{__summary__}\n\n"
+        "Browser-oriented SEP routes (HTML, redirects, proxies, streams). "
+        "JSON REST APIs for inventory and tasks live on the mounted sub-apps."
+    ),
 )
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)

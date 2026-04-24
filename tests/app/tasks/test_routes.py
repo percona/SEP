@@ -24,20 +24,29 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 from fastapi import status
+from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import get_current_user
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
+from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.tasks.config import PreExecutionCheckMode
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import _cached_check_connectivity
-from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.deps import get_executor, get_session
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
+from app.tasks.main import tasks_app
 from app.tasks.models import (
+    DispatchLock,
     ExecutionEvent,
     Task,
+    TaskBackendEnum,
+    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskLogType,
@@ -238,6 +247,210 @@ async def test_retrieve_task_history_by_id_not_found(test_client):
     """Assert retrieving a non-existing task history returns 404."""
     response = test_client.get("/history/99999")
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+async def _seed_legacy_blob(
+    session: AsyncSession, history: TaskHistory, legacy: dict
+) -> None:
+    """Encode ``legacy`` as gzip+base64 and persist it in ``tracking["task_logs"]``.
+
+    Mirrors the seeding pattern used by the stream-logs legacy fallback tests so
+    both code paths exercise the same blob shape.
+    """
+    encoded = base64.b64encode(gzip.compress(json_lib.dumps(legacy).encode())).decode()
+    history.execution_request.tracking["task_logs"] = encoded
+    await TaskHistoryManager.save(
+        session, history, flag_modified_fields=["execution_request"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_has_logs_false_by_default(
+    test_client, created_task_with_history
+):
+    """Assert ``has_logs`` is ``False`` when no chunks and no legacy blob exist."""
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["has_logs"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_has_logs_true_from_chunk_store(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is ``True`` when the chunk store has rows."""
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_has_logs_true_from_legacy_blob(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is ``True`` when only the legacy blob is present."""
+    await _seed_legacy_blob(
+        session,
+        created_task_with_history,
+        {"run-script": {"stdout": "legacy stdout", "stderr": ""}},
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_has_logs_mixed_rows(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is independently populated per row (chunk / legacy / none)."""
+    task = created_task_with_history.task
+    with_chunks = await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            execution_request={
+                "task": task.name,
+                "target": "node2",
+                "meta": {"target": "node2"},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by="test-user",
+        ),
+    )
+    without_logs = await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            execution_request={
+                "task": task.name,
+                "target": "node3",
+                "meta": {"target": "node3"},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by="test-user",
+        ),
+    )
+    await TaskHistoryLogWriter.append(
+        session,
+        with_chunks.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+    await _seed_legacy_blob(
+        session,
+        created_task_with_history,
+        {"run-script": {"stdout": "legacy", "stderr": ""}},
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    items_by_id = {item["id"]: item for item in response.json()["items"]}
+    assert items_by_id[with_chunks.id]["has_logs"] is True
+    assert items_by_id[created_task_with_history.id]["has_logs"] is True
+    assert items_by_id[without_logs.id]["has_logs"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_empty_does_not_crash(test_client):
+    """Assert the empty-list case returns 200 and no SQL from ``ids_with_chunks``."""
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_task_history_populates_has_logs(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is populated on the ``/{task}/history/`` list endpoint."""
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    response = test_client.get(f"/{created_task_with_history.task.name}/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["items"][0]["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_populates_has_logs_from_chunk_store(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is ``True`` on the retrieve-by-id endpoint for chunk rows."""
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_populates_has_logs_from_legacy_blob(
+    test_client, session, created_task_with_history
+):
+    """Assert ``has_logs`` is ``True`` on the retrieve endpoint for legacy-only rows."""
+    await _seed_legacy_blob(
+        session,
+        created_task_with_history,
+        {"run-script": {"stdout": "legacy", "stderr": ""}},
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_has_logs_false_when_neither(
+    test_client, created_task_with_history
+):
+    """Assert ``has_logs`` is ``False`` when neither chunks nor legacy blob exist."""
+    response = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is False
 
 
 @pytest.mark.asyncio
@@ -530,7 +743,7 @@ async def test_sync_task_history_running_calls_executor(
     created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
     await TaskHistoryManager.save(session, created_task_with_history)
 
-    async def fake_sync(item):
+    async def fake_sync(item, writer_session=None):
         item.status = TaskHistoryStatusEnum.SUCCESS
         item.finished_at = utc_now()
         return item
@@ -551,6 +764,86 @@ async def test_sync_task_history_not_running_skips_executor(
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
     mock_executor.sync_task_history.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_sync_task_history_not_running_still_populates_has_logs(
+    test_client, session, created_task_with_history
+):
+    """Assert the early-return branch (already-finished) still populates ``has_logs``.
+
+    Regression: the sync endpoint short-circuits when the task has already
+    finished. Before the fix, the early return skipped ``_populate_has_logs``
+    so the response always had ``has_logs=False`` even when chunks existed,
+    which broke the API contract relative to ``GET /history/{id}``.
+    """
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_sync_task_history_populates_has_logs(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert the sync endpoint populates ``has_logs`` when chunks exist."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    async def fake_sync(item, writer_session=None):
+        item.status = TaskHistoryStatusEnum.SUCCESS
+        item.finished_at = utc_now()
+        return item
+
+    mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
+
+
+@pytest.mark.asyncio
+async def test_stop_task_running_populates_has_logs(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert the stop endpoint populates ``has_logs`` on the running → stopped response."""
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"chunk output",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+    mock_executor.stop_task.return_value = created_task_with_history
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["has_logs"] is True
 
 
 @pytest.mark.asyncio
@@ -843,6 +1136,136 @@ async def test_execute_task_name_with_eta_serializes_deferred_execution_request(
     assert (
         data["execution_request"]["tracking"]["celery_task_id"] == "fake-celery-task-id"
     )
+
+
+@pytest.mark.asyncio
+async def test_execute_route_keeps_scheduled_at_out_of_meta(
+    test_client, session, mocker
+):
+    """Assert POST /execute/{task_name} never writes ``scheduled_at`` to meta.
+
+    The dispatch dedup path iterates every meta key to identify identical
+    pending/running tasks, so a per-call timestamp would silently disable
+    the guard. The staleness value is derived at dispatch time from ``eta``
+    / ``created_at`` instead.
+    """
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="stale-meta-free", anonymize_mask=0)
+        ),
+    )
+
+    async def fake_dispatch_queue_item(queue_item, passed_session):
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        return await TaskHistoryManager.save(
+            passed_session,
+            queue_item,
+            flag_modified_fields=["execution_request"],
+        )
+
+    fake_executor = MagicMock(spec=BaseExecutor)
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    mocker.patch(
+        "app.tasks.routes.dispatch_queue_item",
+        side_effect=fake_dispatch_queue_item,
+    )
+
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1", "meta_foo": "bar"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    meta = response.json()["execution_request"]["meta"]
+    assert meta["target"] == "node1"
+    assert meta["foo"] == "bar"
+    assert "scheduled_at" not in meta
+
+
+@pytest.mark.asyncio
+async def test_execute_task_name_refreshes_execution_request_before_annotation(
+    test_client, session, mock_executor, mocker
+):
+    """Assert the STARTED annotation fires against a loaded ``execution_request``.
+
+    Regression for SEP-1017. Exercise the full
+    ``POST /execute/{task_name}`` → ``_dispatch_queue_item`` →
+    ``schedule_annotation(result, "STARTED")`` flow with a real session
+    and a fake executor whose ``dispatch_task`` runs the real
+    ``TaskHistoryManager.save`` (which re-defers the deferred
+    ``execution_request`` ``column_property``). Let the real
+    ``schedule_annotation`` run so its precondition guard exercises
+    against the refreshed instance; mock only
+    ``create_pmm_annotation`` (the outermost HTTP boundary) and assert
+    the annotation was scheduled with the expected primitives.
+
+    Before the fix, this test reproduces ``MissingGreenlet`` against the
+    async ``aiosqlite`` driver.
+    """
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(name="annotation-task", anonymize_mask=0)
+        ),
+    )
+
+    async def fake_dispatch_task(passed_session, queue_item, _task=None):
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        return await TaskHistoryManager.save(
+            passed_session, queue_item, flag_modified_fields=["execution_request"]
+        )
+
+    mock_executor.dispatch_task = fake_dispatch_task
+
+    mocker.patch(
+        "app.tasks.celery.DispatchLockManager.delete_where",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.tasks.celery.DispatchLockManager.create",
+        new_callable=AsyncMock,
+        return_value=MagicMock(spec=DispatchLock),
+    )
+    mocker.patch("app.tasks.celery.DispatchLockManager.delete", new_callable=AsyncMock)
+    mocker.patch(
+        "app.tasks.celery._raise_if_identical_task_conflict", new_callable=AsyncMock
+    )
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=mock_executor)
+    mocker.patch("app.tasks.celery.get_executor_for_task", return_value=mock_executor)
+    mock_pmm_create = mocker.patch(
+        "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+    )
+    _background_tasks.clear()
+
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1"},
+    )
+
+    for bg_task in list(_background_tasks):
+        await bg_task
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["status"] == TaskHistoryStatusEnum.RUNNING.value
+    mock_pmm_create.assert_awaited_once()
+    assert mock_pmm_create.await_args.kwargs["text"].endswith("- STARTED")
+    assert mock_pmm_create.await_args.kwargs["node_name"] == "node1"
+
+
+# Note: the corresponding regression for ``POST /history/{id}/stop/`` →
+# ``BaseExecutor.stop_task`` → ``schedule_annotation(saved, "STOPPED")``
+# lives at helper level in
+# ``tests/app/tasks/execution/test_models.py::TestStopTaskRegression``.
+# That test exercises the real ``BaseExecutor.stop_task`` against a real
+# ``AsyncSession`` — the exact code path SEP-1017 fixes. An HTTP-level
+# peer would additionally exercise response-model serialization, which
+# hits a pre-existing deferred-relationship issue on ``TaskHistory.task``
+# that is out of scope for SEP-1017; the existing
+# ``test_stop_task_running_calls_executor`` already covers the route's
+# 200 contract.
 
 
 CONNECTIVITY_META = {
@@ -1324,3 +1747,95 @@ class TestPreExecutionConnectivityCheck:
         assert response.status_code == status.HTTP_200_OK
         mock_check.assert_not_called()
         mock_dispatch.assert_called_once()
+
+
+@pytest.mark.asyncio
+class TestSyncTaskHistoryRealSession:
+    """Integration coverage for POST /history/{id}/sync/ with a real session.
+
+    Regression for SEP-1035: a real HTTP POST must open a fresh writer
+    session, forward it to executor.sync_task_history, and let the Nomad
+    executor's _persist_nomad_task_logs append chunks to taskhistory_log.
+    """
+
+    async def test_sync_running_persists_logs_via_writer_session(
+        self,
+        regular_user,
+        session: AsyncSession,
+        mock_executor: AsyncMock,
+    ):
+        """Verify the sync route drives log persistence through writer_session."""
+        test_session_maker = get_async_session_maker_from_engine(session.bind)
+
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name="run-python",
+                    backend=TaskBackendEnum.NOMAD,
+                    is_template=False,
+                    protected=False,
+                    alert_on_fail=False,
+                )
+            ),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node1",
+                meta={"target": "node1"},
+                tracking={"evaluation_id": "eval-1", "allocation_id": "alloc-1"},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+            executed_by="test-user",
+        )
+        saved_history = await TaskHistoryManager.save(session, history)
+
+        stdout_bytes = b"fresh stdout chunk"
+
+        async def fake_sync(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            assert writer_session is not None
+            await TaskHistoryLogWriter.append(
+                writer_session,
+                queue_item.id,
+                source="run-script",
+                stream=TaskLogType.STDOUT,
+                new_bytes=stdout_bytes,
+                force_flush=True,
+                producer_offset_after=len(stdout_bytes),
+            )
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            queue_item.finished_at = utc_now()
+            return queue_item
+
+        mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+
+        tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
+        tasks_app.dependency_overrides[get_session] = lambda: session
+        tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+
+        try:
+            with patch(
+                "app.tasks.routes.get_async_session_maker",
+                return_value=test_session_maker,
+            ):
+                transport = ASGITransport(app=tasks_app)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as client:
+                    response = await client.post(f"/history/{saved_history.id}/sync/")
+        finally:
+            tasks_app.dependency_overrides = {}
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        mock_executor.sync_task_history.assert_awaited_once()
+        call_kwargs = mock_executor.sync_task_history.await_args.kwargs
+        assert "writer_session" in call_kwargs
+        assert call_kwargs["writer_session"] is not None
+        assert await TaskHistoryLogManager.exists_for_task(session, saved_history.id)

@@ -21,6 +21,7 @@ else
 endif
 PIP?="${VENV_BIN}/pip"
 APPS=tasks inventory sep
+PYTEST_WORKERS?=auto
 
 venv: pyproject.toml poetry.lock
 	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "venv" ] || "${PYTHON}" -m venv "${VENV}"
@@ -86,7 +87,12 @@ makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app
 			elif grep -q "New upgrade operations detected" alembic_check.log; then \
 				echo "New upgrade operations detected for $$capitalized. Creating migration."; \
 				read -p "Enter description for new $$capitalized Migration: " desc; \
-				"${VENV_BIN}"/alembic --name $$app revision --autogenerate -m "$$desc"; \
+				if [ "$$app" = "sep" ]; then \
+					extra_args="--head=sep_main@head"; \
+				else \
+					extra_args=""; \
+				fi; \
+				"${VENV_BIN}"/alembic --name $$app revision --autogenerate $$extra_args -m "$$desc"; \
 				rm alembic_check.log; \
 				continue; \
 			else \
@@ -99,9 +105,16 @@ makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app
 		echo "No new upgrade operations detected for $$capitalized"; \
 	done
 
+makemigrations-plugin: venv alembic.ini
+ifndef PLUGIN
+	$(error PLUGIN is required. Usage: make makemigrations-plugin PLUGIN=<plugin-name>)
+endif
+	@read -p "Enter description for new $(PLUGIN) plugin migration: " desc; \
+	"${VENV_BIN}"/alembic --name sep revision --autogenerate --head=$(PLUGIN)@head -m "$$desc"
+
 migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations/versions app/sep/migrations/versions
 	@for app in $(APPS); do \
-		"${VENV_BIN}"/alembic --name $$app upgrade head; \
+		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
 	done
 
 checkmigrations: migrate
@@ -117,7 +130,7 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@"${VENV_BIN}"/pytest -v -r a -n auto --cov=app tests/
+	@"${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app tests/
 
 changelog-add:
 ifndef TICKET
@@ -137,6 +150,8 @@ changelog-check:
 changelog-list:
 	@$(PYTHON) scripts/changelog.py list
 
+SIGN_FLAG := $(if $(SIGN_VIA_API),--sign-via-github-api,)
+
 release-rc:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
@@ -144,13 +159,13 @@ endif
 ifndef RC
 	$(error RC is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
 endif
-	@$(PYTHON) scripts/release.py rc --version "$(VERSION)" --rc "$(RC)"
+	@$(PYTHON) scripts/release.py rc --version "$(VERSION)" --rc "$(RC)" $(SIGN_FLAG)
 
 release-stable:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-stable VERSION=X.Y.Z)
 endif
-	@$(PYTHON) scripts/release.py stable --version "$(VERSION)"
+	@$(PYTHON) scripts/release.py stable --version "$(VERSION)" $(SIGN_FLAG)
 
 trigger-jenkins:
 ifndef TAG
@@ -173,4 +188,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations migrate checkmigrations test release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
