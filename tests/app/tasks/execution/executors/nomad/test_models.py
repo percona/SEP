@@ -17,6 +17,7 @@
 
 import asyncio
 import json
+import time
 from base64 import b64encode
 from binascii import b2a_base64
 from datetime import datetime, UTC
@@ -39,11 +40,13 @@ from app.tasks.execution.executors.nomad.models import (
     _detect_stale_skip,
     _NOMAD_LOG_STREAM_CLIENT_ERROR,
     _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
+    _PROBE_JOB_ID_PREFIX,
     NOMAD_DEAD_JOB_STATUS,
     nomad_task_states_to_execution_events,
     NomadAllocStatusEnum,
     NomadExecutor,
 )
+from app.tasks.execution.models import HealthCheckResult
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.models import (
     ExecutionEvent,
@@ -2471,3 +2474,208 @@ class TestNomadTaskStatesToExecutionEvents:
         assert out[0].event_type == "Setup"
         assert "Downloading Artifacts" in out[0].description
         assert out[0].step == "step1"
+
+
+class TestCheckHostHealth:
+    """Test NomadExecutor.check_host_health.
+
+    The probe path registers a one-shot concrete batch job, polls Nomad
+    for its terminal status, evaluates the last allocation, and purges the
+    job in a ``finally`` block. Each test stubs
+    :attr:`NomadExecutor.backend` with a ``MagicMock`` and drives the
+    relevant sub-calls explicitly; no real Nomad client is involved.
+    """
+
+    @staticmethod
+    def _healthy_executor(backend: MagicMock) -> NomadExecutor:
+        """Build a probe-optimized executor whose Nomad client is ``backend``."""
+        executor = _build_executor(
+            health_check_timeout=2,
+            health_check_poll_interval=0,
+        )
+        # ``cached_property`` on the pydantic model is patched via the
+        # instance __dict__ so the mock sticks for the rest of the test.
+        object.__setattr__(executor, "backend", backend)
+        return executor
+
+    @pytest.mark.asyncio
+    async def test_healthy_job_completes_cleanly(self):
+        """Register + poll + evaluate + purge when Nomad returns ``complete``."""
+        backend = MagicMock()
+        backend.job.register_job.return_value = {"EvalID": "eval-1"}
+        backend.job.get_job.return_value = {
+            "ID": "some-probe",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+        }
+        backend.allocations.get_allocations.return_value = [
+            {
+                "ID": "alloc-1",
+                "JobID": "some-probe",
+                "EvalID": "eval-1",
+                "ClientStatus": NomadAllocStatusEnum.COMPLETE,
+                "TaskStates": None,
+            }
+        ]
+        executor = self._healthy_executor(backend)
+
+        result = await executor.check_host_health("node-a", "10.0.0.1")
+
+        assert result == HealthCheckResult(healthy=True)
+        register_call = backend.job.register_job.call_args
+        job_id = register_call.kwargs["id_"]
+        assert job_id.startswith(_PROBE_JOB_ID_PREFIX)
+        spec = register_call.kwargs["job"]["Job"]
+        # Constraint has the host name baked in, not a ${NOMAD_META_target}
+        # placeholder -- that's the whole point of this per-probe flow.
+        assert spec["Constraints"][0]["RTarget"] == "node-a"
+        assert "ParameterizedJob" not in spec
+        assert backend.job.get_job.called
+        backend.job.deregister_job.assert_called_once_with(job_id, purge=True)
+
+    @pytest.mark.asyncio
+    async def test_register_failure_returns_error_result(self):
+        """A :class:`BaseNomadException` during register returns unhealthy."""
+        backend = MagicMock()
+        backend.job.register_job.side_effect = BaseNomadException(MagicMock())
+        executor = self._healthy_executor(backend)
+
+        result = await executor.check_host_health("node-a", "10.0.0.1")
+
+        assert result.healthy is False
+        assert "register probe job" in (result.error or "").lower()
+        backend.job.deregister_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_failed_allocation_reports_client_status(self):
+        """A non-``complete`` ``ClientStatus`` flips the result to unhealthy."""
+        backend = MagicMock()
+        backend.job.register_job.return_value = {"EvalID": "eval-1"}
+        backend.job.get_job.return_value = {
+            "ID": "some-probe",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+        }
+        backend.allocations.get_allocations.return_value = [
+            {
+                "ID": "alloc-1",
+                "JobID": "some-probe",
+                "EvalID": "eval-1",
+                "ClientStatus": NomadAllocStatusEnum.FAILED,
+                "TaskStates": None,
+            }
+        ]
+        executor = self._healthy_executor(backend)
+
+        result = await executor.check_host_health("node-a", "10.0.0.1")
+
+        assert result.healthy is False
+        assert "ClientStatus" in (result.error or "")
+        # Purge still runs from the ``finally`` block.
+        assert backend.job.deregister_job.called
+
+    @pytest.mark.asyncio
+    async def test_timeout_when_job_never_reaches_dead(self):
+        """Poll loop respects ``health_check_timeout`` and reports a timeout."""
+        backend = MagicMock()
+        backend.job.register_job.return_value = {"EvalID": "eval-1"}
+        backend.job.get_job.return_value = {
+            "ID": "some-probe",
+            "Status": "running",
+        }
+        executor = _build_executor(
+            health_check_timeout=0,
+            health_check_poll_interval=0,
+        )
+        object.__setattr__(executor, "backend", backend)
+
+        result = await executor.check_host_health("node-a", "10.0.0.1")
+
+        assert result.healthy is False
+        assert "did not complete within" in (result.error or "")
+        assert backend.job.deregister_job.called
+
+    @pytest.mark.asyncio
+    async def test_job_not_found_during_poll_returns_error_and_still_purges(self):
+        """A purged-from-under-us job reports the disappearance but still cleans up."""
+        backend = MagicMock()
+        backend.job.register_job.return_value = {"EvalID": "eval-1"}
+        backend.job.get_job.side_effect = JobNotFoundError(
+            "gone",
+            executor_name="nomad",
+            resource_type="job",
+            resource_id="some-probe",
+        )
+        executor = self._healthy_executor(backend)
+
+        result = await executor.check_host_health("node-a", "10.0.0.1")
+
+        assert result.healthy is False
+        assert "disappeared" in (result.error or "")
+        assert backend.job.deregister_job.called
+
+    @pytest.mark.asyncio
+    async def test_purge_failure_is_swallowed(self):
+        """A :class:`BaseNomadException` in the ``finally`` block must not raise."""
+        backend = MagicMock()
+        backend.job.register_job.return_value = {"EvalID": "eval-1"}
+        backend.job.get_job.return_value = {
+            "ID": "some-probe",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+        }
+        backend.allocations.get_allocations.return_value = [
+            {
+                "ID": "alloc-1",
+                "JobID": "some-probe",
+                "EvalID": "eval-1",
+                "ClientStatus": NomadAllocStatusEnum.COMPLETE,
+                "TaskStates": None,
+            }
+        ]
+        backend.job.deregister_job.side_effect = BaseNomadException(MagicMock())
+        executor = self._healthy_executor(backend)
+
+        # Expected: healthy result survives the failed purge.
+        result = await executor.check_host_health("node-a", "10.0.0.1")
+
+        assert result == HealthCheckResult(healthy=True)
+
+
+class TestPurgeHealthProbeOrphans:
+    """Test NomadExecutor.purge_health_probe_orphans."""
+
+    @staticmethod
+    def _executor_with_backend(backend: MagicMock) -> NomadExecutor:
+        executor = _build_executor(health_check_timeout=1)
+        object.__setattr__(executor, "backend", backend)
+        return executor
+
+    def test_purges_only_stale_non_terminal_jobs(self):
+        """Old pending/running jobs are purged; recent + dead jobs are skipped."""
+        now_ns = time.time_ns()
+        old_ns = now_ns - 10 * 10**9  # 10 seconds ago, past 2 * timeout=1
+        fresh_ns = now_ns
+        backend = MagicMock()
+        backend.jobs.get_jobs.return_value = [
+            {
+                "ID": f"{_PROBE_JOB_ID_PREFIX}node-a-123",
+                "Status": "pending",
+                "SubmitTime": old_ns,
+            },
+            {
+                "ID": f"{_PROBE_JOB_ID_PREFIX}node-b-456",
+                "Status": "pending",
+                "SubmitTime": fresh_ns,  # too young
+            },
+            {
+                "ID": f"{_PROBE_JOB_ID_PREFIX}node-c-789",
+                "Status": NOMAD_DEAD_JOB_STATUS,
+                "SubmitTime": old_ns,  # dead, ignored
+            },
+        ]
+        executor = self._executor_with_backend(backend)
+
+        purged = executor.purge_health_probe_orphans()
+
+        assert purged == 1
+        backend.job.deregister_job.assert_called_once_with(
+            f"{_PROBE_JOB_ID_PREFIX}node-a-123", purge=True
+        )

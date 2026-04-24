@@ -40,6 +40,7 @@ from app.tasks.celery import (
     _dispatch_chained_task,
     _dispatch_queue_item,
     _MAX_CHAIN_DEPTH,
+    _probe_all_nodes,
     _raise_if_identical_task_conflict,
     delete_task_history,
     dispatch_queue_item,
@@ -50,7 +51,7 @@ from app.tasks.celery import (
     task_revoked_handler,
 )
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
-from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution.models import BaseExecutor, HealthCheckResult
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
@@ -917,6 +918,144 @@ class TestSyncRunningItems:
             await sync_running_items()
 
         mock_sync_task.chunks.assert_not_called()
+
+
+class TestProbeAllNodes:
+    """Test _probe_all_nodes.
+
+    Stubs the Nomad executor, the async session maker, and
+    :class:`NodeHealthCheckManager.upsert` so the probe-cycle control flow
+    can be exercised without a real DB or Nomad. Each test asserts on the
+    upsert call shape, which is the only observable side effect of the
+    cycle.
+    """
+
+    def _make_executor(
+        self, hosts: dict[str, str], check_result=None, check_side_effect=None
+    ) -> MagicMock:
+        executor = MagicMock(spec=BaseExecutor)
+        executor.get_hosts = MagicMock(return_value=hosts)
+        executor.check_host_health = AsyncMock(
+            return_value=check_result, side_effect=check_side_effect
+        )
+        executor.purge_health_probe_orphans = MagicMock(return_value=0)
+        return executor
+
+    @pytest.mark.asyncio
+    async def test_upserts_healthy_result_for_each_host(self):
+        """Assert a ``healthy=True`` probe upserts one row per host."""
+        hosts = {"node-a": "10.0.0.1", "node-b": "10.0.0.2"}
+        executor = self._make_executor(
+            hosts, check_result=HealthCheckResult(healthy=True)
+        )
+        with (
+            patch("app.tasks.celery.get_executor", return_value=executor),
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_make_lock_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.NodeHealthCheckManager.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            await _probe_all_nodes()
+
+        assert mock_upsert.await_count == len(hosts)
+        upserted = {
+            call.kwargs["node_name"]: call.kwargs
+            for call in mock_upsert.await_args_list
+        }
+        assert upserted["node-a"]["healthy"] is True
+        assert upserted["node-a"]["error_message"] is None
+        assert upserted["node-b"]["healthy"] is True
+        assert upserted["node-b"]["error_message"] is None
+
+    @pytest.mark.asyncio
+    async def test_check_host_health_exception_recorded_as_unhealthy(self):
+        """Assert a raising executor still produces one unhealthy upsert per host."""
+        executor = self._make_executor(
+            {"node-a": "10.0.0.1"},
+            check_side_effect=RuntimeError("boom"),
+        )
+        with (
+            patch("app.tasks.celery.get_executor", return_value=executor),
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_make_lock_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.NodeHealthCheckManager.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            await _probe_all_nodes()
+
+        mock_upsert.assert_awaited_once()
+        call = mock_upsert.await_args
+        assert call.kwargs["node_name"] == "node-a"
+        assert call.kwargs["healthy"] is False
+        assert call.kwargs["error_message"] == "boom"
+
+    @pytest.mark.asyncio
+    async def test_operational_error_aborts_cycle(self):
+        """Assert a missing ``nodehealthcheck`` table stops the cycle early."""
+        from sqlalchemy.exc import OperationalError
+
+        executor = self._make_executor(
+            {"node-a": "10.0.0.1", "node-b": "10.0.0.2"},
+            check_result=HealthCheckResult(healthy=True),
+        )
+        with (
+            patch("app.tasks.celery.get_executor", return_value=executor),
+            patch(
+                "app.tasks.celery.get_async_session_maker",
+                return_value=_make_lock_session_maker(),
+            ),
+            patch(
+                "app.tasks.celery.NodeHealthCheckManager.upsert",
+                new_callable=AsyncMock,
+                side_effect=OperationalError("stmt", {}, Exception("no such table")),
+            ) as mock_upsert,
+        ):
+            await _probe_all_nodes()
+
+        assert mock_upsert.await_count == 1
+        assert executor.check_host_health.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_get_hosts_exception_aborts_cycle(self):
+        """Assert a raising ``get_hosts()`` skips both probing and upserting."""
+        executor = MagicMock(spec=BaseExecutor)
+        executor.get_hosts = MagicMock(side_effect=RuntimeError("nomad down"))
+        executor.check_host_health = AsyncMock()
+        with (
+            patch("app.tasks.celery.get_executor", return_value=executor),
+            patch(
+                "app.tasks.celery.NodeHealthCheckManager.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            await _probe_all_nodes()
+
+        executor.check_host_health.assert_not_awaited()
+        mock_upsert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_hosts_no_upsert(self):
+        """Assert zero hosts means zero probes and zero upserts."""
+        executor = self._make_executor({}, check_result=HealthCheckResult(healthy=True))
+        with (
+            patch("app.tasks.celery.get_executor", return_value=executor),
+            patch(
+                "app.tasks.celery.NodeHealthCheckManager.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            await _probe_all_nodes()
+
+        executor.check_host_health.assert_not_awaited()
+        mock_upsert.assert_not_awaited()
 
 
 class TestTaskRevokedHandler:

@@ -15,6 +15,8 @@
 
 """Define tests for the Tasks CRUD managers."""
 
+from datetime import UTC
+
 import pytest
 import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -22,8 +24,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.utils.date_time import utc_now
 from app.tasks.crud import (
     DispatchLockManager,
+    NodeHealthCheckManager,
     TaskHistoryLogManager,
     TaskHistoryManager,
     TaskManager,
@@ -31,6 +35,7 @@ from app.tasks.crud import (
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
+    NodeHealthCheck,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -819,3 +824,147 @@ class TestTaskHistoryLogManagerIdsWithChunks:
         result = await TaskHistoryLogManager.ids_with_chunks(session, [history.id])
 
         assert result == {history.id}
+
+
+# ---------------------------------------------------------------------------
+# NodeHealthCheckManager
+# ---------------------------------------------------------------------------
+
+
+async def _current_rows(session: AsyncSession) -> list[NodeHealthCheck]:
+    """Return every ``NodeHealthCheck`` row persisted so far."""
+    return await NodeHealthCheckManager.list(session)
+
+
+class TestNodeHealthCheckManager:
+    """Test NodeHealthCheckManager upsert + list_by_names.
+
+    Exercised against the SQLite-backed test session, which covers the
+    SQLite branch of the dialect-aware ``ON CONFLICT DO UPDATE`` statement
+    in :meth:`NodeHealthCheckManager.upsert`. The PostgreSQL and MySQL
+    branches share the same SQLAlchemy ``on_conflict_do_update`` /
+    ``on_duplicate_key_update`` contract, so this dialect is sufficient to
+    guard the upsert call shape.
+    """
+
+    @pytest.mark.asyncio
+    async def test_upsert_inserts_when_row_missing(self, session: AsyncSession) -> None:
+        """Assert the first upsert for a node creates a fresh row."""
+        now = utc_now()
+        await NodeHealthCheckManager.upsert(
+            session,
+            node_name="node-a",
+            healthy=True,
+            error_message=None,
+            now=now,
+        )
+
+        rows = await _current_rows(session)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.node_name == "node-a"
+        assert row.healthy is True
+        assert row.error_message is None
+        # SQLite strips tzinfo on read-back; re-attach UTC to match the
+        # application-level ``utc_now`` semantics.
+        assert row.last_checked.replace(tzinfo=UTC) == now
+
+    @pytest.mark.asyncio
+    async def test_upsert_updates_existing_row_by_node_name(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a second upsert overwrites the prior row for the same node."""
+        first = utc_now()
+        await NodeHealthCheckManager.upsert(
+            session,
+            node_name="node-a",
+            healthy=False,
+            error_message="probe timeout",
+            now=first,
+        )
+        second = utc_now()
+        await NodeHealthCheckManager.upsert(
+            session,
+            node_name="node-a",
+            healthy=True,
+            error_message=None,
+            now=second,
+        )
+
+        rows = await _current_rows(session)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.healthy is True
+        assert row.error_message is None
+        assert row.last_checked.replace(tzinfo=UTC) == second
+
+    @pytest.mark.asyncio
+    async def test_upsert_keeps_rows_independent_across_nodes(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert two different ``node_name`` values yield two distinct rows."""
+        now = utc_now()
+        await NodeHealthCheckManager.upsert(
+            session,
+            node_name="node-a",
+            healthy=True,
+            error_message=None,
+            now=now,
+        )
+        await NodeHealthCheckManager.upsert(
+            session,
+            node_name="node-b",
+            healthy=False,
+            error_message="boom",
+            now=now,
+        )
+
+        rows = {row.node_name: row for row in await _current_rows(session)}
+        assert set(rows) == {"node-a", "node-b"}
+        assert rows["node-a"].healthy is True
+        assert rows["node-b"].healthy is False
+        assert rows["node-b"].error_message == "boom"
+
+    @pytest.mark.asyncio
+    async def test_list_by_names_empty_returns_empty_list_without_sql(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert ``list_by_names([])`` short-circuits without emitting SQL.
+
+        An empty ``IN ()`` predicate triggers a SQLAlchemy warning and is a
+        no-op, so :meth:`NodeHealthCheckManager.list_by_names` must skip the
+        query entirely when the input sequence is empty.
+        """
+        now = utc_now()
+        await NodeHealthCheckManager.upsert(
+            session,
+            node_name="node-a",
+            healthy=True,
+            error_message=None,
+            now=now,
+        )
+
+        result = await NodeHealthCheckManager.list_by_names(session, [])
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_list_by_names_returns_only_requested_rows(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert ``list_by_names`` filters the requested nodes and drops the rest."""
+        now = utc_now()
+        for name in ("node-a", "node-b", "node-c"):
+            await NodeHealthCheckManager.upsert(
+                session,
+                node_name=name,
+                healthy=True,
+                error_message=None,
+                now=now,
+            )
+
+        result = await NodeHealthCheckManager.list_by_names(
+            session, ["node-a", "node-c"]
+        )
+
+        assert {row.node_name for row in result} == {"node-a", "node-c"}
