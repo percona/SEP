@@ -110,7 +110,14 @@ def test_periodic_task_update_with_chain_preserves_chain(
             "chain_task_names": ["task-b"],
             "meta": {},
         },
-        "crontab": {"every": 10, "period": "minutes"},
+        "crontab": {
+            "minute": "*/10",
+            "hour": "*",
+            "day_of_month": "*",
+            "month_of_year": "*",
+            "day_of_week": "*",
+            "timezone": "UTC",
+        },
     }
     mock_task_api_dep.get.return_value = existing_periodic_data
 
