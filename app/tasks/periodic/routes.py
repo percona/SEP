@@ -130,8 +130,7 @@ async def update_periodic_task(
     # Validate whenever the effective chain exists and either the chain changed
     # or the effective parent task changed.
     if effective_chain and (
-        effective_chain != existing_chain
-        or task_name != existing_kwargs["task_name"]
+        effective_chain != existing_chain or task_name != existing_kwargs["task_name"]
     ):
         logger.debug(
             "UPDATE PERIODIC TASK - VALIDATING CHAIN (chain or parent changed)"
