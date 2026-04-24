@@ -21,7 +21,6 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from app.sep.api._stub import router as stub_router
 from app.sep.api.router import api_router, plugins_router
 from app.sep.deps import IsApiAuthenticated
 from app.sep.main import sep_app
@@ -80,13 +79,6 @@ class TestApiRouterComposition:
             route.path for route in sep_app.routes if hasattr(route, "path")
         }
         assert "/api/plugins/checksums/schema" in api_plugin_paths
-
-    def test_stub_router_module_exports_stub_endpoint(self) -> None:
-        """Assert the isolated stub module still exposes the ``GET /`` endpoint."""
-        stub_paths = {
-            route.path for route in stub_router.routes if hasattr(route, "path")
-        }
-        assert "/" in stub_paths
 
 
 class TestApiRouterAuthenticated:
