@@ -28,6 +28,7 @@ export type {
   FloatField,
   BoolField,
   ChoiceField,
+  MultiChoiceField,
   TextAreaField,
   DateTimeField,
   FileField,
@@ -35,6 +36,7 @@ export type {
   ServiceField,
   SchemaField,
   TableField,
+  HostField,
 } from './types/plugin-schema';
 
 // Hooks
