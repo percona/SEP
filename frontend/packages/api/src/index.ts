@@ -11,8 +11,28 @@ export type { ApiErrorDetails, ApiErrorKind } from './errors';
 // Auth
 export { postLogin, postRefresh, fetchCurrentUser } from './auth';
 
-// Types
-export type { PaginatedResponse, ApiErrorResponse, OAuthTokenResponse, User } from './types/api';
+// Types (re-exported from generated OpenAPI schemas)
+export type { OAuthTokenResponse, SPAOAuthTokenResponse, User } from './types/api';
+
+// Generated OpenAPI type surfaces — use for typed openapi-fetch clients
+// and for type-only imports in plugins and framework code.
+export type {
+  paths as MainPaths,
+  components as MainComponents,
+  operations as MainOperations,
+} from './generated/main';
+export type {
+  paths as InventoryPaths,
+  components as InventoryComponents,
+} from './generated/inventory';
+export type { paths as TasksPaths, components as TasksComponents } from './generated/tasks';
+export type { paths as SepPaths, components as SepComponents } from './generated/sep';
+
+// Typed request clients (openapi-fetch wrappers sharing interceptors with apiClient)
+export { mainApi, inventoryApi, tasksApi, sepApi } from './typed-client';
+
+// Sample typed hook (demonstrates the full codegen → openapi-fetch → useQuery pattern)
+export { useCurrentUser } from './hooks/useCurrentUser';
 
 export type {
   PluginSchema,

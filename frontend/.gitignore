@@ -1,0 +1,3 @@
+# The repo-level .gitignore excludes `[Ss]cripts` for Python venv dirs.
+# Re-allow our package scripts directories.
+!packages/*/scripts/
