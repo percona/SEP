@@ -648,7 +648,7 @@ async def get_executor_hosts(
     ``None``, which the homepage renders as "Unknown".
     """
     hosts = executor.get_hosts()
-    health_by_name: dict[str, object] = {}
+    health_by_name = {}
     try:
         health_rows = await NodeHealthCheckManager.list_by_names(session, list(hosts))
     except OperationalError:
