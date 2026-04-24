@@ -279,7 +279,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     mock_plugin.module_name = "app.sep.plugins.backup_pg"
 
     mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
-    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
+    mocker.patch("app.core.utils.import_var", return_value=mocker.MagicMock())
 
     importlib.reload(main_module)
 
