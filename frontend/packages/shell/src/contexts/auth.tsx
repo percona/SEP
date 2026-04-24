@@ -29,7 +29,7 @@ interface AuthState {
   /** true after the initial session check finishes (success or failure) */
   ready: boolean;
   login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -110,17 +110,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   // ── Logout ────────────────────────────────────────────────────────────
-  // Clear local state immediately so the UI reflects the logout even if the
-  // server round-trip is slow. Fire `/oauth/logout` in the background to
-  // clear the `HttpOnly` refresh cookie — without it, a page reload would
-  // bootstrap a fresh session from the still-valid cookie. A failed request
-  // just means the cookie will expire naturally; local state is gone either
-  // way.
-  const logout = useCallback(() => {
+  // `POST /oauth/logout` requires the Bearer token to identify the session
+  // to invalidate, so we must call it *before* clearing local state — if
+  // we cleared first, the request interceptor would read a null token and
+  // the backend would reject with 401, leaving the `HttpOnly` refresh
+  // cookie intact (and a subsequent page reload would bootstrap a fresh
+  // session). Run the logout request, then clear local state regardless
+  // of the outcome so a backend failure can't trap the user.
+  const logout = useCallback(async () => {
+    try {
+      await postLogout();
+    } catch {
+      /* clear local state anyway — cookie will expire on its own */
+    }
     clearAuth();
-    postLogout().catch(() => {
-      /* already logged out locally — cookie may linger until it expires */
-    });
   }, [clearAuth]);
 
   // ── Inject token provider & unauthorized handler into API client ────
