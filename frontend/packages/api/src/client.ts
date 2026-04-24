@@ -107,12 +107,16 @@ let refreshInFlight: Promise<string | null> | null = null;
 export function refreshAccessToken(): Promise<string | null> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
+      // Only the network call is inside the try/catch — a synchronous throw
+      // from the externally-injected _onRefreshed handler must NOT be reported
+      // as a failed refresh, otherwise the auth layer would force-logout a
+      // user whose cookie rotation succeeded on the backend.
+      let data: { accessToken: string; expiresIn: number };
       try {
-        const { data } = await apiClient.post<{ accessToken: string; expiresIn: number }>(
+        const response = await apiClient.post<{ accessToken: string; expiresIn: number }>(
           '/oauth/refresh',
         );
-        _onRefreshed(data.accessToken, data.expiresIn);
-        return data.accessToken;
+        data = response.data;
       } catch {
         return null;
       } finally {
@@ -122,6 +126,8 @@ export function refreshAccessToken(): Promise<string | null> {
           refreshInFlight = null;
         });
       }
+      _onRefreshed(data.accessToken, data.expiresIn);
+      return data.accessToken;
     })();
   }
   return refreshInFlight;

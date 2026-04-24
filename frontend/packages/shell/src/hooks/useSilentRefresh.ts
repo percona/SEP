@@ -34,7 +34,9 @@ export function useSilentRefresh({
   leadSeconds = 60,
 }: Options): void {
   const onFailureRef = useRef(onFailure);
-  onFailureRef.current = onFailure;
+  useEffect(() => {
+    onFailureRef.current = onFailure;
+  });
 
   useEffect(() => {
     if (!accessToken || expiresIn === null) {
