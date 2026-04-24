@@ -256,6 +256,39 @@ def test_read_root_renders_homepage(mocker, dummy_context, test_client):
     assert kwargs.get("context") == dummy_context
 
 
+def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
+    """Regression: task-infrastructure routers must be mounted for backup_pg-only installs.
+
+    When backup_pg is the only task-related plugin enabled, the shared routers
+    (periodic_tasks, stop_task, stream_logs, download_files, execution_events,
+    inventory_ajax) must still be mounted so that Jinja url_for() calls like
+    url_for('periodic_task_create') and url_for('stop_task_execution') resolve
+    without raising NoMatchFound.
+    """
+    import importlib
+
+    import app.sep.main as main_module
+
+    mock_plugin = mocker.MagicMock()
+    mock_plugin.router_path = "app.sep.plugins.backup_pg.router"
+    mock_plugin.uri_path = "/backup_pg"
+    mock_plugin.module_name = "app.sep.plugins.backup_pg"
+
+    original_plugins = sep_settings.PLUGINS
+    mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
+    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
+
+    try:
+        importlib.reload(main_module)
+
+        route_names = {r.name for r in main_module.sep_app.routes}
+        assert "periodic_task_create" in route_names
+        assert "stop_task_execution" in route_names
+    finally:
+        sep_settings.PLUGINS = original_plugins
+        importlib.reload(main_module)
+
+
 class TestExceptionHandlers:
     """Define test suite for exception handlers."""
 

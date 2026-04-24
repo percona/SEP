@@ -124,6 +124,7 @@ if {
     "tasks",
     "backup",
     "backup_mongo",
+    "backup_pg",
     "checksums",
 } & imported_plugins:
     from app.sep.api.routes import router as inventory_api_router
