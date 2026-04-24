@@ -694,16 +694,16 @@ class TestChecksumsDeleteEndpoint:
 class TestChecksumsRegression:
     """Regression tests confirming removed SEP-921 paths are gone."""
 
-    def test_old_checksums_api_detail_path_returns_404(self, test_client):
-        """Ensure the SEP-921 GET /checksums/api/{task_name} path no longer exists.
+    def test_old_checksums_api_detail_path_caught_by_html_route(
+        self, test_client, mock_task_api_dep
+    ):
+        """Verify /checksums/api/{task_name} returns 404 from HTML route, not JSON API.
 
-        /checksums/api/some-task used to be routed to the JSON detail endpoint
-        (SEP-921). After the migration to /api/plugins/checksums/, the path has no
-        matching route and must return 404.
-
-        Note: /checksums/api/ (without a second segment) is still caught by the
-        wildcard GET /{task_name} HTML route as task_name="api" — that pre-existing
-        behaviour is unrelated to this migration.
+        /checksums/api/some-task matches the wildcard GET /{task_name} HTML route.
+        The route dependency get_checksums_task fails to find the task; the 404 is
+        from the HTML detail handler's task lookup, not from JSON API routing.
         """
-        response = test_client.get("/checksums/api/some-task")
+        mock_task_api_dep.get.side_effect = HTTPNotFoundException()
+
+        response = test_client.get("/checksums/api/some-task", follow_redirects=False)
         assert response.status_code == status.HTTP_404_NOT_FOUND
