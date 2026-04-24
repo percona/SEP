@@ -122,7 +122,7 @@
 | app/sep/plugins/backup\_pg/deps.py                                                                          |       45 |        1 |     98% |       180 |
 | app/sep/plugins/backup\_pg/models.py                                                                        |       22 |        0 |    100% |           |
 | app/sep/plugins/backup\_pg/routes.py                                                                        |       58 |        0 |    100% |           |
-| app/sep/plugins/checksums/deps.py                                                                           |      130 |       63 |     52% |65-76, 90-128, 156, 158, 264-266, 280, 363-368, 384-411, 424-451, 462, 492 |
+| app/sep/plugins/checksums/deps.py                                                                           |      130 |       62 |     52% |65-76, 90-128, 158, 264-266, 280, 363-368, 384-411, 424-451, 462, 492 |
 | app/sep/plugins/checksums/models.py                                                                         |       33 |        0 |    100% |           |
 | app/sep/plugins/checksums/routes.py                                                                         |       74 |       33 |     55% |63-64, 148-198, 218-226, 241-247, 263-264 |
 | app/sep/plugins/dipper/constants.py                                                                         |       10 |        0 |    100% |           |
@@ -195,7 +195,7 @@
 | app/tasks/periodic/models.py                                                                                |      101 |        5 |     95% |196, 231, 283, 299, 368 |
 | app/tasks/periodic/routes.py                                                                                |       38 |        3 |     92% | 62-66, 97 |
 | app/tasks/routes.py                                                                                         |      205 |       29 |     86% |122-126, 183, 204-211, 243, 292-300, 306, 350-351, 378-379, 407-408, 427, 560, 575, 584-595, 611-612 |
-| **TOTAL**                                                                                                   | **13005** | **1938** | **85%** |           |
+| **TOTAL**                                                                                                   | **13005** | **1937** | **85%** |           |
 
 
 ## Setup coverage badge
