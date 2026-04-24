@@ -18,7 +18,7 @@
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.1.0",
-    "@vitejs/plugin-react-swc": "^4.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^26.0.0",
     "typescript": "~5.8.0",
     "vitest": "^3.1.0"
@@ -26,6 +26,7 @@
   "peerDependencies": {
     "@emotion/react": "^11.0.0",
     "@emotion/styled": "^11.0.0",
+    "@melloware/react-logviewer": "^6.5.0",
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
     "@percona/percona-ui": "^1.0.15",

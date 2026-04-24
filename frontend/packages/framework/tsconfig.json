@@ -6,6 +6,6 @@
     "outDir": "dist",
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src", "test"],
+  "include": ["src", "test", "tests"],
   "exclude": ["src/**/*.stories.tsx"]
 }
