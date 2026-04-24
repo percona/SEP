@@ -59,9 +59,15 @@ export const apiClient = applyCaseMiddleware(
 
 // ── Request: attach Bearer token, optionally log ───────────────────────
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = _getToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  // Do not overwrite an already-set Authorization header so the 401 retry
+  // path (which sets the header explicitly from the freshly-refreshed
+  // token) is correct even if the external token provider has not yet
+  // observed the refresh.
+  if (!config.headers.Authorization) {
+    const token = _getToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
   if (IS_DEV) {
     const method = config.method?.toUpperCase() ?? 'GET';
@@ -161,8 +167,12 @@ apiClient.interceptors.response.use(
         const newToken = await refreshAccessToken();
         if (newToken) {
           config._retried = true;
-          // Request interceptor re-reads the token provider on replay, so
-          // no need to mutate headers here beyond marking the config.
+          // Set the header explicitly from the refreshed token so the
+          // retry is self-contained and not dependent on external token-
+          // provider wiring. The request interceptor preserves an already-
+          // set Authorization header.
+          config.headers = config.headers ?? {};
+          config.headers.Authorization = `Bearer ${newToken}`;
           return apiClient.request(config);
         }
         // Refresh failed — treat as unauthorized.

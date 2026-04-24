@@ -240,6 +240,34 @@ describe('apiClient — 401 refresh-retry', () => {
     expect(refreshCalls).toBe(1);
   });
 
+  it('retries with the freshly-refreshed token even if the token provider was never updated', async () => {
+    // Simulate a consumer that forgot to wire setOnRefreshed — the token
+    // provider keeps returning the stale token. The retry must still
+    // carry the new Bearer because the interceptor sets it explicitly.
+    setTokenProvider(() => 'old');
+    // Deliberately NOT calling setOnRefreshed.
+    const seenAuth: Array<string | null> = [];
+
+    server.use(
+      http.get(`${BASE}/api/protected`, ({ request }) => {
+        const auth = request.headers.get('Authorization');
+        seenAuth.push(auth);
+        if (auth === 'Bearer new') {
+          return HttpResponse.json({ ok: true });
+        }
+        return HttpResponse.json({ detail: 'expired' }, { status: 401 });
+      }),
+      http.post(`${BASE}/api/oauth/refresh`, () =>
+        HttpResponse.json({ access_token: 'new', expires_in: 300 }),
+      ),
+    );
+
+    const res = await apiClient.get('/protected');
+
+    expect(res.status).toBe(200);
+    expect(seenAuth).toEqual(['Bearer old', 'Bearer new']);
+  });
+
   it('does not retry after a second 401 on the retried request', async () => {
     setTokenProvider(() => 'old');
     const onUnauth = vi.fn();
