@@ -1060,6 +1060,16 @@ class TransformPayloadRequest(BaseModel):
     fmt: Literal["hcl", "json", "yaml"]
 
 
+class TransformPayloadResponse(BaseModel):
+    """Define the parsed job specification returned from ``POST /transform/``.
+
+    The concrete keys depend on the executor backend; clients should treat values as
+    untyped JSON except where they validate domain-specific job fields themselves.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
 class HostInfo(BaseModel):
     """Represent an executor host enriched with its latest probe outcome.
 

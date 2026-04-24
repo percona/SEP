@@ -8,6 +8,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const DevTaskLogsPage = import.meta.env.DEV ? lazy(() => import('./pages/DevTaskLogsPage')) : null;
 
 // Schema-driven plugins — each is a single lazy import
 const ChecksumsPlugin = lazy(() =>
@@ -33,6 +34,12 @@ export const router = createBrowserRouter([
           { index: true, element: <DashboardPage /> },
           { path: 'inventory', element: <PlaceholderPage /> },
           { path: 'tasks', element: <PlaceholderPage /> },
+          ...(DevTaskLogsPage
+            ? [
+                { path: 'dev/task-logs', element: <DevTaskLogsPage /> },
+                { path: 'dev/task-logs/:id', element: <DevTaskLogsPage /> },
+              ]
+            : []),
           { path: 'snippets', element: <PlaceholderPage /> },
           { path: 'atw', element: <PlaceholderPage /> },
           { path: 'dipper', element: <PlaceholderPage /> },

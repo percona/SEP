@@ -30,7 +30,7 @@ from app.sep.utils.decorators import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["sep", "inventory"])
 
 
 @router.get("/services/{service_id}/schemas", dependencies=[IsAuthenticated])

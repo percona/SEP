@@ -25,7 +25,7 @@ from app.sep.config import sep_settings
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.snippets.config import snippets_settings
 
-router = APIRouter()
+router = APIRouter(tags=["sep", "artifacts"])
 
 ARTIFACT_DOWNLOAD_SALT = "artifact-download"
 ARTIFACT_TYPE_SNIPPET = "snippet"
