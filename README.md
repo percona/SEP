@@ -189,13 +189,12 @@
 | app/tasks/logs/log\_writer.py                                                                               |      123 |        8 |     93% |116, 226-227, 349, 353, 357, 537, 543 |
 | app/tasks/main.py                                                                                           |       58 |       11 |     81% |57-60, 84-85, 134-135, 142-146 |
 | app/tasks/models.py                                                                                         |      291 |        3 |     99% |591, 1040-1041 |
-| app/tasks/periodic/config.py                                                                                |       12 |        0 |    100% |           |
 | app/tasks/periodic/crud.py                                                                                  |       26 |        0 |    100% |           |
 | app/tasks/periodic/deps.py                                                                                  |       11 |        0 |    100% |           |
 | app/tasks/periodic/models.py                                                                                |      101 |        5 |     95% |196, 231, 283, 299, 368 |
 | app/tasks/periodic/routes.py                                                                                |       38 |        3 |     92% | 62-66, 97 |
 | app/tasks/routes.py                                                                                         |      205 |       29 |     86% |122-126, 183, 204-211, 243, 292-300, 306, 350-351, 378-379, 407-408, 427, 560, 575, 584-595, 611-612 |
-| **TOTAL**                                                                                                   | **13005** | **1938** | **85%** |           |
+| **TOTAL**                                                                                                   | **12993** | **1938** | **85%** |           |
 
 
 ## Setup coverage badge
