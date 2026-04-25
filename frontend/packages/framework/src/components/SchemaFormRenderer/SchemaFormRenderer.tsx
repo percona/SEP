@@ -1,41 +1,47 @@
-import { useForm } from 'react-hook-form';
+import { useMemo } from 'react';
+import { FormProvider, useForm, type SubmitHandler } from 'react-hook-form';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
-import type { FormSection, PluginField } from '@sep/api';
-import { FieldRenderer } from './FieldRenderer';
+import Typography from '@mui/material/Typography';
+import { FieldRenderer } from './fields';
+import { coerceFormValues } from './utils/validationMapper';
+import type { FormSection, PluginField } from './types';
 
 function fieldDefault(field: PluginField): unknown {
   switch (field.type) {
     case 'bool':
-      return false;
+      return field.default ?? false;
     case 'integer':
     case 'float':
-      return field.default ?? undefined;
-    case 'choice':
-      return '';
-    case 'string':
-    case 'textarea':
-    case 'yaml':
-    case 'datetime':
+      return field.default ?? '';
+    case 'multichoice':
+      return field.default ?? [];
     case 'file':
-      return '';
+      return undefined;
     case 'service':
     case 'schema':
     case 'table':
-      return undefined;
+    case 'host':
+      return field.default ?? '';
     default:
-      return '';
+      return field.default ?? '';
   }
 }
 
-interface SchemaFormRendererProps {
+function flattenFields(sections: FormSection[]): PluginField[] {
+  return sections.flatMap((s) => s.fields);
+}
+
+export interface SchemaFormRendererProps {
   sections: FormSection[];
   onSubmit: (data: Record<string, unknown>) => void;
   submitLabel?: string;
   loading?: boolean;
   defaultValues?: Record<string, unknown>;
+  /** Server-side error to show above the form (e.g. API failure from the caller's mutation). */
+  submitError?: string | null;
 }
 
 export function SchemaFormRenderer({
@@ -44,38 +50,69 @@ export function SchemaFormRenderer({
   submitLabel = 'Run',
   loading = false,
   defaultValues,
+  submitError,
 }: SchemaFormRendererProps) {
-  const formDefaults = sections.reduce<Record<string, unknown>>((acc, section) => {
-    section.fields.forEach((field) => {
-      acc[field.name] = defaultValues?.[field.name] ?? field.default ?? fieldDefault(field);
-    });
-    return acc;
-  }, {});
+  const allFields = useMemo(() => flattenFields(sections), [sections]);
 
-  const { handleSubmit, control } = useForm({ defaultValues: formDefaults });
+  const formDefaults = useMemo(
+    () =>
+      allFields.reduce<Record<string, unknown>>((acc, field) => {
+        acc[field.name] = defaultValues?.[field.name] ?? fieldDefault(field);
+        return acc;
+      }, {}),
+    [allFields, defaultValues],
+  );
+
+  const methods = useForm<Record<string, unknown>>({ defaultValues: formDefaults });
+  const { formState } = methods;
+  const hasInlineErrors = Object.keys(formState.errors).length > 0;
+
+  const handleSubmit: SubmitHandler<Record<string, unknown>> = (values) => {
+    onSubmit(coerceFormValues(values, allFields));
+  };
 
   return (
-    <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ maxWidth: 640 }}>
-      {sections.map((section, idx) => (
-        <Box key={section.title} sx={{ mb: 3 }}>
-          {idx > 0 && <Divider sx={{ mb: 2 }} />}
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            {section.title}
-          </Typography>
-          {section.description && (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {section.description}
-            </Typography>
-          )}
-          {section.fields.map((field) => (
-            <FieldRenderer key={field.name} field={field} control={control} />
-          ))}
-        </Box>
-      ))}
+    <FormProvider {...methods}>
+      <Box
+        component="form"
+        onSubmit={methods.handleSubmit(handleSubmit)}
+        noValidate
+        sx={{ maxWidth: 640 }}
+      >
+        {submitError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {submitError}
+          </Alert>
+        )}
+        {hasInlineErrors && formState.isSubmitted && !submitError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Fix the highlighted fields before submitting.
+          </Alert>
+        )}
 
-      <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
-        {submitLabel}
-      </Button>
-    </Box>
+        {sections.map((section, idx) => (
+          <Box key={section.title} component="fieldset" sx={{ border: 0, p: 0, mb: 3 }}>
+            {idx > 0 && <Divider sx={{ mb: 2 }} />}
+            <Typography component="legend" variant="h6" sx={{ mb: 1, px: 0 }}>
+              {section.title}
+            </Typography>
+            {section.description && (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                {section.description}
+              </Typography>
+            )}
+            {section.fields.map((field) => (
+              <Box key={field.name} sx={{ mb: 2 }}>
+                <FieldRenderer field={field} />
+              </Box>
+            ))}
+          </Box>
+        ))}
+
+        <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
+          {submitLabel}
+        </Button>
+      </Box>
+    </FormProvider>
   );
 }

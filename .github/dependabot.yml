@@ -6,3 +6,9 @@ updates:
       interval: "weekly"
     labels:
       - "skip-test"
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "skip-test"

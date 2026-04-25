@@ -50,6 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.filter.outputs.python }}
+      frontend: ${{ steps.filter.outputs.frontend }}
       docker: ${{ steps.filter.outputs.docker }}
     steps:
       - name: Checkout codebase
@@ -64,6 +65,9 @@ jobs:
               - '**/**.py'
               - 'pyproject.toml'
               - 'poetry.lock'
+            frontend:
+              - 'frontend/**'
+              - 'package.json'
             docker:
               - '**'
               - '!**/*.md'
@@ -120,6 +124,13 @@ jobs:
       - label-gate
       - changes
 
+  frontend:
+    if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.frontend == 'true' }}
+    uses: ./.github/workflows/frontend.yaml
+    needs:
+      - label-gate
+      - changes
+
   build:
     # Run when Python or Docker-relevant paths change. Use always() so the job
     # still runs when `python` is skipped (no .py changes but Containerfile /
@@ -143,7 +154,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@35d5669990ec77242c5a5926b41381a3f26fa947 # v4.0.0
+        uses: docker/setup-buildx-action@d38a1862945707faf7e7defdeeef07776b9ea4a3 # v4.0.0
 
       - name: Build base image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -174,6 +185,7 @@ jobs:
       - changes
       - precommit
       - python
+      - frontend
       - build
     runs-on: ubuntu-latest
     steps:
