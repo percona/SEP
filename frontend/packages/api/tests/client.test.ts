@@ -1,6 +1,12 @@
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiClient, setOnUnauthorized, setTokenProvider } from '../src/client';
+import {
+  apiClient,
+  refreshAccessToken,
+  setOnRefreshed,
+  setOnUnauthorized,
+  setTokenProvider,
+} from '../src/client';
 import { ApiError } from '../src/errors';
 import { server } from './msw-server';
 
@@ -12,11 +18,13 @@ beforeEach(() => {
   apiClient.defaults.baseURL = `${BASE}/api`;
   setTokenProvider(() => null);
   setOnUnauthorized(() => {});
+  setOnRefreshed(() => {});
 });
 
 afterEach(() => {
   setTokenProvider(() => null);
   setOnUnauthorized(() => {});
+  setOnRefreshed(() => {});
 });
 
 describe('apiClient — Bearer token injection', () => {
@@ -131,20 +139,6 @@ describe('apiClient — error normalization', () => {
     });
   });
 
-  it('invokes the unauthorized handler on 401 (non-refresh endpoints)', async () => {
-    const onUnauth = vi.fn();
-    setOnUnauthorized(onUnauth);
-
-    server.use(
-      http.get(`${BASE}/api/protected`, () =>
-        HttpResponse.json({ detail: 'nope' }, { status: 401 }),
-      ),
-    );
-
-    await expect(apiClient.get('/protected')).rejects.toBeInstanceOf(ApiError);
-    expect(onUnauth).toHaveBeenCalledOnce();
-  });
-
   it('skips the unauthorized handler on refresh-endpoint 401', async () => {
     const onUnauth = vi.fn();
     setOnUnauthorized(onUnauth);
@@ -155,7 +149,180 @@ describe('apiClient — error normalization', () => {
       ),
     );
 
-    await expect(apiClient.post('/oauth/refresh', '""')).rejects.toBeInstanceOf(ApiError);
+    await expect(apiClient.post('/oauth/refresh')).rejects.toBeInstanceOf(ApiError);
     expect(onUnauth).not.toHaveBeenCalled();
+  });
+});
+
+describe('apiClient — 401 refresh-retry', () => {
+  it('retries the original request with the new token after a silent refresh', async () => {
+    let currentToken = 'old';
+    setTokenProvider(() => currentToken);
+    const onRefreshed = vi.fn((token: string, _ttl: number) => {
+      currentToken = token;
+    });
+    setOnRefreshed(onRefreshed);
+    const seenAuth: Array<string | null> = [];
+
+    server.use(
+      http.get(`${BASE}/api/protected`, ({ request }) => {
+        const auth = request.headers.get('Authorization');
+        seenAuth.push(auth);
+        if (auth === 'Bearer new') {
+          return HttpResponse.json({ ok: true });
+        }
+        return HttpResponse.json({ detail: 'expired' }, { status: 401 });
+      }),
+      http.post(`${BASE}/api/oauth/refresh`, () =>
+        HttpResponse.json({ access_token: 'new', expires_in: 300 }),
+      ),
+    );
+
+    const res = await apiClient.get('/protected');
+
+    expect(res.status).toBe(200);
+    expect(seenAuth).toEqual(['Bearer old', 'Bearer new']);
+    expect(onRefreshed).toHaveBeenCalledWith('new', 300);
+  });
+
+  it('invokes the unauthorized handler when refresh itself fails', async () => {
+    setTokenProvider(() => 'old');
+    const onUnauth = vi.fn();
+    setOnUnauthorized(onUnauth);
+
+    server.use(
+      http.get(`${BASE}/api/protected`, () =>
+        HttpResponse.json({ detail: 'expired' }, { status: 401 }),
+      ),
+      http.post(`${BASE}/api/oauth/refresh`, () =>
+        HttpResponse.json({ detail: 'no cookie' }, { status: 401 }),
+      ),
+    );
+
+    await expect(apiClient.get('/protected')).rejects.toBeInstanceOf(ApiError);
+    expect(onUnauth).toHaveBeenCalledOnce();
+  });
+
+  it('single-flights concurrent 401s into a single refresh call', async () => {
+    let currentToken = 'old';
+    setTokenProvider(() => currentToken);
+    setOnRefreshed((token) => {
+      currentToken = token;
+    });
+
+    let refreshCalls = 0;
+
+    server.use(
+      http.get(`${BASE}/api/a`, ({ request }) => {
+        const auth = request.headers.get('Authorization');
+        if (auth === 'Bearer new') {
+          return HttpResponse.json({ r: 'a' });
+        }
+        return HttpResponse.json({ detail: 'expired' }, { status: 401 });
+      }),
+      http.get(`${BASE}/api/b`, ({ request }) => {
+        const auth = request.headers.get('Authorization');
+        if (auth === 'Bearer new') {
+          return HttpResponse.json({ r: 'b' });
+        }
+        return HttpResponse.json({ detail: 'expired' }, { status: 401 });
+      }),
+      http.post(`${BASE}/api/oauth/refresh`, async () => {
+        refreshCalls += 1;
+        // Delay so both 401s are in-flight before refresh resolves.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return HttpResponse.json({ access_token: 'new', expires_in: 300 });
+      }),
+    );
+
+    const [a, b] = await Promise.all([apiClient.get('/a'), apiClient.get('/b')]);
+
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('shares the single-flight coordinator between refreshAccessToken callers and 401 retries', async () => {
+    let currentToken = 'old';
+    setTokenProvider(() => currentToken);
+    setOnRefreshed((token) => {
+      currentToken = token;
+    });
+    let refreshCalls = 0;
+
+    server.use(
+      http.get(`${BASE}/api/protected`, ({ request }) => {
+        const auth = request.headers.get('Authorization');
+        if (auth === 'Bearer new') {
+          return HttpResponse.json({ ok: true });
+        }
+        return HttpResponse.json({ detail: 'expired' }, { status: 401 });
+      }),
+      http.post(`${BASE}/api/oauth/refresh`, async () => {
+        refreshCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return HttpResponse.json({ access_token: 'new', expires_in: 300 });
+      }),
+    );
+
+    // Simulates the timer and a concurrent protected request both needing
+    // a fresh token at the same instant. Only one /oauth/refresh must fire.
+    const [direct, retried] = await Promise.all([
+      refreshAccessToken(),
+      apiClient.get('/protected'),
+    ]);
+
+    expect(direct).toBe('new');
+    expect(retried.status).toBe(200);
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('retries with the freshly-refreshed token even if the token provider was never updated', async () => {
+    // Simulate a consumer that forgot to wire setOnRefreshed — the token
+    // provider keeps returning the stale token. The retry must still
+    // carry the new Bearer because the interceptor sets it explicitly.
+    setTokenProvider(() => 'old');
+    // Deliberately NOT calling setOnRefreshed.
+    const seenAuth: Array<string | null> = [];
+
+    server.use(
+      http.get(`${BASE}/api/protected`, ({ request }) => {
+        const auth = request.headers.get('Authorization');
+        seenAuth.push(auth);
+        if (auth === 'Bearer new') {
+          return HttpResponse.json({ ok: true });
+        }
+        return HttpResponse.json({ detail: 'expired' }, { status: 401 });
+      }),
+      http.post(`${BASE}/api/oauth/refresh`, () =>
+        HttpResponse.json({ access_token: 'new', expires_in: 300 }),
+      ),
+    );
+
+    const res = await apiClient.get('/protected');
+
+    expect(res.status).toBe(200);
+    expect(seenAuth).toEqual(['Bearer old', 'Bearer new']);
+  });
+
+  it('does not retry after a second 401 on the retried request', async () => {
+    setTokenProvider(() => 'old');
+    const onUnauth = vi.fn();
+    setOnUnauthorized(onUnauth);
+    let refreshCalls = 0;
+
+    server.use(
+      http.get(`${BASE}/api/protected`, () =>
+        HttpResponse.json({ detail: 'expired' }, { status: 401 }),
+      ),
+      http.post(`${BASE}/api/oauth/refresh`, () => {
+        refreshCalls += 1;
+        return HttpResponse.json({ access_token: 'new', expires_in: 300 });
+      }),
+    );
+
+    await expect(apiClient.get('/protected')).rejects.toBeInstanceOf(ApiError);
+    expect(refreshCalls).toBe(1);
+    expect(onUnauth).toHaveBeenCalledOnce();
   });
 });
