@@ -1,43 +1,22 @@
-// Common API response types — will be generated from OpenAPI later.
+// Common API types re-exported from the OpenAPI-generated schemas.
+// Hand-written types were removed after SEP-963 Phase 2 codegen landed.
 // The runtime ApiError class lives in ../errors.ts.
 
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  perPage: number;
-}
+import type { components } from '../generated/main';
 
-export interface ApiErrorResponse {
-  detail: string;
-  statusCode: number;
-}
+/** Authenticated user profile — `GET /api/users/me`. */
+export type User = components['schemas']['CasdoorUser'];
 
-// ── Auth ────────────────────────────────────────────────────────────────
+/**
+ * Slim OAuth token returned to SPA clients by `POST /api/oauth/login` and
+ * `POST /api/oauth/refresh`. Only contains the access token and its TTL —
+ * the refresh token rides an `HttpOnly` cookie and is opaque to JS.
+ */
+export type SPAOAuthTokenResponse = components['schemas']['SPAOAuthTokenResponse'];
 
-/** Response from POST /api/oauth/token and /api/oauth/refresh */
-export interface OAuthTokenResponse {
-  accessToken: string;
-  idToken: string;
-  refreshToken: string;
-  tokenType: string;
-  expiresIn: number;
-  scope: string;
-}
-
-/** User profile returned by GET /api/users/me */
-export interface User {
-  id: string;
-  username: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  isAdmin: boolean;
-  isActive: boolean;
-  isForbidden: boolean;
-  isDeleted: boolean;
-  owner: string;
-  createdTime: string;
-  updatedTime: string;
-}
+/**
+ * @deprecated Use `SPAOAuthTokenResponse`. The full `OAuthToken` shape is
+ * only returned by the legacy `/oauth/token` endpoint; the SPA uses the
+ * cookie-based `/oauth/login` + `/oauth/refresh` flow.
+ */
+export type OAuthTokenResponse = SPAOAuthTokenResponse;

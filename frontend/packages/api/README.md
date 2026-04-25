@@ -1,27 +1,38 @@
 # @sep/api
 
-Centralized HTTP client, React Query configuration, and (in Phase 2) OpenAPI
-type codegen for the SEP frontend.
+Centralized HTTP client, React Query configuration, and OpenAPI type codegen
+for the SEP frontend.
 
 This package is consumed by `@sep/shell`, `@sep/framework`, and plugin
 packages. Anything that talks to the backend should go through here.
 
-## What's in the package today (Phase 1)
+## What's in the package
 
 - **`apiClient`** — preconfigured axios instance with interceptors for Bearer
   token injection, unauthorized handling, dev logging, and structured error
-  normalization into `ApiError`.
+  normalization into `ApiError`. Request/response bodies are passed through
+  verbatim — field casing matches the OpenAPI spec.
+- **Typed clients** — `mainApi`, `inventoryApi`, `tasksApi`, `sepApi` are
+  [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/) clients typed
+  against the generated `paths` under `src/generated/`. They share
+  Bearer-token and unauthorized handling with `apiClient` via a middleware
+  that reads the same `setTokenProvider` state.
+- **Generated types** — `src/generated/{main,inventory,tasks,sep}.ts` are
+  emitted by `pnpm --filter @sep/api codegen` from the four FastAPI specs.
+  Files are committed so builds don't require a live backend; they are
+  marked `linguist-generated` in `frontend/.gitattributes` to keep GitHub
+  diffs collapsed.
 - **`createQueryClient()`** — factory that returns a `QueryClient` with the
   dashboard-tuned defaults: 30s stale time, exponential back-off retry that
   skips 4xx responses, `refetchOnWindowFocus: true`.
 - **`ApiError`** — structured error class surfaced by the client. Every
-  rejection from `apiClient` is an `ApiError`. Distinguishes `http`,
-  `network`, `timeout`, `canceled`, and `unknown` kinds.
+  rejection from `apiClient` is an `ApiError`; `throwOnApiError()` adapts
+  the `openapi-fetch` `{ data, error }` tuple to throw the same shape.
 - **Token accessor pattern** — `setTokenProvider()` and `setOnUnauthorized()`
   let the auth layer plug in without the API package depending on auth state.
 - **Hooks** — `usePluginSchema`, `usePluginTasks`, `usePluginTask`,
-  `useCreatePluginTask`. These predate codegen and use generics; they'll be
-  complemented by typed hooks once Phase 2 lands.
+  `useCreatePluginTask` (generic, predate codegen) and `useCurrentUser`
+  (sample of the typed-hook pattern).
 - **Auth functions** — `postLogin`, `postRefresh`, `fetchCurrentUser`.
   Thin request wrappers consumed by the `AuthProvider` in `@sep/shell`.
 
@@ -75,23 +86,58 @@ if (error instanceof ApiError) {
 
 ## Conventions
 
-### camelCase ↔ snake_case (policy: drop middleware in Phase 2)
+### Field casing
 
-The backend is FastAPI and exposes snake_case field names on the wire.
-Today `apiClient` wraps axios with `axios-case-converter`, which transforms
-request payloads to snake_case and response payloads to camelCase before
-either hits application code. This was pragmatic before codegen existed.
+The backend is FastAPI. Most wire payloads are snake_case; a few schemas
+(notably `CasdoorUser`) are served with a camelCase alias generator. Either
+way, the canonical names live in the OpenAPI spec and are reflected in
+`src/generated/*.ts`. Read field names from the generated types — do not
+apply client-side case conversion.
 
-**Decision:** once Phase 2 runs `openapi-typescript`, the generated types
-will mirror the wire format (snake_case). Keeping the middleware would
-create a hidden mismatch between TypeScript's view of the data and the
-runtime object, so the middleware will be removed in Phase 2.
+## Codegen
 
-**Implications for new code:** be aware that Phase 2 will rename fields
-across plugin schemas, table columns, mock data, and the auth context.
-Don't entrench new camelCase assumptions that a codegen pass can't see.
+```bash
+# Requires the backend running at http://localhost:8000 (override with
+# CODEGEN_BASE_URL=…).
+pnpm --filter @sep/api codegen
+```
 
-See `SEP-963-codegen-followup.md` for the full Phase 2 checklist.
+The script (`scripts/codegen.ts`) iterates over a `SPECS` list and writes
+one `.ts` file per spec into `src/generated/`. If the backend ever merges
+to a single spec, collapse `SPECS` to one entry — nothing else changes.
+
+A CI check should regenerate and fail on drift:
+
+```bash
+pnpm --filter @sep/api codegen
+git diff --exit-code -- packages/api/src/generated/
+```
+
+## How to add a new typed hook
+
+1. Regenerate types if you're calling a newly-added endpoint.
+2. Pick the client matching the spec: `mainApi`, `inventoryApi`,
+   `tasksApi`, or `sepApi`.
+3. Wrap the call in `throwOnApiError` so errors propagate as `ApiError`:
+
+```ts
+import { useQuery } from '@tanstack/react-query';
+import { sepApi, throwOnApiError, type SepComponents } from '@sep/api';
+
+type Task = SepComponents['schemas']['ChecksumTaskResponse'];
+
+export function useChecksumTask(name: string) {
+  return useQuery<Task>({
+    queryKey: ['checksums', name],
+    queryFn: () =>
+      throwOnApiError(
+        sepApi.GET('/checksums/{task_name}', { params: { path: { task_name: name } } }),
+      ),
+  });
+}
+```
+
+See `src/hooks/useCurrentUser.ts` for a minimal reference.
 
 ## Testing
 
@@ -109,12 +155,9 @@ Covered:
 - Retry predicate: skip 4xx, retry 5xx and network, cap at 3 attempts
 - `retryDelay` exponential back-off and ceiling
 
-## What's missing (Phase 2)
+## Known follow-ups
 
-Blocked on SEP-957 (OpenAPI spec tuning). See `SEP-963-codegen-followup.md`.
-
-- `openapi-typescript` codegen script + generated types under `src/generated/`
-- `openapi-fetch`-based typed request wrapper
-- Sample typed health-check hook
-- Migration of hand-written types in `src/types/api.ts` to generated
-- Removal of `axios-case-converter`
+- `postLogin` / `postRefresh` / `fetchCurrentUser` in `src/auth.ts` are
+  still hand-written wrappers kept as-is to avoid perturbing
+  `AuthProvider`. They can be replaced with typed calls via `mainApi`
+  once the SPA auth flow (SEP-961 + SEP-1029) settles.
