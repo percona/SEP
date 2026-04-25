@@ -14,4 +14,16 @@ export type { ExecutionEvent, ExecutionEventsState } from './useExecutionEvents'
 export { useLogDownload } from './useLogDownload';
 export type { DownloadLog } from './useLogDownload';
 
-export { useTaskHistory } from './useTaskHistory';
+export {
+  useTaskHistory,
+  useTaskHistoryByName,
+  useStopTaskHistory,
+  isRunningStatus,
+  RUNNING_STATUSES,
+} from './useTaskHistory';
+export type {
+  TaskHistoryStatus,
+  TaskHistoryEntry,
+  PaginatedTaskHistory,
+  UseTaskHistoryOptions,
+} from './useTaskHistory';
