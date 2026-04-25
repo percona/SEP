@@ -30,6 +30,7 @@ repos:
         language: python
         additional_dependencies: ["jsbeautifier==1.15.1"]
         files: ^(?!.*\.min\.js$)(?!static/(js|css)/vendor/).*\.js$
+        exclude: ^frontend/
       - id: css-beautify
         name: CSS Beautify
         description: "Run css-beautify (from cssbeautifier) on .css files"
@@ -37,6 +38,7 @@ repos:
         language: python
         additional_dependencies: ["cssbeautifier==1.15.1"]
         files: ^(?!.*\.min\.css$)(?!static/(js|css)/vendor/).*\.css$
+        exclude: ^frontend/
       - id: update-installer-checksum
         name: Update sep_installer.sh checksum
         description: "Update sep_installer.sha256 when sep_installer.sh changes"

@@ -1,3 +1,4 @@
+/// <reference path="../vite-env.d.ts" />
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';

@@ -1,5 +1,5 @@
+/// <reference path="./vite-env.d.ts" />
 import axios, { type InternalAxiosRequestConfig } from 'axios';
-import applyCaseMiddleware from 'axios-case-converter';
 import { ApiError, normalizeAxiosError } from './errors';
 
 // ── Token provider ─────────────────────────────────────────────────────
@@ -23,24 +23,32 @@ export function setOnUnauthorized(handler: OnUnauthorized) {
   _onUnauthorized = handler;
 }
 
+/** Read the currently registered token provider. Used by the typed client. */
+export function getToken(): string | null {
+  return _getToken();
+}
+
+/** Invoke the currently registered unauthorized handler. */
+export function emitUnauthorized(): void {
+  _onUnauthorized();
+}
+
 // ── Dev logging flag ───────────────────────────────────────────────────
 // Vite statically replaces `import.meta.env.DEV` at build time, so the
 // logging branches are dead-code-eliminated in production bundles.
 const IS_DEV = import.meta.env.DEV;
 
 /**
- * Primary API client. See README.md for the camelCase ↔ snake_case policy —
- * axios-case-converter will be removed in Phase 2 once generated types land.
+ * Primary API client. Request/response payloads are passed through verbatim —
+ * field casing matches the OpenAPI spec (see `src/generated/`).
  */
-export const apiClient = applyCaseMiddleware(
-  axios.create({
-    baseURL: '/api',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    validateStatus: (status) => status >= 200 && status < 300,
-  }),
-);
+export const apiClient = axios.create({
+  baseURL: '/api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  validateStatus: (status) => status >= 200 && status < 300,
+});
 
 // ── Request: attach Bearer token, optionally log ───────────────────────
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
