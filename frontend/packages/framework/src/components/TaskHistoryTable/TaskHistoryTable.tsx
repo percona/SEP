@@ -66,6 +66,8 @@ interface ViewProps {
   hideTaskNameColumn?: boolean;
   onStop: (entry: TaskHistoryEntry) => void;
   isStopping: boolean;
+  /** True when the row's stop action will resolve to a real handler (callback or internal mutation). */
+  canStop: (entry: TaskHistoryEntry) => boolean;
 }
 
 function TaskHistoryTableView({
@@ -78,6 +80,7 @@ function TaskHistoryTableView({
   hideTaskNameColumn,
   onStop,
   isStopping,
+  canStop,
 }: ViewProps) {
   const columns = useMemo<MRT_ColumnDef<TaskHistoryEntry>[]>(() => {
     const cols: MRT_ColumnDef<TaskHistoryEntry>[] = [
@@ -171,7 +174,7 @@ function TaskHistoryTableView({
                   <IconButton
                     size="small"
                     aria-label="View logs"
-                    disabled={!entry.has_logs && !running}
+                    disabled={!onViewLogs || (!entry.has_logs && !running)}
                     onClick={() => onViewLogs?.(entry)}
                   >
                     <VisibilityIcon fontSize="small" />
@@ -186,7 +189,7 @@ function TaskHistoryTableView({
                       color="warning"
                       aria-label="Stop task"
                       onClick={() => onStop(entry)}
-                      disabled={isStopping}
+                      disabled={isStopping || !canStop(entry)}
                     >
                       <StopCircleIcon fontSize="small" />
                     </IconButton>
@@ -199,6 +202,7 @@ function TaskHistoryTableView({
                     <IconButton
                       size="small"
                       aria-label="Download files"
+                      disabled={!onDownloadFiles}
                       onClick={() => onDownloadFiles?.(entry)}
                     >
                       <DownloadIcon fontSize="small" />
@@ -219,6 +223,7 @@ function TaskHistoryTableView({
     onViewLogs,
     onStop,
     isStopping,
+    canStop,
     resolveUserName,
   ]);
 
@@ -305,6 +310,11 @@ function ConnectedTaskHistoryTable({
     [onStopTask, stopMutation],
   );
 
+  const canStop = useCallback(
+    (entry: TaskHistoryEntry) => !!onStopTask || (entry.id !== null && entry.id !== undefined),
+    [onStopTask],
+  );
+
   return (
     <TaskHistoryTableView
       rows={rows}
@@ -316,6 +326,7 @@ function ConnectedTaskHistoryTable({
       hideTaskNameColumn={hideTaskNameColumn}
       onStop={handleStop}
       isStopping={stopMutation.isPending}
+      canStop={canStop}
     />
   );
 }
@@ -352,6 +363,8 @@ function PresentationalTaskHistoryTable({
     [onStopTask],
   );
 
+  const canStop = useCallback(() => !!onStopTask, [onStopTask]);
+
   return (
     <TaskHistoryTableView
       rows={data}
@@ -363,6 +376,7 @@ function PresentationalTaskHistoryTable({
       hideTaskNameColumn={hideTaskNameColumn}
       onStop={handleStop}
       isStopping={false}
+      canStop={canStop}
     />
   );
 }
