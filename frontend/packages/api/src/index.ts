@@ -1,7 +1,13 @@
 /// <reference path="./vite-env.d.ts" />
 
 // API client
-export { apiClient, setTokenProvider, setOnUnauthorized } from './client';
+export {
+  apiClient,
+  refreshAccessToken,
+  setTokenProvider,
+  setOnUnauthorized,
+  setOnRefreshed,
+} from './client';
 
 // Query client
 export { createQueryClient, defaultQueryClientConfig } from './queryClient';
