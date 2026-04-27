@@ -17,6 +17,7 @@
 
 import json
 
+from app.core.celery.models import CrontabSchedule
 from app.core.celery.utils import (
     init_periodic_tasks_db,
     SystemPeriodicTaskData,
@@ -40,6 +41,15 @@ SYSTEM_PERIODIC_TASKS = [
             SystemPeriodicTaskData(
                 name="sep__sync_snippets",
                 task_name="app.sep.celery.sync_snippets",
+            ),
+        ],
+    ),
+    SystemPeriodicTaskSchedule(
+        schedule=CrontabSchedule(minute="15", hour="4"),
+        tasks=[
+            SystemPeriodicTaskData(
+                name="sep__check_nomad_cert_expiry",
+                task_name="app.sep.celery.check_nomad_cert_expiry",
             ),
         ],
     ),
