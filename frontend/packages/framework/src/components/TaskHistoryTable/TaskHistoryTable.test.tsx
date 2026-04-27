@@ -154,9 +154,8 @@ describe('TaskHistoryTable actions', () => {
     expect(onViewLogs.mock.calls[0][0].id).toBe(1);
   });
 
-  it('confirms before invoking onStopTask', async () => {
+  it('opens confirm dialog and invokes onStopTask on Stop click', async () => {
     const onStopTask = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const data = [makeEntry(2, 'running')];
     render(
       <Wrapper client={client}>
@@ -164,14 +163,15 @@ describe('TaskHistoryTable actions', () => {
       </Wrapper>,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Stop task' }));
-    expect(confirmSpy).toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/Are you sure/i)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Stop' }));
     expect(onStopTask).toHaveBeenCalledOnce();
-    confirmSpy.mockRestore();
+    expect(onStopTask.mock.calls[0][0].id).toBe(2);
   });
 
-  it('skips stop callback when confirm returns false', async () => {
+  it('skips stop callback when dialog Cancel clicked', async () => {
     const onStopTask = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const data = [makeEntry(2, 'running')];
     render(
       <Wrapper client={client}>
@@ -179,8 +179,9 @@ describe('TaskHistoryTable actions', () => {
       </Wrapper>,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Stop task' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(onStopTask).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it('shows download button only for completed rows with downloadable artifacts', () => {
@@ -201,28 +202,98 @@ describe('TaskHistoryTable actions', () => {
 describe('TaskHistoryTable sort + pagination', () => {
   const client = makeQueryClient();
 
-  it('sorts by Started column when header clicked', async () => {
-    const data = [makeEntry(1, 'success'), makeEntry(2, 'failed'), makeEntry(3, 'running')];
+  function taskNamesInOrder(): string[] {
+    const cells = screen.getAllByRole('cell');
+    return cells.map((c) => c.textContent ?? '').filter((t) => /^task-\d+$/.test(t));
+  }
+
+  it('reorders rows when Started column header is toggled', async () => {
+    const data = [makeEntry(1, 'success'), makeEntry(2, 'success'), makeEntry(3, 'success')];
     render(
       <Wrapper client={client}>
         <TaskHistoryTable data={data} disablePolling />
       </Wrapper>,
     );
-    const rows = screen.getAllByRole('row');
-    expect(rows.length).toBeGreaterThan(1);
-    const startedHeader = screen.getByText('Started');
-    await userEvent.click(startedHeader);
-    await userEvent.click(startedHeader);
+
+    // Initial sort is started_at desc → task-3, task-2, task-1.
+    const initial = taskNamesInOrder();
+    expect(initial).toEqual(['task-3', 'task-2', 'task-1']);
+
+    await userEvent.click(screen.getByText('Started'));
+    const ascending = taskNamesInOrder();
+    expect(ascending).toEqual(['task-1', 'task-2', 'task-3']);
+    expect(ascending).not.toEqual(initial);
   });
 
-  it('renders pagination controls', () => {
-    const data = Array.from({ length: 25 }, (_, i) => makeEntry(i + 1, 'success'));
+  it('paginates: next page swaps the visible rows', async () => {
+    const data = Array.from({ length: 25 }, (_, i) =>
+      makeEntry(i + 1, 'success', {
+        // Override started_at so ascending id matches descending default sort.
+        started_at: new Date(Date.UTC(2026, 0, 1, 0, 25 - i)).toISOString(),
+      }),
+    );
     render(
       <Wrapper client={client}>
         <TaskHistoryTable data={data} disablePolling />
       </Wrapper>,
     );
-    expect(screen.getByLabelText(/Go to next page/i)).toBeInTheDocument();
+
+    const firstPageNames = taskNamesInOrder();
+    expect(firstPageNames).toHaveLength(10);
+    expect(firstPageNames[0]).toBe('task-1');
+
+    await userEvent.click(screen.getByLabelText(/Go to next page/i));
+
+    const secondPageNames = taskNamesInOrder();
+    expect(secondPageNames).toHaveLength(10);
+    expect(secondPageNames[0]).toBe('task-11');
+    expect(secondPageNames).not.toEqual(firstPageNames);
+  });
+});
+
+describe('TaskHistoryTable connected stop mutation', () => {
+  beforeEach(() => {
+    mockedApiClient.get.mockReset();
+    mockedApiClient.post.mockReset();
+  });
+
+  it('without onStopTask, posts to stop endpoint and refetches', async () => {
+    const runningEntry = makeEntry(42, 'running');
+    const stoppedEntry = makeEntry(42, 'stopped', { duration: 10 });
+
+    let returnRunning = true;
+    mockedApiClient.get.mockImplementation(async () => ({
+      data: {
+        items: [returnRunning ? runningEntry : stoppedEntry],
+        total: 1,
+        offset: 0,
+        limit: 10,
+      },
+    }));
+    mockedApiClient.post.mockImplementation(async () => {
+      returnRunning = false;
+      return { data: stoppedEntry };
+    });
+
+    const client = makeQueryClient();
+    render(
+      <Wrapper client={client}>
+        <TaskHistoryTable taskName="my-task" disablePolling />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(screen.getByText('Running')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop task' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Stop' }));
+
+    await waitFor(() =>
+      expect(mockedApiClient.post).toHaveBeenCalledWith('/tasks/history/42/stop/'),
+    );
+
+    await waitFor(() => expect(screen.getByText('Stopped')).toBeInTheDocument());
+    expect(mockedApiClient.get.mock.calls.length).toBeGreaterThan(1);
   });
 });
 

@@ -7,8 +7,6 @@
  */
 
 import type { Meta, StoryObj } from '@storybook/react';
-import type { ComponentType } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskHistoryTable } from './TaskHistoryTable';
 import type { TaskHistoryEntry, TaskHistoryStatus } from './TaskHistoryTable.types';
 
@@ -91,19 +89,9 @@ const CHAIN_SCENARIOS: TaskHistoryEntry[] = [
   }),
 ];
 
-const withQueryClient = (Story: ComponentType) => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return (
-    <QueryClientProvider client={client}>
-      <Story />
-    </QueryClientProvider>
-  );
-};
-
 const meta: Meta<typeof TaskHistoryTable> = {
   title: 'Framework/TaskHistoryTable',
   component: TaskHistoryTable,
-  decorators: [withQueryClient],
   parameters: { layout: 'padded' },
 };
 export default meta;

@@ -1,3 +1,4 @@
+import { keyframes } from '@emotion/react';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -7,6 +8,17 @@ import HourglassDisabledIcon from '@mui/icons-material/HourglassDisabled';
 import ReportIcon from '@mui/icons-material/Report';
 import Chip from '@mui/material/Chip';
 import type { TaskHistoryStatus } from '../../hooks/useTaskHistory';
+
+const spin = keyframes`
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+`;
+
+const spinningIconSx = {
+  '& .MuiChip-icon': {
+    animation: `${spin} 1.4s linear infinite`,
+  },
+} as const;
 
 type ChipColor = 'success' | 'error' | 'warning' | 'info' | 'default';
 
@@ -40,19 +52,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       icon={entry.icon}
       label={entry.label}
       data-status={status}
-      sx={
-        entry.spin
-          ? {
-              '& .MuiChip-icon': {
-                animation: 'taskHistorySpin 1.4s linear infinite',
-              },
-              '@keyframes taskHistorySpin': {
-                from: { transform: 'rotate(0deg)' },
-                to: { transform: 'rotate(360deg)' },
-              },
-            }
-          : undefined
-      }
+      sx={entry.spin ? spinningIconSx : undefined}
     />
   );
 }

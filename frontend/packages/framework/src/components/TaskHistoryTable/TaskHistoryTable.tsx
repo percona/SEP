@@ -1,7 +1,13 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import DownloadIcon from '@mui/icons-material/Download';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
@@ -49,11 +55,11 @@ function readMeta(entry: TaskHistoryEntry): MetaShape {
 }
 
 function hasDownloadableArtifacts(entry: TaskHistoryEntry): boolean {
-  if (entry.has_logs) {
-    return true;
-  }
-  const maybeFiles = (entry as { available_files?: unknown }).available_files;
-  return !!maybeFiles && typeof maybeFiles === 'object' && Object.keys(maybeFiles).length > 0;
+  return entry.has_logs;
+}
+
+function stopConfirmLabel(entry: TaskHistoryEntry): string {
+  return entry.task?.name ?? `#${entry.id ?? ''}`;
 }
 
 interface ViewProps {
@@ -64,7 +70,8 @@ interface ViewProps {
   onDownloadFiles: TaskHistoryTableProps['onDownloadFiles'];
   onChainItemClick: TaskHistoryTableProps['onChainItemClick'];
   hideTaskNameColumn?: boolean;
-  onStop: (entry: TaskHistoryEntry) => void;
+  /** Called once the user confirms the stop dialog. */
+  onConfirmStop: (entry: TaskHistoryEntry) => void;
   isStopping: boolean;
   /** True when the row's stop action will resolve to a real handler (callback or internal mutation). */
   canStop: (entry: TaskHistoryEntry) => boolean;
@@ -78,10 +85,20 @@ function TaskHistoryTableView({
   onDownloadFiles,
   onChainItemClick,
   hideTaskNameColumn,
-  onStop,
+  onConfirmStop,
   isStopping,
   canStop,
 }: ViewProps) {
+  const [pendingStopEntry, setPendingStopEntry] = useState<TaskHistoryEntry | null>(null);
+
+  const requestStop = useCallback((entry: TaskHistoryEntry) => setPendingStopEntry(entry), []);
+  const cancelStop = useCallback(() => setPendingStopEntry(null), []);
+  const confirmStop = useCallback(() => {
+    if (pendingStopEntry) {
+      onConfirmStop(pendingStopEntry);
+    }
+    setPendingStopEntry(null);
+  }, [onConfirmStop, pendingStopEntry]);
   const columns = useMemo<MRT_ColumnDef<TaskHistoryEntry>[]>(() => {
     const cols: MRT_ColumnDef<TaskHistoryEntry>[] = [
       {
@@ -188,7 +205,7 @@ function TaskHistoryTableView({
                       size="small"
                       color="warning"
                       aria-label="Stop task"
-                      onClick={() => onStop(entry)}
+                      onClick={() => requestStop(entry)}
                       disabled={isStopping || !canStop(entry)}
                     >
                       <StopCircleIcon fontSize="small" />
@@ -221,44 +238,66 @@ function TaskHistoryTableView({
     onChainItemClick,
     onDownloadFiles,
     onViewLogs,
-    onStop,
+    requestStop,
     isStopping,
     canStop,
     resolveUserName,
   ]);
 
   return (
-    <MaterialReactTable
-      columns={columns}
-      data={rows}
-      state={{ isLoading }}
-      enableColumnActions={false}
-      enableDensityToggle={false}
-      enableFullScreenToggle={false}
-      enableHiding={false}
-      enablePagination
-      enableSorting
-      initialState={{
-        density: 'compact',
-        sorting: [{ id: 'started_at', desc: true }],
-        pagination: { pageIndex: 0, pageSize: 10 },
-      }}
-      getRowId={(row) => String(row.id ?? `${row.task?.name ?? ''}-${row.started_at ?? ''}`)}
-      muiTableBodyRowProps={({ row }) =>
-        isRunningStatus(row.original.status)
-          ? { 'data-running': 'true', sx: { backgroundColor: 'action.hover' } }
-          : {}
-      }
-      renderEmptyRowsFallback={() => (
-        <Typography variant="body2" sx={{ p: 2, textAlign: 'center' }} color="text.secondary">
-          No task history
-        </Typography>
-      )}
-    />
+    <>
+      <MaterialReactTable
+        columns={columns}
+        data={rows}
+        state={{ isLoading }}
+        enableColumnActions={false}
+        enableDensityToggle={false}
+        enableFullScreenToggle={false}
+        enableHiding={false}
+        enablePagination
+        enableSorting
+        initialState={{
+          density: 'compact',
+          sorting: [{ id: 'started_at', desc: true }],
+          pagination: { pageIndex: 0, pageSize: 10 },
+        }}
+        getRowId={(row) => String(row.id ?? `${row.task?.name ?? ''}-${row.started_at ?? ''}`)}
+        muiTableBodyRowProps={({ row }) =>
+          isRunningStatus(row.original.status)
+            ? { 'data-running': 'true', sx: { backgroundColor: 'action.hover' } }
+            : {}
+        }
+        renderEmptyRowsFallback={() => (
+          <Typography variant="body2" sx={{ p: 2, textAlign: 'center' }} color="text.secondary">
+            No task history
+          </Typography>
+        )}
+      />
+      <Dialog
+        open={pendingStopEntry !== null}
+        onClose={cancelStop}
+        aria-labelledby="task-history-stop-title"
+      >
+        <DialogTitle id="task-history-stop-title">Stop task</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {pendingStopEntry
+              ? `Are you sure you want to stop the task ${stopConfirmLabel(pendingStopEntry)}?`
+              : ''}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelStop}>Cancel</Button>
+          <Button onClick={confirmStop} color="warning" variant="contained" autoFocus>
+            Stop
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 
-interface ConnectedProps extends Omit<TaskHistoryTableProps, 'data' | 'isLoading'> {}
+type ConnectedProps = Omit<TaskHistoryTableProps, 'data' | 'isLoading'>;
 
 function ConnectedTaskHistoryTable({
   taskName,
@@ -289,16 +328,8 @@ function ConnectedTaskHistoryTable({
   const rows: TaskHistoryEntry[] = queryResult.data?.items ?? [];
   const isLoading = queryResult.isLoading;
 
-  const handleStop = useCallback(
+  const onConfirmStop = useCallback(
     (entry: TaskHistoryEntry) => {
-      const taskLabel = entry.task?.name ?? `#${entry.id ?? ''}`;
-      const confirmed =
-        typeof window === 'undefined'
-          ? true
-          : window.confirm(`Are you sure you want to stop the task ${taskLabel}?`);
-      if (!confirmed) {
-        return;
-      }
       if (onStopTask) {
         onStopTask(entry);
         return;
@@ -324,7 +355,7 @@ function ConnectedTaskHistoryTable({
       onDownloadFiles={onDownloadFiles}
       onChainItemClick={onChainItemClick}
       hideTaskNameColumn={hideTaskNameColumn}
-      onStop={handleStop}
+      onConfirmStop={onConfirmStop}
       isStopping={stopMutation.isPending}
       canStop={canStop}
     />
@@ -348,20 +379,7 @@ function PresentationalTaskHistoryTable({
   onChainItemClick,
   hideTaskNameColumn,
 }: PresentationalProps) {
-  const handleStop = useCallback(
-    (entry: TaskHistoryEntry) => {
-      const taskLabel = entry.task?.name ?? `#${entry.id ?? ''}`;
-      const confirmed =
-        typeof window === 'undefined'
-          ? true
-          : window.confirm(`Are you sure you want to stop the task ${taskLabel}?`);
-      if (!confirmed) {
-        return;
-      }
-      onStopTask?.(entry);
-    },
-    [onStopTask],
-  );
+  const onConfirmStop = useCallback((entry: TaskHistoryEntry) => onStopTask?.(entry), [onStopTask]);
 
   const canStop = useCallback(() => !!onStopTask, [onStopTask]);
 
@@ -374,7 +392,7 @@ function PresentationalTaskHistoryTable({
       onDownloadFiles={onDownloadFiles}
       onChainItemClick={onChainItemClick}
       hideTaskNameColumn={hideTaskNameColumn}
-      onStop={handleStop}
+      onConfirmStop={onConfirmStop}
       isStopping={false}
       canStop={canStop}
     />
