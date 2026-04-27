@@ -10,22 +10,21 @@ import {
 } from 'react';
 import {
   postLogin,
-  postRefresh,
+  postLogout,
   fetchCurrentUser,
-  setTokenProvider,
+  refreshAccessToken,
+  setOnRefreshed,
   setOnUnauthorized,
+  setTokenProvider,
+  type SPAOAuthTokenResponse,
   type User,
 } from '@sep/api';
-
-// ── Storage keys ────────────────────────────────────────────────────────
-// Only the refresh token is persisted (localStorage for now).
-// TODO: move refresh token to HttpOnly cookie once backend supports it.
-const REFRESH_KEY = 'sep_refresh_token';
+import { useSilentRefresh } from '../hooks/useSilentRefresh';
 
 // ── Context shape ───────────────────────────────────────────────────────
 interface AuthState {
   user: User | null;
-  token: string | null;
+  accessToken: string | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
   /** true during initial session bootstrap & during login */
@@ -33,71 +32,41 @@ interface AuthState {
   /** true after the initial session check finishes (success or failure) */
   ready: boolean;
   login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
 
 // ── Provider ────────────────────────────────────────────────────────────
+// Access token lives only in React state. The refresh token lives in an
+// `HttpOnly` cookie set by the backend — JS never sees it and never
+// persists anything to localStorage/sessionStorage.
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   // Access token lives only in React state. A ref mirrors the latest value
   // so the token provider callback (injected into the API client) always
   // reads the current token without stale closures.
-  const [token, setToken] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [expiresIn, setExpiresIn] = useState<number | null>(null);
   const tokenRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const isAuthenticated = !!token;
+  const isAuthenticated = !!accessToken;
   const isAdmin = user?.isAdmin ?? false;
 
-  // ── Helpers ───────────────────────────────────────────────────────────
-  const persistTokens = useCallback((accessToken: string, refreshToken: string) => {
-    setToken(accessToken);
-    tokenRef.current = accessToken;
-    localStorage.setItem(REFRESH_KEY, refreshToken);
+  const applyTokens = useCallback((tokens: SPAOAuthTokenResponse) => {
+    tokenRef.current = tokens.access_token;
+    setAccessToken(tokens.access_token);
+    setExpiresIn(tokens.expires_in);
   }, []);
 
-  const clearTokens = useCallback(() => {
-    setToken(null);
+  const clearAuth = useCallback(() => {
     tokenRef.current = null;
+    setAccessToken(null);
+    setExpiresIn(null);
     setUser(null);
-    localStorage.removeItem(REFRESH_KEY);
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
-    }
   }, []);
-
-  // ── Token refresh ─────────────────────────────────────────────────────
-  const scheduleRefresh = useCallback(
-    (expiresIn: number) => {
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-      }
-
-      // Refresh 60 seconds before expiry (minimum 10s)
-      const ms = Math.max((expiresIn - 60) * 1000, 10_000);
-
-      refreshTimerRef.current = setTimeout(async () => {
-        const rt = localStorage.getItem(REFRESH_KEY);
-        if (!rt) {
-          return;
-        }
-
-        try {
-          const tokens = await postRefresh(rt);
-          persistTokens(tokens.accessToken, tokens.refreshToken);
-          scheduleRefresh(tokens.expiresIn);
-        } catch {
-          // Refresh failed — force re-login
-          clearTokens();
-        }
-      }, ms);
-    },
-    [persistTokens, clearTokens],
-  );
 
   // ── Login ─────────────────────────────────────────────────────────────
   const login = useCallback(
@@ -105,75 +74,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       try {
         const tokens = await postLogin(username, password);
-        persistTokens(tokens.accessToken, tokens.refreshToken);
-        scheduleRefresh(tokens.expiresIn);
-
-        // Fetch full user profile
+        applyTokens(tokens);
         const profile = await fetchCurrentUser();
         setUser(profile);
       } finally {
         setLoading(false);
       }
     },
-    [persistTokens, scheduleRefresh],
+    [applyTokens],
   );
 
   // ── Logout ────────────────────────────────────────────────────────────
-  const logout = useCallback(() => {
-    clearTokens();
-  }, [clearTokens]);
+  // Always clear local state, even if the backend call fails (network
+  // error, expired token). The refresh cookie is best-effort cleared
+  // server-side; a stuck cookie would be re-validated on next use.
+  const logout = useCallback(async () => {
+    try {
+      await postLogout();
+    } catch {
+      // swallow — we clear local state unconditionally below
+    } finally {
+      clearAuth();
+    }
+  }, [clearAuth]);
 
-  // ── Inject token provider & unauthorized handler into API client ────
-  // The API layer never owns the token — it calls back here to get it.
+  // ── Silent refresh timer ──────────────────────────────────────────────
+  // Success updates state via the ``setOnRefreshed`` callback below — the
+  // hook only triggers the shared single-flight refresh so the timer and
+  // the 401 retry interceptor cannot double-rotate the refresh cookie.
+  useSilentRefresh({
+    accessToken,
+    expiresIn,
+    onFailure: clearAuth,
+  });
+
+  // ── Inject callbacks into API client ──────────────────────────────────
   useEffect(() => {
     setTokenProvider(() => tokenRef.current);
+    setOnRefreshed((token, ttl) => {
+      tokenRef.current = token;
+      setAccessToken(token);
+      setExpiresIn(ttl);
+    });
     setOnUnauthorized(() => {
-      clearTokens();
-      // Redirect to login unless already there (avoid loops)
+      clearAuth();
       if (!window.location.pathname.startsWith('/login')) {
         window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
       }
     });
     return () => {
       setTokenProvider(() => null);
+      setOnRefreshed(() => {});
       setOnUnauthorized(() => {});
     };
-  }, [clearTokens]);
+  }, [clearAuth]);
 
   // ── Session bootstrap (runs once on mount) ────────────────────────────
-  // Access token is memory-only so it's lost on reload. Restore the
-  // session by performing a silent refresh with the persisted refresh
-  // token, then fetch the user profile with the new access token.
+  // Access token is memory-only so it's lost on reload. Attempt a silent
+  // refresh through the shared coordinator (same path as the 401 retry
+  // interceptor) so a page-load concurrent with an in-flight refresh does
+  // not rotate the cookie twice. If the cookie is absent or invalid the
+  // call resolves to null and the user lands on /login.
   useEffect(() => {
-    const refreshToken = localStorage.getItem(REFRESH_KEY);
-    if (!refreshToken) {
-      setReady(true);
-      return;
-    }
-
+    let cancelled = false;
     setLoading(true);
-    postRefresh(refreshToken)
-      .then((tokens) => {
-        persistTokens(tokens.accessToken, tokens.refreshToken);
-        scheduleRefresh(tokens.expiresIn);
-        return fetchCurrentUser();
-      })
-      .then((profile) => {
+    refreshAccessToken()
+      .then(async (token) => {
+        if (cancelled) {
+          return;
+        }
+        if (!token) {
+          clearAuth();
+          return;
+        }
+        // ``setOnRefreshed`` has already synced tokenRef + accessToken
+        // state, so the profile fetch will carry the new Bearer token.
+        const profile = await fetchCurrentUser();
+        if (cancelled) {
+          return;
+        }
         setUser(profile);
       })
       .catch(() => {
-        // Refresh token invalid/expired — clear and require re-login
-        clearTokens();
+        if (!cancelled) {
+          clearAuth();
+        }
       })
       .finally(() => {
-        setLoading(false);
-        setReady(true);
+        if (!cancelled) {
+          setLoading(false);
+          setReady(true);
+        }
       });
-
     return () => {
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-      }
+      cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -182,7 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(
     () => ({
       user,
-      token,
+      accessToken,
       isAuthenticated,
       isAdmin,
       loading,
@@ -190,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
     }),
-    [user, token, isAuthenticated, isAdmin, loading, ready, login, logout],
+    [user, accessToken, isAuthenticated, isAdmin, loading, ready, login, logout],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

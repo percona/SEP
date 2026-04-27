@@ -22,7 +22,7 @@ export const checksumsSchema: PluginSchema = {
       description: 'Select the MySQL service to run checksums against.',
       fields: [
         {
-          name: 'serviceId',
+          name: 'service_id',
           label: 'MySQL Service',
           type: 'service',
           required: true,
@@ -41,7 +41,7 @@ export const checksumsSchema: PluginSchema = {
       title: 'Options',
       fields: [
         {
-          name: 'chunkSize',
+          name: 'chunk_size',
           label: 'Chunk Size',
           type: 'choice',
           default: '1000',
@@ -53,13 +53,13 @@ export const checksumsSchema: PluginSchema = {
           ],
         },
         {
-          name: 'replicateCheck',
+          name: 'replicate_check',
           label: 'Replicate check (--replicate-check)',
           type: 'bool',
           default: true,
         },
         {
-          name: 'checkInterval',
+          name: 'check_interval',
           label: 'Check interval (seconds)',
           type: 'integer',
           default: 1,
@@ -82,8 +82,8 @@ export const checksumsSchema: PluginSchema = {
       { key: 'schema', label: 'Schema', format: 'code' },
       { key: 'status', label: 'Status', format: 'status', sortable: true },
       { key: 'differences', label: 'Differences' },
-      { key: 'lastRun', label: 'Last Run', format: 'relative', sortable: true },
+      { key: 'last_run', label: 'Last Run', format: 'relative', sortable: true },
     ],
-    defaultSort: '-lastRun',
+    defaultSort: '-last_run',
   },
 };

@@ -6,6 +6,13 @@ python:
       - 'pyproject.toml'
       - 'poetry.lock'
 
+frontend:
+- any:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'frontend/**'
+      - 'package.json'
+
 skip-test:
 - all:
   - changed-files:
