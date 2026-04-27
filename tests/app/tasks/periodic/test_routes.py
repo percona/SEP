@@ -228,6 +228,77 @@ class TestUpdatePeriodicTask:
         # Chain should be preserved
         assert data["execute_request"]["chain_task_names"] == ["task-b"]
 
+    @pytest.mark.asyncio
+    async def test_update_periodic_task_without_execute_request_preserves_chain(
+        self,
+        periodic_test_client,
+        celery_beat_session,
+        tasks_session,
+    ):
+        """Assert updating without execute_request in body preserves existing chain.
+
+        This is a regression test for the bug where kwargs reconstruction
+        did not update the kwargs field, causing execution_data to be dropped
+        from the persisted row when execute_request was omitted from the PUT body.
+        """
+        shared = {"owner": "BACKUPS", "data": {"Constraints": [{"RTarget": "n"}]}}
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="task-a", **shared)),
+        )
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="task-b", **shared)),
+        )
+
+        schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+        celery_beat_session.add(schedule)
+        await celery_beat_session.flush()
+
+        periodic_task = PeriodicTask(
+            name="chained-periodic",
+            task=CELERY_TASK_NAME,
+            kwargs=json.dumps(
+                {
+                    "task_name": "task-a",
+                    "execution_data": {
+                        "chain_task_names": ["task-b"],
+                        "meta": {},
+                    },
+                }
+            ),
+            enabled=True,
+            description="A periodic task with chain",
+            schedule_model=schedule,
+        )
+        celery_beat_session.add(periodic_task)
+        await celery_beat_session.commit()
+        await celery_beat_session.refresh(periodic_task)
+
+        update_data = {
+            "name": "chained-periodic",
+            "task": "task-a",
+            "start_time": None,
+            "enabled": True,
+            "description": "Updated description",
+            "crontab": {
+                "minute": "0",
+                "hour": "*/4",
+                "day_of_month": "*",
+                "month_of_year": "*",
+                "day_of_week": "*",
+                "timezone": "UTC",
+            },
+        }
+        response = periodic_test_client.put(
+            f"/periodic/{periodic_task.id}",
+            json=update_data,
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["execute_request"]["chain_task_names"] == ["task-b"]
+        assert data["description"] == "Updated description"
+
 
 class TestCreatePeriodicTaskChainValidation:
     """Test chain_task_names validation on POST /{task_name}/periodic/."""

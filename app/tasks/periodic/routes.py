@@ -23,6 +23,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
+from app.core.utils.iterators import unique_everseen
 from app.tasks.crud import TaskManager
 from app.tasks.deps import (
     get_executable_task_by_name,
@@ -35,6 +36,7 @@ from app.tasks.models import (
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.deps import PeriodicTaskDep
 from app.tasks.periodic.models import (
+    PeriodicTaskExecuteRequest,
     PeriodicTaskResponse,
     PeriodicTaskUpdate,
 )
@@ -104,25 +106,21 @@ async def update_periodic_task(
     existing_chain = existing_execution_data.get("chain_task_names")
 
     if updated_chain:
-        seen = set()
-        unique_chain = []
-        for item in updated_chain:
-            if item not in seen:
-                unique_chain.append(item)
-                seen.add(item)
+        unique_chain = list(unique_everseen(updated_chain))
 
         if updated_task.execute_request:
             updated_task.execute_request.chain_task_names = unique_chain
         updated_chain = unique_chain
 
     if updated_task.execute_request is None and existing_execution_data:
-        from app.tasks.periodic.models import PeriodicTaskExecuteRequest
-
         updated_task.execute_request = PeriodicTaskExecuteRequest(
             **existing_execution_data
         )
+        kwargs_dict = json.loads(updated_task.kwargs)
+        kwargs_dict["execution_data"] = existing_execution_data
+        updated_task.kwargs = json.dumps(kwargs_dict)
         logger.debug(
-            "UPDATE PERIODIC TASK - Reconstructed execute_request from existing data"
+            "UPDATE PERIODIC TASK - Reconstructed execute_request and kwargs from existing data"
         )
 
     effective_chain = updated_chain if updated_chain is not None else existing_chain
