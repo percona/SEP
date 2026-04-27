@@ -163,24 +163,43 @@ def _assemble_checksum_payload(
     here so Nomad payloads are byte-identical regardless of the call origin.
 
     :param service: The validated inventory service instance.
+    :type service: CreatedService
     :param task_name: The task name.
+    :type task_name: str
     :param hostname: The executor host.
+    :type hostname: str
     :param recursion_method: The replica-discovery method (e.g. ``"processlist"``).
+    :type recursion_method: str
     :param dsn_table: DSN table used when ``recursion_method == "dsn"``.
+    :type dsn_table: str
     :param databases: Comma-separated database names (pre-resolved).
+    :type databases: str
     :param tables: Comma-separated ``schema.table`` strings (pre-resolved).
+    :type tables: str
     :param pause_file: Pause-file path.
+    :type pause_file: str
     :param binary_index: Enable ``--binary-index`` flag.
+    :type binary_index: bool
     :param explain_arg: Enable ``--explain`` flag.
+    :type explain_arg: bool
     :param fail_on_stopped_replication: Enable ``--fail-on-stopped-replication``.
+    :type fail_on_stopped_replication: bool
     :param truncate_replicate_table: Enable ``--truncate-replicate-table``.
+    :type truncate_replicate_table: bool
     :param progress: ``--progress`` value.
+    :type progress: str
     :param set_vars: ``--set-vars`` value.
+    :type set_vars: str
     :param max_load: ``--max-load`` value.
+    :type max_load: str
     :param chunk_time: ``--chunk-time`` value.
+    :type chunk_time: str
     :param max_lag: ``--max-lag`` value.
+    :type max_lag: str
     :param alert_on_fail: Whether to alert on task failure.
+    :type alert_on_fail: bool
     :param extra_remaining_args: Additional pre-parsed CLI args (form path only).
+    :type extra_remaining_args: Iterable[str]
     :return: A fully constructed ``TaskWrite`` object.
     :rtype: TaskWrite
     """

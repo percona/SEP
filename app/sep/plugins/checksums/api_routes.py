@@ -48,18 +48,12 @@ schema_endpoint(router=router, plugin_schema=checksums_schema)
 
 
 @router.get("/", response_model=list[ChecksumTaskResponse])
-async def checksums_list(
+async def checksums_api_list(
     tasks_api: TaskAPI,
     service_type: ServiceTypeEnum | None = None,
     status: TaskHistoryStatusEnum | None = None,
 ) -> list[ChecksumTaskResponse]:
-    """List checksum tasks as JSON.
-
-    :param tasks_api: Authenticated Tasks API client.
-    :param service_type: Optional service type filter (only MySQL returns results).
-    :param status: Optional latest-history status filter.
-    :return: Matching checksum task responses.
-    """
+    """List checksum tasks."""
     return await get_checksums_api_task_responses(
         tasks_api,
         service_type=service_type,
@@ -68,17 +62,11 @@ async def checksums_list(
 
 
 @router.get("/{task_name}", response_model=ChecksumTaskResponse)
-async def checksums_detail(
+async def checksums_api_detail(
     task_name: str,
     tasks_api: TaskAPI,
 ) -> ChecksumTaskResponse:
-    """Retrieve a single checksum task as JSON.
-
-    :param task_name: The task name.
-    :param tasks_api: Authenticated Tasks API client.
-    :return: The checksum task response.
-    :raises HTTPNotFoundException: If the task does not exist or is not owned by checksums.
-    """
+    """Retrieve a single checksum task."""
     task = await get_checksums_task(task_name, tasks_api)
     task_status = await get_checksums_task_status(task.name, tasks_api)
     return build_checksums_api_task_response(task, status=task_status)
@@ -89,22 +77,12 @@ async def checksums_detail(
     response_model=ChecksumTaskResponse,
     status_code=http_status.HTTP_201_CREATED,
 )
-async def checksums_create(
+async def checksums_api_create(
     body: ChecksumTaskWrite,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
 ) -> ChecksumTaskResponse:
-    """Create a checksum task from a JSON request body.
-
-    Atomic — no connectivity side-effects. Accepts pre-resolved databases and
-    tables strings; does not perform schema/table ID lookups.
-
-    :param body: The validated request body.
-    :param tasks_api: Authenticated Tasks API client.
-    :param inventory_api: Authenticated Inventory API client.
-    :return: The created checksum task response.
-    :raises HTTPNotFoundException: If the inventory service does not exist.
-    """
+    """Create a checksum task from a JSON payload request body."""
     logger.debug("Create checksums task (JSON path): %s", body.task_name)
     task_write = await build_checksum_task(body, inventory_api)
     created = await tasks_api.post("/", json=task_write.model_dump())
@@ -117,12 +95,5 @@ async def checksums_api_delete(
     task: ChecksumsTask,
     tasks_api: TaskAPI,
 ) -> None:
-    """Delete a checksum task.
-
-    Verifies that the task is owned by the checksums plugin before deletion.
-
-    :param task: The validated checksums task (ownership verified by dependency).
-    :param tasks_api: Authenticated Tasks API client.
-    :raises HTTPNotFoundException: If the task does not exist or is not owned by checksums.
-    """
+    """Delete a checksum task."""
     await tasks_api.delete(f"/{task.name}")
