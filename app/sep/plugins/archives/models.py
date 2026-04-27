@@ -74,9 +74,14 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :type limit: int | None
     :param sleep: Optional; Sleep duration between operations for rate limiting.
     :type sleep: int | None
-    :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
-        Default is 0 (binary logging enabled).
-    :type disable_binlog: int
+    :param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.
+        ``None`` means the checkbox was left unset (binary logging stays enabled).
+    :type disable_binlog: int | None
+    :param disable_bulk_insert: Optional integer flag (0 or 1) to disable bulk
+        insert. ``None`` means the checkbox was left unset / default behavior is
+        used; 0 means bulk insert remains enabled, and 1 means bulk insert is
+        disabled.
+    :type disable_bulk_insert: int | None
     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
@@ -104,6 +109,9 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     sleep: int | None = None
     disable_binlog: int | None = Field(
         None, ge=0, le=1, description="Optional flag to disable binary logging."
+    )
+    disable_bulk_insert: int | None = Field(
+        None, ge=0, le=1, description="Optional flag to disable bulk insert."
     )
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
@@ -280,9 +288,13 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :type limit: int | None
     :param sleep: Optional; Sleep duration between operations for rate limiting.
     :type sleep: int | None
-    :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
-        Default is 0 (binary logging enabled).
-    :type disable_binlog: int
+    :param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.
+        ``None`` means the checkbox was left unset (binary logging stays enabled).
+    :type disable_binlog: int | None
+    :param disable_bulk_insert: Optional integer flag (0 or 1) to disable bulk
+        insert. If ``None``, the setting is left unset so existing/default behavior is
+        preserved.
+    :type disable_bulk_insert: int | None
     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
@@ -306,6 +318,12 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
         ge=0,
         le=1,
         description="Optional flag to disable binary logging; set to 0 or 1",
+    )
+    disable_bulk_insert: int | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Optional flag to disable bulk insert; set to 0 or 1",
     )
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
