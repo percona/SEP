@@ -1089,6 +1089,23 @@ def test_node_list_renders_crontab_schedule(
     assert 'value="crontab"' in body
 
 
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_persisted_start_time(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Surface ``start_time`` on the schedule block when the persisted row has it set."""
+    schedule = _interval_periodic()
+    schedule["start_time"] = "2026-05-01T09:00:00+00:00"
+    mock_task_api_dep.get.return_value = [schedule]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "Starts at:" in body
+    assert "2026-05-01T09:00:00+00:00" in body
+
+
 @pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
 def test_node_list_includes_available_timezones_in_context(
     mocker, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_syncers
