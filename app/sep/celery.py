@@ -19,7 +19,6 @@ import asyncio
 import logging
 from pathlib import Path
 
-from cryptography import x509
 from sqlmodel import col
 
 from app.celery import celery
@@ -290,88 +289,3 @@ async def _backup_alert_config() -> None:
             await AlertBackupManager.delete_where(
                 session, col(AlertBackup.id).in_(ids_to_delete)
             )
-
-
-@celery.task
-def check_nomad_cert_expiry() -> None:
-    """Run the Nomad TLS certificate expiry check (CA and client PEM on disk).
-
-    Reads :data:`TASKS.NOMAD.SSL_CAFILE` and :data:`TASKS.NOMAD.SSL_CERTFILE`,
-    compares each certificate's ``not_valid_after_utc`` to
-    :data:`TASKS.NOMAD.CERT_EXPIRY_WARN_DAYS`, and triggers or resolves alerts
-    through :class:`app.core.alerts.models.AlertService`.
-
-    When ``ALERTING.PROVIDERS`` is empty (typical in local development),
-    :meth:`~app.core.alerts.models.AlertService.trigger` and ``resolve`` log
-    a warning and return without sending anything.
-
-    The deduplication key for PagerDuty is ``nomad-cert-expiry:<basename>`` so
-    incidents are stable across restarts. Renaming a cert file on disk may
-    leave a stale open incident under the old basename.
-    """
-    celery.loop.run_until_complete(_check_nomad_cert_expiry())
-
-
-async def _check_nomad_cert_expiry() -> None:
-    """Evaluate Nomad CA and client PEM files and fire or clear expiry alerts."""
-    from app.core.alerts.config import alert_service
-    from app.core.alerts.models import AlertSeverity
-    from app.core.utils import utc_now
-    from app.tasks.config import tasks_settings
-
-    nomad = tasks_settings.NOMAD
-    warn_days = nomad.cert_expiry_warn_days
-    now = utc_now()
-    for label, raw_path in (
-        ("CA", nomad.ssl_cafile),
-        ("client", nomad.ssl_certfile),
-    ):
-        if raw_path is None:
-            continue
-        path = Path(raw_path)
-
-        dedup_key = f"nomad-cert-expiry:{path.name}"
-        try:
-            pem = path.read_bytes()
-            cert = x509.load_pem_x509_certificate(pem)
-        except OSError as exc:
-            logger.warning(
-                "Could not read Nomad %s certificate at %s: %s",
-                label,
-                path,
-                exc,
-            )
-            continue
-        except ValueError:
-            logger.warning(
-                "Could not parse Nomad %s certificate PEM at %s", label, path
-            )
-            continue
-
-        not_after = cert.not_valid_after_utc
-        days_left = (not_after - now).days
-        if days_left > warn_days:
-            await alert_service.resolve(dedup_key)
-            continue
-        if days_left <= 0:
-            severity = AlertSeverity.CRITICAL
-            summary = (
-                f"Nomad {label} certificate {path.name!r} has expired or expires "
-                f"today (not_valid_after_utc={not_after.isoformat()}). "
-                "Renew the certificate and restart SEP so task dispatch continues."
-            )
-        else:
-            severity = AlertSeverity.WARNING
-            summary = (
-                f"Nomad {label} certificate {path.name!r} expires in {days_left} day(s) "
-                f"on {not_after.date().isoformat()} (warning window: {warn_days} day(s))."
-            )
-        await alert_service.trigger(
-            {
-                "summary": summary,
-                "source": f"nomad_cert_expiry:{label}",
-                "severity": severity,
-                "class": "nomad_cert_expiry",
-                "dedup_key": dedup_key,
-            }
-        )
