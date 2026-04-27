@@ -21,6 +21,7 @@ from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
+from app.sep.tasks import parse_crontab_form_fields, parse_interval_form_fields
 
 
 class InventorySyncScheduleCreateForm(BaseModel):
@@ -61,7 +62,7 @@ class InventorySyncScheduleCreateForm(BaseModel):
     def normalize_form(cls, data: Any) -> Any:
         """Transform flat form fields into structured ``interval`` / ``crontab``.
 
-        Mirror the parsing logic in
+        Share the dict-construction helpers with
         :class:`app.sep.tasks.PeriodicTaskRequest.set_period` so the form
         accepts the exact same input shape as the schedule template. Do not
         validate that exactly one schedule mode is provided — the route
@@ -75,22 +76,9 @@ class InventorySyncScheduleCreateForm(BaseModel):
         if not isinstance(data, dict):
             return data
         if "interval_every" in data and "interval_period" in data:
-            data["interval"] = {
-                "every": data["interval_every"],
-                "period": data["interval_period"],
-            }
+            data["interval"] = parse_interval_form_fields(data)
         if "cron_expression" in data and "cron_timezone" in data:
-            minute, hour, day_of_month, month_of_year, day_of_week = data[
-                "cron_expression"
-            ].split()
-            data["crontab"] = {
-                "timezone": data["cron_timezone"],
-                "minute": minute,
-                "hour": hour,
-                "day_of_month": day_of_month,
-                "month_of_year": month_of_year,
-                "day_of_week": day_of_week,
-            }
+            data["crontab"] = parse_crontab_form_fields(data)
         return data
 
     def to_periodic_task_payload(self) -> dict[str, Any]:
