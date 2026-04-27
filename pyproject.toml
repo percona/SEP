@@ -66,6 +66,7 @@ dependencies = [
     "python-multipart (>=0.0.26,<0.0.27)",
     "croniter (>=6.0.0,<7.0.0)",
     "weasyprint (>=68.1,<69.0)",
+    "cryptography (>=46.0.0,<47.0.0)",
 ]
 
 [tool.poetry]

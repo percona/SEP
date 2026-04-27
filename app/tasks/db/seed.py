@@ -31,6 +31,7 @@ from app.core.celery.utils import (
 )
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import DatabaseDialect
+from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.db.engine import engine
@@ -467,6 +468,20 @@ SYSTEM_PERIODIC_TASKS = [
         ],
     )
 ]
+
+_nomad_cert_schedule = tasks_settings.NOMAD.check_cert_expiry_interval
+if _nomad_cert_schedule is not None:
+    SYSTEM_PERIODIC_TASKS.append(
+        SystemPeriodicTaskSchedule(
+            schedule=_nomad_cert_schedule,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="tasks__check_nomad_cert_expiry",
+                    task_name="app.tasks.celery.check_nomad_cert_expiry",
+                ),
+            ],
+        ),
+    )
 
 
 async def init_tasks_db() -> None:
