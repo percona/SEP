@@ -19,9 +19,25 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 {% set has_crontab = sync_schedule and sync_schedule.crontab %}
 {% set default_interval_mode = is_create or has_interval %}
 <form method="post"
-      action="{%- if is_create -%}{{ url_for("periodic_task_create") }}{%- else -%}{{ url_for('periodic_task_update', periodic_task_id=sync_schedule.id) }}{%- endif -%}">
+      action="{%- if is_create -%}{{ url_for("schedule_create") }}{%- else -%}{{ url_for('periodic_task_update', periodic_task_id=sync_schedule.id) }}{%- endif -%}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-    {% if is_create %}<input type="hidden" name="task" value="inventory-sync" />{% endif %}
+    {# Editing the syncer in place is disallowed: the syncer is row identity.
+       To target a different syncer, clear the row and attach a new one. #}
+    {% if is_create %}
+        <fieldset>
+            <legend>Syncer</legend>
+            <label>
+                <input type="radio" name="syncer" value="" checked />
+                All syncers
+            </label>
+            {% for available in available_syncers %}
+                <label>
+                    <input type="radio" name="syncer" value="{{ available.name }}" />
+                    {{ available.display_name }}
+                </label>
+            {% endfor %}
+        </fieldset>
+    {% endif %}
     <fieldset>
         <legend>
             {% if is_create %}

@@ -227,6 +227,58 @@ class TestCeleryExecutorDispatchTask:
         assert stdout_chunks
         assert "output data" in "".join(chunk.content for chunk in stdout_chunks)
 
+    @pytest.mark.asyncio
+    async def test_dispatch_forwards_meta_as_kwargs(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert run kwargs are populated from ``execution_request.meta``."""
+        celery_queue_item.execution_request.meta = {"syncer": "PMM"}
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            return_value="ok",
+        ) as mock_run:
+            await executor.dispatch_task(session, celery_queue_item)
+        _, call_kwargs = mock_run.call_args
+        assert call_kwargs["kwargs"] == {"syncer": "PMM"}
+
+    @pytest.mark.asyncio
+    async def test_dispatch_forwards_empty_kwargs_when_meta_none(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert ``meta = None`` resolves to an empty kwargs forward."""
+        celery_queue_item.execution_request.meta = None
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            return_value="ok",
+        ) as mock_run:
+            await executor.dispatch_task(session, celery_queue_item)
+        _, call_kwargs = mock_run.call_args
+        assert call_kwargs["kwargs"] == {}
+
+    @pytest.mark.asyncio
+    async def test_dispatch_skips_underscore_prefixed_meta_keys(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert underscore-prefixed control keys are filtered out before forwarding."""
+        celery_queue_item.execution_request.meta = {
+            "syncer": "PMM",
+            "_chain_task_names": ["other"],
+            "_chain_on_failure": False,
+        }
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            return_value="ok",
+        ) as mock_run:
+            await executor.dispatch_task(session, celery_queue_item)
+        _, call_kwargs = mock_run.call_args
+        assert call_kwargs["kwargs"] == {"syncer": "PMM"}
+
 
 class TestCeleryExecutorRunCallable:
     """Test CeleryExecutor._run_callable."""
@@ -298,6 +350,73 @@ class TestCeleryExecutorRunCallable:
         with patch("importlib.import_module", return_value=mock_module):
             await executor._run_callable(task, stdout, io.StringIO())
         assert stdout.getvalue().startswith("Executing app.fake.module.async_func")
+
+    @pytest.mark.asyncio
+    async def test_async_callable_forwards_kwargs(self, executor) -> None:
+        """Assert kwargs are unpacked into an async callable as keyword arguments."""
+        captured = {}
+        mod = ModuleType("app.fake.module")
+
+        async def takes_kwargs(*, syncer: str) -> str:
+            captured["syncer"] = syncer
+            return syncer
+
+        mod.takes_kwargs = takes_kwargs
+        task = self._make_task("app.fake.module.takes_kwargs")
+        with patch("importlib.import_module", return_value=mod):
+            result = await executor._run_callable(
+                task,
+                io.StringIO(),
+                io.StringIO(),
+                kwargs={"syncer": "PMM"},
+            )
+        assert result == "PMM"
+        assert captured == {"syncer": "PMM"}
+
+    @pytest.mark.asyncio
+    async def test_sync_callable_forwards_kwargs(self, executor) -> None:
+        """Assert kwargs are unpacked into a sync callable executed via to_thread."""
+        mod = ModuleType("app.fake.module")
+
+        def takes_kwargs(*, a: int, b: int) -> int:
+            return a + b
+
+        mod.takes_kwargs = takes_kwargs
+        task = self._make_task("app.fake.module.takes_kwargs")
+        expected_sum = 2 + 3
+        with patch("importlib.import_module", return_value=mod):
+            result = await executor._run_callable(
+                task,
+                io.StringIO(),
+                io.StringIO(),
+                kwargs={"a": 2, "b": 3},
+            )
+        assert result == expected_sum
+
+    @pytest.mark.asyncio
+    async def test_kwargs_none_invokes_zero_arg_callable(
+        self, executor, mock_module
+    ) -> None:
+        """Assert ``kwargs=None`` (the default) invokes the callable with no args."""
+        task = self._make_task("app.fake.module.async_func")
+        with patch("importlib.import_module", return_value=mock_module):
+            result = await executor._run_callable(task, io.StringIO(), io.StringIO())
+        assert result == "async result"
+
+    @pytest.mark.asyncio
+    async def test_unknown_kwarg_raises_type_error(self, executor, mock_module) -> None:
+        """Assert an unexpected kwarg surfaces the callable's TypeError."""
+        task = self._make_task("app.fake.module.async_func")
+        with (
+            patch("importlib.import_module", return_value=mock_module),
+            pytest.raises(TypeError),
+        ):
+            await executor._run_callable(
+                task,
+                io.StringIO(),
+                io.StringIO(),
+                kwargs={"unexpected": 1},
+            )
 
 
 class TestCeleryExecutorSyncTaskHistory:

@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.exceptions import HTTPBadRequestException
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
@@ -36,6 +37,24 @@ from tests.app.factories import (
     CreatedServiceFactory,
     CreatedTableFactory,
 )
+
+
+class _StubPMMSyncer:
+    """Stand-in syncer used to exercise ``filter_syncers_by_name`` matching."""
+
+    def can_sync_inventory(self) -> bool:
+        return True
+
+
+class _StubMySQLSyncer:
+    """Second stand-in syncer used to exercise multi-syncer selection."""
+
+    def can_sync_inventory(self) -> bool:
+        return True
+
+
+_PMM_STUB_NAME = f"{_StubPMMSyncer.__module__}.{_StubPMMSyncer.__name__}"
+_MYSQL_STUB_NAME = f"{_StubMySQLSyncer.__module__}.{_StubMySQLSyncer.__name__}"
 
 
 @pytest.fixture
@@ -176,3 +195,67 @@ async def test_run_scheduled_inventory_sync_no_api_key(mocker):
     )
     with pytest.raises(ValueError, match="INVENTORY_SYNC_API_KEY"):
         await run_scheduled_inventory_sync()
+
+
+def _patch_scheduled_sync_env(mocker, syncers):
+    """Patch the API key and syncer-construction hooks for scheduled-sync tests."""
+    mocker.patch(
+        "app.sep.plugins.inventory.sync.tasks_settings",
+        INVENTORY_SYNC_API_KEY="test-api-key",
+    )
+    mocker.patch(
+        "app.sep.plugins.inventory.sync.get_syncers_standalone",
+        return_value=syncers,
+    )
+    return mocker.patch(
+        "app.sep.plugins.inventory.sync.run_inventory_sync",
+        new=AsyncMock(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_inventory_sync_runs_all_when_syncer_none(mocker):
+    """Sync-all path: every configured syncer is forwarded in declaration order."""
+    syncers = [_StubPMMSyncer(), _StubMySQLSyncer()]
+    mock_run = _patch_scheduled_sync_env(mocker, syncers)
+    await run_scheduled_inventory_sync()
+    mock_run.assert_awaited_once_with("test-api-key", *syncers)
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_inventory_sync_runs_all_when_syncer_empty_string(mocker):
+    """An empty syncer string is treated as the sync-all path."""
+    syncers = [_StubPMMSyncer(), _StubMySQLSyncer()]
+    mock_run = _patch_scheduled_sync_env(mocker, syncers)
+    await run_scheduled_inventory_sync(syncer="")
+    mock_run.assert_awaited_once_with("test-api-key", *syncers)
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_inventory_sync_targets_named_syncer(mocker):
+    """A matching qualified name resolves to a single-syncer call."""
+    pmm = _StubPMMSyncer()
+    mysql = _StubMySQLSyncer()
+    mock_run = _patch_scheduled_sync_env(mocker, [pmm, mysql])
+    await run_scheduled_inventory_sync(syncer=_MYSQL_STUB_NAME)
+    mock_run.assert_awaited_once_with("test-api-key", mysql)
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_inventory_sync_unknown_syncer_raises(mocker):
+    """An unknown syncer raises HTTPBadRequestException without invoking the run."""
+    mock_run = _patch_scheduled_sync_env(mocker, [_StubPMMSyncer()])
+    with pytest.raises(HTTPBadRequestException):
+        await run_scheduled_inventory_sync(syncer="app.fake.UnknownSyncer")
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_inventory_sync_incapable_syncer_raises(mocker):
+    """A configured syncer that cannot sync inventory is rejected by name."""
+    pmm = _StubPMMSyncer()
+    mocker.patch.object(pmm, "can_sync_inventory", return_value=False)
+    mock_run = _patch_scheduled_sync_env(mocker, [pmm])
+    with pytest.raises(HTTPBadRequestException):
+        await run_scheduled_inventory_sync(syncer=_PMM_STUB_NAME)
+    mock_run.assert_not_awaited()
