@@ -27,11 +27,13 @@ in ``app/main.py`` would silently shadow this router.
 
 from fastapi import APIRouter
 
-from app.sep.api._stub import router as stub_router
 from app.sep.deps import IsApiAuthenticated
+from app.sep.plugins.checksums.api_routes import router as checksums_api_router
 
 plugins_router = APIRouter(prefix="/plugins")
-plugins_router.include_router(stub_router, prefix="/_stub", tags=["_stub"])
+plugins_router.include_router(
+    checksums_api_router, prefix="/checksums", tags=["checksums"]
+)
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
 api_router.include_router(plugins_router)
