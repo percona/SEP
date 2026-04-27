@@ -21,7 +21,7 @@ from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
-from app.sep.tasks import parse_crontab_form_fields, parse_interval_form_fields
+from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
 
 
 class InventorySyncScheduleCreateForm(BaseModel):
@@ -63,8 +63,9 @@ class InventorySyncScheduleCreateForm(BaseModel):
         """Transform flat form fields into structured ``interval`` / ``crontab``.
 
         Share the dict-construction helpers with
-        :class:`app.sep.tasks.PeriodicTaskRequest.set_period` so the form
-        accepts the exact same input shape as the schedule template. Do not
+        :class:`app.sep.tasks.PeriodicTaskRequest.set_period` (both reach into
+        :mod:`app.sep.utils.forms`) so the form accepts the exact same input
+        shape as the schedule template. Do not
         validate that exactly one schedule mode is provided — the route
         performs that check so a friendly HTTP 400 message can be raised.
 

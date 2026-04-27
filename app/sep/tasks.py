@@ -21,50 +21,10 @@ from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
+from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
 from app.tasks.periodic.models import (
     PeriodicTaskExecuteRequest,
 )
-
-
-def parse_interval_form_fields(data: dict[str, Any]) -> dict[str, Any]:
-    """Build the structured ``interval`` dict from flat ``interval_*`` form fields.
-
-    :param data: The raw form input. Must contain ``interval_every`` and
-        ``interval_period``.
-    :type data: dict[str, Any]
-    :return: A dict with ``every`` and ``period`` keys ready to feed
-        :class:`IntervalSchedule`.
-    :rtype: dict[str, Any]
-    """
-    return {
-        "every": data["interval_every"],
-        "period": data["interval_period"],
-    }
-
-
-def parse_crontab_form_fields(data: dict[str, Any]) -> dict[str, Any]:
-    """Build the structured ``crontab`` dict from flat ``cron_*`` form fields.
-
-    Split the 5-field ``cron_expression`` into named components and combine with
-    ``cron_timezone``.
-
-    :param data: The raw form input. Must contain ``cron_expression`` (5 space-
-        separated fields) and ``cron_timezone``.
-    :type data: dict[str, Any]
-    :return: A dict ready to feed :class:`CrontabSchedule`.
-    :rtype: dict[str, Any]
-    """
-    minute, hour, day_of_month, month_of_year, day_of_week = data[
-        "cron_expression"
-    ].split()
-    return {
-        "timezone": data["cron_timezone"],
-        "minute": minute,
-        "hour": hour,
-        "day_of_month": day_of_month,
-        "month_of_year": month_of_year,
-        "day_of_week": day_of_week,
-    }
 
 
 class PeriodicTaskRequest(BaseModel):
