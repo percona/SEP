@@ -25,6 +25,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
+    AVAILABLE_TIMEZONES,
     CreatedNodeDep,
     CreatedSchemaDep,
     CreatedServiceDep,
@@ -94,6 +95,7 @@ async def node_list(
         None,
     )
     context["sync_schedule"] = sync_schedule
+    context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html.j2",

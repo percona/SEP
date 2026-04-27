@@ -1,0 +1,103 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<section class="inventory-sync-schedule">
+    <h3>Inventory Sync Schedule</h3>
+    {% if sync_schedule %}
+        <p>
+            {% if sync_schedule.crontab %}
+                <span title="{{ sync_schedule.crontab.timezone }}">
+                    Cron: <strong>{{ sync_schedule.period }}</strong>
+                    ({{ sync_schedule.crontab.timezone }})
+                </span>
+            {% else %}
+                <strong>{{ sync_schedule.period }}</strong>
+            {% endif %}
+            {% if not sync_schedule.enabled %}<em>(disabled)</em>{% endif %}
+            {% if sync_schedule.next_run_at %}
+                · Next run: <span class="relativeTime">{{ sync_schedule.next_run_at }}</span>
+            {% endif %}
+            {% if sync_schedule.last_run_at %}
+                · Last run: <span class="relativeTime">{{ sync_schedule.last_run_at }}</span>
+            {% endif %}
+        </p>
+        <div class="schedule-actions"
+             style="display:flex;
+                    gap:0.5em;
+                    align-items:center">
+            <button type="button" id="schedule-edit-toggle" class="contained">Edit Schedule</button>
+            <form method="post"
+                  action="{{ url_for('periodic_task_update', periodic_task_id=sync_schedule.id) }}"
+                  style="display:inline">
+                <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                <input type="hidden"
+                       name="enabled"
+                       value="{{ 'false' if sync_schedule.enabled else 'true' }}">
+                <button type="submit" class="contained">
+                    {% if sync_schedule.enabled %}
+                        Disable
+                    {% else %}
+                        Enable
+                    {% endif %}
+                </button>
+            </form>
+            <form method="post"
+                  action="{{ url_for('periodic_task_delete', periodic_task_id=sync_schedule.id) }}"
+                  class="confirmable-form"
+                  data-confirm-message="Clear the inventory-sync schedule?"
+                  style="display:inline">
+                <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                <button type="submit" class="contained">Clear Schedule</button>
+            </form>
+        </div>
+        <div id="schedule-edit-container" style="display:none">
+            {% include "inventory/partials/sync-schedule-edit-form.html.j2" %}
+        </div>
+    {% else %}
+        <p>No schedule configured.</p>
+        <button type="button" id="schedule-edit-toggle" class="contained">Attach Schedule</button>
+        <div id="schedule-edit-container" style="display:none">
+            {% include "inventory/partials/sync-schedule-edit-form.html.j2" %}
+        </div>
+    {% endif %}
+</section>
+<script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
+    (function () {
+        const toggleBtn = document.getElementById('schedule-edit-toggle');
+        const container = document.getElementById('schedule-edit-container');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', function () {
+                container.style.display =
+                    container.style.display === 'none' ? 'block' : 'none';
+            });
+        }
+        document.querySelectorAll(
+            '.inventory-sync-schedule input[name="schedule_mode"]'
+        ).forEach(function (input) {
+            input.addEventListener('change', function () {
+                document.querySelectorAll(
+                    '.inventory-sync-schedule [data-mode]'
+                ).forEach(function (el) {
+                    const isActive = el.dataset.mode === input.value;
+                    el.style.display = isActive ? 'block' : 'none';
+                    el.querySelectorAll('input, select').forEach(function (field) {
+                        field.disabled = !isActive;
+                    });
+                });
+            });
+        });
+    })();
+</script>

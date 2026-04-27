@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.plugins.inventory.routes module."""
 
+import re
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,6 +25,7 @@ from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
+    AVAILABLE_TIMEZONES,
     get_created_node,
     get_created_schema,
     get_created_service,
@@ -930,3 +932,242 @@ def test_node_list_context_is_empty_when_no_syncers_configured(
         assert kwargs["context"]["can_sync"] is False
     finally:
         sep_app.dependency_overrides = {}
+
+
+_INVENTORY_SYNC_PERIODIC_ID = 7
+
+
+def _compact(text: str) -> str:
+    """Collapse whitespace runs in rendered HTML for substring assertions.
+
+    The djlint formatter splits HTML attributes onto separate lines in the
+    template source; the rendered output preserves that whitespace, so plain
+    substring matches against multi-attribute fragments fail. Normalising any
+    run of whitespace to a single space lets tests assert against the logical
+    content without binding to formatter output.
+
+    :param text: The rendered HTML body.
+    :type text: str
+    :return: The body with consecutive whitespace collapsed to single spaces.
+    :rtype: str
+    """
+    return re.sub(r"\s+", " ", text)
+
+
+def _interval_periodic(
+    *,
+    every: int = 5,
+    period: str = "minutes",
+    enabled: bool = True,
+    task_id: int = _INVENTORY_SYNC_PERIODIC_ID,
+) -> dict:
+    """Build a fake interval-mode inventory-sync periodic-task JSON row."""
+    return {
+        "id": task_id,
+        "name": "inventory-sync",
+        "task": "inventory-sync",
+        "start_time": None,
+        "enabled": enabled,
+        "description": "",
+        "execute_request": None,
+        "interval": {"every": every, "period": period},
+        "crontab": None,
+        "last_run_at": None,
+        "total_run_count": 0,
+        "date_changed": None,
+        "next_run_at": None,
+        "period": f"every {every} {period[:-1] if every == 1 else period}",
+    }
+
+
+def _crontab_periodic(
+    *,
+    minute: str = "0",
+    hour: str = "0",
+    day_of_month: str = "*",
+    month_of_year: str = "*",
+    day_of_week: str = "*",
+    timezone: str = "Europe/Berlin",
+    enabled: bool = True,
+    task_id: int = _INVENTORY_SYNC_PERIODIC_ID,
+) -> dict:
+    """Build a fake crontab-mode inventory-sync periodic-task JSON row."""
+    return {
+        "id": task_id,
+        "name": "inventory-sync",
+        "task": "inventory-sync",
+        "start_time": None,
+        "enabled": enabled,
+        "description": "",
+        "execute_request": None,
+        "interval": None,
+        "crontab": {
+            "minute": minute,
+            "hour": hour,
+            "day_of_month": day_of_month,
+            "month_of_year": month_of_year,
+            "day_of_week": day_of_week,
+            "timezone": timezone,
+        },
+        "last_run_at": None,
+        "total_run_count": 0,
+        "date_changed": None,
+        "next_run_at": None,
+        "period": (f"{minute} {hour} {day_of_month} {month_of_year} {day_of_week}"),
+    }
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_no_schedule_state(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Render the no-schedule state when the periodic-tasks API returns no rows."""
+    mock_task_api_dep.get.return_value = []
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "No schedule configured" in body
+    assert "Attach Schedule" in body
+    assert 'name="task" value="inventory-sync"' in body
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_interval_schedule_enabled(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Render the interval-mode schedule with Disable, Edit, and Clear actions."""
+    mock_task_api_dep.get.return_value = [_interval_periodic()]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "every 5 minutes" in body
+    assert "Disable" in body
+    assert "Edit Schedule" in body
+    assert "Clear Schedule" in body
+    assert f"/periodic/{_INVENTORY_SYNC_PERIODIC_ID}/update" in body
+    assert f"/periodic/{_INVENTORY_SYNC_PERIODIC_ID}/delete" in body
+    assert 'name="enabled" value="false"' in body
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_interval_schedule_disabled(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Render the disabled state with an Enable toggle and a "(disabled)" marker."""
+    mock_task_api_dep.get.return_value = [_interval_periodic(enabled=False)]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "(disabled)" in body
+    assert "Enable" in body
+    assert 'name="enabled" value="true"' in body
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_crontab_schedule(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Render a crontab-mode schedule with the cron expression and timezone."""
+    mock_task_api_dep.get.return_value = [
+        _crontab_periodic(
+            minute="0", hour="0", day_of_month="*", month_of_year="*", day_of_week="*"
+        )
+    ]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "0 0 * * *" in body
+    assert "Europe/Berlin" in body
+    assert 'value="crontab"' in body
+
+
+@pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
+def test_node_list_includes_available_timezones_in_context(
+    mocker, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_syncers
+):
+    """Pass ``AVAILABLE_TIMEZONES`` through to the template context."""
+    mock_task_api_dep.get.return_value = []
+    template_spy = mocker.spy(templates, "TemplateResponse")
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    _, kwargs = template_spy.call_args
+    assert kwargs["context"]["AVAILABLE_TIMEZONES"] == AVAILABLE_TIMEZONES
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_attach_form_uses_periodic_task_create_route(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Render the attach form pointing at the periodic-task create route."""
+    mock_task_api_dep.get.return_value = []
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert 'action="http://testserver/periodic/"' in body
+    assert 'name="task" value="inventory-sync"' in body
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_pre_fills_form_for_existing_interval_schedule(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Pre-fill the edit form's interval inputs from the existing schedule."""
+    mock_task_api_dep.get.return_value = [_interval_periodic(every=15, period="hours")]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert 'name="interval_every"' in body
+    assert 'value="15"' in body
+    assert '<option value="hours" selected>' in body
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_pre_fills_form_for_existing_crontab_schedule(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Pre-fill the edit form's cron inputs from the existing schedule."""
+    mock_task_api_dep.get.return_value = [
+        _crontab_periodic(
+            minute="*/5",
+            hour="*",
+            day_of_month="*",
+            month_of_year="*",
+            day_of_week="*",
+            timezone="America/New_York",
+        )
+    ]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "*/5 * * * *" in body
+    assert re.search(r'<option value="America/New_York"\s+selected\s*>', body)
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_ignores_non_inventory_sync_periodic_rows(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Filter out periodic rows whose ``task`` is not ``inventory-sync``."""
+    other = _interval_periodic()
+    other["task"] = "checksums-run"
+    mock_task_api_dep.get.return_value = [other]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "No schedule configured" in body
