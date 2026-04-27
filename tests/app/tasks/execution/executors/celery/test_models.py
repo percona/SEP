@@ -279,6 +279,31 @@ class TestCeleryExecutorDispatchTask:
         _, call_kwargs = mock_run.call_args
         assert call_kwargs["kwargs"] == {"syncer": "PMM"}
 
+    @pytest.mark.asyncio
+    async def test_dispatch_skips_reserved_target_meta_key(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert ``meta["target"]`` is treated as routing data, not a kwarg.
+
+        ``_dispatch_chained_task`` and the Nomad executor's ``_prepare_task``
+        path both inject ``meta["target"]`` carrying the executor host slug.
+        Forwarding it would TypeError any Celery callable (e.g.
+        ``run_scheduled_inventory_sync``) that does not accept ``target``.
+        """
+        celery_queue_item.execution_request.meta = {
+            "syncer": "PMM",
+            "target": "local",
+        }
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            return_value="ok",
+        ) as mock_run:
+            await executor.dispatch_task(session, celery_queue_item)
+        _, call_kwargs = mock_run.call_args
+        assert call_kwargs["kwargs"] == {"syncer": "PMM"}
+
 
 class TestCeleryExecutorRunCallable:
     """Test CeleryExecutor._run_callable."""

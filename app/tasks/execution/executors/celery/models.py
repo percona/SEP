@@ -43,6 +43,12 @@ logger = logging.getLogger(__name__)
 
 CELERY_CALLABLE_ALLOWED_PREFIX = "app."
 
+# `meta["target"]` carries executor-routing data (the host/cluster slug) and is
+# injected by the chained-dispatch and Nomad pre-dispatch paths. It is not a
+# callable argument, so the Celery executor must filter it out alongside the
+# underscore-prefixed control keys before forwarding `meta` as `**kwargs`.
+_RESERVED_META_KEYS = frozenset({"target"})
+
 
 class CeleryExecutor(BaseExecutor):
     """Execute tasks as Python callables directly in the Celery worker process.
@@ -90,7 +96,11 @@ class CeleryExecutor(BaseExecutor):
             if queue_item.execution_request and queue_item.execution_request.meta
             else {}
         )
-        kwargs = {key: value for key, value in meta.items() if not key.startswith("_")}
+        kwargs = {
+            key: value
+            for key, value in meta.items()
+            if not key.startswith("_") and key not in _RESERVED_META_KEYS
+        }
 
         stdout_buffer = io.StringIO()
         stderr_buffer = io.StringIO()
