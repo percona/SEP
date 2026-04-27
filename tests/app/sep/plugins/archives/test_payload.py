@@ -73,13 +73,14 @@ class TestPtArchiveRunnerBulkInsert:
         assert "--bulk-insert" in args
 
     def test_bulk_insert_omitted_when_disabled(self, payload):
-        """--bulk-insert is not added when prg_disable_bulk_insert=1."""
+        """--bulk-insert is not added when prg_disable_bulk_insert=1; --bulk-delete stays."""
         conf = _base_conf({"prg_disable_bulk_insert": 1})
         with patch.object(payload, "run_cmd", return_value=0) as mock_run:
             payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
 
         args = mock_run.call_args[0]
         assert "--bulk-insert" not in args
+        assert "--bulk-delete" in args
 
     def test_dest_arg_still_present_when_bulk_insert_disabled(self, payload):
         """--dest=... is always included regardless of disable_bulk_insert."""
@@ -111,17 +112,6 @@ class TestPtArchiveRunnerBulkInsert:
         args = mock_run.call_args[0]
         assert "--bulk-insert" not in args
         assert any(a.startswith("--file=") for a in args)
-
-    def test_disable_bulk_insert_zero_explicit_still_includes_bulk_insert(
-        self, payload
-    ):
-        """prg_disable_bulk_insert=0 (explicit) keeps --bulk-insert, matching default."""
-        conf = _base_conf({"prg_disable_bulk_insert": 0})
-        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
-            payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
-
-        args = mock_run.call_args[0]
-        assert "--bulk-insert" in args
 
     def test_use_index_does_not_affect_bulk_insert_behavior(self, payload):
         """disable_bulk_insert=1 omits --bulk-insert even when use_index is set."""

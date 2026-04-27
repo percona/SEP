@@ -354,17 +354,19 @@ def pt_archive_runner(cmd: str, src_db: str, src_tbl: str, conf: dict[str, Any])
             ["--buffer", "--bulk-delete", "--file={}".format(conf['dst_file'])]
         )
     else:
-        dest_args = [
+        dest_args = []
+        if not conf["prg_disable_bulk_insert"]:
+            dest_args.append("--bulk-insert")
+        dest_args.extend([
+            "--bulk-delete",
             "--dest=h={},P={},D={},t={},b={},L=yes".format(
                 conf["dst_host"],
                 conf["dst_port"],
                 conf["dst_db"],
                 conf["dst_tbl"],
                 conf["prg_disable_binlog"],
-            )
-        ]
-        if not conf["prg_disable_bulk_insert"]:
-            dest_args.insert(0, "--bulk-insert")
+            ),
+        ])
         pt_archiver_cmd.extend(dest_args)
 
     if conf["prg_extra_args"]:
