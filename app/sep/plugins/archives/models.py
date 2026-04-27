@@ -77,6 +77,9 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
         Default is 0 (binary logging enabled).
     :type disable_binlog: int
+    :param disable_bulk_insert: Integer flag (0 or 1) to disable bulk insert.
+        Default is 0 (bulk insert enabled).
+    :type disable_bulk_insert: int
     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
@@ -104,6 +107,9 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     sleep: int | None = None
     disable_binlog: int | None = Field(
         None, ge=0, le=1, description="Optional flag to disable binary logging."
+    )
+    disable_bulk_insert: int | None = Field(
+        None, ge=0, le=1, description="Optional flag to disable bulk insert."
     )
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
@@ -283,6 +289,9 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
         Default is 0 (binary logging enabled).
     :type disable_binlog: int
+    :param disable_bulk_insert: Integer flag (0 or 1) to disable bulk insert.
+        Default is 0 (bulk insert enabled).
+    :type disable_bulk_insert: int
     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
@@ -306,6 +315,12 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
         ge=0,
         le=1,
         description="Optional flag to disable binary logging; set to 0 or 1",
+    )
+    disable_bulk_insert: int | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Optional flag to disable bulk insert; set to 0 or 1",
     )
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."

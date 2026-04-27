@@ -26,7 +26,11 @@ from app.sep.plugins.archives.deps import (
     get_archives_task,
     get_archives_task_info,
 )
-from app.sep.plugins.archives.models import ArchivesCreate, SwapDropEnum
+from app.sep.plugins.archives.models import (
+    ArchivesCreate,
+    PurgeConfigItem,
+    SwapDropEnum,
+)
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import (
     CreatedTableFactory,
@@ -103,6 +107,34 @@ def created_task() -> Task:
             ),
             MOCK_DESTINATION_TABLE_ID,
         ),
+        (
+            ArchivesCreate(
+                alias="PURGE_WITH_DISABLE_BULK_INSERT",
+                hostname="localhost",
+                service_id=MOCK_CREATED_SERVICE_ID,
+                source_db_id=MOCK_CREATED_SCHEMA_ID,
+                source_table_id=MOCK_CREATED_TABLE_ID,
+                swap_drop=SwapDropEnum.PURGE_ONLY,
+                where="id > 10",
+                dest_table_id=MOCK_DESTINATION_TABLE_ID,
+                disable_bulk_insert=1,
+            ),
+            MOCK_DESTINATION_TABLE_ID,
+        ),
+        (
+            ArchivesCreate(
+                alias="PURGE_WITHOUT_DISABLE_BULK_INSERT",
+                hostname="localhost",
+                service_id=MOCK_CREATED_SERVICE_ID,
+                source_db_id=MOCK_CREATED_SCHEMA_ID,
+                source_table_id=MOCK_CREATED_TABLE_ID,
+                swap_drop=SwapDropEnum.PURGE_ONLY,
+                where="id > 10",
+                dest_table_id=MOCK_DESTINATION_TABLE_ID,
+                disable_bulk_insert=None,
+            ),
+            MOCK_DESTINATION_TABLE_ID,
+        ),
     ],
 )
 async def test_build_archives_task_payload(
@@ -144,6 +176,18 @@ async def test_build_archives_task_payload(
     assert created_table.name in purge_config_yaml
     if dest_table_id:
         assert dest_table.name in purge_config_yaml
+    if created_archives.disable_bulk_insert == 1:
+        assert "DISABLE_BULK_INSERT: 1" in purge_config_yaml
+    else:
+        assert "DISABLE_BULK_INSERT:" not in purge_config_yaml
+
+
+def test_purge_config_item_backward_compat_without_disable_bulk_insert():
+    """PurgeConfigItem must validate old YAML configs that lack DISABLE_BULK_INSERT."""
+    item = PurgeConfigItem.model_validate(
+        {"ALIAS": "old_task", "SWAP_DROP": 0, "WHERE": "id > 1"}
+    )
+    assert item.disable_bulk_insert is None
 
 
 @pytest.mark.asyncio
