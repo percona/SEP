@@ -266,7 +266,6 @@ def test_archives_detail(
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
-    # Old tasks without DISABLE_BULK_INSERT in YAML must render the checkbox unchecked.
     assert 'name="disable_bulk_insert"' in response.text
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
