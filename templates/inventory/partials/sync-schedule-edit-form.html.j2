@@ -53,7 +53,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                    id="interval_every"
                    min="1"
                    value="{{ sync_schedule.interval.every if has_interval else 5 }}"
-                   {% if not default_interval_mode %}disabled{% endif %}>
+                   {% if default_interval_mode %}required{% else %}disabled{% endif %}>
             <select name="interval_period"
                     id="interval_period"
                     {% if not default_interval_mode %}disabled{% endif %}>
@@ -74,7 +74,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                    placeholder="0 0 * * *"
                    pattern="^\S+\s+\S+\s+\S+\s+\S+\s+\S+$"
                    value="{%- if has_crontab -%}{{ sync_schedule.crontab.minute }} {{ sync_schedule.crontab.hour }} {{ sync_schedule.crontab.day_of_month }} {{ sync_schedule.crontab.month_of_year }} {{ sync_schedule.crontab.day_of_week }}{%- endif -%}"
-                   {% if not has_crontab %}disabled{% endif %}>
+                   {% if has_crontab %}required{% else %}disabled{% endif %}>
             <label for="cron_timezone">Timezone:</label>
             <select name="cron_timezone"
                     id="cron_timezone"

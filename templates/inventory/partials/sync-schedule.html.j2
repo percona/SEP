@@ -96,6 +96,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     el.querySelectorAll('input, select').forEach(function (field) {
                         field.disabled = !isActive;
                     });
+                    el.querySelectorAll(
+                        'input[name="interval_every"], input[name="cron_expression"]'
+                    ).forEach(function (field) {
+                        if (isActive) {
+                            field.setAttribute('required', '');
+                        } else {
+                            field.removeAttribute('required');
+                        }
+                    });
                 });
             });
         });
