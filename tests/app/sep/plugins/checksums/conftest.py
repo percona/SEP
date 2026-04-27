@@ -13,8 +13,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests fixtures for checksum plugin route tests."""
+"""Define test fixtures for checksum plugin route tests."""
 
 from tests.app.sep.conftest import (  # noqa: F401
+    mock_inventory_api_dep,
     mock_task_api_dep,
 )
