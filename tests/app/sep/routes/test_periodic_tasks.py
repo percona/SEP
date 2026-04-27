@@ -90,3 +90,52 @@ def test_periodic_task_update(test_client, mock_task_api_dep, created_periodic_t
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/tasks"
+
+
+def test_periodic_task_update_with_chain_preserves_chain(
+    test_client, mock_task_api_dep, created_periodic_task
+):
+    """Test that updating only cron preserves existing chain.
+
+    This is a regression test for the bug where editing a periodic task
+    with existing chained tasks would fail even if the chain was not modified.
+    """
+    existing_periodic_data = {
+        "id": created_periodic_task.id,
+        "name": created_periodic_task.name,
+        "task": "task-a",
+        "enabled": True,
+        "description": "Test periodic with chain",
+        "execute_request": {
+            "chain_task_names": ["task-b"],
+            "meta": {},
+        },
+        "crontab": {
+            "minute": "*/10",
+            "hour": "*",
+            "day_of_month": "*",
+            "month_of_year": "*",
+            "day_of_week": "*",
+            "timezone": "UTC",
+        },
+    }
+    mock_task_api_dep.get.return_value = existing_periodic_data
+
+    # Update only the cron expression (simulating form submission)
+    updated_task_data = {
+        "cron_expression": "0 */2 * * *",
+        "cron_timezone": "UTC",
+    }
+    response = test_client.post(
+        f"/periodic/{created_periodic_task.id}/update",
+        data=updated_task_data,
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == "/tasks"
+
+    mock_task_api_dep.put.assert_awaited_once()
+    call_args = mock_task_api_dep.put.call_args
+    assert call_args[0][0] == f"/periodic/{created_periodic_task.id}"
+    put_data = call_args[1]["json"]
+    assert put_data.get("execute_request", {}).get("chain_task_names") == ["task-b"]
