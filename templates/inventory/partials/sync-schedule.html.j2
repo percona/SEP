@@ -27,6 +27,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 <strong>{{ sync_schedule.period }}</strong>
             {% endif %}
             {% if not sync_schedule.enabled %}<em>(disabled)</em>{% endif %}
+            {% if sync_schedule.start_time %}
+                · Starts at: <span class="relativeTime">{{ sync_schedule.start_time }}</span>
+            {% endif %}
             {% if sync_schedule.next_run_at %}
                 · Next run: <span class="relativeTime">{{ sync_schedule.next_run_at }}</span>
             {% endif %}
