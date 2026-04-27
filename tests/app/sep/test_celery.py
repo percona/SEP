@@ -34,6 +34,7 @@ from app.core.utils import json_serializer
 from app.sep.celery import (
     _backup_alert_config,
     _check_nomad_cert_expiry,
+    check_nomad_cert_expiry,
 )
 from app.sep.clients.pmm import (
     AlertRule,
@@ -54,8 +55,8 @@ from app.tasks.execution.executors.nomad import NomadExecutor
 MODULE = "app.sep.celery"
 EXPECTED_DELETE_WHERE_CALLS = 2
 EXPECTED_BACKUP_COUNT_AFTER_DIFF = 2
+EXPECTED_NOMAD_CERT_RESOLVE_CALLS = 2
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
-NOMAD_CERT_RESOLVE_CALLS_TWO = 2
 
 
 def _make_async_session_maker():
@@ -660,7 +661,7 @@ class TestCheckNomadCertExpiry:
         await _check_nomad_cert_expiry()
 
         mock_trigger.assert_not_called()
-        assert mock_resolve.call_count == NOMAD_CERT_RESOLVE_CALLS_TWO
+        assert mock_resolve.call_count == EXPECTED_NOMAD_CERT_RESOLVE_CALLS
         called = {c.args[0] for c in mock_resolve.call_args_list}
         assert called == {
             f"nomad-cert-expiry:{ca.name}",
@@ -733,8 +734,105 @@ class TestCheckNomadCertExpiry:
         mock_trigger = mocker.patch.object(
             AlertService, "trigger", new_callable=AsyncMock
         )
+        mock_resolve = mocker.patch.object(
+            AlertService, "resolve", new_callable=AsyncMock
+        )
 
         await _check_nomad_cert_expiry()
 
+        mock_trigger.assert_called_once()
+        mock_resolve.assert_not_called()
         alert = mock_trigger.call_args[0][0]
         assert alert["severity"] is AlertSeverity.CRITICAL
+        assert alert["dedup_key"] == f"nomad-cert-expiry:{ca.name}"
+
+    @pytest.mark.asyncio
+    async def test_path_read_bytes_oserror_logs_and_skips(
+        self, mocker, tmp_path: Path
+    ) -> None:
+        """Assert OSError from read_bytes is logged and does not raise."""
+        ca = tmp_path / "io.pem"
+        ca.write_bytes(b"unused")
+        mocker.patch(
+            "app.tasks.config.tasks_settings",
+            MagicMock(NOMAD=_nomad_config_for_paths(ca=ca, cert=None)),
+        )
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mocker.patch.object(
+            Path, "read_bytes", side_effect=OSError("simulated read failure")
+        )
+        mock_trigger = mocker.patch.object(
+            AlertService, "trigger", new_callable=AsyncMock
+        )
+        mock_resolve = mocker.patch.object(
+            AlertService, "resolve", new_callable=AsyncMock
+        )
+        log_warning = mocker.patch(f"{MODULE}.logger.warning")
+
+        await _check_nomad_cert_expiry()
+
+        log_warning.assert_called()
+        assert "Could not read" in str(log_warning.call_args)
+        mock_trigger.assert_not_called()
+        mock_resolve.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_pem_valueerror_logs_and_skips(
+        self, mocker, tmp_path: Path
+    ) -> None:
+        """Assert non-PEM file bytes log and ValueError is handled (no raise)."""
+        bad = tmp_path / "not-pem.pem"
+        bad.write_bytes(b"not a pem")
+        mocker.patch(
+            "app.tasks.config.tasks_settings",
+            MagicMock(NOMAD=_nomad_config_for_paths(ca=bad, cert=None)),
+        )
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mocker.patch.object(AlertService, "trigger", new_callable=AsyncMock)
+        mocker.patch.object(AlertService, "resolve", new_callable=AsyncMock)
+        log_warning = mocker.patch(f"{MODULE}.logger.warning")
+
+        await _check_nomad_cert_expiry()
+
+        log_warning.assert_called()
+        assert "Could not parse" in str(log_warning.call_args)
+
+    @pytest.mark.asyncio
+    async def test_missing_file_warns_and_skips(self, mocker, tmp_path: Path) -> None:
+        """Assert a missing PEM path logs a warning and does not call the alert service."""
+        mock_nomad = MagicMock()
+        mock_nomad.ssl_cafile = tmp_path / "missing.pem"
+        mock_nomad.ssl_certfile = None
+        mock_nomad.cert_expiry_warn_days = 7
+        mocker.patch("app.tasks.config.tasks_settings", MagicMock(NOMAD=mock_nomad))
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mock_trigger = mocker.patch.object(
+            AlertService, "trigger", new_callable=AsyncMock
+        )
+        mock_resolve = mocker.patch.object(
+            AlertService, "resolve", new_callable=AsyncMock
+        )
+        log_warning = mocker.patch(f"{MODULE}.logger.warning")
+
+        await _check_nomad_cert_expiry()
+
+        log_warning.assert_called()
+        assert "Could not read" in str(log_warning.call_args)
+        mock_trigger.assert_not_called()
+        mock_resolve.assert_not_called()
+
+    def test_celery_entrypoint_uses_event_loop(self, mocker) -> None:
+        """Assert check_nomad_cert_expiry runs the async helper via the event loop."""
+        from app.celery import celery as app_celery
+
+        coro = MagicMock()
+        mock_check = MagicMock(return_value=coro)
+        mocker.patch(f"{MODULE}._check_nomad_cert_expiry", mock_check)
+        mocker.patch.object(
+            app_celery.loop,
+            "run_until_complete",
+            autospec=True,
+        )
+
+        check_nomad_cert_expiry()
+        app_celery.loop.run_until_complete.assert_called_once_with(coro)
