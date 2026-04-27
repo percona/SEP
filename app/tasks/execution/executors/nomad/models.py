@@ -38,6 +38,7 @@ from aiohttp import (
 from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
+from pydantic import Field
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPBadRequestException
@@ -298,12 +299,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param log_socket_read_timeout: Socket read timeout in seconds for log streaming.
         Defaults to 10.
     :type log_socket_read_timeout: int
+    :param cert_expiry_warn_days: Number of days before ``not_valid_after`` when
+        Nomad TLS cert expiry alerts should fire. Used by the periodic
+        ``check_nomad_cert_expiry`` task. Defaults to 7.
+    :type cert_expiry_warn_days: int
     """
 
     secure: bool = False
     timeout: int = 10
     minify_payload: bool = True
     log_socket_read_timeout: int = 10
+    cert_expiry_warn_days: int = Field(default=7, ge=1)
 
     @cached_property
     def backend(self) -> Nomad:
