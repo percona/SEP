@@ -54,9 +54,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                    min="1"
                    value="{{ sync_schedule.interval.every if has_interval else 5 }}"
                    {% if default_interval_mode %}required{% else %}disabled{% endif %}>
-            <label for="interval_period" class="visually-hidden">Period</label>
             <select name="interval_period"
                     id="interval_period"
+                    aria-label="Period"
                     {% if not default_interval_mode %}disabled{% endif %}>
                 {% for period in ['minutes', 'hours', 'days'] %}
                     <option value="{{ period }}"
