@@ -359,6 +359,24 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             </div>
                             <span class="label">Disable Binlog</span>
                         </label>
+                        <br>
+                        <br>
+                        {% set disable_bulk_insert_title = "Disable bulk insert for the operation. Use this when local_infile is set to OFF on the target host." %}
+                        <label for="disable_bulk_insert"
+                               class="checkbox"
+                               title="{{ disable_bulk_insert_title }}">
+                            <input type="checkbox"
+                                   id="disable_bulk_insert"
+                                   name="disable_bulk_insert"
+                                   class="validate"
+                                   {% if task.disable_bulk_insert %}checked{% endif %}
+                                   value="1">
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Disable Bulk Insert</span>
+                        </label>
                     </div>
                     {% set delete_data_title = "Enable to delete the rows after they are archived." %}
                     <label id="delete_data_container"
