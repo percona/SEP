@@ -198,13 +198,75 @@ async def test_get_archives_task(created_task, mock_remote_api):
     assert isinstance(alters_task, Task)
 
 
-def test_get_archives_task_info(created_task):
-    """Test for extracting relevant information from a task for the Archives plugin."""
-    expected_output = {
-        "hostname": "mock_target",
-        "source_table": "mock_source_db.mock_source_table",
-        "created_by": created_task.created_by,
-        "last_updated_by": created_task.last_updated_by,
-    }
-    result = get_archives_task_info(created_task.model_dump())
-    assert result == expected_output
+class TestGetArchivesTaskInfo:
+    """Test get_archives_task_info across all conditional output branches."""
+
+    @staticmethod
+    def _make_task(purge_item: dict, hostname: str = "mock_target") -> dict:
+        """Build a minimal task dict."""
+        return {
+            "data": {
+                "meta": {
+                    "config": yaml.dump({"PURGE_LIST": [purge_item]}),
+                    "target": hostname,
+                }
+            },
+            "created_by": None,
+            "last_updated_by": None,
+        }
+
+    def test_source_table_and_hostname(self, created_task):
+        """Source table and hostname are extracted from a standard task."""
+        expected_output = {
+            "hostname": "mock_target",
+            "source_table": "mock_source_db.mock_source_table",
+            "created_by": created_task.created_by,
+            "last_updated_by": created_task.last_updated_by,
+        }
+        result = get_archives_task_info(created_task.model_dump())
+        assert result == expected_output
+
+    def test_dest_table_included_when_set(self):
+        """dest_table key is included when DEST_TABLE is set alongside SOURCE_DB."""
+        task = self._make_task(
+            {
+                "SOURCE_DB": "mydb",
+                "SOURCE_TABLE": "src_tbl",
+                "DEST_TABLE": "archive_tbl",
+            }
+        )
+        result = get_archives_task_info(task)
+        assert result["source_table"] == "mydb.src_tbl"
+        assert result["dest_table"] == "mydb.archive_tbl"
+
+    def test_source_query_included_when_set(self):
+        """source_query key is included when SOURCE_QUERY is set."""
+        task = self._make_task(
+            {"SOURCE_QUERY": "SELECT `db`, `tbl` FROM information_schema.tables"}
+        )
+        result = get_archives_task_info(task)
+        assert (
+            result["source_query"]
+            == "SELECT `db`, `tbl` FROM information_schema.tables"
+        )
+        assert "source_table" not in result
+
+    def test_dest_file_included_when_set(self):
+        """dest_file key is included when DEST_FILE is set."""
+        task = self._make_task(
+            {
+                "SOURCE_DB": "mydb",
+                "SOURCE_TABLE": "src_tbl",
+                "DEST_FILE": "/tmp/archive.csv",
+            }
+        )
+        result = get_archives_task_info(task)
+        assert result["dest_file"] == "/tmp/archive.csv"
+        assert result["source_table"] == "mydb.src_tbl"
+
+    def test_source_table_absent_when_no_source_db_or_table(self):
+        """source_table key is absent when SOURCE_DB and SOURCE_TABLE are not set."""
+        task = self._make_task({"ALIAS": "purge_task", "SWAP_DROP": 1})
+        result = get_archives_task_info(task)
+        assert "source_table" not in result
+        assert result["hostname"] == "mock_target"

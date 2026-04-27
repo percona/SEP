@@ -64,13 +64,14 @@ class TestPtArchiveRunnerBulkInsert:
     """Test --bulk-insert flag behaviour in pt_archive_runner."""
 
     def test_bulk_insert_included_by_default(self, payload):
-        """--bulk-insert is added to the dest-table branch when disable_bulk_insert=0."""
+        """--bulk-insert and --bulk-delete are both added to the dest-table branch by default."""
         conf = _base_conf()
         with patch.object(payload, "run_cmd", return_value=0) as mock_run:
             payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
 
         args = mock_run.call_args[0]
         assert "--bulk-insert" in args
+        assert "--bulk-delete" in args
 
     def test_bulk_insert_omitted_when_disabled(self, payload):
         """--bulk-insert is not added when prg_disable_bulk_insert=1; --bulk-delete stays."""
@@ -99,10 +100,11 @@ class TestPtArchiveRunnerBulkInsert:
 
         args = mock_run.call_args[0]
         assert "--bulk-insert" not in args
+        assert "--bulk-delete" in args
         assert "--purge" in args
 
     def test_bulk_insert_not_in_dest_file_branch(self, payload):
-        """--bulk-insert is never added in the dest-file branch."""
+        """--bulk-insert is never added in the dest-file branch; --bulk-delete and --buffer are."""
         conf = _base_conf(
             {"dst_file": "/tmp/archive.csv", "prg_disable_bulk_insert": 0}
         )
@@ -111,6 +113,8 @@ class TestPtArchiveRunnerBulkInsert:
 
         args = mock_run.call_args[0]
         assert "--bulk-insert" not in args
+        assert "--bulk-delete" in args
+        assert "--buffer" in args
         assert any(a.startswith("--file=") for a in args)
 
     def test_use_index_does_not_affect_bulk_insert_behavior(self, payload):
@@ -122,3 +126,67 @@ class TestPtArchiveRunnerBulkInsert:
         args = mock_run.call_args[0]
         assert "--bulk-insert" not in args
         assert any(a.startswith("--dest=") for a in args)
+
+
+class TestPtArchiveRunnerArgs:
+    """Test argument construction in pt_archive_runner beyond bulk-insert gating."""
+
+    def test_use_index_adds_i_flag_to_source_arg(self, payload):
+        """--source= includes i=<index> when prg_use_index is set."""
+        conf = _base_conf({"prg_use_index": "PRIMARY"})
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
+
+        args = mock_run.call_args[0]
+        source_arg = next(a for a in args if a.startswith("--source="))
+        assert "i=PRIMARY" in source_arg
+
+    def test_no_use_index_omits_i_flag_from_source_arg(self, payload):
+        """--source= has no i= when prg_use_index is None."""
+        conf = _base_conf()
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
+
+        args = mock_run.call_args[0]
+        source_arg = next(a for a in args if a.startswith("--source="))
+        assert ",i=" not in source_arg
+
+    def test_disable_binlog_reflected_in_source_arg(self, payload):
+        """--source= b= value matches prg_disable_binlog."""
+        conf = _base_conf({"prg_disable_binlog": 1})
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
+
+        args = mock_run.call_args[0]
+        source_arg = next(a for a in args if a.startswith("--source="))
+        assert "b=1" in source_arg
+
+    def test_disable_binlog_reflected_in_dest_arg(self, payload):
+        """--dest= b= value matches prg_disable_binlog."""
+        conf = _base_conf({"prg_disable_binlog": 1})
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
+
+        args = mock_run.call_args[0]
+        dest_arg = next(a for a in args if a.startswith("--dest="))
+        assert "b=1" in dest_arg
+
+    def test_extra_args_appended_to_command(self, payload):
+        """prg_extra_args tokens are appended to the pt-archiver command."""
+        conf = _base_conf({"prg_extra_args": "--no-check-columns --dry-run"})
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
+
+        args = mock_run.call_args[0]
+        assert "--no-check-columns" in args
+        assert "--dry-run" in args
+
+    def test_no_extra_args_when_none(self, payload):
+        """No spurious extra tokens are added when prg_extra_args is None."""
+        conf = _base_conf()
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.pt_archive_runner("pt-archiver", "mydb", "mytable", conf)
+
+        # call_args[0] = (cmd, *pt_archiver_flags); skip the cmd at index 0
+        pt_archiver_flags = mock_run.call_args[0][1:]
+        assert all(isinstance(a, str) and a.startswith("--") for a in pt_archiver_flags)
