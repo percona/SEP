@@ -1222,7 +1222,7 @@ def test_node_list_renders_per_syncer_schedule_with_display_name(
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
     body = _compact(response.text)
-    assert "<strong>StubPMM</strong>" in body or "StubPMM" in body
+    assert "<strong>_StubPMM</strong>" in body
     assert "All syncers" not in body.split("Attach a schedule")[0]
 
 
