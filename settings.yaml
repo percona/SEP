@@ -182,6 +182,8 @@ default:
       SSL_KEYFILE: null
       SSL_CERTFILE: null
       SSL_CAFILE: null
+      CERT_EXPIRY_WARN_DAYS: 7  # Alert when CA/client PEM not_valid_after is within this many days
+      CHECK_CERT_EXPIRY_INTERVAL: "1 days"  # Celery beat interval for check_nomad_cert_expiry; null to disable
       TIMEOUT: 10  # Request timeout in seconds
       MINIFY_PAYLOAD: True  # Minify payloads before dispatch
       LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
@@ -331,5 +333,7 @@ production_docker:
       SSL_CAFILE: /data/certs/nomad/nomad-agent-ca.pem
       SSL_CERTFILE: /data/certs/nomad/global-client-nomad.pem
       SSL_KEYFILE: /data/certs/nomad/global-client-nomad-key.pem
+      CERT_EXPIRY_WARN_DAYS: 7  # Alert when CA/client PEM not_valid_after is within this many days
+      CHECK_CERT_EXPIRY_INTERVAL: "1 days"  # Celery beat interval for check_nomad_cert_expiry; null to disable
     SSL_KEYFILE: /data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: /data/certs/sep/tasks_api-cert.pem
