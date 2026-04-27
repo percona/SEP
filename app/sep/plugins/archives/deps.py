@@ -91,6 +91,7 @@ async def build_archives_task_payload(
                 "limit",
                 "sleep",
                 "disable_binlog",
+                "disable_bulk_insert",
                 "delete_data",
             },
             by_alias=True,
