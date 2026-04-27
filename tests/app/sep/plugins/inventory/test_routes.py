@@ -216,7 +216,7 @@ def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     mock_inventory_api_dep.get.assert_any_await("/", params={"limit": 0})
-    mock_task_api_dep.get.assert_any_await("/periodic/")
+    mock_task_api_dep.get.assert_any_await("/inventory-sync/periodic/")
 
 
 @pytest.mark.asyncio
@@ -1155,19 +1155,3 @@ def test_node_list_pre_fills_form_for_existing_crontab_schedule(
     body = _compact(response.text)
     assert "*/5 * * * *" in body
     assert re.search(r'<option value="America/New_York"\s+selected\s*>', body)
-
-
-@pytest.mark.usefixtures(
-    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
-)
-def test_node_list_ignores_non_inventory_sync_periodic_rows(
-    test_client, mock_inventory_api_dep, mock_task_api_dep
-):
-    """Filter out periodic rows whose ``task`` is not ``inventory-sync``."""
-    other = _interval_periodic()
-    other["task"] = "checksums-run"
-    mock_task_api_dep.get.return_value = [other]
-    response = test_client.get("/inventory/")
-    assert response.status_code == status.HTTP_200_OK
-    body = _compact(response.text)
-    assert "No schedule configured" in body

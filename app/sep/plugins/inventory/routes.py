@@ -89,12 +89,10 @@ async def node_list(
         lambda syncer: syncer.can_sync_inventory(),
     )
     context["can_sync"] = bool(context["available_syncers"])
-    periodic_tasks = await tasks_api.get("/periodic/")
-    sync_schedule = next(
-        (pt for pt in periodic_tasks if pt.get("task") == "inventory-sync"),
-        None,
+    inventory_sync_schedules = await tasks_api.get("/inventory-sync/periodic/")
+    context["sync_schedule"] = (
+        inventory_sync_schedules[0] if inventory_sync_schedules else None
     )
-    context["sync_schedule"] = sync_schedule
     context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
     return templates.TemplateResponse(
         request=request,
