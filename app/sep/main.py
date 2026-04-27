@@ -129,15 +129,11 @@ for plugin in sep_settings.PLUGINS:
     sep_app.include_router(router, prefix=plugin.uri_path)
     imported_plugins.add(plugin.module_name.split(".")[-1])
 
-if {
-    "alters",
-    "archives",
-    "tasks",
-    "backup",
-    "backup_mongo",
-    "backup_pg",
-    "checksums",
-} & imported_plugins:
+_TASK_INFRA_PLUGINS = frozenset(
+    {"alters", "archives", "tasks", "backup", "backup_mongo", "backup_pg", "checksums"}
+)
+
+if _TASK_INFRA_PLUGINS & imported_plugins:
     from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.execution_events import router as execution_events_router
     from app.sep.routes.inventory_ajax import router as inventory_ajax_router
@@ -150,16 +146,7 @@ if {
     sep_app.include_router(execution_events_router, prefix="/execution-events")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
 
-if {
-    "alters",
-    "archives",
-    "tasks",
-    "backup",
-    "backup_mongo",
-    "backup_pg",
-    "checksums",
-    "inventory",
-} & imported_plugins:
+if (_TASK_INFRA_PLUGINS | {"inventory"}) & imported_plugins:
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
 
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
