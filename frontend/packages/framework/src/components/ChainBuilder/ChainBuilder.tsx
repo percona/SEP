@@ -189,10 +189,12 @@ export function ChainBuilder({
           value=""
           displayEmpty={false}
           onChange={handleAdd}
-          inputProps={{
-            'data-testid': 'chain-add-select',
-            ...(selectHelper ? { 'aria-describedby': helperId } : {}),
-          }}
+          inputProps={
+            {
+              'data-testid': 'chain-add-select',
+              ...(selectHelper ? { 'aria-describedby': helperId } : {}),
+            } as React.InputHTMLAttributes<HTMLInputElement>
+          }
         >
           {availableTasks.map((t) => (
             <MenuItem key={t.name} value={t.name} disabled={disabledOptions.has(t.name)}>

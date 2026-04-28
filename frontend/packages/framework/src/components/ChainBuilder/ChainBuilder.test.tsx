@@ -149,6 +149,71 @@ describe('ChainBuilder remove', () => {
   });
 });
 
+describe('ChainBuilder reorder', () => {
+  it('reorders chips via keyboard drag (move first chip right)', async () => {
+    // jsdom returns zero rects, so dnd-kit's KeyboardSensor can't locate the
+    // adjacent sortable. Stub getBoundingClientRect so chips lay out left-to-right.
+    const order = ['task-a', 'task-b', 'task-c'];
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function (): DOMRect {
+      const handles = this.querySelectorAll('[aria-label^="Drag "]');
+      if (handles.length === 1) {
+        const name = (handles[0].getAttribute('aria-label') ?? '').slice('Drag '.length);
+        const i = order.indexOf(name);
+        if (i >= 0) {
+          const x = i * 100;
+          return {
+            x,
+            y: 0,
+            width: 80,
+            height: 32,
+            top: 0,
+            left: x,
+            right: x + 80,
+            bottom: 32,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+      }
+      return {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        toJSON: () => ({}),
+      } as DOMRect;
+    };
+
+    try {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+      render(
+        <Harness
+          initial={{ chain_task_names: ['task-a', 'task-b', 'task-c'], chain_on_failure: false }}
+          onChangeSpy={onChange}
+        />,
+      );
+
+      const handle = screen.getByRole('button', { name: 'Drag task-a' });
+      handle.focus();
+      await user.keyboard('[Space]');
+      await user.keyboard('[ArrowRight]');
+      await user.keyboard('[Space]');
+
+      expect(onChange).toHaveBeenLastCalledWith({
+        chain_task_names: ['task-b', 'task-a', 'task-c'],
+        chain_on_failure: false,
+      });
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = original;
+    }
+  });
+});
+
 describe('ChainBuilder chain_on_failure toggle', () => {
   it('emits chain_on_failure=true when toggled on', async () => {
     const user = userEvent.setup();
@@ -165,6 +230,24 @@ describe('ChainBuilder chain_on_failure toggle', () => {
     expect(onChange).toHaveBeenLastCalledWith({
       chain_task_names: ['task-a'],
       chain_on_failure: true,
+    });
+  });
+
+  it('emits chain_on_failure=false when toggled off', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <Harness
+        initial={{ chain_task_names: ['task-a'], chain_on_failure: true }}
+        onChangeSpy={onChange}
+      />,
+    );
+
+    await user.click(screen.getByTestId('chain-on-failure-checkbox'));
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      chain_task_names: ['task-a'],
+      chain_on_failure: false,
     });
   });
 
