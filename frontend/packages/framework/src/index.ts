@@ -3,8 +3,11 @@ export { SchemaFormRenderer } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
 export { SchemaDrivenPlugin } from './components/SchemaDrivenPlugin';
 export { ServiceSelector } from './components/ServiceSelector';
+export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';
+export type { SchemaSelectorProps } from './components/SchemaSelector';
 export { TableSelector } from './components/TableSelector';
+export type { TableSelectorProps } from './components/TableSelector';
 export { HostSelector } from './components/HostSelector';
 export {
   TaskLogViewer,
@@ -31,6 +34,17 @@ export { AlertOnFailField } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
 
 // Hooks
+export { useServices, useSchemas, useTables } from './hooks';
+export type {
+  ServiceOption,
+  ServiceType,
+  SchemaOption,
+  TableOption,
+  UseServicesOptions,
+  UseSchemasOptions,
+  UseTablesOptions,
+} from './hooks';
+
 export {
   useTaskLogs,
   useExecutionEvents,
