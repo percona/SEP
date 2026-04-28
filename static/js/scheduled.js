@@ -17,7 +17,7 @@
 
 $(document).ready(function() {
     const cronstrue = window.cronstrue;
-    const cronValidation = window.cronValidation;
+    const cronValidation = window.cronValidation || null;
 
     // ========================================
     // Helper Functions
@@ -34,7 +34,7 @@ $(document).ready(function() {
     }
 
     function getHumanizedCronIfValid(cronExpression) {
-        if (!cronValidation.isCronExpressionValid(cronExpression)) {
+        if (!cronValidation || !cronValidation.isCronExpressionValid(cronExpression)) {
             return null;
         }
         return humanizeCronExpression(cronExpression.trim());

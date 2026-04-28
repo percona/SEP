@@ -159,8 +159,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     if (!input || input.disabled || !input.value) {
                         return;
                     }
-                    if (!window.cronValidation
-                        || !window.cronValidation.isCronExpressionValid(input.value)) {
+                    if (window.cronValidation
+                        && !window.cronValidation.isCronExpressionValid(input.value)) {
                         event.preventDefault();
                         input.setCustomValidity(
                             'Enter five space-separated cron fields with valid characters and non-zero step values.'
