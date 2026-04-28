@@ -265,6 +265,7 @@ class PeriodicTaskWrite(BasePeriodicTask):
         """Populate Celery task data before validation.
 
         Transforms the input data to include the Celery task name and execution data.
+        For updates, only includes execute_request if it was explicitly set.
 
         :param data: The input data containing task details.
         :type data: Any
@@ -276,9 +277,10 @@ class PeriodicTaskWrite(BasePeriodicTask):
                 "task": "app.tasks.celery.execute_task_by_name",
                 "kwargs": {
                     "task_name": data.get("task"),
-                    "execution_data": data.get("execute_request"),
                 },
             }
+            if "execute_request" in data:
+                extra_data["kwargs"]["execution_data"] = data.get("execute_request")
             return data | extra_data
         return data
 

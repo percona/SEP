@@ -23,6 +23,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
+from app.core.utils.iterators import unique_everseen
 from app.tasks.crud import TaskManager
 from app.tasks.deps import (
     get_executable_task_by_name,
@@ -35,6 +36,7 @@ from app.tasks.models import (
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.deps import PeriodicTaskDep
 from app.tasks.periodic.models import (
+    PeriodicTaskExecuteRequest,
     PeriodicTaskResponse,
     PeriodicTaskUpdate,
 )
@@ -93,12 +95,54 @@ async def update_periodic_task(
     task_name = updated_kwargs.get("task_name") or existing_kwargs["task_name"]
     if task_name != existing_kwargs["task_name"]:
         await get_executable_task_by_name(tasks_session, task_name)
-    if updated_task.execute_request and updated_task.execute_request.chain_task_names:
+
+    updated_chain = (
+        updated_task.execute_request.chain_task_names
+        if updated_task.execute_request
+        and updated_task.execute_request.chain_task_names
+        else None
+    )
+    existing_execution_data = existing_kwargs.get("execution_data") or {}
+    existing_chain = existing_execution_data.get("chain_task_names")
+
+    if updated_chain:
+        unique_chain = list(unique_everseen(updated_chain))
+
+        if updated_task.execute_request:
+            updated_task.execute_request.chain_task_names = unique_chain
+        updated_chain = unique_chain
+
+    if updated_task.execute_request is None and existing_execution_data:
+        updated_task.execute_request = PeriodicTaskExecuteRequest(
+            **existing_execution_data
+        )
+        kwargs_dict = json.loads(updated_task.kwargs)
+        kwargs_dict["execution_data"] = existing_execution_data
+        updated_task.kwargs = json.dumps(kwargs_dict)
+        logger.debug(
+            "UPDATE PERIODIC TASK - Reconstructed execute_request and kwargs from existing data"
+        )
+
+    effective_chain = updated_chain if updated_chain is not None else existing_chain
+
+    # Validate whenever the effective chain exists and either the chain changed
+    # or the effective parent task changed.
+    if effective_chain and (
+        effective_chain != existing_chain or task_name != existing_kwargs["task_name"]
+    ):
+        logger.debug(
+            "UPDATE PERIODIC TASK - VALIDATING CHAIN (chain or parent changed)"
+        )
         await validate_chain_task_names(
             tasks_session,
-            updated_task.execute_request.chain_task_names,
+            effective_chain,
             await get_executable_task_by_name(tasks_session, task_name),
         )
+    else:
+        logger.debug(
+            "UPDATE PERIODIC TASK - SKIPPING CHAIN VALIDATION (effective chain and parent unchanged)"
+        )
+
     logger.debug("Updating periodic task %s", existing_task.id)
     return await PeriodicTaskManager.update(session, existing_task, updated_task)
 

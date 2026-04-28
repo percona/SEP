@@ -42,9 +42,9 @@ from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.models import AlertBackup
 from app.sep.snippets.config import SnippetFilter, SnippetFilterType
 
-MODULE = "app.sep.celery"
 EXPECTED_DELETE_WHERE_CALLS = 2
 EXPECTED_BACKUP_COUNT_AFTER_DIFF = 2
+MODULE = "app.sep.celery"
 
 
 def _make_async_session_maker():

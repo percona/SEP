@@ -1,0 +1,99 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+{% set is_create = sync_schedule is none %}
+{% set has_interval = sync_schedule and sync_schedule.interval %}
+{% set has_crontab = sync_schedule and sync_schedule.crontab %}
+{% set default_interval_mode = is_create or has_interval %}
+<form method="post"
+      action="{%- if is_create -%}{{ url_for("periodic_task_create") }}{%- else -%}{{ url_for('periodic_task_update', periodic_task_id=sync_schedule.id) }}{%- endif -%}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+    {% if is_create %}<input type="hidden" name="task" value="inventory-sync" />{% endif %}
+    <fieldset>
+        <legend>
+            {% if is_create %}
+                Attach
+            {% else %}
+                Edit
+            {% endif %}
+            Schedule
+        </legend>
+        <label>
+            <input type="radio"
+                   name="schedule_mode"
+                   value="interval"
+                   {% if default_interval_mode %}checked{% endif %}>
+            Interval
+        </label>
+        <label>
+            <input type="radio"
+                   name="schedule_mode"
+                   value="crontab"
+                   {% if has_crontab %}checked{% endif %}>
+            Crontab
+        </label>
+        <div data-mode="interval"
+             style="display:{%- if default_interval_mode -%}block{%- else -%}none{%- endif -%}">
+            <label for="interval_every">Every:</label>
+            <input type="number"
+                   name="interval_every"
+                   id="interval_every"
+                   min="1"
+                   value="{{ sync_schedule.interval.every if has_interval else 5 }}"
+                   {% if default_interval_mode %}required{% else %}disabled{% endif %}>
+            <select name="interval_period"
+                    id="interval_period"
+                    aria-label="Period"
+                    {% if not default_interval_mode %}disabled{% endif %}>
+                {% for period in ['minutes', 'hours', 'days'] %}
+                    <option value="{{ period }}"
+                            {% if has_interval and sync_schedule.interval.period == period %}selected{% endif %}>
+                        {{ period }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div data-mode="crontab"
+             style="display:{%- if has_crontab -%}block{%- else -%}none{%- endif -%}">
+            <label for="cron_expression">Cron expression (5 fields):</label>
+            <input type="text"
+                   name="cron_expression"
+                   id="cron_expression"
+                   placeholder="0 0 * * *"
+                   pattern="^\S+\s+\S+\s+\S+\s+\S+\s+\S+$"
+                   value="{%- if has_crontab -%}{{ sync_schedule.crontab.minute }} {{ sync_schedule.crontab.hour }} {{ sync_schedule.crontab.day_of_month }} {{ sync_schedule.crontab.month_of_year }} {{ sync_schedule.crontab.day_of_week }}{%- endif -%}"
+                   {% if has_crontab %}required{% else %}disabled{% endif %}>
+            <label for="cron_timezone">Timezone:</label>
+            <select name="cron_timezone"
+                    id="cron_timezone"
+                    {% if not has_crontab %}disabled{% endif %}>
+                {% for tz in AVAILABLE_TIMEZONES %}
+                    <option value="{{ tz }}"
+                            {% if has_crontab and sync_schedule.crontab.timezone == tz %}selected{% endif %}
+                            {% if not has_crontab and tz == 'UTC' %}selected{% endif %}>{{ tz }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </fieldset>
+    <button type="submit" class="contained">
+        {% if is_create %}
+            Attach
+        {% else %}
+            Save
+        {% endif %}
+        Schedule
+    </button>
+</form>

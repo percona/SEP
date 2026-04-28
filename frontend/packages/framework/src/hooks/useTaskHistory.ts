@@ -1,49 +1,140 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiClient, type TasksComponents } from '@sep/api';
 
-interface TaskHistoryEntry {
-  id: string;
-  status: string;
-  startedAt: string;
-  completedAt?: string;
-  duration?: string;
-  triggeredBy?: string;
+export type TaskHistoryStatus = TasksComponents['schemas']['TaskHistoryStatusEnum'];
+export type TaskHistoryEntry = TasksComponents['schemas']['TaskHistoryResponse'];
+export type PaginatedTaskHistory =
+  TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
+
+export const RUNNING_STATUSES: ReadonlySet<TaskHistoryStatus> = new Set(['running', 'pending']);
+
+export function isRunningStatus(status: TaskHistoryStatus): boolean {
+  return RUNNING_STATUSES.has(status);
 }
 
-// TODO: connect to real API
-const MOCK_HISTORY: TaskHistoryEntry[] = [
-  {
-    id: 'run-001',
-    status: 'completed',
-    startedAt: '2025-01-15T10:00:00Z',
-    completedAt: '2025-01-15T10:05:00Z',
-    duration: '5m 0s',
-    triggeredBy: 'admin',
-  },
-  {
-    id: 'run-002',
-    status: 'failed',
-    startedAt: '2025-01-14T08:00:00Z',
-    completedAt: '2025-01-14T08:01:30Z',
-    duration: '1m 30s',
-    triggeredBy: 'scheduler',
-  },
-  {
-    id: 'run-003',
-    status: 'completed',
-    startedAt: '2025-01-13T12:00:00Z',
-    completedAt: '2025-01-13T12:10:00Z',
-    duration: '10m 0s',
-    triggeredBy: 'admin',
-  },
-];
+export interface UseTaskHistoryOptions {
+  /** Filter by exact status (server-side ?status=). */
+  status?: TaskHistoryStatus | null;
+  /** Override polling interval (ms). Defaults to 5000. */
+  pollingIntervalMs?: number;
+  /** Disable polling regardless of running tasks. */
+  disablePolling?: boolean;
+  /** Optional offset/limit for client-side prefetch (server pagination is deferred). */
+  offset?: number;
+  limit?: number;
+  /** Disable the underlying query (no fetch, no polling). */
+  enabled?: boolean;
+}
 
-export function useTaskHistory(pluginName: string, taskId?: string) {
-  return useQuery<TaskHistoryEntry[]>({
-    queryKey: ['plugins', pluginName, 'tasks', taskId, 'history'],
+interface ListParams {
+  status?: TaskHistoryStatus | null;
+  offset?: number;
+  limit?: number;
+}
+
+function buildParams({ status, offset, limit }: ListParams): Record<string, string | number> {
+  const params: Record<string, string | number> = {};
+  if (status) {
+    params.status = status;
+  }
+  if (typeof offset === 'number') {
+    params.offset = offset;
+  }
+  if (typeof limit === 'number') {
+    params.limit = limit;
+  }
+  return params;
+}
+
+function refetchIntervalFor(
+  data: PaginatedTaskHistory | undefined,
+  pollingMs: number,
+  disabled: boolean,
+): number | false {
+  if (disabled) {
+    return false;
+  }
+  if (!data) {
+    return false;
+  }
+  const hasRunning = data.items.some((entry) => isRunningStatus(entry.status));
+  return hasRunning ? pollingMs : false;
+}
+
+/**
+ * List task history across all tasks.
+ *
+ * Polling activates only when at least one row is in a running state, matching
+ * the legacy Jinja2 page reload behaviour. Server cursor pagination is deferred
+ * (SEP-923/924/925); callers paginate client-side for now.
+ */
+export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
+  const {
+    status,
+    pollingIntervalMs = 5000,
+    disablePolling = false,
+    offset,
+    limit,
+    enabled = true,
+  } = options;
+  return useQuery<PaginatedTaskHistory>({
+    queryKey: ['task-history', { status: status ?? null, offset, limit }],
+    enabled,
     queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 300));
-      return MOCK_HISTORY;
+      const { data } = await apiClient.get<PaginatedTaskHistory>('/tasks/history/', {
+        params: buildParams({ status, offset, limit }),
+      });
+      return data;
     },
-    placeholderData: MOCK_HISTORY,
+    refetchInterval: (query) =>
+      refetchIntervalFor(query.state.data, pollingIntervalMs, disablePolling),
+  });
+}
+
+/**
+ * List task history filtered to a specific task by name.
+ */
+export function useTaskHistoryByName(
+  taskName: string | undefined,
+  options: UseTaskHistoryOptions = {},
+) {
+  const {
+    status,
+    pollingIntervalMs = 5000,
+    disablePolling = false,
+    offset,
+    limit,
+    enabled = true,
+  } = options;
+  return useQuery<PaginatedTaskHistory>({
+    queryKey: ['task-history', taskName, { status: status ?? null, offset, limit }],
+    enabled: enabled && !!taskName,
+    queryFn: async () => {
+      const { data } = await apiClient.get<PaginatedTaskHistory>(
+        `/tasks/${encodeURIComponent(taskName!)}/history/`,
+        { params: buildParams({ status, offset, limit }) },
+      );
+      return data;
+    },
+    refetchInterval: (query) =>
+      refetchIntervalFor(query.state.data, pollingIntervalMs, disablePolling),
+  });
+}
+
+/**
+ * Stop a running task history execution.
+ */
+export function useStopTaskHistory() {
+  const queryClient = useQueryClient();
+  return useMutation<TaskHistoryEntry, Error, number>({
+    mutationFn: async (taskHistoryId) => {
+      const { data } = await apiClient.post<TaskHistoryEntry>(
+        `/tasks/history/${taskHistoryId}/stop/`,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task-history'] });
+    },
   });
 }
