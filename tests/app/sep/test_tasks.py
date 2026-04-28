@@ -15,6 +15,9 @@
 
 """Define tests for app.sep.tasks module."""
 
+import pytest
+from pydantic import ValidationError
+
 from app.sep.tasks import EnhancedPeriodicTaskCreateRequest, PeriodicTaskRequest
 
 
@@ -59,3 +62,57 @@ def test_enhanced_periodic_task_create_request_still_works_with_chain_task_names
 
     assert request.execute_request is not None
     assert request.execute_request.chain_task_names == ["chain-task"]
+
+
+def test_periodic_task_request_rejects_cron_with_too_few_tokens() -> None:
+    """Test that PeriodicTaskRequest raises ValidationError when cron_expression has fewer than five fields."""
+    data = {
+        "cron_expression": "0 0 * *",
+        "cron_timezone": "UTC",
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        PeriodicTaskRequest.model_validate(data)
+
+    assert "5" in str(exc_info.value) or "invalid" in str(exc_info.value).lower()
+
+
+def test_periodic_task_request_rejects_cron_with_too_many_tokens() -> None:
+    """Test that PeriodicTaskRequest raises ValidationError when cron_expression has more than five fields."""
+    data = {
+        "cron_expression": "0 0 * * * extra",
+        "cron_timezone": "UTC",
+    }
+
+    with pytest.raises(ValidationError):
+        PeriodicTaskRequest.model_validate(data)
+
+
+def test_periodic_task_request_rejects_cron_with_invalid_token() -> None:
+    """Test that PeriodicTaskRequest raises ValidationError when cron_expression has a syntactically invalid field."""
+    data = {
+        "cron_expression": "not-a-field * * * *",
+        "cron_timezone": "UTC",
+    }
+
+    with pytest.raises(ValidationError):
+        PeriodicTaskRequest.model_validate(data)
+
+
+def test_periodic_task_request_accepts_valid_five_field_cron() -> None:
+    """Test that PeriodicTaskRequest parses a valid five-field cron_expression into crontab fields."""
+    data = {
+        "cron_expression": "15 9-17 * * MON-FRI",
+        "cron_timezone": "America/New_York",
+    }
+
+    request = PeriodicTaskRequest.model_validate(data)
+
+    assert request.interval is None
+    assert request.crontab is not None
+    assert request.crontab.minute == "15"
+    assert request.crontab.hour == "9-17"
+    assert request.crontab.day_of_month == "*"
+    assert request.crontab.month_of_year == "*"
+    assert request.crontab.day_of_week == "MON-FRI"
+    assert request.crontab.timezone == "America/New_York"
