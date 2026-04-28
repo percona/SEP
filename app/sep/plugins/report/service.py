@@ -898,7 +898,7 @@ async def generate_report(
 # PDF generation helpers
 
 _LOGO_PNG_PATH = (
-    Path(__file__).resolve().parents[4] / "static" / "img" / "percona_logo.png"
+    Path(__file__).resolve().parents[4] / "static" / "img" / "percona-logo.png"
 )
 
 
