@@ -3,6 +3,7 @@ import { useFormContext, useWatch, type Control } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useTables, type TableOption } from '../../hooks/useTables';
 import type { SchemaOption } from '../../hooks/useSchemas';
+import { extractId } from '../../hooks/extractId';
 
 const EMPTY_OPTIONS: TableOption[] = [];
 
@@ -23,20 +24,6 @@ export interface TableSelectorProps {
 const getOptionLabel = (opt: TableOption | string) => (typeof opt === 'string' ? opt : opt.name);
 
 const isOptionEqualToValue = (a: TableOption, b: TableOption) => a.id === b.id;
-
-function extractId(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value !== '') {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  if (value && typeof value === 'object' && 'id' in value) {
-    return extractId((value as { id: unknown }).id);
-  }
-  return null;
-}
 
 export function TableSelector({
   name,

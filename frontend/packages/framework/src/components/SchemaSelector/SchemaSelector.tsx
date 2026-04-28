@@ -3,6 +3,7 @@ import { useFormContext, useWatch, type Control } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSchemas, type SchemaOption } from '../../hooks/useSchemas';
 import type { ServiceOption } from '../../hooks/useServices';
+import { extractId } from '../../hooks/extractId';
 
 const EMPTY_OPTIONS: SchemaOption[] = [];
 
@@ -23,20 +24,6 @@ export interface SchemaSelectorProps {
 const getOptionLabel = (opt: SchemaOption | string) => (typeof opt === 'string' ? opt : opt.name);
 
 const isOptionEqualToValue = (a: SchemaOption, b: SchemaOption) => a.id === b.id;
-
-function extractId(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value !== '') {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  if (value && typeof value === 'object' && 'id' in value) {
-    return extractId((value as { id: unknown }).id);
-  }
-  return null;
-}
 
 export function SchemaSelector({
   name,

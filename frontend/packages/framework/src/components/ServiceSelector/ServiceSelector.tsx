@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Control } from 'react-hook-form';
+import { useFormContext, type Control } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useServices, type ServiceOption, type ServiceType } from '../../hooks/useServices';
 
@@ -32,6 +32,9 @@ export function ServiceSelector({
   disabled,
   helperText,
 }: ServiceSelectorProps) {
+  const ctx = useFormContext();
+  const effectiveControl = control ?? ctx?.control;
+
   // Stabilise the array reference so `useServices` query key stays stable
   // across renders when the parent passes a fresh literal each time.
   const types = useMemo(
@@ -60,7 +63,7 @@ export function ServiceSelector({
     <AutoCompleteInput<ServiceOption>
       name={name}
       label={label}
-      control={control}
+      control={effectiveControl}
       isRequired={required}
       loading={isLoading}
       disabled={disabled || isError}

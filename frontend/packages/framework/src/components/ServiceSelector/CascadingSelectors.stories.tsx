@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect } from 'react';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import Stack from '@mui/material/Stack';
 import { ServiceSelector } from './ServiceSelector';
@@ -51,38 +50,17 @@ const TABLES_BY_SCHEMA: Record<number, Array<{ id: number; name: string }>> = {
   32: [],
 };
 
-function installFetchMock() {
-  if ((globalThis as { __sepCascadeMock?: boolean }).__sepCascadeMock) {
-    return;
-  }
-  (globalThis as { __sepCascadeMock?: boolean }).__sepCascadeMock = true;
-  const realFetch = globalThis.fetch.bind(globalThis);
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (url.includes('/api/inventory/services/')) {
-      return new Response(JSON.stringify(SERVICES), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    const schemaMatch = url.match(/\/inventory-api\/services\/(\d+)\/schemas/);
-    if (schemaMatch) {
-      const id = Number(schemaMatch[1]);
-      return new Response(JSON.stringify(SCHEMAS_BY_SERVICE[id] ?? []), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    const tableMatch = url.match(/\/inventory-api\/schemas\/(\d+)\/tables/);
-    if (tableMatch) {
-      const id = Number(tableMatch[1]);
-      return new Response(JSON.stringify(TABLES_BY_SCHEMA[id] ?? []), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    return realFetch(input, init);
-  }) as typeof fetch;
+// Build the per-URL response map consumed by the storybook fetch wrapper.
+// Matching is longest-prefix, so the per-id paths take precedence over the
+// generic `/api/inventory/services/` services-list registration.
+const cascadeFetchResponses: Record<string, unknown> = {
+  '/api/inventory/services/': SERVICES,
+};
+for (const [serviceId, list] of Object.entries(SCHEMAS_BY_SERVICE)) {
+  cascadeFetchResponses[`/inventory-api/services/${serviceId}/schemas`] = list;
+}
+for (const [schemaId, list] of Object.entries(TABLES_BY_SCHEMA)) {
+  cascadeFetchResponses[`/inventory-api/schemas/${schemaId}/tables`] = list;
 }
 
 function CurrentValues() {
@@ -95,10 +73,6 @@ function CurrentValues() {
 }
 
 function CascadeDemo({ serviceTypes }: { serviceTypes?: string[] }) {
-  useEffect(() => {
-    installFetchMock();
-  }, []);
-
   const methods = useForm<CascadeForm>({
     defaultValues: { service: null, schema: null, table: null },
   });
@@ -118,6 +92,7 @@ function CascadeDemo({ serviceTypes }: { serviceTypes?: string[] }) {
 const meta: Meta<typeof CascadeDemo> = {
   title: 'Selectors/CascadingSelectors',
   component: CascadeDemo,
+  parameters: { fetchResponses: cascadeFetchResponses },
 };
 export default meta;
 
