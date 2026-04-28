@@ -101,6 +101,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </div>
     </details>
 </section>
+<script src="{{ url_for('static', path='/js/cron-validation.js') }}"
+        nonce="{{ request.state.csp_nonce }}"></script>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
     (function () {
         document.querySelectorAll(
@@ -142,6 +144,33 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     });
                 });
             });
+            const cronInput = container.querySelector(
+                'input[name="cron_expression"]'
+            );
+            if (cronInput) {
+                cronInput.addEventListener('input', function () {
+                    cronInput.setCustomValidity('');
+                });
+            }
+            const form = container.querySelector('form');
+            if (form) {
+                form.addEventListener('submit', function (event) {
+                    const input = form.querySelector('input[name="cron_expression"]');
+                    if (!input || input.disabled || !input.value) {
+                        return;
+                    }
+                    if (window.cronValidation
+                        && !window.cronValidation.isCronExpressionValid(input.value)) {
+                        event.preventDefault();
+                        input.setCustomValidity(
+                            'Enter five space-separated cron fields with valid characters and non-zero step values.'
+                        );
+                        input.reportValidity();
+                    } else {
+                        input.setCustomValidity('');
+                    }
+                });
+            }
         });
     })();
 </script>
