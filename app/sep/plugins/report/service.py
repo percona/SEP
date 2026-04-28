@@ -914,7 +914,7 @@ def _get_logo_data_uri() -> str:
 def _get_page_css() -> CSS:
     """Return the cached WeasyPrint CSS object for the PDF page layout."""
     return CSS(
-        string="@page { size: 370mm 445.5mm; margin: 0; background: rgb(0, 18, 34); }"
+        string="@page { size: 370mm 445.5mm; margin: 0; background: rgb(40, 39, 39); }"
     )
 
 
