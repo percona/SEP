@@ -26,7 +26,6 @@ from app.tasks.periodic.models import (
     PeriodicTaskExecuteRequest,
 )
 
-# Standard crontab: minute, hour, day of month, month, day of week.
 STANDARD_CRON_FIELD_COUNT = 5
 
 

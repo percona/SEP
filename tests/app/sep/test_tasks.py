@@ -74,7 +74,7 @@ def test_periodic_task_request_rejects_cron_with_too_few_tokens() -> None:
     with pytest.raises(ValidationError) as exc_info:
         PeriodicTaskRequest.model_validate(data)
 
-    assert "5" in str(exc_info.value) or "invalid" in str(exc_info.value).lower()
+    assert "is not a valid cron schedule" in str(exc_info.value)
 
 
 def test_periodic_task_request_rejects_empty_cron_expression() -> None:

@@ -64,18 +64,18 @@ $(document).ready(function() {
                 }));
     }
 
-    function isCronExpressionValid(cronExpression) {
+    function getHumanizedCronIfValid(cronExpression) {
         if (!cronExpression) {
-            return false;
+            return null;
         }
         const trimmedExpression = cronExpression.trim();
         if (!hasValidCronFieldCharacters(trimmedExpression)) {
-            return false;
+            return null;
         }
         if (hasInvalidZeroStep(trimmedExpression)) {
-            return false;
+            return null;
         }
-        return !!humanizeCronExpression(trimmedExpression);
+        return humanizeCronExpression(trimmedExpression);
     }
 
     function updateCronDescription($input) {
@@ -83,10 +83,7 @@ $(document).ready(function() {
         const $cronDescription = $input.closest('.cron-inputs').find('.cron-description');
 
         if (cronExpression) {
-            const trimmedExpression = cronExpression.trim();
-            const humanized = isCronExpressionValid(trimmedExpression) ?
-                humanizeCronExpression(trimmedExpression) :
-                null;
+            const humanized = getHumanizedCronIfValid(cronExpression);
             if (humanized) {
                 $cronDescription.text(humanized);
                 $input.removeClass('invalid');
@@ -110,7 +107,7 @@ $(document).ready(function() {
                 return false;
             }
 
-            if (!isCronExpressionValid(cronExpression)) {
+            if (!getHumanizedCronIfValid(cronExpression)) {
                 alert('Invalid cron expression.');
                 $cronInput.addClass('invalid');
                 return false;
