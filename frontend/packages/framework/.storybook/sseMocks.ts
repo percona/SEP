@@ -20,8 +20,6 @@ export class StoryEventSource {
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
 
-  static instances: StoryEventSource[] = [];
-
   readonly url: string;
   readonly withCredentials: boolean;
   readyState: number = StoryEventSource.OPEN;
@@ -34,7 +32,6 @@ export class StoryEventSource {
   constructor(url: string, init?: EventSourceInit) {
     this.url = url;
     this.withCredentials = init?.withCredentials ?? false;
-    StoryEventSource.instances.push(this);
 
     queueMicrotask(() => {
       if (this.closed) {
@@ -123,13 +120,19 @@ export function installStorybookSseMocks(): void {
 
   g.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    for (const [prefix, body] of fetchResponses) {
-      if (url.startsWith(prefix)) {
-        return new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+    // Longest-prefix match so a more specific registration wins over a more
+    // general one (e.g. `/execution-events/sb-success` over `/execution-events`).
+    let bestPrefix: string | undefined;
+    for (const prefix of fetchResponses.keys()) {
+      if (url.startsWith(prefix) && (!bestPrefix || prefix.length > bestPrefix.length)) {
+        bestPrefix = prefix;
       }
+    }
+    if (bestPrefix !== undefined) {
+      return new Response(JSON.stringify(fetchResponses.get(bestPrefix)), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     const original = g[ORIGINAL_FETCH_KEY];
     if (original) {

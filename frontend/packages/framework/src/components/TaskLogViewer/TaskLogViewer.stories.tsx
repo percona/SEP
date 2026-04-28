@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, fn, userEvent, within } from 'storybook/test';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import type { StoryEventSource } from '../../../.storybook/sseMocks';
 import { TaskLogViewer } from './TaskLogViewer';
 
@@ -281,16 +281,22 @@ export const InteractiveSmokeTest: Story = {
 
     await step('stderr top tab gains an unread dot when stderr arrives', async () => {
       const stderrTab = await canvas.findByRole('tab', { name: /stderr/i });
-      const dot = stderrTab.querySelector('.MuiBadge-dot');
-      await expect(dot).toBeTruthy();
-      await expect(dot?.classList.contains('MuiBadge-invisible')).toBe(false);
+      // The dot toggles on a React effect after the SSE message commits, so
+      // poll until the badge surfaces rather than asserting on the same tick.
+      await waitFor(() => {
+        const dot = stderrTab.querySelector('.MuiBadge-dot');
+        expect(dot).toBeTruthy();
+        expect(dot?.classList.contains('MuiBadge-invisible')).toBe(false);
+      });
     });
 
     await step('clicking stderr clears the unread dot', async () => {
       const stderrTab = await canvas.findByRole('tab', { name: /stderr/i });
       await userEvent.click(stderrTab);
-      const dot = stderrTab.querySelector('.MuiBadge-dot');
-      await expect(dot?.classList.contains('MuiBadge-invisible')).toBe(true);
+      await waitFor(() => {
+        const dot = stderrTab.querySelector('.MuiBadge-dot');
+        expect(dot?.classList.contains('MuiBadge-invisible')).toBe(true);
+      });
     });
 
     await step('download button invokes URL.createObjectURL with a Blob', async () => {
@@ -307,7 +313,11 @@ export const InteractiveSmokeTest: Story = {
         await expect(createObjectURL).toHaveBeenCalledTimes(1);
         const blobArg = createObjectURL.mock.calls[0]?.[0];
         await expect(blobArg).toBeInstanceOf(Blob);
-        await expect(revokeObjectURL).toHaveBeenCalledWith('blob:story');
+        // useLogDownload defers revocation via setTimeout(0) so Safari can
+        // finish the anchor-triggered download — wait for the timer to fire.
+        await waitFor(() => {
+          expect(revokeObjectURL).toHaveBeenCalledWith('blob:story');
+        });
       } finally {
         URL.createObjectURL = originalCreate;
         URL.revokeObjectURL = originalRevoke;
