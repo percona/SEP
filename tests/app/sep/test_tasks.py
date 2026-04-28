@@ -77,15 +77,30 @@ def test_periodic_task_request_rejects_cron_with_too_few_tokens() -> None:
     assert "5" in str(exc_info.value) or "invalid" in str(exc_info.value).lower()
 
 
-def test_periodic_task_request_rejects_cron_with_too_many_tokens() -> None:
-    """Test that PeriodicTaskRequest raises ValidationError when cron_expression has more than five fields."""
+def test_periodic_task_request_rejects_empty_cron_expression() -> None:
+    """Test that PeriodicTaskRequest raises ValidationError when cron_expression is empty or whitespace."""
     data = {
-        "cron_expression": "0 0 * * * extra",
+        "cron_expression": "   ",
         "cron_timezone": "UTC",
     }
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         PeriodicTaskRequest.model_validate(data)
+
+    assert "expression is empty" in str(exc_info.value).lower()
+
+
+def test_periodic_task_request_rejects_cron_with_too_many_tokens() -> None:
+    """Test that PeriodicTaskRequest raises ValidationError when cron_expression has more than five fields."""
+    data = {
+        "cron_expression": "0 0 * * * *",
+        "cron_timezone": "UTC",
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        PeriodicTaskRequest.model_validate(data)
+
+    assert "expected 5 whitespace-separated fields" in str(exc_info.value)
 
 
 def test_periodic_task_request_rejects_cron_with_invalid_token() -> None:
