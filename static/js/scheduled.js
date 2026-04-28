@@ -17,6 +17,7 @@
 
 $(document).ready(function() {
     const cronstrue = window.cronstrue;
+    const cronValidation = window.cronValidation || null;
 
     // ========================================
     // Helper Functions
@@ -32,12 +33,19 @@ $(document).ready(function() {
         }
     }
 
+    function getHumanizedCronIfValid(cronExpression) {
+        if (!cronValidation || !cronValidation.isCronExpressionValid(cronExpression)) {
+            return null;
+        }
+        return humanizeCronExpression(cronExpression.trim());
+    }
+
     function updateCronDescription($input) {
         const cronExpression = $input.val();
         const $cronDescription = $input.closest('.cron-inputs').find('.cron-description');
 
         if (cronExpression) {
-            const humanized = humanizeCronExpression(cronExpression);
+            const humanized = getHumanizedCronIfValid(cronExpression);
             if (humanized) {
                 $cronDescription.text(humanized);
                 $input.removeClass('invalid');
@@ -61,7 +69,7 @@ $(document).ready(function() {
                 return false;
             }
 
-            if (!humanizeCronExpression(cronExpression)) {
+            if (!getHumanizedCronIfValid(cronExpression)) {
                 alert('Invalid cron expression.');
                 $cronInput.addClass('invalid');
                 return false;
@@ -212,7 +220,7 @@ $(document).ready(function() {
     // Event Handlers - Cron Expression Input
     // ========================================
 
-    $('input[name="cron_expression"]').on('input', function() {
+    $('input[name="cron_expression"]').on('input change', function() {
         updateCronDescription($(this));
     });
 
@@ -262,16 +270,23 @@ $(document).ready(function() {
         }
     });
 
-    $('#save-button').click(function(e) {
+    $('#new-periodic-task-form').on('submit', function(e) {
         e.preventDefault();
 
         const $newTaskRow = $('.new-periodic-task-row');
         const $cronDiv = $newTaskRow.find('.cron-inputs');
-        const $intervalDiv = $newTaskRow.find('.interval-inputs');
         const isCronMode = !$cronDiv.hasClass('hidden');
 
         if (!validateScheduleInputs($newTaskRow, isCronMode)) {
             return false;
+        }
+
+        if (isCronMode) {
+            const $cronInput = $newTaskRow.find('input[name="cron_expression"]');
+            if ($cronInput.length && !$cronInput.get(0).checkValidity()) {
+                $cronInput.get(0).reportValidity();
+                return false;
+            }
         }
 
         updateDateTimeInput($newTaskRow);
@@ -298,7 +313,8 @@ $(document).ready(function() {
             });
         }
 
-        const $newForm = $('#new-periodic-task-form');
+        const form = e.currentTarget;
+        const $newForm = $(form);
         $newForm.find('input[name="execute_request_chain_task_names"]').remove();
         $newForm.find('input[name="execute_request_chain_on_failure"]').remove();
         const $newChainBuilder = $newTaskRow.find('.chain-builder');
@@ -321,7 +337,7 @@ $(document).ready(function() {
             }
         }
 
-        $newForm.submit();
+        form.submit();
         return true;
     });
 
@@ -376,15 +392,33 @@ $(document).ready(function() {
         });
     });
 
-    $('.save-edit-button').click(function(e) {
-        const taskId = $(this).data('task-id');
+    // Capture phase runs before the global .submitButton confirm dialog (bubble), so
+    // schedule validation can block the modal and submission on invalid cron/interval.
+    document.addEventListener('click', function(e) {
+        const button = e.target.closest('.save-edit-button');
+        if (!button) {
+            return;
+        }
+
+        const taskId = $(button).data('task-id');
         const $editRow = $(`.edit-periodic-task-row[data-task-id="${taskId}"]`);
         const $cronDiv = $editRow.find('.cron-inputs');
         const isCronMode = !$cronDiv.hasClass('hidden');
 
         if (!validateScheduleInputs($editRow, isCronMode)) {
             e.preventDefault();
+            e.stopImmediatePropagation();
             return false;
+        }
+
+        if (isCronMode) {
+            const $cronInput = $editRow.find('input[name="cron_expression"]');
+            if ($cronInput.length && !$cronInput.get(0).checkValidity()) {
+                $cronInput.get(0).reportValidity();
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return false;
+            }
         }
 
         updateDateTimeInput($editRow);
@@ -460,5 +494,5 @@ $(document).ready(function() {
                 }).appendTo($form);
             }
         }
-    });
+    }, true);
 });
