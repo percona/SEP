@@ -49,12 +49,33 @@ $(document).ready(function() {
         return parts.every((part, index) => CRON_FIELD_PATTERNS[index].test(part));
     }
 
+    function hasInvalidZeroStep(cronExpression) {
+        return cronExpression
+            .trim()
+            .split(/\s+/)
+            .some((part) => part
+                .split(',')
+                .some((segment) => {
+                    if (!segment.includes('/')) {
+                        return false;
+                    }
+                    const step = segment.split('/')[1];
+                    return /^\d+$/.test(step) && Number(step) === 0;
+                }));
+    }
+
     function isCronExpressionValid(cronExpression) {
         if (!cronExpression) {
             return false;
         }
         const trimmedExpression = cronExpression.trim();
-        return hasValidCronFieldCharacters(trimmedExpression) && !!humanizeCronExpression(trimmedExpression);
+        if (!hasValidCronFieldCharacters(trimmedExpression)) {
+            return false;
+        }
+        if (hasInvalidZeroStep(trimmedExpression)) {
+            return false;
+        }
+        return !!humanizeCronExpression(trimmedExpression);
     }
 
     function updateCronDescription($input) {
