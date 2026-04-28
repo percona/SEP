@@ -13,7 +13,9 @@
     "format:check": "oxfmt --check .",
     "typecheck": "pnpm -r type-check",
     "type-check": "pnpm -r type-check",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "storybook": "pnpm --filter @sep/framework storybook",
+    "build-storybook": "pnpm --filter @sep/framework build-storybook"
   },
   "devDependencies": {
     "oxfmt": "^0.45.0",
