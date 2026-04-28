@@ -17,6 +17,7 @@
 
 from typing import Any
 
+from croniter import croniter
 from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
@@ -24,6 +25,9 @@ from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.tasks.periodic.models import (
     PeriodicTaskExecuteRequest,
 )
+
+# Standard crontab: minute, hour, day of month, month, day of week.
+STANDARD_CRON_FIELD_COUNT = 5
 
 
 class PeriodicTaskRequest(BaseModel):
@@ -73,9 +77,30 @@ class PeriodicTaskRequest(BaseModel):
                 }
                 data["crontab"] = None
             elif "cron_expression" in data and "cron_timezone" in data:
-                minute, hour, day_of_month, month_of_year, day_of_week = data[
-                    "cron_expression"
-                ].split()
+                raw_expr = data["cron_expression"]
+                cron_expression = str(raw_expr or "").strip()
+                if not cron_expression:
+                    msg = "Invalid cron expression: expression is empty."
+                    raise ValueError(msg)
+                if not croniter.is_valid(cron_expression):
+                    msg = f"Invalid cron expression: {raw_expr!r} is not a valid cron schedule."
+                    raise ValueError(msg)
+                parts = cron_expression.split()
+                if len(parts) != STANDARD_CRON_FIELD_COUNT:
+                    msg = (
+                        "Invalid cron expression: expected "
+                        f"{STANDARD_CRON_FIELD_COUNT} whitespace-separated fields "
+                        "(minute hour day-of-month month day-of-week), got "
+                        f"{len(parts)}."
+                    )
+                    raise ValueError(msg)
+                (
+                    minute,
+                    hour,
+                    day_of_month,
+                    month_of_year,
+                    day_of_week,
+                ) = parts
                 data["crontab"] = {
                     "timezone": data["cron_timezone"],
                     "minute": minute,
