@@ -268,10 +268,11 @@ async def test_sync_inventory_with_unknown_syncer_param_skips_run(
 ):
     """Reject a POST whose ``syncer`` value matches no configured syncer.
 
-    SEP's global ``HTTPException`` handler converts the raised
-    ``HTTPBadRequestException`` into a 303 redirect with a flash message, so
-    the assertion focuses on the side effect that matters: the background
-    task must not have been scheduled.
+    The route catches the ``ValueError`` raised by ``filter_syncers_by_name``
+    and re-raises it as ``HTTPBadRequestException``, which SEP's global
+    ``HTTPException`` handler then converts into a 303 redirect with a flash
+    message, so the assertion focuses on the side effect that matters: the
+    background task must not have been scheduled.
     """
     response = await async_test_client.post(
         "/inventory/sync/",

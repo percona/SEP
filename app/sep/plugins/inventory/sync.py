@@ -41,9 +41,9 @@ async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
         ``"app.sep.sync.syncers.pmm.PMMSyncer"``), or ``None`` / empty for the
         sync-all path.
     :type syncer: str | None
-    :raises ValueError: If ``INVENTORY_SYNC_API_KEY`` is not configured.
-    :raises HTTPBadRequestException: If ``syncer`` is set but does not match
-        any configured syncer that can sync inventory.
+    :raises ValueError: If ``INVENTORY_SYNC_API_KEY`` is not configured, or if
+        ``syncer`` is set but does not match any configured syncer that can
+        sync inventory.
     """
     api_key = tasks_settings.INVENTORY_SYNC_API_KEY
     if not api_key:

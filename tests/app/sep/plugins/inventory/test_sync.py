@@ -15,12 +15,12 @@
 
 """Define tests for the app.sep.plugins.inventory.sync module."""
 
+import re
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.exceptions import HTTPBadRequestException
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
@@ -243,9 +243,9 @@ async def test_run_scheduled_inventory_sync_targets_named_syncer(mocker):
 
 @pytest.mark.asyncio
 async def test_run_scheduled_inventory_sync_unknown_syncer_raises(mocker):
-    """An unknown syncer raises HTTPBadRequestException without invoking the run."""
+    """An unknown syncer raises ``ValueError`` without invoking the run."""
     mock_run = _patch_scheduled_sync_env(mocker, [_StubPMMSyncer()])
-    with pytest.raises(HTTPBadRequestException):
+    with pytest.raises(ValueError, match=r"app\.fake\.UnknownSyncer"):
         await run_scheduled_inventory_sync(syncer="app.fake.UnknownSyncer")
     mock_run.assert_not_awaited()
 
@@ -256,6 +256,6 @@ async def test_run_scheduled_inventory_sync_incapable_syncer_raises(mocker):
     pmm = _StubPMMSyncer()
     mocker.patch.object(pmm, "can_sync_inventory", return_value=False)
     mock_run = _patch_scheduled_sync_env(mocker, [pmm])
-    with pytest.raises(HTTPBadRequestException):
+    with pytest.raises(ValueError, match=re.escape(_PMM_STUB_NAME)):
         await run_scheduled_inventory_sync(syncer=_PMM_STUB_NAME)
     mock_run.assert_not_awaited()
