@@ -17,6 +17,14 @@
 
 $(document).ready(function() {
     const cronstrue = window.cronstrue;
+    const CRON_FIELD_COUNT = 5;
+    const CRON_FIELD_PATTERNS = [
+        /^[\d*/,\-]+$/, // minute
+        /^[\d*/,\-]+$/, // hour
+        /^[\d*/,\-?LW]+$/i, // day of month
+        /^[\d*/,\-A-Z]+$/i, // month
+        /^[\d*/,\-A-Z#?L]+$/i, // day of week
+    ];
 
     // ========================================
     // Helper Functions
@@ -32,12 +40,32 @@ $(document).ready(function() {
         }
     }
 
+    function hasValidCronFieldCharacters(cronExpression) {
+        const parts = cronExpression.trim().split(/\s+/);
+        if (parts.length !== CRON_FIELD_COUNT) {
+            return false;
+        }
+
+        return parts.every((part, index) => CRON_FIELD_PATTERNS[index].test(part));
+    }
+
+    function isCronExpressionValid(cronExpression) {
+        if (!cronExpression) {
+            return false;
+        }
+        const trimmedExpression = cronExpression.trim();
+        return hasValidCronFieldCharacters(trimmedExpression) && !!humanizeCronExpression(trimmedExpression);
+    }
+
     function updateCronDescription($input) {
         const cronExpression = $input.val();
         const $cronDescription = $input.closest('.cron-inputs').find('.cron-description');
 
         if (cronExpression) {
-            const humanized = humanizeCronExpression(cronExpression);
+            const trimmedExpression = cronExpression.trim();
+            const humanized = isCronExpressionValid(trimmedExpression) ?
+                humanizeCronExpression(trimmedExpression) :
+                null;
             if (humanized) {
                 $cronDescription.text(humanized);
                 $input.removeClass('invalid');
@@ -61,7 +89,7 @@ $(document).ready(function() {
                 return false;
             }
 
-            if (!humanizeCronExpression(cronExpression)) {
+            if (!isCronExpressionValid(cronExpression)) {
                 alert('Invalid cron expression.');
                 $cronInput.addClass('invalid');
                 return false;
@@ -386,10 +414,13 @@ $(document).ready(function() {
 
     // Capture phase runs before the global .submitButton confirm dialog (bubble), so
     // schedule validation can block the modal and submission on invalid cron/interval.
-    $(document).on('click', {
-        capture: true
-    }, '.save-edit-button', function(e) {
-        const taskId = $(this).data('task-id');
+    document.addEventListener('click', function(e) {
+        const button = e.target.closest('.save-edit-button');
+        if (!button) {
+            return;
+        }
+
+        const taskId = $(button).data('task-id');
         const $editRow = $(`.edit-periodic-task-row[data-task-id="${taskId}"]`);
         const $cronDiv = $editRow.find('.cron-inputs');
         const isCronMode = !$cronDiv.hasClass('hidden');
@@ -483,5 +514,5 @@ $(document).ready(function() {
                 }).appendTo($form);
             }
         }
-    });
+    }, true);
 });
