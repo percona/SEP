@@ -18,9 +18,18 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    status,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.exceptions import HTTPBadRequestException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
@@ -46,6 +55,7 @@ from app.sep.plugins.inventory.deps import (
     filter_syncers_by_name,
     SyncersDep,
 )
+from app.sep.plugins.inventory.models import InventorySyncScheduleCreateForm
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
     run_node_sync,
@@ -89,10 +99,7 @@ async def node_list(
         lambda syncer: syncer.can_sync_inventory(),
     )
     context["can_sync"] = bool(context["available_syncers"])
-    inventory_sync_schedules = await tasks_api.get("/inventory-sync/periodic/")
-    context["sync_schedule"] = (
-        inventory_sync_schedules[0] if inventory_sync_schedules else None
-    )
+    context["sync_schedules"] = await tasks_api.get("/inventory-sync/periodic/")
     context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
     return templates.TemplateResponse(
         request=request,
@@ -109,13 +116,67 @@ async def sync_inventory(
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start inventory sync as a background task."""
-    selected = filter_syncers_by_name(
-        syncers,
-        syncer_name,
-        lambda syncer: syncer.can_sync_inventory(),
-    )
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_inventory(),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
     background_tasks.add_task(run_inventory_sync, user.access_token, *selected)
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/schedule/", dependencies=[IsAuthenticated, IsCsrfValidated])
+async def schedule_create(
+    syncers: SyncersDep,
+    tasks_api: TaskAPI,
+    schedule: Annotated[InventorySyncScheduleCreateForm, Form()],
+    referer: Annotated[str, Header()] = "/inventory/",
+) -> RedirectResponse:
+    """Attach a periodic schedule to the inventory-sync task.
+
+    Validate the optional ``syncer`` field and the interval/crontab shape at
+    form-submit time using ``filter_syncers_by_name`` and explicit checks so
+    invalid input fails fast with a friendly redirect rather than silently
+    misfiring inside the worker. When ``syncer`` is unset the schedule runs
+    every configured syncer; when set it targets only that syncer.
+
+    :param syncers: The configured syncers from ``SyncersDep``.
+    :type syncers: SyncersDep
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :param schedule: The submitted attach form.
+    :type schedule: InventorySyncScheduleCreateForm
+    :param referer: The originating page used for the redirect on success.
+    :type referer: str
+    :return: A 303 redirect back to the originating page.
+    :rtype: RedirectResponse
+    :raises HTTPBadRequestException: If the syncer name is unknown or both /
+        neither schedule mode is supplied.
+    """
+    if schedule.syncer:
+        try:
+            filter_syncers_by_name(
+                syncers,
+                schedule.syncer,
+                lambda candidate: candidate.can_sync_inventory(),
+            )
+        except ValueError as exc:
+            raise HTTPBadRequestException(str(exc)) from exc
+    if schedule.interval and schedule.crontab:
+        raise HTTPBadRequestException(
+            "Cannot specify both interval and crontab; choose one schedule mode.",
+        )
+    if not schedule.interval and not schedule.crontab:
+        raise HTTPBadRequestException(
+            "Either interval or crontab must be specified.",
+        )
+    payload = schedule.to_periodic_task_payload()
+    logger.debug("Attaching inventory-sync schedule, %s", payload)
+    await tasks_api.post("/inventory-sync/periodic/", json=payload)
+    return RedirectResponse(referer, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/{node_id}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -153,11 +214,14 @@ async def sync_node(
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start node sync as a background task."""
-    selected = filter_syncers_by_name(
-        syncers,
-        syncer_name,
-        lambda syncer: syncer.can_sync_node(node),
-    )
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_node(node),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
     background_tasks.add_task(run_node_sync, node, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/{node.id}",
@@ -227,11 +291,14 @@ async def sync_service(
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start service sync as a background task."""
-    selected = filter_syncers_by_name(
-        syncers,
-        syncer_name,
-        lambda syncer: syncer.can_sync_service(service),
-    )
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_service(service),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
     background_tasks.add_task(run_service_sync, service, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/services/{service.id}",
@@ -382,11 +449,14 @@ async def sync_schema(
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start schema sync as a background task."""
-    selected = filter_syncers_by_name(
-        syncers,
-        syncer_name,
-        lambda syncer: syncer.can_sync_schema(schema),
-    )
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_schema(schema),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
     background_tasks.add_task(run_schema_sync, schema, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/schemas/{schema.id}",

@@ -22,6 +22,7 @@ from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
+from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
 from app.tasks.periodic.models import (
     PeriodicTaskExecuteRequest,
 )
@@ -70,10 +71,7 @@ class PeriodicTaskRequest(BaseModel):
         """
         if isinstance(data, dict):
             if "interval_every" in data and "interval_period" in data:
-                data["interval"] = {
-                    "every": data["interval_every"],
-                    "period": data["interval_period"],
-                }
+                data["interval"] = parse_interval_form_fields(data)
                 data["crontab"] = None
             elif "cron_expression" in data and "cron_timezone" in data:
                 raw_expr = data["cron_expression"]
@@ -93,21 +91,7 @@ class PeriodicTaskRequest(BaseModel):
                         f"{len(parts)}."
                     )
                     raise ValueError(msg)
-                (
-                    minute,
-                    hour,
-                    day_of_month,
-                    month_of_year,
-                    day_of_week,
-                ) = parts
-                data["crontab"] = {
-                    "timezone": data["cron_timezone"],
-                    "minute": minute,
-                    "hour": hour,
-                    "day_of_month": day_of_month,
-                    "month_of_year": month_of_year,
-                    "day_of_week": day_of_week,
-                }
+                data["crontab"] = parse_crontab_form_fields(data)
                 data["interval"] = None
             execute_request_data = {}
             for key, value in list(data.items()):

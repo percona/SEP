@@ -21,7 +21,6 @@ from typing import Annotated, NamedTuple
 from fastapi import Depends
 
 from app.core.config import settings
-from app.core.exceptions import HTTPBadRequestException
 from app.core.utils import import_var
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
@@ -123,9 +122,12 @@ def filter_syncers_by_name(
       contract.
     - **Targeted** (``syncer_name`` present) — return the single syncer whose
       fully qualified name matches and whose capability check currently
-      returns ``True``. Raise ``HTTPBadRequestException`` on an empty match
+      returns ``True``. Raise a domain-level ``ValueError`` on an empty match
       set so crafted or stale POSTs do not become silent no-ops when
-      ``run_*_sync(*[])`` is called.
+      ``run_*_sync(*[])`` is called. Callers translate the error at the
+      appropriate boundary: HTTP routes catch it and re-raise
+      ``HTTPBadRequestException``, while the Celery caller lets it propagate
+      as a task failure with a clean traceback.
 
     :param syncers: The syncers injected by ``SyncersDep``.
     :type syncers: list[BaseSyncer]
@@ -138,8 +140,8 @@ def filter_syncers_by_name(
     :type can_sync_check: Callable[[BaseSyncer], bool]
     :return: The resolved list of syncers to hand to ``run_*_sync``.
     :rtype: list[BaseSyncer]
-    :raises HTTPBadRequestException: In targeted mode, when no configured
-        syncer both matches ``syncer_name`` and passes the capability check.
+    :raises ValueError: In targeted mode, when no configured syncer both
+        matches ``syncer_name`` and passes the capability check.
     """
     if not syncer_name:
         return list(syncers)
@@ -149,7 +151,7 @@ def filter_syncers_by_name(
         if _get_syncer_qualified_name(syncer) == syncer_name and can_sync_check(syncer)
     ]
     if not matched:
-        raise HTTPBadRequestException(
+        raise ValueError(
             f"Unknown or inapplicable syncer: {syncer_name!r}",
         )
     return matched
