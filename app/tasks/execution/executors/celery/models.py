@@ -43,6 +43,12 @@ logger = logging.getLogger(__name__)
 
 CELERY_CALLABLE_ALLOWED_PREFIX = "app."
 
+# `meta["target"]` carries executor-routing data (the host/cluster slug) and is
+# injected by the chained-dispatch and Nomad pre-dispatch paths. It is not a
+# callable argument, so the Celery executor must filter it out alongside the
+# underscore-prefixed control keys before forwarding `meta` as `**kwargs`.
+_RESERVED_META_KEYS = frozenset({"target"})
+
 
 class CeleryExecutor(BaseExecutor):
     """Execute tasks as Python callables directly in the Celery worker process.
@@ -85,10 +91,26 @@ class CeleryExecutor(BaseExecutor):
         queue_item.started_at = utc_now()
         queue_item.status = TaskHistoryStatusEnum.RUNNING
 
+        meta = (
+            queue_item.execution_request.meta
+            if queue_item.execution_request and queue_item.execution_request.meta
+            else {}
+        )
+        kwargs = {
+            key: value
+            for key, value in meta.items()
+            if not key.startswith("_") and key not in _RESERVED_META_KEYS
+        }
+
         stdout_buffer = io.StringIO()
         stderr_buffer = io.StringIO()
         try:
-            result = await self._run_callable(task, stdout_buffer, stderr_buffer)
+            result = await self._run_callable(
+                task,
+                stdout_buffer,
+                stderr_buffer,
+                kwargs=kwargs,
+            )
             stdout_buffer.write(f"\nResult: {result}\n")
             queue_item.status = TaskHistoryStatusEnum.SUCCESS
         except Exception:
@@ -122,7 +144,12 @@ class CeleryExecutor(BaseExecutor):
         return saved
 
     async def _run_callable(
-        self, task: Task, stdout_buffer: io.StringIO, stderr_buffer: io.StringIO
+        self,
+        task: Task,
+        stdout_buffer: io.StringIO,
+        stderr_buffer: io.StringIO,
+        *,
+        kwargs: dict[str, Any] | None = None,
     ) -> Any:
         """Import and invoke the callable specified in the task data.
 
@@ -137,6 +164,10 @@ class CeleryExecutor(BaseExecutor):
         :type stdout_buffer: io.StringIO
         :param stderr_buffer: A StringIO buffer for capturing standard error.
         :type stderr_buffer: io.StringIO
+        :param kwargs: Keyword arguments forwarded to the callable. Forwarded
+            from ``execution_request.meta`` by ``dispatch_task``; defaults to
+            an empty mapping (the callable is invoked with no arguments).
+        :type kwargs: dict[str, Any] | None
         :return: The return value of the callable.
         :rtype: Any
         """
@@ -147,10 +178,11 @@ class CeleryExecutor(BaseExecutor):
         if not callable(func):
             raise TypeError(f"'{callable_path}' is not callable")
         stdout_buffer.write(f"Executing {callable_path}\n")
+        call_kwargs = kwargs or {}
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             if asyncio.iscoroutinefunction(func):
-                return await func()
-            return await asyncio.to_thread(func)
+                return await func(**call_kwargs)
+            return await asyncio.to_thread(func, **call_kwargs)
 
     async def _sync_task_history(
         self,
