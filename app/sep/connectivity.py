@@ -85,7 +85,9 @@ def _record_latest_result(target: str, service_type: str, *, success: bool) -> N
     ``alru_cache`` (which exposes no public sync peek). The snapshot has no
     TTL of its own; ``alru_cache`` remains the authoritative TTL store and
     the snapshot is best-effort, refreshed each time
-    ``check_and_warn_connectivity`` runs.
+    ``check_and_warn_connectivity`` (form path) or
+    ``app.sep.plugins.framework.connectivity.record_connectivity_warning``
+    (JSON API path) runs.
 
     :param target: The Nomad node name.
     :type target: str

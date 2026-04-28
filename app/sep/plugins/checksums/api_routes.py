@@ -89,8 +89,11 @@ async def checksums_api_create(
     """Create a checksum task from a JSON payload request body.
 
     :param check_connectivity: Whether to verify the target database is
-        reachable after task creation. Mirrors the form flow's
-        ``check_connectivity`` checkbox semantic.
+        reachable after task creation. Defaults to ``True`` so callers that
+        omit the parameter still get a connectivity round-trip; pass
+        ``check_connectivity=false`` to opt out. Note that the form flow
+        defaults to ``False`` (HTML checkbox semantics — an unchecked box
+        submits no field); this asymmetry is intentional.
     :type check_connectivity: bool
     """
     logger.debug("Create checksums task (JSON path): %s", body.task_name)
