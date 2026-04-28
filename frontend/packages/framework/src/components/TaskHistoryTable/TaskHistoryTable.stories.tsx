@@ -1,12 +1,4 @@
-/**
- * Storybook story for TaskHistoryTable.
- *
- * NOTE: Storybook is not yet installed in this monorepo. This file is authored
- * in CSF3 format so it can be picked up automatically when Storybook is wired
- * in. Until then it doubles as a living fixture used by the unit tests.
- */
-
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { TaskHistoryTable } from './TaskHistoryTable';
 import type { TaskHistoryEntry, TaskHistoryStatus } from './TaskHistoryTable.types';
 
@@ -127,11 +119,11 @@ export const WithCallbacks: Story = {
     data: MIXED_RUNNING,
     disablePolling: true,
     // eslint-disable-next-line no-console
-    onViewLogs: (e) => console.log('view logs', e.id),
+    onViewLogs: (e: TaskHistoryEntry) => console.log('view logs', e.id),
     // eslint-disable-next-line no-console
-    onStopTask: (e) => console.log('stop', e.id),
+    onStopTask: (e: TaskHistoryEntry) => console.log('stop', e.id),
     // eslint-disable-next-line no-console
-    onDownloadFiles: (e) => console.log('download', e.id),
-    resolveUserName: (id) => (id ? `user:${id}` : ''),
+    onDownloadFiles: (e: TaskHistoryEntry) => console.log('download', e.id),
+    resolveUserName: (id: string | null | undefined) => (id ? `user:${id}` : ''),
   },
 };
