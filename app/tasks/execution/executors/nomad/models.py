@@ -38,8 +38,11 @@ from aiohttp import (
 from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
+from pydantic import Field
+from sqlalchemy_celery_beat.models import Period
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
 from app.core.utils import (
@@ -308,6 +311,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param log_socket_read_timeout: Socket read timeout in seconds for log streaming.
         Defaults to 10.
     :type log_socket_read_timeout: int
+    :param cert_expiry_warn_days: Number of days before ``not_valid_after`` when
+        Nomad TLS cert expiry alerts should fire. Used by the periodic
+        ``check_nomad_cert_expiry`` task. Defaults to 7.
+    :type cert_expiry_warn_days: int
+    :param check_cert_expiry_interval: Beat schedule for ``check_nomad_cert_expiry``
+        (e.g. once per day). Set to ``None`` to skip registering the periodic task
+        in ``app.tasks.db.seed`` (Celery beat will not run the check).
+    :type check_cert_expiry_interval: IntervalSchedule | None
     :param health_check_timeout: Maximum seconds :meth:`check_host_health` waits
         for a dispatched ``health-probe`` job to finish before declaring the
         target unhealthy. Defaults to 30.
@@ -325,6 +336,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     timeout: int = 10
     minify_payload: bool = True
     log_socket_read_timeout: int = 10
+    cert_expiry_warn_days: int = Field(default=7, ge=1)
+    check_cert_expiry_interval: IntervalSchedule | None = Field(
+        default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
+    )
     health_check_timeout: int = 30
     health_check_poll_interval: int = 1
 

@@ -97,6 +97,7 @@ def main() -> None:
 
     pt_archiver_bin = config.get("PT_ARCHIVER_BIN") or "pt-archiver"
 
+    failed_aliases: list[str] = []
     try:
         purge_data_list = []
         default_purge = {}
@@ -139,6 +140,7 @@ def main() -> None:
                 "prg_purge": purge.get("DELETE_DATA", 0),
                 "prg_extra_args": purge.get("EXTRA_ARGS"),
                 "prg_disable_binlog": purge.get("DISABLE_BINLOG", 0),
+                "prg_disable_bulk_insert": purge.get("DISABLE_BULK_INSERT", 0),
                 "prg_use_index": purge.get("USE_INDEX", None),
                 "prg_send_notifications": purge.get("SLACK_NOTIFICATIONS", 0),
                 "swp_drp": purge.get("SWAP_DROP", 0),
@@ -204,6 +206,8 @@ def main() -> None:
                 if ret != 0:
                     logger.error("<%s> ERROR: Purge Failed", conf["prg_alias"])
                     error_on_alias.append(conf["prg_alias"])
+                    if conf["prg_alias"] not in failed_aliases:
+                        failed_aliases.append(conf["prg_alias"])
                     logger.info(">>>>>>>>>>>>>>>>>> Purge failed.")
                     if config.get("STOP_ON_ERROR"):
                         sys.exit(1)
@@ -224,6 +228,13 @@ def main() -> None:
         sys.exit(1)
     finally:
         lock.release()
+
+    if failed_aliases:
+        logger.error(
+            "One or more purges failed: %s. Exiting with non-zero status.",
+            ", ".join(str(alias) for alias in failed_aliases),
+        )
+        sys.exit(1)
 
 
 def run_cmd(cmd: str, *args: str) -> int:
@@ -343,18 +354,20 @@ def pt_archive_runner(cmd: str, src_db: str, src_tbl: str, conf: dict[str, Any])
             ["--buffer", "--bulk-delete", "--file={}".format(conf['dst_file'])]
         )
     else:
-        pt_archiver_cmd.extend(
-            [
-                "--bulk-insert",
-                "--dest=h={},P={},D={},t={},b={},L=yes".format(
-                    conf["dst_host"],
-                    conf["dst_port"],
-                    conf["dst_db"],
-                    conf["dst_tbl"],
-                    conf["prg_disable_binlog"],
-                ),
-            ]
-        )
+        dest_args = []
+        if not conf["prg_disable_bulk_insert"]:
+            dest_args.append("--bulk-insert")
+        dest_args.extend([
+            "--bulk-delete",
+            "--dest=h={},P={},D={},t={},b={},L=yes".format(
+                conf["dst_host"],
+                conf["dst_port"],
+                conf["dst_db"],
+                conf["dst_tbl"],
+                conf["prg_disable_binlog"],
+            ),
+        ])
+        pt_archiver_cmd.extend(dest_args)
 
     if conf["prg_extra_args"]:
         pt_archiver_cmd.extend(conf["prg_extra_args"].split(" "))

@@ -20,12 +20,14 @@ import time
 
 import pytest
 
+from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
     NOMAD_EXEC_ARTIFACT,
     NOMAD_EXEC_PYTHON_ARTIFACT,
     NOMAD_RUN_COMMAND,
     NOMAD_RUN_PYTHON,
     STALENESS_PREAMBLE_SHELL,
+    SYSTEM_PERIODIC_TASKS,
     SYSTEM_TASKS,
 )
 from app.tasks.models import TaskBackendEnum
@@ -195,3 +197,28 @@ class TestStalenessPreambleShell:
         line = result.stdout.decode().strip()
         assert line.startswith("SEP_STALE_SKIP: elapsed=")
         assert "threshold=5s" in line
+
+
+def test_nomad_cert_expiry_periodic_task_seeded() -> None:
+    """Assert tasks__check_nomad_cert_expiry schedule matches TASKS.NOMAD when enabled."""
+    interval = tasks_settings.NOMAD.check_cert_expiry_interval
+    if interval is None:
+        assert not any(
+            entry.name == "tasks__check_nomad_cert_expiry"
+            for _sched, tasks in SYSTEM_PERIODIC_TASKS
+            for entry in tasks
+        )
+        return
+    assert any(
+        entry.name == "tasks__check_nomad_cert_expiry"
+        and entry.task_name == "app.tasks.celery.check_nomad_cert_expiry"
+        for _schedule, tasks in SYSTEM_PERIODIC_TASKS
+        for entry in tasks
+    )
+    for schedule, tasks in SYSTEM_PERIODIC_TASKS:
+        for entry in tasks:
+            if entry.name == "tasks__check_nomad_cert_expiry":
+                assert schedule == interval
+                assert entry.task_name == "app.tasks.celery.check_nomad_cert_expiry"
+                return
+    raise AssertionError("tasks__check_nomad_cert_expiry task not found")

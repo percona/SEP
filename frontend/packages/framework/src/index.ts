@@ -5,6 +5,7 @@ export { SchemaDrivenPlugin } from './components/SchemaDrivenPlugin';
 export { ServiceSelector } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';
 export { TableSelector } from './components/TableSelector';
+export { HostSelector } from './components/HostSelector';
 export {
   TaskLogViewer,
   LogStepTabs,
@@ -14,13 +15,32 @@ export {
   StatusBadge,
 } from './components/TaskLogViewer';
 export type { TaskLogViewerProps, BadgeStatus } from './components/TaskLogViewer';
-export { TaskHistoryTable } from './components/TaskHistoryTable';
+export {
+  TaskHistoryTable,
+  TaskHistoryStatusBadge,
+  ChainDisplay,
+} from './components/TaskHistoryTable';
+export type {
+  TaskHistoryTableProps,
+  TaskHistoryEntry,
+  TaskHistoryStatus,
+  PaginatedTaskHistory,
+} from './components/TaskHistoryTable';
 export { ChainBuilder } from './components/ChainBuilder';
 export { AlertOnFailField } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
 
 // Hooks
-export { useTaskLogs, useExecutionEvents, useLogDownload, useTaskHistory } from './hooks';
+export {
+  useTaskLogs,
+  useExecutionEvents,
+  useLogDownload,
+  useTaskHistory,
+  useTaskHistoryByName,
+  useStopTaskHistory,
+  isRunningStatus,
+  RUNNING_STATUSES,
+} from './hooks';
 export type {
   TaskLogsState,
   StepText,
