@@ -189,7 +189,10 @@ export function ChainBuilder({
           value=""
           displayEmpty={false}
           onChange={handleAdd}
-          inputProps={{ 'data-testid': 'chain-add-select', 'aria-describedby': helperId }}
+          inputProps={{
+            'data-testid': 'chain-add-select',
+            ...(selectHelper ? { 'aria-describedby': helperId } : {}),
+          }}
         >
           {availableTasks.map((t) => (
             <MenuItem key={t.name} value={t.name} disabled={disabledOptions.has(t.name)}>
@@ -257,10 +260,13 @@ function SortableChainItem({
   };
 
   return (
-    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+    <Box
+      ref={setNodeRef}
+      style={style}
+      component="span"
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+    >
       <Box
-        ref={setNodeRef}
-        style={style}
         sx={{
           display: 'inline-flex',
           alignItems: 'center',
