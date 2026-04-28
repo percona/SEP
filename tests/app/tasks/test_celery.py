@@ -17,10 +17,14 @@
 
 import asyncio
 from contextlib import contextmanager
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects import postgresql
@@ -31,16 +35,18 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
-from app.core.alerts.models import AlertService
+from app.core.alerts.models import AlertService, AlertSeverity
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import json_serializer
 from app.tasks import celery as celery_module
 from app.tasks.celery import (
+    _check_nomad_cert_expiry,
     _dispatch_chained_task,
     _dispatch_queue_item,
     _MAX_CHAIN_DEPTH,
     _raise_if_identical_task_conflict,
+    check_nomad_cert_expiry,
     delete_task_history,
     dispatch_queue_item,
     get_executor_for_task,
@@ -50,6 +56,7 @@ from app.tasks.celery import (
     task_revoked_handler,
 )
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
@@ -63,6 +70,10 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
+
+MODULE = "app.tasks.celery"
+EXPECTED_NOMAD_CERT_RESOLVE_CALLS = 2
+ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 
 def _make_task(**overrides):
@@ -2452,3 +2463,239 @@ class TestSyncQueueItemRegression:
         mock_chain.assert_awaited_once()
         parent_arg = mock_chain.await_args.args[1]
         assert "execution_request" not in sa_inspect(parent_arg).unloaded
+
+
+def _write_self_signed_pem(
+    path: Path,
+    *,
+    not_valid_after: datetime,
+    not_valid_before: datetime | None = None,
+    common_name: str = "test",
+) -> None:
+    """Build and write a minimal self-signed PEM certificate for tests."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, common_name)])
+    nvb = not_valid_before or (ANCHOR - timedelta(days=1))
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(nvb)
+        .not_valid_after(not_valid_after)
+        .sign(key, hashes.SHA256())
+    )
+    path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
+
+def _nomad_config_for_paths(
+    *,
+    ca: Path | None = None,
+    cert: Path | None = None,
+    warn_days: int = 7,
+) -> NomadExecutor:
+    """Return a NomadExecutor config object for cert-expiry task tests."""
+    return NomadExecutor(
+        endpoint="http://127.0.0.1:4646",
+        verify_ssl=False,
+        ssl_cafile=ca,
+        ssl_certfile=cert,
+        cert_expiry_warn_days=warn_days,
+    )
+
+
+class TestCheckNomadCertExpiry:
+    """Test _check_nomad_cert_expiry and check_nomad_cert_expiry."""
+
+    @pytest.mark.asyncio
+    async def test_healthy_certs_call_resolve_not_trigger(
+        self, mocker, tmp_path: Path
+    ) -> None:
+        """Assert long-lived CA and client PEMs call resolve and do not trigger."""
+        ca = tmp_path / "ca.pem"
+        cl = tmp_path / "client.pem"
+        _write_self_signed_pem(
+            ca, not_valid_after=ANCHOR + timedelta(days=30), common_name="ca"
+        )
+        _write_self_signed_pem(
+            cl, not_valid_after=ANCHOR + timedelta(days=30), common_name="cl"
+        )
+        mocker.patch(
+            "app.tasks.celery.tasks_settings",
+            MagicMock(NOMAD=_nomad_config_for_paths(ca=ca, cert=cl)),
+        )
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mock_alert = MagicMock()
+        mock_alert.trigger = AsyncMock()
+        mock_alert.resolve = AsyncMock()
+        mocker.patch("app.core.alerts.config.alert_service", mock_alert)
+
+        await _check_nomad_cert_expiry()
+
+        mock_alert.trigger.assert_not_called()
+        assert mock_alert.resolve.call_count == EXPECTED_NOMAD_CERT_RESOLVE_CALLS
+        called = {c.args[0] for c in mock_alert.resolve.call_args_list}
+        assert called == {
+            f"nomad-cert-expiry:{ca.name}",
+            f"nomad-cert-expiry:{cl.name}",
+        }
+
+    @pytest.mark.asyncio
+    async def test_within_window_triggers_warning(self, mocker, tmp_path: Path) -> None:
+        """Assert a cert within the warning window triggers WARNING."""
+        ca = tmp_path / "w.pem"
+        _write_self_signed_pem(
+            ca, not_valid_after=ANCHOR + timedelta(days=7), common_name="w"
+        )
+        mocker.patch(
+            "app.tasks.celery.tasks_settings",
+            MagicMock(NOMAD=_nomad_config_for_paths(ca=ca, cert=None)),
+        )
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mock_alert = MagicMock()
+        mock_alert.trigger = AsyncMock()
+        mock_alert.resolve = AsyncMock()
+        mocker.patch("app.core.alerts.config.alert_service", mock_alert)
+
+        await _check_nomad_cert_expiry()
+
+        mock_alert.trigger.assert_called_once()
+        alert = mock_alert.trigger.call_args[0][0]
+        assert alert["severity"] is AlertSeverity.WARNING
+        assert alert["dedup_key"] == f"nomad-cert-expiry:{ca.name}"
+        assert "7 day" in alert["summary"]
+
+    @pytest.mark.asyncio
+    async def test_just_beyond_window_resolves_only(
+        self, mocker, tmp_path: Path
+    ) -> None:
+        """Assert a cert just past the warning window only resolves and does not trigger."""
+        ca = tmp_path / "ok.pem"
+        _write_self_signed_pem(
+            ca, not_valid_after=ANCHOR + timedelta(days=8), common_name="ok"
+        )
+        mocker.patch(
+            "app.tasks.celery.tasks_settings",
+            MagicMock(NOMAD=_nomad_config_for_paths(ca=ca, cert=None)),
+        )
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mock_alert = MagicMock()
+        mock_alert.trigger = AsyncMock()
+        mock_alert.resolve = AsyncMock()
+        mocker.patch("app.core.alerts.config.alert_service", mock_alert)
+
+        await _check_nomad_cert_expiry()
+
+        mock_alert.trigger.assert_not_called()
+        mock_alert.resolve.assert_called_once_with(f"nomad-cert-expiry:{ca.name}")
+
+    @pytest.mark.asyncio
+    async def test_expired_triggers_critical(self, mocker, tmp_path: Path) -> None:
+        """Assert an expired cert triggers CRITICAL."""
+        ca = tmp_path / "x.pem"
+        _write_self_signed_pem(
+            ca, not_valid_after=ANCHOR - timedelta(hours=1), common_name="x"
+        )
+        mocker.patch(
+            "app.tasks.celery.tasks_settings",
+            MagicMock(NOMAD=_nomad_config_for_paths(ca=ca, cert=None)),
+        )
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mock_alert = MagicMock()
+        mock_alert.trigger = AsyncMock()
+        mock_alert.resolve = AsyncMock()
+        mocker.patch("app.core.alerts.config.alert_service", mock_alert)
+
+        await _check_nomad_cert_expiry()
+
+        mock_alert.trigger.assert_called_once()
+        mock_alert.resolve.assert_not_called()
+        alert = mock_alert.trigger.call_args[0][0]
+        assert alert["severity"] is AlertSeverity.CRITICAL
+        assert alert["dedup_key"] == f"nomad-cert-expiry:{ca.name}"
+
+    @pytest.mark.asyncio
+    async def test_path_read_bytes_oserror_logs_and_skips(
+        self, mocker, tmp_path: Path
+    ) -> None:
+        """Assert OSError from read_bytes is logged and does not raise."""
+        ca = tmp_path / "io.pem"
+        ca.write_bytes(b"unused")
+        mocker.patch(
+            "app.tasks.celery.tasks_settings",
+            MagicMock(NOMAD=_nomad_config_for_paths(ca=ca, cert=None)),
+        )
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mocker.patch.object(
+            Path, "read_bytes", side_effect=OSError("simulated read failure")
+        )
+        mock_alert = MagicMock()
+        mock_alert.trigger = AsyncMock()
+        mock_alert.resolve = AsyncMock()
+        mocker.patch("app.core.alerts.config.alert_service", mock_alert)
+        log_warning = mocker.patch(f"{MODULE}.logger.warning")
+
+        await _check_nomad_cert_expiry()
+
+        log_warning.assert_called()
+        assert "Could not read" in str(log_warning.call_args)
+        mock_alert.trigger.assert_not_called()
+        mock_alert.resolve.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_pem_valueerror_logs_and_skips(
+        self, mocker, tmp_path: Path
+    ) -> None:
+        """Assert non-PEM file bytes log and ValueError is handled (no raise)."""
+        bad = tmp_path / "not-pem.pem"
+        bad.write_bytes(b"not a pem")
+        mocker.patch(
+            "app.tasks.celery.tasks_settings",
+            MagicMock(NOMAD=_nomad_config_for_paths(ca=bad, cert=None)),
+        )
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        log_warning = mocker.patch(f"{MODULE}.logger.warning")
+
+        await _check_nomad_cert_expiry()
+
+        log_warning.assert_called()
+        assert "Could not parse" in str(log_warning.call_args)
+
+    @pytest.mark.asyncio
+    async def test_missing_file_warns_and_skips(self, mocker, tmp_path: Path) -> None:
+        """Assert a missing PEM path logs a warning and does not call the alert service."""
+        mock_nomad = MagicMock()
+        mock_nomad.ssl_cafile = tmp_path / "missing.pem"
+        mock_nomad.ssl_certfile = None
+        mock_nomad.cert_expiry_warn_days = 7
+        mocker.patch("app.tasks.celery.tasks_settings", MagicMock(NOMAD=mock_nomad))
+        mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
+        mock_alert = MagicMock()
+        mock_alert.trigger = AsyncMock()
+        mock_alert.resolve = AsyncMock()
+        mocker.patch("app.core.alerts.config.alert_service", mock_alert)
+        log_warning = mocker.patch(f"{MODULE}.logger.warning")
+
+        await _check_nomad_cert_expiry()
+
+        log_warning.assert_called()
+        assert "Could not read" in str(log_warning.call_args)
+        mock_alert.trigger.assert_not_called()
+        mock_alert.resolve.assert_not_called()
+
+    def test_celery_entrypoint_uses_event_loop(self, mocker) -> None:
+        """Assert check_nomad_cert_expiry runs the async helper via the event loop."""
+        from app.celery import celery as app_celery
+
+        coro = MagicMock()
+        mock_check = MagicMock(return_value=coro)
+        mocker.patch(f"{MODULE}._check_nomad_cert_expiry", mock_check)
+        mocker.patch.object(
+            app_celery.loop,
+            "run_until_complete",
+            autospec=True,
+        )
+
+        check_nomad_cert_expiry()
+        app_celery.loop.run_until_complete.assert_called_once_with(coro)

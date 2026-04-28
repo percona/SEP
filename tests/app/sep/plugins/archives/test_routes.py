@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.plugins.archives.routes module."""
 
+import re
 from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock
 
@@ -266,6 +267,7 @@ def test_archives_detail(
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
+    assert 'name="disable_bulk_insert"' in response.text
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
@@ -276,6 +278,50 @@ def test_archives_detail(
     mock_inventory_api_dep.get.assert_any_await(
         "/services/", params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0}
     )
+
+
+@pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
+def test_archives_detail_bulk_insert_checked(
+    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
+):
+    """Test that the disable_bulk_insert checkbox is checked when DISABLE_BULK_INSERT=1."""
+    mock_meta_config = yaml.dump(
+        {
+            "ALL": {
+                "SOURCE_HOST": "127.0.0.1",
+                "SOURCE_PORT": 3306,
+            },
+            "PURGE_LIST": [
+                {
+                    "ALIAS": "test_archiver_task",
+                    "SOURCE_DB": "mock_source_db",
+                    "SOURCE_TABLE": "mock_source_table",
+                    "SWAP_DROP": 1,
+                    "DISABLE_BULK_INSERT": 1,
+                }
+            ],
+        }
+    )
+
+    mock_data = {
+        "meta": {
+            "config": mock_meta_config,
+            "target": "mock_target",
+        },
+        "hostname": "mock_nomad_host_name",
+    }
+    created_task.data = mock_data
+    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_task_api_dep.get.side_effect = [
+        {"127.0.0.1": "localhost"},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        [],
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+    ]
+    response = test_client.get(f"/archives/{created_task.name}")
+    assert response.status_code == status.HTTP_200_OK
+    assert re.search(r'name="disable_bulk_insert"[^>]*checked', response.text)
 
 
 @pytest.mark.usefixtures(
