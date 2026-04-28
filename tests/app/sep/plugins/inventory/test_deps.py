@@ -15,12 +15,11 @@
 
 """Define tests for the app.sep.plugins.inventory.deps module."""
 
+import re
 from typing import cast
 
 import pytest
-from fastapi import status
 
-from app.core.exceptions import HTTPBadRequestException
 from app.sep.plugins.inventory.deps import (
     _get_syncer_qualified_name,
     AvailableSyncer,
@@ -194,25 +193,22 @@ def test_filter_syncers_by_name_matches_on_fully_qualified_name():
     assert result == [new]
 
 
-def test_filter_syncers_by_name_raises_400_for_unknown_name():
-    """Ensure an unknown syncer name raises a 400 instead of silently no-op."""
-    with pytest.raises(HTTPBadRequestException) as excinfo:
+def test_filter_syncers_by_name_raises_value_error_for_unknown_name():
+    """Ensure an unknown syncer name raises ``ValueError`` instead of silently no-op."""
+    with pytest.raises(ValueError, match=r"not\.a\.real\.Name"):
         filter_syncers_by_name(
             _as_syncers([_StubSyncer()]),
             "not.a.real.Name",
             _always,
         )
-    assert excinfo.value.status_code == status.HTTP_400_BAD_REQUEST
-    assert "not.a.real.Name" in excinfo.value.detail
 
 
-def test_filter_syncers_by_name_raises_400_when_matched_syncer_cannot_sync_entity():
-    """Ensure a name match that fails the capability check still raises 400."""
+def test_filter_syncers_by_name_raises_value_error_when_matched_syncer_cannot_sync_entity():
+    """Ensure a name match that fails the capability check still raises ``ValueError``."""
     qualified = f"{__name__}._StubSyncer"
-    with pytest.raises(HTTPBadRequestException) as excinfo:
+    with pytest.raises(ValueError, match=re.escape(qualified)):
         filter_syncers_by_name(
             _as_syncers([_StubSyncer()]),
             qualified,
             _never,
         )
-    assert excinfo.value.status_code == status.HTTP_400_BAD_REQUEST
