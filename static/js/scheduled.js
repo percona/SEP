@@ -212,7 +212,7 @@ $(document).ready(function() {
     // Event Handlers - Cron Expression Input
     // ========================================
 
-    $('input[name="cron_expression"]').on('input', function() {
+    $('input[name="cron_expression"]').on('input change', function() {
         updateCronDescription($(this));
     });
 
@@ -262,16 +262,23 @@ $(document).ready(function() {
         }
     });
 
-    $('#save-button').click(function(e) {
+    $('#new-periodic-task-form').on('submit', function(e) {
         e.preventDefault();
 
         const $newTaskRow = $('.new-periodic-task-row');
         const $cronDiv = $newTaskRow.find('.cron-inputs');
-        const $intervalDiv = $newTaskRow.find('.interval-inputs');
         const isCronMode = !$cronDiv.hasClass('hidden');
 
         if (!validateScheduleInputs($newTaskRow, isCronMode)) {
             return false;
+        }
+
+        if (isCronMode) {
+            const $cronInput = $newTaskRow.find('input[name="cron_expression"]');
+            if ($cronInput.length && !$cronInput.get(0).checkValidity()) {
+                $cronInput.get(0).reportValidity();
+                return false;
+            }
         }
 
         updateDateTimeInput($newTaskRow);
@@ -298,7 +305,8 @@ $(document).ready(function() {
             });
         }
 
-        const $newForm = $('#new-periodic-task-form');
+        const form = e.currentTarget;
+        const $newForm = $(form);
         $newForm.find('input[name="execute_request_chain_task_names"]').remove();
         $newForm.find('input[name="execute_request_chain_on_failure"]').remove();
         const $newChainBuilder = $newTaskRow.find('.chain-builder');
@@ -321,7 +329,7 @@ $(document).ready(function() {
             }
         }
 
-        $newForm.submit();
+        form.submit();
         return true;
     });
 
@@ -376,7 +384,11 @@ $(document).ready(function() {
         });
     });
 
-    $('.save-edit-button').click(function(e) {
+    // Capture phase runs before the global .submitButton confirm dialog (bubble), so
+    // schedule validation can block the modal and submission on invalid cron/interval.
+    $(document).on('click', {
+        capture: true
+    }, '.save-edit-button', function(e) {
         const taskId = $(this).data('task-id');
         const $editRow = $(`.edit-periodic-task-row[data-task-id="${taskId}"]`);
         const $cronDiv = $editRow.find('.cron-inputs');
@@ -384,7 +396,18 @@ $(document).ready(function() {
 
         if (!validateScheduleInputs($editRow, isCronMode)) {
             e.preventDefault();
+            e.stopImmediatePropagation();
             return false;
+        }
+
+        if (isCronMode) {
+            const $cronInput = $editRow.find('input[name="cron_expression"]');
+            if ($cronInput.length && !$cronInput.get(0).checkValidity()) {
+                $cronInput.get(0).reportValidity();
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return false;
+            }
         }
 
         updateDateTimeInput($editRow);
