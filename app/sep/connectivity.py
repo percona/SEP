@@ -13,7 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Provide connectivity check helpers and an async LRU cache for task creation."""
+"""Provide connectivity check helpers and an async LRU cache for task creation.
+
+These helpers serve the **form (Jinja) flow** — they emit flash messages via
+:func:`app.sep.middleware.messages.warning` and depend on a Starlette
+:class:`~starlette.requests.Request`. The **JSON API flow** uses the parallel
+helpers in :mod:`app.sep.plugins.framework.connectivity`, which return a
+``ConnectivityWarning | None`` object instead of mutating request state.
+"""
 
 import logging
 from collections import OrderedDict
