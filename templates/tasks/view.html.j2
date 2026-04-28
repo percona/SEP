@@ -61,6 +61,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/vendor/select2.min.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
+    <script src="{{ url_for('static', path='/js/cron-validation.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/scheduled.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
     <script src="{{ url_for('static', path='/js/chain-builder.js') }}"

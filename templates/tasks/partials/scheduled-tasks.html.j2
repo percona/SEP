@@ -143,6 +143,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                                 <input type="text"
                                        name="cron_expression"
                                        placeholder="*/5 * * * *"
+                                       pattern="^\S+(?:\s+\S+){4}$"
+                                       title="Five space-separated cron fields: minute, hour, day of month, month, day of week (e.g. */5 * * * *)"
                                        value="{%- if periodic_task.crontab -%}{{ periodic_task.crontab.minute }} {{ periodic_task.crontab.hour }} {{ periodic_task.crontab.day_of_month }} {{ periodic_task.crontab.month_of_year }} {{ periodic_task.crontab.day_of_week }}{%- endif -%}"
                                        {%- if not periodic_task.crontab %}disabled{%- endif %}
                                        {%- if periodic_task.crontab %}required{%- endif %}>
@@ -257,6 +259,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                             <input type="text"
                                    name="cron_expression"
                                    placeholder="*/5 * * * *"
+                                   pattern="^\S+(?:\s+\S+){4}$"
+                                   title="Five space-separated cron fields: minute, hour, day of month, month, day of week (e.g. */5 * * * *)"
                                    form="new-periodic-task-form"
                                    disabled>
                             <select name="cron_timezone" form="new-periodic-task-form" disabled>
