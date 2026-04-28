@@ -17,14 +17,7 @@
 
 $(document).ready(function() {
     const cronstrue = window.cronstrue;
-    const CRON_FIELD_COUNT = 5;
-    const CRON_FIELD_PATTERNS = [
-        /^[\d*/,\-]+$/, // minute
-        /^[\d*/,\-]+$/, // hour
-        /^[\d*/,\-?LW]+$/i, // day of month
-        /^[\d*/,\-A-Z]+$/i, // month
-        /^[\d*/,\-A-Z#?L]+$/i, // day of week
-    ];
+    const cronValidation = window.cronValidation;
 
     // ========================================
     // Helper Functions
@@ -40,42 +33,11 @@ $(document).ready(function() {
         }
     }
 
-    function hasValidCronFieldCharacters(cronExpression) {
-        const parts = cronExpression.trim().split(/\s+/);
-        if (parts.length !== CRON_FIELD_COUNT) {
-            return false;
-        }
-
-        return parts.every((part, index) => CRON_FIELD_PATTERNS[index].test(part));
-    }
-
-    function hasInvalidZeroStep(cronExpression) {
-        return cronExpression
-            .trim()
-            .split(/\s+/)
-            .some((part) => part
-                .split(',')
-                .some((segment) => {
-                    if (!segment.includes('/')) {
-                        return false;
-                    }
-                    const step = segment.split('/')[1];
-                    return /^\d+$/.test(step) && Number(step) === 0;
-                }));
-    }
-
     function getHumanizedCronIfValid(cronExpression) {
-        if (!cronExpression) {
+        if (!cronValidation.isCronExpressionValid(cronExpression)) {
             return null;
         }
-        const trimmedExpression = cronExpression.trim();
-        if (!hasValidCronFieldCharacters(trimmedExpression)) {
-            return null;
-        }
-        if (hasInvalidZeroStep(trimmedExpression)) {
-            return null;
-        }
-        return humanizeCronExpression(trimmedExpression);
+        return humanizeCronExpression(cronExpression.trim());
     }
 
     function updateCronDescription($input) {

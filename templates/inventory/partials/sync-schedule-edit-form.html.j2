@@ -93,7 +93,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                    name="cron_expression"
                    id="cron_expression-{{ form_id }}"
                    placeholder="0 0 * * *"
-                   pattern="^\S+\s+\S+\s+\S+\s+\S+\s+\S+$"
+                   pattern="^\S+(?:\s+\S+){4}$"
+                   title="Five space-separated cron fields: minute, hour, day of month, month, day of week (e.g. */5 * * * *)"
                    value="{%- if has_crontab -%}{{ sync_schedule.crontab.minute }} {{ sync_schedule.crontab.hour }} {{ sync_schedule.crontab.day_of_month }} {{ sync_schedule.crontab.month_of_year }} {{ sync_schedule.crontab.day_of_week }}{%- endif -%}"
                    {% if has_crontab %}required{% else %}disabled{% endif %}>
             <label for="cron_timezone-{{ form_id }}">Timezone:</label>
