@@ -1,12 +1,4 @@
-/**
- * Storybook story for SchemaFormRenderer.
- *
- * NOTE: Storybook is not yet installed in this monorepo. This file is authored
- * in CSF3 format so it can be picked up automatically when Storybook is wired
- * in. Until then it doubles as a living fixture used by the unit tests.
- */
-
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ComponentType } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { FormSection } from './types';
@@ -143,7 +135,7 @@ export const MultiSectionSchema: Story = {
   args: {
     sections: MULTI_SECTION_SCHEMA,
     submitLabel: 'Create task',
-    onSubmit: (values) => {
+    onSubmit: (values: Record<string, unknown>) => {
       // eslint-disable-next-line no-console
       console.log('submit', values);
     },
@@ -171,7 +163,7 @@ export const MinimalForm: Story = {
       },
     ],
     submitLabel: 'Submit',
-    onSubmit: (v) => {
+    onSubmit: (v: Record<string, unknown>) => {
       // eslint-disable-next-line no-console
       console.log(v);
     },
