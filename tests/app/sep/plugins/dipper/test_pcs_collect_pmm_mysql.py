@@ -54,7 +54,15 @@ class TestPcsCollectPmmMysqlInsecureFlag:
         frontmatter_end = content.index("# ---", content.index("# ---") + 1)
         frontmatter = content[:frontmatter_end]
         assert "name: insecure" in frontmatter
-        assert "type: bool" in frontmatter
+        insecure_index = frontmatter.index("name: insecure")
+        next_parameter_index = frontmatter.find(
+            "name: ", insecure_index + len("name: insecure")
+        )
+        if next_parameter_index == -1:
+            insecure_block = frontmatter[insecure_index:]
+        else:
+            insecure_block = frontmatter[insecure_index:next_parameter_index]
+        assert "type: bool" in insecure_block
 
     def test_no_hardcoded_verify_false(self):
         """Regression: no requests call site must use a literal verify=False."""
