@@ -17,7 +17,6 @@
 
 from typing import Any
 
-from croniter import croniter
 from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
@@ -26,8 +25,6 @@ from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_f
 from app.tasks.periodic.models import (
     PeriodicTaskExecuteRequest,
 )
-
-STANDARD_CRON_FIELD_COUNT = 5
 
 
 class PeriodicTaskRequest(BaseModel):
@@ -74,23 +71,6 @@ class PeriodicTaskRequest(BaseModel):
                 data["interval"] = parse_interval_form_fields(data)
                 data["crontab"] = None
             elif "cron_expression" in data and "cron_timezone" in data:
-                raw_expr = data["cron_expression"]
-                cron_expression = str(raw_expr or "").strip()
-                if not cron_expression:
-                    msg = "Invalid cron expression: expression is empty."
-                    raise ValueError(msg)
-                if not croniter.is_valid(cron_expression):
-                    msg = f"Invalid cron expression: {raw_expr!r} is not a valid cron schedule."
-                    raise ValueError(msg)
-                parts = cron_expression.split()
-                if len(parts) != STANDARD_CRON_FIELD_COUNT:
-                    msg = (
-                        "Invalid cron expression: expected "
-                        f"{STANDARD_CRON_FIELD_COUNT} whitespace-separated fields "
-                        "(minute hour day-of-month month day-of-week), got "
-                        f"{len(parts)}."
-                    )
-                    raise ValueError(msg)
                 data["crontab"] = parse_crontab_form_fields(data)
                 data["interval"] = None
             execute_request_data = {}
