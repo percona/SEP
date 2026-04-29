@@ -102,9 +102,9 @@
 | app/sep/plugins/alters/models.py                                                                            |       26 |        0 |    100% |           |
 | app/sep/plugins/alters/pre\_checks.py                                                                       |      236 |      236 |      0% |    27-638 |
 | app/sep/plugins/alters/routes.py                                                                            |      107 |        0 |    100% |           |
-| app/sep/plugins/archives/deps.py                                                                            |       63 |        7 |     89% |119-122, 132, 134, 256 |
+| app/sep/plugins/archives/deps.py                                                                            |       63 |        7 |     89% |119-122, 132, 134, 258 |
 | app/sep/plugins/archives/models.py                                                                          |       91 |        3 |     97% |138, 169, 221 |
-| app/sep/plugins/archives/payload                                                                            |      196 |      147 |     25% |44-237, 242-248, 253-260, 267-296, 301-310, 386-401, 406-410, 414 |
+| app/sep/plugins/archives/payload                                                                            |      195 |      135 |     31% |44-235, 240-246, 295, 300-309, 385-400, 405-409, 413 |
 | app/sep/plugins/archives/routes.py                                                                          |       78 |        6 |     92% |134, 136, 138, 212-217 |
 | app/sep/plugins/atw/models.py                                                                               |       26 |        1 |     96% |        74 |
 | app/sep/plugins/atw/routes.py                                                                               |       23 |        9 |     61% |     48-72 |
@@ -166,7 +166,7 @@
 | app/sep/sync/models.py                                                                                      |      348 |       60 |     83% |75-84, 98-100, 119, 267-269, 330, 390-391, 424, 478-480, 537, 567, 583, 603-607, 708, 722, 742-743, 823, 837, 859-860, 941, 954, 978-980, 1052, 1065, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py                                                                       |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                        |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       20 |     78% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       22 |     76% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 291-294, 344 |
 | app/sep/tasks.py                                                                                            |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                 |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                      |       20 |        0 |    100% |           |
@@ -201,7 +201,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      205 |       29 |     86% |122-126, 183, 204-211, 243, 292-300, 306, 350-351, 378-379, 407-408, 427, 560, 575, 584-595, 611-612 |
-| **TOTAL**                                                                                                   | **13741** | **2332** | **83%** |           |
+| **TOTAL**                                                                                                   | **13740** | **2322** | **83%** |           |
 
 
 ## Setup coverage badge
