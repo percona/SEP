@@ -18,7 +18,7 @@
 __all__ = ["BaseRemoteAPI", "RemoteAPI"]
 
 import logging
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
@@ -43,6 +43,52 @@ from app.core.log import correlation_id_var
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
 from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
+
+# Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
+# StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
+# verbose NDJSON log lines from tasks like xtrabackup. 16 MiB stays well below an
+# OOM threshold while comfortably covering real log chunks.
+_MAX_STREAM_LINE_BYTES = 16 * 1024 * 1024
+
+
+async def _iter_lines_from_chunks(
+    chunks: AsyncIterator[bytes], path: str
+) -> AsyncGenerator[bytes, None]:
+    """Yield newline-terminated lines from an async iterator of byte chunks.
+
+    Buffer chunks from ``chunks`` and yield each newline-terminated slice with
+    the trailing newline byte preserved. Flush any remaining partial line at
+    end-of-stream so callers receive the final unterminated chunk.
+
+    :param chunks: An async iterator producing byte chunks (e.g. from
+        ``aiohttp`` ``StreamReader.iter_any()``).
+    :type chunks: AsyncIterator[bytes]
+    :param path: The stream path, included in the error message when a single
+        line exceeds the cap.
+    :type path: str
+    :yield: Each newline-terminated line as ``bytes`` (newline included).
+    :rtype: AsyncGenerator[bytes, None]
+    :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
+    """
+    buffer = bytearray()
+    async for chunk in chunks:
+        if not chunk:
+            continue
+        buffer.extend(chunk)
+        while True:
+            newline_pos = buffer.find(b"\n")
+            if newline_pos == -1:
+                break
+            yield bytes(buffer[: newline_pos + 1])
+            del buffer[: newline_pos + 1]
+        if len(buffer) > _MAX_STREAM_LINE_BYTES:
+            msg = (
+                f"Stream line exceeded {_MAX_STREAM_LINE_BYTES} bytes "
+                f"without a newline (path={path!s})"
+            )
+            raise ValueError(msg)
+    if buffer:
+        yield bytes(buffer)
 
 
 class BaseRemoteAPI(BaseCaseInsensitiveModel):
@@ -393,7 +439,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                         detail=error_detail,
                         headers=error_headers,
                     )
-                async for line in response.content:
+                async for line in _iter_lines_from_chunks(
+                    response.content.iter_any(), path
+                ):
                     yield line
             self.logger.debug("Stream ended normally path=%s method=%s", path, method)
         except HTTPException:

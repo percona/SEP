@@ -259,13 +259,13 @@ async def test_session_setter(remote_api):
 
 @pytest.mark.asyncio
 async def test_stream_yields_chunks(remote_api, base_url):
-    """stream() yields raw bytes from the response body iterator."""
+    """stream() yields one bytes object per newline-terminated line, with the trailing newline preserved."""
     body = b"chunk1\nchunk2\n"
     with aioresponses() as m:
         m.get(f"{base_url}stream", body=body)
         async with remote_api:
             out = [c async for c in remote_api.stream("/stream")]
-    assert b"".join(out) == body
+    assert out == [b"chunk1\n", b"chunk2\n"]
 
 
 @pytest.mark.asyncio
@@ -365,12 +365,12 @@ async def test_stream_yields_content_chunks_and_logs_debug_lifecycle(remote_api)
     """Stream yields aiohttp body chunks and logs start/end at DEBUG."""
 
     async def body():
-        yield b"chunk-a"
-        yield b"chunk-b"
+        yield b"chunk-a\n"
+        yield b"chunk-b\n"
 
     mock_response = MagicMock()
     mock_response.status = status.HTTP_200_OK
-    mock_response.content = body()
+    mock_response.content.iter_any = lambda: body()
     mock_ctx = AsyncMock()
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
@@ -382,7 +382,7 @@ async def test_stream_yields_content_chunks_and_logs_debug_lifecycle(remote_api)
                     c async for c in remote_api.stream("/stream/path/", method="GET")
                 ]
 
-    assert chunks == [b"chunk-a", b"chunk-b"]
+    assert chunks == [b"chunk-a\n", b"chunk-b\n"]
     mock_debug.assert_any_call(
         "Stream started path=%s method=%s", "/stream/path/", "GET"
     )
@@ -398,14 +398,15 @@ async def test_stream_logs_warning_with_exc_info_and_reraises_on_content_error(
     """On iteration failure, stream logs WARNING with exc_info and re-raises."""
 
     class FailingContent:
-        """Async iterator that raises on first chunk."""
+        """Response content stub whose iter_any() raises on first iteration."""
 
-        def __aiter__(self):
-            return self
+        def iter_any(self):
+            async def _gen():
+                msg = "connection reset"
+                raise ConnectionResetError(msg)
+                yield  # pragma: no cover  # makes _gen an async generator
 
-        async def __anext__(self):
-            msg = "connection reset"
-            raise ConnectionResetError(msg)
+            return _gen()
 
     mock_response = MagicMock()
     mock_response.status = status.HTTP_200_OK
@@ -453,3 +454,90 @@ async def test_stream_logs_warning_when_request_context_raises(remote_api):
     assert wargs[2] == "POST"
     assert isinstance(wargs[3], RuntimeError)
     assert wkwargs.get("exc_info") is True
+
+
+@pytest.mark.asyncio
+async def test_stream_yields_long_line_above_default_aiohttp_limit(remote_api):
+    """Lines larger than aiohttp's default 128 KiB readline cap are delivered intact."""
+    long_payload = b"x" * (200 * 1024)
+
+    async def body():
+        yield long_payload + b"\n"
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content.iter_any = lambda: body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            chunks = [c async for c in remote_api.stream("/long-line/")]
+
+    assert chunks == [long_payload + b"\n"]
+
+
+@pytest.mark.asyncio
+async def test_stream_flushes_trailing_partial_line_on_eof(remote_api):
+    """Last line is delivered even when upstream ends without a trailing newline."""
+
+    async def body():
+        yield b"first\nsecond-no-newline"
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content.iter_any = lambda: body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            chunks = [c async for c in remote_api.stream("/no-trailing/")]
+
+    assert chunks == [b"first\n", b"second-no-newline"]
+
+
+@pytest.mark.asyncio
+async def test_stream_splits_lines_across_chunk_boundaries(remote_api):
+    """A single logical line that arrives across multiple chunks is reassembled."""
+
+    async def body():
+        yield b"line-"
+        yield b"split-across-"
+        yield b"chunks\nnext\n"
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content.iter_any = lambda: body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            chunks = [c async for c in remote_api.stream("/split/")]
+
+    assert chunks == [b"line-split-across-chunks\n", b"next\n"]
+
+
+@pytest.mark.asyncio
+async def test_stream_raises_when_single_line_exceeds_cap(remote_api, monkeypatch):
+    """A line without a newline exceeding _MAX_STREAM_LINE_BYTES raises ValueError."""
+    monkeypatch.setattr("app.core.requests.remote_api._MAX_STREAM_LINE_BYTES", 1024)
+
+    async def body():
+        yield b"x" * 2048
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content.iter_any = lambda: body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            with pytest.raises(ValueError, match="exceeded"):
+                [_ async for _ in remote_api.stream("/runaway/")]
