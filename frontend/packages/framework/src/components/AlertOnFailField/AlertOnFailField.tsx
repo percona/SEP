@@ -68,25 +68,24 @@ export function AlertOnFailField({ control, defaultValue = false }: AlertOnFailF
   return (
     // `describeChild` keeps the checkbox's accessible name (the
     // FormControlLabel text) intact; the tooltip is attached via
-    // aria-describedby instead of overriding aria-label. The wrapping span
-    // gives the Tooltip a non-disabled hover target so the message still
-    // appears when the checkbox itself is disabled.
+    // aria-describedby instead of overriding aria-label. Attach the Tooltip
+    // directly to FormControlLabel so the description is associated with the
+    // label/control component while remaining hoverable even when the
+    // checkbox itself is disabled.
     <Tooltip title={tooltip} placement="top" describeChild>
-      <span>
-        <FormControlLabel
-          label="Alert on failure"
-          control={
-            <Checkbox
-              name={name}
-              inputRef={ref}
-              checked={!!value}
-              onChange={(_, checked) => onChange(checked)}
-              onBlur={onBlur}
-              disabled={disabled}
-            />
-          }
-        />
-      </span>
+      <FormControlLabel
+        label="Alert on failure"
+        control={
+          <Checkbox
+            name={name}
+            inputRef={ref}
+            checked={!!value}
+            onChange={(_, checked) => onChange(checked)}
+            onBlur={onBlur}
+            disabled={disabled}
+          />
+        }
+      />
     </Tooltip>
   );
 }
