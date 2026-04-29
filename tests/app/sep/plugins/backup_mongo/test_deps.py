@@ -38,9 +38,7 @@ async def test_build_backup_task_payload_includes_service_name(
         return_value=mongo_service,
     )
 
-    task_payload: TaskWrite = await build_backup_task_payload(
-        backup_create, mock_remote_api
-    )
+    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
 
     assert isinstance(task_payload, TaskWrite)
     assert task_payload.owner == TaskOwner.BACKUP_MONGO

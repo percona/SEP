@@ -60,7 +60,7 @@ async def test_dispatch_includes_service_name_when_service_id_set(
         return_value=mongo_service,
     )
 
-    task_payload: TaskWrite = await dispatch(restore_create, mock_remote_api)
+    task_payload = await dispatch(restore_create, mock_remote_api)
 
     assert task_payload.data["meta"]["_service_name"] == mongo_service.name
 
@@ -78,7 +78,7 @@ async def test_dispatch_omits_service_name_when_service_id_unset(
         "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
     )
 
-    task_payload: TaskWrite = await dispatch(restore_create_no_service, mock_remote_api)
+    task_payload = await dispatch(restore_create_no_service, mock_remote_api)
 
     assert "_service_name" not in task_payload.data["meta"]
     get_created_entity.assert_not_called()

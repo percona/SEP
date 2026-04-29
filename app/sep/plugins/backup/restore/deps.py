@@ -22,6 +22,7 @@ import yaml
 from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
+from app.core.exceptions import HTTPNotFoundException
 from app.core.utils.pydantic import extract_model_from_instance
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -43,6 +44,8 @@ from app.sep.plugins.backup.restore.models import (
     RestoreCreate,
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+
+UNKNOWN_SERVICE_SENTINEL = "-1"
 
 
 async def build_restore_task_payload(
@@ -80,13 +83,21 @@ async def build_restore_task_payload(
                 service_id=service.id,
             )
             restore_config_payload["database"] = schema.name
-    elif form.service_id:
-        service = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SERVICE,
-            form.service_id,
-            type=ServiceTypeEnum.MYSQL,
-        )
+    elif form.service_id and form.service_id != UNKNOWN_SERVICE_SENTINEL:
+        try:
+            service = await get_created_entity(
+                inventory_api,
+                SyncInventoryEntityTypeEnum.SERVICE,
+                form.service_id,
+                type=ServiceTypeEnum.MYSQL,
+            )
+        except HTTPNotFoundException:
+            # The xtrabackup/binlog forms render ``service_id`` inside the MyLoader
+            # fieldset only, so the value sent for those backup types may be the
+            # ``UNKNOWN_SERVICE_SENTINEL`` placeholder or a stale id whose service
+            # was deleted. A non-MyDumper restore does not need the service to
+            # build the task payload, so fall back to a node-only PMM annotation.
+            service = None
 
     restore_config = RestoreConfig(
         all_servers=RestoreConfigAll.model_validate(all_config_dict),
