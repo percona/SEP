@@ -92,7 +92,7 @@ async def test_build_restore_task_payload_mydumper_without_service_id_raises(
     mock_remote_api,
 ):
     """MYDUMPER preserves the eager-raise contract when service_id is unset."""
-    mocker.patch(
+    get_created_entity = mocker.patch(
         "app.sep.plugins.backup.restore.deps.get_created_entity",
         side_effect=HTTPNotFoundException(),
     )
@@ -108,3 +108,5 @@ async def test_build_restore_task_payload_mydumper_without_service_id_raises(
 
     with pytest.raises(HTTPNotFoundException):
         await build_restore_task_payload(form, mock_remote_api)
+
+    get_created_entity.assert_awaited_once()
