@@ -26,12 +26,7 @@ function Harness({ serviceTypes }: { serviceTypes?: readonly string[] }) {
   const methods = useForm({ defaultValues: { service: null } });
   return (
     <FormProvider {...methods}>
-      <ServiceSelector
-        name="service"
-        label="Service"
-        control={methods.control as never}
-        serviceTypes={serviceTypes as never}
-      />
+      <ServiceSelector name="service" label="Service" serviceTypes={serviceTypes as never} />
     </FormProvider>
   );
 }

@@ -101,12 +101,7 @@ export function coerceFormValues(
       out[field.name] = Number.isNaN(num) ? raw : num;
       continue;
     }
-    if (
-      field.type === 'service' ||
-      field.type === 'schema' ||
-      field.type === 'table' ||
-      field.type === 'host'
-    ) {
+    if (field.type === 'service' || field.type === 'schema' || field.type === 'table') {
       // ServiceSelector et al. store the full `{id, name, …}` option object
       // in form state so the autocomplete can render the selected value.
       // Backend payloads expect the scalar id, so unwrap on submit.

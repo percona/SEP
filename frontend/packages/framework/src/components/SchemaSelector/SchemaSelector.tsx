@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { useFormContext, useWatch, type Control } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSchemas, type SchemaOption } from '../../hooks/useSchemas';
 import type { ServiceOption } from '../../hooks/useServices';
-import { extractId } from '../../hooks/extractId';
+import { extractId } from '../../utils/extractId';
 
 const EMPTY_OPTIONS: SchemaOption[] = [];
 
@@ -17,7 +17,6 @@ export interface SchemaSelectorProps {
    * either a `ServiceOption` (from `<ServiceSelector>`) or a raw service id.
    */
   dependsOn: string;
-  control?: Control;
   disabled?: boolean;
 }
 
@@ -30,28 +29,22 @@ export function SchemaSelector({
   label,
   required,
   dependsOn,
-  control,
   disabled,
 }: SchemaSelectorProps) {
-  const ctx = useFormContext();
-  const effectiveControl = control ?? ctx?.control;
-  const setValue = ctx?.setValue;
+  const { control, setValue } = useFormContext();
 
-  const parent = useWatch({ control: effectiveControl, name: dependsOn }) as
+  const parent = useWatch({ control, name: dependsOn }) as
     | ServiceOption
     | number
     | null
     | undefined;
   const serviceId = extractId(parent);
 
-  // Reset child whenever the parent service id changes.
   const prevIdRef = useRef<number | null>(serviceId);
   useEffect(() => {
     if (prevIdRef.current !== serviceId) {
       prevIdRef.current = serviceId;
-      if (setValue) {
-        setValue(name, null, { shouldDirty: true, shouldValidate: false });
-      }
+      setValue(name, null, { shouldDirty: true, shouldValidate: false });
     }
   }, [serviceId, name, setValue]);
 
@@ -72,7 +65,7 @@ export function SchemaSelector({
     <AutoCompleteInput<SchemaOption>
       name={name}
       label={label}
-      control={effectiveControl}
+      control={control}
       isRequired={required}
       loading={isLoading}
       disabled={disabled || noService || isError}
@@ -88,7 +81,7 @@ export function SchemaSelector({
           ? 'Select a service first'
           : isLoading
             ? 'Loading schemas…'
-            : 'No schemas',
+            : 'No schemas in this service',
       }}
       textFieldProps={{ helperText, error: isError }}
     />

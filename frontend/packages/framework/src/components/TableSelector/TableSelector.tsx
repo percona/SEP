@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { useFormContext, useWatch, type Control } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useTables, type TableOption } from '../../hooks/useTables';
 import type { SchemaOption } from '../../hooks/useSchemas';
-import { extractId } from '../../hooks/extractId';
+import { extractId } from '../../utils/extractId';
 
 const EMPTY_OPTIONS: TableOption[] = [];
 
@@ -17,7 +17,6 @@ export interface TableSelectorProps {
    * either a `SchemaOption` or a raw schema id.
    */
   dependsOn: string;
-  control?: Control;
   disabled?: boolean;
 }
 
@@ -25,32 +24,17 @@ const getOptionLabel = (opt: TableOption | string) => (typeof opt === 'string' ?
 
 const isOptionEqualToValue = (a: TableOption, b: TableOption) => a.id === b.id;
 
-export function TableSelector({
-  name,
-  label,
-  required,
-  dependsOn,
-  control,
-  disabled,
-}: TableSelectorProps) {
-  const ctx = useFormContext();
-  const effectiveControl = control ?? ctx?.control;
-  const setValue = ctx?.setValue;
+export function TableSelector({ name, label, required, dependsOn, disabled }: TableSelectorProps) {
+  const { control, setValue } = useFormContext();
 
-  const parent = useWatch({ control: effectiveControl, name: dependsOn }) as
-    | SchemaOption
-    | number
-    | null
-    | undefined;
+  const parent = useWatch({ control, name: dependsOn }) as SchemaOption | number | null | undefined;
   const schemaId = extractId(parent);
 
   const prevIdRef = useRef<number | null>(schemaId);
   useEffect(() => {
     if (prevIdRef.current !== schemaId) {
       prevIdRef.current = schemaId;
-      if (setValue) {
-        setValue(name, null, { shouldDirty: true, shouldValidate: false });
-      }
+      setValue(name, null, { shouldDirty: true, shouldValidate: false });
     }
   }, [schemaId, name, setValue]);
 
@@ -71,7 +55,7 @@ export function TableSelector({
     <AutoCompleteInput<TableOption>
       name={name}
       label={label}
-      control={effectiveControl}
+      control={control}
       isRequired={required}
       loading={isLoading}
       disabled={disabled || noSchema || isError}
@@ -87,7 +71,7 @@ export function TableSelector({
           ? 'Select a schema first'
           : isLoading
             ? 'Loading tables…'
-            : 'No tables',
+            : 'No tables in this schema',
       }}
       textFieldProps={{ helperText, error: isError }}
     />

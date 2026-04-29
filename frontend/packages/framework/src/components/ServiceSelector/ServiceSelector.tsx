@@ -1,5 +1,4 @@
-import { useMemo } from 'react';
-import { useFormContext, type Control } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useServices, type ServiceOption, type ServiceType } from '../../hooks/useServices';
 
@@ -12,8 +11,6 @@ export interface ServiceSelectorProps {
   required?: boolean;
   /** Optional filter — only services whose `type` is in this list are shown. */
   serviceTypes?: readonly ServiceType[];
-  /** Optional explicit form `control`. Falls back to `useFormContext`. */
-  control?: Control;
   disabled?: boolean;
   helperText?: string;
 }
@@ -28,28 +25,17 @@ export function ServiceSelector({
   label,
   required,
   serviceTypes,
-  control,
   disabled,
   helperText,
 }: ServiceSelectorProps) {
-  const ctx = useFormContext();
-  const effectiveControl = control ?? ctx?.control;
-
-  // Stabilise the array reference so `useServices` query key stays stable
-  // across renders when the parent passes a fresh literal each time.
-  const types = useMemo(
-    () => (serviceTypes && serviceTypes.length > 0 ? Array.from(serviceTypes) : undefined),
-    // Compare as a sorted, joined string so [a, b] and [b, a] dedupe.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [serviceTypes ? [...serviceTypes].sort().join('|') : ''],
-  );
+  const { control } = useFormContext();
 
   const {
     data: services = EMPTY_OPTIONS,
     isLoading,
     isError,
     error,
-  } = useServices({ serviceTypes: types });
+  } = useServices({ serviceTypes });
 
   const empty = !isLoading && !isError && services.length === 0;
 
@@ -63,7 +49,7 @@ export function ServiceSelector({
     <AutoCompleteInput<ServiceOption>
       name={name}
       label={label}
-      control={effectiveControl}
+      control={control}
       isRequired={required}
       loading={isLoading}
       disabled={disabled || isError}
@@ -75,7 +61,7 @@ export function ServiceSelector({
       autoCompleteProps={{
         getOptionLabel,
         isOptionEqualToValue,
-        noOptionsText: isLoading ? 'Loading services…' : 'No services',
+        noOptionsText: isLoading ? 'Loading services…' : 'No services available',
       }}
       textFieldProps={{ helperText: text, error: isError }}
     />
