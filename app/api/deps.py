@@ -78,7 +78,7 @@ async def get_current_user(token: AuthToken) -> User:
     """Return the authenticated user from an OAuth2 token.
 
     When ``settings.SEP_INTERNAL_TOKEN`` is configured and the incoming Bearer
-    token matches it (constant-time comparison), return a synthetic admin
+    token matches it (constant-time comparison), return a synthetic non-admin
     "service principal" user instead of contacting the OAuth provider. This
     allows SEP-internal service-to-service calls (e.g. scheduled inventory
     sync) to authenticate with a stable deployment-level secret rather than a
