@@ -377,6 +377,27 @@ def _make_form_with_source_names(**overrides) -> ArchivesCreate:
     return ArchivesCreate(**{**defaults, **overrides})
 
 
+def _make_form_with_source_query(**overrides) -> ArchivesCreate:
+    """Create form using source_query (no source ID or name fields)."""
+    defaults = {
+        "alias": "test",
+        "hostname": "host",
+        "service_id": MOCK_CREATED_SERVICE_ID,
+        "source_db_id": None,
+        "source_table_id": None,
+        "source_db_name": "",
+        "source_table_name": "",
+        "source_query": "SELECT id FROM foo WHERE id > 1",
+        "swap_drop": SwapDropEnum.PURGE_ONLY,
+        "where": "id > 1",
+        "dest_table_id": MOCK_DESTINATION_TABLE_ID,
+        "dest_table_name": "",
+        "dest_file": None,
+        "dest_db_name": "",
+    }
+    return ArchivesCreate(**{**defaults, **overrides})
+
+
 class TestResolveSourceTables:
     """Test _resolve_source_tables across all branches and edge cases."""
 
@@ -437,6 +458,32 @@ class TestResolveSourceTables:
         form = _make_form_with_source_ids()
 
         with pytest.raises(HTTPNotFoundException):
+            await _resolve_source_tables(form, mock_remote_api, MOCK_CREATED_SERVICE_ID)
+
+    @pytest.mark.asyncio
+    async def test_source_query_path_returns_empty(self, mock_remote_api):
+        """source_query form: both source branches skipped, returns ({}, None) with no API calls."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_query()
+
+        source_data, schema = await _resolve_source_tables(
+            form, mock_remote_api, MOCK_CREATED_SERVICE_ID
+        )
+
+        assert source_data == {}
+        assert schema is None
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schema_service_id_mismatch_raises_error(
+        self, created_schema, mock_remote_api
+    ):
+        """Schema returned with wrong service_id raises ValueError (post-fetch assertion)."""
+        created_schema.service_id = 999  # does not match MOCK_CREATED_SERVICE_ID
+        mock_remote_api.get = AsyncMock(side_effect=[created_schema.model_dump()])
+        form = _make_form_with_source_ids()
+
+        with pytest.raises(ValueError, match="service_id"):
             await _resolve_source_tables(form, mock_remote_api, MOCK_CREATED_SERVICE_ID)
 
 
