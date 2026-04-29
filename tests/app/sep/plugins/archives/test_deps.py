@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.plugins.archives.deps module."""
 
+from datetime import date
 from unittest.mock import AsyncMock
 
 import pytest
@@ -181,6 +182,20 @@ def created_task() -> Task:
             MOCK_DESTINATION_TABLE_ID,
             True,
         ),
+        (
+            ArchivesCreate(
+                alias="SWAP_ARCHIVE_DROP_WITH_DATE_SUFFIX",
+                hostname="localhost",
+                service_id=MOCK_CREATED_SERVICE_ID,
+                source_db_id=MOCK_CREATED_SCHEMA_ID,
+                source_table_id=MOCK_CREATED_TABLE_ID,
+                swap_drop=SwapDropEnum.SWAP_ARCHIVE_DROP,
+                where="id > 100",
+                swp_table_suffix=date(2026, 4, 29),
+                dest_table_id=MOCK_DESTINATION_TABLE_ID,
+            ),
+            MOCK_DESTINATION_TABLE_ID,
+        ),
     ],
 )
 async def test_build_archives_task_payload(
@@ -245,6 +260,11 @@ async def test_build_archives_task_payload(
         assert "DEST_HOST:" not in purge_config_yaml
         assert "DEST_PORT:" not in purge_config_yaml
         assert "DEST_DB:" not in purge_config_yaml
+    if created_archives.swap_drop == SwapDropEnum.SWAP_ARCHIVE_DROP:
+        loaded = yaml.safe_load(purge_config_yaml)
+        suffix = loaded["PURGE_LIST"][0]["SWP_TABLE_SUFFIX"]
+        assert isinstance(suffix, str)
+        assert suffix == "2026-04-29"
 
 
 def test_purge_config_item_backward_compat_without_disable_bulk_insert():

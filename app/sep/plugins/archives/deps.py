@@ -246,7 +246,9 @@ async def build_archives_task_payload(
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    purge_config.model_dump(by_alias=True, exclude_none=True)
+                    purge_config.model_dump(
+                        mode="json", by_alias=True, exclude_none=True
+                    )
                 ),
                 "target": form.hostname,
                 "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",

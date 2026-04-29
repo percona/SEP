@@ -190,3 +190,72 @@ class TestPtArchiveRunnerArgs:
         # call_args[0] = (cmd, *pt_archiver_flags); skip the cmd at index 0
         pt_archiver_flags = mock_run.call_args[0][1:]
         assert all(isinstance(a, str) and a.startswith("--") for a in pt_archiver_flags)
+
+
+def _ddl_conf() -> dict:
+    """Return a minimal conf dict for DDL helpers."""
+    return {
+        "src_host": "source_host",
+        "src_port": 3306,
+        "dst_host": "dest_host",
+        "dst_port": 3306,
+        "dst_db": "destdb",
+    }
+
+
+def _extract_sql(call_args) -> str:
+    """Extract the SQL command from a run_cmd("mysql", *cmd) call."""
+    args = call_args[0]
+    sql_arg = next(a for a in args if isinstance(a, str) and a.startswith("-e"))
+    return sql_arg[len("-e") :]
+
+
+class TestSwapCreateTableQuoting:
+    """SQL emitted by swap_create_table backtick-quotes every identifier."""
+
+    def test_plain_identifiers_are_backtick_quoted(self, payload):
+        """Standard identifiers are wrapped in backticks in CREATE/RENAME TABLE."""
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.swap_create_table("mydb", "mytable", "mytable_old", _ddl_conf())
+
+        sql = _extract_sql(mock_run.call_args_list[0])
+        assert "CREATE TABLE `mydb`.`mytable_tmp` LIKE `mydb`.`mytable`;" in sql
+        assert (
+            "RENAME TABLE `mydb`.`mytable` TO `mydb`.`mytable_old`,"
+            " `mydb`.`mytable_tmp` TO `mydb`.`mytable`;"
+        ) in sql
+
+    def test_hyphenated_swap_suffix_does_not_break_sql(self, payload):
+        """A swap-name like ``my_table_2026-04-29`` survives MySQL parsing via backticks.
+
+        Without backticks MySQL would parse the hyphens as subtraction
+        operators in the RENAME TABLE clause and reject the statement.
+        """
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.swap_create_table(
+                "mydb", "my_table", "my_table_2026-04-29", _ddl_conf()
+            )
+
+        sql = _extract_sql(mock_run.call_args_list[0])
+        assert "`mydb`.`my_table_2026-04-29`" in sql
+        assert "mydb.my_table_2026-04-29" not in sql
+
+
+class TestDropTableQuoting:
+    """SQL emitted by drop_table backtick-quotes every identifier."""
+
+    def test_plain_identifiers_are_backtick_quoted(self, payload):
+        """Standard identifiers are wrapped in backticks in DROP TABLE."""
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.drop_table("mydb", "mytable", _ddl_conf())
+
+        sql = _extract_sql(mock_run.call_args)
+        assert sql == "DROP TABLE `mydb`.`mytable`;"
+
+    def test_hyphenated_table_name_does_not_break_sql(self, payload):
+        """A table name with hyphens (date suffix) survives MySQL parsing via backticks."""
+        with patch.object(payload, "run_cmd", return_value=0) as mock_run:
+            payload.drop_table("mydb", "my_table_2026-04-29", _ddl_conf())
+
+        sql = _extract_sql(mock_run.call_args)
+        assert sql == "DROP TABLE `mydb`.`my_table_2026-04-29`;"
