@@ -564,3 +564,70 @@ async def test_stream_raises_when_single_chunk_yields_oversized_line(
         with patch.object(remote_api, "_request", return_value=mock_ctx):
             with pytest.raises(ValueError, match="exceeded"):
                 [_ async for _ in remote_api.stream("/oversized-line/")]
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_yields_raw_bytes_without_line_splitting(remote_api):
+    """stream_chunks() yields raw chunks from iter_any() preserving boundaries."""
+
+    async def body():
+        yield b"binary-without-newline-"
+        yield b"more-binary"
+        yield b"\n-and-some-after"
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content.iter_any = lambda: body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            chunks = [c async for c in remote_api.stream_chunks("/binary/")]
+
+    assert chunks == [
+        b"binary-without-newline-",
+        b"more-binary",
+        b"\n-and-some-after",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_does_not_apply_line_size_cap(remote_api, monkeypatch):
+    """stream_chunks() does not enforce the per-line cap (binary payloads have no newlines)."""
+    monkeypatch.setattr("app.core.requests.remote_api._MAX_STREAM_LINE_BYTES", 1024)
+
+    async def body():
+        yield b"x" * 4096
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content.iter_any = lambda: body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            chunks = [c async for c in remote_api.stream_chunks("/binary-large/")]
+
+    assert chunks == [b"x" * 4096]
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_raises_http_exception_on_error_status(remote_api):
+    """stream_chunks() raises HTTPException for 4xx/5xx without yielding anything."""
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_404_NOT_FOUND
+    mock_response.json = AsyncMock(return_value={"detail": "missing"})
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            with pytest.raises(HTTPException) as exc_info:
+                [_ async for _ in remote_api.stream_chunks("/missing/")]
+
+    assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND

@@ -410,10 +410,14 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             status_code=status_code, detail=detail, headers=headers
         ) from None
 
-    async def stream(
+    async def stream_chunks(
         self, path: str, method: str = "GET", **kwargs: Any
     ) -> AsyncGenerator[bytes, None]:
-        """Perform a streaming HTTP request and yield response content.
+        """Perform a streaming HTTP request and yield raw byte chunks as they arrive.
+
+        Use this for binary, gzip, or any non-line-oriented payload. For NDJSON
+        log streams, prefer :meth:`stream`, which buffers chunks across newline
+        boundaries so each yield is a single line.
 
         :param path: The API endpoint path to request.
         :type path: str
@@ -421,7 +425,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :type method: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :yield: Lines of response content as bytes.
+        :yield: Raw byte chunks from the response body in arrival order.
         :rtype: AsyncGenerator[bytes, None]
         :raises HTTPGoneException: If the upstream API returns HTTP 410 (e.g. task data
             gone from the Nomad executor). Callers may use ``isinstance(..., HTTPGoneException)``
@@ -458,10 +462,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                         detail=error_detail,
                         headers=error_headers,
                     )
-                async for line in _iter_lines_from_chunks(
-                    response.content.iter_any(), path
-                ):
-                    yield line
+                async for chunk in response.content.iter_any():
+                    if chunk:
+                        yield chunk
             self.logger.debug("Stream ended normally path=%s method=%s", path, method)
         except HTTPException:
             raise
@@ -474,6 +477,33 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                 exc_info=True,
             )
             raise
+
+    async def stream(
+        self, path: str, method: str = "GET", **kwargs: Any
+    ) -> AsyncGenerator[bytes, None]:
+        """Perform a streaming HTTP request and yield response content one line at a time.
+
+        Buffer chunks across newline boundaries and yield each newline-terminated
+        slice with its trailing newline byte preserved. Flush any remaining partial
+        line at end-of-stream. Use this for NDJSON log streams; for binary or
+        non-line payloads, use :meth:`stream_chunks`.
+
+        :param path: The API endpoint path to request.
+        :type path: str
+        :param method: The HTTP method to use for the request. Defaults to "GET".
+        :type method: str
+        :param kwargs: Additional keyword arguments to pass to the request.
+        :type kwargs: Any
+        :yield: Each newline-terminated line of response content as ``bytes``.
+        :rtype: AsyncGenerator[bytes, None]
+        :raises HTTPGoneException: See :meth:`stream_chunks`.
+        :raises HTTPException: See :meth:`stream_chunks`.
+        :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
+        """
+        async for line in _iter_lines_from_chunks(
+            self.stream_chunks(path, method, **kwargs), path
+        ):
+            yield line
 
     @staticmethod
     @lru_cache(maxsize=8)

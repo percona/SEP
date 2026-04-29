@@ -100,7 +100,7 @@ async def task_history_file_stream(
     :yield: Chunks of log data as bytes.
     :rtype: AsyncGenerator[bytes, None]
     """
-    async for chunk in tasks_api.stream(
+    async for chunk in tasks_api.stream_chunks(
         f"/history/{task_history_id}/file/",
         params=request.query_params,
     ):
