@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useForm, type Control, type FieldValues } from 'react-hook-form';
+import { useForm, type FieldValues, type UseFormGetValues } from 'react-hook-form';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
@@ -32,14 +32,14 @@ function makeQueryClient() {
 function Harness({
   defaultValue,
   onSubmit,
-  controlSpy,
+  formSpy,
 }: {
   defaultValue?: boolean;
   onSubmit?: (values: Record<string, unknown>) => void;
-  controlSpy?: (control: Control<FieldValues>) => void;
+  formSpy?: (api: { getValues: UseFormGetValues<FieldValues> }) => void;
 }) {
-  const { control, handleSubmit } = useForm();
-  controlSpy?.(control);
+  const { control, handleSubmit, getValues } = useForm();
+  formSpy?.({ getValues });
   return (
     <form onSubmit={handleSubmit((v) => onSubmit?.(v))}>
       <AlertOnFailField control={control} defaultValue={defaultValue} />
@@ -105,12 +105,12 @@ describe('AlertOnFailField', () => {
 
   it('clears defaultValue=true when providers are unavailable at mount', async () => {
     setAlertConfig({ data: { available: false }, isLoading: false });
-    let capturedControl: Control<FieldValues> | undefined;
+    let getValues: UseFormGetValues<FieldValues> | undefined;
     renderHarness(
       <Harness
         defaultValue
-        controlSpy={(c) => {
-          capturedControl = c;
+        formSpy={({ getValues: gv }) => {
+          getValues = gv;
         }}
       />,
     );
@@ -119,20 +119,18 @@ describe('AlertOnFailField', () => {
     expect(checkbox).toBeDisabled();
     await waitFor(() => expect(checkbox).not.toBeChecked());
     // Form state, not just rendered checkbox, must be cleared.
-    expect(capturedControl?._formValues.alert_on_fail).toBe(false);
+    expect(getValues?.('alert_on_fail')).toBe(false);
   });
 
   it('clears the value when providers become unavailable mid-session', async () => {
     setAlertConfig({ data: { available: true }, isLoading: false });
     const user = userEvent.setup();
-    let capturedControl: Control<FieldValues> | undefined;
-    const { rerender } = renderHarness(
-      <Harness
-        controlSpy={(c) => {
-          capturedControl = c;
-        }}
-      />,
-    );
+    const onSubmit = vi.fn();
+    let getValues: UseFormGetValues<FieldValues> | undefined;
+    const captureSpy = ({ getValues: gv }: { getValues: UseFormGetValues<FieldValues> }) => {
+      getValues = gv;
+    };
+    const { rerender } = renderHarness(<Harness onSubmit={onSubmit} formSpy={captureSpy} />);
 
     const checkbox = screen.getByRole('checkbox', { name: /Alert on failure/i });
     await user.click(checkbox);
@@ -141,17 +139,19 @@ describe('AlertOnFailField', () => {
     setAlertConfig({ data: { available: false }, isLoading: false });
     rerender(
       <QueryClientProvider client={makeQueryClient()}>
-        <Harness
-          controlSpy={(c) => {
-            capturedControl = c;
-          }}
-        />
+        <Harness onSubmit={onSubmit} formSpy={captureSpy} />
       </QueryClientProvider>,
     );
 
     await waitFor(() => expect(checkbox).not.toBeChecked());
     expect(checkbox).toBeDisabled();
-    expect(capturedControl?._formValues.alert_on_fail).toBe(false);
+    expect(getValues?.('alert_on_fail')).toBe(false);
+
+    // Submitting also produces the cleared value — proves the reset is in
+    // form state, not just a render-time mask.
+    await user.click(screen.getByRole('button', { name: 'submit' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ alert_on_fail: false }));
   });
 
   it('keeps defaultValue=true after a delayed available=true query resolution', async () => {
