@@ -16,10 +16,12 @@
 """Define tests for the app.api.deps module."""
 
 import pytest
+from pydantic import SecretStr
 
-from app.api.deps import get_current_admin, get_current_user
+from app.api.deps import _SERVICE_PRINCIPAL_ID, get_current_admin, get_current_user
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
+from app.core.config import settings
 
 User = get_user_model()
 
@@ -51,6 +53,63 @@ async def test_get_current_user_inactive_user(casdoor_mock, mocker):
     mocker.patch("app.api.deps.User.from_jwt", return_value=user)
     with pytest.raises(HTTPForbiddenException):
         await get_current_user(token)
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_internal_token_match(casdoor_mock, mocker):
+    """Test get_current_user returns the service principal when the token matches."""
+    secret = "supersecret"
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+    user = await get_current_user(secret)
+    assert user.username == "sep-service"
+    assert user.is_admin is False
+    assert user.access_token == secret
+    assert user.id == _SERVICE_PRINCIPAL_ID
+    casdoor_mock.introspect_token.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_internal_token_mismatch_falls_through(
+    casdoor_mock, valid_username, mocker
+):
+    """Test get_current_user falls through to Casdoor when the token does not match."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("supersecret"))
+    user = await get_current_user("not-the-secret")
+    assert user.username == valid_username
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_internal_token_unset_falls_through(
+    casdoor_mock, valid_username, mocker
+):
+    """Test get_current_user uses Casdoor when SEP_INTERNAL_TOKEN is None."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
+    user = await get_current_user("supersecret")
+    assert user.username == valid_username
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_internal_token_empty_falls_through(
+    casdoor_mock, valid_username, mocker
+):
+    """Test get_current_user falls through when SEP_INTERNAL_TOKEN is empty.
+
+    An empty configured secret must not match an empty Bearer token; the
+    request must continue down the Casdoor path.
+    """
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(""))
+    user = await get_current_user("")
+    assert user.username == valid_username
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_internal_token_trailing_whitespace_mismatch(
+    casdoor_mock, valid_username, mocker
+):
+    """Test get_current_user rejects tokens that differ only by trailing whitespace."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("supersecret"))
+    user = await get_current_user("supersecret ")
+    assert user.username == valid_username
 
 
 @pytest.mark.asyncio
