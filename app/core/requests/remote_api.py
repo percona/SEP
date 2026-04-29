@@ -84,7 +84,9 @@ async def _iter_lines_from_chunks(
     :param path: The stream path, included in the error message when a single
         line exceeds the cap.
     :type path: str
-    :yield: Each newline-terminated line as ``bytes`` (newline included).
+    :yield: Each line as ``bytes`` with its trailing newline preserved; the
+        final unterminated chunk is also yielded when the stream ends without
+        a newline.
     :rtype: AsyncGenerator[bytes, None]
     :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
     """
@@ -93,15 +95,19 @@ async def _iter_lines_from_chunks(
         if not chunk:
             continue
         buffer.extend(chunk)
+        offset = 0
         while True:
-            newline_pos = buffer.find(b"\n")
+            newline_pos = buffer.find(b"\n", offset)
             if newline_pos == -1:
                 break
-            line_size = newline_pos + 1
+            line_end = newline_pos + 1
+            line_size = line_end - offset
             if line_size > _MAX_STREAM_LINE_BYTES:
                 _raise_stream_line_too_big(line_size, path)
-            yield bytes(buffer[:line_size])
-            del buffer[:line_size]
+            yield bytes(buffer[offset:line_end])
+            offset = line_end
+        if offset:
+            del buffer[:offset]
         if len(buffer) > _MAX_STREAM_LINE_BYTES:
             _raise_stream_line_too_big(len(buffer), path)
     if buffer:
@@ -494,16 +500,28 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :type method: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :yield: Each newline-terminated line of response content as ``bytes``.
+        :yield: Each line of response content as ``bytes`` with its trailing
+            newline preserved; the final unterminated chunk is also yielded
+            when the body does not end with a newline.
         :rtype: AsyncGenerator[bytes, None]
         :raises HTTPGoneException: See :meth:`stream_chunks`.
         :raises HTTPException: See :meth:`stream_chunks`.
         :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
         """
-        async for line in _iter_lines_from_chunks(
-            self.stream_chunks(path, method, **kwargs), path
-        ):
-            yield line
+        try:
+            async for line in _iter_lines_from_chunks(
+                self.stream_chunks(path, method, **kwargs), path
+            ):
+                yield line
+        except ValueError as exc:
+            self.logger.warning(
+                "Stream line cap exceeded path=%s method=%s: %s",
+                path,
+                method,
+                exc,
+                exc_info=True,
+            )
+            raise
 
     @staticmethod
     @lru_cache(maxsize=8)
