@@ -54,6 +54,128 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 
+async def _resolve_source_tables(
+    form: ArchivesCreate, inventory_api: InventoryAPI, service_id: int
+) -> tuple[dict[str, str], Any]:
+    """Resolve source database and table names.
+
+    Fetches source schema and table entities from inventory if IDs are provided,
+    otherwise uses manually-entered names.
+
+    :param form: The form data containing source specifications.
+    :type form: ArchivesCreate
+    :param inventory_api: The Inventory API client.
+    :type inventory_api: InventoryAPI
+    :param service_id: The source service ID.
+    :type service_id: int
+    :return: A tuple of resolved source data dict and schema object (or None).
+    :rtype: tuple[dict[str, str], Any]
+    """
+    source_data = {}
+    schema = None
+
+    if form.source_db_id is not None:
+        schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            form.source_db_id,
+            service_id=service_id,
+        )
+        source_data["source_db"] = schema.name
+    elif source_db := form.source_db_name.rstrip():
+        source_data["source_db"] = source_db
+        if source_table := form.source_table_name.rstrip():
+            source_data["source_table"] = source_table
+        return source_data, schema
+
+    if form.source_table_id is not None:
+        source_table = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.TABLE,
+            form.source_table_id,
+            schema_id=schema.id,
+        )
+        source_data["source_table"] = source_table.name
+
+    return source_data, schema
+
+
+async def _resolve_destination_tables(
+    form: ArchivesCreate, inventory_api: InventoryAPI
+) -> dict[str, str]:
+    """Resolve destination table or file path.
+
+    Fetches destination table entity from inventory if ID is provided,
+    otherwise uses manually-entered name or file path.
+
+    :param form: The form data containing destination specifications.
+    :type form: ArchivesCreate
+    :param inventory_api: The Inventory API client.
+    :type inventory_api: InventoryAPI
+    :return: A dictionary with resolved destination data.
+    :rtype: dict[str, str]
+    """
+    dest_data = {}
+
+    if form.dest_table_id is not None:
+        dest_table = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.TABLE,
+            form.dest_table_id,
+        )
+        dest_data["dest_table"] = dest_table.name
+    elif dest_table := form.dest_table_name.rstrip():
+        dest_data["dest_table"] = dest_table
+    elif form.dest_file is not None:
+        dest_data["dest_file"] = form.dest_file
+
+    return dest_data
+
+
+async def _resolve_destination_host_and_db(
+    form: ArchivesCreate, inventory_api: InventoryAPI
+) -> dict[str, Any]:
+    """Resolve destination host and database schema.
+
+    Fetches destination service and schema from inventory if IDs are provided,
+    otherwise uses manually-entered host, port, and database name.
+
+    :param form: The form data containing destination specifications.
+    :type form: ArchivesCreate
+    :param inventory_api: The Inventory API client.
+    :type inventory_api: InventoryAPI
+    :return: A dictionary with resolved destination host/port/database data.
+    :rtype: dict[str, Any]
+    """
+    dest_data = {}
+
+    if form.dest_service_id is not None:
+        dest_service = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            form.dest_service_id,
+            type=ServiceTypeEnum.MYSQL,
+        )
+        dest_data["dest_host"] = dest_service.node.address
+        dest_data["dest_port"] = dest_service.port or DEFAULT_MYSQL_PORT
+    elif form.dest_host:
+        dest_data["dest_host"] = form.dest_host
+        if form.dest_port:
+            dest_data["dest_port"] = form.dest_port
+
+    if form.dest_db_id is not None:
+        dest_schema = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            form.dest_db_id,
+        )
+        dest_data["dest_db"] = dest_schema.name
+    elif dest_db := form.dest_db_name.rstrip():
+        dest_data["dest_db"] = dest_db
+
+    return dest_data
+
+
 async def build_archives_task_payload(
     form: Annotated[ArchivesCreate, Form()],
     inventory_api: InventoryAPI,
@@ -67,7 +189,7 @@ async def build_archives_task_payload(
     :type form: ArchivesCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `TaskWrite` object containing all the necessary
+    :return: A fully constructed ``TaskWrite`` object containing all the necessary
         configuration to create the Archives task.
     :rtype: TaskWrite
     """
@@ -98,40 +220,14 @@ async def build_archives_task_payload(
         ),
     }
 
-    schema = None
-    if form.source_db_id is not None:
-        schema = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            form.source_db_id,
-            service_id=service.id,
-        )
-        purge_item_data["source_db"] = schema.name
+    source_data, _ = await _resolve_source_tables(form, inventory_api, service.id)
+    purge_item_data.update(source_data)
 
-    if form.source_table_id is not None:
-        source_table = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.TABLE,
-            form.source_table_id,
-            schema_id=schema.id,
-        )
-        purge_item_data["source_table"] = source_table.name
-    elif source_db := form.source_db_name.rstrip():
-        purge_item_data["source_db"] = source_db
-        if source_table := form.source_table_name.rstrip():
-            purge_item_data["source_table"] = source_table
+    dest_tables = await _resolve_destination_tables(form, inventory_api)
+    purge_item_data.update(dest_tables)
 
-    if form.dest_table_id is not None:
-        dest_table = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.TABLE,
-            form.dest_table_id,
-        )
-        purge_item_data["dest_table"] = dest_table.name
-    elif dest_table := form.dest_table_name.rstrip():
-        purge_item_data["dest_table"] = dest_table
-    elif form.dest_file is not None:
-        purge_item_data["dest_file"] = form.dest_file
+    dest_host_db = await _resolve_destination_host_and_db(form, inventory_api)
+    purge_item_data.update(dest_host_db)
 
     purge_config = PurgeConfig(
         all=PurgeConfigAll(

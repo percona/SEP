@@ -127,15 +127,27 @@ async def archives_detail(
     dest_table = purge_item.get("DEST_TABLE")
     source_query = purge_item.get("SOURCE_QUERY")
     dest_file = purge_item.get("DEST_FILE")
+    dest_host = purge_item.get("DEST_HOST")
+    dest_db = purge_item.get("DEST_DB")
+    dest_port = purge_item.get("DEST_PORT")
 
     if source_db and source_table:
         task_data["source_table"] = f"{source_db}.{source_table}"
-    if source_db and dest_table:
-        task_data["dest_table"] = f"{source_db}.{dest_table}"
+    if dest_table:
+        display_db = dest_db if dest_db else source_db
+        if display_db:
+            task_data["dest_table"] = f"{display_db}.{dest_table}"
+        else:
+            task_data["dest_table"] = dest_table
     if source_query:
         task_data["source_query"] = source_query
     if dest_file:
         task_data["dest_file"] = dest_file
+    if dest_host:
+        task_data["dest_host"] = dest_host
+        task_data["dest_port"] = dest_port
+    if dest_db:
+        task_data["dest_db"] = dest_db
     task_data["source_host"] = all_server.get("SOURCE_HOST")
     task_data["source_port"] = all_server.get("SOURCE_PORT")
     context["task"] = {

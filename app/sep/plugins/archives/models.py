@@ -19,7 +19,7 @@ from datetime import date
 from enum import IntEnum
 from typing import Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import NonEmptyStr
@@ -46,9 +46,13 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param source_db_id: The source database schema ID from which data will be purged.
         Must be None if source_query is set.
     :type source_db_id: int | None
+    :param source_db_name: The name of the source database schema.
+    :type source_db_name: str
     :param source_table_id: The source table ID within the specified schema from which
         data will be purged. Must be None if source_query is set.
     :type source_table_id: int | None
+    :param source_table_name: The name of the source table.
+    :type source_table_name: str
     :param source_query: Optional; a query defining the source data to be purged.
         Must be None if both source_db_id and source_table_id are set.
     :type source_query: NonEmptyStr | None
@@ -58,6 +62,8 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param dest_table_id: Optional; The destination table ID.
         Must be None if dest_file is set.
     :type dest_table_id: int | None
+    :param dest_table_name: The name of the destination table.
+    :type dest_table_name: str
     :param dest_file: Optional; The destination file path.
         Must be None if dest_table_id is set.
     :type dest_file: NonEmptyStr | None
@@ -85,6 +91,16 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
+    :param dest_service_id: Optional; The Inventory ID of the destination database service.
+    :type dest_service_id: int | None
+    :param dest_host: Optional; The hostname of the destination database.
+    :type dest_host: str | None
+    :param dest_port: Optional; The port of the destination database (1-65535).
+    :type dest_port: int | None
+    :param dest_db_id: Optional; The destination database schema ID.
+    :type dest_db_id: int | None
+    :param dest_db_name: The name of the destination database schema.
+    :type dest_db_name: str
     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
     :type alert_on_fail: bool
     """
@@ -116,7 +132,33 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
     )
+    dest_service_id: int | None = None
+    dest_host: str | None = None
+    dest_port: int | None = Field(None, ge=1, le=65535)
+    dest_db_id: int | None = None
+    dest_db_name: str = ""
     alert_on_fail: bool = False
+
+    @field_validator("dest_host", "dest_db_name")
+    @classmethod
+    def validate_no_dsn_delimiters(cls, v: str) -> str:
+        """Validate that destination fields do not contain DSN delimiters.
+
+        Prevents pt-archiver DSN injection by rejecting commas and equals signs
+        which could split or modify the DSN key=value pairs. Applied to both
+        ``dest_host`` and ``dest_db_name`` fields.
+
+        :param v: The field value to validate.
+        :type v: str
+        :return: The validated value if no delimiters are present.
+        :rtype: str
+        :raises ValueError: If the value contains ``,`` or ``=`` characters.
+        """
+        if v and ("," in v or "=" in v):
+            raise ValueError(
+                "Values cannot contain ',' or '=' characters (DSN delimiters)."
+            )
+        return v
 
     @model_validator(mode="after")
     def validate_tables_are_different(self) -> Self:
@@ -168,6 +210,47 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
         if self.dest_table_id is not None and bool(self.dest_table_name.rstrip()):
             raise ValueError(
                 "Cannot use both dest_table_id and dest_table_name at the same time."
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_dest_host_exclusivity(self) -> Self:
+        """Validate destination host/db field exclusivity and compatibility.
+
+        :return: The validated instance
+        :rtype: ArchivesCreate
+        :raises ValueError: If dest_service_id and dest_host are both set, or if
+            dest_db_id and dest_db_name are both set, or if dest_db_id is set
+            without dest_service_id, or if destination fields are set with
+            SWAP_ARCHIVE_DROP (swap_drop=2).
+        """
+        has_dest_service = self.dest_service_id is not None
+        has_dest_host = self.dest_host is not None
+        has_dest_db_id = self.dest_db_id is not None
+        has_dest_db_name = bool(self.dest_db_name.rstrip())
+
+        if has_dest_service and has_dest_host:
+            raise ValueError(
+                "Cannot use both dest_service_id (inventory) and dest_host (manual input) at the same time."
+            )
+
+        if has_dest_db_id and has_dest_db_name:
+            raise ValueError(
+                "Cannot use both dest_db_id (inventory) and dest_db_name (manual input) at the same time."
+            )
+
+        if has_dest_db_id and not has_dest_service:
+            raise ValueError(
+                "dest_db_id requires dest_service_id to be set (cannot pick inventory schema with manual host)."
+            )
+
+        if self.swap_drop == SwapDropEnum.SWAP_ARCHIVE_DROP and (
+            has_dest_service or has_dest_host
+        ):
+            raise ValueError(
+                "Cannot set destination host when swap_drop is SWAP_ARCHIVE_DROP (2) "
+                "(cross-host table swapping is not supported)."
             )
 
         return self
@@ -298,6 +381,12 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
+    :param dest_host: Optional; The destination host address.
+    :type dest_host: NonEmptyStr | None
+    :param dest_port: Optional; The destination port number.
+    :type dest_port: int | None
+    :param dest_db: Optional; The destination database schema name.
+    :type dest_db: NonEmptyStr | None
     """
 
     alias: NonEmptyStr
@@ -328,6 +417,9 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
     )
+    dest_host: NonEmptyStr | None = None
+    dest_port: int | None = None
+    dest_db: NonEmptyStr | None = None
 
 
 class PurgeConfig(BaseCaseInsensitiveModel):
