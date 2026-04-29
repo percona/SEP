@@ -190,12 +190,10 @@ def main() -> None:
                 elif conf["swp_drp"] == 2:
                     # SWAP-ARCHIVE-DROP
                     # SWAP
-                    src_tbl_swapped = src_tbl + "_" + conf["swp_table_suffix"]
+                    src_tbl_swapped = f"{src_tbl}_{conf['swp_table_suffix']}"
                     ret = swap_create_table(src_db, src_tbl, src_tbl_swapped, conf)
                     if ret == 0:
                         # ARCHIVE
-                        # we need to re-set dst_table
-                        conf["dst_tbl"] = src_tbl_swapped
                         ret = pt_archive_runner(
                             pt_archiver_bin, src_db, src_tbl_swapped, conf
                         )
@@ -250,7 +248,7 @@ def run_cmd(cmd: str, *args: str) -> int:
 
 def drop_table(src_db: str, src_tbl: str, conf: dict[str, Any]) -> int:
     """Drop table."""
-    sql_cmd = f"DROP TABLE {src_db}.{src_tbl};"
+    sql_cmd = f"DROP TABLE `{src_db}`.`{src_tbl}`;"
     drp_cmd = [
         src_db,
         "-h{}".format(conf["src_host"]),
@@ -265,8 +263,9 @@ def swap_create_table(
 ) -> int:
     """Swap table."""
     sql_cmd = (
-        f"CREATE TABLE {src_db}.{src_tbl}_tmp LIKE {src_db}.{src_tbl};"
-        f"RENAME TABLE {src_db}.{src_tbl} TO {src_db}.{src_tbl_swapped}, {src_db}.{src_tbl}_tmp TO {src_db}.{src_tbl};"
+        f"CREATE TABLE `{src_db}`.`{src_tbl}_tmp` LIKE `{src_db}`.`{src_tbl}`;"
+        f"RENAME TABLE `{src_db}`.`{src_tbl}` TO `{src_db}`.`{src_tbl_swapped}`,"
+        f" `{src_db}`.`{src_tbl}_tmp` TO `{src_db}`.`{src_tbl}`;"
     )
     drp_swp_cmd = [
         src_db,
