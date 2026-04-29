@@ -197,7 +197,7 @@ class TestCheckMySQL:
         mock_pymysql.connect.side_effect = mock_pymysql.err.OperationalError()
 
         result = check_mysql("db-host", 3306)
-        assert result["success"] is False
+        assert result == {"success": False, "error": ""}
 
 
 class TestCheckPostgreSQL:
