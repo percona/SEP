@@ -258,7 +258,7 @@ async def test_session_setter(remote_api):
 
 
 @pytest.mark.asyncio
-async def test_stream_yields_chunks(remote_api, base_url):
+async def test_stream_yields_lines(remote_api, base_url):
     """stream() yields one bytes object per newline-terminated line, with the trailing newline preserved."""
     body = b"chunk1\nchunk2\n"
     with aioresponses() as m:
@@ -564,6 +564,36 @@ async def test_stream_raises_when_single_chunk_yields_oversized_line(
         with patch.object(remote_api, "_request", return_value=mock_ctx):
             with pytest.raises(ValueError, match="exceeded"):
                 [_ async for _ in remote_api.stream("/oversized-line/")]
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_warning_when_line_cap_exceeded(remote_api, monkeypatch):
+    """Line-cap ValueError is logged at WARNING with exc_info before re-raising."""
+    monkeypatch.setattr("app.core.requests.remote_api._MAX_STREAM_LINE_BYTES", 1024)
+
+    async def body():
+        yield b"x" * 2048 + b"\n"
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content.iter_any = lambda: body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(remote_api.logger, "warning") as mock_warning:
+        async with remote_api:
+            with patch.object(remote_api, "_request", return_value=mock_ctx):
+                with pytest.raises(ValueError, match="exceeded"):
+                    [_ async for _ in remote_api.stream("/cap-log/", method="GET")]
+
+    mock_warning.assert_called_once()
+    args, kwargs = mock_warning.call_args
+    assert args[0] == "Stream line cap exceeded path=%s method=%s: %s"
+    assert args[1] == "/cap-log/"
+    assert args[2] == "GET"
+    assert isinstance(args[3], ValueError)
+    assert kwargs.get("exc_info") is True
 
 
 @pytest.mark.asyncio
