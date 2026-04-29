@@ -268,10 +268,11 @@ async def test_sync_inventory_with_unknown_syncer_param_skips_run(
 ):
     """Reject a POST whose ``syncer`` value matches no configured syncer.
 
-    SEP's global ``HTTPException`` handler converts the raised
-    ``HTTPBadRequestException`` into a 303 redirect with a flash message, so
-    the assertion focuses on the side effect that matters: the background
-    task must not have been scheduled.
+    The route catches the ``ValueError`` raised by ``filter_syncers_by_name``
+    and re-raises it as ``HTTPBadRequestException``, which SEP's global
+    ``HTTPException`` handler then converts into a 303 redirect with a flash
+    message, so the assertion focuses on the side effect that matters: the
+    background task must not have been scheduled.
     """
     response = await async_test_client.post(
         "/inventory/sync/",
@@ -954,12 +955,34 @@ def _compact(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+def _execute_request_for(syncer: str | None) -> dict | None:
+    """Build the ``execute_request`` blob for a periodic-task fake row.
+
+    :param syncer: Fully qualified syncer name to embed in ``meta``, or
+        ``None`` to omit ``execute_request`` entirely (legacy / sync-all rows).
+    :type syncer: str | None
+    :return: A JSON-serialisable ``execute_request`` dict, or ``None``.
+    :rtype: dict | None
+    """
+    if syncer is None:
+        return None
+    return {
+        "task": "inventory-sync",
+        "target": "local",
+        "meta": {"syncer": syncer},
+        "payload": None,
+        "tracking": {"allocation_id": None, "evaluation_id": None},
+        "eta": None,
+    }
+
+
 def _interval_periodic(
     *,
     every: int = 5,
     period: str = "minutes",
     enabled: bool = True,
     task_id: int = _INVENTORY_SYNC_PERIODIC_ID,
+    syncer: str | None = None,
 ) -> dict:
     """Build a fake interval-mode inventory-sync periodic-task JSON row."""
     return {
@@ -969,7 +992,7 @@ def _interval_periodic(
         "start_time": None,
         "enabled": enabled,
         "description": "",
-        "execute_request": None,
+        "execute_request": _execute_request_for(syncer),
         "interval": {"every": every, "period": period},
         "crontab": None,
         "last_run_at": None,
@@ -990,6 +1013,7 @@ def _crontab_periodic(
     timezone: str = "Europe/Berlin",
     enabled: bool = True,
     task_id: int = _INVENTORY_SYNC_PERIODIC_ID,
+    syncer: str | None = None,
 ) -> dict:
     """Build a fake crontab-mode inventory-sync periodic-task JSON row."""
     return {
@@ -999,7 +1023,7 @@ def _crontab_periodic(
         "start_time": None,
         "enabled": enabled,
         "description": "",
-        "execute_request": None,
+        "execute_request": _execute_request_for(syncer),
         "interval": None,
         "crontab": {
             "minute": minute,
@@ -1029,8 +1053,8 @@ def test_node_list_renders_no_schedule_state(
     assert response.status_code == status.HTTP_200_OK
     body = _compact(response.text)
     assert "No schedule configured" in body
-    assert "Attach Schedule" in body
-    assert 'name="task" value="inventory-sync"' in body
+    assert "Attach a schedule" in body
+    assert 'action="http://testserver/inventory/schedule/"' in body
 
 
 @pytest.mark.usefixtures(
@@ -1122,16 +1146,16 @@ def test_node_list_includes_available_timezones_in_context(
 @pytest.mark.usefixtures(
     "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
 )
-def test_node_list_attach_form_uses_periodic_task_create_route(
+def test_node_list_attach_form_uses_inventory_schedule_create_route(
     test_client, mock_inventory_api_dep, mock_task_api_dep
 ):
-    """Render the attach form pointing at the periodic-task create route."""
+    """Render the attach form pointing at the inventory-specific create route."""
     mock_task_api_dep.get.return_value = []
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
     body = _compact(response.text)
-    assert 'action="http://testserver/periodic/"' in body
-    assert 'name="task" value="inventory-sync"' in body
+    assert 'action="http://testserver/inventory/schedule/"' in body
+    assert 'name="task" value="inventory-sync"' not in body
 
 
 @pytest.mark.usefixtures(
@@ -1172,3 +1196,241 @@ def test_node_list_pre_fills_form_for_existing_crontab_schedule(
     body = _compact(response.text)
     assert "*/5 * * * *" in body
     assert re.search(r'<option value="America/New_York"\s+selected\s*>', body)
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_legacy_schedule_with_all_syncers_label(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """A row without ``execute_request`` renders with the "All syncers" label."""
+    mock_task_api_dep.get.return_value = [_interval_periodic()]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "All syncers" in body
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_per_syncer_schedule_with_display_name(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """A schedule with a known syncer renders the syncer's display name."""
+    mock_task_api_dep.get.return_value = [_interval_periodic(syncer=_PMM_STUB_NAME)]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "<strong>_StubPMM</strong>" in body
+    assert "All syncers" not in body.split("Attach a schedule")[0]
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_two_schedules_with_distinct_actions(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Two schedules render as two rows whose update/delete URLs differ."""
+    mock_task_api_dep.get.return_value = [
+        _interval_periodic(task_id=11),
+        _interval_periodic(task_id=22, syncer=_PMM_STUB_NAME),
+    ]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "/periodic/11/update" in body
+    assert "/periodic/11/delete" in body
+    assert "/periodic/22/update" in body
+    assert "/periodic/22/delete" in body
+    assert 'data-schedule-id="11"' in body
+    assert 'data-schedule-id="22"' in body
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_unknown_syncer_label_falls_through(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """A row referencing a syncer that is no longer configured renders without crashing."""
+    mock_task_api_dep.get.return_value = [
+        _interval_periodic(syncer="app.sep.sync.syncers.gone.RemovedSyncer")
+    ]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "RemovedSyncer" in body
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_renders_per_row_disabled_marker(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """The ``(disabled)`` marker appears only on the disabled row."""
+    mock_task_api_dep.get.return_value = [
+        _interval_periodic(task_id=11, enabled=True),
+        _interval_periodic(task_id=22, enabled=False, syncer=_PMM_STUB_NAME),
+    ]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert body.count("(disabled)") == 1
+
+
+@pytest.mark.usefixtures(
+    "mock_sync_item_manager", "mock_get_username_mapping", "mock_syncers"
+)
+def test_node_list_attach_form_includes_syncer_radio_options(
+    test_client, mock_inventory_api_dep, mock_task_api_dep
+):
+    """Attach form exposes a radio for "All syncers" plus one per available syncer."""
+    mock_task_api_dep.get.return_value = []
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert 'type="radio" name="syncer" value=""' in body
+    assert f'value="{_PMM_STUB_NAME}"' in body
+    assert f'value="{_MYSQL_STUB_NAME}"' in body
+
+
+@pytest.mark.asyncio
+async def test_schedule_create_attach_with_syncer_succeeds(
+    async_test_client, mock_syncers, mock_task_api_dep
+):
+    """Posting a syncer attaches a schedule with the syncer in execute_request.meta."""
+    response = await async_test_client.post(
+        "/inventory/schedule/",
+        data={
+            "syncer": _PMM_STUB_NAME,
+            "schedule_mode": "interval",
+            "interval_every": "5",
+            "interval_period": "minutes",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_awaited_once_with(
+        "/inventory-sync/periodic/",
+        json={
+            "task": "inventory-sync",
+            "interval": {"every": 5, "period": "minutes"},
+            "execute_request": {"meta": {"syncer": _PMM_STUB_NAME}},
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_schedule_create_attach_all_syncers_succeeds(
+    async_test_client, mock_syncers, mock_task_api_dep
+):
+    """An empty syncer field omits ``execute_request`` from the payload."""
+    response = await async_test_client.post(
+        "/inventory/schedule/",
+        data={
+            "syncer": "",
+            "schedule_mode": "interval",
+            "interval_every": "10",
+            "interval_period": "minutes",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_awaited_once_with(
+        "/inventory-sync/periodic/",
+        json={
+            "task": "inventory-sync",
+            "interval": {"every": 10, "period": "minutes"},
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_schedule_create_attach_with_crontab_succeeds(
+    async_test_client, mock_syncers, mock_task_api_dep
+):
+    """Crontab variant posts a parsed crontab dict to the Tasks API."""
+    response = await async_test_client.post(
+        "/inventory/schedule/",
+        data={
+            "syncer": _PMM_STUB_NAME,
+            "schedule_mode": "crontab",
+            "cron_expression": "0 0 * * *",
+            "cron_timezone": "UTC",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_awaited_once_with(
+        "/inventory-sync/periodic/",
+        json={
+            "task": "inventory-sync",
+            "crontab": {
+                "timezone": "UTC",
+                "minute": "0",
+                "hour": "0",
+                "day_of_month": "*",
+                "month_of_year": "*",
+                "day_of_week": "*",
+            },
+            "execute_request": {"meta": {"syncer": _PMM_STUB_NAME}},
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_schedule_create_attach_with_unknown_syncer_skips_post(
+    async_test_client, mock_syncers, mock_task_api_dep
+):
+    """An unknown syncer value redirects with a flash and does not call the Tasks API."""
+    response = await async_test_client.post(
+        "/inventory/schedule/",
+        data={
+            "syncer": "app.fake.UnknownSyncer",
+            "schedule_mode": "interval",
+            "interval_every": "5",
+            "interval_period": "minutes",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_schedule_create_attach_with_both_modes_skips_post(
+    async_test_client, mock_syncers, mock_task_api_dep
+):
+    """Submitting both interval and crontab fields fails fast without POSTing."""
+    response = await async_test_client.post(
+        "/inventory/schedule/",
+        data={
+            "syncer": "",
+            "schedule_mode": "interval",
+            "interval_every": "5",
+            "interval_period": "minutes",
+            "cron_expression": "0 0 * * *",
+            "cron_timezone": "UTC",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_schedule_create_attach_with_neither_mode_skips_post(
+    async_test_client, mock_syncers, mock_task_api_dep
+):
+    """Submitting neither interval nor crontab fields fails fast without POSTing."""
+    response = await async_test_client.post(
+        "/inventory/schedule/",
+        data={"syncer": ""},
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_not_awaited()
