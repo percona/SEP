@@ -26,6 +26,7 @@ frontmatter and served at
 __all__ = ["SNIPPETS_PLUGIN_SCHEMA", "build_snippet_schema"]
 
 from typing import cast
+from urllib.parse import quote
 
 from app.sep.plugins.framework.schema import (
     AnyField,
@@ -249,7 +250,8 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
                 name=_SCRIPT_PREVIEW_FIELD_NAME,
                 label="Script preview",
                 endpoint_url=(
-                    f"/api/plugins/snippets/{snippet.filename}/script-preview"
+                    f"/plugins/snippets/{quote(snippet.filename, safe='')}"
+                    "/script-preview"
                 ),
             ),
         ),

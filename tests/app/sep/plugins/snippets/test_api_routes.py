@@ -110,7 +110,7 @@ class TestSnippetsApiPerSnippetSchema:
             if field["type"] == "script_preview"
         )
         assert preview_field["endpointUrl"] == (
-            f"{API_BASE}/{snippet.filename}/script-preview"
+            f"/plugins/snippets/{snippet.filename}/script-preview"
         )
 
 

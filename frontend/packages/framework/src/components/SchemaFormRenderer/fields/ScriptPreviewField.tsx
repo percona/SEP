@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Box, CircularProgress, Typography } from '@mui/material';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { apiClient } from '@sep/api';
 import type { ScriptPreviewField as ScriptPreviewFieldType } from '../types';
 
 interface ScriptPreviewFieldProps {
@@ -54,13 +55,10 @@ export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
     const handle = setTimeout(
       () => {
         setState((prev) => ({ ...prev, status: 'loading', error: null }));
-        fetch(field.endpointUrl, { signal: controller.signal })
-          .then(async (response) => {
-            if (!response.ok) {
-              throw new Error(`Preview unavailable (HTTP ${response.status})`);
-            }
-            const data = (await response.json()) as ScriptPreviewResponse;
-            setState({ status: 'success', data, error: null });
+        apiClient
+          .get<ScriptPreviewResponse>(field.endpointUrl, { signal: controller.signal })
+          .then((response) => {
+            setState({ status: 'success', data: response.data, error: null });
           })
           .catch((error: unknown) => {
             if (controller.signal.aborted) {
