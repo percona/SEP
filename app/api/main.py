@@ -17,8 +17,9 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import oauth, users
+from app.api.routes import config, oauth, users
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(oauth.router, prefix="/oauth", tags=["oauth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(config.router, prefix="/config", tags=["config"])
