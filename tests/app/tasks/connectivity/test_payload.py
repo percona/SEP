@@ -24,8 +24,15 @@ import pytest
 
 @pytest.fixture
 def mock_pymysql():
-    """Inject a mock pymysql module into sys.modules."""
+    """Inject a mock pymysql module into sys.modules.
+
+    A real ``OperationalError`` class is installed on the mock so production
+    code can reference ``pymysql.err.OperationalError`` in an ``except`` clause
+    without tripping ``TypeError: catching classes that do not inherit from
+    BaseException is not allowed``.
+    """
     mock = MagicMock()
+    mock.err.OperationalError = type("OperationalError", (Exception,), {})
     old = sys.modules.get("pymysql")
     sys.modules["pymysql"] = mock
     yield mock
@@ -50,8 +57,14 @@ def mock_myloginpath():
 
 @pytest.fixture
 def mock_psycopg2():
-    """Inject a mock psycopg2 module into sys.modules."""
+    """Inject a mock psycopg2 module into sys.modules.
+
+    A real ``OperationalError`` class is installed on the mock with a
+    ``pgcode`` attribute so production code can both catch the exception and
+    inspect its SQLSTATE classification.
+    """
     mock = MagicMock()
+    mock.OperationalError = type("OperationalError", (Exception,), {"pgcode": None})
     old = sys.modules.get("psycopg2")
     sys.modules["psycopg2"] = mock
     yield mock
@@ -63,8 +76,16 @@ def mock_psycopg2():
 
 @pytest.fixture
 def mock_pymongo():
-    """Inject a mock pymongo module into sys.modules."""
+    """Inject a mock pymongo module into sys.modules.
+
+    A real ``OperationFailure`` class is installed on the mock with a ``code``
+    attribute so production code can both catch the exception and inspect its
+    server-reported MongoDB error code.
+    """
     mock = MagicMock()
+    mock.errors.OperationFailure = type(
+        "OperationFailure", (Exception,), {"code": None}
+    )
     old = sys.modules.get("pymongo")
     sys.modules["pymongo"] = mock
     yield mock
@@ -133,6 +154,51 @@ class TestCheckMySQL:
             host="db-host", port=3306, connect_timeout=10
         )
 
+    @pytest.mark.parametrize("code", [1044, 1045, 1130])
+    def test_auth_failure_treated_as_success(
+        self, code, mock_myloginpath, mock_pymysql
+    ):
+        """Verify server-side auth/authorization rejections report success.
+
+        Per SEP-927, the goal is to test connectivity. An auth-denied response
+        from the server proves the server is reachable.
+        """
+        from app.tasks.connectivity.payload import check_mysql
+
+        mock_myloginpath.parse.return_value = {}
+        mock_pymysql.connect.side_effect = mock_pymysql.err.OperationalError(
+            code, "Access denied for user 'x'@'y'"
+        )
+
+        assert check_mysql("db-host", 3306) == {"success": True}
+
+    def test_network_operational_error_remains_failure(
+        self, mock_myloginpath, mock_pymysql
+    ):
+        """Verify a network-level OperationalError (code 2xxx) reports failure."""
+        from app.tasks.connectivity.payload import check_mysql
+
+        mock_myloginpath.parse.return_value = {}
+        mock_pymysql.connect.side_effect = mock_pymysql.err.OperationalError(
+            2003, "Can't connect to MySQL server"
+        )
+
+        result = check_mysql("db-host", 3306)
+        assert result["success"] is False
+        assert "Can't connect" in result["error"]
+
+    def test_operational_error_with_empty_args_remains_failure(
+        self, mock_myloginpath, mock_pymysql
+    ):
+        """Verify OperationalError with no args does not crash and reports failure."""
+        from app.tasks.connectivity.payload import check_mysql
+
+        mock_myloginpath.parse.return_value = {}
+        mock_pymysql.connect.side_effect = mock_pymysql.err.OperationalError()
+
+        result = check_mysql("db-host", 3306)
+        assert result["success"] is False
+
 
 class TestCheckPostgreSQL:
     """Test PostgreSQL connectivity checker."""
@@ -166,6 +232,37 @@ class TestCheckPostgreSQL:
 
         assert result == {"success": False, "error": "Connection refused"}
 
+    @pytest.mark.parametrize("pgcode", ["28000", "28P01"])
+    def test_auth_failure_by_sqlstate_treated_as_success(self, pgcode, mock_psycopg2):
+        """Verify SQLSTATE class 28 (auth rejection) reports success.
+
+        Per SEP-927, an auth-rejected response from the server proves the
+        server is reachable, which is what this check measures.
+        """
+        from app.tasks.connectivity.payload import check_postgresql
+
+        err = mock_psycopg2.OperationalError("FATAL: auth rejected")
+        err.pgcode = pgcode
+        mock_psycopg2.connect.side_effect = err
+
+        assert check_postgresql("db-host", 5432) == {"success": True}
+
+    def test_pgcode_none_remains_failure(self, mock_psycopg2):
+        """Verify OperationalError with ``pgcode=None`` reports failure.
+
+        libpq does not always populate ``pgcode`` on connection-time errors;
+        an explicit ``None`` is treated as a failure to avoid fragile message
+        string matching.
+        """
+        from app.tasks.connectivity.payload import check_postgresql
+
+        err = mock_psycopg2.OperationalError("FATAL: password authentication failed")
+        mock_psycopg2.connect.side_effect = err
+
+        result = check_postgresql("db-host", 5432)
+        assert result["success"] is False
+        assert "password authentication failed" in result["error"]
+
 
 class TestCheckMongoDB:
     """Test MongoDB connectivity checker."""
@@ -195,6 +292,37 @@ class TestCheckMongoDB:
         result = check_mongodb("db-host", 27017)
 
         assert result == {"success": False, "error": "Server selection timeout"}
+
+    @pytest.mark.parametrize("code", [13, 18])
+    def test_auth_failure_treated_as_success(self, code, mock_pymongo):
+        """Verify ``OperationFailure`` codes 13 and 18 report success.
+
+        Per SEP-927, a server-side auth rejection (``13`` Unauthorized,
+        ``18`` AuthenticationFailed) proves the server is reachable.
+        """
+        from app.tasks.connectivity.payload import check_mongodb
+
+        mock_client = MagicMock()
+        mock_pymongo.MongoClient.return_value = mock_client
+        err = mock_pymongo.errors.OperationFailure("auth rejected")
+        err.code = code
+        mock_client.admin.command.side_effect = err
+
+        assert check_mongodb("db-host", 27017) == {"success": True}
+
+    def test_other_operation_failure_remains_failure(self, mock_pymongo):
+        """Verify ``OperationFailure`` with a non-auth code reports failure."""
+        from app.tasks.connectivity.payload import check_mongodb
+
+        mock_client = MagicMock()
+        mock_pymongo.MongoClient.return_value = mock_client
+        err = mock_pymongo.errors.OperationFailure("namespace not found")
+        err.code = 26
+        mock_client.admin.command.side_effect = err
+
+        result = check_mongodb("db-host", 27017)
+        assert result["success"] is False
+        assert "namespace not found" in result["error"]
 
 
 class TestMain:
