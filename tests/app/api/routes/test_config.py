@@ -19,6 +19,7 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_current_user
 from app.main import app
 
 
@@ -28,8 +29,9 @@ def test_client():
     return TestClient(app)
 
 
-def test_get_alert_config_available(test_client, mocker):
-    """Reports `available=True` when at least one alert provider is configured."""
+def test_get_alert_config_available(test_client, mocker, regular_user):
+    """Report ``available=True`` when at least one alert provider is configured."""
+    app.dependency_overrides[get_current_user] = lambda: regular_user
     mocker.patch(
         "app.api.routes.config.alert_settings.PROVIDERS",
         new={"any-truthy-provider"},
@@ -37,11 +39,20 @@ def test_get_alert_config_available(test_client, mocker):
     response = test_client.get("/api/config/alerts")
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"available": True}
+    app.dependency_overrides = {}
 
 
-def test_get_alert_config_unavailable(test_client, mocker):
-    """Reports `available=False` when no alert providers are configured."""
+def test_get_alert_config_unavailable(test_client, mocker, regular_user):
+    """Report ``available=False`` when no alert providers are configured."""
+    app.dependency_overrides[get_current_user] = lambda: regular_user
     mocker.patch("app.api.routes.config.alert_settings.PROVIDERS", new=set())
     response = test_client.get("/api/config/alerts")
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"available": False}
+    app.dependency_overrides = {}
+
+
+def test_get_alert_config_requires_auth(test_client):
+    """Reject anonymous requests so the alerting flag is not leaked."""
+    response = test_client.get("/api/config/alerts")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED

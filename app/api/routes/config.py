@@ -18,23 +18,33 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.api.deps import IsAuthenticatedDep
 from app.core.alerts.config import alert_settings
 
 router = APIRouter()
 
 
 class AlertConfigResponse(BaseModel):
-    """Lightweight payload describing alert provider availability."""
+    """Represent the response of ``GET /api/config/alerts``.
+
+    :param available: Whether at least one alert provider is configured.
+    :type available: bool
+    """
 
     available: bool
 
 
-@router.get("/alerts")
+@router.get("/alerts", dependencies=[IsAuthenticatedDep])
 async def get_alert_config() -> AlertConfigResponse:
     """Report whether at least one alert provider is configured.
 
     Mirrors the server-side ``bool(alert_settings.PROVIDERS)`` check used by
     the Jinja2 task forms so the React frontend can drive the same
-    enabled/disabled behavior of the *Alert on failure* field.
+    enabled/disabled behavior of the *Alert on failure* field. The endpoint
+    is gated behind authentication so an anonymous probe cannot leak
+    whether alerting is wired up on this deployment.
+
+    :return: The alert provider availability flag.
+    :rtype: AlertConfigResponse
     """
     return AlertConfigResponse(available=bool(alert_settings.PROVIDERS))
