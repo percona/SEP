@@ -26,6 +26,7 @@ if [[ -z $password ]]; then
     password=$(openssl rand -hex 15)
 fi
 adminPassword=$(openssl rand -hex 20)
+perconaLogo="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYwIiBoZWlnaHQ9IjE2MCIgdmlld0JveD0iMCAwIDE2MCAxNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxNjAiIGhlaWdodD0iMTYwIiByeD0iMjQiIGZpbGw9IiMwRTFBNTMiLz4KPHBhdGggZD0iTTExMi43MjYgODYuNjM5NEMxMjMuODIxIDc5LjM5MjEgMTI3LjQ1MSA2NC42MDkgMTIwLjczNyA1Mi45OTAzQzExNy4zNzMgNDcuMTYyNCAxMTEuOTM1IDQyLjk4ODcgMTA1LjQyOSA0MS4yNDU5Qzk5LjQwMTYgMzkuNjI4NyA5My4xMDYyIDQwLjI5IDg3LjU2NTIgNDMuMDg3Nkw4MCAzMEw2NC4yOTY1IDU3LjE4MDVMMjggMTIwSDEzMkwxMTIuNzI2IDg2LjYzOTRaTTEwMy42NSA0Ny45MDRDMTA4LjM3OSA0OS4xNjI3IDExMi4zMTQgNTIuMTk3MiAxMTQuNzY1IDU2LjQyMjRDMTE5LjU4MiA2NC43NTEyIDExNy4wOCA3NS4zMTUyIDEwOS4yNjcgODAuNjUwN0w5MS4wMjAxIDQ5LjA3Qzk0Ljk1MTEgNDcuMTgwOSA5OS4zODUxIDQ2Ljc2ODkgMTAzLjY1IDQ3LjkwNFpNODAgNDMuNzk0MkwxMjAuMDQgMTEzLjEwMUg5Ni42MTI1TDY4LjI4MTEgNjQuMDc3Nkw3OS45OTc5IDQzLjc5NjJMODAgNDMuNzk0MlpNMzkuOTYgMTEzLjEwMUw2NC4yOTQ1IDcwLjk4OTFMODguNjI4OSAxMTMuMTAxSDM5Ljk2WiIgZmlsbD0idXJsKCNwYWludDBfbGluZWFyXzEyOTA0XzgyMTg2KSIvPgo8ZGVmcz4KPGxpbmVhckdyYWRpZW50IGlkPSJwYWludDBfbGluZWFyXzEyOTA0XzgyMTg2IiB4MT0iNDAuNDkwMSIgeTE9IjExMi43NDIiIHgyPSIxMjEuNTE4IiB5Mj0iNjguMjc5NCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgo8c3RvcCBzdG9wLWNvbG9yPSIjRkMzNTE5Ii8+CjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI0YwRDEzNiIvPgo8L2xpbmVhckdyYWRpZW50Pgo8L2RlZnM+Cjwvc3ZnPgo="
 
 # Read the generated certificate and private key, replacing line breaks with "\n"
 certificate=$(awk '{printf "%s\\n", $0}' "$data_dir/certs/casdoor/sep_token_jwt_key.pem")
@@ -40,7 +41,7 @@ cat > "$data_dir/casdoor_init_data.json" << EOL
       "name": "sep",
       "displayName": "Services Enablement Platform",
       "websiteUrl": "https://github.com/percona/SEP",
-      "favicon": "https://docs.percona.com/percona-platform/images/percona-logo.svg",
+      "favicon": "$perconaLogo",
       "passwordType": "plain",
       "passwordSalt": "",
       "passwordOptions": [
@@ -116,7 +117,7 @@ cat > "$data_dir/casdoor_init_data.json" << EOL
       "owner": "admin",
       "name": "sep-app",
       "displayName": "SEP App",
-      "logo": "https://docs.percona.com/percona-platform/images/percona-logo.svg",
+      "logo": "$perconaLogo",
       "homepageUrl": "https://github.com/percona/SEP",
       "organization": "sep",
       "cert": "sep-cert",
