@@ -1,45 +1,92 @@
-import { useWatch, type Control } from 'react-hook-form';
-import Box from '@mui/material/Box';
-import MenuItem from '@mui/material/MenuItem';
-import { SwitchInput, SelectInput } from '@percona/percona-ui';
+import { useEffect } from 'react';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Tooltip from '@mui/material/Tooltip';
+import { useController, type Control, type FieldValues } from 'react-hook-form';
+import { useAlertConfig } from '@sep/api';
+
+/**
+ * Form field name submitted to the task-creation API. Matches the snake_case
+ * key the backend expects on `POST /tasks` (`alert_on_fail`) so plugin forms
+ * can simply spread the form values into the request payload.
+ */
+export const ALERT_ON_FAIL_FIELD_NAME = 'alert_on_fail';
+
+const TOOLTIP_AVAILABLE = 'Enable to trigger an alert if the task fails';
+const TOOLTIP_UNAVAILABLE = 'Configure an alert provider to use this feature';
+const TOOLTIP_ERROR = 'Could not load alert configuration';
 
 interface AlertOnFailFieldProps {
-  control: Control;
+  /** react-hook-form `control` from the parent form's `useForm()`. */
+  control: Control<FieldValues>;
+  /**
+   * Initial value for the field. Mirrors the Jinja2 partial's
+   * `alert_on_fail_default`. The value is reset to `false` if the
+   * availability query later reports no configured providers, so a
+   * persisted `true` from an edit form can never round-trip to the
+   * backend when alerts are disabled.
+   */
+  defaultValue?: boolean;
 }
 
-// TODO: fetch real alert providers from backend
-const MOCK_PROVIDERS = [
-  { value: 'email', label: 'Email' },
-  { value: 'slack', label: 'Slack' },
-  { value: 'pagerduty', label: 'PagerDuty' },
-];
+/**
+ * Renders the *Alert on failure* checkbox shared by every task plugin's
+ * create/edit form. Replaces the
+ * `templates/tasks/partials/create-form-alert-on-failure-input.html.j2`
+ * partial: when the backend reports no configured alert providers the
+ * checkbox is disabled (not hidden) and a tooltip prompts the operator to
+ * configure a provider.
+ */
+export function AlertOnFailField({ control, defaultValue = false }: AlertOnFailFieldProps) {
+  const { data, isLoading, isError } = useAlertConfig();
+  const available = data?.available ?? false;
+  // Stay disabled while the availability query is in flight or has errored
+  // so the field can't briefly appear actionable before resolving.
+  const disabled = isLoading || isError || !available;
+  const tooltip = isError ? TOOLTIP_ERROR : available ? TOOLTIP_AVAILABLE : TOOLTIP_UNAVAILABLE;
 
-export function AlertOnFailField({ control }: AlertOnFailFieldProps) {
-  const alertEnabled = useWatch({ control, name: 'alertOnFail' }) as boolean;
+  const {
+    field: { onChange, onBlur, value, ref, name },
+  } = useController({
+    name: ALERT_ON_FAIL_FIELD_NAME,
+    control,
+    defaultValue,
+  });
+
+  // Once we know providers are unavailable, force the form value to false so
+  // the UI (`checked`) and the submitted payload stay aligned. Covers two
+  // cases: (1) edit forms that mounted with `defaultValue=true` before the
+  // availability query resolved as `false`; (2) a user toggling the field on
+  // and then alert providers becoming unavailable mid-session.
+  const knownUnavailable = !isLoading && !isError && !available;
+  useEffect(() => {
+    if (knownUnavailable && value) {
+      onChange(false);
+    }
+  }, [knownUnavailable, value, onChange]);
 
   return (
-    <Box>
-      <SwitchInput
-        name="alertOnFail"
-        label="Alert on failure"
-        labelCaption="Send a notification when this task fails"
-        control={control}
-      />
-      {alertEnabled && (
-        <SelectInput
-          name="alertProvider"
-          label="Alert Provider"
-          control={control}
-          selectFieldProps={{ fullWidth: true }}
-          controllerProps={{ name: 'alertProvider' }}
-        >
-          {MOCK_PROVIDERS.map((p) => (
-            <MenuItem key={p.value} value={p.value}>
-              {p.label}
-            </MenuItem>
-          ))}
-        </SelectInput>
-      )}
-    </Box>
+    // `describeChild` keeps the checkbox's accessible name (the
+    // FormControlLabel text) intact; the tooltip is attached via
+    // aria-describedby instead of overriding aria-label. The wrapping span
+    // gives the Tooltip a non-disabled hover target so the message still
+    // appears when the checkbox itself is disabled.
+    <Tooltip title={tooltip} placement="top" describeChild>
+      <span>
+        <FormControlLabel
+          label="Alert on failure"
+          control={
+            <Checkbox
+              name={name}
+              inputRef={ref}
+              checked={!!value}
+              onChange={(_, checked) => onChange(checked)}
+              onBlur={onBlur}
+              disabled={disabled}
+            />
+          }
+        />
+      </span>
+    </Tooltip>
   );
 }
