@@ -22,14 +22,17 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
+    get_created_entity,
     get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
     BackupConfigBackup,
@@ -154,6 +157,7 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
 
 async def build_backup_task_payload(
     form: Annotated[BackupCreate, Form()],
+    inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build the backup task payload from form.
 
@@ -161,10 +165,19 @@ async def build_backup_task_payload(
 
     :param form: The form data for the Backups creation.
     :type form: BackupCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
     :return: A fully constructed ``TaskWrite`` object containing all the
         necessary configuration to create the Backup task.
     :rtype: TaskWrite
     """
+    service = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        form.service_id,
+        type=ServiceTypeEnum.MONGODB,
+    )
+
     pitr = _build_pitr_config(form)
     storage = _build_storage_config(form)
     backup_config_dict = _build_backup_config_dict(form)
@@ -198,6 +211,7 @@ async def build_backup_task_payload(
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
+                "_service_name": service.name,
             },
             "payload": f"file://{payload_path}",
             "backup_type": form.backup_type,

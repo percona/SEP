@@ -169,6 +169,7 @@ def test_archives_create_full_form_dependency_chain_without_payload_override(
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == created_archives.alias
     assert posted["owner"] == TaskOwner.ARCHIVER.value
+    assert posted["data"]["meta"]["_service_name"] == created_service.name
 
 
 def test_archives_create_skips_connectivity_check_when_opted_out(

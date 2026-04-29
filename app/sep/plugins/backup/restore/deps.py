@@ -53,11 +53,12 @@ async def build_restore_task_payload(
     all_config_dict = extract_model_from_instance(form, RestoreConfigAll)
     base_config_dict = extract_model_from_instance(form, BaseRestoreConfigServer)
 
-    restore_config_payload: dict[str, Any] = {
+    restore_config_payload = {
         **base_config_dict.model_dump(),
         "alias": form.task_name,
     }
 
+    service = None
     if form.backup_type == BackupType.MYDUMPER:
         service = await get_created_entity(
             inventory_api,
@@ -79,6 +80,13 @@ async def build_restore_task_payload(
                 service_id=service.id,
             )
             restore_config_payload["database"] = schema.name
+    elif form.service_id:
+        service = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            form.service_id,
+            type=ServiceTypeEnum.MYSQL,
+        )
 
     restore_config = RestoreConfig(
         all_servers=RestoreConfigAll.model_validate(all_config_dict),
@@ -101,19 +109,23 @@ async def build_restore_task_payload(
 
     payload_path = Path(__file__).parent / payload_name
 
+    meta = {
+        "config": yaml.dump(
+            jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
+        ),
+        "target": form.hostname,
+        "requirements": requirements,
+    }
+    if service is not None:
+        meta["_service_name"] = service.name
+
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.RESTORES,
         data={
             "task": "run-python",
-            "meta": {
-                "config": yaml.dump(
-                    jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
-                ),
-                "target": form.hostname,
-                "requirements": requirements,
-            },
+            "meta": meta,
             "payload": f"file://{payload_path}",
         },
     )

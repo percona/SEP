@@ -156,6 +156,7 @@ def test_backups_create_full_form_dependency_chain_without_payload_override(
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == backup_create.task_name
     assert posted["owner"] == TaskOwner.BACKUPS.value
+    assert posted["data"]["meta"]["_service_name"] == created_service.name
 
 
 EXPECTED_CONNECTIVITY_POST_CALLS = 2
