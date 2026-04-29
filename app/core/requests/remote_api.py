@@ -51,6 +51,22 @@ from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
 _MAX_STREAM_LINE_BYTES = 16 * 1024 * 1024
 
 
+def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
+    """Raise :class:`ValueError` for a stream line larger than the cap.
+
+    :param size: Size in bytes of the offending line or pending buffer.
+    :type size: int
+    :param path: The stream path, included in the error message.
+    :type path: str
+    :raises ValueError: Always — this function never returns.
+    """
+    msg = (
+        f"Stream line exceeded {_MAX_STREAM_LINE_BYTES} bytes "
+        f"(size={size}, path={path})"
+    )
+    raise ValueError(msg)
+
+
 async def _iter_lines_from_chunks(
     chunks: AsyncIterator[bytes], path: str
 ) -> AsyncGenerator[bytes, None]:
@@ -58,7 +74,9 @@ async def _iter_lines_from_chunks(
 
     Buffer chunks from ``chunks`` and yield each newline-terminated slice with
     the trailing newline byte preserved. Flush any remaining partial line at
-    end-of-stream so callers receive the final unterminated chunk.
+    end-of-stream so callers receive the final unterminated chunk. Reject any
+    line larger than ``_MAX_STREAM_LINE_BYTES`` to protect consumers from a
+    runaway producer.
 
     :param chunks: An async iterator producing byte chunks (e.g. from
         ``aiohttp`` ``StreamReader.iter_any()``).
@@ -79,15 +97,16 @@ async def _iter_lines_from_chunks(
             newline_pos = buffer.find(b"\n")
             if newline_pos == -1:
                 break
-            yield bytes(buffer[: newline_pos + 1])
-            del buffer[: newline_pos + 1]
+            line_size = newline_pos + 1
+            if line_size > _MAX_STREAM_LINE_BYTES:
+                _raise_stream_line_too_big(line_size, path)
+            yield bytes(buffer[:line_size])
+            del buffer[:line_size]
         if len(buffer) > _MAX_STREAM_LINE_BYTES:
-            msg = (
-                f"Stream line exceeded {_MAX_STREAM_LINE_BYTES} bytes "
-                f"without a newline (path={path!s})"
-            )
-            raise ValueError(msg)
+            _raise_stream_line_too_big(len(buffer), path)
     if buffer:
+        if len(buffer) > _MAX_STREAM_LINE_BYTES:
+            _raise_stream_line_too_big(len(buffer), path)
         yield bytes(buffer)
 
 

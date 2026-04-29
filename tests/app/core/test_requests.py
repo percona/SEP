@@ -541,3 +541,26 @@ async def test_stream_raises_when_single_line_exceeds_cap(remote_api, monkeypatc
         with patch.object(remote_api, "_request", return_value=mock_ctx):
             with pytest.raises(ValueError, match="exceeded"):
                 [_ async for _ in remote_api.stream("/runaway/")]
+
+
+@pytest.mark.asyncio
+async def test_stream_raises_when_single_chunk_yields_oversized_line(
+    remote_api, monkeypatch
+):
+    """A newline-terminated line exceeding the cap is rejected before yielding."""
+    monkeypatch.setattr("app.core.requests.remote_api._MAX_STREAM_LINE_BYTES", 1024)
+
+    async def body():
+        yield b"x" * 2048 + b"\n"
+
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_200_OK
+    mock_response.content.iter_any = lambda: body()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            with pytest.raises(ValueError, match="exceeded"):
+                [_ async for _ in remote_api.stream("/oversized-line/")]
