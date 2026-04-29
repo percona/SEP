@@ -327,8 +327,13 @@ class Settings(BaseYamlSettings):
         a new one is created.
     :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
-        `secrets.token_urlsafe(32)`.
+        ``secrets.token_urlsafe(32)``.
     :type SECRET_KEY: str
+    :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
+        service-to-service authentication (e.g. scheduled inventory sync). When
+        unset, features that depend on it are disabled. Generate with
+        ``openssl rand -hex 32``.
+    :type SEP_INTERNAL_TOKEN: SecretStr | None
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel
     :param LOGGING_CONFIG: dictConfig logging configuration.
@@ -355,6 +360,7 @@ class Settings(BaseYamlSettings):
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
+    SEP_INTERNAL_TOKEN: SecretStr | None = None
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePathField | None = None
