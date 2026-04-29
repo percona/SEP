@@ -67,7 +67,7 @@ async def build_archives_task_payload(
     :type form: ArchivesCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `TaskWrite` object containing all the necessary
+    :return: A fully constructed ``TaskWrite`` object containing all the necessary
         configuration to create the Archives task.
     :rtype: TaskWrite
     """
@@ -150,7 +150,9 @@ async def build_archives_task_payload(
             "task": "run-python",
             "meta": {
                 "config": yaml.dump(
-                    purge_config.model_dump(by_alias=True, exclude_none=True)
+                    purge_config.model_dump(
+                        mode="json", by_alias=True, exclude_none=True
+                    )
                 ),
                 "target": form.hostname,
                 "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
