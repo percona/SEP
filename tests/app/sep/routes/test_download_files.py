@@ -146,7 +146,7 @@ class TestDownloadTaskHistoryFile:
         mock_tasks_client_dep.get.return_value = {
             "backup.sql": {"size": 2048, "is_dir": False}
         }
-        mock_tasks_client_dep.stream.return_value = _mock_file_stream(
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_file_stream(
             [b"chunk1", b"chunk2"]
         )
 
@@ -165,7 +165,9 @@ class TestDownloadTaskHistoryFile:
     ):
         """Assert directory downloads use .tar.gz filename suffix."""
         mock_tasks_client_dep.get.return_value = {"data/": {"size": 0, "is_dir": True}}
-        mock_tasks_client_dep.stream.return_value = _mock_file_stream([b"tardata"])
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_file_stream(
+            [b"tardata"]
+        )
 
         response = test_client.get(
             f"/files/{task_history_response.id}/download?path=data/"
@@ -181,7 +183,7 @@ class TestDownloadTaskHistoryFile:
     ):
         """Assert file still streams when metadata fetch raises HTTPException."""
         mock_tasks_client_dep.get.side_effect = HTTPException(status_code=500)
-        mock_tasks_client_dep.stream.return_value = _mock_file_stream(
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_file_stream(
             [b"fallback-data"]
         )
 
@@ -199,7 +201,9 @@ class TestDownloadTaskHistoryFile:
         self, test_client, mock_tasks_client_dep, task_history_response
     ):
         """Assert download without path query param streams without Content-Disposition."""
-        mock_tasks_client_dep.stream.return_value = _mock_file_stream([b"raw-data"])
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_file_stream(
+            [b"raw-data"]
+        )
 
         response = test_client.get(f"/files/{task_history_response.id}/download")
 
