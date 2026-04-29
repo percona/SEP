@@ -78,7 +78,7 @@ GZIP_BIN = os.getenv('PERCONA_BACKUP_GZIP_BIN', '/usr/bin/gzip')
 QPRESS_BIN = os.getenv('PERCONA_BACKUP_QPRESS_BIN', '/usr/bin/qpress')
 ZSTD_BIN = os.getenv('PERCONA_BACKUP_ZSTD_BIN', '/usr/bin/zstd')
 LZ4_BIN = os.getenv('PERCONA_BACKUP_LZ4_BIN', '/usr/bin/lz4')
-GSUTIL_BIN = os.getenv('PERCONA_BACKUP_GSUTIL_BIN', '/usr/local/bin/gsutil')
+GCLOUD_BIN = os.getenv('PERCONA_BACKUP_GCLOUD_BIN', '/usr/bin/gcloud')
 AWS_BIN = os.getenv('PERCONA_BACKUP_AWS_BIN', '/usr/bin/aws')
 SSH_ARGS = '-o PasswordAuthentication=no -o StrictHostKeyChecking=no'
 UPLOADME_FILE = '.uploadme'
@@ -1497,11 +1497,11 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
             msg = 'Can not create tmp dir for latest file.'
             raise BackupError(msg)
 
-        gs_cmd = [GSUTIL_BIN, 'cp', self.backup_source, latest_local_file_path]
+        gs_cmd = [GCLOUD_BIN, 'storage', 'cp', self.backup_source, latest_local_file_path]
         gs_proc = subprocess.Popen(gs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = gs_proc.communicate()
         if gs_proc.returncode != 0:
-            msg = 'GS latest file download failed. Error: %s' % (err,)
+            msg = 'GS latest file download failed. Error: %s' % (err.decode(),)
             raise BackupError(msg)
 
         with open(latest_local_file_path, 'r') as fname:
@@ -1510,7 +1510,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if 'gs://' in latest_backup_source:
             return latest_backup_source
         else:
-            msg = 'GS latest file content is an invalid path. Error: %s' % (err,)
+            msg = 'GS latest file content is an invalid path. Error: %s' % (err.decode(),)
             raise BackupError(msg)
 
     def _s3_get_path_from_latest(self):
@@ -1724,8 +1724,8 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         os.mkdir(destination)
         destination_dir = os.path.normpath(destination) + os.sep
 
-        download_cmd = '%s -m rsync -r %s %s %s' \
-                       % (GSUTIL_BIN, regex_args, source, destination_dir)
+        download_cmd = '%s -m storage rsync -r %s %s %s' \
+                       % (GCLOUD_BIN, regex_args, source, destination_dir)
 
         self.logger.info('Running: %s', download_cmd)
         log_stream = open(log_file, 'a')
@@ -2178,7 +2178,7 @@ class Binlog(Restore):
         elif self.backup_source.startswith('s3:'):
             ls_cmd = [PYTHON_BIN, S3CMD_BIN, 'ls', source_path]
         elif self.backup_source.startswith('gs:'):
-            ls_cmd = [GSUTIL_BIN, 'ls', source_path]
+            ls_cmd = [GCLOUD_BIN, 'storage', 'ls', source_path]
         else:
             try:
                 host, path = self.backup_source.split(':', 1)

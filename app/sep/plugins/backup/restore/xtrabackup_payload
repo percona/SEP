@@ -67,7 +67,7 @@ GZIP_BIN = os.getenv('PERCONA_BACKUP_GZIP_BIN', '/usr/bin/gzip')
 QPRESS_BIN = os.getenv('PERCONA_BACKUP_QPRESS_BIN', '/usr/bin/qpress')
 ZSTD_BIN = os.getenv('PERCONA_BACKUP_ZSTD_BIN', '/usr/bin/zstd')
 LZ4_BIN = os.getenv('PERCONA_BACKUP_LZ4_BIN', '/usr/bin/lz4')
-GSUTIL_BIN = os.getenv('PERCONA_BACKUP_GSUTIL_BIN', '/usr/local/bin/gsutil')
+GCLOUD_BIN = os.getenv('PERCONA_BACKUP_GCLOUD_BIN', '/usr/bin/gcloud')
 AWS_BIN = os.getenv('PERCONA_BACKUP_AWS_BIN', '/usr/bin/aws')
 SSH_ARGS = '-o PasswordAuthentication=no -o StrictHostKeyChecking=no'
 UPLOADME_FILE = '.uploadme'
@@ -1487,11 +1487,11 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         except:
             raise BackupError('Cannot create tmp dir for latest file')
 
-        gs_cmd = [GSUTIL_BIN, 'cp', self.backup_source, latest_local_file_path]
+        gs_cmd = [GCLOUD_BIN, 'storage', 'cp', self.backup_source, latest_local_file_path]
         gs_proc = subprocess.Popen(gs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = gs_proc.communicate()
         if gs_proc.returncode != 0:
-            raise BackupError('GS latest file download failed. Error: %s' % (err,))
+            raise BackupError('GS latest file download failed. Error: %s' % (err.decode(),))
 
         with open(latest_local_file_path, 'r') as fname:
             latest_backup_source = fname.read().rstrip()
@@ -1499,7 +1499,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if 'gs://' in latest_backup_source:
             return latest_backup_source
         else:
-            raise BackupError('GS latest file content is an invalid path. Error: %s' % (err,))
+            raise BackupError('GS latest file content is an invalid path. Error: %s' % (err.decode(),))
 
     def _s3_get_path_from_latest(self):
         latest_dir = '/tmp/percona_backup_latest'
@@ -1691,8 +1691,8 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         os.mkdir(destination)
         destination_dir = os.path.normpath(destination) + os.sep
 
-        download_cmd = '%s rsync -r %s %s %s' \
-                       % (GSUTIL_BIN, regex_args, source, destination_dir)
+        download_cmd = '%s storage rsync -r %s %s %s' \
+                       % (GCLOUD_BIN, regex_args, source, destination_dir)
 
         self.logger.info('Running: %s', download_cmd)
         log_stream = open(log_file, 'a')
