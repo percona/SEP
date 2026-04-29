@@ -15,19 +15,19 @@
 
 """Provide synchronization functions for the SEP inventory."""
 
+from app.core.config import settings
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.inventory.deps import (
     filter_syncers_by_name,
     get_syncers_standalone,
 )
 from app.sep.sync.models import BaseSyncer
-from app.tasks.config import tasks_settings
 
 
 async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
-    """Execute scheduled inventory sync using configured API key and syncers.
+    """Execute scheduled inventory sync using configured internal token and syncers.
 
-    Read the API key from ``tasks_settings.INVENTORY_SYNC_API_KEY`` and construct
+    Read the internal token from ``settings.SEP_INTERNAL_TOKEN`` and construct
     syncers from application settings. When ``syncer`` is set, only that syncer
     runs; when ``None`` or empty, every configured syncer runs.
 
@@ -41,14 +41,16 @@ async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
         ``"app.sep.sync.syncers.pmm.PMMSyncer"``), or ``None`` / empty for the
         sync-all path.
     :type syncer: str | None
-    :raises ValueError: If ``INVENTORY_SYNC_API_KEY`` is not configured, or if
+    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if
         ``syncer`` is set but does not match any configured syncer that can
         sync inventory.
     """
-    api_key = tasks_settings.INVENTORY_SYNC_API_KEY
-    if not api_key:
+    token_setting = settings.SEP_INTERNAL_TOKEN
+    if token_setting is None or not (api_key := token_setting.get_secret_value()):
         raise ValueError(
-            "INVENTORY_SYNC_API_KEY must be configured for scheduled inventory sync"
+            "SEP_INTERNAL_TOKEN must be configured for scheduled inventory "
+            "sync. Set it in .env to a long random secret "
+            "(e.g. `openssl rand -hex 32`)."
         )
     syncers = await get_syncers_standalone()
     selected = filter_syncers_by_name(
