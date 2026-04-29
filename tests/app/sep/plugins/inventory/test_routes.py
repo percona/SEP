@@ -20,7 +20,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException, status
+from pydantic import SecretStr
 
+from app.core.config import settings
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.crud import SyncItemManager
@@ -1434,3 +1436,92 @@ async def test_schedule_create_attach_with_neither_mode_skips_post(
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     mock_task_api_dep.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_schedule_create_blocked_when_token_unset(
+    async_test_client, mocker, mock_syncers, mock_task_api_dep
+):
+    """Reject schedule creation when ``SEP_INTERNAL_TOKEN`` is unset."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
+    response = await async_test_client.post(
+        "/inventory/schedule/",
+        data={
+            "syncer": "",
+            "schedule_mode": "interval",
+            "interval_every": "5",
+            "interval_period": "minutes",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_schedule_create_blocked_when_token_empty(
+    async_test_client, mocker, mock_syncers, mock_task_api_dep
+):
+    """Reject schedule creation when ``SEP_INTERNAL_TOKEN`` is an empty string."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(""))
+    response = await async_test_client.post(
+        "/inventory/schedule/",
+        data={
+            "syncer": "",
+            "schedule_mode": "interval",
+            "interval_every": "5",
+            "interval_period": "minutes",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_not_awaited()
+
+
+@pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
+def test_node_list_context_scheduled_sync_enabled_when_token_set(
+    mocker, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_syncers
+):
+    """Pass ``scheduled_sync_enabled=True`` to the template when the token is set."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("ok"))
+    mock_task_api_dep.get.return_value = []
+    template_spy = mocker.spy(templates, "TemplateResponse")
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    _, kwargs = template_spy.call_args
+    assert kwargs["context"]["scheduled_sync_enabled"] is True
+    body = _compact(response.text)
+    assert "Attach a schedule" in body
+    assert "schedule-disabled-notice" not in body
+
+
+@pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
+def test_node_list_context_scheduled_sync_disabled_when_token_unset(
+    mocker, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_syncers
+):
+    """Pass ``scheduled_sync_enabled=False`` and render the notice when token unset."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
+    mock_task_api_dep.get.return_value = []
+    template_spy = mocker.spy(templates, "TemplateResponse")
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    _, kwargs = template_spy.call_args
+    assert kwargs["context"]["scheduled_sync_enabled"] is False
+    body = _compact(response.text)
+    assert "schedule-disabled-notice" in body
+    assert "SEP_INTERNAL_TOKEN" in body
+    assert "Attach a schedule" not in body
+
+
+@pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
+def test_node_list_renders_per_row_chip_when_token_unset(
+    mocker, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_syncers
+):
+    """Render the "(will not run)" chip on existing schedule rows when token unset."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
+    mock_task_api_dep.get.return_value = [_interval_periodic()]
+    response = test_client.get("/inventory/")
+    assert response.status_code == status.HTTP_200_OK
+    body = _compact(response.text)
+    assert "schedule-stale-warning" in body
+    assert "will not run" in body

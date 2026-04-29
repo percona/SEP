@@ -16,7 +16,9 @@
 """Define the API dependencies."""
 
 import logging
+import secrets
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Cookie, Depends
 from fastapi.security import OAuth2PasswordBearer
@@ -28,6 +30,7 @@ from app.core.auth.exceptions import (
     InactiveUserException,
 )
 from app.core.auth.utils import get_user_model
+from app.core.config import settings
 from app.core.log import set_log_context
 from app.sep.config import sep_settings
 
@@ -42,9 +45,44 @@ RefreshTokenCookie = Annotated[
     str | None, Cookie(alias=sep_settings.SESSION_REFRESH.COOKIE_NAME)
 ]
 
+_SERVICE_PRINCIPAL_ID = UUID("00000000-0000-4000-8000-000000000000")
+_SERVICE_PRINCIPAL = User(
+    id=_SERVICE_PRINCIPAL_ID,
+    username="sep-service",
+    owner="built-in",
+    email="",
+    first_name="SEP",
+    last_name="Service",
+    is_admin=False,
+)
+
+
+def _build_service_principal(secret: str) -> User:
+    """Return a per-request copy of the service principal with ``access_token`` set.
+
+    ``access_token`` is a property-backed private attribute on ``BaseUser``;
+    Pydantic v2's ``model_copy(update=...)`` silently drops non-field keys, so
+    the value must be assigned via the property setter after the copy.
+
+    :param secret: The unwrapped ``SEP_INTERNAL_TOKEN`` value.
+    :type secret: str
+    :return: A fresh copy of the singleton with ``access_token`` populated.
+    :rtype: User
+    """
+    user = _SERVICE_PRINCIPAL.model_copy()
+    user.access_token = secret
+    return user
+
 
 async def get_current_user(token: AuthToken) -> User:
     """Return the authenticated user from an OAuth2 token.
+
+    When ``settings.SEP_INTERNAL_TOKEN`` is configured and the incoming Bearer
+    token matches it (constant-time comparison), return a synthetic admin
+    "service principal" user instead of contacting the OAuth provider. This
+    allows SEP-internal service-to-service calls (e.g. scheduled inventory
+    sync) to authenticate with a stable deployment-level secret rather than a
+    short-lived personal access token.
 
     :param token: The OAuth2 token to authenticate the user.
     :type token: AuthToken
@@ -54,6 +92,11 @@ async def get_current_user(token: AuthToken) -> User:
     :raises InactiveUserException: If authentication succeeds but the user is not
         active.
     """
+    if (token_setting := settings.SEP_INTERNAL_TOKEN) is not None:
+        secret = token_setting.get_secret_value()
+        if secret and secrets.compare_digest(token, secret):
+            set_log_context(user=_SERVICE_PRINCIPAL.username)
+            return _build_service_principal(secret)
     try:
         user = await User.from_jwt(token)
     except ValidationError:
