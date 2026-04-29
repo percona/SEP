@@ -22,6 +22,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -171,12 +172,19 @@ async def build_backup_task_payload(
         necessary configuration to create the Backup task.
     :rtype: TaskWrite
     """
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        form.service_id,
-        type=ServiceTypeEnum.MONGODB,
-    )
+    try:
+        service = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            form.service_id,
+            type=ServiceTypeEnum.MONGODB,
+        )
+    except HTTPNotFoundException:
+        # PBM tasks run off ``form.hostname`` and the generated config; the
+        # service is only fetched to populate ``_service_name`` for PMM. Fall
+        # back to a node-only annotation if the service was deleted between
+        # form load and form submit.
+        service = None
 
     pitr = _build_pitr_config(form)
     storage = _build_storage_config(form)
@@ -195,24 +203,25 @@ async def build_backup_task_payload(
 
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
+    meta = {
+        "config": yaml.dump(
+            backup_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
+            default_flow_style=False,
+            allow_unicode=True,
+        ),
+        "target": form.hostname,
+        "requirements": requirements,
+    }
+    if service is not None:
+        meta["_service_name"] = service.name
+
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUP_MONGO,
         data={
             "task": "run-python",
-            "meta": {
-                "config": yaml.dump(
-                    backup_config.model_dump(
-                        by_alias=True, exclude_none=True, mode="json"
-                    ),
-                    default_flow_style=False,
-                    allow_unicode=True,
-                ),
-                "target": form.hostname,
-                "requirements": requirements,
-                "_service_name": service.name,
-            },
+            "meta": meta,
             "payload": f"file://{payload_path}",
             "backup_type": form.backup_type,
         },

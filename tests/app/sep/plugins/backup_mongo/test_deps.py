@@ -17,6 +17,7 @@
 
 import pytest
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -50,3 +51,21 @@ async def test_build_backup_task_payload_includes_service_name(
         backup_create.service_id,
         type=ServiceTypeEnum.MONGODB,
     )
+
+
+@pytest.mark.asyncio
+async def test_build_backup_task_payload_swallows_404_for_missing_service(
+    mocker,
+    mock_remote_api,
+    backup_create: BackupCreate,
+):
+    """A stale service_id (service deleted) degrades to a node-only annotation."""
+    mocker.patch(
+        "app.sep.plugins.backup_mongo.deps.get_created_entity",
+        side_effect=HTTPNotFoundException(),
+    )
+
+    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
+
+    assert isinstance(task_payload, TaskWrite)
+    assert "_service_name" not in task_payload.data["meta"]

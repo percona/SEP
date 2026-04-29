@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -93,6 +94,21 @@ async def test_resolve_service_name_returns_none_when_service_id_missing(
     assert (
         await _resolve_service_name(restore_create_no_service, mock_remote_api) is None
     )
+
+
+@pytest.mark.asyncio
+async def test_resolve_service_name_returns_none_on_stale_service_id(
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+):
+    """_resolve_service_name returns None when the inventory lookup 404s."""
+    mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
+        side_effect=HTTPNotFoundException(),
+    )
+
+    assert await _resolve_service_name(restore_create, mock_remote_api) is None
 
 
 @pytest.mark.asyncio

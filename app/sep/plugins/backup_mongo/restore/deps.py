@@ -22,6 +22,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -109,12 +110,18 @@ async def _resolve_service_name(
     """
     if not form.service_id:
         return None
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        form.service_id,
-        type=ServiceTypeEnum.MONGODB,
-    )
+    try:
+        service = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            form.service_id,
+            type=ServiceTypeEnum.MONGODB,
+        )
+    except HTTPNotFoundException:
+        # Mongo restores can target a hostname directly, so a stale
+        # ``service_id`` (service deleted between form load and submit) should
+        # not block task creation — fall back to a node-only PMM annotation.
+        return None
     return service.name
 
 
