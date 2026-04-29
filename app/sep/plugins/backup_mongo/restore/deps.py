@@ -20,9 +20,8 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, HTTPException, status
 
-from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -117,20 +116,22 @@ async def _resolve_service_name(
             form.service_id,
             type=ServiceTypeEnum.MONGODB,
         )
-    except HTTPNotFoundException:
-        # Mongo restores can target a hostname directly, so a stale
-        # ``service_id`` (service deleted between form load and submit) should
-        # not block task creation — fall back to a node-only PMM annotation.
+    except HTTPException as exc:
+        # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not
+        # the project's ``HTTPNotFoundException``. Mongo restores can target a
+        # hostname directly, so a stale ``service_id`` (service deleted
+        # between form load and submit) should not block task creation — fall
+        # back to a node-only PMM annotation on a 404; re-raise other errors.
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
         return None
     return service.name
 
 
-async def build_restore_config_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
+def _build_restore_config_task(
+    form: RestoreCreate, service_name: str | None
 ) -> TaskWrite:
-    """Build task payload for restore config operation in PBM format."""
-    service_name = await _resolve_service_name(form, inventory_api)
+    """Build the restore-config TaskWrite using a pre-resolved ``service_name``."""
     restore_config_dict = _build_restore_config_dict(form)
 
     restore_config = RestoreConfig(
@@ -169,12 +170,8 @@ async def build_restore_config_task_payload(
     )
 
 
-async def build_restore_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build task payload for a restore operation in PBM format."""
-    service_name = await _resolve_service_name(form, inventory_api)
+def _build_restore_task(form: RestoreCreate, service_name: str | None) -> TaskWrite:
+    """Build the restore TaskWrite using a pre-resolved ``service_name``."""
     restore_config = RestoreConfig(
         restore=None,  # Restore options are already synced in config task
         backup_source=form.backup_source,
@@ -220,12 +217,8 @@ async def build_restore_task_payload(
     )
 
 
-async def build_pbm_list_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build task payload for pbm list command."""
-    service_name = await _resolve_service_name(form, inventory_api)
+def _build_pbm_list_task(form: RestoreCreate, service_name: str | None) -> TaskWrite:
+    """Build the pbm-list TaskWrite using a pre-resolved ``service_name``."""
     payload_path = Path(__file__).parent / "pbm_list_payload"
     config_dict = (
         {"credentials_path": form.credentials_path} if form.credentials_path else {}
@@ -254,12 +247,10 @@ async def build_pbm_list_task_payload(
     )
 
 
-async def build_pbm_force_resync_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
+def _build_pbm_force_resync_task(
+    form: RestoreCreate, service_name: str | None
 ) -> TaskWrite:
-    """Build task payload for pbm config --force-resync command (physical restores only)."""
-    service_name = await _resolve_service_name(form, inventory_api)
+    """Build the pbm-force-resync TaskWrite using a pre-resolved ``service_name``."""
     payload_path = Path(__file__).parent / "pbm_force_resync_payload"
     config_dict = (
         {"credentials_path": form.credentials_path} if form.credentials_path else {}
@@ -286,6 +277,42 @@ async def build_pbm_force_resync_task_payload(
             "parent": form.task_name,
         },
     )
+
+
+async def build_restore_config_task_payload(
+    form: Annotated[RestoreCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build task payload for restore config operation in PBM format."""
+    service_name = await _resolve_service_name(form, inventory_api)
+    return _build_restore_config_task(form, service_name)
+
+
+async def build_restore_task_payload(
+    form: Annotated[RestoreCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build task payload for a restore operation in PBM format."""
+    service_name = await _resolve_service_name(form, inventory_api)
+    return _build_restore_task(form, service_name)
+
+
+async def build_pbm_list_task_payload(
+    form: Annotated[RestoreCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build task payload for pbm list command."""
+    service_name = await _resolve_service_name(form, inventory_api)
+    return _build_pbm_list_task(form, service_name)
+
+
+async def build_pbm_force_resync_task_payload(
+    form: Annotated[RestoreCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build task payload for pbm config --force-resync command (physical restores only)."""
+    service_name = await _resolve_service_name(form, inventory_api)
+    return _build_pbm_force_resync_task(form, service_name)
 
 
 def _parse_restore_config_options(restore_config: dict[str, Any]) -> dict[str, Any]:
@@ -353,17 +380,19 @@ async def build_restore_tasks(
     """Build restore config, restore task, pbm list task, and optionally force-resync task payloads.
 
     Force-resync task is only created for physical restores.
+
+    The service name is resolved once and reused across the sub-tasks to avoid
+    redundant Inventory API lookups for the same ``service_id``.
     """
-    config_task = await build_restore_config_task_payload(form, inventory_api)
-    restore_task = await build_restore_task_payload(form, inventory_api)
-    pbm_list_task = await build_pbm_list_task_payload(form, inventory_api)
+    service_name = await _resolve_service_name(form, inventory_api)
+    config_task = _build_restore_config_task(form, service_name)
+    restore_task = _build_restore_task(form, service_name)
+    pbm_list_task = _build_pbm_list_task(form, service_name)
 
     # Only create force-resync task for physical restores
     force_resync_task = None
     if form.backup_type == BackupType.PBM_PHYSICAL:
-        force_resync_task = await build_pbm_force_resync_task_payload(
-            form, inventory_api
-        )
+        force_resync_task = _build_pbm_force_resync_task(form, service_name)
 
     return config_task, restore_task, pbm_list_task, force_resync_task
 

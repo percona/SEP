@@ -19,10 +19,9 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 
-from app.core.exceptions import HTTPNotFoundException
 from app.core.utils.pydantic import extract_model_from_instance
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -91,12 +90,17 @@ async def build_restore_task_payload(
                 form.service_id,
                 type=ServiceTypeEnum.MYSQL,
             )
-        except HTTPNotFoundException:
-            # The xtrabackup/binlog forms render ``service_id`` inside the MyLoader
-            # fieldset only, so the value sent for those backup types may be the
-            # ``UNKNOWN_SERVICE_SENTINEL`` placeholder or a stale id whose service
-            # was deleted. A non-MyDumper restore does not need the service to
-            # build the task payload, so fall back to a node-only PMM annotation.
+        except HTTPException as exc:
+            # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404,
+            # not the project's ``HTTPNotFoundException``. The xtrabackup/binlog
+            # forms render ``service_id`` inside the MyLoader fieldset only, so
+            # the value sent for those backup types may be the
+            # ``UNKNOWN_SERVICE_SENTINEL`` placeholder or a stale id whose
+            # service was deleted. A non-MyDumper restore does not need the
+            # service to build the task payload, so fall back to a node-only
+            # PMM annotation on a 404; re-raise any other error.
+            if exc.status_code != status.HTTP_404_NOT_FOUND:
+                raise
             service = None
 
     restore_config = RestoreConfig(

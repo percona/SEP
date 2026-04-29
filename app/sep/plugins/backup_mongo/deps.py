@@ -20,9 +20,8 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, HTTPException, status
 
-from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -179,11 +178,15 @@ async def build_backup_task_payload(
             form.service_id,
             type=ServiceTypeEnum.MONGODB,
         )
-    except HTTPNotFoundException:
-        # PBM tasks run off ``form.hostname`` and the generated config; the
-        # service is only fetched to populate ``_service_name`` for PMM. Fall
-        # back to a node-only annotation if the service was deleted between
-        # form load and form submit.
+    except HTTPException as exc:
+        # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not
+        # the project's ``HTTPNotFoundException``. PBM tasks run off
+        # ``form.hostname`` and the generated config; the service is only
+        # fetched to populate ``_service_name`` for PMM. Fall back to a
+        # node-only annotation if the service was deleted between form load
+        # and form submit, but re-raise any other error.
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
         service = None
 
     pitr = _build_pitr_config(form)
