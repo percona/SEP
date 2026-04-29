@@ -29,6 +29,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
@@ -77,6 +78,21 @@ CONNECTABLE_SERVICE_TYPES = frozenset(
 )
 
 
+def _is_scheduled_sync_enabled() -> bool:
+    """Return whether scheduled inventory sync is enabled.
+
+    The feature requires ``settings.SEP_INTERNAL_TOKEN`` to be set to a
+    non-empty value; ``SecretStr("")`` is truthy regardless of contents, so
+    the inner ``get_secret_value()`` check is required to reject empty
+    deployments.
+
+    :return: True if scheduled sync is enabled.
+    :rtype: bool
+    """
+    token = settings.SEP_INTERNAL_TOKEN
+    return token is not None and bool(token.get_secret_value())
+
+
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def node_list(
     session: SessionDep,
@@ -99,6 +115,7 @@ async def node_list(
         lambda syncer: syncer.can_sync_inventory(),
     )
     context["can_sync"] = bool(context["available_syncers"])
+    context["scheduled_sync_enabled"] = _is_scheduled_sync_enabled()
     context["sync_schedules"] = await tasks_api.get("/inventory-sync/periodic/")
     context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
     return templates.TemplateResponse(
@@ -153,9 +170,15 @@ async def schedule_create(
     :type referer: str
     :return: A 303 redirect back to the originating page.
     :rtype: RedirectResponse
-    :raises HTTPBadRequestException: If the syncer name is unknown or both /
-        neither schedule mode is supplied.
+    :raises HTTPBadRequestException: If ``SEP_INTERNAL_TOKEN`` is not
+        configured, the syncer name is unknown, or both / neither schedule
+        mode is supplied.
     """
+    if not _is_scheduled_sync_enabled():
+        raise HTTPBadRequestException(
+            "SEP_INTERNAL_TOKEN must be configured before attaching an "
+            "inventory-sync schedule.",
+        )
     if schedule.syncer:
         try:
             filter_syncers_by_name(

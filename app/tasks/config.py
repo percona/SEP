@@ -64,9 +64,6 @@ class TasksSettings(BaseYamlAppSettings):
     :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Defaults to 5
         minutes.
     :type SYNC_LOCK_TTL: timedelta
-    :param INVENTORY_SYNC_API_KEY: The PMM API key used for scheduled inventory sync
-        execution. Defaults to None, meaning scheduled sync is not configured.
-    :type INVENTORY_SYNC_API_KEY: str | None
     :param PRE_EXECUTION_CONNECTIVITY_CHECK: The mode for pre-execution connectivity
         checks. Defaults to ``PreExecutionCheckMode.WARN``.
     :type PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode
@@ -88,8 +85,6 @@ class TasksSettings(BaseYamlAppSettings):
         content_security_policy_strict=False
     )
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
-    INVENTORY_SYNC_API_KEY: str | None = None
-
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = PreExecutionCheckMode.WARN
     STALENESS_THRESHOLD_SECONDS: PositiveInt = 3600
     HEALTH_CHECK_INTERVAL: timedelta = timedelta(minutes=15)
