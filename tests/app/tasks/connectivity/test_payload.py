@@ -257,6 +257,7 @@ class TestCheckPostgreSQL:
         from app.tasks.connectivity.payload import check_postgresql
 
         err = mock_psycopg2.OperationalError("FATAL: password authentication failed")
+        err.pgcode = None
         mock_psycopg2.connect.side_effect = err
 
         result = check_postgresql("db-host", 5432)
