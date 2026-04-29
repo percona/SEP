@@ -12,3 +12,17 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Provide shared building blocks for schema-driven plugins."""
+
+from app.sep.plugins.framework.connectivity import (
+    ConnectivityWarning,
+    maybe_record_connectivity_warning,
+    record_connectivity_warning,
+)
+
+__all__ = [
+    "ConnectivityWarning",
+    "maybe_record_connectivity_warning",
+    "record_connectivity_warning",
+]
