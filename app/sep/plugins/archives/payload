@@ -194,8 +194,6 @@ def main() -> None:
                     ret = swap_create_table(src_db, src_tbl, src_tbl_swapped, conf)
                     if ret == 0:
                         # ARCHIVE
-                        # we need to re-set dst_table
-                        conf["dst_tbl"] = src_tbl_swapped
                         ret = pt_archive_runner(
                             pt_archiver_bin, src_db, src_tbl_swapped, conf
                         )
