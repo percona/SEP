@@ -24,11 +24,36 @@ from fastapi import status
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.connectivity import _fetch_connectivity_result, _LATEST_RESULTS
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
-def build_checksum_task(name: str = "checksum-task") -> dict:
-    """Build a fake checksums task payload for route tests."""
+def build_checksum_task(
+    name: str = "checksum-task", *, with_connectivity_meta: bool = False
+) -> dict:
+    """Build a fake checksums task payload for route tests.
+
+    :param name: The task name to embed in the payload.
+    :type name: str
+    :param with_connectivity_meta: If ``True``, populate the
+        ``_connectivity_*`` meta keys consumed by the JSON-side connectivity
+        helper. Defaults to ``False`` to preserve existing test behavior.
+    :type with_connectivity_meta: bool
+    :return: A task payload shaped like the Tasks API response.
+    :rtype: dict
+    """
+    meta = {
+        "command": "pt-table-checksum",
+        "args": "--recursion-method=processlist",
+        "target": "host1",
+        "_service_name": "test-service",
+        "_service_host": "127.0.0.1",
+        "_service_port": 3306,
+    }
+    if with_connectivity_meta:
+        meta["_connectivity_host"] = "127.0.0.1"
+        meta["_connectivity_port"] = 3306
+        meta["_connectivity_service_type"] = "mysql"
     return {
         "id": 1,
         "name": name,
@@ -37,22 +62,22 @@ def build_checksum_task(name: str = "checksum-task") -> dict:
         "is_template": False,
         "protected": False,
         "alert_on_fail": False,
-        "data": {
-            "task": "run-command",
-            "meta": {
-                "command": "pt-table-checksum",
-                "args": "--recursion-method=processlist",
-                "target": "host1",
-                "_service_name": "test-service",
-                "_service_host": "127.0.0.1",
-                "_service_port": 3306,
-            },
-        },
+        "data": {"task": "run-command", "meta": meta},
         "created_at": datetime.now(UTC),
         "updated_at": None,
         "created_by": "user@example.com",
         "last_updated_by": "user@example.com",
     }
+
+
+@pytest.fixture(autouse=True)
+def _clear_connectivity_caches():
+    """Clear the connectivity alru_cache and snapshot between tests."""
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+    yield
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
 
 
 def build_checksum_write_body(
@@ -610,6 +635,131 @@ class TestChecksumsCreateEndpoint:
         _, call_kwargs = mock_task_api_dep.post.call_args
         args_str = call_kwargs["json"]["data"]["meta"]["args"]
         assert "dsn=" not in args_str
+
+    def test_checksums_create_with_connectivity_check_failure_populates_warning(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Populate ``connectivity_warning`` when the connectivity check fails."""
+        task = build_checksum_task(with_connectivity_meta=True)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.post = AsyncMock(
+            side_effect=[task, {"success": False, "error": "connection refused"}]
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.post("/api/plugins/checksums/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["connectivity_warning"] == {
+            "target": "host1",
+            "service_type": "mysql",
+            "message": "connection refused",
+        }
+        assert _LATEST_RESULTS[("host1", "mysql")] is False
+
+    def test_checksums_create_with_connectivity_check_success_warning_is_null(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Serialize ``connectivity_warning`` as ``null`` on success."""
+        task = build_checksum_task(with_connectivity_meta=True)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.post = AsyncMock(
+            side_effect=[task, {"success": True, "error": None}]
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.post("/api/plugins/checksums/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert "connectivity_warning" in data
+        assert data["connectivity_warning"] is None
+        assert _LATEST_RESULTS[("host1", "mysql")] is True
+
+    def test_checksums_create_with_meta_missing_connectivity_keys_warning_is_null(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Serialize ``connectivity_warning`` as ``null`` when meta lacks the keys."""
+        task = build_checksum_task()
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.post = AsyncMock(return_value=task)
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.post("/api/plugins/checksums/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["connectivity_warning"] is None
+        assert mock_task_api_dep.post.await_count == 1
+        assert _LATEST_RESULTS == {}
+
+    def test_checksums_create_opt_out_skips_connectivity_check(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Skip the connectivity check when ``check_connectivity=false``."""
+        task = build_checksum_task(with_connectivity_meta=True)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.post = AsyncMock(return_value=task)
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.post(
+            "/api/plugins/checksums/",
+            json=body,
+            params={"check_connectivity": "false"},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["connectivity_warning"] is None
+        assert mock_task_api_dep.post.await_count == 1
+        assert _LATEST_RESULTS == {}
+
+    def test_checksums_create_opt_in_explicit_true_runs_check(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Run the check when ``check_connectivity=true`` is explicit."""
+        task = build_checksum_task(with_connectivity_meta=True)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.post = AsyncMock(
+            side_effect=[task, {"success": True, "error": None}]
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.post(
+            "/api/plugins/checksums/",
+            json=body,
+            params={"check_connectivity": "true"},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["connectivity_warning"] is None
+        assert _LATEST_RESULTS[("host1", "mysql")] is True
+
+    def test_checksums_create_invalid_check_connectivity_returns_422(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Reject unparseable ``check_connectivity`` values with HTTP 422."""
+        body = build_checksum_write_body()
+        response = test_client.post(
+            "/api/plugins/checksums/",
+            json=body,
+            params={"check_connectivity": "garbage"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.post.assert_not_called()
 
 
 class TestChecksumsDeleteEndpoint:

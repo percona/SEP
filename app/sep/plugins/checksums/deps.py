@@ -45,6 +45,7 @@ from app.sep.plugins.checksums.models import (
     ChecksumTaskResponse,
     ChecksumTaskWrite,
 )
+from app.sep.plugins.framework import ConnectivityWarning
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -62,7 +63,9 @@ def extract_databases_and_tables_from_extra_args(form: ChecksumsCreate) -> list[
     """Extract --databases and --tables from extra_args and add to form fields.
 
     :param form: The form data for the Checksums creation.
+    :type form: ChecksumsCreate
     :return: List of remaining arguments (excluding --databases and --tables).
+    :rtype: list[str]
     """
     if not form.extra_args:
         return []
@@ -87,7 +90,9 @@ async def process_schema_and_table_ids(
     """Process schema_id and table_id to set databases and tables form fields.
 
     :param form: The form data for the Checksums creation.
+    :type form: ChecksumsCreate
     :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
     """
     if not form.schema_id or len(form.schema_id) == 0:
         return
@@ -294,7 +299,7 @@ async def build_checksums_task_payload(
     :type form: ChecksumsCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `TaskWrite` object containing all the necessary
+    :return: A fully constructed ``TaskWrite`` object containing all the necessary
         commands and parameters for the Checksums task execution.
     :rtype: TaskWrite
     """
@@ -454,6 +459,8 @@ async def get_checksums_task_status(
 def build_checksums_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
+    *,
+    connectivity_warning: ConnectivityWarning | None = None,
 ) -> ChecksumTaskResponse:
     """Build a checksum task response object for the JSON API.
 
@@ -461,6 +468,9 @@ def build_checksums_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param connectivity_warning: A warning to surface when a connectivity
+        check failed during the task creation flow.
+    :type connectivity_warning: ConnectivityWarning | None
     :return: A validated checksum task API response object.
     :rtype: ChecksumTaskResponse
     """
@@ -468,6 +478,7 @@ def build_checksums_api_task_response(
         **task.model_dump(),
         service_type=ServiceTypeEnum.MYSQL,
         status=status,
+        connectivity_warning=connectivity_warning,
     )
 
 
