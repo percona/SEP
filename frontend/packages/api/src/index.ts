@@ -69,4 +69,7 @@ export {
   usePluginTasks,
   usePluginTask,
   useCreatePluginTask,
+  useAlertConfig,
+  ALERT_CONFIG_QUERY_KEY,
 } from './hooks';
+export type { AlertConfig } from './hooks';

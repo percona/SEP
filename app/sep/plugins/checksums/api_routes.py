@@ -22,8 +22,9 @@ route for safety.
 """
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
 from app.inventory.models import ServiceTypeEnum
@@ -38,6 +39,7 @@ from app.sep.plugins.checksums.deps import (
 )
 from app.sep.plugins.checksums.models import ChecksumTaskResponse, ChecksumTaskWrite
 from app.sep.plugins.checksums.schema import checksums_schema
+from app.sep.plugins.framework import maybe_record_connectivity_warning
 from app.sep.plugins.framework.api import schema_endpoint
 from app.tasks.models import Task, TaskHistoryStatusEnum
 
@@ -81,13 +83,33 @@ async def checksums_api_create(
     body: ChecksumTaskWrite,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
+    *,
+    check_connectivity: Annotated[bool, Query()] = True,
 ) -> ChecksumTaskResponse:
-    """Create a checksum task from a JSON payload request body."""
+    """Create a checksum task from a JSON payload request body.
+
+    :param check_connectivity: Whether to verify the target database is
+        reachable after task creation. Defaults to ``True`` so callers that
+        omit the parameter still get a connectivity round-trip; pass
+        ``check_connectivity=false`` to opt out. Note that the form flow
+        defaults to ``False`` (HTML checkbox semantics — an unchecked box
+        submits no field); this asymmetry is intentional.
+    :type check_connectivity: bool
+    """
     logger.debug("Create checksums task (JSON path): %s", body.task_name)
     task_write = await build_checksum_task(body, inventory_api)
     created = await tasks_api.post("/", json=task_write.model_dump())
     task = Task.model_validate(created)
-    return build_checksums_api_task_response(task, status=None)
+    connectivity_warning = await maybe_record_connectivity_warning(
+        tasks_api,
+        task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
+    )
+    return build_checksums_api_task_response(
+        task,
+        status=None,
+        connectivity_warning=connectivity_warning,
+    )
 
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
