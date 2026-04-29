@@ -13,13 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the Support Snippets plugin."""
+"""Define routes for the Support Snippets plugin.
+
+These Jinja2 routes are deprecated under the API-First Migration epic
+(SEP-948). The JSON API equivalents live under ``/api/plugins/snippets/``
+and the React UI consumes them via ``frontend/packages/plugins/snippets``.
+Every response from this router carries the RFC 8594 ``Deprecation: true``
+header and emits a WARNING on hit; the routes remain mounted so users can
+fall back to the legacy UI for capabilities (chaining, scheduling,
+alerting) the React UI does not yet expose.
+"""
 
 import logging
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import col
 
@@ -37,6 +46,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.middleware import messages
+from app.sep.plugins.framework.deprecation import mark_jinja2_route_deprecated
 from app.sep.plugins.snippets.deps import (
     ApprovedSnippet,
     ExecutableSnippet,
@@ -51,7 +61,7 @@ from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(mark_jinja2_route_deprecated)])
 templates = sep_settings.TEMPLATES
 
 

@@ -45,7 +45,10 @@ from app.sep.plugins.dipper.constants import (
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
 from app.sep.plugins.dipper.models import DipperScript
-from app.sep.routes.artifacts import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_DIPPER
+from app.sep.routes.artifact_constants import (
+    ARTIFACT_DOWNLOAD_SALT,
+    ARTIFACT_TYPE_DIPPER,
+)
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippetArgs, SnippetExecutionMeta
 
@@ -117,7 +120,7 @@ async def get_dipper_script_with_meta(script: DipperScriptDep) -> DipperScript:
 
     This dependency ensures that the script's metadata is retrieved and up to date.
 
-    :return The DipperScript instance with updated metadata.
+    :return: The DipperScript instance with updated metadata.
     :rtype: DipperScript
     """
     await script.update_meta()
