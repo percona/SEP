@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework import ConnectivityWarning
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -201,6 +202,10 @@ class ChecksumTaskResponse(ChecksumTaskBase):
     :type created_by: str | None
     :param last_updated_by: The user who last modified the task record.
     :type last_updated_by: str | None
+    :param connectivity_warning: A warning surfaced when the post-creation
+        database connectivity check fails. ``None`` when the check passes,
+        is opted out, or the task meta lacks the connectivity keys.
+    :type connectivity_warning: ConnectivityWarning | None
     """
 
     id: int | None = None
@@ -212,3 +217,4 @@ class ChecksumTaskResponse(ChecksumTaskBase):
     updated_at: datetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
+    connectivity_warning: ConnectivityWarning | None = None
