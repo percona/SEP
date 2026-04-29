@@ -145,7 +145,8 @@ async def archives_detail(
         task_data["dest_file"] = dest_file
     if dest_host:
         task_data["dest_host"] = dest_host
-        task_data["dest_port"] = dest_port
+        if dest_port is not None:
+            task_data["dest_port"] = dest_port
     if dest_db:
         task_data["dest_db"] = dest_db
     task_data["source_host"] = all_server.get("SOURCE_HOST")

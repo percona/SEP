@@ -158,9 +158,9 @@ async def _resolve_destination_host_and_db(
         )
         dest_data["dest_host"] = dest_service.node.address
         dest_data["dest_port"] = dest_service.port or DEFAULT_MYSQL_PORT
-    elif form.dest_host:
-        dest_data["dest_host"] = form.dest_host
-        if form.dest_port:
+    elif dest_host := (form.dest_host or "").strip():
+        dest_data["dest_host"] = dest_host
+        if form.dest_port is not None:
             dest_data["dest_port"] = form.dest_port
 
     if form.dest_db_id is not None:
@@ -168,6 +168,7 @@ async def _resolve_destination_host_and_db(
             inventory_api,
             SyncInventoryEntityTypeEnum.SCHEMA,
             form.dest_db_id,
+            service_id=form.dest_service_id,
         )
         dest_data["dest_db"] = dest_schema.name
     elif dest_db := form.dest_db_name.rstrip():
@@ -307,6 +308,7 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     dest_table = purge_item.get("DEST_TABLE")
     source_query = purge_item.get("SOURCE_QUERY")
     dest_file = purge_item.get("DEST_FILE")
+    dest_db = purge_item.get("DEST_DB")
 
     result = {
         "hostname": meta["target"],
@@ -316,8 +318,12 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
 
     if source_db and source_table:
         result["source_table"] = f"{source_db}.{source_table}"
-    if source_db and dest_table:
-        result["dest_table"] = f"{source_db}.{dest_table}"
+    if dest_table:
+        display_db = dest_db if dest_db else source_db
+        if display_db:
+            result["dest_table"] = f"{display_db}.{dest_table}"
+        else:
+            result["dest_table"] = dest_table
     if source_query:
         result["source_query"] = source_query
     if dest_file:

@@ -141,7 +141,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
 
     @field_validator("dest_host", "dest_db_name")
     @classmethod
-    def validate_no_dsn_delimiters(cls, v: str) -> str:
+    def validate_no_dsn_delimiters(cls, v: str | None) -> str | None:
         """Validate that destination fields do not contain DSN delimiters.
 
         Prevents pt-archiver DSN injection by rejecting commas and equals signs
@@ -149,9 +149,9 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
         ``dest_host`` and ``dest_db_name`` fields.
 
         :param v: The field value to validate.
-        :type v: str
+        :type v: str | None
         :return: The validated value if no delimiters are present.
-        :rtype: str
+        :rtype: str | None
         :raises ValueError: If the value contains ``,`` or ``=`` characters.
         """
         if v and ("," in v or "=" in v):
@@ -226,7 +226,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
             SWAP_ARCHIVE_DROP (swap_drop=2).
         """
         has_dest_service = self.dest_service_id is not None
-        has_dest_host = self.dest_host is not None
+        has_dest_host = bool(self.dest_host and self.dest_host.strip())
         has_dest_db_id = self.dest_db_id is not None
         has_dest_db_name = bool(self.dest_db_name.rstrip())
 

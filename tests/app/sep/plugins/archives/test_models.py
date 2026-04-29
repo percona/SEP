@@ -287,7 +287,7 @@ class TestArchivesCreateDestinationValidation:
         )
         assert form.dest_port == MAX_VALID_PORT
 
-    def test_dest_host_rejects_equals_in_db_name(self):
+    def test_dest_db_name_rejects_equals(self):
         """dest_db_name cannot contain equals signs (DSN delimiter)."""
         with pytest.raises(ValidationError) as exc_info:
             ArchivesCreate(
@@ -358,8 +358,8 @@ class TestArchivesCreateDestinationValidation:
 
     def test_dest_host_whitespace_only_treated_as_none(self):
         """dest_host with only whitespace should not trigger validation errors."""
-        # dest_host is str | None, so whitespace-only string is not rejected by type.
-        # However, in runtime resolution, it would be treated as falsy.
+        # The model stores the raw whitespace-only value, but the validator and
+        # resolver both strip before acting on it, so it is treated as absent.
         form = ArchivesCreate(
             alias="test",
             hostname="host",
@@ -372,3 +372,18 @@ class TestArchivesCreateDestinationValidation:
             dest_host="   ",
         )
         assert form.dest_host == "   "
+
+    def test_dest_host_none_and_dest_db_name_empty_is_valid(self):
+        """dest_host=None and dest_db_name='' (defaults) should not raise ValidationError."""
+        form = ArchivesCreate(
+            alias="test",
+            hostname="host",
+            service_id=1,
+            source_db_id=1,
+            source_table_id=1,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=2,
+        )
+        assert form.dest_host is None
+        assert form.dest_db_name == ""
