@@ -15,14 +15,19 @@
 
 """Define tests for the app.sep.plugins.archives.deps module."""
 
-from datetime import date
 from unittest.mock import AsyncMock
 
 import pytest
 import yaml
 
+from app.core.exceptions import HTTPNotFoundException
+from app.inventory.constants import DEFAULT_MYSQL_PORT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedTable
 from app.sep.plugins.archives.deps import (
+    _resolve_destination_host_and_db,
+    _resolve_destination_tables,
+    _resolve_source_tables,
     build_archives_task_payload,
     get_archives_task,
     get_archives_task_info,
@@ -34,6 +39,7 @@ from app.sep.plugins.archives.models import (
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import (
+    CreatedServiceFactory,
     CreatedTableFactory,
     MOCK_CREATED_SCHEMA_ID,
     MOCK_CREATED_SERVICE_ID,
@@ -41,6 +47,8 @@ from tests.app.factories import (
     MOCK_DESTINATION_TABLE_ID,
     TaskFactory,
 )
+
+EXPECTED_API_CALLS_FOR_BOTH_IDS = 2
 
 
 @pytest.fixture
@@ -80,7 +88,7 @@ def created_task() -> Task:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("created_archives", "dest_table_id"),
+    ("created_archives", "dest_table_id", "expect_dest_host"),
     [
         (
             ArchivesCreate(
@@ -94,6 +102,7 @@ def created_task() -> Task:
                 dest_file=None,
             ),
             None,
+            False,
         ),
         (
             ArchivesCreate(
@@ -107,6 +116,7 @@ def created_task() -> Task:
                 dest_table_id=MOCK_DESTINATION_TABLE_ID,
             ),
             MOCK_DESTINATION_TABLE_ID,
+            False,
         ),
         (
             ArchivesCreate(
@@ -121,6 +131,7 @@ def created_task() -> Task:
                 disable_bulk_insert=1,
             ),
             MOCK_DESTINATION_TABLE_ID,
+            False,
         ),
         (
             ArchivesCreate(
@@ -135,20 +146,40 @@ def created_task() -> Task:
                 disable_bulk_insert=None,
             ),
             MOCK_DESTINATION_TABLE_ID,
+            False,
         ),
         (
             ArchivesCreate(
-                alias="SWAP_ARCHIVE_DROP_WITH_DATE_SUFFIX",
+                alias="PURGE_WITH_DEST_SERVICE",
                 hostname="localhost",
                 service_id=MOCK_CREATED_SERVICE_ID,
                 source_db_id=MOCK_CREATED_SCHEMA_ID,
                 source_table_id=MOCK_CREATED_TABLE_ID,
-                swap_drop=SwapDropEnum.SWAP_ARCHIVE_DROP,
-                where="id > 100",
-                swp_table_suffix=date(2026, 4, 29),
+                swap_drop=SwapDropEnum.PURGE_ONLY,
+                where="id > 10",
                 dest_table_id=MOCK_DESTINATION_TABLE_ID,
+                dest_service_id=MOCK_CREATED_SERVICE_ID,
+                dest_db_id=MOCK_CREATED_SCHEMA_ID,
             ),
             MOCK_DESTINATION_TABLE_ID,
+            True,
+        ),
+        (
+            ArchivesCreate(
+                alias="PURGE_WITH_MANUAL_DEST",
+                hostname="localhost",
+                service_id=MOCK_CREATED_SERVICE_ID,
+                source_db_id=MOCK_CREATED_SCHEMA_ID,
+                source_table_id=MOCK_CREATED_TABLE_ID,
+                swap_drop=SwapDropEnum.PURGE_ONLY,
+                where="id > 10",
+                dest_table_id=MOCK_DESTINATION_TABLE_ID,
+                dest_host="archive.host",
+                dest_port=3307,
+                dest_db_name="archive_db",
+            ),
+            MOCK_DESTINATION_TABLE_ID,
+            True,
         ),
     ],
 )
@@ -159,17 +190,23 @@ async def test_build_archives_task_payload(
     created_table,
     dest_table,
     dest_table_id,
+    expect_dest_host,
     mock_remote_api,
 ):
     """Test for building the archive task payload from form."""
-    mock_remote_api.get = AsyncMock(
-        side_effect=[
-            created_service.model_dump(),
-            created_schema.model_dump(),
-            created_table.model_dump(),
-            dest_table.model_dump() if dest_table_id else None,
-        ]
-    )
+    api_responses = [
+        created_service.model_dump(),
+        created_schema.model_dump(),
+        created_table.model_dump(),
+    ]
+    if dest_table_id:
+        api_responses.append(dest_table.model_dump())
+
+    if created_archives.dest_service_id is not None:
+        api_responses.append(created_service.model_dump())
+        api_responses.append(created_schema.model_dump())
+
+    mock_remote_api.get = AsyncMock(side_effect=api_responses)
     generated_task = await build_archives_task_payload(
         created_archives, mock_remote_api
     )
@@ -184,6 +221,8 @@ async def test_build_archives_task_payload(
     assert "payload" in generated_task.data
     assert "file://" in generated_task.data["payload"]
 
+    assert generated_task.data["meta"]["_service_name"] == created_service.name
+
     purge_config_yaml = generated_task.data["meta"]["config"]
     assert created_archives.alias in purge_config_yaml
     assert created_archives.hostname in purge_config_yaml
@@ -196,6 +235,18 @@ async def test_build_archives_task_payload(
     else:
         assert "DISABLE_BULK_INSERT:" not in purge_config_yaml
 
+    if expect_dest_host:
+        if created_archives.dest_service_id is not None:
+            assert "DEST_HOST:" in purge_config_yaml
+            assert "DEST_DB:" in purge_config_yaml
+        elif created_archives.dest_host:
+            assert f"DEST_HOST: {created_archives.dest_host}" in purge_config_yaml
+            assert f"DEST_PORT: {created_archives.dest_port}" in purge_config_yaml
+            assert f"DEST_DB: {created_archives.dest_db_name}" in purge_config_yaml
+    else:
+        assert "DEST_HOST:" not in purge_config_yaml
+        assert "DEST_PORT:" not in purge_config_yaml
+        assert "DEST_DB:" not in purge_config_yaml
     if created_archives.swap_drop == SwapDropEnum.SWAP_ARCHIVE_DROP:
         loaded = yaml.safe_load(purge_config_yaml)
         suffix = loaded["PURGE_LIST"][0]["SWP_TABLE_SUFFIX"]
@@ -291,3 +342,496 @@ class TestGetArchivesTaskInfo:
         result = get_archives_task_info(task)
         assert "source_table" not in result
         assert result["hostname"] == "mock_target"
+
+
+def _make_form_with_source_ids(**overrides) -> ArchivesCreate:
+    """Create form using source_db_id and source_table_id."""
+    defaults = {
+        "alias": "test",
+        "hostname": "host",
+        "service_id": MOCK_CREATED_SERVICE_ID,
+        "source_db_id": MOCK_CREATED_SCHEMA_ID,
+        "source_table_id": MOCK_CREATED_TABLE_ID,
+        "source_db_name": "",
+        "source_table_name": "",
+        "swap_drop": SwapDropEnum.PURGE_ONLY,
+        "where": "id > 1",
+        "dest_table_id": MOCK_DESTINATION_TABLE_ID,
+        "dest_table_name": "",
+        "dest_file": None,
+        "dest_db_name": "",
+    }
+    return ArchivesCreate(**{**defaults, **overrides})
+
+
+def _make_form_with_source_names(**overrides) -> ArchivesCreate:
+    """Create form using source_db_name and source_table_name."""
+    defaults = {
+        "alias": "test",
+        "hostname": "host",
+        "service_id": MOCK_CREATED_SERVICE_ID,
+        "source_db_id": None,
+        "source_table_id": None,
+        "source_db_name": "default_db",
+        "source_table_name": "default_table",
+        "swap_drop": SwapDropEnum.PURGE_ONLY,
+        "where": "id > 1",
+        "dest_table_id": MOCK_DESTINATION_TABLE_ID,
+        "dest_table_name": "",
+        "dest_file": None,
+        "dest_db_name": "",
+    }
+    return ArchivesCreate(**{**defaults, **overrides})
+
+
+def _make_form_with_source_query(**overrides) -> ArchivesCreate:
+    """Create form using source_query (no source ID or name fields)."""
+    defaults = {
+        "alias": "test",
+        "hostname": "host",
+        "service_id": MOCK_CREATED_SERVICE_ID,
+        "source_db_id": None,
+        "source_table_id": None,
+        "source_db_name": "",
+        "source_table_name": "",
+        "source_query": "SELECT id FROM foo WHERE id > 1",
+        "swap_drop": SwapDropEnum.PURGE_ONLY,
+        "where": "id > 1",
+        "dest_table_id": MOCK_DESTINATION_TABLE_ID,
+        "dest_table_name": "",
+        "dest_file": None,
+        "dest_db_name": "",
+    }
+    return ArchivesCreate(**{**defaults, **overrides})
+
+
+class TestResolveSourceTables:
+    """Test _resolve_source_tables across all branches and edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_both_ids_resolves_schema_and_table(
+        self, created_schema, created_table, mock_remote_api
+    ):
+        """Both source_db_id and source_table_id set: fetch schema and table."""
+        mock_remote_api.get = AsyncMock(
+            side_effect=[created_schema.model_dump(), created_table.model_dump()]
+        )
+        form = _make_form_with_source_ids()
+
+        source_data, schema = await _resolve_source_tables(
+            form, mock_remote_api, MOCK_CREATED_SERVICE_ID
+        )
+
+        assert source_data == {
+            "source_db": created_schema.name,
+            "source_table": created_table.name,
+        }
+        assert schema == created_schema
+        assert mock_remote_api.get.call_count == EXPECTED_API_CALLS_FOR_BOTH_IDS
+
+    @pytest.mark.asyncio
+    async def test_manual_names_both_set(self, mock_remote_api):
+        """Manual source_db_name and source_table_name: early return, no API calls."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_names(
+            source_db_name="mydb", source_table_name="mytable"
+        )
+
+        source_data, schema = await _resolve_source_tables(
+            form, mock_remote_api, MOCK_CREATED_SERVICE_ID
+        )
+
+        assert source_data == {"source_db": "mydb", "source_table": "mytable"}
+        assert schema is None
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schema_id_not_found_propagates_exception(self, mock_remote_api):
+        """Schema fetch raises HTTPNotFoundException: propagates unchanged."""
+        mock_remote_api.get = AsyncMock(side_effect=HTTPNotFoundException())
+        form = _make_form_with_source_ids()
+
+        with pytest.raises(HTTPNotFoundException):
+            await _resolve_source_tables(form, mock_remote_api, MOCK_CREATED_SERVICE_ID)
+
+    @pytest.mark.asyncio
+    async def test_table_id_not_found_propagates_exception(
+        self, created_schema, mock_remote_api
+    ):
+        """Table fetch raises HTTPNotFoundException after schema succeeds."""
+        mock_remote_api.get = AsyncMock(
+            side_effect=[created_schema.model_dump(), HTTPNotFoundException()]
+        )
+        form = _make_form_with_source_ids()
+
+        with pytest.raises(HTTPNotFoundException):
+            await _resolve_source_tables(form, mock_remote_api, MOCK_CREATED_SERVICE_ID)
+
+    @pytest.mark.asyncio
+    async def test_source_query_path_returns_empty(self, mock_remote_api):
+        """source_query form: both source branches skipped, returns ({}, None) with no API calls."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_query()
+
+        source_data, schema = await _resolve_source_tables(
+            form, mock_remote_api, MOCK_CREATED_SERVICE_ID
+        )
+
+        assert source_data == {}
+        assert schema is None
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schema_service_id_mismatch_raises_error(
+        self, created_schema, mock_remote_api
+    ):
+        """Schema returned with wrong service_id raises ValueError (post-fetch assertion)."""
+        created_schema.service_id = 999  # does not match MOCK_CREATED_SERVICE_ID
+        mock_remote_api.get = AsyncMock(side_effect=[created_schema.model_dump()])
+        form = _make_form_with_source_ids()
+
+        with pytest.raises(ValueError, match="service_id"):
+            await _resolve_source_tables(form, mock_remote_api, MOCK_CREATED_SERVICE_ID)
+
+
+class TestResolveDestinationTables:
+    """Test _resolve_destination_tables across all branches and edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_dest_table_id_resolves_table(self, dest_table, mock_remote_api):
+        """dest_table_id set: fetch and return table name."""
+        mock_remote_api.get = AsyncMock(side_effect=[dest_table.model_dump()])
+        form = _make_form_with_source_ids(dest_table_id=MOCK_DESTINATION_TABLE_ID)
+
+        result = await _resolve_destination_tables(form, mock_remote_api)
+
+        assert result == {"dest_table": dest_table.name}
+        assert mock_remote_api.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_manual_dest_table_name(self, mock_remote_api):
+        """dest_table_id=None, manual dest_table_name: no API calls."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_table_id=None, dest_table_name="archive_tbl"
+        )
+
+        result = await _resolve_destination_tables(form, mock_remote_api)
+
+        assert result == {"dest_table": "archive_tbl"}
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dest_file_when_no_table(self, mock_remote_api):
+        """No table ID/name, dest_file set: return file path."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_table_id=None, dest_table_name="", dest_file="/tmp/out.csv"
+        )
+
+        result = await _resolve_destination_tables(form, mock_remote_api)
+
+        assert result == {"dest_file": "/tmp/out.csv"}
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_table_name_falls_through_to_dest_file(
+        self, mock_remote_api
+    ):
+        """Whitespace dest_table_name rstrips to empty, falls to dest_file."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_table_id=None,
+            dest_table_name="   ",
+            dest_file="/tmp/archive.csv",
+        )
+
+        result = await _resolve_destination_tables(form, mock_remote_api)
+
+        assert result == {"dest_file": "/tmp/archive.csv"}
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_all_absent_returns_empty(self, mock_remote_api):
+        """All dest table fields absent (swap_drop=SWAP_DROP path): empty dict."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_table_id=None,
+            dest_table_name="",
+            dest_file=None,
+            swap_drop=SwapDropEnum.SWAP_DROP,
+            where=None,
+            swp_table_suffix=None,
+        )
+
+        result = await _resolve_destination_tables(form, mock_remote_api)
+
+        assert result == {}
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dest_table_id_not_found_propagates_exception(self, mock_remote_api):
+        """dest_table_id fetch raises HTTPNotFoundException: propagates."""
+        mock_remote_api.get = AsyncMock(side_effect=HTTPNotFoundException())
+        form = _make_form_with_source_ids(dest_table_id=MOCK_DESTINATION_TABLE_ID)
+
+        with pytest.raises(HTTPNotFoundException):
+            await _resolve_destination_tables(form, mock_remote_api)
+
+
+class TestResolveDestinationHostAndDb:
+    """Test _resolve_destination_host_and_db across all branches and edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_dest_service_id_resolves_host_and_port(
+        self, created_service, mock_remote_api
+    ):
+        """dest_service_id set: fetch and return host and port."""
+        created_service.port = 3307
+        mock_remote_api.get = AsyncMock(side_effect=[created_service.model_dump()])
+        form = _make_form_with_source_ids(
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_host=None,
+            dest_port=None,
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {
+            "dest_host": created_service.node.address,
+            "dest_port": 3307,
+        }
+        assert mock_remote_api.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_dest_service_port_none_uses_default(
+        self, created_node, mock_remote_api
+    ):
+        """dest_service.port=None: use DEFAULT_MYSQL_PORT fallback."""
+        dest_service = CreatedServiceFactory.build(
+            node=created_node, type=ServiceTypeEnum.MYSQL, port=None
+        )
+        mock_remote_api.get = AsyncMock(side_effect=[dest_service.model_dump()])
+        form = _make_form_with_source_ids(
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_host=None,
+            dest_port=None,
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {
+            "dest_host": dest_service.node.address,
+            "dest_port": DEFAULT_MYSQL_PORT,
+        }
+
+    @pytest.mark.asyncio
+    async def test_manual_host_with_port(self, mock_remote_api):
+        """Manual dest_host and dest_port: no API calls."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None, dest_host="archive.host", dest_port=3307
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {"dest_host": "archive.host", "dest_port": 3307}
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_manual_host_without_port(self, mock_remote_api):
+        """Manual dest_host, no dest_port: return host only, no dest_port key."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None, dest_host="archive.host", dest_port=None
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {"dest_host": "archive.host"}
+        assert "dest_port" not in result
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_host_fields_set(self, mock_remote_api):
+        """No host fields set: empty dict from host section."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None, dest_host=None, dest_port=None, dest_db_name=""
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {}
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dest_service_and_db_id_fully_resolved(
+        self, created_service, created_schema, mock_remote_api
+    ):
+        """dest_service_id + dest_db_id: fetch both, return all three keys."""
+        created_service.port = 3307
+        mock_remote_api.get = AsyncMock(
+            side_effect=[created_service.model_dump(), created_schema.model_dump()]
+        )
+        form = _make_form_with_source_ids(
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_db_id=MOCK_CREATED_SCHEMA_ID,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {
+            "dest_host": created_service.node.address,
+            "dest_port": 3307,
+            "dest_db": created_schema.name,
+        }
+        assert mock_remote_api.get.call_count == EXPECTED_API_CALLS_FOR_BOTH_IDS
+
+    @pytest.mark.asyncio
+    async def test_dest_service_and_db_name(self, created_service, mock_remote_api):
+        """dest_service_id + dest_db_name (no ID): fetch service, use manual db name."""
+        created_service.port = 3307
+        mock_remote_api.get = AsyncMock(side_effect=[created_service.model_dump()])
+        form = _make_form_with_source_ids(
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_db_id=None,
+            dest_db_name="archive_db",
+            dest_host=None,
+            dest_port=None,
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {
+            "dest_host": created_service.node.address,
+            "dest_port": 3307,
+            "dest_db": "archive_db",
+        }
+        assert mock_remote_api.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_manual_host_and_db_name(self, mock_remote_api):
+        """Manual host and db_name (no IDs): no API calls."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None,
+            dest_host="archive.host",
+            dest_port=3307,
+            dest_db_id=None,
+            dest_db_name="archive_db",
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {
+            "dest_host": "archive.host",
+            "dest_port": 3307,
+            "dest_db": "archive_db",
+        }
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_manual_db_name_only(self, mock_remote_api):
+        """Manual dest_db_name only (no host, no ID): no API calls."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_id=None,
+            dest_db_name="mydb",
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {"dest_db": "mydb"}
+        assert "dest_host" not in result
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_db_name_returns_no_db_key(self, mock_remote_api):
+        """dest_db_name with whitespace rstrips to empty: no dest_db key."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_id=None,
+            dest_db_name="   ",
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {}
+        assert "dest_db" not in result
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_all_none_returns_empty(self, mock_remote_api):
+        """All dest host and db fields None/blank: empty dict."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_id=None,
+            dest_db_name="",
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {}
+        mock_remote_api.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dest_service_not_found_propagates_exception(self, mock_remote_api):
+        """Service fetch raises HTTPNotFoundException: propagates."""
+        mock_remote_api.get = AsyncMock(side_effect=HTTPNotFoundException())
+        form = _make_form_with_source_ids(
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_host=None,
+            dest_port=None,
+        )
+
+        with pytest.raises(HTTPNotFoundException):
+            await _resolve_destination_host_and_db(form, mock_remote_api)
+
+    @pytest.mark.asyncio
+    async def test_dest_schema_not_found_propagates_exception(
+        self, created_service, mock_remote_api
+    ):
+        """Service fetch succeeds, schema fetch raises HTTPNotFoundException."""
+        mock_remote_api.get = AsyncMock(
+            side_effect=[created_service.model_dump(), HTTPNotFoundException()]
+        )
+        form = _make_form_with_source_ids(
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_db_id=MOCK_CREATED_SCHEMA_ID,
+            dest_host=None,
+            dest_port=None,
+        )
+
+        with pytest.raises(HTTPNotFoundException):
+            await _resolve_destination_host_and_db(form, mock_remote_api)
+
+    @pytest.mark.asyncio
+    async def test_whitespace_dest_host_returns_empty(self, mock_remote_api):
+        """Whitespace-only dest_host strips to empty: no dest_host key returned."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None,
+            dest_host="   ",
+            dest_port=None,
+            dest_db_id=None,
+            dest_db_name="",
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {}
+        assert "dest_host" not in result
+        mock_remote_api.get.assert_not_called()
