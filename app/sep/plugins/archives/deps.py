@@ -253,6 +253,7 @@ async def build_archives_task_payload(
                 ),
                 "target": form.hostname,
                 "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
+                "_service_name": service.name,
                 CONNECTIVITY_META_HOST_KEY: service.node.address,
                 CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -6,6 +6,12 @@ import type { ReactNode } from 'react';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import { buildValidationRules, coerceFormValues } from './utils/validationMapper';
 import type { FormSection } from './types';
+
+vi.mock('@sep/api', () => ({
+  apiClient: { get: vi.fn(), post: vi.fn() },
+}));
+import { apiClient } from '@sep/api';
+const mockedApi = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function renderWithProviders(ui: ReactNode) {
   const queryClient = new QueryClient({
@@ -78,6 +84,27 @@ describe('coerceFormValues', () => {
     ]);
     expect(out).toEqual({ title: 'hi', flag: true });
   });
+
+  it('unwraps option objects from service/schema/table fields to scalar ids', () => {
+    const out = coerceFormValues(
+      {
+        serviceId: { id: 7, name: 'svc', type: 'mysql' },
+        schemaName: { id: 11, name: 'app_prod' },
+        tbl: { id: 101, name: 'users' },
+        empty: '',
+      },
+      [
+        { type: 'service', name: 'serviceId', label: 'Service', serviceTypes: [] },
+        { type: 'schema', name: 'schemaName', label: 'Schema', dependsOn: 'serviceId' },
+        { type: 'table', name: 'tbl', label: 'Table', dependsOn: 'schemaName' },
+        { type: 'service', name: 'empty', label: 'Empty', serviceTypes: [] },
+      ],
+    );
+    expect(out.serviceId).toBe(7);
+    expect(out.schemaName).toBe(11);
+    expect(out.tbl).toBe(101);
+    expect(out.empty).toBeUndefined();
+  });
 });
 
 describe('SchemaFormRenderer — field rendering', () => {
@@ -133,7 +160,9 @@ describe('SchemaFormRenderer — field rendering', () => {
     expect(screen.getByLabelText(/When/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Config/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Upload/)).toBeInTheDocument();
-    expect(document.getElementById('mui-component-select-tbl')).not.toBeNull();
+    // ServiceSelector / SchemaSelector / TableSelector use percona-ui's
+    // AutoCompleteInput which renders a TextField — assert by label.
+    expect(screen.getByLabelText('Table')).toBeInTheDocument();
     expect(document.getElementById('mui-component-select-hostId')).not.toBeNull();
   });
 
@@ -251,7 +280,34 @@ describe('SchemaFormRenderer — file required', () => {
 });
 
 describe('SchemaFormRenderer — cascade behaviour', () => {
+  beforeEach(() => {
+    mockedApi.get.mockReset();
+  });
+
   it('clears downstream schema value when the upstream service changes', async () => {
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url === '/api/inventory/services/') {
+        return Promise.resolve({
+          data: {
+            items: [
+              { id: 1, name: 'mysql-prod-1', type: 'mysql' },
+              { id: 2, name: 'mysql-staging-1', type: 'mysql' },
+            ],
+            total: 2,
+            offset: 0,
+            limit: 200,
+          },
+        });
+      }
+      if (url === '/inventory-api/services/1/schemas') {
+        return Promise.resolve({ data: [{ id: 11, name: 'app_production' }] });
+      }
+      if (url === '/inventory-api/services/2/schemas') {
+        return Promise.resolve({ data: [{ id: 21, name: 'app_staging' }] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     const sections: FormSection[] = [
@@ -270,32 +326,34 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
     ];
     renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
 
-    const serviceCombo = document.getElementById('mui-component-select-serviceId')!;
-    const schemaCombo = document.getElementById('mui-component-select-schemaName')!;
-    expect(serviceCombo).toBeInTheDocument();
-    expect(schemaCombo).toBeInTheDocument();
+    const serviceCombo = screen.getByLabelText('Service');
+    const schemaCombo = screen.getByLabelText('Schema');
 
-    // Pick first service
+    // Wait for services to load.
+    await waitFor(() =>
+      expect(mockedApi.get).toHaveBeenCalledWith('/api/inventory/services/', expect.anything()),
+    );
+
+    // Pick first service.
     await user.click(serviceCombo);
     const svcOption = await screen.findByRole('option', { name: /mysql-prod-1/ });
     await user.click(svcOption);
 
-    // Wait for the schema select to become enabled, then pick a schema tied to svc-1
-    await waitFor(() => expect(schemaCombo).not.toHaveAttribute('aria-disabled', 'true'));
+    // Schema fetch fires, dropdown becomes enabled.
+    await waitFor(() => expect(schemaCombo).not.toBeDisabled());
+
     await user.click(schemaCombo);
     const schemaOption = await screen.findByRole('option', { name: 'app_production' });
     await user.click(schemaOption);
+    expect((schemaCombo as HTMLInputElement).value).toBe('app_production');
 
-    // Confirm the schema value is set
-    await waitFor(() => expect(schemaCombo).toHaveTextContent('app_production'));
-
-    // Switch to another service — schema should be cleared by the cascade hook
+    // Switch to another service — schema should be cleared by the cascade reset.
     await user.click(serviceCombo);
     const svc2 = await screen.findByRole('option', { name: /mysql-staging-1/ });
     await user.click(svc2);
 
     await waitFor(() => {
-      expect(schemaCombo).not.toHaveTextContent('app_production');
+      expect((schemaCombo as HTMLInputElement).value).toBe('');
     });
   });
 });
