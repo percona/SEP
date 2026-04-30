@@ -51,6 +51,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         {% if sync_schedule.last_run_at %}
                             · Last run: <span class="relativeTime">{{ sync_schedule.last_run_at }}</span>
                         {% endif %}
+                        {% if not scheduled_sync_enabled %}
+                            <span class="schedule-stale-warning">(will not run — <code>SEP_INTERNAL_TOKEN</code> missing)</span>
+                        {% endif %}
                     </p>
                     <div class="schedule-actions"
                          style="display:flex;
@@ -92,14 +95,21 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     {% else %}
         <p>No schedule configured.</p>
     {% endif %}
-    <details class="schedule-attach">
-        <summary>Attach a schedule</summary>
-        <div class="schedule-edit-container">
-            {% with sync_schedule = none %}
-                {% include "inventory/partials/sync-schedule-edit-form.html.j2" %}
-            {% endwith %}
-        </div>
-    </details>
+    {% if scheduled_sync_enabled %}
+        <details class="schedule-attach">
+            <summary>Attach a schedule</summary>
+            <div class="schedule-edit-container">
+                {% with sync_schedule = none %}
+                    {% include "inventory/partials/sync-schedule-edit-form.html.j2" %}
+                {% endwith %}
+            </div>
+        </details>
+    {% else %}
+        <p class="schedule-disabled-notice">
+            Scheduled inventory sync is currently unavailable. Set
+            <code>SEP_INTERNAL_TOKEN</code> in <code>.env</code> to enable.
+        </p>
+    {% endif %}
 </section>
 <script src="{{ url_for('static', path='/js/cron-validation.js') }}"
         nonce="{{ request.state.csp_nonce }}"></script>
