@@ -96,6 +96,7 @@ def test_pg_backups_create_full_form_dependency_chain_without_payload_override(
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == backup_create.task_name
     assert posted["owner"] == TaskOwner.BACKUP_PG.value
+    assert posted["data"]["meta"]["_service_name"] == pg_service.name
 
 
 def test_pg_backups_create_skips_connectivity_check_when_opted_out(
@@ -191,7 +192,9 @@ def test_backups_detail_handles_inventory_error(
             {"items": [], "total": 0, "offset": 0, "limit": 50},
         ]
     )
-    mock_inventory_api_dep.get = AsyncMock(side_effect=HTTPException(status_code=404))
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    )
 
     response = test_client.get(f"/backup-pg/{created_task.name}")
 
