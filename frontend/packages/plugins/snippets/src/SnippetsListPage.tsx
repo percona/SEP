@@ -43,7 +43,7 @@ export function SnippetsListPage() {
   return (
     <Box>
       <Typography variant="h4" sx={{ mb: 1 }}>
-        Support Snippets
+        Snippet Manager
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Pre-approved snippets discovered from disk. Click a row to view its execution form and
