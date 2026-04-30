@@ -326,7 +326,7 @@ class MySQLSyncer(BaseTaskSyncer):
         :yield: Each JSON object from the NDJSON file as a dictionary.
         :rtype: AsyncGenerator[dict[str, Any]]
         """
-        file_iter = self.tasks_api.stream(
+        file_iter = self.tasks_api.stream_chunks(
             f"/history/{task_history_id}/file/", params={"path": path}
         )
         async for line in self._iter_lines_gzip_stream(file_iter, encoding=encoding):
