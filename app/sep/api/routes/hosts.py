@@ -31,7 +31,7 @@ UPSTREAM_ERROR_HEADER = "X-Sep-Upstream-Error"
 
 
 class HostResponse(BaseModel):
-    """Single executor target enriched with an inventory display name.
+    """Represent a single executor target enriched with an inventory display name.
 
     :param id: The executor (Nomad / Celery) node name. This is the value
         consumed by dispatch payloads as ``executor_host``.

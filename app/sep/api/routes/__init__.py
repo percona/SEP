@@ -13,4 +13,4 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cross-cutting SEP API sub-routers mounted under ``/api/sep/``."""
+"""Aggregate cross-cutting SEP API sub-routers under ``/api/sep/``."""
