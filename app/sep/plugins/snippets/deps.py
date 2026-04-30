@@ -227,6 +227,9 @@ def get_snippet_source(request: Request, snippet: SnippetDep) -> str:
     return str(base_url.replace(path=f"/artifacts/download/{token}"))
 
 
+SnippetSource = Annotated[str, Depends(get_snippet_source)]
+
+
 async def get_validated_execution_args(
     request: Request,
     snippet: ExecutableSnippet,
@@ -302,7 +305,7 @@ def build_snippet_execution_meta(
 
 def get_snippet_execution_request_meta(
     snippet: ExecutableSnippet,
-    snippet_source: Annotated[str, Depends(get_snippet_source)],
+    snippet_source: SnippetSource,
     execution_args: Annotated[BaseSnippetArgs, Depends(get_validated_execution_args)],
 ) -> SnippetExecutionMeta:
     """Prepare and return the execution metadata for a snippet execution request.

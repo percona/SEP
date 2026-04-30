@@ -32,9 +32,8 @@ paths; there is no single-segment dynamic catch-all, so the static
 """
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi import status as http_status
 from pydantic import ValidationError
 
@@ -45,8 +44,8 @@ from app.sep.plugins.framework.schema import PluginSchema
 from app.sep.plugins.snippets.deps import (
     build_snippet_execution_meta,
     ExecutableSnippetForApi,
-    get_snippet_source,
     SnippetDep,
+    SnippetSource,
 )
 from app.sep.plugins.snippets.models import (
     ScriptPreviewResponse,
@@ -92,9 +91,7 @@ def _build_snippet_response(snippet: Snippet) -> SnippetResponse:
     )
 
 
-@router.get(
-    "/", response_model=list[SnippetResponse], dependencies=[IsApiAuthenticated]
-)
+@router.get("/", dependencies=[IsApiAuthenticated])
 async def snippets_api_list(session: SessionDep) -> list[SnippetResponse]:
     """List every currently-discovered snippet entity.
 
@@ -107,7 +104,6 @@ async def snippets_api_list(session: SessionDep) -> list[SnippetResponse]:
 
 @router.get(
     "/{snippet_filename}/schema",
-    response_model=PluginSchema,
     response_model_by_alias=True,
     dependencies=[IsApiAuthenticated],
 )
@@ -124,7 +120,6 @@ async def snippets_api_per_snippet_schema(snippet: SnippetDep) -> PluginSchema:
 
 @router.get(
     "/{snippet_filename}/script-preview",
-    response_model=ScriptPreviewResponse,
     dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewResponse:
@@ -155,7 +150,6 @@ async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewRespo
 
 @router.get(
     "/{snippet_filename}/history",
-    response_model=list[SnippetExecutionHistoryItem],
     dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_history(
@@ -202,7 +196,6 @@ async def snippets_api_history(
 
 @router.post(
     "/{snippet_filename}/execute",
-    response_model=SnippetExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated],
 )
@@ -210,7 +203,7 @@ async def snippets_api_execute(
     snippet: ExecutableSnippetForApi,
     body: SnippetExecutionRequest,
     tasks_api: TaskAPI,
-    snippet_source: Annotated[str, Depends(get_snippet_source)],
+    snippet_source: SnippetSource,
 ) -> SnippetExecutionResponse:
     """Execute a snippet against the tasks API.
 
