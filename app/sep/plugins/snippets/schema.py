@@ -58,7 +58,7 @@ _SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
 
 SNIPPETS_PLUGIN_SCHEMA = PluginSchema(
     name="snippets",
-    display_name="Support Snippets",
+    display_name="Snippet Manager",
     description=(
         "Discover and execute pre-approved support snippets against "
         "registered executor hosts."
