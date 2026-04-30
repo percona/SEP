@@ -21,10 +21,10 @@ import pytest
 
 from app.core.requests import RemoteAPI
 from app.sep.connectivity import (
-    _fetch_connectivity_result,
-    _LATEST_RESULTS,
     _record_latest_result,
     annotate_tasks_with_connectivity,
+    clear_connectivity_caches,
+    get_latest_connectivity_result,
 )
 from app.sep.plugins.framework.connectivity import (
     ConnectivityWarning,
@@ -36,11 +36,9 @@ from app.sep.plugins.framework.connectivity import (
 @pytest.fixture(autouse=True)
 def _clear_caches():
     """Clear the alru_cache and the latest-results snapshot between tests."""
-    _fetch_connectivity_result.cache_clear()
-    _LATEST_RESULTS.clear()
+    clear_connectivity_caches()
     yield
-    _fetch_connectivity_result.cache_clear()
-    _LATEST_RESULTS.clear()
+    clear_connectivity_caches()
 
 
 @pytest.fixture
@@ -66,7 +64,7 @@ class TestRecordConnectivityWarning:
         )
 
         assert result is None
-        assert _LATEST_RESULTS[("node1", "mysql")] is True
+        assert get_latest_connectivity_result("node1", "mysql") is True
 
     @pytest.mark.asyncio
     async def test_returns_warning_on_failure(self, mock_tasks_api):
@@ -89,7 +87,7 @@ class TestRecordConnectivityWarning:
             service_type="mysql",
             message="connection refused",
         )
-        assert _LATEST_RESULTS[("node1", "mysql")] is False
+        assert get_latest_connectivity_result("node1", "mysql") is False
 
     @pytest.mark.asyncio
     async def test_uses_fallback_message_when_error_is_none(self, mock_tasks_api):
@@ -142,7 +140,7 @@ class TestRecordConnectivityWarning:
             service_type="mysql",
         )
 
-        assert _LATEST_RESULTS == {("node1", "mysql"): True}
+        assert get_latest_connectivity_result("node1", "mysql") is True
 
     @pytest.mark.asyncio
     async def test_writes_to_latest_results_on_failure(self, mock_tasks_api):
@@ -160,7 +158,7 @@ class TestRecordConnectivityWarning:
             service_type="mysql",
         )
 
-        assert _LATEST_RESULTS == {("node1", "mysql"): False}
+        assert get_latest_connectivity_result("node1", "mysql") is False
 
     @pytest.mark.asyncio
     async def test_snapshot_drives_list_view_annotation(self, mock_tasks_api):
@@ -217,7 +215,7 @@ class TestMaybeRecordConnectivityWarning:
 
         assert result is None
         mock_record.assert_not_called()
-        assert _LATEST_RESULTS == {}
+        assert get_latest_connectivity_result("node1", "mysql") is None
 
     @pytest.mark.asyncio
     async def test_empty_meta_returns_none(self, mock_tasks_api, mocker):
@@ -307,7 +305,7 @@ class TestMaybeRecordConnectivityWarning:
 
         assert result is None
         mock_tasks_api.post.assert_awaited_once()
-        assert _LATEST_RESULTS[("node1", "mysql")] is True
+        assert get_latest_connectivity_result("node1", "mysql") is True
 
     @pytest.mark.asyncio
     async def test_complete_meta_returns_warning_on_failure(self, mock_tasks_api):
@@ -335,7 +333,7 @@ class TestMaybeRecordConnectivityWarning:
     async def test_opt_out_preserves_existing_latest_results(
         self, mock_tasks_api, mocker
     ):
-        """Preserve an existing ``_LATEST_RESULTS`` entry when opted out."""
+        """Preserve an existing snapshot entry when opted out."""
         mocker.patch(
             "app.sep.plugins.framework.connectivity.record_connectivity_warning",
             new_callable=AsyncMock,
@@ -353,5 +351,4 @@ class TestMaybeRecordConnectivityWarning:
         )
 
         assert result is None
-        assert _LATEST_RESULTS[("node1", "mysql")] is True
-        assert len(_LATEST_RESULTS) == 1
+        assert get_latest_connectivity_result("node1", "mysql") is True
