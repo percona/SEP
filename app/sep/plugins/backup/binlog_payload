@@ -2003,7 +2003,7 @@ class GSUploadProvider:
         proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
         _, err = proc.communicate()
         if proc.returncode != 0:
-            msg = f"GS upload failed. Error: {err.decode()}"
+            msg = f"GS upload failed. Error: {err}"
             raise BackupError(msg)
 
         if self.backup_type not in ["B", "O"] and not (
@@ -2021,7 +2021,7 @@ class GSUploadProvider:
                 proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
                 _, err = proc.communicate()
                 if proc.returncode != 0:
-                    msg = f"GS upload failed. Error: {err.decode()}"
+                    msg = f"GS upload failed. Error: {err}"
                     raise BackupError(msg)
             finally:
                 if Path(latest_file_local_path).exists():

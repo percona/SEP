@@ -1491,7 +1491,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         gs_proc = subprocess.Popen(gs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = gs_proc.communicate()
         if gs_proc.returncode != 0:
-            raise BackupError('GS latest file download failed. Error: %s' % (err.decode(),))
+            raise BackupError('GS latest file download failed. Error: %s' % (err,))
 
         with open(latest_local_file_path, 'r') as fname:
             latest_backup_source = fname.read().rstrip()
@@ -1499,7 +1499,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if 'gs://' in latest_backup_source:
             return latest_backup_source
         else:
-            raise BackupError('GS latest file content is an invalid path. Error: %s' % (err.decode(),))
+            raise BackupError('GS latest file content is an invalid path. Error: %s' % (err,))
 
     def _s3_get_path_from_latest(self):
         latest_dir = '/tmp/percona_backup_latest'

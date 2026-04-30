@@ -1754,7 +1754,7 @@ class GSUploadProvider:
                 latest_file_remote_dir = (
                        f"gs://{self.bucket_name}/{Path(full_prefix).parent}/latest"
                 )
-                gs_cmd = [GCLOUD_BIN, 'storage', 'cp',latest_file_local_path, latest_file_remote_dir]
+                gs_cmd = [GCLOUD_BIN, 'storage', 'cp', latest_file_local_path, latest_file_remote_dir]
                 proc = subprocess.Popen(gs_cmd, stdout=self.log_stream, stderr=subprocess.PIPE)
                 _, err = proc.communicate()
                 if proc.returncode != 0:

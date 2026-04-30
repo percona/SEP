@@ -1510,7 +1510,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if 'gs://' in latest_backup_source:
             return latest_backup_source
         else:
-            msg = 'GS latest file content is an invalid path. Error: %s' % (err.decode(),)
+            msg = 'GS latest file content is an invalid path. Error: %s' % (err,)
             raise BackupError(msg)
 
     def _s3_get_path_from_latest(self):
@@ -1724,8 +1724,8 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         os.mkdir(destination)
         destination_dir = os.path.normpath(destination) + os.sep
 
-        download_cmd = '%s -m storage rsync -r %s %s %s' \
-                       % (GCLOUD_BIN, regex_args, source, destination_dir)
+        download_cmd = '%s storage rsync -r %s %s %s' \
+                    % (GCLOUD_BIN, regex_args, source, destination_dir)
 
         self.logger.info('Running: %s', download_cmd)
         log_stream = open(log_file, 'a')
