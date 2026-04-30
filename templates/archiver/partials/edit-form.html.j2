@@ -1245,7 +1245,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 setManualInputDestHost(false, true, destEls);
                 await populateDestSchemas(destServiceSelect, destDbSelect, {
                     matched: matched,
-                    unknownLabel: 'Unknown schema: ' + source_data.dest_db
+                    unknownLabel: 'Unknown schema: ' + source_data.dest_db,
+                    schemas: schemas
                 });
             } else {
                 destManualHostContainer.style.display = 'block';

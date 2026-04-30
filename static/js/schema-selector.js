@@ -57,7 +57,7 @@ async function populateDestSchemas(destServiceSelect, destDbSelect, opts) {
         placeholder: "Select a schema"
     });
     if (destServiceSelect.value && destServiceSelect.value !== "-1") {
-        var schemas = await fetchSchemas(destServiceSelect.value);
+        var schemas = options.schemas || await fetchSchemas(destServiceSelect.value);
         if (schemas.length > 0) {
             populateSelect(destDbSelect, schemas, {
                 placeholder: "Select a schema"
