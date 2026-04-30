@@ -32,8 +32,9 @@ paths; there is no single-segment dynamic catch-all, so the static
 """
 
 import logging
+from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi import status as http_status
 from pydantic import ValidationError
 
@@ -49,7 +50,6 @@ from app.sep.plugins.snippets.deps import (
 )
 from app.sep.plugins.snippets.models import (
     ScriptPreviewResponse,
-    SnippetExecutionHistoryItem,
     SnippetExecutionRequest,
     SnippetExecutionResponse,
     SnippetResponse,
@@ -154,44 +154,25 @@ async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewRespo
 )
 async def snippets_api_history(
     snippet: SnippetDep, tasks_api: TaskAPI
-) -> list[SnippetExecutionHistoryItem]:
-    """Return the execution history rows for a single snippet.
+) -> dict[str, Any]:
+    """Return the paginated execution history rows for a single snippet.
 
-    Mirrors the legacy Jinja2 detail page's history fetch.
+    Filters the canonical task-history endpoint by ``snippet_filename`` so
+    the React detail page can pass the result straight into the shared
+    ``TaskHistoryTable`` component without re-projecting fields.
 
     :param snippet: The snippet whose history is requested.
     :type snippet: Snippet
     :param tasks_api: Async client for the tasks sub-app.
     :type tasks_api: RemoteAPI
-    :return: One :class:`SnippetExecutionHistoryItem` per matching task
-        history row.
-    :rtype: list[SnippetExecutionHistoryItem]
+    :return: The upstream paginated task-history response (``items``,
+        ``total``, ``offset``, ``limit``).
+    :rtype: dict[str, Any]
     """
-    response = await tasks_api.get(
+    return await tasks_api.get(
         f"/{snippet.execution_task_name}/history/",
         params={"snippet_filename": snippet.filename},
     )
-    items = []
-    for entry in response["items"]:
-        try:
-            files = await tasks_api.get(f"/history/{entry['id']}/files/")
-        except HTTPException:
-            logger.debug(
-                "Could not fetch available files for task history %s",
-                entry["id"],
-                exc_info=True,
-            )
-            files = []
-        items.append(
-            SnippetExecutionHistoryItem(
-                task_id=entry["id"],
-                status=entry["status"],
-                created_at=entry["created_at"],
-                created_by=entry.get("created_by"),
-                available_files=files,
-            ),
-        )
-    return items
 
 
 @router.post(

@@ -24,7 +24,6 @@ to the task-history view backed by ``app/sep/routes/stream_logs.py``.
 
 __all__ = [
     "ScriptPreviewResponse",
-    "SnippetExecutionHistoryItem",
     "SnippetExecutionRequest",
     "SnippetExecutionResponse",
     "SnippetResponse",
@@ -36,7 +35,6 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
-from app.tasks.models import TaskHistoryStatusEnum
 
 
 class SnippetResponse(BaseModel):
@@ -139,31 +137,6 @@ class SnippetExecutionResponse(BaseModel):
     task_name: NonEmptyStr
     task_id: int | None = None
     snippet_filename: NonEmptyStr
-
-
-class SnippetExecutionHistoryItem(BaseModel):
-    """Represent one row of the per-snippet execution history list.
-
-    :param task_id: The id of the task-history row.
-    :type task_id: int
-    :param status: The execution status of the task-history row.
-    :type status: TaskHistoryStatusEnum
-    :param created_at: When the task-history row was created.
-    :type created_at: datetime
-    :param created_by: Username of the user who triggered the execution,
-        when known.
-    :type created_by: str | None
-    :param available_files: Filenames available to download from the task's
-        artifact store; empty if the files endpoint returned no results or
-        errored.
-    :type available_files: list[str]
-    """
-
-    task_id: int
-    status: TaskHistoryStatusEnum
-    created_at: datetime
-    created_by: str | None = None
-    available_files: list[str] = []
 
 
 class ScriptPreviewResponse(BaseModel):

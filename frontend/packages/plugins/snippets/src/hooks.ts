@@ -1,11 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type PluginSchema } from '@sep/api';
-import type {
-  SnippetExecutionHistoryItem,
-  SnippetExecutionRequest,
-  SnippetExecutionResponse,
-  SnippetResponse,
-} from './types';
+import type { PaginatedTaskHistory } from '@sep/framework';
+import type { SnippetExecutionRequest, SnippetExecutionResponse, SnippetResponse } from './types';
 
 const SNIPPETS_BASE = '/plugins/snippets';
 
@@ -41,12 +37,15 @@ export function useSnippetSchema(filename: string | undefined) {
 
 /**
  * Fetch the execution history for a single snippet.
+ *
+ * Returns the upstream paginated tasks-history payload so the React detail
+ * page can pass the result straight into the shared ``TaskHistoryTable``.
  */
 export function useSnippetHistory(filename: string | undefined) {
-  return useQuery<SnippetExecutionHistoryItem[]>({
+  return useQuery<PaginatedTaskHistory>({
     queryKey: ['snippets', filename, 'history'],
     queryFn: async () => {
-      const { data } = await apiClient.get<SnippetExecutionHistoryItem[]>(
+      const { data } = await apiClient.get<PaginatedTaskHistory>(
         `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/history`,
       );
       return data;

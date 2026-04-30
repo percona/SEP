@@ -1,19 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Alert,
-  Box,
-  CircularProgress,
-  Divider,
-  Link as MuiLink,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Typography,
-} from '@mui/material';
-import { SchemaFormRenderer } from '@sep/framework';
+import { Alert, Box, CircularProgress, Divider, Link as MuiLink, Typography } from '@mui/material';
+import { SchemaFormRenderer, TaskHistoryTable } from '@sep/framework';
 import { useSnippetExecution, useSnippetHistory, useSnippetSchema } from './hooks';
 
 const EXECUTION_RESERVED_NAMES = new Set(['executor_host', 'sudo', 'script_preview']);
@@ -125,43 +113,16 @@ export function SnippetDetailPage() {
       <Typography variant="h6" sx={{ mb: 1 }}>
         Execution history
       </Typography>
-      {historyQuery.isLoading ? (
-        <CircularProgress size={20} />
-      ) : historyQuery.error ? (
+      {historyQuery.error ? (
         <Alert severity="error">
           Failed to load execution history: {historyQuery.error.message}
         </Alert>
-      ) : (historyQuery.data ?? []).length === 0 ? (
-        <Typography color="text.secondary">No executions yet.</Typography>
       ) : (
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Run</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Started</TableCell>
-              <TableCell>By</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(historyQuery.data ?? []).map((row) => (
-              <TableRow key={row.task_id} hover>
-                <TableCell>
-                  <MuiLink
-                    component="button"
-                    type="button"
-                    onClick={() => navigate(`/tasks/${row.task_id}`)}
-                  >
-                    #{row.task_id}
-                  </MuiLink>
-                </TableCell>
-                <TableCell>{row.status}</TableCell>
-                <TableCell>{row.created_at}</TableCell>
-                <TableCell>{row.created_by ?? '—'}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <TaskHistoryTable
+          data={historyQuery.data?.items ?? []}
+          isLoading={historyQuery.isLoading}
+          hideTaskNameColumn
+        />
       )}
     </Box>
   );

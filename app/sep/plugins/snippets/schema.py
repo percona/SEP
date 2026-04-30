@@ -224,10 +224,7 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
                     name=_SUDO_FIELD_NAME,
                     label="Run with sudo",
                     default=snippet.sudo.sudo_default,
-                    description=(
-                        "Prepend ``sudo`` to the interpreter when the "
-                        "snippet is executed."
-                    ),
+                    description="Prepend sudo to the interpreter when the snippet is executed.",
                 ),
             ),
         )

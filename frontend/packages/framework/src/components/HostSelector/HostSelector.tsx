@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useWatch, type Control } from 'react-hook-form';
+import { Box } from '@mui/material';
 import MenuItem from '@mui/material/MenuItem';
 import { SelectInput } from '@percona/percona-ui';
 
@@ -53,25 +54,27 @@ export function HostSelector({ name, label, required, dependsOn, control }: Host
       : undefined;
 
   return (
-    <SelectInput
-      name={name}
-      label={label}
-      isRequired={required}
-      control={control}
-      helperText={helperText}
-      selectFieldProps={{ fullWidth: true, disabled }}
-      controllerProps={{
-        name,
-        rules: {
-          ...(required && { required: `${label} is required` }),
-        },
-      }}
-    >
-      {hosts.map((h) => (
-        <MenuItem key={h.hostId} value={h.hostId}>
-          {h.hostName}
-        </MenuItem>
-      ))}
-    </SelectInput>
+    <Box sx={{ width: '100%' }}>
+      <SelectInput
+        name={name}
+        label={label}
+        isRequired={required}
+        control={control}
+        helperText={helperText}
+        selectFieldProps={{ fullWidth: true, disabled }}
+        controllerProps={{
+          name,
+          rules: {
+            ...(required && { required: `${label} is required` }),
+          },
+        }}
+      >
+        {hosts.map((h) => (
+          <MenuItem key={h.hostId} value={h.hostId}>
+            {h.hostName}
+          </MenuItem>
+        ))}
+      </SelectInput>
+    </Box>
   );
 }

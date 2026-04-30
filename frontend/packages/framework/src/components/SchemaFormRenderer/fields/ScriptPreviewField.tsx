@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Box, CircularProgress, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
+import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
+import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { apiClient } from '@sep/api';
 import type { ScriptPreviewField as ScriptPreviewFieldType } from '../types';
+
+SyntaxHighlighter.registerLanguage('bash', bash);
+SyntaxHighlighter.registerLanguage('python', python);
 
 interface ScriptPreviewFieldProps {
   field: ScriptPreviewFieldType;
@@ -27,13 +35,15 @@ const DEBOUNCE_MS = 300;
  *
  * Fetches `endpointUrl` on mount and re-fetches whenever any sibling field
  * listed in `dependsOn` changes value — debounced and cancellation-safe via
- * an AbortController. Renders the response's `content` inside a `<pre>`
- * block annotated with the chosen highlighter language; visual syntax
- * highlighting is intentionally deferred to a later ticket so this
- * migration does not pull in a new bundle dependency.
+ * an AbortController. Renders the response's `content` with Prism-based
+ * syntax highlighting (bash and python registered; unknown languages fall
+ * back to no-color rendering). The rendered `<pre>` keeps `tabIndex={0}`
+ * and a `data-language` attribute so the scrollable region remains
+ * keyboard-focusable.
  */
 export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
   const { control } = useFormContext();
+  const theme = useTheme();
   const dependsOnValues = useWatch({
     control,
     name: field.dependsOn,
@@ -102,30 +112,35 @@ export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
           {state.error ?? 'Preview unavailable'}
         </Alert>
       )}
-      {state.status === 'success' && state.data && (
-        <>
-          {state.data.is_truncated && (
-            <Typography variant="caption" color="text.secondary">
-              Preview truncated.
-            </Typography>
-          )}
-          <Box
-            component="pre"
-            tabIndex={0}
-            data-language={state.data.language || field.language || 'plaintext'}
-            sx={{
-              m: 0,
-              overflow: 'auto',
-              fontFamily: 'monospace',
-              fontSize: '0.85rem',
-              maxHeight: '400px',
-              whiteSpace: 'pre',
-            }}
-          >
-            <code>{state.data.content}</code>
-          </Box>
-        </>
-      )}
+      {state.status === 'success' &&
+        state.data &&
+        (() => {
+          const language = state.data.language || field.language || 'plaintext';
+          const highlighterStyle = theme.palette.mode === 'dark' ? vscDarkPlus : vs;
+          return (
+            <>
+              {state.data.is_truncated && (
+                <Typography variant="caption" color="text.secondary">
+                  Preview truncated.
+                </Typography>
+              )}
+              <SyntaxHighlighter
+                language={language}
+                style={highlighterStyle}
+                customStyle={{
+                  margin: 0,
+                  maxHeight: 400,
+                  overflow: 'auto',
+                  fontSize: '0.85rem',
+                  borderRadius: 4,
+                }}
+                PreTag={(props) => <pre tabIndex={0} data-language={language} {...props} />}
+              >
+                {state.data.content}
+              </SyntaxHighlighter>
+            </>
+          );
+        })()}
     </Box>
   );
 }

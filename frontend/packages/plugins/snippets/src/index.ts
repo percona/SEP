@@ -4,7 +4,6 @@ export { SnippetDetailPage } from './SnippetDetailPage';
 export { useSnippets, useSnippetSchema, useSnippetHistory, useSnippetExecution } from './hooks';
 export type {
   ScriptPreviewResponse,
-  SnippetExecutionHistoryItem,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
   SnippetResponse,

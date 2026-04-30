@@ -34,14 +34,6 @@ export interface SnippetExecutionResponse {
   snippet_filename: string;
 }
 
-export interface SnippetExecutionHistoryItem {
-  task_id: number;
-  status: string;
-  created_at: string;
-  created_by: string | null;
-  available_files: string[];
-}
-
 export interface ScriptPreviewResponse {
   content: string;
   language: string;

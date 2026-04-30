@@ -157,40 +157,36 @@ class TestSnippetsApiScriptPreview:
 class TestSnippetsApiHistory:
     """Tests for ``GET /api/plugins/snippets/{snippet_filename}/history``."""
 
-    async def test_history_passes_filter_and_inlines_files(
+    async def test_history_passes_filter_through(
         self, test_client, mock_task_api_dep, create_snippet
     ):
-        """History endpoint filters by snippet filename and inlines available files."""
+        """History endpoint filters by snippet filename and returns the upstream payload verbatim."""
         snippet = await create_snippet("hello.sh", approved=True)
         history_id = 42
-        mock_task_api_dep.get = AsyncMock(
-            side_effect=[
+        upstream_payload = {
+            "items": [
                 {
-                    "items": [
-                        {
-                            "id": history_id,
-                            "status": TaskHistoryStatusEnum.SUCCESS.value,
-                            "created_at": datetime.now(UTC).isoformat(),
-                            "created_by": "alice",
-                        },
-                    ],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
+                    "id": history_id,
+                    "status": TaskHistoryStatusEnum.SUCCESS.value,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "created_by": "alice",
                 },
-                ["log.txt"],
             ],
-        )
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
+        mock_task_api_dep.get = AsyncMock(return_value=upstream_payload)
 
         response = test_client.get(f"{API_BASE}/{snippet.filename}/history")
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert len(body) == 1
-        assert body[0]["task_id"] == history_id
-        assert body[0]["available_files"] == ["log.txt"]
+        assert body == upstream_payload
         first_call = mock_task_api_dep.get.call_args_list[0]
         assert first_call.kwargs["params"] == {"snippet_filename": snippet.filename}
+        # The endpoint must not fan out a per-row files lookup anymore.
+        assert mock_task_api_dep.get.call_count == 1
 
 
 @pytest.mark.asyncio
