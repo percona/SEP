@@ -650,6 +650,12 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
 def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
     """Branch from ``origin/main``, bump to the next dev version, push and open a PR.
 
+    When ``GH_PR_TOKEN`` is set in the environment, override ``GH_TOKEN`` with
+    its value for the ``gh pr create`` call only. This lets the workflow keep a
+    PAT in ``GH_TOKEN`` for tag and release operations while delegating the PR
+    creation to a token with ``pull-requests: write`` (typically the workflow's
+    own ``GITHUB_TOKEN``).
+
     :param version: The X.Y.Z stable release version (no ``v`` prefix).
     :type version: str
     :param stable_tag: The stable release tag (with ``v`` prefix) for the PR body.
@@ -664,7 +670,16 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
     _bump_version(dev_version, f"v{dev_version}")
     _run(["git", "commit", "-am", f"Bump version to v{dev_version}"])
     _run(["git", "push", "-u", "origin", dev_branch])
-    if _gh_available():
+    if not _gh_available():
+        print(
+            f"Note: gh CLI not found. Manually create a PR from {dev_branch} to main.",
+        )
+        return
+    pr_token = os.environ.get("GH_PR_TOKEN")
+    saved_gh_token = os.environ.get("GH_TOKEN")
+    if pr_token:
+        os.environ["GH_TOKEN"] = pr_token
+    try:
         _run(
             [
                 "gh",
@@ -678,10 +693,12 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
                 f"Automated dev version bump after {stable_tag} stable release.",
             ],
         )
-    else:
-        print(
-            f"Note: gh CLI not found. Manually create a PR from {dev_branch} to main.",
-        )
+    finally:
+        if pr_token:
+            if saved_gh_token is None:
+                os.environ.pop("GH_TOKEN", None)
+            else:
+                os.environ["GH_TOKEN"] = saved_gh_token
 
 
 def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:

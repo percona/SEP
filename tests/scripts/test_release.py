@@ -17,6 +17,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -827,6 +828,53 @@ def test_stable_via_github_api_errors_without_gh(monkeypatch, capsys):
     monkeypatch.setattr(release, "_gh_available", lambda: False)
     assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 1
     assert "--sign-via-github-api requires the gh CLI" in capsys.readouterr().err
+
+
+# --- _create_dev_version_bump_pr GH_TOKEN swap -----------------------------
+
+
+def _patch_dev_pr_runner(monkeypatch, observed_tokens):
+    """Patch ``_run`` to record ``GH_TOKEN`` at the time ``gh pr create`` runs."""
+    monkeypatch.setattr(release, "_bump_version", lambda *_a, **_kw: None)
+    monkeypatch.setattr(release, "_gh_available", lambda: True)
+
+    def runner(cmd, *, check=True, capture=False):
+        if tuple(cmd[:3]) == ("gh", "pr", "create"):
+            observed_tokens.append(os.environ.get("GH_TOKEN"))
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr(release, "_run", runner)
+
+
+def test_dev_pr_uses_gh_pr_token_when_set_and_restores_gh_token(monkeypatch):
+    """``GH_PR_TOKEN`` overrides ``GH_TOKEN`` for ``gh pr create`` only."""
+    monkeypatch.setenv("GH_TOKEN", "pat-token")
+    monkeypatch.setenv("GH_PR_TOKEN", "github-token")
+    observed = []
+    _patch_dev_pr_runner(monkeypatch, observed)
+
+    release._create_dev_version_bump_pr("0.12.0", "v0.12.0")
+
+    assert observed == ["github-token"]
+    assert os.environ["GH_TOKEN"] == "pat-token"
+
+
+def test_dev_pr_keeps_gh_token_when_pr_token_unset(monkeypatch):
+    """Without ``GH_PR_TOKEN``, ``GH_TOKEN`` is unchanged for ``gh pr create``."""
+    monkeypatch.setenv("GH_TOKEN", "pat-token")
+    monkeypatch.delenv("GH_PR_TOKEN", raising=False)
+    observed = []
+    _patch_dev_pr_runner(monkeypatch, observed)
+
+    release._create_dev_version_bump_pr("0.12.0", "v0.12.0")
+
+    assert observed == ["pat-token"]
+    assert os.environ["GH_TOKEN"] == "pat-token"
 
 
 # --- argparse --------------------------------------------------------------
