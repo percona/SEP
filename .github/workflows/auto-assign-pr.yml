@@ -9,10 +9,11 @@ permissions:
 
 jobs:
   assign-author:
-    # Skip if already assigned, and skip fork PRs.
+    # Skip if already assigned, fork PRs, and bot authors (e.g. Dependabot cannot be assigned with GITHUB_TOKEN).
     if: >-
       !github.event.pull_request.assignees[0] &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
       - name: Assign PR to author
