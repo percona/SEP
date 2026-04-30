@@ -85,29 +85,37 @@ describe('coerceFormValues', () => {
     expect(out).toEqual({ title: 'hi', flag: true });
   });
 
-  it('unwraps option objects from service/schema/table fields to scalar ids', () => {
+  it('unwraps option objects from service/schema/table/host fields to scalar ids', () => {
     const out = coerceFormValues(
       {
         serviceId: { id: 7, name: 'svc', type: 'mysql' },
         schemaName: { id: 11, name: 'app_prod' },
         tbl: { id: 101, name: 'users' },
+        hostId: { id: 'nomad-1', name: 'db-mysql-01', address: '10.0.0.1' },
         empty: '',
       },
       [
         { type: 'service', name: 'serviceId', label: 'Service', serviceTypes: [] },
         { type: 'schema', name: 'schemaName', label: 'Schema', dependsOn: 'serviceId' },
         { type: 'table', name: 'tbl', label: 'Table', dependsOn: 'schemaName' },
+        { type: 'host', name: 'hostId', label: 'Host' },
         { type: 'service', name: 'empty', label: 'Empty', serviceTypes: [] },
       ],
     );
     expect(out.serviceId).toBe(7);
     expect(out.schemaName).toBe(11);
     expect(out.tbl).toBe(101);
+    expect(out.hostId).toBe('nomad-1');
     expect(out.empty).toBeUndefined();
   });
 });
 
 describe('SchemaFormRenderer — field rendering', () => {
+  beforeEach(() => {
+    mockedApi.get.mockReset();
+    mockedApi.get.mockResolvedValue({ data: [] });
+  });
+
   const sections: FormSection[] = [
     {
       title: 'Basics',
@@ -160,10 +168,10 @@ describe('SchemaFormRenderer — field rendering', () => {
     expect(screen.getByLabelText(/When/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Config/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Upload/)).toBeInTheDocument();
-    // ServiceSelector / SchemaSelector / TableSelector use percona-ui's
-    // AutoCompleteInput which renders a TextField — assert by label.
+    // ServiceSelector / SchemaSelector / TableSelector / HostSelector use
+    // percona-ui's AutoCompleteInput which renders a TextField — assert by label.
     expect(screen.getByLabelText('Table')).toBeInTheDocument();
-    expect(document.getElementById('mui-component-select-hostId')).not.toBeNull();
+    expect(screen.getByLabelText('Host')).toBeInTheDocument();
   });
 
   it('groups fields under section titles as fieldset legends', () => {
