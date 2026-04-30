@@ -181,3 +181,28 @@ class TestSepHostsAuth:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
+
+    def test_unauthenticated_unknown_sep_path_returns_json_404(
+        self, unauthenticated_client: TestClient
+    ) -> None:
+        """Return JSON 404 for unknown ``/api/sep/*`` paths even when unauthenticated.
+
+        Exercise the ``JSON_API_PATH_PREFIXES`` tuple directly (not just the
+        registered route): the 404 handler must return JSON rather than an
+        HTML redirect to the login page for any path matching the prefix.
+        """
+        response = unauthenticated_client.get(
+            "/api/sep/does-not-exist/", follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.headers["content-type"].startswith("application/json")
+        assert "detail" in response.json()
+
+    def test_authenticated_unknown_sep_path_returns_json_404(
+        self, test_client: TestClient
+    ) -> None:
+        """Return JSON 404 for unknown ``/api/sep/*`` paths under an authenticated client."""
+        response = test_client.get("/api/sep/does-not-exist/", follow_redirects=False)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.headers["content-type"].startswith("application/json")
+        assert "detail" in response.json()
