@@ -38,6 +38,79 @@ async function fetchTables(schemaId, search) {
     return response.json();
 }
 
+async function fetchServices(serviceType) {
+    var params = new URLSearchParams();
+    if (serviceType) params.set("service_type", serviceType);
+    params.set("limit", "0");
+    var url = "/inventory-api/services/?" + params;
+    var response = await fetch(url);
+    if (!response.ok) return [];
+    var data = await response.json();
+    return data.items || [];
+}
+
+async function populateDestSchemas(destServiceSelect, destDbSelect, opts) {
+    var options = opts || {};
+    var matched = options.matched || {};
+    var unknownLabel = options.unknownLabel || null;
+    populateSelect(destDbSelect, [], {
+        placeholder: "Select a schema"
+    });
+    if (destServiceSelect.value && destServiceSelect.value !== "-1") {
+        var schemas = await fetchSchemas(destServiceSelect.value);
+        if (schemas.length > 0) {
+            populateSelect(destDbSelect, schemas, {
+                placeholder: "Select a schema"
+            });
+            destDbSelect.disabled = false;
+            var serviceMatch = String(destServiceSelect.value) === String(matched.destServiceId);
+            if (serviceMatch && matched.destSchemaId && matched.destSchemaId !== "-1") {
+                destDbSelect.value = matched.destSchemaId;
+                return;
+            }
+            if (serviceMatch && matched.destSchemaId === "-1" && unknownLabel) {
+                var unknownOpt = document.createElement("option");
+                unknownOpt.value = "-1";
+                unknownOpt.textContent = unknownLabel;
+                unknownOpt.selected = true;
+                destDbSelect.appendChild(unknownOpt);
+            }
+            if (schemas.length === 1) {
+                destDbSelect.value = schemas[0].id;
+            }
+        } else {
+            destDbSelect.disabled = true;
+        }
+    } else {
+        destDbSelect.disabled = true;
+    }
+}
+
+function setManualInputDestHost(enabled, forceToggleChecked, els) {
+    if (forceToggleChecked && els.toggle) {
+        els.toggle.checked = enabled;
+    }
+    if (enabled) {
+        els.serviceFieldsContainer.style.display = "none";
+        els.serviceSelect.value = "";
+        els.serviceSelect.disabled = true;
+        els.manualInputFields.style.display = "block";
+        els.hostInput.disabled = false;
+        els.portInput.disabled = false;
+        els.dbNameInput.disabled = false;
+    } else {
+        els.serviceFieldsContainer.style.display = "block";
+        els.serviceSelect.disabled = false;
+        els.manualInputFields.style.display = "none";
+        els.hostInput.disabled = true;
+        els.portInput.disabled = true;
+        els.dbNameInput.disabled = true;
+        els.hostInput.value = "";
+        els.portInput.value = "";
+        els.dbNameInput.value = "";
+    }
+}
+
 function populateSelect(selectEl, items, options) {
     var opts = options || {};
     var valueKey = opts.valueKey || "id";

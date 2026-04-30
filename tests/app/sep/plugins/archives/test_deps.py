@@ -810,3 +810,21 @@ class TestResolveDestinationHostAndDb:
 
         with pytest.raises(HTTPNotFoundException):
             await _resolve_destination_host_and_db(form, mock_remote_api)
+
+    @pytest.mark.asyncio
+    async def test_whitespace_dest_host_returns_empty(self, mock_remote_api):
+        """Whitespace-only dest_host strips to empty: no dest_host key returned."""
+        mock_remote_api.get = AsyncMock()
+        form = _make_form_with_source_ids(
+            dest_service_id=None,
+            dest_host="   ",
+            dest_port=None,
+            dest_db_id=None,
+            dest_db_name="",
+        )
+
+        result = await _resolve_destination_host_and_db(form, mock_remote_api)
+
+        assert result == {}
+        assert "dest_host" not in result
+        mock_remote_api.get.assert_not_called()

@@ -599,6 +599,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const destHostInput = document.getElementById('dest_host');
     const destPortInput = document.getElementById('dest_port');
     const destDbNameInput = document.getElementById('dest_db_name');
+    const destEls = {
+        toggle: destManualInputToggle,
+        serviceFieldsContainer: destServiceFieldsContainer,
+        serviceSelect: destServiceSelect,
+        manualInputFields: destManualInputFields,
+        hostInput: destHostInput,
+        portInput: destPortInput,
+        dbNameInput: destDbNameInput
+    };
     const deleteDataContainer = document.getElementById('delete_data_container');
     const prgPurgeCheckbox = document.getElementById('delete_data');
     const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
@@ -614,7 +623,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     let useManualInputSource = false;
     let useManualInputDest = false;
-    let useManualInputDestHost = false;
 
     function setManualInputSource(enabled, forceToggleChecked) {
         useManualInputSource = enabled;
@@ -1204,63 +1212,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
       }
 
-    async function populateDestSchemas() {
-        populateSelect(destDbSelect, [], {placeholder: 'Select a schema'});
-        if (destServiceSelect.value && destServiceSelect.value !== '-1') {
-            var schemas = await fetchSchemas(destServiceSelect.value);
-            if (schemas.length > 0) {
-                populateSelect(destDbSelect, schemas, {placeholder: 'Select a schema'});
-                destDbSelect.disabled = false;
-                if (destServiceSelect.value === matched.destServiceId && matched.destSchemaId && matched.destSchemaId !== '-1') {
-                    destDbSelect.value = matched.destSchemaId;
-                    return;
-                }
-                if (destServiceSelect.value === matched.destServiceId && matched.destSchemaId === '-1') {
-                    var unknownOpt = document.createElement('option');
-                    unknownOpt.value = '-1';
-                    unknownOpt.textContent = 'Unknown schema: ' + source_data.dest_db;
-                    unknownOpt.selected = true;
-                    destDbSelect.appendChild(unknownOpt);
-                }
-                if (schemas.length === 1) {
-                    destDbSelect.value = schemas[0].id;
-                }
-            } else {
-                destDbSelect.disabled = true;
-            }
-        } else {
-            destDbSelect.disabled = true;
-        }
-    }
-
-    function setManualInputDestHost(enabled, forceToggleChecked) {
-        useManualInputDestHost = enabled;
-        if (forceToggleChecked && destManualInputToggle) {
-            destManualInputToggle.checked = enabled;
-        }
-        if (enabled) {
-            destServiceFieldsContainer.style.display = 'none';
-            destServiceSelect.value = '';
-            destServiceSelect.disabled = true;
-            destManualInputFields.style.display = 'block';
-            destHostInput.disabled = false;
-            destPortInput.disabled = false;
-            destDbNameInput.disabled = false;
-        } else {
-            destServiceFieldsContainer.style.display = 'block';
-            destServiceSelect.disabled = false;
-            destManualInputFields.style.display = 'none';
-            destHostInput.disabled = true;
-            destPortInput.disabled = true;
-            destDbNameInput.disabled = true;
-        }
-    }
-
     async function initDest() {
         if (source_data.dest_host || source_data.dest_db) {
-            // Try to match against inventory services
-            var response = await fetch('/inventory-api/services/?service_type=MYSQL&limit=0');
-            var services = await response.json().then(r => r.items || []);
+            var services = await fetchServices('MYSQL');
             var found = false;
 
             for (var i = 0; i < services.length; i++) {
@@ -1269,7 +1223,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     matched.destServiceId = services[i].id;
                     destServiceSelect.value = services[i].id;
 
-                    // Now fetch schemas for this service
                     var schemas = await fetchSchemas(services[i].id);
                     var schemaFound = false;
                     for (var j = 0; j < schemas.length; j++) {
@@ -1289,10 +1242,14 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
             if (found) {
                 destManualHostContainer.style.display = 'block';
-                setManualInputDestHost(false, true);
+                setManualInputDestHost(false, true, destEls);
+                await populateDestSchemas(destServiceSelect, destDbSelect, {
+                    matched: matched,
+                    unknownLabel: 'Unknown schema: ' + source_data.dest_db
+                });
             } else {
                 destManualHostContainer.style.display = 'block';
-                setManualInputDestHost(true, true);
+                setManualInputDestHost(true, true, destEls);
                 if (source_data.dest_host) destHostInput.value = source_data.dest_host;
                 if (source_data.dest_port) destPortInput.value = source_data.dest_port;
                 if (source_data.dest_db) destDbNameInput.value = source_data.dest_db;
@@ -1301,10 +1258,10 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
 
     destServiceSelect.addEventListener('change', function() {
-        populateDestSchemas();
+        populateDestSchemas(destServiceSelect, destDbSelect, {matched: matched, unknownLabel: 'Unknown schema: ' + source_data.dest_db});
         if (!this.value) {
             destManualHostContainer.style.display = 'none';
-            setManualInputDestHost(false, true);
+            setManualInputDestHost(false, true, destEls);
         } else {
             destManualHostContainer.style.display = 'block';
         }
@@ -1312,7 +1269,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     if (destManualInputToggle) {
         destManualInputToggle.addEventListener('change', function() {
-            setManualInputDestHost(this.checked, false);
+            setManualInputDestHost(this.checked, false, destEls);
         });
     }
 

@@ -564,6 +564,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const destHostInput = document.getElementById('dest_host');
     const destPortInput = document.getElementById('dest_port');
     const destDbNameInput = document.getElementById('dest_db_name');
+    const destEls = {
+        toggle: destManualInputToggle,
+        serviceFieldsContainer: destServiceFieldsContainer,
+        serviceSelect: destServiceSelect,
+        manualInputFields: destManualInputFields,
+        hostInput: destHostInput,
+        portInput: destPortInput,
+        dbNameInput: destDbNameInput
+    };
     const deleteDataContainer = document.getElementById('delete_data_container');
     const prgPurgeCheckbox = document.getElementById('delete_data');
     const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
@@ -579,7 +588,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     let useManualInputSource = false;
     let useManualInputDest = false;
-    let useManualInputDestHost = false;
 
     async function populateSchemas(selectedService) {
         populateSelect(schemaSelect, [], {placeholder: 'Select a schema'});
@@ -713,55 +721,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         updateDestinationFieldset();
     }
 
-    async function populateDestSchemas() {
-        populateSelect(destDbSelect, [], {placeholder: 'Select a schema'});
-        if (destServiceSelect.value && destServiceSelect.value !== '-1') {
-            var schemas = await fetchSchemas(destServiceSelect.value);
-            if (schemas.length > 0) {
-                populateSelect(destDbSelect, schemas, {placeholder: 'Select a schema'});
-                destDbSelect.disabled = false;
-                if (schemas.length === 1) {
-                    destDbSelect.value = schemas[0].id;
-                }
-            } else {
-                destDbSelect.disabled = true;
-            }
-        } else {
-            destDbSelect.disabled = true;
-        }
-    }
-
-    function setManualInputDestHost(enabled, forceToggleChecked) {
-        useManualInputDestHost = enabled;
-        if (forceToggleChecked && destManualInputToggle) {
-            destManualInputToggle.checked = enabled;
-        }
-        if (enabled) {
-            destServiceFieldsContainer.style.display = 'none';
-            destServiceSelect.value = '';
-            destServiceSelect.disabled = true;
-            destManualInputFields.style.display = 'block';
-            destHostInput.disabled = false;
-            destPortInput.disabled = false;
-            destDbNameInput.disabled = false;
-        } else {
-            destServiceFieldsContainer.style.display = 'block';
-            destServiceSelect.disabled = false;
-            destManualInputFields.style.display = 'none';
-            destHostInput.disabled = true;
-            destPortInput.disabled = true;
-            destDbNameInput.disabled = true;
-            destHostInput.value = '';
-            destPortInput.value = '';
-            destDbNameInput.value = '';
-        }
-    }
-
     destServiceSelect.addEventListener('change', function() {
-        populateDestSchemas();
+        populateDestSchemas(destServiceSelect, destDbSelect);
         if (!this.value) {
             destManualHostContainer.style.display = 'none';
-            setManualInputDestHost(false, true);
+            setManualInputDestHost(false, true, destEls);
         } else {
             destManualHostContainer.style.display = 'block';
         }
@@ -769,7 +733,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     if (destManualInputToggle) {
         destManualInputToggle.addEventListener('change', function() {
-            setManualInputDestHost(this.checked, false);
+            setManualInputDestHost(this.checked, false, destEls);
         });
     }
 
