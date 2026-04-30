@@ -14,12 +14,12 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
   const newOptions: ThemeOptions = {
     components: {
       MuiButton: {
-        styleOverrides: {
-          containedSuccess: { color: '#fff' },
-          containedError: { color: '#fff' },
-          containedWarning: { color: '#fff' },
-          containedInfo: { color: '#fff' },
-        },
+        variants: [
+          { props: { variant: 'contained', color: 'success' }, style: { color: '#fff' } },
+          { props: { variant: 'contained', color: 'error' }, style: { color: '#fff' } },
+          { props: { variant: 'contained', color: 'warning' }, style: { color: '#fff' } },
+          { props: { variant: 'contained', color: 'info' }, style: { color: '#fff' } },
+        ],
       },
     },
   };

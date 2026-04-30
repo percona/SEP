@@ -113,7 +113,7 @@ const columns: MRT_ColumnDef<RecentTask>[] = [
     accessorKey: 'name',
     header: 'Task',
     Cell: ({ cell }) => (
-      <Typography variant="body2" fontFamily="'Roboto Mono', monospace">
+      <Typography variant="body2" sx={{ fontFamily: "'Roboto Mono', monospace" }}>
         {cell.getValue<string>()}
       </Typography>
     ),
@@ -162,7 +162,7 @@ export default function DashboardPage() {
 
       {/* Stats Cards — using percona-ui's OverviewCard */}
       <LoadableChildren loading={loading}>
-        <Grid container spacing={3} alignItems="stretch" sx={{ mb: 3 }}>
+        <Grid container spacing={3} sx={{ mb: 3, alignItems: 'stretch' }}>
           {stats.map((stat) => (
             <Grid
               key={stat.title}
@@ -188,7 +188,7 @@ export default function DashboardPage() {
                 }}
                 onClick={() => navigate(stat.to)}
               >
-                <Typography variant="h3" fontWeight={700}>
+                <Typography variant="h3" sx={{ fontWeight: 700 }}>
                   {stat.value}
                 </Typography>
               </OverviewCard>
