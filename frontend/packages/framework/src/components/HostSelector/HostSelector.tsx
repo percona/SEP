@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
+import { useSnackbar } from 'notistack';
 import { useHosts, type HostOption } from '../../hooks/useHosts';
 
 const EMPTY_OPTIONS: HostOption[] = [];
@@ -22,12 +24,30 @@ export function HostSelector({ name, label, required, disabled, helperText }: Ho
     control,
     formState: { errors },
   } = useFormContext();
+  const { enqueueSnackbar } = useSnackbar();
 
-  const { data: hosts = EMPTY_OPTIONS, isLoading, isError, error } = useHosts();
+  const { data, isLoading, isError, error } = useHosts();
+  const hosts = data?.hosts ?? EMPTY_OPTIONS;
+  const upstreamError = data?.upstreamError ?? null;
 
   const empty = !isLoading && !isError && hosts.length === 0;
 
   const fieldError = errors[name]?.message as string | undefined;
+
+  // Surface upstream Tasks-API failures via the shell's snackbar system. The
+  // route returns `200 []` with the detail attached as a header so the
+  // dropdown can still render "No hosts available" while the user gets a
+  // visible explanation. Raise once per distinct upstream error message.
+  const lastSurfacedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (upstreamError && upstreamError !== lastSurfacedRef.current) {
+      enqueueSnackbar(`Failed to load executor hosts: ${upstreamError}`, {
+        variant: 'error',
+        autoHideDuration: 30_000,
+      });
+      lastSurfacedRef.current = upstreamError;
+    }
+  }, [upstreamError, enqueueSnackbar]);
 
   const text = fieldError
     ? fieldError

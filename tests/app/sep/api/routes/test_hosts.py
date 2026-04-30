@@ -132,16 +132,18 @@ class TestSepHostsEndpoint:
     ) -> None:
         """Return ``200 []`` when the Tasks API is unreachable.
 
-        ``get_executor_hosts`` catches ``HTTPException``, queues a flash
-        message, and returns ``{}``. The JSON route inherits this graceful
-        degradation so the frontend can render "No hosts available" rather
-        than a hard error.
+        Catch the upstream ``HTTPException`` and degrade to an empty list so
+        the frontend can render "No hosts available" rather than a hard
+        error. Also attach the ``X-Sep-Hosts-Upstream-Error`` header carrying
+        the upstream detail so the React shell can raise a notification
+        without breaking the ``200 []`` contract.
         """
         mock_task_api_dep.get.side_effect = HTTPBadGatewayException("tasks unreachable")
         mock_inventory_api_dep.get.return_value = {"items": []}
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+        assert response.headers["X-Sep-Hosts-Upstream-Error"] == "tasks unreachable"
 
 
 class TestSepHostsAuth:

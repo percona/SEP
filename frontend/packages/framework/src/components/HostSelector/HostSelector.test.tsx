@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FormProvider, useForm } from 'react-hook-form';
+import { SnackbarProvider } from 'notistack';
 import type { PropsWithChildren } from 'react';
 import { HostSelector } from './HostSelector';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
@@ -14,8 +15,11 @@ vi.mock('@sep/api', () => ({
 import { apiClient } from '@sep/api';
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
-function makeResponse(items: Array<{ id: string; name: string; address: string }>) {
-  return { data: items };
+function makeResponse(
+  items: Array<{ id: string; name: string; address: string }>,
+  headers: Record<string, string> = {},
+) {
+  return { data: items, headers };
 }
 
 function makeClient() {
@@ -34,7 +38,11 @@ function Harness() {
 }
 
 function Wrapper({ children, client }: PropsWithChildren<{ client: QueryClient }>) {
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      <SnackbarProvider>{children}</SnackbarProvider>
+    </QueryClientProvider>
+  );
 }
 
 describe('HostSelector', () => {
@@ -57,7 +65,7 @@ describe('HostSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/api/sep/hosts/'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
     expect(mocked.get).toHaveBeenCalledTimes(1);
 
     const user = userEvent.setup();
@@ -138,7 +146,7 @@ describe('HostSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/api/sep/hosts/'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
 
     const user = userEvent.setup();
     // `required: true` adds a trailing "*" to the rendered MUI label, so match by prefix.
@@ -150,5 +158,22 @@ describe('HostSelector', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ hostId: 'nomad-1' }));
+  });
+
+  it('raises a snackbar when the route reports an upstream Tasks-API failure', async () => {
+    mocked.get.mockResolvedValueOnce(
+      makeResponse([], { 'x-sep-hosts-upstream-error': 'tasks unreachable' }),
+    );
+
+    const client = makeClient();
+    render(
+      <Wrapper client={client}>
+        <Harness />
+      </Wrapper>,
+    );
+
+    expect(
+      await screen.findByText(/Failed to load executor hosts: tasks unreachable/),
+    ).toBeInTheDocument();
   });
 });

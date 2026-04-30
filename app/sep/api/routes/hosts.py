@@ -20,12 +20,14 @@ React frontend can populate its host selector through SEP rather than calling
 the Tasks and Inventory APIs directly.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
-from app.sep.deps import ExecutorHostsCtx
+from app.sep.deps import InventoryAPI, TaskAPI
 
 router = APIRouter()
+
+UPSTREAM_ERROR_HEADER = "X-Sep-Hosts-Upstream-Error"
 
 
 class HostResponse(BaseModel):
@@ -47,31 +49,57 @@ class HostResponse(BaseModel):
 
 
 @router.get("/", response_model=list[HostResponse])
-async def list_hosts(executor_hosts_ctx: ExecutorHostsCtx) -> list[HostResponse]:
+async def list_hosts(
+    response: Response,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+) -> list[HostResponse]:
     """Return executor hosts merged with inventory display names.
 
-    Internally call ``tasks_api.get('/hosts/')`` (executor targets) and the
-    Inventory API (display-name lookup) via the shared
-    :func:`app.sep.deps.get_executor_hosts_context` dep. Inventory failures
-    degrade gracefully — hosts without an inventory match keep the raw
-    executor node name. Tasks-API failures also degrade gracefully (handled
-    by ``get_executor_hosts``); the route returns an empty list when the
-    Tasks API is unreachable rather than surfacing an upstream error.
+    Call ``tasks_api.get('/hosts/')`` for executor targets and the Inventory
+    API for display-name enrichment. Both upstream calls degrade gracefully
+    — Inventory failures cause hosts without a match to keep the raw
+    executor node name, and Tasks-API failures cause an empty list to be
+    returned rather than a hard error. Tasks-API failures additionally set
+    the ``X-Sep-Hosts-Upstream-Error`` response header so the frontend can
+    surface the failure detail through its notification system without
+    breaking the ``200 []`` response contract that lets the dropdown render
+    "No hosts available".
 
-    :param executor_hosts_ctx: Executor host context with display name lookup.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: Sorted list of hosts, each with executor id, friendly name, and
-        network address.
+    :param response: The outgoing response, used to attach the upstream
+        error header on Tasks-API failure.
+    :type response: Response
+    :param tasks_api: The Tasks API client used to fetch executor hosts.
+    :type tasks_api: TaskAPI
+    :param inventory_api: The Inventory API client used to enrich the hosts
+        with their display names.
+    :type inventory_api: InventoryAPI
+    :return: Sorted list of hosts, each with executor id, friendly name,
+        and network address.
     :rtype: list[HostResponse]
     """
+    try:
+        executor_hosts: dict[str, str] = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        response.headers[UPSTREAM_ERROR_HEADER] = exc.detail
+        return []
+
+    try:
+        inventory_response = await inventory_api.get("/", params={"limit": 0})
+        display_names = {
+            node["address"]: node["name"] for node in inventory_response["items"]
+        }
+    except (HTTPException, TypeError, KeyError, OSError):
+        display_names = {}
+
     return sorted(
         [
             HostResponse(
                 id=node_name,
-                name=executor_hosts_ctx.display_name(node_name),
+                name=display_names.get(address, node_name),
                 address=address,
             )
-            for node_name, address in executor_hosts_ctx.hosts.items()
+            for node_name, address in executor_hosts.items()
         ],
         key=lambda host: host.name.casefold(),
     )
