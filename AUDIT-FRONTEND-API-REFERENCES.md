@@ -14,6 +14,7 @@
 8. [Alert Troubleshooting — Dynamic `baseUri`](#8-alert-troubleshooting--dynamic-baseuri)
 9. [Alerts CRUD — `/alerts/*`](#9-alerts-crud--alerts)
 10. [Additional Direct Route — `/alters/table/{id}/details`](#10-additional-direct-route--alterstableiddetails)
+11. [Retirement Plan](#11-retirement-plan)
 
 ---
 
@@ -127,8 +128,8 @@ Related Storybook/tests may also reference these hooks/endpoints, but the table 
 
 | Current URL | Proposed plugin endpoint |
 |---|---|
-| `GET /stream-logs/{id}` (SSE) | `GET /api/plugins/task-manager/stream-logs/{id}` |
-| `GET /stream-logs/{id}/execution-events` (SSE) | `GET /api/plugins/task-manager/stream-logs/{id}/execution-events` |
+| `GET /stream-logs/{id}` (SSE) | `GET /api/plugins/tasks/stream-logs/{id}` |
+| `GET /stream-logs/{id}/execution-events` (SSE) | `GET /api/plugins/tasks/stream-logs/{id}/execution-events` |
 
 ---
 
@@ -154,8 +155,8 @@ Related Storybook/tests may also reference these hooks/endpoints, but the table 
 
 | Current URL | Proposed plugin endpoint |
 |---|---|
-| `GET /files/{id}` | `GET /api/plugins/task-manager/files/{id}` |
-| `GET /files/{id}/download?path=...` | `GET /api/plugins/task-manager/files/{id}/download?path=...` |
+| `GET /files/{id}` | `GET /api/plugins/tasks/files/{id}` |
+| `GET /files/{id}/download?path=...` | `GET /api/plugins/tasks/files/{id}/download?path=...` |
 
 ---
 ## 4. Execution Events
@@ -179,7 +180,7 @@ Related Storybook/tests may also reference these hooks/endpoints, but the table 
 
 | Current URL | Proposed plugin endpoint |
 |---|---|
-| `GET /execution-events/{id}` | `GET /api/plugins/task-manager/execution-events/{id}` |
+| `GET /execution-events/{id}` | `GET /api/plugins/tasks/execution-events/{id}` |
 
 ---
 
@@ -215,9 +216,9 @@ Under the gateway pattern, the React frontend would replace these forms with typ
 
 | Current URL (server-rendered) | Proposed plugin endpoint |
 |---|---|
-| `POST /periodic/` | `POST /api/plugins/task-manager/periodic/` |
-| `POST /periodic/{id}/update` | `PUT /api/plugins/task-manager/periodic/{id}` |
-| `POST /periodic/{id}/delete` | `DELETE /api/plugins/task-manager/periodic/{id}` |
+| `POST /periodic/` | `POST /api/plugins/tasks/periodic/` |
+| `POST /periodic/{id}/update` | `PUT /api/plugins/tasks/periodic/{id}` |
+| `POST /periodic/{id}/delete` | `DELETE /api/plugins/tasks/periodic/{id}` |
 
 ---
 
@@ -242,7 +243,7 @@ These are HTML form submissions, not AJAX.
 
 | Current URL (server-rendered) | Proposed plugin endpoint |
 |---|---|
-| `POST /stop-task/{id}` | `POST /api/plugins/task-manager/stop-task/{id}` |
+| `POST /stop-task/{id}` | `POST /api/plugins/tasks/stop-task/{id}` |
 
 ---
 ## 7. Artifact Download — `/artifacts/*`
@@ -279,8 +280,8 @@ Under the gateway pattern, the replacement would be:
 
 | Current URL pattern | Proposed plugin endpoint |
 |---|---|
-| `GET {baseUri}/output/{taskId}` | `GET /api/plugins/troubleshooting/output/{taskId}` |
-| `POST {form.action}` | `POST /api/plugins/troubleshooting/run/{snippetId}`  |
+| `GET {baseUri}/output/{taskId}` | `GET /api/plugins/alert_troubleshooting/output/{taskId}` |
+| `POST {form.action}` | `POST /api/plugins/alert_troubleshooting/run/{snippetId}`  |
 
 ---
 
@@ -322,3 +323,23 @@ These routes are **already plugin-level** routes (alerts plugin), not sub-app pr
 | Current URL | Proposed plugin endpoint |
 |---|---|
 | `GET /alters/table/{id}/details` | `GET /api/plugins/alters/table/{id}/details?syntax_highlight_style=monokai` |
+
+---
+
+## 11. Retirement Plan
+
+Once the React frontend exclusively consumes the proposed `/api/plugins/{name}/...` endpoints listed in sections 1–10, the SEP-side proxy and direct routes below can be deleted. Each row lists the file, its mount, the section that maps it to a replacement, and the precondition that must hold before removal.
+
+| File | Current mount | Maps to | Retire when |
+|---|---|---|---|
+| `app/sep/routes/inventory_ajax.py` | `/inventory-api/*` | §1 | All cascading-selector templates (`alters`, `archives`, `checksums`, `backup` restore) and any future React selector hooks call the per-plugin `/api/plugins/{plugin}/schemas` and `/tables` (or shared `/api/plugins/inventory/...`) endpoints |
+| `app/sep/routes/stream_logs.py` | `/stream-logs/*` | §2 | `static/js/logs.js` is removed and `frontend/packages/framework/src/hooks/useTaskLogs.ts` + `useExecutionEvents.ts` consume `/api/plugins/tasks/stream-logs/...` |
+| `app/sep/routes/download_files.py` | `/files/*` | §3 | `static/js/logs.js` and any future React file-listing UI use `/api/plugins/tasks/files/{id}` and `/files/{id}/download` |
+| `app/sep/routes/execution_events.py` | `/execution-events/*` | §4 | `static/js/logs.js` and `useExecutionEvents.ts` consume `/api/plugins/tasks/execution-events/{id}` |
+| `app/sep/routes/periodic_tasks.py` | `/periodic/*` | §5 | `templates/tasks/partials/scheduled-tasks.html.j2` and `templates/homepage/scheduled-tasks.html.j2` are replaced by React components calling `/api/plugins/tasks/periodic/...` |
+| `app/sep/routes/stop_task.py` | `/stop-task/*` | §6 | `templates/tasks/partials/{running,pending}-tasks.html.j2` stop/cancel buttons are replaced by React components calling `/api/plugins/tasks/stop-task/{id}` |
+| `app/sep/routes/artifacts.py` | `/artifacts/*` | §7 | Snippets and dipper download links are migrated to per-plugin `/api/plugins/{snippets,dipper}/artifacts/download/{token}` (or this stays as a shared, non-plugin endpoint by explicit decision) |
+
+Sections 8 (Alert Troubleshooting), 9 (Alerts CRUD), and 10 (alters direct route) already live inside their owning plugin modules — they are not SEP-level proxies and have no `app/sep/routes/...` file to retire. Their proposed replacements describe a path/prefix change inside the existing plugin router, not a deletion.
+
+The router-registration block in `app/sep/main.py:136-157` becomes dead code once every entry above is retired and its corresponding `_TASK_INFRA_PLUGINS`-gated `include_router(...)` call is removed alongside the deleted file.
