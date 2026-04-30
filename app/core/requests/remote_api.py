@@ -18,7 +18,7 @@
 __all__ = ["BaseRemoteAPI", "RemoteAPI"]
 
 import logging
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
@@ -43,6 +43,77 @@ from app.core.log import correlation_id_var
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
 from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
+
+# Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
+# StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
+# verbose NDJSON log lines from tasks like xtrabackup. 16 MiB stays well below an
+# OOM threshold while comfortably covering real log chunks.
+_MAX_STREAM_LINE_BYTES = 16 * 1024 * 1024
+
+
+def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
+    """Raise :class:`ValueError` for a stream line larger than the cap.
+
+    :param size: Size in bytes of the offending line or pending buffer.
+    :type size: int
+    :param path: The stream path, included in the error message.
+    :type path: str
+    :raises ValueError: Always — this function never returns.
+    """
+    msg = (
+        f"Stream line exceeded {_MAX_STREAM_LINE_BYTES} bytes "
+        f"(size={size}, path={path})"
+    )
+    raise ValueError(msg)
+
+
+async def _iter_lines_from_chunks(
+    chunks: AsyncIterator[bytes], path: str
+) -> AsyncGenerator[bytes, None]:
+    """Yield newline-terminated lines from an async iterator of byte chunks.
+
+    Buffer chunks from ``chunks`` and yield each newline-terminated slice with
+    the trailing newline byte preserved. Flush any remaining partial line at
+    end-of-stream so callers receive the final unterminated chunk. Reject any
+    line larger than ``_MAX_STREAM_LINE_BYTES`` to protect consumers from a
+    runaway producer.
+
+    :param chunks: An async iterator producing byte chunks (e.g. from
+        ``aiohttp`` ``StreamReader.iter_any()``).
+    :type chunks: AsyncIterator[bytes]
+    :param path: The stream path, included in the error message when a single
+        line exceeds the cap.
+    :type path: str
+    :yield: Each line as ``bytes`` with its trailing newline preserved; the
+        final unterminated chunk is also yielded when the stream ends without
+        a newline.
+    :rtype: AsyncGenerator[bytes, None]
+    :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
+    """
+    buffer = bytearray()
+    async for chunk in chunks:
+        if not chunk:
+            continue
+        buffer.extend(chunk)
+        offset = 0
+        while True:
+            newline_pos = buffer.find(b"\n", offset)
+            if newline_pos == -1:
+                break
+            line_end = newline_pos + 1
+            line_size = line_end - offset
+            if line_size > _MAX_STREAM_LINE_BYTES:
+                _raise_stream_line_too_big(line_size, path)
+            yield bytes(buffer[offset:line_end])
+            offset = line_end
+        if offset:
+            del buffer[:offset]
+        if len(buffer) > _MAX_STREAM_LINE_BYTES:
+            _raise_stream_line_too_big(len(buffer), path)
+    if buffer:
+        if len(buffer) > _MAX_STREAM_LINE_BYTES:
+            _raise_stream_line_too_big(len(buffer), path)
+        yield bytes(buffer)
 
 
 class BaseRemoteAPI(BaseCaseInsensitiveModel):
@@ -345,10 +416,14 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             status_code=status_code, detail=detail, headers=headers
         ) from None
 
-    async def stream(
+    async def stream_chunks(
         self, path: str, method: str = "GET", **kwargs: Any
     ) -> AsyncGenerator[bytes, None]:
-        """Perform a streaming HTTP request and yield response content.
+        """Perform a streaming HTTP request and yield raw byte chunks as they arrive.
+
+        Use this for binary, gzip, or any non-line-oriented payload. For NDJSON
+        log streams, prefer :meth:`stream`, which buffers chunks across newline
+        boundaries so each yield is a single line.
 
         :param path: The API endpoint path to request.
         :type path: str
@@ -356,7 +431,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :type method: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :yield: Lines of response content as bytes.
+        :yield: Raw byte chunks from the response body in arrival order.
         :rtype: AsyncGenerator[bytes, None]
         :raises HTTPGoneException: If the upstream API returns HTTP 410 (e.g. task data
             gone from the Nomad executor). Callers may use ``isinstance(..., HTTPGoneException)``
@@ -393,14 +468,54 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                         detail=error_detail,
                         headers=error_headers,
                     )
-                async for line in response.content:
-                    yield line
+                async for chunk in response.content.iter_any():
+                    if chunk:
+                        yield chunk
             self.logger.debug("Stream ended normally path=%s method=%s", path, method)
         except HTTPException:
             raise
         except Exception as exc:
             self.logger.warning(
                 "Stream error path=%s method=%s: %s",
+                path,
+                method,
+                exc,
+                exc_info=True,
+            )
+            raise
+
+    async def stream(
+        self, path: str, method: str = "GET", **kwargs: Any
+    ) -> AsyncGenerator[bytes, None]:
+        """Perform a streaming HTTP request and yield response content one line at a time.
+
+        Buffer chunks across newline boundaries and yield each newline-terminated
+        slice with its trailing newline byte preserved. Flush any remaining partial
+        line at end-of-stream. Use this for NDJSON log streams; for binary or
+        non-line payloads, use :meth:`stream_chunks`.
+
+        :param path: The API endpoint path to request.
+        :type path: str
+        :param method: The HTTP method to use for the request. Defaults to "GET".
+        :type method: str
+        :param kwargs: Additional keyword arguments to pass to the request.
+        :type kwargs: Any
+        :yield: Each line of response content as ``bytes`` with its trailing
+            newline preserved; the final unterminated chunk is also yielded
+            when the body does not end with a newline.
+        :rtype: AsyncGenerator[bytes, None]
+        :raises HTTPGoneException: See :meth:`stream_chunks`.
+        :raises HTTPException: See :meth:`stream_chunks`.
+        :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
+        """
+        try:
+            async for line in _iter_lines_from_chunks(
+                self.stream_chunks(path, method, **kwargs), path
+            ):
+                yield line
+        except ValueError as exc:
+            self.logger.warning(
+                "Stream line cap exceeded path=%s method=%s: %s",
                 path,
                 method,
                 exc,
