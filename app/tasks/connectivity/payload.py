@@ -28,6 +28,11 @@ import sys
 def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     """Check MySQL connectivity via ``SELECT 1``.
 
+    A server-side auth/authorization rejection (error codes 1044, 1045, 1130)
+    is reported as success because the server's structured response proves it
+    is reachable, which is what this check measures. Network-level failures
+    (codes 2xxx) and any other exception remain failures.
+
     :param host: The database host address.
     :type host: str
     :param port: The database port number.
@@ -52,12 +57,22 @@ def check_mysql(host: str, port: int) -> dict[str, bool | str]:
             return {"success": True}
         finally:
             conn.close()
+    except pymysql.err.OperationalError as exc:
+        code = exc.args[0] if exc.args else None
+        if code in (1044, 1045, 1130):
+            return {"success": True}
+        return {"success": False, "error": str(exc)}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
 
 def check_postgresql(host: str, port: int) -> dict[str, bool | str]:
     """Check PostgreSQL connectivity via ``SELECT 1``.
+
+    A SQLSTATE class 28 response (``28000`` invalid authorization
+    specification, ``28P01`` invalid password) is reported as success because
+    the server's structured response proves it is reachable. Network-level
+    failures (``pgcode`` not set) and any other exception remain failures.
 
     :param host: The database host address.
     :type host: str
@@ -76,12 +91,22 @@ def check_postgresql(host: str, port: int) -> dict[str, bool | str]:
             return {"success": True}
         finally:
             conn.close()
+    except psycopg2.OperationalError as exc:
+        pgcode = getattr(exc, "pgcode", None)
+        if pgcode in ("28000", "28P01"):
+            return {"success": True}
+        return {"success": False, "error": str(exc)}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
 
 def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
     """Check MongoDB connectivity via the ``ping`` command.
+
+    A server-side ``OperationFailure`` with code ``13`` (Unauthorized) or
+    ``18`` (AuthenticationFailed) is reported as success because the server
+    processed the request and responded, which proves it is reachable.
+    ``ServerSelectionTimeoutError`` and any other exception remain failures.
 
     :param host: The database host address.
     :type host: str
@@ -101,6 +126,10 @@ def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
             return {"success": True}
         finally:
             client.close()
+    except pymongo.errors.OperationFailure as exc:
+        if getattr(exc, "code", None) in (13, 18):
+            return {"success": True}
+        return {"success": False, "error": str(exc)}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 

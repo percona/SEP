@@ -27,7 +27,9 @@ export type {
   PaginatedTaskHistory,
 } from './components/TaskHistoryTable';
 export { ChainBuilder } from './components/ChainBuilder';
-export { AlertOnFailField } from './components/AlertOnFailField';
+
+export type { ChainBuilderProps, ChainValue, AvailableTask } from './components/ChainBuilder';
+export { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
 
 // Hooks

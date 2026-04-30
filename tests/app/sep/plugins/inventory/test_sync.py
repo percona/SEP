@@ -20,7 +20,9 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import SecretStr
 
+from app.core.config import settings
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
@@ -168,12 +170,9 @@ async def test_run_table_sync(created_table, mock_base_syncer_factory):
 
 @pytest.mark.asyncio
 async def test_run_scheduled_inventory_sync(mocker, mock_base_syncer_factory):
-    """Assert run_scheduled_inventory_sync reads API key and constructs syncers."""
+    """Assert run_scheduled_inventory_sync reads internal token and constructs syncers."""
     syncer = mock_base_syncer_factory()
-    mocker.patch(
-        "app.sep.plugins.inventory.sync.tasks_settings",
-        INVENTORY_SYNC_API_KEY="test-api-key",
-    )
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("test-api-key"))
     mocker.patch(
         "app.sep.plugins.inventory.sync.get_syncers_standalone",
         return_value=[syncer],
@@ -187,22 +186,27 @@ async def test_run_scheduled_inventory_sync(mocker, mock_base_syncer_factory):
 
 
 @pytest.mark.asyncio
-async def test_run_scheduled_inventory_sync_no_api_key(mocker):
-    """Assert run_scheduled_inventory_sync raises when no API key configured."""
-    mocker.patch(
-        "app.sep.plugins.inventory.sync.tasks_settings",
-        INVENTORY_SYNC_API_KEY=None,
-    )
-    with pytest.raises(ValueError, match="INVENTORY_SYNC_API_KEY"):
+async def test_run_scheduled_inventory_sync_no_token(mocker):
+    """Assert run_scheduled_inventory_sync raises when SEP_INTERNAL_TOKEN unset."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
+    with pytest.raises(
+        ValueError,
+        match=r"SEP_INTERNAL_TOKEN must be configured.*openssl rand -hex 32",
+    ):
+        await run_scheduled_inventory_sync()
+
+
+@pytest.mark.asyncio
+async def test_run_scheduled_inventory_sync_empty_token(mocker):
+    """Assert run_scheduled_inventory_sync raises when SEP_INTERNAL_TOKEN is empty."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(""))
+    with pytest.raises(ValueError, match=r"SEP_INTERNAL_TOKEN must be configured"):
         await run_scheduled_inventory_sync()
 
 
 def _patch_scheduled_sync_env(mocker, syncers):
-    """Patch the API key and syncer-construction hooks for scheduled-sync tests."""
-    mocker.patch(
-        "app.sep.plugins.inventory.sync.tasks_settings",
-        INVENTORY_SYNC_API_KEY="test-api-key",
-    )
+    """Patch the internal token and syncer-construction hooks for scheduled-sync tests."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("test-api-key"))
     mocker.patch(
         "app.sep.plugins.inventory.sync.get_syncers_standalone",
         return_value=syncers,
