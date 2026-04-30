@@ -245,6 +245,11 @@ async def test_build_archives_task_payload(
         assert "DEST_HOST:" not in purge_config_yaml
         assert "DEST_PORT:" not in purge_config_yaml
         assert "DEST_DB:" not in purge_config_yaml
+    if created_archives.swap_drop == SwapDropEnum.SWAP_ARCHIVE_DROP:
+        loaded = yaml.safe_load(purge_config_yaml)
+        suffix = loaded["PURGE_LIST"][0]["SWP_TABLE_SUFFIX"]
+        assert isinstance(suffix, str)
+        assert suffix == "2026-04-29"
 
 
 def test_purge_config_item_backward_compat_without_disable_bulk_insert():
