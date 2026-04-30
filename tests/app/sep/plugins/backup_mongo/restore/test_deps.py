@@ -18,8 +18,8 @@
 from collections.abc import Awaitable, Callable
 
 import pytest
+from fastapi import HTTPException, status
 
-from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -102,10 +102,15 @@ async def test_resolve_service_name_returns_none_on_stale_service_id(
     mock_remote_api,
     restore_create: RestoreCreate,
 ):
-    """_resolve_service_name returns None when the inventory lookup 404s."""
+    """_resolve_service_name returns None when the inventory lookup 404s.
+
+    ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not the
+    project's ``HTTPNotFoundException``; the mock mirrors production behavior
+    so the swallow path is exercised end-to-end.
+    """
     mocker.patch(
         "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
-        side_effect=HTTPNotFoundException(),
+        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
     )
 
     assert await _resolve_service_name(restore_create, mock_remote_api) is None
@@ -141,8 +146,13 @@ async def test_build_restore_tasks_threads_inventory_api_to_all_dispatch_fns(
     mock_remote_api,
     mongo_service: CreatedService,
 ):
-    """build_restore_tasks returns a 4-tuple with _service_name set on every sub-task for physical restores."""
-    mocker.patch(
+    """build_restore_tasks returns a 4-tuple with _service_name set on every sub-task for physical restores.
+
+    Also asserts the inventory lookup is performed only once across all four
+    sub-tasks — the four builders share the resolved name rather than each
+    re-querying the Inventory API for the same ``service_id``.
+    """
+    get_created_entity = mocker.patch(
         "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
         return_value=mongo_service,
     )
@@ -160,6 +170,7 @@ async def test_build_restore_tasks_threads_inventory_api_to_all_dispatch_fns(
     assert all(task is not None for task in tasks)
     for task in tasks:
         assert task.data["meta"]["_service_name"] == mongo_service.name
+    get_created_entity.assert_awaited_once()
 
 
 @pytest.mark.asyncio

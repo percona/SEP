@@ -16,9 +16,11 @@
 """Define tests for the app.sep.plugins.backup.restore.deps module."""
 
 import pytest
+from fastapi import HTTPException, status
 
-from app.core.exceptions import HTTPNotFoundException
+from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup.models import BackupType
 from app.sep.plugins.backup.restore.deps import build_restore_task_payload
 from app.sep.plugins.backup.restore.models import RestoreCreate
@@ -94,7 +96,7 @@ async def test_build_restore_task_payload_mydumper_without_service_id_raises(
     """MYDUMPER preserves the eager-raise contract when service_id is unset."""
     get_created_entity = mocker.patch(
         "app.sep.plugins.backup.restore.deps.get_created_entity",
-        side_effect=HTTPNotFoundException(),
+        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
     )
 
     form = RestoreCreate(
@@ -106,10 +108,21 @@ async def test_build_restore_task_payload_mydumper_without_service_id_raises(
         datadir="/var/lib/mysql",
     )
 
-    with pytest.raises(HTTPNotFoundException):
+    with pytest.raises(HTTPException) as exc_info:
         await build_restore_task_payload(form, mock_remote_api)
 
-    get_created_entity.assert_awaited_once()
+    assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+    # Tighten the eager-raise contract: assert the lookup ran with the exact
+    # args the MYDUMPER branch promises (None service_id, MYSQL filter). A
+    # future refactor that gates the lookup behind ``if form.service_id`` would
+    # silently keep ``assert_awaited_once`` green; ``assert_awaited_once_with``
+    # surfaces the regression.
+    get_created_entity.assert_awaited_once_with(
+        mock_remote_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        None,
+        type=ServiceTypeEnum.MYSQL,
+    )
 
 
 @pytest.mark.asyncio
@@ -151,10 +164,15 @@ async def test_build_restore_task_payload_swallows_404_for_non_mydumper(
     mocker,
     mock_remote_api,
 ):
-    """xtrabackup/binlog gracefully degrade to node-only annotations on stale service_id."""
+    """xtrabackup/binlog gracefully degrade to node-only annotations on stale service_id.
+
+    ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not the
+    project's ``HTTPNotFoundException``; the mock mirrors production behavior
+    so the swallow path is exercised end-to-end.
+    """
     mocker.patch(
         "app.sep.plugins.backup.restore.deps.get_created_entity",
-        side_effect=HTTPNotFoundException(),
+        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
     )
 
     form = RestoreCreate(
