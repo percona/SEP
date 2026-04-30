@@ -111,6 +111,7 @@ export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
           )}
           <Box
             component="pre"
+            tabIndex={0}
             data-language={state.data.language || field.language || 'plaintext'}
             sx={{
               m: 0,

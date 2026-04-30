@@ -35,7 +35,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'inventory', element: <PlaceholderPage /> },
-          { path: 'tasks', element: <PlaceholderPage /> },
+          { path: 'tasks/*', element: <PlaceholderPage /> },
           { path: 'snippets/*', element: <SnippetsPlugin /> },
           { path: 'atw', element: <PlaceholderPage /> },
           { path: 'dipper', element: <PlaceholderPage /> },
