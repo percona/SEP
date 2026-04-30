@@ -110,7 +110,7 @@
 | app/sep/plugins/atw/routes.py                                                                               |       23 |        9 |     61% |     48-72 |
 | app/sep/plugins/backup/deps.py                                                                              |       74 |       11 |     85% |100, 137, 192, 198-200, 204, 206, 209-210, 291 |
 | app/sep/plugins/backup/models.py                                                                            |       91 |        1 |     99% |       286 |
-| app/sep/plugins/backup/restore/deps.py                                                                      |       69 |       20 |     71% |78-84, 103, 119, 159-180, 204, 220-225, 258 |
+| app/sep/plugins/backup/restore/deps.py                                                                      |       69 |       23 |     67% |73-75, 78-84, 103, 119, 159-180, 204, 220-225, 258 |
 | app/sep/plugins/backup/restore/models.py                                                                    |       73 |        1 |     99% |       198 |
 | app/sep/plugins/backup/restore/routes.py                                                                    |       65 |       30 |     54% |58, 96-150, 171-180, 217-219 |
 | app/sep/plugins/backup/routes.py                                                                            |       76 |        6 |     92% |74, 178-179, 232-237 |
@@ -201,7 +201,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      205 |       29 |     86% |122-126, 183, 204-211, 243, 292-300, 306, 350-351, 378-379, 407-408, 427, 560, 575, 584-595, 611-612 |
-| **TOTAL**                                                                                                   | **13851** | **2205** | **84%** |           |
+| **TOTAL**                                                                                                   | **13851** | **2208** | **84%** |           |
 
 
 ## Setup coverage badge
