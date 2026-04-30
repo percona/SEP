@@ -98,8 +98,6 @@ export interface TableField extends BaseField {
 
 export interface HostField extends BaseField {
   type: 'host';
-  /** Optional upstream field name. When provided, available hosts are filtered by the selected service. */
-  dependsOn?: string;
 }
 
 // ── Read-only preview ───────────────────────────────────────────────────
