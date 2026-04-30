@@ -49,13 +49,14 @@ export function HostSelector({ name, label, required, disabled, helperText }: Ho
     }
   }, [upstreamError, enqueueSnackbar]);
 
-  const text = fieldError
-    ? fieldError
-    : isError
-      ? (error?.message ?? 'Failed to load hosts')
-      : empty
-        ? 'No hosts available'
-        : helperText;
+  let text = helperText;
+  if (fieldError) {
+    text = fieldError;
+  } else if (isError) {
+    text = error?.message ?? 'Failed to load hosts';
+  } else if (empty) {
+    text = 'No hosts available';
+  }
 
   return (
     <AutoCompleteInput<HostOption>

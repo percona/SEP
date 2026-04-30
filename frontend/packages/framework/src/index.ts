@@ -43,6 +43,7 @@ export type {
   SchemaOption,
   TableOption,
   HostOption,
+  HostsResult,
   UseServicesOptions,
   UseSchemasOptions,
   UseTablesOptions,
