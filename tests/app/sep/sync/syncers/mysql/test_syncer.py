@@ -577,7 +577,9 @@ class TestStreamsAndParsing:
             yield comp[10:]
 
         mocker.patch.object(
-            mock_mysql_syncer.tasks_api, "stream", return_value=fake_stream("", {})
+            mock_mysql_syncer.tasks_api,
+            "stream_chunks",
+            return_value=fake_stream("", {}),
         )
         out = [obj async for obj in mock_mysql_syncer.stream_ndjson_file(1, "x.gz")]
         assert out == [{"x": 1}]
