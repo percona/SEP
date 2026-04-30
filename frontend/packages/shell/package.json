@@ -18,7 +18,7 @@
     "@fontsource/roboto-mono": "^5.1.0",
     "@melloware/react-logviewer": "^6.5.0",
     "@mui/icons-material": "^7.3.7",
-    "@mui/material": "^9.0.0",
+    "@mui/material": "^7.3.7",
     "@mui/utils": "^7.3.7",
     "@mui/x-date-pickers": "^7.6.2",
     "@percona/percona-ui": "^1.0.15",
