@@ -19,31 +19,31 @@
 
 ## Router Registration — `app/sep/main.py`
 
-All proxy routes are conditionally registered in [app/sep/main.py](app/sep/main.py#L136) based on which plugins are enabled
+All proxy routes are conditionally registered in [app/sep/main.py](app/sep/main.py#L143) based on which plugins are enabled
 
 
 ### Quick Reference
 
 | Prefix | Backend file | Purpose |
 |---|---|---|
-| **[`/inventory-api`](#1-cascading-selectors--inventory-api)** ([L136](app/sep/main.py#L136)) | `app/sep/api/routes.py` | Enabled if `alters`, `archives`, `tasks`, `backup`, `backup_mongo`, or `checksums` plugins are active |
-| **[`/stream-logs`](#2-sse-log-streaming--stream-logs)** ([L137](app/sep/main.py#L137)) | `app/sep/routes/stream_logs.py` | Server-sent events (SSE): stream task logs and execution events in real time |
-| **[`/files`](#3-file-listing-and-download--files)** ([L138](app/sep/main.py#L138)) | `app/sep/routes/download_files.py` | List and download task output files | 
-| **[`/execution-events`](#4-execution-events)** ([L139](app/sep/main.py#L139)) | `app/sep/routes/execution_events.py` | Fetch full event logs for completed tasks | 
-| **[`/periodic`](#5-periodic-task-crud--periodic)** ([L140](app/sep/main.py#L140)) | `app/sep/routes/periodic_tasks.py` | Create, read, update, delete scheduled (periodic) tasks | 
-| **[`/stop-task`](#6-task-stop--stop-task)** ([L141](app/sep/main.py#L141)) | `app/sep/routes/stop_task.py` | Stop or cancel a running or pending task |
-| **[`/artifacts`](#7-artifact-download--artifacts)** ([L146](app/sep/main.py#L146)) | `app/sep/routes/artifacts.py` | It is used to download artifact files. |
+| **[`/inventory-api`](#1-cascading-selectors--inventory-api)** ([L143](app/sep/main.py#L143)) | `app/sep/routes/inventory_ajax.py` | Enabled if `alters`, `archives`, `tasks`, `backup`, `backup_mongo`, `backup_pg`, or `checksums` plugins are active |
+| **[`/stream-logs`](#2-sse-log-streaming--stream-logs)** ([L144](app/sep/main.py#L144)) | `app/sep/routes/stream_logs.py` | Server-sent events (SSE): stream task logs and execution events in real time |
+| **[`/files`](#3-file-listing-and-download--files)** ([L145](app/sep/main.py#L145)) | `app/sep/routes/download_files.py` | List and download task output files |
+| **[`/execution-events`](#4-execution-events)** ([L146](app/sep/main.py#L146)) | `app/sep/routes/execution_events.py` | Fetch full event logs for completed tasks |
+| **[`/periodic`](#5-periodic-task-crud--periodic)** ([L152](app/sep/main.py#L152)) | `app/sep/routes/periodic_tasks.py` | Create, read, update, delete scheduled (periodic) tasks |
+| **[`/stop-task`](#6-task-stop--stop-task)** ([L147](app/sep/main.py#L147)) | `app/sep/routes/stop_task.py` | Stop or cancel a running or pending task |
+| **[`/artifacts`](#7-artifact-download--artifacts)** ([L157](app/sep/main.py#L157)) | `app/sep/routes/artifacts.py` | Used to download artifact files |
 
 ---
 
 ## 1. Cascading Selectors — `/inventory-api/*`
 
-### Backend proxy — `app/sep/api/routes.py` (exposed at `/inventory-api`)
+### Backend proxy — `app/sep/routes/inventory_ajax.py` (exposed at `/inventory-api`)
 
 | Route | Method | Backend call | Description |
 |---|---|---|---|
- | `/inventory-api/services/{service_id}/schemas` | `GET` | Inventory API `GET /services/{service_id}/schemas?` | Returns `[{id, name}]` list of schemas for a service|
-| `/inventory-api/schemas/{schema_id}/tables` | `GET` | Inventory API `GET /schemas/{schema_id}/tables?` | Returns `[{id, name}]` list of tables for a schema |
+| `/inventory-api/services/{service_id}/schemas` | `GET` | Inventory API `GET /services/{service_id}/schemas/?limit=0&search=...` (`search` optional) | Returns `[{id, name}]` list of schemas for a service |
+| `/inventory-api/schemas/{schema_id}/tables` | `GET` | Inventory API `GET /schemas/{schema_id}/tables/?limit=0&search=...` (`search` optional) | Returns `[{id, name}]` list of tables for a schema |
 
 ### Shared JS utility — `static/js/schema-selector.js`
 
@@ -87,8 +87,8 @@ This script reference is included in all the templates listed below.
 | `templates/backups/restore/partials/create-form.html.j2` | [~L576](https://github.com/percona/SEP/blob/main/templates/backups/restore/partials/create-form.html.j2#L576) - [~L666](https://github.com/percona/SEP/blob/main/templates/backups/restore/partials/create-form.html.j2#L666) | `fetchSchemas(serviceId)` / `fetchSchemas(singleHost)` | Destination schema dropdown (MyLoader restore only; no table lookup) |
 | `templates/backups/restore/partials/edit-form.html.j2` | [~L725](https://github.com/percona/SEP/blob/main/templates/backups/restore/partials/edit-form.html.j2#L725) - [~L795](https://github.com/percona/SEP/blob/main/templates/backups/restore/partials/edit-form.html.j2#L795) | `fetchSchemas(selectedService)` - `fetchSchemas(selectedServiceId)`| `initSource()` |
 
-**Proposed replacement:**  
-Each plugin that needs cascading selectors should expose its own typed selector endpoints under `/api/plugins/{plugin-name}/`. A shared pattern (one endpoint per plugin) eliminates the cross-sub-app proxy. 
+**Proposed replacement:**
+Each plugin that needs cascading selectors should expose its own typed selector endpoints under `/api/plugins/{plugin-name}/`. A shared pattern (one endpoint per plugin) eliminates the cross-sub-app proxy.
 
 Example:
 
@@ -97,7 +97,7 @@ Example:
 | `GET /inventory-api/services/{id}/schemas` | `GET /api/plugins/{plugin-name}/schemas?service_id={id}&search=...` |
 | `GET /inventory-api/schemas/{id}/tables` | `GET /api/plugins/{plugin-name}/tables?schema_id={id}&search=...` |
 
-Where `{plugin-name}` is `alters`, `archiver`, `checksums`, or `restores` depending on the consuming template. 
+Where `{plugin-name}` is the actual plugin identifier used under `/api/plugins/{name}` — for example, `alters`, `archives`, `checksums`, or `backup` depending on the consuming template. Restore templates/UI should be documented under the `backup` plugin rather than a separate `restores` plugin.
 
 If a shared selector component (SEP-968 `ServiceSelector` / `SchemaSelector` / `TableSelector`) is introduced, a single shared plugin route (e.g., `/api/plugins/inventory/schemas` and `/api/plugins/inventory/tables`) is an alternative.
 
@@ -112,12 +112,16 @@ If a shared selector component (SEP-968 `ServiceSelector` / `SchemaSelector` / `
 | `/stream-logs/{task_history_id}` | `GET` - SSE | Tasks API `GET /history/{id}/logs/` (streaming) then `POST /history/{id}/sync/` | Streams log lines; emits `finish` and `sep-error` SSE events |
 | `/stream-logs/{task_history_id}/execution-events` | `GET` - SSE | Tasks API `GET /history/{id}/events` (polling loop) | Streams execution events for *running* tasks; emits `finish` on completion |
 
-### Frontend call sites — `static/js/logs.js`
+### Frontend call sites
 
-| Line | Mechanism | URL pattern | Trigger | Description |
-|---|---|---|---|---|
-| [~L498](https://github.com/percona/SEP/blob/main/static/js/logs.js#L498) | `new EventSource(...)` | `/stream-logs/${taskId}?${offsetQueryString}` | `.view-logs-button` [~L84](https://github.com/percona/SEP/blob/main/templates/tasks/partials/completed-tasks.html.j2#L84) - [~L51](https://github.com/percona/SEP/blob/main/templates/tasks/partials/running-tasks.html.j2#L51) | Opens SSE log stream for a task |
-| [~L408](https://github.com/percona/SEP/blob/main/static/js/logs.js#L408) | `new EventSource(...)` | `/stream-logs/${encodeURIComponent(taskId)}/execution-events` | `fetchExecutionEventsIfNeeded()` when task status is `running` | Streams execution events in real time |
+| File | Line | Mechanism | URL pattern | Trigger | Description |
+|---|---|---|---|---|---|
+| `static/js/logs.js` | [~L498](https://github.com/percona/SEP/blob/main/static/js/logs.js#L498) | `new EventSource(...)` | `/stream-logs/${taskId}?${offsetQueryString}` | `.view-logs-button` [~L84](https://github.com/percona/SEP/blob/main/templates/tasks/partials/completed-tasks.html.j2#L84) - [~L51](https://github.com/percona/SEP/blob/main/templates/tasks/partials/running-tasks.html.j2#L51) | Opens SSE log stream for a task |
+| `static/js/logs.js` | [~L408](https://github.com/percona/SEP/blob/main/static/js/logs.js#L408) | `new EventSource(...)` | `/stream-logs/${encodeURIComponent(taskId)}/execution-events` | `fetchExecutionEventsIfNeeded()` when task status is `running` | Streams execution events in real time |
+| `frontend/packages/framework/src/hooks/useTaskLogs.ts` | hook implementation | `EventSource`/SSE client | `/stream-logs/${taskId}` | React task log viewer hook subscribes when log streaming is enabled for a task | Opens SSE log stream for a task in the React/TS frontend |
+| `frontend/packages/framework/src/hooks/useExecutionEvents.ts` | hook implementation | `EventSource`/SSE client | `/stream-logs/${taskId}/execution-events` | React execution-events hook subscribes for running tasks | Streams execution events in real time in the React/TS frontend |
+
+Related Storybook/tests may also reference these hooks/endpoints, but the table above captures the primary production frontend call sites for this audit.
 
 **Proposed replacement:**
 
@@ -162,11 +166,14 @@ If a shared selector component (SEP-968 `ServiceSelector` / `SchemaSelector` / `
 |---|---|---|---|
 | `/execution-events/{task_history_id}` | GET (REST) | Tasks API `GET /history/{id}/events` | Returns full event list for *completed* tasks as JSON array |
 
-### Frontend call sites — `static/js/logs.js`
+### Frontend call sites
 
-| Line | Mechanism | URL pattern | Trigger | Description |
+| File | Mechanism | URL pattern | Trigger | Description |
 |---|---|---|---|---|
-| [~L451](https://github.com/percona/SEP/blob/main/static/js/logs.js#L451) | `fetch(...)` | `/execution-events/${encodeURIComponent(taskId)}` | `fetchExecutionEventsIfNeeded()` when task status is NOT `running` | Fetches the full event list once for a completed task |
+| [`static/js/logs.js` ~L451](https://github.com/percona/SEP/blob/main/static/js/logs.js#L451) | `fetch(...)` | `/execution-events/${encodeURIComponent(taskId)}` | `fetchExecutionEventsIfNeeded()` when task status is NOT `running` | Fetches the full event list once for a completed task |
+| `frontend/packages/framework/src/hooks/useExecutionEvents.ts` | `fetch(...)` | `/execution-events/${id}` | Hook-driven execution-event loading for a task history entry | Fetches the same completed-task execution events through the framework hook |
+
+**Related execution-event streaming references:** `frontend/packages/framework/src/hooks/useExecutionEvents.ts` also consumes `/stream-logs/{id}/execution-events`, with corresponding Storybook/test references. That stream belongs to the SSE inventory in Section 2, but is noted here so the execution-events inventory remains complete.
 
 **Proposed replacement:**
 
@@ -183,8 +190,8 @@ If a shared selector component (SEP-968 `ServiceSelector` / `SchemaSelector` / `
 | Route | Method | Backend call | Description |
 |---|---|---|---|
 | `/periodic/` | `POST` | Tasks API `POST /{task_name}/periodic/` | Creates periodic task |
-| `/periodic/{periodic_task_id}/delete` | `DELETE` | Tasks API `DELETE /periodic/{id}` | Deletes periodic task |
-| `/periodic/{periodic_task_id}/update` | `GET` + `PUT` | Tasks API `GET /periodic/{id}` + `PUT /periodic/{id}` | Updates periodic task (full read-modify-write) |
+| `/periodic/{periodic_task_id}/delete` | `POST` | Tasks API `DELETE /periodic/{id}` | Deletes periodic task |
+| `/periodic/{periodic_task_id}/update` | `POST` | Tasks API `GET /periodic/{id}` + `PUT /periodic/{id}` | Updates periodic task (full read-modify-write) |
 
 ### Frontend call sites (server-rendered via `url_for()` in Jinja2)
 
@@ -198,19 +205,19 @@ rendered by `templates/tasks/partials/scheduled-tasks.html.j2`. The parent templ
 | File | Line | Jinja2 expression | HTTP method | Description |
 |---|---|---|---|---|
 | `templates/tasks/partials/scheduled-tasks.html.j2` | [~L19](https://github.com/percona/SEP/blob/main/templates/tasks/partials/scheduled-tasks.html.j2#L19) | `url_for('periodic_task_create')` | `POST` | New periodic task form action |
-| `templates/tasks/partials/scheduled-tasks.html.j2` | [~L25](https://github.com/percona/SEP/blob/main/templates/tasks/partials/scheduled-tasks.html.j2#L25) | `url_for('periodic_task_update', periodic_task_id=periodic_task.id)` | `PUT` | Edit periodic task form action |
-| `templates/tasks/partials/scheduled-tasks.html.j2` | [~L82](https://github.com/percona/SEP/blob/main/templates/tasks/partials/scheduled-tasks.html.j2#L82) | `url_for('periodic_task_update', periodic_task_id=periodic_task.id)` | `PUT` | Enable/disable toggle form action |
-| `templates/tasks/partials/scheduled-tasks.html.j2` | [~L105](https://github.com/percona/SEP/blob/main/templates/tasks/partials/scheduled-tasks.html.j2#L105) | `url_for('periodic_task_delete', periodic_task_id=periodic_task.id)` | `DELETE` | Delete form action |
+| `templates/tasks/partials/scheduled-tasks.html.j2` | [~L25](https://github.com/percona/SEP/blob/main/templates/tasks/partials/scheduled-tasks.html.j2#L25) | `url_for('periodic_task_update', periodic_task_id=periodic_task.id)` | `POST` | Edit periodic task form action |
+| `templates/tasks/partials/scheduled-tasks.html.j2` | [~L82](https://github.com/percona/SEP/blob/main/templates/tasks/partials/scheduled-tasks.html.j2#L82) | `url_for('periodic_task_update', periodic_task_id=periodic_task.id)` | `POST` | Enable/disable toggle form action |
+| `templates/tasks/partials/scheduled-tasks.html.j2` | [~L105](https://github.com/percona/SEP/blob/main/templates/tasks/partials/scheduled-tasks.html.j2#L105) | `url_for('periodic_task_delete', periodic_task_id=periodic_task.id)` | `POST` | Delete form action |
 | `templates/homepage/scheduled-tasks.html.j2` | [~L20](https://github.com/percona/SEP/blob/main/templates/homepage/scheduled-tasks.html.j2#L20) | `url_for('periodic_task_create')` | `POST` | New periodic task form action (homepage widget) |
 
-**Proposed replacement:**  
+**Proposed replacement:**
 Under the gateway pattern, the React frontend would replace these forms with typed API calls:
 
 | Current URL (server-rendered) | Proposed plugin endpoint |
 |---|---|
 | `POST /periodic/` | `POST /api/plugins/task-manager/periodic/` |
-| `PUT /periodic/{id}/update` | `PUT /api/plugins/task-manager/periodic/{id}` |
-| `DELETE /periodic/{id}/delete` | `DELETE /api/plugins/task-manager/periodic/{id}` |
+| `POST /periodic/{id}/update` | `PUT /api/plugins/task-manager/periodic/{id}` |
+| `POST /periodic/{id}/delete` | `DELETE /api/plugins/task-manager/periodic/{id}` |
 
 ---
 
@@ -249,11 +256,12 @@ These are HTML form submissions, not AJAX.
 **Note:** This route does **not** proxy to a sub-app. It reads from local directories: `snippets_settings.SNIPPETS_DIR` and `DIPPER_PAYLOADS_DIR`. The token is validated via `crypto_timestamp_serializer` before serving.
 
 
-**Proposed replacement:** 
+**Proposed replacement:**
 
-| Current URL | Proposed plugin endpoint |
-|---|---|
-| `GET /artifacts/download/{token}` | `GET /api/plugins/snippets/artifacts/download/{token}` |
+| Current URL | Consumer | Proposed plugin endpoint |
+|---|---|---|
+| `GET /artifacts/download/{token}` | Snippets | `GET /api/plugins/snippets/artifacts/download/{token}` |
+| `GET /artifacts/download/{token}` | Dipper payloads | `GET /api/plugins/dipper/artifacts/download/{token}` |
 
 ---
 
@@ -266,7 +274,7 @@ These are HTML form submissions, not AJAX.
 | [~L93](https://github.com/percona/SEP/blob/main/static/js/troubleshooting-detail.js#L93) | `fetch(baseUri + '/output/' + encodeURIComponent(taskId), { credentials: 'include' })` | `{baseUri}/output/${encodeURIComponent(taskId)}` | `GET` | Polls task output (stdout/stderr + status) during snippet execution |
 | [~L152](https://github.com/percona/SEP/blob/main/static/js/troubleshooting-detail.js#L152) | `fetch(form.action, { method: 'POST', body: formData, credentials: 'include' })` | `form.action` | `POST` | Submits snippet execution; form action is set by the server in the template |
 
-**Proposed replacement:**  
+**Proposed replacement:**
 Under the gateway pattern, the replacement would be:
 
 | Current URL pattern | Proposed plugin endpoint |
@@ -309,7 +317,7 @@ These routes are **already plugin-level** routes (alerts plugin), not sub-app pr
 | `templates/alters/partials/create-form.html.j2` | [~L815](https://github.com/percona/SEP/blob/main/templates/alters/partials/create-form.html.j2#L815) | ``/alters/table/${tableId}/details?syntax_highlight_style=monokai`` | GET | Fetches `CREATE TABLE` SQL and key information for a specific table (alters plugin) |
 | `templates/alters/partials/edit-form.html.j2` | [~L872](https://github.com/percona/SEP/blob/main/templates/alters/partials/edit-form.html.j2#L872) | ``/alters/table/${tableId}/details?syntax_highlight_style=monokai`` | GET | Same as above, in edit form |
 
-**Proposed replacement:** 
+**Proposed replacement:**
 
 | Current URL | Proposed plugin endpoint |
 |---|---|
