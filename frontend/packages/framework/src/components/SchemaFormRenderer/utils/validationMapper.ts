@@ -99,6 +99,18 @@ export function coerceFormValues(
       }
       const num = field.type === 'integer' ? parseInt(String(raw), 10) : parseFloat(String(raw));
       out[field.name] = Number.isNaN(num) ? raw : num;
+      continue;
+    }
+    if (field.type === 'service' || field.type === 'schema' || field.type === 'table') {
+      // ServiceSelector et al. store the full `{id, name, …}` option object
+      // in form state so the autocomplete can render the selected value.
+      // Backend payloads expect the scalar id, so unwrap on submit.
+      if (raw && typeof raw === 'object' && 'id' in (raw as Record<string, unknown>)) {
+        const id = (raw as { id: unknown }).id;
+        out[field.name] = id ?? undefined;
+      } else if (raw === '' || raw === null) {
+        out[field.name] = undefined;
+      }
     }
   }
   return out;

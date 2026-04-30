@@ -1,62 +1,89 @@
-import { useQuery } from '@tanstack/react-query';
-import { useWatch, type Control } from 'react-hook-form';
-import MenuItem from '@mui/material/MenuItem';
-import { SelectInput } from '@percona/percona-ui';
+import { useEffect, useRef } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
+import { AutoCompleteInput } from '@percona/percona-ui';
+import { useSchemas, type SchemaOption } from '../../hooks/useSchemas';
+import type { ServiceOption } from '../../hooks/useServices';
+import { extractId } from '../../utils/extractId';
 
-interface SchemaInfo {
-  schemaName: string;
-}
+const EMPTY_OPTIONS: SchemaOption[] = [];
 
-interface SchemaSelectorProps {
+export interface SchemaSelectorProps {
+  /** react-hook-form field name. Stores a `SchemaOption | null`. */
   name: string;
   label: string;
   required?: boolean;
+  /**
+   * Form field name of the parent `ServiceSelector`. The watched value is
+   * either a `ServiceOption` (from `<ServiceSelector>`) or a raw service id.
+   */
   dependsOn: string;
-  control: Control;
+  disabled?: boolean;
 }
 
-// TODO: connect to real inventory API
-const MOCK_SCHEMAS: Record<string, SchemaInfo[]> = {
-  'svc-1': [{ schemaName: 'app_production' }, { schemaName: 'app_analytics' }],
-  'svc-2': [{ schemaName: 'app_staging' }],
-  'svc-3': [{ schemaName: 'public' }, { schemaName: 'analytics' }],
-};
+const getOptionLabel = (opt: SchemaOption | string) => (typeof opt === 'string' ? opt : opt.name);
 
-export function SchemaSelector({ name, label, required, dependsOn, control }: SchemaSelectorProps) {
-  const serviceId = useWatch({ control, name: dependsOn }) as string | undefined;
+const isOptionEqualToValue = (a: SchemaOption, b: SchemaOption) => a.id === b.id;
 
-  const { data: schemas = [], isLoading } = useQuery<SchemaInfo[]>({
-    queryKey: ['inventory', 'schemas', serviceId],
-    enabled: !!serviceId,
-    queryFn: async () => {
-      // TODO: switch to real API
-      await new Promise((r) => setTimeout(r, 200));
-      return (serviceId ? MOCK_SCHEMAS[serviceId] : undefined) ?? [];
-    },
-  });
+export function SchemaSelector({
+  name,
+  label,
+  required,
+  dependsOn,
+  disabled,
+}: SchemaSelectorProps) {
+  const { control, setValue } = useFormContext();
+
+  const parent = useWatch({ control, name: dependsOn }) as
+    | ServiceOption
+    | number
+    | null
+    | undefined;
+  const serviceId = extractId(parent);
+
+  const prevIdRef = useRef<number | null>(serviceId);
+  useEffect(() => {
+    if (prevIdRef.current !== serviceId) {
+      prevIdRef.current = serviceId;
+      setValue(name, null, { shouldDirty: true, shouldValidate: false });
+    }
+  }, [serviceId, name, setValue]);
+
+  const { data: schemas = EMPTY_OPTIONS, isLoading, isError, error } = useSchemas({ serviceId });
+
+  const noService = serviceId === null || serviceId === undefined;
+  const empty = !noService && !isLoading && !isError && schemas.length === 0;
+
+  const helperText = noService
+    ? 'Select a service first'
+    : isError
+      ? (error?.message ?? 'Failed to load schemas')
+      : empty
+        ? 'No schemas in this service'
+        : undefined;
 
   return (
-    <SelectInput
+    <AutoCompleteInput<SchemaOption>
       name={name}
       label={label}
-      isRequired={required}
       control={control}
-      helperText={
-        !serviceId ? 'Select a service first' : isLoading ? 'Loading schemas...' : undefined
-      }
-      selectFieldProps={{ fullWidth: true, disabled: !serviceId }}
+      isRequired={required}
+      loading={isLoading}
+      disabled={disabled || noService || isError}
+      options={schemas}
       controllerProps={{
         name,
-        rules: {
-          ...(required && { required: `${label} is required` }),
-        },
+        rules: required ? { required: `${label} is required` } : undefined,
       }}
-    >
-      {schemas.map((s) => (
-        <MenuItem key={s.schemaName} value={s.schemaName}>
-          {s.schemaName}
-        </MenuItem>
-      ))}
-    </SelectInput>
+      autoCompleteProps={{
+        getOptionLabel,
+        isOptionEqualToValue,
+        noOptionsText: noService
+          ? 'Select a service first'
+          : isLoading
+            ? 'Loading schemas…'
+            : 'No schemas in this service',
+      }}
+      textFieldProps={{ helperText, error: isError }}
+    />
   );
 }
