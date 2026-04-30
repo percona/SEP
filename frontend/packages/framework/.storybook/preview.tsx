@@ -3,6 +3,7 @@ import { ThemeContextProvider, sepThemeOptions } from '@percona/percona-ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Preview } from '@storybook/react-vite';
 import { MemoryRouter } from 'react-router-dom';
+import { apiClient } from '@sep/api';
 import {
   installStorybookSseMocks,
   registerFetchResponse,
@@ -11,6 +12,11 @@ import {
 } from './sseMocks';
 
 installStorybookSseMocks();
+
+// Route axios through the global `fetch` so stories can stub responses via
+// `parameters.fetchResponses`. Without this, axios uses its XHR adapter
+// in the browser and bypasses the storybook fetch wrapper entirely.
+apiClient.defaults.adapter = 'fetch';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
