@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -69,6 +70,7 @@ jobs:
       - name: Run release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GH_PR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TYPE: ${{ inputs.release_type }}
           VERSION: ${{ inputs.version }}
           RC_NUMBER: ${{ inputs.rc_number }}
