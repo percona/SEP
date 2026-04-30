@@ -15,45 +15,60 @@
 
 """Define helpers for marking Jinja2 plugin routes as deprecated.
 
-Plugins migrating to the JSON API + React UI under the API-First Migration
-epic (SEP-948) keep their legacy Jinja2 routes mounted while the React UI
-matures. Mark every legacy route on an in-flight plugin with this helper so
-clients see the RFC 8594 ``Deprecation`` response header and so each
-hit is logged at WARNING.
+Plugins migrating to the JSON API + React UI keep their legacy Jinja2 routes
+mounted while the React UI matures. Mark every legacy route on an in-flight
+plugin with this helper so clients see the RFC 8594 ``Deprecation`` response
+header and so each hit is logged at WARNING.
 
 Apply once at router construction:
 
 .. code-block:: python
 
-    from app.sep.plugins.framework.deprecation import (
-        mark_jinja2_route_deprecated,
-    )
+    from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 
-    router = APIRouter(dependencies=[Depends(mark_jinja2_route_deprecated)])
+    router = APIRouter(route_class=DeprecatedJinja2Route)
 """
 
 import logging
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from fastapi import Request, Response
+from fastapi.routing import APIRoute
 
-__all__ = ["mark_jinja2_route_deprecated"]
+__all__ = ["DeprecatedJinja2Route"]
 
 logger = logging.getLogger(__name__)
 
 
-def mark_jinja2_route_deprecated(request: Request, response: Response) -> None:
-    """Log a deprecation warning and set the ``Deprecation`` response header.
+class DeprecatedJinja2Route(APIRoute):
+    """:class:`APIRoute` subclass that marks every response as deprecated.
 
-    :param request: The incoming request, used for the path in the log
-        message.
-    :type request: Request
-    :param response: The outgoing response, mutated in place to add the
-        ``Deprecation: true`` header.
-    :type response: Response
+    Logs a WARNING per request and sets ``Deprecation: true`` on the
+    outgoing response, regardless of whether the endpoint returns a plain
+    value, a :class:`Response` subclass, or a template response. The
+    header mutation happens after the handler runs, so it survives
+    FastAPI's short-circuit for endpoints that return a ``Response``
+    directly.
     """
-    logger.warning(
-        "Jinja2 plugin route %s is deprecated; use the JSON API equivalent "
-        "under /api/plugins/",
-        request.url.path,
-    )
-    response.headers["Deprecation"] = "true"
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        """Wrap the default route handler with deprecation logging and header.
+
+        :return: A coroutine handler that logs a WARNING and stamps the
+            ``Deprecation: true`` header on the outgoing response.
+        :rtype: Callable[[Request], Coroutine[Any, Any, Response]]
+        """
+        original_route_handler = super().get_route_handler()
+
+        async def custom_route_handler(request: Request) -> Response:
+            logger.warning(
+                "Jinja2 plugin route %s is deprecated; use the JSON API "
+                "equivalent under /api/plugins/",
+                request.url.path,
+            )
+            response = await original_route_handler(request)
+            response.headers["Deprecation"] = "true"
+            return response
+
+        return custom_route_handler

@@ -17,14 +17,15 @@
 
 from unittest.mock import patch
 
-from fastapi import APIRouter, Depends, FastAPI, status
+from fastapi import APIRouter, FastAPI, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.testclient import TestClient
 
-from app.sep.plugins.framework.deprecation import mark_jinja2_route_deprecated
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 
 
-def _build_app_with_deprecated_router() -> FastAPI:
-    router = APIRouter(dependencies=[Depends(mark_jinja2_route_deprecated)])
+def _build_app() -> FastAPI:
+    router = APIRouter(route_class=DeprecatedJinja2Route)
 
     @router.get("/legacy")
     def legacy_endpoint() -> dict:
@@ -34,26 +35,48 @@ def _build_app_with_deprecated_router() -> FastAPI:
     def legacy_action() -> dict:
         return {"ok": True}
 
+    @router.get("/legacy/html", response_class=HTMLResponse)
+    def legacy_html() -> HTMLResponse:
+        return HTMLResponse("<p>hi</p>")
+
+    @router.get("/legacy/redirect")
+    def legacy_redirect() -> RedirectResponse:
+        return RedirectResponse("/legacy", status_code=status.HTTP_303_SEE_OTHER)
+
     app = FastAPI()
     app.include_router(router)
     return app
 
 
-def test_deprecation_header_set_on_get_response():
+def test_deprecation_header_set_on_dict_response():
     """Every GET response under the router carries Deprecation: true."""
-    client = TestClient(_build_app_with_deprecated_router())
-
-    response = client.get("/legacy")
+    response = TestClient(_build_app()).get("/legacy")
 
     assert response.status_code == status.HTTP_200_OK
     assert response.headers.get("Deprecation") == "true"
 
 
+def test_deprecation_header_set_on_html_response():
+    """Regression: header is set even when the endpoint returns HTMLResponse directly."""
+    response = TestClient(_build_app()).get("/legacy/html")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers.get("Deprecation") == "true"
+
+
+def test_deprecation_header_set_on_redirect_response():
+    """Regression: header is set even when the endpoint returns RedirectResponse directly."""
+    client = TestClient(_build_app(), follow_redirects=False)
+
+    response = client.get("/legacy/redirect")
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers.get("Deprecation") == "true"
+
+
 def test_deprecation_header_set_on_post_response():
     """POST responses under the router also carry Deprecation: true."""
-    client = TestClient(_build_app_with_deprecated_router())
-
-    response = client.post("/legacy/action")
+    response = TestClient(_build_app()).post("/legacy/action")
 
     assert response.status_code == status.HTTP_200_OK
     assert response.headers.get("Deprecation") == "true"
@@ -64,8 +87,7 @@ def test_deprecation_emits_warning_log():
     with patch(
         "app.sep.plugins.framework.deprecation.logger.warning",
     ) as mock_warning:
-        client = TestClient(_build_app_with_deprecated_router())
-        client.get("/legacy")
+        TestClient(_build_app()).get("/legacy")
 
     assert mock_warning.called
     args = mock_warning.call_args.args
