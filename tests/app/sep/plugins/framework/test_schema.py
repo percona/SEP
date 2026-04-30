@@ -34,6 +34,7 @@ from app.sep.plugins.framework.schema import (
     IntegerField,
     ListView,
     MultiChoiceField,
+    PluginEntitySchema,
     PluginSchema,
     SchemaField,
     ServiceField,
@@ -139,6 +140,49 @@ def test_plugin_schema_constructs_with_minimal_fields():
     assert schema.name == "minimal"
     assert schema.capabilities is None
     assert schema.forms == []
+
+
+def test_plugin_schema_entities_mode_omits_root_list_view():
+    """Construct a ``PluginSchema`` with ``entities`` set and no root ``list_view``."""
+    entity = PluginEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
+    schema = PluginSchema(
+        name="multi",
+        display_name="Multi",
+        entities=[entity],
+    )
+    assert schema.entities is not None
+    assert len(schema.entities) == 1
+    assert schema.list_view is None
+
+
+def test_plugin_entity_schema_rejects_duplicate_field_names():
+    """Reject a ``PluginEntitySchema`` with duplicate field ``name`` values across sections."""
+    with pytest.raises(ValueError, match="duplicate field name"):
+        PluginEntitySchema(
+            name="dup",
+            display_name="Dup",
+            forms=[
+                FormSection(
+                    title="A",
+                    fields=[StringField(name="x", label="X")],
+                ),
+                FormSection(
+                    title="B",
+                    fields=[StringField(name="x", label="X2")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
 
 
 def test_plugin_schema_constructs_with_all_capabilities_on():
