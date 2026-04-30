@@ -98,8 +98,6 @@ export interface TableField extends BaseField {
 
 export interface HostField extends BaseField {
   type: 'host';
-  /** @deprecated Ignored by the renderer. Will be removed in a future release. */
-  dependsOn?: string;
 }
 
 // ── Discriminated union ─────────────────────────────────────────────────

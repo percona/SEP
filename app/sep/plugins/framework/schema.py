@@ -349,15 +349,11 @@ class HostField(BaseField):
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
     :type field_type: Literal["host"]
-    :param depends_on: **Deprecated.** Ignored by the renderer; will be
-        removed in a future release after consumers have migrated.
-    :type depends_on: NonEmptyStr | None
     """
 
     field_type: Literal["host"] = Field(
         "host", alias="type", serialization_alias="type"
     )
-    depends_on: NonEmptyStr | None = None
 
 
 class SchemaField(BaseField):
