@@ -162,7 +162,7 @@ describe('HostSelector', () => {
 
   it('raises a snackbar when the route reports an upstream Tasks-API failure', async () => {
     mocked.get.mockResolvedValueOnce(
-      makeResponse([], { 'x-sep-hosts-upstream-error': 'tasks unreachable' }),
+      makeResponse([], { 'x-sep-upstream-error': 'tasks unreachable' }),
     );
 
     const client = makeClient();

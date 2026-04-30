@@ -12,7 +12,7 @@ export interface HostOption {
 
 export interface HostsResult {
   hosts: HostOption[];
-  /** Detail from the `X-Sep-Hosts-Upstream-Error` header when the Tasks API
+  /** Detail from the `X-Sep-Upstream-Error` header when the Tasks API
    * was unreachable. `null` when the upstream call succeeded. */
   upstreamError: string | null;
 }
@@ -21,7 +21,7 @@ export interface UseHostsOptions {
   enabled?: boolean;
 }
 
-const UPSTREAM_ERROR_HEADER = 'x-sep-hosts-upstream-error';
+const UPSTREAM_ERROR_HEADER = 'x-sep-upstream-error';
 
 /**
  * Fetch executor hosts merged with inventory display names.
@@ -30,7 +30,7 @@ const UPSTREAM_ERROR_HEADER = 'x-sep-hosts-upstream-error';
  * Tasks/Inventory merge server-side. Loading and error states are
  * first-class React Query states. When the Tasks API is unreachable the
  * route degrades to `200 []` and surfaces the upstream detail via the
- * `X-Sep-Hosts-Upstream-Error` response header — this hook exposes that
+ * `X-Sep-Upstream-Error` response header — this hook exposes that
  * detail as `data.upstreamError` so the consumer can raise a notification.
  */
 export function useHosts(options: UseHostsOptions = {}): UseQueryResult<HostsResult, Error> {

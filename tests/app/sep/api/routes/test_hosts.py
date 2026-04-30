@@ -134,7 +134,7 @@ class TestSepHostsEndpoint:
 
         Catch the upstream ``HTTPException`` and degrade to an empty list so
         the frontend can render "No hosts available" rather than a hard
-        error. Also attach the ``X-Sep-Hosts-Upstream-Error`` header carrying
+        error. Also attach the ``X-Sep-Upstream-Error`` header carrying
         the upstream detail so the React shell can raise a notification
         without breaking the ``200 []`` contract.
         """
@@ -143,7 +143,21 @@ class TestSepHostsEndpoint:
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
-        assert response.headers["X-Sep-Hosts-Upstream-Error"] == "tasks unreachable"
+        assert response.headers["X-Sep-Upstream-Error"] == "tasks unreachable"
+
+    def test_tasks_oserror_returns_empty_list(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Return ``200 []`` when the Tasks API raises an OSError (connector failure)."""
+        mock_task_api_dep.get.side_effect = OSError("connection refused")
+        mock_inventory_api_dep.get.return_value = {"items": []}
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+        assert response.headers["X-Sep-Upstream-Error"] == "connection refused"
 
 
 class TestSepHostsAuth:

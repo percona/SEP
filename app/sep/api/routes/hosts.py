@@ -27,7 +27,7 @@ from app.sep.deps import InventoryAPI, TaskAPI
 
 router = APIRouter()
 
-UPSTREAM_ERROR_HEADER = "X-Sep-Hosts-Upstream-Error"
+UPSTREAM_ERROR_HEADER = "X-Sep-Upstream-Error"
 
 
 class HostResponse(BaseModel):
@@ -60,11 +60,11 @@ async def list_hosts(
     API for display-name enrichment. Both upstream calls degrade gracefully
     — Inventory failures cause hosts without a match to keep the raw
     executor node name, and Tasks-API failures cause an empty list to be
-    returned rather than a hard error. Tasks-API failures additionally set
-    the ``X-Sep-Hosts-Upstream-Error`` response header so the frontend can
-    surface the failure detail through its notification system without
-    breaking the ``200 []`` response contract that lets the dropdown render
-    "No hosts available".
+    returned rather than a hard error. Tasks-API failures (HTTP and
+    connection errors alike) additionally set the ``X-Sep-Upstream-Error``
+    response header so the frontend can surface the failure detail through
+    its notification system without breaking the ``200 []`` response contract
+    that lets the dropdown render "No hosts available".
 
     :param response: The outgoing response, used to attach the upstream
         error header on Tasks-API failure.
@@ -80,8 +80,9 @@ async def list_hosts(
     """
     try:
         executor_hosts: dict[str, str] = await tasks_api.get("/hosts/")
-    except HTTPException as exc:
-        response.headers[UPSTREAM_ERROR_HEADER] = exc.detail
+    except (HTTPException, OSError) as exc:
+        detail = getattr(exc, "detail", str(exc))
+        response.headers[UPSTREAM_ERROR_HEADER] = str(detail)
         return []
 
     try:
