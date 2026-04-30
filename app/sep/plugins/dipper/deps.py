@@ -32,6 +32,10 @@ from app.core.exceptions import (
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.inventory.models import ServiceTypeEnum
+from app.sep.artifact_constants import (
+    ARTIFACT_DOWNLOAD_SALT,
+    ARTIFACT_TYPE_DIPPER,
+)
 from app.sep.deps import (
     CreatedServiceDep,
     ExecutorHosts,
@@ -45,10 +49,6 @@ from app.sep.plugins.dipper.constants import (
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
 from app.sep.plugins.dipper.models import DipperScript
-from app.sep.routes.artifact_constants import (
-    ARTIFACT_DOWNLOAD_SALT,
-    ARTIFACT_TYPE_DIPPER,
-)
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippetArgs, SnippetExecutionMeta
 

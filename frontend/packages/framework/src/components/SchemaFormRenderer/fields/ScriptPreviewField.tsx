@@ -39,6 +39,7 @@ export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
     name: field.dependsOn,
   });
   const dependsOnKey = useMemo(() => JSON.stringify(dependsOnValues ?? []), [dependsOnValues]);
+  const dependsOnSchema = useMemo(() => JSON.stringify(field.dependsOn), [field.dependsOn]);
 
   const [state, setState] = useState<PreviewState>({
     status: 'idle',
@@ -75,7 +76,7 @@ export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
       clearTimeout(handle);
       controller.abort();
     };
-  }, [field.endpointUrl, field.dependsOn.length, dependsOnKey]);
+  }, [field.endpointUrl, dependsOnSchema, dependsOnKey]);
 
   return (
     <Box

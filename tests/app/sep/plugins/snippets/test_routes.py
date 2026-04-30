@@ -31,7 +31,7 @@ from app.sep.deps import (
     get_session,
 )
 from app.sep.main import sep_app
-from app.sep.plugins.framework.deprecation import mark_jinja2_route_deprecated
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.snippets.routes import router as snippets_jinja_router
 from app.sep.snippets.crud import SnippetManager
 
@@ -407,11 +407,8 @@ class TestCompletedTasksPartialHasLogs:
 
 
 class TestSnippetsRouterDeprecation:
-    """The snippets Jinja2 router declares the deprecation marker dep."""
+    """The snippets Jinja2 router uses the deprecation route class."""
 
-    def test_router_declares_deprecation_dependency(self):
-        """Confirm the router is constructed with the deprecation marker dep."""
-        assert any(
-            getattr(dep, "dependency", None) is mark_jinja2_route_deprecated
-            for dep in snippets_jinja_router.dependencies
-        )
+    def test_router_uses_deprecated_route_class(self):
+        """Confirm the router is constructed with ``DeprecatedJinja2Route``."""
+        assert snippets_jinja_router.route_class is DeprecatedJinja2Route

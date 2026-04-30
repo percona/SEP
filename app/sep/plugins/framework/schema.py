@@ -435,9 +435,10 @@ class ScriptPreviewField(BaseField):
         ``"type"``.
     :type field_type: Literal["script_preview"]
     :param endpoint_url: The fully-resolved URL the renderer fetches preview
-        content from. Schema synthesisers should bake any plugin-specific
-        path segments (for example, ``/api/plugins/snippets/{filename}/script-preview``)
-        here at schema build time rather than templating client-side.
+        content from, relative to the FE ``apiClient`` base (``/api``). Schema
+        synthesisers should bake any plugin-specific path segments (for
+        example, ``/plugins/snippets/{filename}/script-preview``) here at
+        schema build time rather than templating client-side.
     :type endpoint_url: NonEmptyStr
     :param depends_on: Names of sibling fields whose values trigger a
         re-fetch when changed. Empty (the default) means fetch once on

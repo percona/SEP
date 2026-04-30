@@ -82,8 +82,8 @@ def _choice_field_for(parameter: SnippetMetaParameter) -> ChoiceField:
     """Build a :class:`ChoiceField` from a parameter's normalised choices."""
     choices = []
     for entry in parameter.choices or []:
-        value = str(entry["value"])
-        label = str(entry.get("label") or value)
+        value = entry["value"]
+        label = entry.get("label") or value
         choices.append(Choice(value=value, label=label))
     default = None if parameter.default is None else str(parameter.default)
     return ChoiceField(

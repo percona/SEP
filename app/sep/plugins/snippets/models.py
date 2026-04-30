@@ -33,14 +33,14 @@ __all__ = [
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
 from app.tasks.models import TaskHistoryStatusEnum
 
 
 class SnippetResponse(BaseModel):
-    """Snippet entity as exposed by the JSON API.
+    """Represent a snippet entity as exposed by the JSON API.
 
     :param filename: The snippet's filename on disk; doubles as its
         identifier in the API.
@@ -100,7 +100,7 @@ class SnippetResponse(BaseModel):
 
 
 class SnippetExecutionRequest(BaseModel):
-    """JSON body for ``POST /api/plugins/snippets/{filename}/execute``.
+    """Define the JSON body for ``POST /api/plugins/snippets/{filename}/execute``.
 
     Per-parameter values defined in the snippet's YAML frontmatter go into
     ``args`` and are validated server-side via the snippet's dynamic
@@ -119,11 +119,11 @@ class SnippetExecutionRequest(BaseModel):
 
     executor_host: NonEmptyStr
     sudo: bool = False
-    args: dict[str, Any] = Field(default_factory=dict)
+    args: dict[str, Any] = {}
 
 
 class SnippetExecutionResponse(BaseModel):
-    """Returned from the execute endpoint, pointing at the created task.
+    """Represent the response returned from the execute endpoint.
 
     :param task_name: The task name the snippet was executed under (varies
         based on the snippet's interpreter and pip requirements).
@@ -142,7 +142,7 @@ class SnippetExecutionResponse(BaseModel):
 
 
 class SnippetExecutionHistoryItem(BaseModel):
-    """One row of the per-snippet execution history list.
+    """Represent one row of the per-snippet execution history list.
 
     :param task_id: The id of the task-history row.
     :type task_id: int
@@ -163,11 +163,11 @@ class SnippetExecutionHistoryItem(BaseModel):
     status: TaskHistoryStatusEnum
     created_at: datetime
     created_by: str | None = None
-    available_files: list[str] = Field(default_factory=list)
+    available_files: list[str] = []
 
 
 class ScriptPreviewResponse(BaseModel):
-    """Backend response for the script-preview endpoint.
+    """Represent the backend response for the script-preview endpoint.
 
     :param content: The full text content of the snippet file (preamble,
         frontmatter, and body concatenated).

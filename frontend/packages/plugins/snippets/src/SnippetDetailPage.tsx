@@ -29,8 +29,7 @@ const EXECUTION_RESERVED_NAMES = new Set(['executor_host', 'sudo', 'script_previ
  * impending removal.
  */
 export function SnippetDetailPage() {
-  const { filename: rawFilename } = useParams<{ filename: string }>();
-  const filename = rawFilename ? decodeURIComponent(rawFilename) : undefined;
+  const { filename } = useParams<{ filename: string }>();
   const navigate = useNavigate();
 
   const schemaQuery = useSnippetSchema(filename);

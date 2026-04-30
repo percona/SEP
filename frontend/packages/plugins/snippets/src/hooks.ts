@@ -29,7 +29,9 @@ export function useSnippetSchema(filename: string | undefined) {
   return useQuery<PluginSchema>({
     queryKey: ['snippets', filename, 'schema'],
     queryFn: async () => {
-      const { data } = await apiClient.get<PluginSchema>(`${SNIPPETS_BASE}/${filename}/schema`);
+      const { data } = await apiClient.get<PluginSchema>(
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/schema`,
+      );
       return data;
     },
     enabled: Boolean(filename),
@@ -45,7 +47,7 @@ export function useSnippetHistory(filename: string | undefined) {
     queryKey: ['snippets', filename, 'history'],
     queryFn: async () => {
       const { data } = await apiClient.get<SnippetExecutionHistoryItem[]>(
-        `${SNIPPETS_BASE}/${filename}/history`,
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/history`,
       );
       return data;
     },
@@ -64,7 +66,7 @@ export function useSnippetExecution(filename: string | undefined) {
   return useMutation<SnippetExecutionResponse, Error, SnippetExecutionRequest>({
     mutationFn: async (body) => {
       const { data } = await apiClient.post<SnippetExecutionResponse>(
-        `${SNIPPETS_BASE}/${filename}/execute`,
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/execute`,
         body,
       );
       return data;

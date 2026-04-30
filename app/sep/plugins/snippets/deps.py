@@ -30,12 +30,12 @@ from app.core.exceptions import (
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.core.utils.fields import NonEmptyStr, UniqueList
-from app.sep.deps import get_base_url, SessionDep
-from app.sep.middleware import messages
-from app.sep.routes.artifact_constants import (
+from app.sep.artifact_constants import (
     ARTIFACT_DOWNLOAD_SALT,
     ARTIFACT_TYPE_SNIPPET,
 )
+from app.sep.deps import get_base_url, SessionDep
+from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
