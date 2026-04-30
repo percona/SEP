@@ -15,7 +15,7 @@
 
 """Define the shared SEP API router hosting plugin and cross-cutting endpoints.
 
-Apply authentication at the router level and expose two sibling sub-routers:
+Apply authentication at the router level and expose two prefix groups:
 
 * ``/api/plugins/{plugin_name}/`` — per-plugin JSON endpoints (added in
   individual plugin tickets).
@@ -40,9 +40,6 @@ plugins_router.include_router(
     checksums_api_router, prefix="/checksums", tags=["checksums"]
 )
 
-sep_router = APIRouter(prefix="/sep", tags=["sep"])
-sep_router.include_router(hosts_router, prefix="/hosts")
-
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
 api_router.include_router(plugins_router)
-api_router.include_router(sep_router)
+api_router.include_router(hosts_router, prefix="/sep/hosts", tags=["sep"])
