@@ -28,7 +28,7 @@ export function useHosts(options: UseHostsOptions = {}): UseQueryResult<HostOpti
     enabled,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data } = await apiClient.get<HostOption[]>('/api/sep/hosts/');
+      const { data } = await apiClient.get<HostOption[]>('/sep/hosts/');
       return data;
     },
   });
