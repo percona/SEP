@@ -54,7 +54,12 @@ export function HostSelector({ name, label, required, dependsOn, control }: Host
       : undefined;
 
   return (
-    <Box sx={{ width: '100%' }}>
+    <Box
+      sx={{
+        width: '100%',
+        '& .MuiFormControl-root': { width: '100%' },
+      }}
+    >
       <SelectInput
         name={name}
         label={label}
