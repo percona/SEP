@@ -16,9 +16,9 @@
 """Define dependencies for the Inventory plugin."""
 
 from collections.abc import Callable
-from typing import Annotated, NamedTuple
+from typing import Annotated, Any, NamedTuple
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Request, status
 
 from app.core.config import settings
 from app.core.utils import import_var
@@ -27,6 +27,8 @@ from app.sep.config import sep_settings
 from app.sep.deps import InventoryClient, TasksClient
 from app.sep.sync.models import BaseSyncer
 from app.tasks.config import tasks_settings
+
+INVENTORY_PLUGIN_ENTITY_NAMES = frozenset({"nodes", "services", "schemas", "tables"})
 
 
 class AvailableSyncer(NamedTuple):
@@ -224,3 +226,125 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
             ),
         )
     return syncers
+
+
+def require_inventory_plugin_entity(entity: str) -> str:
+    """Normalize ``entity`` or raise HTTP 404 when it is not a known segment.
+
+    :param entity: URL segment under ``/api/plugins/inventory/``.
+    :type entity: str
+    :return: The same value when it is one of ``nodes``, ``services``,
+        ``schemas``, or ``tables``.
+    :rtype: str
+    :raises HTTPException: With status 404 when ``entity`` is unknown.
+    """
+    if entity not in INVENTORY_PLUGIN_ENTITY_NAMES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Unknown entity"
+        )
+    return entity
+
+
+def unwrap_inventory_plugin_list_payload(data: Any) -> list[Any]:
+    """Return a list from an inventory list response (paginated or bare array).
+
+    :param data: JSON payload from the inventory list endpoint.
+    :type data: Any
+    :return: ``data["items"]`` when that key holds a list; otherwise ``data``
+        when it is already a list.
+    :rtype: list[Any]
+    :raises HTTPException: With status 502 when the payload shape is unexpected.
+    """
+    if isinstance(data, dict) and "items" in data:
+        items = data["items"]
+        if isinstance(items, list):
+            return items
+    if isinstance(data, list):
+        return data
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Unexpected inventory list response shape",
+    )
+
+
+def inventory_service_list_path(entity: str) -> str:
+    """Map a plugin entity name to the inventory service path for list GET.
+
+    :param entity: One of ``nodes``, ``services``, ``schemas``, or ``tables``.
+    :type entity: str
+    :return: Path relative to the inventory API root (``/`` for nodes).
+    :rtype: str
+    """
+    if entity == "nodes":
+        return "/"
+    return f"/{entity}/"
+
+
+def inventory_service_detail_path(entity: str, item_id: int) -> str:
+    """Map a plugin entity and id to the inventory path for detail GET/PUT/DELETE.
+
+    :param entity: One of ``nodes``, ``services``, ``schemas``, or ``tables``.
+    :type entity: str
+    :param item_id: Primary key of the row.
+    :type item_id: int
+    :return: Path relative to the inventory API root.
+    :rtype: str
+    """
+    if entity == "nodes":
+        return f"/{item_id}"
+    return f"/{entity}/{item_id}"
+
+
+def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
+    """Map a plugin entity and JSON body to the inventory path for POST.
+
+    Nested creates require ``node_id``, ``service_id``, or ``schema_id`` in
+    ``body`` and raise HTTP 422 when the parent id is missing.
+
+    :param entity: One of ``nodes``, ``services``, ``schemas``, or ``tables``.
+    :type entity: str
+    :param body: Parsed create payload from the client.
+    :type body: dict[str, Any]
+    :return: Path relative to the inventory API root.
+    :rtype: str
+    :raises HTTPException: With status 422 when a required parent id is absent,
+        or 404 when ``entity`` is unknown.
+    """
+    if entity == "nodes":
+        return "/"
+    if entity == "services":
+        node_id = body.get("node_id")
+        if node_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="node_id is required to create a service",
+            )
+        return f"/{int(node_id)}/services/"
+    if entity == "schemas":
+        service_id = body.get("service_id")
+        if service_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="service_id is required to create a schema",
+            )
+        return f"/services/{int(service_id)}/schemas/"
+    if entity == "tables":
+        schema_id = body.get("schema_id")
+        if schema_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="schema_id is required to create a table",
+            )
+        return f"/schemas/{int(schema_id)}/tables/"
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown entity")
+
+
+def inventory_plugin_query_params(request: Request) -> dict[str, Any]:
+    """Collect non-empty query string parameters from ``request``.
+
+    :param request: The inbound HTTP request.
+    :type request: Request
+    :return: Key/value pairs with empty string values omitted.
+    :rtype: dict[str, Any]
+    """
+    return {k: v for k, v in request.query_params.items() if v is not None and v != ""}

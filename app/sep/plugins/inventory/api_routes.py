@@ -1,0 +1,182 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define the JSON API router for the Inventory plugin.
+
+Mounted at ``/api/plugins/inventory/`` via ``plugins_router`` in
+``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
+level; the ``schema_endpoint`` helper also pins ``IsApiAuthenticated`` per
+route for safety.
+
+Proxies CRUD for nodes, services, schemas, and tables to the inventory HTTP API
+through ``InventoryAPI`` in ``app.sep.deps`` (``RemoteAPI`` toward the
+inventory service). List handlers unwrap paginated ``items`` into a JSON array
+for the schema-driven React client.
+
+Schedule and periodic sync routes are not mounted here so SEP-1058 can own the
+React schedule UI; do not add schedule or inventory-sync proxy routes without
+coordinating with that ticket. The inventory service remains the canonical CRUD
+surface at ``/api/inventory/*``; this router is the typed entry point for the
+React plugin.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
+
+from app.sep.deps import InventoryAPI
+from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.inventory.deps import (
+    inventory_plugin_query_params,
+    inventory_service_create_path,
+    inventory_service_detail_path,
+    inventory_service_list_path,
+    require_inventory_plugin_entity,
+    unwrap_inventory_plugin_list_payload,
+)
+from app.sep.plugins.inventory.schema import inventory_schema
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+schema_endpoint(router=router, plugin_schema=inventory_schema)
+
+
+@router.get("/{entity}")
+async def inventory_entity_redirect_slash(
+    request: Request, entity: str
+) -> RedirectResponse:
+    """Redirect ``GET /{entity}`` to ``GET /{entity}/`` for list routes."""
+    require_inventory_plugin_entity(entity)
+    return RedirectResponse(
+        url=str(request.url.include_query_params()).rstrip("/") + "/",
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    )
+
+
+@router.get("/{entity}/")
+async def inventory_list_entity(
+    request: Request,
+    entity: str,
+    inventory_api: InventoryAPI,
+) -> list[Any]:
+    """List inventory nodes, services, schemas, or tables."""
+    entity = require_inventory_plugin_entity(entity)
+    params = inventory_plugin_query_params(request)
+    try:
+        data = await inventory_api.get(
+            inventory_service_list_path(entity), params=params
+        )
+        return unwrap_inventory_plugin_list_payload(data)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Inventory plugin list failure (entity=%s)", entity)
+        raise
+
+
+@router.post("/{entity}/")
+async def inventory_create_entity(
+    entity: str,
+    inventory_api: InventoryAPI,
+    request: Request,
+) -> Any:
+    """Create an inventory node, service, schema, or table."""
+    entity = require_inventory_plugin_entity(entity)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="JSON object body required",
+        )
+    try:
+        inv_path = inventory_service_create_path(entity, body)
+        return await inventory_api.post(inv_path, json=body)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Inventory plugin create failure (entity=%s)", entity)
+        raise
+
+
+@router.get("/{entity}/{item_id:int}")
+async def inventory_get_entity(
+    entity: str,
+    item_id: int,
+    inventory_api: InventoryAPI,
+) -> Any:
+    """Retrieve a single inventory node, service, schema, or table."""
+    entity = require_inventory_plugin_entity(entity)
+    try:
+        return await inventory_api.get(inventory_service_detail_path(entity, item_id))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "Inventory plugin detail failure (entity=%s id=%s)", entity, item_id
+        )
+        raise
+
+
+@router.put("/{entity}/{item_id:int}")
+async def inventory_update_entity(
+    entity: str,
+    item_id: int,
+    inventory_api: InventoryAPI,
+    request: Request,
+) -> Any:
+    """Update an inventory node, service, schema, or table."""
+    entity = require_inventory_plugin_entity(entity)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="JSON object body required",
+        )
+    try:
+        return await inventory_api.put(
+            inventory_service_detail_path(entity, item_id), json=body
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "Inventory plugin update failure (entity=%s id=%s)", entity, item_id
+        )
+        raise
+
+
+@router.delete("/{entity}/{item_id:int}")
+async def inventory_delete_entity(
+    entity: str,
+    item_id: int,
+    inventory_api: InventoryAPI,
+) -> Response:
+    """Delete an inventory node, service, schema, or table."""
+    entity = require_inventory_plugin_entity(entity)
+    try:
+        await inventory_api.delete(inventory_service_detail_path(entity, item_id))
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "Inventory plugin delete failure (entity=%s id=%s)", entity, item_id
+        )
+        raise
