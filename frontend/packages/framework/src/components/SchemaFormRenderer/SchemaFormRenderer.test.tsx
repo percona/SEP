@@ -113,12 +113,7 @@ describe('coerceFormValues', () => {
 describe('SchemaFormRenderer — field rendering', () => {
   beforeEach(() => {
     mockedApi.get.mockReset();
-    mockedApi.get.mockImplementation((url: string) => {
-      if (url === '/api/sep/hosts/') {
-        return Promise.resolve({ data: [] });
-      }
-      return Promise.resolve({ data: [] });
-    });
+    mockedApi.get.mockResolvedValue({ data: [] });
   });
 
   const sections: FormSection[] = [
