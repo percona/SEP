@@ -32,6 +32,7 @@ __all__ = [
     "IntegerField",
     "ListView",
     "MultiChoiceField",
+    "PluginEntitySchema",
     "PluginSchema",
     "SchemaBaseModel",
     "SchemaField",
@@ -541,6 +542,52 @@ class Capabilities(SchemaBaseModel):
     scheduling: bool = False
 
 
+class PluginEntitySchema(SchemaBaseModel):
+    """Describe one CRUD entity for a multi-entity schema-driven plugin.
+
+    Used when a plugin exposes several independent resources (for example
+    inventory nodes, services, schemas, and tables), each with its own list
+    view and create/edit forms. Task-style plugins omit ``entities`` and use
+    the root ``forms`` / ``list_view`` instead.
+
+    :param name: URL segment and API key for the entity (for example ``nodes``).
+    :type name: NonEmptyStr
+    :param display_name: Human-readable title for this entity's screens.
+    :type display_name: NonEmptyStr
+    :param description: Optional helper text for this entity. Defaults to
+        ``None``.
+    :type description: NonEmptyStr | None
+    :param forms: Form sections for create (and edit when the UI supports it).
+    :type forms: list[FormSection]
+    :param list_view: Column configuration for this entity's list table.
+    :type list_view: ListView
+    """
+
+    name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
+    display_name: NonEmptyStr
+    description: NonEmptyStr | None = None
+    forms: list[FormSection]
+    list_view: ListView
+
+    @model_validator(mode="after")
+    def _validate_unique_field_names(self) -> Self:
+        """Ensure field ``name`` values are unique within this entity's forms."""
+        seen = set()
+        duplicates = []
+        for section in self.forms:
+            for field in section.fields:
+                if field.name in seen:
+                    duplicates.append(field.name)
+                else:
+                    seen.add(field.name)
+        if duplicates:
+            raise ValueError(
+                f"duplicate field name(s) across form sections: "
+                f"{sorted(set(duplicates))}"
+            )
+        return self
+
+
 class PluginSchema(SchemaBaseModel):
     """Represent a plugin's complete schema: form sections, list view, capabilities.
 
@@ -555,33 +602,48 @@ class PluginSchema(SchemaBaseModel):
     :param task_type: Optional task-type identifier used when creating tasks
         via the shared task API. Defaults to ``None``.
     :type task_type: NonEmptyStr | None
-    :param forms: The ordered list of form sections the plugin renders when
-        creating a task.
+    :param forms: Form sections for single-entity / task plugins. Defaults to
+        an empty list when ``entities`` is used instead.
     :type forms: list[FormSection]
     :param capabilities: Optional plugin-level feature flags. Defaults to
         ``None``.
     :type capabilities: Capabilities | None
-    :param list_view: The list-view configuration for the plugin.
-    :type list_view: ListView
+    :param list_view: List-view configuration when ``entities`` is unset
+        (single-entity / task plugins). Ignored when ``entities`` is set.
+    :type list_view: ListView | None
+    :param entities: Optional list of CRUD entities for multi-resource plugins.
+        When non-empty, the React shell renders one list/create/detail flow
+        per entity. Defaults to ``None`` (legacy single-entity mode).
+    :type entities: list[PluginEntitySchema] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
     display_name: NonEmptyStr
     description: NonEmptyStr | None = None
     task_type: NonEmptyStr | None = None
-    forms: list[FormSection]
+    forms: list[FormSection] = Field(default_factory=list)
     capabilities: Capabilities | None = None
-    list_view: ListView
+    list_view: ListView | None = None
+    entities: list[PluginEntitySchema] | None = None
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
-        """Ensure every field across every section has a unique ``name``.
+        """Ensure every field name is unique within the active form set.
+
+        When ``entities`` is set, each entity validates its own ``forms``.
+        Otherwise root ``forms`` are validated (task-style plugins).
 
         :return: The validated plugin schema instance.
         :rtype: PluginSchema
-        :raises ValueError: If any field ``name`` is reused across form
-            sections.
+        :raises ValueError: If duplicate field names appear in the same form
+            set, or if neither ``entities`` nor ``list_view`` is usable.
         """
+        if self.entities:
+            return self
+        if self.list_view is None:
+            raise ValueError(
+                "list_view is required when entities is not set (task-style plugins)"
+            )
         seen = set()
         duplicates = []
         for section in self.forms:
