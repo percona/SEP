@@ -28,6 +28,8 @@ import {
 
 interface ScheduledTasksPanelProps {
   pluginName: string;
+  /** Disable list polling. Used by stories/tests. */
+  disablePolling?: boolean;
 }
 
 const COLUMN_HEADERS = [
@@ -42,9 +44,14 @@ const COLUMN_HEADERS = [
   'Actions',
 ];
 
-export function ScheduledTasksPanel({ pluginName }: ScheduledTasksPanelProps) {
-  const { periodicTasks, pluginTasks, isLoading, isError, error } =
-    useScheduledTasksForPlugin(pluginName);
+export function ScheduledTasksPanel({
+  pluginName,
+  disablePolling = false,
+}: ScheduledTasksPanelProps) {
+  const { periodicTasks, pluginTasks, isLoading, isError, error } = useScheduledTasksForPlugin(
+    pluginName,
+    { disablePolling },
+  );
 
   const createMut = useCreateScheduledTask();
   const updateMut = useUpdateScheduledTask();
@@ -53,10 +60,11 @@ export function ScheduledTasksPanel({ pluginName }: ScheduledTasksPanelProps) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formError, setFormError] = useState<string | undefined>(undefined);
+  const [actionError, setActionError] = useState<string | undefined>(undefined);
 
   const availableTasks = useMemo(() => pluginTasks.map((t) => ({ name: t.name })), [pluginTasks]);
 
-  const handleToggleEnabled = (task: PeriodicTaskResponse, nextEnabled: boolean) => {
+  const handleToggleEnabled = async (task: PeriodicTaskResponse, nextEnabled: boolean) => {
     // PeriodicTaskUpdate requires `kwargs` and `description`, but
     // PeriodicTaskResponse exposes only `description`. Tasks created elsewhere
     // with non-default kwargs will have them reset to '{}' on toggle. Tracked
@@ -72,11 +80,21 @@ export function ScheduledTasksPanel({ pluginName }: ScheduledTasksPanelProps) {
       crontab: task.crontab ?? null,
       execute_request: task.execute_request ?? null,
     };
-    updateMut.mutate({ id: task.id, body });
+    setActionError(undefined);
+    try {
+      await updateMut.mutateAsync({ id: task.id, body });
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to toggle scheduled task');
+    }
   };
 
-  const handleDelete = (task: PeriodicTaskResponse) => {
-    deleteMut.mutate(task.id);
+  const handleDelete = async (task: PeriodicTaskResponse) => {
+    setActionError(undefined);
+    try {
+      await deleteMut.mutateAsync(task.id);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to delete scheduled task');
+    }
   };
 
   const handleCreate = async (body: PeriodicTaskCreate | PeriodicTaskUpdate, taskName: string) => {
@@ -147,6 +165,17 @@ export function ScheduledTasksPanel({ pluginName }: ScheduledTasksPanelProps) {
         <ScheduleIcon fontSize="small" />
         <Typography variant="h6">Scheduled Tasks</Typography>
       </Box>
+
+      {actionError && (
+        <Alert
+          severity="error"
+          onClose={() => setActionError(undefined)}
+          sx={{ mx: 2, mb: 1 }}
+          data-testid="scheduled-tasks-action-error"
+        >
+          {actionError}
+        </Alert>
+      )}
 
       {isEmpty ? (
         <Box sx={{ p: 3, textAlign: 'center' }}>

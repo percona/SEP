@@ -70,6 +70,19 @@ function detectBrowserTimezone(): string {
   }
 }
 
+// `datetime-local` reads/writes as local wall-clock with no timezone.
+// Backend `start_time` is UTC ISO. Format the UTC instant in the browser's
+// local zone for display; parse the local input back through `Date` (which
+// interprets it as local) before serializing to UTC.
+function utcIsoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return '';
+  }
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function cronToExpression(c: CrontabSchedule): string {
   return `${c.minute} ${c.hour} ${c.day_of_month} ${c.month_of_year} ${c.day_of_week}`;
 }
@@ -107,7 +120,7 @@ function buildDefaults(
       intervalPeriod: (initial.interval?.period as IntervalUnit) ?? 'hours',
       cronExpression: initial.crontab ? cronToExpression(initial.crontab) : '',
       cronTimezone: initial.crontab?.timezone ?? detectBrowserTimezone(),
-      startTime: initial.start_time ? initial.start_time.slice(0, 16) : '',
+      startTime: initial.start_time ? utcIsoToLocalInput(initial.start_time) : '',
       enabled: initial.enabled,
       chain: {
         chain_task_names: initial.execute_request?.chain_task_names ?? [],

@@ -21,7 +21,18 @@ interface PluginTask extends Record<string, unknown> {
  * independent so the periodic list can poll on its own cadence for
  * `last_run_at` / `next_run_at` freshness.
  */
-export function useScheduledTasksForPlugin(pluginName: string) {
+export interface UseScheduledTasksOptions {
+  /** Override polling interval (ms). Defaults to 30000. */
+  pollingIntervalMs?: number;
+  /** Disable polling (stories, tests). */
+  disablePolling?: boolean;
+}
+
+export function useScheduledTasksForPlugin(
+  pluginName: string,
+  options: UseScheduledTasksOptions = {},
+) {
+  const { pollingIntervalMs = POLL_INTERVAL_MS, disablePolling = false } = options;
   const tasksQuery = usePluginTasks<PluginTask>(pluginName);
   const pluginTaskNames = tasksQuery.data?.map((t) => t.name) ?? [];
 
@@ -31,7 +42,7 @@ export function useScheduledTasksForPlugin(pluginName: string) {
       const { data } = await apiClient.get<PeriodicTaskResponse[]>('/tasks/periodic/');
       return data;
     },
-    refetchInterval: POLL_INTERVAL_MS,
+    refetchInterval: disablePolling ? false : pollingIntervalMs,
   });
 
   // Filter only after both queries have data, otherwise during the initial

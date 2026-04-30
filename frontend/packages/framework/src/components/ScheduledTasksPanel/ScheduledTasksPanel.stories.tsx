@@ -79,7 +79,7 @@ function StoryHarness({ periodicTasks, pluginTasks }: StoryArgs) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ScheduledTasksPanel pluginName={PLUGIN_NAME} />
+      <ScheduledTasksPanel pluginName={PLUGIN_NAME} disablePolling />
     </QueryClientProvider>
   );
 }

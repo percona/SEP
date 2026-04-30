@@ -238,6 +238,118 @@ describe('ScheduledTasksPanel', () => {
     resolvePut({ data: {} });
   });
 
+  it('round-trips an existing cron task into the edit form and submits an updated crontab', async () => {
+    setup([
+      makePeriodic({
+        id: 21,
+        interval: null,
+        crontab: {
+          minute: '0',
+          hour: '6',
+          day_of_month: '*',
+          month_of_year: '*',
+          day_of_week: '*',
+          timezone: 'UTC',
+        },
+        period: '0 6 * * *',
+      }),
+    ]);
+    apiMock.put.mockResolvedValue({ data: { id: 21 } });
+
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('scheduled-task-edit-21'));
+    const form = await screen.findByTestId('scheduled-task-form');
+
+    const cronInput = within(form).getByTestId('sched-form-cron');
+    expect(cronInput).toHaveValue('0 6 * * *');
+
+    await user.clear(cronInput);
+    await user.type(cronInput, '*/15 * * * *');
+    await user.click(within(form).getByRole('button', { name: /Save/i }));
+
+    await waitFor(() => expect(apiMock.put).toHaveBeenCalledTimes(1));
+    const [url, body] = apiMock.put.mock.calls[0];
+    expect(url).toBe('/tasks/periodic/21');
+    expect(body.interval).toBeNull();
+    expect(body.crontab).toMatchObject({
+      minute: '*/15',
+      hour: '*',
+      day_of_month: '*',
+      month_of_year: '*',
+      day_of_week: '*',
+    });
+  });
+
+  it('submits chain_task_names in execute_request when a chain is configured', async () => {
+    setup([]);
+    apiMock.post.mockResolvedValue({ data: makePeriodic({ id: 50 }) });
+
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('scheduled-tasks-add'));
+    const form = await screen.findByTestId('scheduled-task-form');
+
+    const chainBuilder = within(form).getByTestId('chain-builder');
+    await user.click(within(chainBuilder).getByRole('combobox'));
+    const option = await screen.findByRole('option', { name: 'other-plugin-task' });
+    await user.click(option);
+
+    await user.click(within(form).getByRole('button', { name: /Create/i }));
+
+    await waitFor(() => expect(apiMock.post).toHaveBeenCalledTimes(1));
+    const [, body] = apiMock.post.mock.calls[0];
+    expect(body.execute_request).toMatchObject({
+      chain_task_names: ['other-plugin-task'],
+      chain_on_failure: false,
+    });
+  });
+
+  it('shows a panel-level error when a toggle mutation fails', async () => {
+    setup([makePeriodic({ id: 60, enabled: true })]);
+    apiMock.put.mockRejectedValue(new Error('toggle blew up'));
+
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+
+    const toggle = await screen.findByLabelText(/Enable plugin-task/i);
+    await userEvent.click(toggle);
+
+    const alert = await screen.findByTestId('scheduled-tasks-action-error');
+    expect(alert).toHaveTextContent(/toggle blew up/i);
+  });
+
+  it('shows a panel-level error when a delete mutation fails', async () => {
+    setup([makePeriodic({ id: 61 })]);
+    apiMock.delete.mockRejectedValue(new Error('delete blew up'));
+
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('scheduled-task-delete-61'));
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }));
+
+    const alert = await screen.findByTestId('scheduled-tasks-action-error');
+    expect(alert).toHaveTextContent(/delete blew up/i);
+  });
+
+  it('shows an inline form error when a create mutation fails', async () => {
+    setup([]);
+    apiMock.post.mockRejectedValue(new Error('create blew up'));
+
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('scheduled-tasks-add'));
+    const form = await screen.findByTestId('scheduled-task-form');
+    await user.click(within(form).getByRole('button', { name: /Create/i }));
+
+    await waitFor(() => {
+      expect(within(form).getByText(/create blew up/i)).toBeInTheDocument();
+    });
+  });
+
   it('submits an edit via PUT with the updated schedule', async () => {
     setup([makePeriodic({ id: 11 })]);
     apiMock.put.mockResolvedValue({ data: makePeriodic({ id: 11 }) });
