@@ -62,7 +62,7 @@ from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
-JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/",)
+JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/", "/api/sep/")
 
 
 async def sep_startup() -> None:

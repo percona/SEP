@@ -79,8 +79,18 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     {% if task.source_query %}{{ task.source_query }}{% endif %}
                 </td>
                 <td>
-                    {% if task.dest_table %}{{ task.dest_table }}{% endif %}
-                    {% if task.dest_file %}{{ task.dest_file }}{% endif %}
+                    {% if task.dest_host %}
+                        <div>
+                            Host: {{ task.dest_host }}
+                            {% if task.dest_port %}:{{ task.dest_port }}{% endif %}
+                        </div>
+                    {% endif %}
+                    {% if task.dest_db %}<div>DB: {{ task.dest_db }}</div>{% endif %}
+                    {% if task.dest_table %}
+                        <div>Table: {{ task.dest_table }}</div>
+                    {% elif task.dest_file %}
+                        <div>File: {{ task.dest_file }}</div>
+                    {% endif %}
                 </td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>

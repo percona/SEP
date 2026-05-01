@@ -143,7 +143,7 @@ export function refreshAccessToken(): Promise<string | null> {
 
 apiClient.interceptors.response.use(
   (response) => {
-    const ct = response.headers['content-type'] ?? '';
+    const ct = String(response.headers['content-type'] ?? '');
     if (ct.includes('text/html') && !isRefreshRequest(response.config?.url)) {
       _onUnauthorized();
       return Promise.reject(

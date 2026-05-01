@@ -339,26 +339,22 @@ class YamlField(BaseField):
 
 
 class HostField(BaseField):
-    """Represent an inventory host selector field.
+    """Represent an executor-target (Nomad / Celery) selector field.
 
-    ``depends_on`` is a forward reference to another field's ``name`` in the
-    same plugin schema; the React renderer loads host options only once the
-    referenced field has a value. The referenced field is not validated at
-    the schema level — plugins are responsible for declaring a valid
-    reference.
+    The React renderer loads options from ``GET /api/sep/hosts/`` (an SEP
+    proxy endpoint that internally calls Tasks ``/hosts/`` and merges
+    Inventory display names server-side). Host selection is not cascaded
+    from another field — every dispatch form lists every available executor
+    target.
 
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
     :type field_type: Literal["host"]
-    :param depends_on: Optional name of another field that must be set before
-        host options are loaded. Defaults to ``None``.
-    :type depends_on: NonEmptyStr | None
     """
 
     field_type: Literal["host"] = Field(
         "host", alias="type", serialization_alias="type"
     )
-    depends_on: NonEmptyStr | None = None
 
 
 class SchemaField(BaseField):

@@ -13,20 +13,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the shared SEP API router hosting plugin endpoints.
+"""Define the shared SEP API router hosting plugin and cross-cutting endpoints.
 
-Apply authentication at the router level and expose per-plugin sub-routers
-under ``/api/plugins/{plugin_name}/``. Per-plugin routers are added in their
-own tickets; this module only defines the composition skeleton.
+Apply authentication at the router level and expose two prefix groups:
 
-``/api/plugins/*`` reaches ``sep_app`` because the top-level ``app/main.py``
-mounts ``/api/inventory`` and ``/api/tasks`` before ``/`` — nothing more
-specific claims ``/api/plugins``. A future ``app.mount("/api/plugins", ...)``
-in ``app/main.py`` would silently shadow this router.
+* ``/api/plugins/{plugin_name}/`` — per-plugin JSON endpoints (added in
+  individual plugin tickets).
+* ``/api/sep/...`` — cross-cutting JSON endpoints that proxy to the Tasks and
+  Inventory sub-applications (so the frontend never bypasses the SEP layer).
+
+``/api/plugins/*`` and ``/api/sep/*`` reach ``sep_app`` because the top-level
+``app/main.py`` mounts ``/api/inventory`` and ``/api/tasks`` before ``/`` —
+nothing more specific claims either prefix. A future
+``app.mount("/api/plugins", ...)`` or ``app.mount("/api/sep", ...)`` in
+``app/main.py`` would silently shadow this router.
 """
 
 from fastapi import APIRouter
 
+from app.sep.api.routes.hosts import router as hosts_router
 from app.sep.deps import IsApiAuthenticated
 from app.sep.plugins.checksums.api_routes import router as checksums_api_router
 from app.sep.plugins.inventory.api_routes import router as inventory_api_router
@@ -41,3 +46,4 @@ plugins_router.include_router(
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
 api_router.include_router(plugins_router)
+api_router.include_router(hosts_router, prefix="/sep/hosts", tags=["sep"])
