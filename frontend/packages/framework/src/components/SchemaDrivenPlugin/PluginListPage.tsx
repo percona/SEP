@@ -67,7 +67,15 @@ export function PluginListPage({ schema, pluginName, mockTasks }: PluginListPage
         listView={schema.listView}
         data={tasks}
         isLoading={isLoading}
-        onRowClick={(row) => navigate(String(row.id))}
+        onRowClick={(row) => {
+          // Backend per-plugin detail/delete routes look up by `task_name`
+          // (string), not numeric `id`. The first listView column is
+          // typically `name`; fall back to id only if name is absent.
+          const key = row.name ?? row.id;
+          if (key !== undefined && key !== null) {
+            navigate(String(key));
+          }
+        }}
       />
     </Box>
   );

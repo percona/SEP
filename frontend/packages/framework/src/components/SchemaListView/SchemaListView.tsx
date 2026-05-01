@@ -118,6 +118,11 @@ export function SchemaListView({
           : [],
         density: 'compact',
       }}
+      muiTablePaperProps={{
+        elevation: 0,
+        variant: 'outlined',
+        sx: { bgcolor: 'background.paper' },
+      }}
       muiTableBodyRowProps={
         onRowClick
           ? ({ row }) => ({
