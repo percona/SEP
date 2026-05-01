@@ -305,8 +305,8 @@ importers:
         specifier: ^8.0.10
         version: 8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0)
       vite-tsconfig-paths:
-        specifier: ^4.3.0
-        version: 4.3.2(typescript@6.0.3)(vite@8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0))
+        specifier: ^6.1.1
+        version: 6.1.1(typescript@6.0.3)(vite@8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0))
       vitest:
         specifier: ^4.0.0
         version: 4.1.5(@types/node@20.19.39)(jsdom@29.0.2)(msw@2.13.6(@types/node@20.19.39)(typescript@6.0.3))(vite@8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0))
@@ -2983,13 +2983,10 @@ packages:
       vue:
         optional: true
 
-  vite-tsconfig-paths@4.3.2:
-    resolution: {integrity: sha512-0Vd/a6po6Q+86rPlntHye7F31zA2URZMbH8M3saAZ/xR9QoGN/L21bxEGfXdWmFdNkqPpRdxFT7nmNe12e9/uA==}
+  vite-tsconfig-paths@6.1.1:
+    resolution: {integrity: sha512-2cihq7zliibCCZ8P9cKJrQBkfgdvcFkOOc3Y02o3GWUDLgqjWsZudaoiuOwO/gzTzy17cS5F7ZPo4bsnS4DGkg==}
     peerDependencies:
       vite: '*'
-    peerDependenciesMeta:
-      vite:
-        optional: true
 
   vite@8.0.10:
     resolution: {integrity: sha512-rZuUu9j6J5uotLDs+cAA4O5H4K1SfPliUlQwqa6YEwSrWDZzP4rhm00oJR5snMewjxF5V/K3D4kctsUTsIU9Mw==}
@@ -5539,12 +5536,11 @@ snapshots:
       react: 19.2.5
       react-dom: 19.2.5(react@19.2.5)
 
-  vite-tsconfig-paths@4.3.2(typescript@6.0.3)(vite@8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0)):
+  vite-tsconfig-paths@6.1.1(typescript@6.0.3)(vite@8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0)):
     dependencies:
       debug: 4.4.3(supports-color@10.2.2)
       globrex: 0.1.2
       tsconfck: 3.1.6(typescript@6.0.3)
-    optionalDependencies:
       vite: 8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0)
     transitivePeerDependencies:
       - supports-color
