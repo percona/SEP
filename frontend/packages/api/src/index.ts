@@ -60,6 +60,7 @@ export type {
   SchemaField,
   TableField,
   HostField,
+  ScriptPreviewField,
 } from './types/plugin-schema';
 
 // Hooks

@@ -100,6 +100,25 @@ export interface HostField extends BaseField {
   type: 'host';
 }
 
+// ── Read-only preview ───────────────────────────────────────────────────
+
+export interface ScriptPreviewField extends BaseField {
+  type: 'script_preview';
+  /**
+   * Fully-resolved URL the renderer fetches preview content from. Schema
+   * synthesisers should bake plugin-specific path segments here at schema
+   * build time rather than templating client-side.
+   */
+  endpointUrl: string;
+  /**
+   * Names of sibling fields whose values trigger a debounced re-fetch.
+   * Empty (the default) means fetch once on mount.
+   */
+  dependsOn: string[];
+  /** Optional default highlighter language hint. */
+  language?: string;
+}
+
 // ── Discriminated union ─────────────────────────────────────────────────
 
 export type PluginField =
@@ -116,7 +135,8 @@ export type PluginField =
   | ServiceField
   | SchemaField
   | TableField
-  | HostField;
+  | HostField
+  | ScriptPreviewField;
 
 // ── Form structure ──────────────────────────────────────────────────────
 

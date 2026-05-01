@@ -13,6 +13,7 @@ import { ServiceField } from './ServiceField';
 import { SchemaField } from './SchemaField';
 import { TableField } from './TableField';
 import { HostField } from './HostField';
+import { ScriptPreviewField } from './ScriptPreviewField';
 
 export {
   StringField,
@@ -29,6 +30,7 @@ export {
   SchemaField,
   TableField,
   HostField,
+  ScriptPreviewField,
 };
 
 interface FieldRendererProps {
@@ -71,6 +73,8 @@ export function FieldRenderer({ field }: FieldRendererProps) {
       return <TableField field={field} />;
     case 'host':
       return <HostField field={field} />;
+    case 'script_preview':
+      return <ScriptPreviewField field={field} />;
     default: {
       const exhaustive: never = field;
       void exhaustive;

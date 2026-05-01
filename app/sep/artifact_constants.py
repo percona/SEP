@@ -13,10 +13,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ["BASE_DIR", "__summary__", "__version__"]
-__version__ = "v0.13.0.dev0"
-__summary__ = "Percona Services Enablement Platform"
+"""Constants for the artifact download module.
 
-from pathlib import Path
+These constants live in their own module to avoid the import cycle that
+would otherwise form when both ``app.sep.routes.artifacts`` and a plugin's
+``deps.py`` need them: ``artifacts.py`` imports plugin-side constants
+(for example, :data:`app.sep.plugins.dipper.constants.DIPPER_PAYLOADS_DIR`),
+while plugin ``deps.py`` modules import the artifact constants here.
+"""
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+__all__ = [
+    "ARTIFACT_DOWNLOAD_SALT",
+    "ARTIFACT_TYPE_DIPPER",
+    "ARTIFACT_TYPE_SNIPPET",
+]
+
+ARTIFACT_DOWNLOAD_SALT = "artifact-download"
+ARTIFACT_TYPE_SNIPPET = "snippet"
+ARTIFACT_TYPE_DIPPER = "dipper"
