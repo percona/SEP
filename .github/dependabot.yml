@@ -57,3 +57,11 @@ updates:
       # once percona-ui ships v2 support.
       - dependency-name: "material-react-table"
         update-types: ["version-update:semver-major"]
+      # @types/node tracks the underlying Node major. Our runtime is
+      # pinned to Node 20.20.2 (frontend/package.json engines.node and
+      # actions/setup-node in .github/workflows/frontend.yaml). Bumping
+      # @types/node beyond v20 surfaces APIs that don't exist in our
+      # runtime — type-check passes, code crashes in CI/prod. Bump this
+      # rule's major in lockstep with engines.node when we upgrade Node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
