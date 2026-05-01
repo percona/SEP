@@ -21,7 +21,10 @@ import pytest
 from fastapi import HTTPException, status
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.connectivity import _fetch_connectivity_result, _LATEST_RESULTS
+from app.sep.connectivity import (
+    clear_connectivity_caches,
+    get_latest_connectivity_result,
+)
 from app.sep.main import sep_app
 from app.sep.plugins.backup_pg.deps import build_backup_task_payload
 from app.tasks.models import (
@@ -103,8 +106,7 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
     test_client, mock_task_api_dep, backup_create
 ):
     """POST /backup-pg/ skips the connectivity check when the checkbox is unchecked."""
-    _fetch_connectivity_result.cache_clear()
-    _LATEST_RESULTS.clear()
+    clear_connectivity_caches()
 
     fake_task_write = TaskWrite(
         name="fake_task",
@@ -137,10 +139,9 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
     call = mock_task_api_dep.post.call_args_list[0]
     assert call.args[0] == "/"
     assert call.kwargs["json"] == fake_task_write.model_dump()
-    assert _LATEST_RESULTS == {}
+    assert get_latest_connectivity_result("node1", "postgresql") is None
 
-    _fetch_connectivity_result.cache_clear()
-    _LATEST_RESULTS.clear()
+    clear_connectivity_caches()
     sep_app.dependency_overrides = {}
 
 
