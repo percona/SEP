@@ -24,4 +24,5 @@ export type {
   SchemaField,
   TableField,
   HostField,
+  ScriptPreviewField,
 } from '@sep/api';

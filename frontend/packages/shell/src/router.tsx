@@ -13,6 +13,9 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const ChecksumsPlugin = lazy(() =>
   import('@sep/checksums').then((m) => ({ default: m.ChecksumsPlugin })),
 );
+const SnippetsPlugin = lazy(() =>
+  import('@sep/plugins-snippets').then((m) => ({ default: m.SnippetsPlugin })),
+);
 
 export const router = createBrowserRouter([
   {
@@ -32,8 +35,8 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'inventory', element: <PlaceholderPage /> },
-          { path: 'tasks', element: <PlaceholderPage /> },
-          { path: 'snippets', element: <PlaceholderPage /> },
+          { path: 'tasks/*', element: <PlaceholderPage /> },
+          { path: 'snippets/*', element: <SnippetsPlugin /> },
           { path: 'atw', element: <PlaceholderPage /> },
           { path: 'dipper', element: <PlaceholderPage /> },
           { path: 'alerts/templates', element: <PlaceholderPage /> },

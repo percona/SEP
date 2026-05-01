@@ -36,6 +36,7 @@ from app.sep.plugins.framework.schema import (
     MultiChoiceField,
     PluginSchema,
     SchemaField,
+    ScriptPreviewField,
     ServiceField,
     StringField,
     TableField,
@@ -177,6 +178,11 @@ def test_plugin_schema_constructs_with_all_capabilities_on():
             {"choices": [Choice(label="A", value="a")]},
         ),
         (SchemaField, "schema", {"depends_on": "serviceId"}),
+        (
+            ScriptPreviewField,
+            "script_preview",
+            {"endpoint_url": "/api/plugins/x/preview"},
+        ),
         (
             ServiceField,
             "service",
@@ -583,3 +589,73 @@ def test_field_type_mismatch_with_concrete_class_raises():
     """Reject constructing a subclass with a ``field_type`` that does not match its literal."""
     with pytest.raises(ValidationError):
         StringField(name="x", label="X", field_type="integer")
+
+
+class TestScriptPreviewField:
+    """Tests covering the read-only :class:`ScriptPreviewField` field type."""
+
+    def test_minimal_construction_defaults_depends_on_empty_and_language_none(self):
+        """Construct a ScriptPreviewField with only the required fields."""
+        field = ScriptPreviewField(
+            name="preview",
+            label="Preview",
+            endpoint_url="/api/plugins/snippets/x.sh/script-preview",
+        )
+
+        assert field.field_type == "script_preview"
+        assert field.endpoint_url == "/api/plugins/snippets/x.sh/script-preview"
+        assert field.depends_on == []
+        assert field.language is None
+
+    def test_endpoint_url_is_required(self):
+        """Reject construction without an endpoint_url."""
+        with pytest.raises(ValidationError):
+            ScriptPreviewField(name="preview", label="Preview")
+
+    def test_endpoint_url_must_be_non_empty(self):
+        """Reject construction with an empty endpoint_url."""
+        with pytest.raises(ValidationError):
+            ScriptPreviewField(name="preview", label="Preview", endpoint_url="")
+
+    def test_depends_on_accepts_non_empty_strings(self):
+        """Accept a depends_on list with one or more sibling field names."""
+        field = ScriptPreviewField(
+            name="preview",
+            label="Preview",
+            endpoint_url="/api/plugins/x/y",
+            depends_on=["snippet_filename", "executor_host"],
+        )
+
+        assert field.depends_on == ["snippet_filename", "executor_host"]
+
+    def test_serialises_with_type_alias(self):
+        """``model_dump(by_alias=True)`` exposes the discriminator as ``"type"``."""
+        field = ScriptPreviewField(
+            name="preview",
+            label="Preview",
+            endpoint_url="/api/plugins/x/y",
+        )
+
+        dumped = field.model_dump(by_alias=True)
+        assert dumped["type"] == "script_preview"
+        assert dumped["endpointUrl"] == "/api/plugins/x/y"
+        assert dumped["dependsOn"] == []
+
+    def test_dispatch_via_any_field_discriminator(self):
+        """A ScriptPreviewField round-trips through the AnyField union."""
+        section = FormSection.model_validate(
+            {
+                "title": "Execution",
+                "fields": [
+                    {
+                        "type": "script_preview",
+                        "name": "preview",
+                        "label": "Preview",
+                        "endpoint_url": "/api/plugins/x/y",
+                    },
+                ],
+            },
+        )
+
+        assert isinstance(section.fields[0], ScriptPreviewField)
+        assert section.fields[0].endpoint_url == "/api/plugins/x/y"

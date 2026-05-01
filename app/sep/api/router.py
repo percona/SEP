@@ -34,10 +34,14 @@ from fastapi import APIRouter
 from app.sep.api.routes.hosts import router as hosts_router
 from app.sep.deps import IsApiAuthenticated
 from app.sep.plugins.checksums.api_routes import router as checksums_api_router
+from app.sep.plugins.snippets.api_routes import router as snippets_api_router
 
 plugins_router = APIRouter(prefix="/plugins")
 plugins_router.include_router(
     checksums_api_router, prefix="/checksums", tags=["checksums"]
+)
+plugins_router.include_router(
+    snippets_api_router, prefix="/snippets", tags=["snippets"]
 )
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])

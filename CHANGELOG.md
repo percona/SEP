@@ -14,6 +14,95 @@ via `make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="..."` where
 See `changelog.d/README.md` for the full workflow.
 -->
 
+## [v0.12.0] - 2026-04-30
+
+### Added
+
+- SEP-446: Snippets for ProxySQL logs
+- SEP-449: Snippets for ProxySQL status
+- SEP-491: Automatic PMM annotations for task lifecycle events (STARTED, COMPLETED, FAILED, STOPPED, LOST)
+- SEP-503: PagerDuty alert triggered on inventory sync item failure
+- SEP-562: Backup tasks can be chained — when scheduling a backup execution, select a follow-up task to dispatch automatically once the primary task reaches a terminal state, regardless of outcome
+- SEP-687: Mydumper payload writes a lockfile on the source host to prevent concurrent backups against the same instance
+- SEP-709: Snippet parameters can be organized into labeled groups in execution forms via a `groups` frontmatter field
+- SEP-711: Nomad job events are collected and surfaced alongside task history for richer dispatch diagnostics
+- SEP-748: NodeAgentDown alert snippet
+- SEP-796: Inventory sync registered as a periodic task; schedules can be created and edited from the inventory plugin and execution history is tracked alongside other task types
+- SEP-808: Alert snippets for StaleBackup, StaleUpload, StaleBackupLog, StaleUploadLog, and BackupFailed
+- SEP-812: Alert snippets for PostgreSQLLockConflicts, PostgreSQLCommitRateLow, and PostgreSQLTooManyConnections
+- SEP-842: Alert snippets for PostgreSQLUptime, PostgreSQLIsDown, PostgreSQLIdleInTransaction, PostgreSQLTransactionDuration, and PostgreSQLTooManyLocksAcquired
+- SEP-859: Alert snippets for PostgreSQLDeadlocks and PostgreSQLArchiveFailed
+- SEP-860: Alert snippets for PostgreSQLReplicationLag, PostgreSQLExporterError, and PostgreSQLWraparound
+- SEP-862: MongoDB alert diagnostic snippets
+- SEP-864: MySQL alert diagnostic snippets
+- SEP-882: Auto-resolve PagerDuty alerts when a failed backup task is re-executed and succeeds
+- SEP-904: Alert Troubleshooting plugin with index page showing alerts grouped by service type
+- SEP-905: Alert Troubleshooting detail page with AJAX snippet execution and inline terminal output
+- SEP-908: Backup tasks can upload to Google Cloud Storage buckets via the `gcloud storage` CLI, alongside the existing S3 and rsync upload options
+- SEP-913: GAS Reporting plugin: pull advisor data and monitoring metrics from PMM for a chosen timeframe, generate HTML/PDF reports, and optionally upload them to a ServiceNow knowledge base space; report generation can be scheduled directly in SEP
+- SEP-921: JSON REST API for the Checksums plugin under `/api/plugins/checksums/` (list, detail, create, delete tasks, and schema endpoint for SPA clients)
+- SEP-928: Inventory Sync split button — the chevron next to the existing sync-all control opens a dropdown that lets DBAs run a single configured syncer instead of waiting for the full chain
+- SEP-932: Database connectivity check endpoint via Nomad task dispatch (MySQL, PostgreSQL, MongoDB)
+- SEP-933: Manual connectivity check button on inventory service detail page
+- SEP-934: Automatic connectivity check on task creation with non-blocking warnings and visual indicators
+- SEP-935: Pre-execution connectivity check before Nomad task dispatch with configurable mode (disabled/warn/block) and result caching
+- SEP-995: Per-task "Check connectivity" checkbox on task creation forms backed by a new `SEP.CONNECTIVITY_CHECK_DEFAULT` setting to opt out of the automatic Nomad connectivity check
+- SEP-997: Alert Troubleshooting: cross-tag diagnostic snippets across related alerts, and let each `alerts:` entry in a snippet's frontmatter declare its own `service_type` so a generic snippet can surface on service-specific troubleshooting pages without being duplicated
+- SEP-998: Batch approval of snippets from the snippets manager
+- SEP-1019: Cancel stuck pending Nomad allocations once the configurable `TASKS__STALENESS_THRESHOLD_SECONDS` threshold (default 3600 s) is exceeded. Stale allocations self-abort via a prestart staleness check, surface as the new `STALE` task history status, and emit a deduped `task_stale` alert.
+- SEP-1040: Inline inventory-sync schedule management on the inventory node list page
+- SEP-1041: Inventory-sync schedules can target a specific syncer or all syncers; the inventory page now renders one row per schedule.
+- SEP-1046: MySQL Archiver tasks can now disable `--bulk-insert` via a checkbox in the create/edit form, allowing `pt-archiver` to run on hosts where `local_infile=OFF`
+
+### Changed
+
+- SEP-379: Task log streaming endpoint releases the connection promptly when the task reaches a terminal state, rather than holding it open until completion; clients can re-open the stream to follow live output
+- SEP-737: Snippet form parameter tooltips replaced with info icons to prevent accidental tooltip activation on hover
+- SEP-816: Reduce write amplification for `TaskHistory.execution_request` by using `JSONB` on Postgres, deferring the column by default, and clearing the sync lock via targeted `UPDATE` instead of a full ORM save
+- SEP-817: Move task logs out of `execution_request.tracking.task_logs` into a dedicated append-only `taskhistory_log` table; legacy records continue to render via a dual-read fallback until their eventual cleanup. The `tracking.task_logs` field is no longer populated for new task histories and is no longer collapsed to a boolean in `TaskHistoryResponse` for pre-migration records — API consumers that relied on the field's presence should switch to streaming the `/history/{id}/logs/` endpoint.
+- SEP-818: Add PostgreSQL and SQLite expression indexes on `taskhistory.execution_request->>'task'`/`->>'target'` so dispatch dedup and task-history filter queries use index scans instead of scanning a narrowed candidate set
+- SEP-856: YAML frontmatter in snippet previews is collapsed by default and excluded from the line-count limit
+- SEP-937: PMM connection settings moved to top-level `PMM` config section (old `SEP.PMM` path still works with deprecation warning)
+- SEP-988: Convert `taskhistory.execution_request` to `JSONB` on PostgreSQL, add a GIN index `ix_taskhistory_execution_request_meta` on `execution_request->'meta'` using `jsonb_path_ops`, and refactor `_raise_if_identical_task_conflict` to use jsonb-native operators on PostgreSQL (`@>` containment for scalar meta items, jsonb equality for list/dict meta items). MySQL and SQLite continue to use the per-key text-equality loop unchanged.
+
+### Breaking Changes
+
+- SEP-924: Inventory list endpoints now return paginated responses with `offset`/`limit` query parameters
+- SEP-925: Tasks list routes (`GET /`, `GET /history/`, `GET /{task}/history/`) now return paginated responses with `offset`/`limit` query parameters
+- SEP-937: The `SEP__PMM_FRONTEND` environment variable has been removed. Use `PMM__FRONTEND` (top-level) or `SEP__PMM__FRONTEND` (nested under SEP.PMM) instead.
+- SEP-988: `_raise_if_identical_task_conflict` dedup comparison on PostgreSQL is now type-strict for scalar meta values, replacing a type-loose `str(raw_value)` text comparison. A dispatch with `meta.key = 1` (int) no longer deduplicates against a pending task with `meta.key = "1"` (string), and vice versa. Bool and `None` scalar meta values were previously not deduplicated correctly on PostgreSQL (latent bugs in `str(True) == "True"` vs jsonb text output `"true"`, and `str(None) == "None"` vs jsonb `NULL`); they are now correctly deduplicated via jsonb containment.
+- SEP-988: `_raise_if_identical_task_conflict` dedup comparison on PostgreSQL is now order-insensitive for dict-valued meta items. Two dispatches whose dict-valued meta items contain the same keys/values in different insertion orders were previously considered distinct and are now considered duplicates. MySQL and SQLite dedup semantics are unchanged.
+- SEP-1069: `TASKS.INVENTORY_SYNC_API_KEY` removed; replaced by `SEP_INTERNAL_TOKEN` env var. Affects only operators tracking v0.12.0 RCs (never shipped stable).
+
+### Configuration Changes
+
+- SEP-491: Added `PMM.ANNOTATIONS_ENABLED` setting (default: `false`) to control PMM annotation creation
+- SEP-491: Added `PMM.ANNOTATIONS_TIMEOUT` setting (default: `5`) to configure PMM annotation request timeout
+- SEP-929: Added `UVICORN_EXTRA_RELOAD_DIRS`, `UVICORN_EXTRA_RELOAD_INCLUDES`, and `UVICORN_EXTRA_RELOAD_EXCLUDES` settings to extend uvicorn reload paths via `settings.yaml`
+- SEP-935: Added `TASKS.PRE_EXECUTION_CONNECTIVITY_CHECK` setting (disabled/warn/block) to control pre-execution connectivity checks before task dispatch
+- SEP-988: Upgrades that cross this revision run `ALTER TABLE taskhistory ALTER COLUMN execution_request TYPE jsonb USING execution_request::jsonb`, which rewrites every row in the `taskhistory` table under an `ACCESS EXCLUSIVE` lock on PostgreSQL. Expected downtime impact is proportional to row count (approximately one minute per two million rows on typical production hardware); size the upgrade window accordingly for deployments with large `taskhistory` tables. The Tasks API also fail-fasts at startup if the column is still plain `json` after deploying SEP-988, with a clear remediation message pointing to the migration.
+- SEP-1019: New `TASKS__STALENESS_THRESHOLD_SECONDS` setting (default 3600 s) controls how long a dispatched task may wait in Nomad before self-aborting as stale.
+
+### Fixed
+
+- SEP-479: Archiver task marked a failed
+- SEP-746: Backup log stream continues updating throughout the full duration of the run instead of stopping after a few seconds
+- SEP-764: pt-osc pre-checks now execute against the database host selected in the task form instead of the default host
+- SEP-810: pt-osc `recursion-method` DSN parameter now has validation and a sensible default value
+- SEP-909: Task history rows no longer remain stuck in RUNNING status after the underlying Nomad job completes
+- SEP-917: Hardcoded `#fff` background on form inline styles no longer breaks dark mode rendering
+- SEP-989: Xtrabackup Nomad payload further optimized to stay within Nomad's 256 KB dispatch limit
+- SEP-1005: Coerce `syntax_highlight` filter input to `str` so backup and archiver detail pages render correctly when task metadata contains non-string scalar values (integers, floats, booleans, None).
+- SEP-1018: Periodic tasks whose target host is not ready on Nomad are now recorded as FAILED TaskHistory rows with a deduped alert instead of queuing a stuck Nomad allocation.
+- SEP-1049: `backup_pg`-only installs no longer crash the homepage and plugin pages with `NoMatchFound` when none of the router-gating allowlist plugins are enabled
+- SEP-1050: Cron schedule validation in SEP periodic-task and inventory-sync schedule forms now surfaces a clear validation message instead of a generic server error.
+- SEP-1069: Scheduled inventory sync now uses a stable internal service token (`SEP_INTERNAL_TOKEN`) instead of a Casdoor user access token, eliminating the periodic auth failures caused by token expiry.
+- SEP-1084: Archives SWAP-ARCHIVE-DROP tasks no longer crash when SWP_TABLE_SUFFIX is a date value
+
+### Security
+
+- SEP-883: Fixed command injection via unsanitized `backup_source` path in restore payload `_symlink_to_real()`
+
 ## [v0.11.0] - 2026-04-02
 
 ### Added
@@ -162,7 +251,8 @@ See `changelog.d/README.md` for the full workflow.
 - SEP-701: Update `aiohttp` to 3.13.3
 - SEP-728: Update `python-multipart` to 0.0.22
 
-[Unreleased]: https://github.com/percona/SEP/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/percona/SEP/compare/v0.12.0...HEAD
+[v0.12.0]: https://github.com/percona/SEP/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/percona/SEP/compare/v0.10.3...v0.11.0
 [v0.10.3]: https://github.com/percona/SEP/compare/v0.10.2...v0.10.3
 [v0.10.2]: https://github.com/percona/SEP/compare/v0.10.1...v0.10.2
