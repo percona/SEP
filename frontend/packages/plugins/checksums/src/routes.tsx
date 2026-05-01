@@ -15,9 +15,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenPlugin } from '@sep/framework';
-import { PLUGIN_NAME } from './routes';
+import type { RouteObject } from 'react-router-dom';
+import { ChecksumsPlugin } from './ChecksumsPlugin';
 
-export function ChecksumsPlugin() {
-  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} />;
-}
+export const PLUGIN_NAME = 'checksums';
+export const PLUGIN_BASE_PATH = '/plugins/checksums';
+
+export const checksumsRoute: RouteObject = {
+  path: 'plugins/checksums/*',
+  element: <ChecksumsPlugin />,
+};
