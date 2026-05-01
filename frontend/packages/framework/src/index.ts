@@ -36,15 +36,18 @@ export { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './components/AlertOn
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
 
 // Hooks
-export { useServices, useSchemas, useTables } from './hooks';
+export { useServices, useSchemas, useTables, useHosts } from './hooks';
 export type {
   ServiceOption,
   ServiceType,
   SchemaOption,
   TableOption,
+  HostOption,
+  HostsResult,
   UseServicesOptions,
   UseSchemasOptions,
   UseTablesOptions,
+  UseHostsOptions,
 } from './hooks';
 
 export {
