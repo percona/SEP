@@ -70,7 +70,7 @@ async def build_backup_task_payload(
     :type form: BackupCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `TaskWrite` object containing all the necessary
+    :return: A fully constructed ``TaskWrite`` object containing all the necessary
         configuration to create the Backup task.
     :rtype: TaskWrite
     """
@@ -151,6 +151,7 @@ async def build_backup_task_payload(
                 ),
                 "target": form.hostname,
                 "requirements": requirements,
+                "_service_name": service.name,
                 CONNECTIVITY_META_HOST_KEY: service.node.address,
                 CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,

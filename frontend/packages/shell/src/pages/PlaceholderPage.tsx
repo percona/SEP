@@ -36,7 +36,7 @@ export default function PlaceholderPage() {
         This section will be implemented during the frontend migration.
       </Typography>
 
-      <Stack direction="row" spacing={2} flexWrap="wrap" justifyContent="center" useFlexGap>
+      <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', justifyContent: 'center' }}>
         <Button variant="contained" color="success" onClick={() => showSuccess('Success toast')}>
           Show Success
         </Button>
