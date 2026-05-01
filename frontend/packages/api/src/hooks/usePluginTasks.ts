@@ -106,3 +106,17 @@ export function useCreatePluginTask<T extends Record<string, unknown>>(
     },
   });
 }
+
+export function useDeletePluginTask(pluginName: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, string>({
+    mutationFn: async (taskId) => {
+      await apiClient.delete(`/plugins/${pluginName}/${taskId}`);
+    },
+    onSuccess: (_data, taskId) => {
+      queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks'] });
+      queryClient.removeQueries({ queryKey: ['plugins', pluginName, 'tasks', taskId] });
+    },
+  });
+}

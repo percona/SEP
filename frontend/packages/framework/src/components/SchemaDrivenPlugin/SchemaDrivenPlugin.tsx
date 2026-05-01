@@ -23,6 +23,7 @@ import { usePluginSchema, type PluginSchema } from '@sep/api';
 import { PluginListPage } from './PluginListPage';
 import { PluginCreatePage } from './PluginCreatePage';
 import { PluginDetailPage } from './PluginDetailPage';
+import { PluginSchedulePage } from './PluginSchedulePage';
 
 interface SchemaDrivenPluginProps {
   pluginName: string;
@@ -64,9 +65,10 @@ export function SchemaDrivenPlugin({ pluginName, mockSchema, mockTasks }: Schema
         element={<PluginCreatePage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />}
       />
       <Route
-        path=":id"
+        path=":id/*"
         element={<PluginDetailPage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />}
       />
+      <Route path="schedule" element={<PluginSchedulePage pluginName={pluginName} />} />
     </Routes>
   );
 }

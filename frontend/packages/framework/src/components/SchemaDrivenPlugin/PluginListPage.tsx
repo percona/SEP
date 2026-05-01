@@ -18,8 +18,10 @@
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
+import ScheduleIcon from '@mui/icons-material/Schedule';
 import { usePluginTasks, type PluginSchema } from '@sep/api';
 import { SchemaListView } from '../SchemaListView';
 
@@ -44,9 +46,21 @@ export function PluginListPage({ schema, pluginName, mockTasks }: PluginListPage
             </Typography>
           )}
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('new')}>
-          New {schema.displayName}
-        </Button>
+        <Stack direction="row" spacing={1}>
+          {schema.capabilities?.scheduling && (
+            <Button
+              variant="outlined"
+              startIcon={<ScheduleIcon />}
+              onClick={() => navigate('schedule')}
+              data-testid="plugin-schedule-link"
+            >
+              Schedules
+            </Button>
+          )}
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('new')}>
+            New {schema.displayName}
+          </Button>
+        </Stack>
       </Box>
 
       <SchemaListView
