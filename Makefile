@@ -169,7 +169,7 @@ endif
 
 trigger-jenkins:
 ifndef TAG
-	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z)
+	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z [WEBHOOK_URL_ENV=... WEBHOOK_AUTH_ENV=...])
 endif
 	@set -euo pipefail; \
 	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
@@ -181,6 +181,12 @@ endif
 			--data-urlencode "pushImage=true" \
 			--data-urlencode "pushImageDocker=true" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \
+			if [ -n "$(WEBHOOK_URL_ENV)" ] && [ -n "$(WEBHOOK_AUTH_ENV)" ]; then \
+				$(PYTHON) scripts/post_jira_webhook.py \
+					--url-env "$(WEBHOOK_URL_ENV)" \
+					--auth-env "$(WEBHOOK_AUTH_ENV)" \
+					--version-tag "$(TAG)" || true; \
+			fi; \
 		else \
 			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
 		fi; \

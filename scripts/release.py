@@ -16,26 +16,25 @@
 
 """Release SEP — cut an RC or promote to stable.
 
-Owns the preconditions, version-bump, tagging, GitHub release, Jenkins trigger,
-and Jira version webhook dispatch for ``make release-rc`` and
-``make release-stable``. Both Makefile targets are thin shims that forward
-``VERSION`` / ``RC`` to this script.
+Owns the preconditions, version-bump, tagging, GitHub release, and Jenkins
+trigger for ``make release-rc`` and ``make release-stable``. Both Makefile
+targets are thin shims that forward ``VERSION`` / ``RC`` to this script.
 
 Subcommands:
 
 - ``rc``: cut release candidate ``vX.Y.ZrcN`` from ``main`` (RC=1) or the
-  existing ``release/vX.Y.Z`` branch (RC>1). When RC=1 and the
-  ``JIRA_VERSION_CREATE_WEBHOOK_*`` env vars are set, POSTs to the Jira
-  automation webhook before the long-running build / push steps (locks
-  ``fixVersion=sep-next`` scope early).
+  existing ``release/vX.Y.Z`` branch (RC>1). When RC=1, dispatches the Jira
+  ``version-create`` automation webhook (via ``scripts/post_jira_webhook.py``)
+  before the long-running build / push steps to lock the
+  ``fixVersion=sep-next`` scope early.
 - ``stable``: promote ``release/vX.Y.Z`` to stable ``vX.Y.Z`` and create a
-  dev-version-bump PR on ``main``. When the build is actually in flight
-  (``JENKINS_*`` env vars set) and the ``JIRA_VERSION_RELEASE_WEBHOOK_*`` env
-  vars are set, POSTs to the Jira automation webhook after the release is
-  complete.
+  dev-version-bump PR on ``main``. The Jira ``version-released`` automation
+  webhook is dispatched from the ``trigger-jenkins`` Makefile rule, gated on
+  the same ``JENKINS_*`` env vars that gate the build trigger itself.
 
-All webhook dispatch is best-effort: failure logs a redacted warning to stderr
-and leaves the corresponding manual-reminder line in the "Next steps" output.
+All webhook dispatch is best-effort: ``scripts/post_jira_webhook.py`` exits
+non-zero on failure with a redacted warning on stderr, and the "Next steps"
+output always carries the manual reminder.
 """
 
 from __future__ import annotations
@@ -47,18 +46,15 @@ import re
 import shutil
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 PYPROJECT = Path("pyproject.toml")
 APP_INIT = Path("app/__init__.py")
-WEBHOOK_TIMEOUT_SECONDS = 10
 WEBHOOK_CREATE_URL_ENV = "JIRA_VERSION_CREATE_WEBHOOK_URL"
 WEBHOOK_CREATE_AUTH_ENV = "JIRA_VERSION_CREATE_WEBHOOK_SECRET"
 WEBHOOK_RELEASE_URL_ENV = "JIRA_VERSION_RELEASE_WEBHOOK_URL"
 WEBHOOK_RELEASE_AUTH_ENV = "JIRA_VERSION_RELEASE_WEBHOOK_SECRET"
-JENKINS_ENV_VARS: tuple[str, ...] = ("JENKINS_URL", "JENKINS_USER", "JENKINS_API_TOKEN")
+POST_JIRA_WEBHOOK_SCRIPT = Path(__file__).resolve().parent / "post_jira_webhook.py"
 
 _VERSION_LINE_RE: re.Pattern[str] = re.compile(r'^version = ".*"$', re.MULTILINE)
 _DUNDER_VERSION_LINE_RE: re.Pattern[str] = re.compile(
@@ -397,19 +393,12 @@ def _bump_version(pep440_version: str, tag_version: str) -> None:
     APP_INIT.write_text(new_init_text, encoding="utf-8")
 
 
-def _post_webhook(url_env: str, auth_env: str, version_tag: str) -> bool:
-    """POST the Jira version-name payload to the webhook. Best-effort.
+def _invoke_post_jira_webhook(url_env: str, auth_env: str, version_tag: str) -> bool:
+    """Run ``scripts/post_jira_webhook.py`` and return whether it succeeded.
 
-    Silently skip the call when either env var is unset or empty — webhook
-    configuration is optional maintainer-side and the matching manual
-    reminder in the "Next steps" output is sufficient to cover that path.
-
-    Reject non-HTTPS URLs up front to avoid shipping the webhook token over
-    cleartext if the env var is misconfigured.
-
-    Catch ``HTTPError`` before the broader transport-error branch because
-    ``HTTPError`` is a subclass of ``URLError``; the reverse order would
-    swallow the status code needed for the warning and tests.
+    Used by ``cmd_rc`` for the version-create webhook. The stable-release
+    webhook is dispatched from the ``trigger-jenkins`` Makefile rule instead,
+    so it shares the same Jenkins-env gate as the build trigger.
 
     :param url_env: The environment-variable name holding the webhook URL.
     :type url_env: str
@@ -417,63 +406,23 @@ def _post_webhook(url_env: str, auth_env: str, version_tag: str) -> bool:
     :type auth_env: str
     :param version_tag: The version-name payload value (e.g. ``v0.12.0``).
     :type version_tag: str
-    :return: ``True`` on HTTP 2xx, ``False`` on any error (missing env var,
-        non-HTTPS URL, network failure, timeout, or non-2xx response).
+    :return: ``True`` when the helper script exits ``0``, ``False`` otherwise.
     :rtype: bool
     """
-    url = os.environ.get(url_env)
-    secret = os.environ.get(auth_env)
-    if not url or not secret:
-        return False
-    if not url.startswith("https://"):
-        print(
-            f"warning: Jira webhook URL must use https:// scheme ({url_env})",
-            file=sys.stderr,
-        )
-        return False
-    payload = json.dumps({"data": {"versionName": version_tag}}).encode("utf-8")
-    try:
-        request = urllib.request.Request(  # noqa: S310
-            url,
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "X-Automation-Webhook-Token": secret,
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(  # noqa: S310
-            request,
-            timeout=WEBHOOK_TIMEOUT_SECONDS,
-        ) as response:
-            response.read()
-    except urllib.error.HTTPError as exc:
-        print(
-            f"warning: Jira webhook returned HTTP {exc.code} ({url_env})",
-            file=sys.stderr,
-        )
-        return False
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-        print(
-            f"warning: Jira webhook dispatch failed ({url_env}): {type(exc).__name__}",
-            file=sys.stderr,
-        )
-        return False
-    return True
-
-
-def _jenkins_configured() -> bool:
-    """Return ``True`` iff all three Jenkins env vars are set.
-
-    Gate the stable-release webhook: if Jenkins is not configured,
-    ``make trigger-jenkins`` was a no-op, so rule #17 must not fire — doing so
-    would mark the Jira version released and send the stakeholder email before
-    any build is in flight.
-
-    :return: ``True`` when every Jenkins env var has a non-empty value.
-    :rtype: bool
-    """
-    return all(os.environ.get(name) for name in JENKINS_ENV_VARS)
+    proc = _run(
+        [
+            sys.executable,
+            str(POST_JIRA_WEBHOOK_SCRIPT),
+            "--url-env",
+            url_env,
+            "--auth-env",
+            auth_env,
+            "--version-tag",
+            version_tag,
+        ],
+        check=False,
+    )
+    return proc.returncode == 0
 
 
 def _print_rc_next_steps(
@@ -502,28 +451,22 @@ def _print_rc_next_steps(
     print(f"  {step + 1}. Notify the team")
 
 
-def _print_stable_next_steps(
-    version: str,
-    *,
-    jira_version_released: bool,
-) -> None:
+def _print_stable_next_steps(version: str) -> None:
     """Print the stable "Next steps" block on stdout.
+
+    The "Mark Jira version as released" reminder is always printed: the Jira
+    release webhook fires inside the ``trigger-jenkins`` Makefile rule, whose
+    success/failure this script no longer observes. Marking an
+    already-released version through the Jira UI is a harmless no-op.
 
     :param version: The X.Y.Z release version (no ``v`` prefix).
     :type version: str
-    :param jira_version_released: When ``True``, omit the "Mark Jira version
-        as released" reminder.
-    :type jira_version_released: bool
     """
     print()
     print("Next steps:")
-    step = 1
-    print(f"  {step}. Publish release notes")
-    step += 1
-    if not jira_version_released:
-        print(f"  {step}. Mark Jira version {version} as released")
-        step += 1
-    print(f"  {step}. Merge the dev version bump PR")
+    print("  1. Publish release notes")
+    print(f"  2. Mark Jira version {version} as released")
+    print("  3. Merge the dev version bump PR")
 
 
 def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
@@ -588,7 +531,7 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
 
     jira_version_created = False
     if rc == 1:
-        jira_version_created = _post_webhook(
+        jira_version_created = _invoke_post_jira_webhook(
             WEBHOOK_CREATE_URL_ENV,
             WEBHOOK_CREATE_AUTH_ENV,
             f"v{version}",
@@ -650,6 +593,12 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
 def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
     """Branch from ``origin/main``, bump to the next dev version, push and open a PR.
 
+    When ``GH_PR_TOKEN`` is set in the environment, override ``GH_TOKEN`` with
+    its value for the ``gh pr create`` call only. This lets the workflow keep a
+    PAT in ``GH_TOKEN`` for tag and release operations while delegating the PR
+    creation to a token with ``pull-requests: write`` (typically the workflow's
+    own ``GITHUB_TOKEN``).
+
     :param version: The X.Y.Z stable release version (no ``v`` prefix).
     :type version: str
     :param stable_tag: The stable release tag (with ``v`` prefix) for the PR body.
@@ -664,7 +613,16 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
     _bump_version(dev_version, f"v{dev_version}")
     _run(["git", "commit", "-am", f"Bump version to v{dev_version}"])
     _run(["git", "push", "-u", "origin", dev_branch])
-    if _gh_available():
+    if not _gh_available():
+        print(
+            f"Note: gh CLI not found. Manually create a PR from {dev_branch} to main.",
+        )
+        return
+    pr_token = os.environ.get("GH_PR_TOKEN")
+    saved_gh_token = os.environ.get("GH_TOKEN")
+    if pr_token:
+        os.environ["GH_TOKEN"] = pr_token
+    try:
         _run(
             [
                 "gh",
@@ -678,10 +636,12 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
                 f"Automated dev version bump after {stable_tag} stable release.",
             ],
         )
-    else:
-        print(
-            f"Note: gh CLI not found. Manually create a PR from {dev_branch} to main.",
-        )
+    finally:
+        if pr_token:
+            if saved_gh_token is None:
+                os.environ.pop("GH_TOKEN", None)
+            else:
+                os.environ["GH_TOKEN"] = saved_gh_token
 
 
 def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
@@ -763,26 +723,17 @@ def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
     print()
     print(f"=== Stable {version} released successfully ===")
     print()
-    _run(["make", "trigger-jenkins", f"TAG={tag}"])
-
-    jira_version_released = False
-    if _jenkins_configured():
-        jira_version_released = _post_webhook(
-            WEBHOOK_RELEASE_URL_ENV,
-            WEBHOOK_RELEASE_AUTH_ENV,
-            tag,
-        )
-    else:
-        print(
-            "note: JENKINS_* env vars not set, skipping Jira release webhook "
-            "(manual 'Mark Jira version as released' reminder retained).",
-            file=sys.stderr,
-        )
-
-    _print_stable_next_steps(
-        version=version,
-        jira_version_released=jira_version_released,
+    _run(
+        [
+            "make",
+            "trigger-jenkins",
+            f"TAG={tag}",
+            f"WEBHOOK_URL_ENV={WEBHOOK_RELEASE_URL_ENV}",
+            f"WEBHOOK_AUTH_ENV={WEBHOOK_RELEASE_AUTH_ENV}",
+        ],
     )
+
+    _print_stable_next_steps(version=version)
     return 0
 
 
