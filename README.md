@@ -112,7 +112,7 @@
 | app/sep/plugins/atw/routes.py                                                                               |       23 |        9 |     61% |     48-72 |
 | app/sep/plugins/backup/deps.py                                                                              |       74 |       11 |     85% |100, 137, 192, 198-200, 204, 206, 209-210, 291 |
 | app/sep/plugins/backup/models.py                                                                            |       91 |        1 |     99% |       286 |
-| app/sep/plugins/backup/restore/deps.py                                                                      |       69 |       23 |     67% |73-75, 78-84, 103, 119, 159-180, 204, 220-225, 258 |
+| app/sep/plugins/backup/restore/deps.py                                                                      |       69 |       20 |     71% |78-84, 103, 119, 159-180, 204, 220-225, 258 |
 | app/sep/plugins/backup/restore/models.py                                                                    |       73 |        1 |     99% |       198 |
 | app/sep/plugins/backup/restore/routes.py                                                                    |       65 |       30 |     54% |58, 96-150, 171-180, 217-219 |
 | app/sep/plugins/backup/routes.py                                                                            |       76 |        6 |     92% |74, 178-179, 232-237 |
@@ -172,7 +172,7 @@
 | app/sep/sync/models.py                                                                                      |      348 |       60 |     83% |75-84, 98-100, 119, 267-269, 330, 390-391, 424, 478-480, 537, 567, 583, 603-607, 708, 722, 742-743, 823, 837, 859-860, 941, 954, 978-980, 1052, 1065, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py                                                                       |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                        |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       19 |     80% |83-87, 107-110, 121, 176-184, 232, 236-252, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       22 |     76% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 291-294, 344 |
 | app/sep/tasks.py                                                                                            |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                 |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                      |       20 |        0 |    100% |           |
