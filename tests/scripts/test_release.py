@@ -16,10 +16,9 @@
 """Tests for the ``scripts/release.py`` CLI."""
 
 import importlib.util
-import json
+import os
 import subprocess
 import sys
-import urllib.error
 from pathlib import Path
 
 import pytest
@@ -48,8 +47,6 @@ SAMPLE_APP_INIT = '''\
 __version__ = "v0.12.0.dev0"
 '''
 
-WEBHOOK_URL = "https://api-private.atlassian.com/automation/webhooks/jira/a/abc/xyz"
-WEBHOOK_SECRET = "super-secret-token-123"
 ARGPARSE_ERROR_EXIT_CODE = 2
 
 
@@ -69,381 +66,6 @@ def repo(tmp_path, monkeypatch):
     (tmp_path / "app" / "__init__.py").write_text(SAMPLE_APP_INIT, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     return tmp_path
-
-
-@pytest.fixture
-def webhook_env(monkeypatch):
-    """Set both create- and release-webhook env vars to known values.
-
-    :param monkeypatch: pytest monkeypatch fixture.
-    :type monkeypatch: pytest.MonkeyPatch
-    """
-    monkeypatch.setenv(release.WEBHOOK_CREATE_URL_ENV, WEBHOOK_URL)
-    monkeypatch.setenv(release.WEBHOOK_CREATE_AUTH_ENV, WEBHOOK_SECRET)
-    monkeypatch.setenv(release.WEBHOOK_RELEASE_URL_ENV, WEBHOOK_URL)
-    monkeypatch.setenv(release.WEBHOOK_RELEASE_AUTH_ENV, WEBHOOK_SECRET)
-
-
-@pytest.fixture
-def jenkins_env(monkeypatch):
-    """Set all three Jenkins env vars to known values.
-
-    :param monkeypatch: pytest monkeypatch fixture.
-    :type monkeypatch: pytest.MonkeyPatch
-    """
-    monkeypatch.setenv("JENKINS_URL", "https://jenkins.example.com")
-    monkeypatch.setenv("JENKINS_USER", "bot")
-    monkeypatch.setenv("JENKINS_API_TOKEN", "jenkins-token")
-
-
-def _fake_ok_response():
-    """Return a fake urlopen response object that context-manages cleanly."""
-
-    class FakeResponse:
-        status = 200
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def read(self):
-            return b""
-
-        def close(self):
-            pass
-
-    return FakeResponse()
-
-
-def _http_error(code):
-    """Build a ``urllib.error.HTTPError`` with the given status code."""
-    return urllib.error.HTTPError(
-        url=WEBHOOK_URL,
-        code=code,
-        msg=f"HTTP {code}",
-        hdrs=None,
-        fp=None,
-    )
-
-
-# --- _post_webhook ---------------------------------------------------------
-
-
-def test_post_webhook_success(monkeypatch, webhook_env):
-    """``_post_webhook`` returns True when ``urlopen`` completes normally."""
-    monkeypatch.setattr(
-        release.urllib.request,
-        "urlopen",
-        lambda *_a, **_kw: _fake_ok_response(),
-    )
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is True
-    )
-
-
-def test_post_webhook_2xx_range(monkeypatch, webhook_env):
-    """``_post_webhook`` treats any non-raising response as success."""
-
-    class NoContent:
-        status = 204
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def read(self):
-            return b""
-
-    monkeypatch.setattr(
-        release.urllib.request,
-        "urlopen",
-        lambda *_a, **_kw: NoContent(),
-    )
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is True
-    )
-
-
-def test_post_webhook_4xx_returns_false(monkeypatch, webhook_env, capsys):
-    """``_post_webhook`` returns False and logs the status on HTTP 404."""
-
-    def raise_http(request, timeout):
-        raise _http_error(404)
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", raise_http)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    err = capsys.readouterr().err
-    assert "HTTP 404" in err
-    assert WEBHOOK_SECRET not in err
-
-
-def test_post_webhook_5xx_returns_false(monkeypatch, webhook_env, capsys):
-    """``_post_webhook`` returns False on HTTP 500."""
-
-    def raise_http(request, timeout):
-        raise _http_error(500)
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", raise_http)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert "HTTP 500" in capsys.readouterr().err
-
-
-def test_post_webhook_network_error_returns_false(monkeypatch, webhook_env, capsys):
-    """``_post_webhook`` returns False and names the error on ``URLError``."""
-
-    def raise_url_error(request, timeout):
-        raise urllib.error.URLError("connection refused")
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", raise_url_error)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert "URLError" in capsys.readouterr().err
-
-
-def test_post_webhook_timeout_returns_false(monkeypatch, webhook_env, capsys):
-    """``_post_webhook`` returns False on ``TimeoutError``."""
-
-    def raise_timeout(request, timeout):
-        raise TimeoutError("timed out")
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", raise_timeout)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert "TimeoutError" in capsys.readouterr().err
-
-
-def test_post_webhook_malformed_url_returns_false(monkeypatch, webhook_env, capsys):
-    """``_post_webhook`` returns False when ``urlopen`` raises ``ValueError``."""
-
-    def raise_value_error(request, timeout):
-        raise ValueError("unknown url type")
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", raise_value_error)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert "ValueError" in capsys.readouterr().err
-
-
-def test_post_webhook_missing_url_env_var(monkeypatch):
-    """``_post_webhook`` returns False and skips the call when URL is unset."""
-    monkeypatch.delenv(release.WEBHOOK_CREATE_URL_ENV, raising=False)
-    monkeypatch.setenv(release.WEBHOOK_CREATE_AUTH_ENV, WEBHOOK_SECRET)
-    calls = []
-
-    def spy(request, timeout):
-        calls.append(request)
-        return _fake_ok_response()
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", spy)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert calls == []
-
-
-def test_post_webhook_missing_secret_env_var(monkeypatch):
-    """``_post_webhook`` returns False and skips the call when SECRET is unset."""
-    monkeypatch.setenv(release.WEBHOOK_CREATE_URL_ENV, WEBHOOK_URL)
-    monkeypatch.delenv(release.WEBHOOK_CREATE_AUTH_ENV, raising=False)
-    calls = []
-
-    def spy(request, timeout):
-        calls.append(request)
-        return _fake_ok_response()
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", spy)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert calls == []
-
-
-def test_post_webhook_both_env_vars_missing(monkeypatch):
-    """``_post_webhook`` returns False when both env vars are unset."""
-    monkeypatch.delenv(release.WEBHOOK_CREATE_URL_ENV, raising=False)
-    monkeypatch.delenv(release.WEBHOOK_CREATE_AUTH_ENV, raising=False)
-    calls = []
-
-    def spy(request, timeout):
-        calls.append(request)
-        return _fake_ok_response()
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", spy)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert calls == []
-
-
-def test_post_webhook_empty_url_env_var(monkeypatch):
-    """``_post_webhook`` returns False when the URL env var is set to empty."""
-    monkeypatch.setenv(release.WEBHOOK_CREATE_URL_ENV, "")
-    monkeypatch.setenv(release.WEBHOOK_CREATE_AUTH_ENV, WEBHOOK_SECRET)
-    calls = []
-
-    def spy(request, timeout):
-        calls.append(request)
-        return _fake_ok_response()
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", spy)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert calls == []
-
-
-def test_post_webhook_sends_correct_payload_and_headers(monkeypatch, webhook_env):
-    """``_post_webhook`` POSTs the nested ``data.versionName`` payload with headers."""
-    captured = {}
-
-    def capture(request, timeout):
-        captured["url"] = request.full_url
-        captured["data"] = request.data
-        captured["method"] = request.get_method()
-        captured["content_type"] = request.get_header("Content-type")
-        captured["token"] = request.get_header("X-automation-webhook-token")
-        captured["timeout"] = timeout
-        return _fake_ok_response()
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", capture)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is True
-    )
-    assert captured["url"] == WEBHOOK_URL
-    assert captured["method"] == "POST"
-    assert captured["content_type"] == "application/json"
-    assert captured["token"] == WEBHOOK_SECRET
-    assert captured["timeout"] == release.WEBHOOK_TIMEOUT_SECONDS
-    assert json.loads(captured["data"]) == {"data": {"versionName": "v0.12.0"}}
-
-
-def test_post_webhook_does_not_log_secret(monkeypatch, webhook_env, capsys):
-    """``_post_webhook`` never writes the secret value to stderr."""
-
-    def raise_http(request, timeout):
-        raise _http_error(401)
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", raise_http)
-    release._post_webhook(
-        release.WEBHOOK_CREATE_URL_ENV,
-        release.WEBHOOK_CREATE_AUTH_ENV,
-        "v0.12.0",
-    )
-    assert WEBHOOK_SECRET not in capsys.readouterr().err
-
-
-def test_post_webhook_does_not_log_url(monkeypatch, webhook_env, capsys):
-    """``_post_webhook`` never writes the full webhook URL to stderr."""
-
-    def raise_http(request, timeout):
-        raise _http_error(401)
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", raise_http)
-    release._post_webhook(
-        release.WEBHOOK_CREATE_URL_ENV,
-        release.WEBHOOK_CREATE_AUTH_ENV,
-        "v0.12.0",
-    )
-    assert WEBHOOK_URL not in capsys.readouterr().err
-
-
-def test_post_webhook_rejects_non_https_scheme(monkeypatch, capsys):
-    """``_post_webhook`` refuses to POST to an ``http://`` URL."""
-    http_url = "http://example.com/webhook"
-    monkeypatch.setenv(release.WEBHOOK_CREATE_URL_ENV, http_url)
-    monkeypatch.setenv(release.WEBHOOK_CREATE_AUTH_ENV, WEBHOOK_SECRET)
-    calls = []
-
-    def spy(request, timeout):
-        calls.append(request)
-        return _fake_ok_response()
-
-    monkeypatch.setattr(release.urllib.request, "urlopen", spy)
-    assert (
-        release._post_webhook(
-            release.WEBHOOK_CREATE_URL_ENV,
-            release.WEBHOOK_CREATE_AUTH_ENV,
-            "v0.12.0",
-        )
-        is False
-    )
-    assert calls == []
-    err = capsys.readouterr().err
-    assert release.WEBHOOK_CREATE_URL_ENV in err
-    assert "https" in err
-    assert http_url not in err
-    assert WEBHOOK_SECRET not in err
 
 
 # --- _bump_version ---------------------------------------------------------
@@ -472,39 +94,6 @@ def test_bump_version_handles_dev_suffix(repo):
     assert '__version__ = "v0.13.0.dev0"' in (repo / "app" / "__init__.py").read_text(
         encoding="utf-8"
     )
-
-
-# --- _jenkins_configured ---------------------------------------------------
-
-
-def test_jenkins_configured_true_when_all_set(jenkins_env):
-    """``_jenkins_configured`` returns True when all three env vars are set."""
-    assert release._jenkins_configured() is True
-
-
-def test_jenkins_configured_false_when_url_unset(monkeypatch, jenkins_env):
-    """``_jenkins_configured`` returns False when ``JENKINS_URL`` is unset."""
-    monkeypatch.delenv("JENKINS_URL")
-    assert release._jenkins_configured() is False
-
-
-def test_jenkins_configured_false_when_user_unset(monkeypatch, jenkins_env):
-    """``_jenkins_configured`` returns False when ``JENKINS_USER`` is unset."""
-    monkeypatch.delenv("JENKINS_USER")
-    assert release._jenkins_configured() is False
-
-
-def test_jenkins_configured_false_when_token_unset(monkeypatch, jenkins_env):
-    """``_jenkins_configured`` returns False when ``JENKINS_API_TOKEN`` is unset."""
-    monkeypatch.delenv("JENKINS_API_TOKEN")
-    assert release._jenkins_configured() is False
-
-
-def test_jenkins_configured_false_when_all_unset(monkeypatch):
-    """``_jenkins_configured`` returns False when every env var is unset."""
-    for name in release.JENKINS_ENV_VARS:
-        monkeypatch.delenv(name, raising=False)
-    assert release._jenkins_configured() is False
 
 
 # --- cmd_rc end-to-end -----------------------------------------------------
@@ -546,7 +135,7 @@ def _make_stable_preconditions(version):
 
 
 def _patch_rc_ok(monkeypatch, *, rc=1, webhook_result=True, webhook_calls=None):
-    """Patch ``_run``, ``_post_webhook``, ``_bump_version``, and build artifacts for cmd_rc."""
+    """Patch ``_run``, ``_invoke_post_jira_webhook``, ``_bump_version``, and build artifacts for cmd_rc."""
     branch = "main" if rc == 1 else "release/v0.12.0"
     runner = _FakeRunner(_make_rc_preconditions(branch=branch))
     monkeypatch.setattr(release, "_run", runner)
@@ -569,7 +158,7 @@ def _patch_rc_ok(monkeypatch, *, rc=1, webhook_result=True, webhook_calls=None):
             webhook_calls.append((url_env, secret_env, version))
         return webhook_result
 
-    monkeypatch.setattr(release, "_post_webhook", spy_webhook)
+    monkeypatch.setattr(release, "_invoke_post_jira_webhook", spy_webhook)
 
     def spy_push_commit(*_a, **kwargs):
         call_order.append(("api_commit", kwargs.get("message")))
@@ -715,8 +304,8 @@ def test_rc_via_github_api_errors_without_gh(monkeypatch, capsys):
 # --- cmd_stable end-to-end -------------------------------------------------
 
 
-def _patch_stable_ok(monkeypatch, *, webhook_result=True, webhook_calls=None):
-    """Patch ``_run``, ``_post_webhook``, ``_bump_version`` for cmd_stable."""
+def _patch_stable_ok(monkeypatch):
+    """Patch ``_run``, ``_bump_version`` for cmd_stable."""
     runner = _FakeRunner(_make_stable_preconditions("0.12.0"))
     monkeypatch.setattr(release, "_bump_version", lambda *_a, **_kw: None)
     monkeypatch.setattr(release, "_gh_available", lambda: True)
@@ -729,14 +318,6 @@ def _patch_stable_ok(monkeypatch, *, webhook_result=True, webhook_calls=None):
         return runner_orig_call(cmd, check=check, capture=capture)
 
     monkeypatch.setattr(release, "_run", ordered_runner)
-
-    def spy_webhook(url_env, secret_env, version):
-        call_order.append(("webhook", url_env, secret_env, version))
-        if webhook_calls is not None:
-            webhook_calls.append((url_env, secret_env, version))
-        return webhook_result
-
-    monkeypatch.setattr(release, "_post_webhook", spy_webhook)
 
     monkeypatch.setattr(
         release,
@@ -755,63 +336,35 @@ def _patch_stable_ok(monkeypatch, *, webhook_result=True, webhook_calls=None):
     return runner, call_order
 
 
-def test_stable_webhook_success_omits_reminder(monkeypatch, jenkins_env, capsys):
-    """With Jenkins configured + webhook success, the reminder is omitted."""
-    _patch_stable_ok(monkeypatch, webhook_result=True)
+def test_stable_invokes_make_trigger_jenkins_with_release_webhook_envs(monkeypatch):
+    """Stable flow forwards the release-webhook env names to ``make trigger-jenkins``."""
+    _, call_order = _patch_stable_ok(monkeypatch)
     assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
-    out = capsys.readouterr().out
-    assert "Mark Jira version" not in out
+    run_cmds = [c[1] for c in call_order if c[0] == "run"]
+    assert (
+        "make",
+        "trigger-jenkins",
+        "TAG=v0.12.0",
+        f"WEBHOOK_URL_ENV={release.WEBHOOK_RELEASE_URL_ENV}",
+        f"WEBHOOK_AUTH_ENV={release.WEBHOOK_RELEASE_AUTH_ENV}",
+    ) in run_cmds
 
 
-def test_stable_webhook_failure_includes_reminder(monkeypatch, jenkins_env, capsys):
-    """With Jenkins configured + webhook failure, the reminder is present."""
-    _patch_stable_ok(monkeypatch, webhook_result=False)
+def test_stable_always_prints_mark_jira_reminder(monkeypatch, capsys):
+    """Stable flow always prints the "Mark Jira version" reminder.
+
+    The Jira release webhook fires inside ``make trigger-jenkins`` whose
+    success/failure ``cmd_stable`` no longer observes — so the reminder is
+    unconditional.
+    """
+    _patch_stable_ok(monkeypatch)
     assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
-    out = capsys.readouterr().out
-    assert "Mark Jira version 0.12.0 as released" in out
+    assert "Mark Jira version 0.12.0 as released" in capsys.readouterr().out
 
 
-def test_stable_calls_webhook_with_release_env_vars(monkeypatch, jenkins_env):
-    """Stable flow calls the webhook exactly once with the release env vars."""
-    calls = []
-    _patch_stable_ok(monkeypatch, webhook_result=True, webhook_calls=calls)
-    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
-    assert calls == [
-        (
-            release.WEBHOOK_RELEASE_URL_ENV,
-            release.WEBHOOK_RELEASE_AUTH_ENV,
-            "v0.12.0",
-        ),
-    ]
-
-
-def test_stable_skips_webhook_when_jenkins_url_unset(monkeypatch, jenkins_env, capsys):
-    """Stable flow skips the webhook when ``JENKINS_URL`` is unset."""
-    monkeypatch.delenv("JENKINS_URL")
-    calls = []
-    _patch_stable_ok(monkeypatch, webhook_result=True, webhook_calls=calls)
-    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
-    captured = capsys.readouterr()
-    assert calls == []
-    assert "Mark Jira version 0.12.0 as released" in captured.out
-    assert "JENKINS_*" in captured.err
-
-
-def test_stable_skips_webhook_when_all_jenkins_env_vars_unset(monkeypatch, capsys):
-    """Stable flow skips the webhook when every Jenkins env var is unset."""
-    for name in release.JENKINS_ENV_VARS:
-        monkeypatch.delenv(name, raising=False)
-    calls = []
-    _patch_stable_ok(monkeypatch, webhook_result=True, webhook_calls=calls)
-    assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 0
-    captured = capsys.readouterr()
-    assert calls == []
-    assert "Mark Jira version 0.12.0 as released" in captured.out
-
-
-def test_stable_via_git_commits_tags_and_pushes(monkeypatch, jenkins_env):
+def test_stable_via_git_commits_tags_and_pushes(monkeypatch):
     """``sign_via_github_api=False`` uses local ``git commit``/``tag``/``push``."""
-    _, call_order = _patch_stable_ok(monkeypatch, webhook_result=True)
+    _, call_order = _patch_stable_ok(monkeypatch)
     assert release.cmd_stable("0.12.0", sign_via_github_api=False) == 0
 
     run_cmds = [c[1] for c in call_order if c[0] == "run"]
@@ -827,6 +380,53 @@ def test_stable_via_github_api_errors_without_gh(monkeypatch, capsys):
     monkeypatch.setattr(release, "_gh_available", lambda: False)
     assert release.cmd_stable("0.12.0", sign_via_github_api=True) == 1
     assert "--sign-via-github-api requires the gh CLI" in capsys.readouterr().err
+
+
+# --- _create_dev_version_bump_pr GH_TOKEN swap -----------------------------
+
+
+def _patch_dev_pr_runner(monkeypatch, observed_tokens):
+    """Patch ``_run`` to record ``GH_TOKEN`` at the time ``gh pr create`` runs."""
+    monkeypatch.setattr(release, "_bump_version", lambda *_a, **_kw: None)
+    monkeypatch.setattr(release, "_gh_available", lambda: True)
+
+    def runner(cmd, *, check=True, capture=False):
+        if tuple(cmd[:3]) == ("gh", "pr", "create"):
+            observed_tokens.append(os.environ.get("GH_TOKEN"))
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr(release, "_run", runner)
+
+
+def test_dev_pr_uses_gh_pr_token_when_set_and_restores_gh_token(monkeypatch):
+    """``GH_PR_TOKEN`` overrides ``GH_TOKEN`` for ``gh pr create`` only."""
+    monkeypatch.setenv("GH_TOKEN", "pat-token")
+    monkeypatch.setenv("GH_PR_TOKEN", "github-token")
+    observed = []
+    _patch_dev_pr_runner(monkeypatch, observed)
+
+    release._create_dev_version_bump_pr("0.12.0", "v0.12.0")
+
+    assert observed == ["github-token"]
+    assert os.environ["GH_TOKEN"] == "pat-token"
+
+
+def test_dev_pr_keeps_gh_token_when_pr_token_unset(monkeypatch):
+    """Without ``GH_PR_TOKEN``, ``GH_TOKEN`` is unchanged for ``gh pr create``."""
+    monkeypatch.setenv("GH_TOKEN", "pat-token")
+    monkeypatch.delenv("GH_PR_TOKEN", raising=False)
+    observed = []
+    _patch_dev_pr_runner(monkeypatch, observed)
+
+    release._create_dev_version_bump_pr("0.12.0", "v0.12.0")
+
+    assert observed == ["pat-token"]
+    assert os.environ["GH_TOKEN"] == "pat-token"
 
 
 # --- argparse --------------------------------------------------------------
