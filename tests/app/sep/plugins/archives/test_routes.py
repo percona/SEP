@@ -169,6 +169,7 @@ def test_archives_create_full_form_dependency_chain_without_payload_override(
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == created_archives.alias
     assert posted["owner"] == TaskOwner.ARCHIVER.value
+    assert posted["data"]["meta"]["_service_name"] == created_service.name
 
 
 def test_archives_create_skips_connectivity_check_when_opted_out(
@@ -322,6 +323,60 @@ def test_archives_detail_bulk_insert_checked(
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert re.search(r'name="disable_bulk_insert"[^>]*checked', response.text)
+
+
+@pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
+def test_archives_detail_with_remote_destination(
+    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
+):
+    """Test archives detail page renders DEST_HOST, DEST_PORT, DEST_DB correctly."""
+    mock_meta_config = yaml.dump(
+        {
+            "ALL": {
+                "SOURCE_HOST": "127.0.0.1",
+                "SOURCE_PORT": 3306,
+            },
+            "PURGE_LIST": [
+                {
+                    "ALIAS": "test_remote_archiver",
+                    "SOURCE_DB": "source_db",
+                    "SOURCE_TABLE": "source_table",
+                    "DEST_TABLE": "dest_table",
+                    "DEST_HOST": "remote.host",
+                    "DEST_PORT": 3307,
+                    "DEST_DB": "remote_db",
+                    "SWAP_DROP": 1,
+                }
+            ],
+        }
+    )
+
+    mock_data = {
+        "meta": {
+            "config": mock_meta_config,
+            "target": "mock_target",
+        },
+        "hostname": "mock_nomad_host_name",
+    }
+    created_task.data = mock_data
+    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_task_api_dep.get.side_effect = [
+        {"127.0.0.1": "localhost"},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        [],
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+    ]
+    response = test_client.get(f"/archives/{created_task.name}")
+    assert response.status_code == status.HTTP_200_OK
+    # Destination table should be qualified with DEST_DB not SOURCE_DB
+    assert "dest_table" in response.text
+    # Destination host should be displayed
+    assert "remote.host" in response.text
+    # Destination port should be displayed
+    assert "3307" in response.text
+    # Remote database should be displayed
+    assert "remote_db" in response.text
 
 
 @pytest.mark.usefixtures(

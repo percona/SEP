@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 
 from app.core.utils.pydantic import extract_model_from_instance
@@ -44,6 +44,8 @@ from app.sep.plugins.backup.restore.models import (
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
+UNKNOWN_SERVICE_SENTINEL = "-1"
+
 
 async def build_restore_task_payload(
     form: Annotated[RestoreCreate, Form()],
@@ -53,11 +55,12 @@ async def build_restore_task_payload(
     all_config_dict = extract_model_from_instance(form, RestoreConfigAll)
     base_config_dict = extract_model_from_instance(form, BaseRestoreConfigServer)
 
-    restore_config_payload: dict[str, Any] = {
+    restore_config_payload = {
         **base_config_dict.model_dump(),
         "alias": form.task_name,
     }
 
+    service = None
     if form.backup_type == BackupType.MYDUMPER:
         service = await get_created_entity(
             inventory_api,
@@ -79,6 +82,26 @@ async def build_restore_task_payload(
                 service_id=service.id,
             )
             restore_config_payload["database"] = schema.name
+    elif form.service_id and form.service_id != UNKNOWN_SERVICE_SENTINEL:
+        try:
+            service = await get_created_entity(
+                inventory_api,
+                SyncInventoryEntityTypeEnum.SERVICE,
+                form.service_id,
+                type=ServiceTypeEnum.MYSQL,
+            )
+        except HTTPException as exc:
+            # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404,
+            # not the project's ``HTTPNotFoundException``. The xtrabackup/binlog
+            # forms render ``service_id`` inside the MyLoader fieldset only, so
+            # the value sent for those backup types may be the
+            # ``UNKNOWN_SERVICE_SENTINEL`` placeholder or a stale id whose
+            # service was deleted. A non-MyDumper restore does not need the
+            # service to build the task payload, so fall back to a node-only
+            # PMM annotation on a 404; re-raise any other error.
+            if exc.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+            service = None
 
     restore_config = RestoreConfig(
         all_servers=RestoreConfigAll.model_validate(all_config_dict),
@@ -101,19 +124,23 @@ async def build_restore_task_payload(
 
     payload_path = Path(__file__).parent / payload_name
 
+    meta = {
+        "config": yaml.dump(
+            jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
+        ),
+        "target": form.hostname,
+        "requirements": requirements,
+    }
+    if service is not None:
+        meta["_service_name"] = service.name
+
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.RESTORES,
         data={
             "task": "run-python",
-            "meta": {
-                "config": yaml.dump(
-                    jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
-                ),
-                "target": form.hostname,
-                "requirements": requirements,
-            },
+            "meta": meta,
             "payload": f"file://{payload_path}",
         },
     )
