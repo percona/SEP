@@ -119,11 +119,19 @@ interface ExecutionData {
 }
 
 function pickExecutionData(task: Record<string, unknown>): ExecutionData | null {
+  // Backend task model nests the executed command under `data.meta` (see
+  // e.g. `app/sep/plugins/checksums/deps.py`). Older flows may put the
+  // same keys at `data.*` directly, so check both for forward-compat.
   const data = task.data;
   if (!data || typeof data !== 'object') {
     return null;
   }
-  const { command, args, target } = data as ExecutionData;
+  const dataObj = data as { meta?: unknown } & ExecutionData;
+  const meta =
+    dataObj.meta && typeof dataObj.meta === 'object' ? (dataObj.meta as ExecutionData) : null;
+  const command = meta?.command ?? dataObj.command;
+  const args = meta?.args ?? dataObj.args;
+  const target = meta?.target ?? dataObj.target;
   if (command === undefined && args === undefined && target === undefined) {
     return null;
   }
@@ -194,14 +202,20 @@ function LogsTab({ taskName }: LogsTabProps) {
 
   return (
     <>
-      <Paper variant="outlined" sx={{ p: 0, mb: 3 }}>
-        <TaskHistoryTable
-          data={historyQuery.data?.items ?? []}
-          isLoading={historyQuery.isLoading}
-          hideTaskNameColumn
-          onViewLogs={setLogsEntry}
-        />
-      </Paper>
+      {historyQuery.error ? (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          Failed to load execution history: {historyQuery.error.message}
+        </Alert>
+      ) : (
+        <Paper variant="outlined" sx={{ p: 0, mb: 3 }}>
+          <TaskHistoryTable
+            data={historyQuery.data?.items ?? []}
+            isLoading={historyQuery.isLoading}
+            hideTaskNameColumn
+            onViewLogs={setLogsEntry}
+          />
+        </Paper>
+      )}
 
       <Dialog open={logsEntry !== null} onClose={() => setLogsEntry(null)} fullWidth maxWidth="lg">
         <DialogTitle>
@@ -238,7 +252,10 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
     try {
       await deleteTask.mutateAsync(taskId);
       enqueueSnackbar(`${schema.displayName} task deleted`, { variant: 'success' });
-      navigate('../..');
+      // Anchor to the plugin root explicitly. Relative `..` chains depend
+      // on which tab the user is on (Overview vs. Logs renders a deeper
+      // sub-route via nested `<Routes>`), so use an absolute path.
+      navigate(`/plugins/${pluginName}`);
     } catch (e) {
       enqueueSnackbar(e instanceof Error ? e.message : 'Failed to delete task', {
         variant: 'error',
@@ -257,7 +274,7 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
           <Button
             variant="outlined"
             startIcon={<ScheduleIcon />}
-            onClick={() => navigate('../schedule')}
+            onClick={() => navigate(`/plugins/${pluginName}/schedule`)}
             data-testid="plugin-task-schedule"
           >
             Schedule
@@ -332,11 +349,17 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
 export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetailPageProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
   const { data: task, isLoading } = usePluginTask(pluginName, id, mockTasks);
 
-  // Tab value derived from the trailing path segment.
-  const tabValue = location.pathname.endsWith('/logs') ? 'logs' : 'overview';
+  const location = useLocation();
+  // Tab value from the trailing path segment, normalized to ignore
+  // trailing slashes (`/logs/` ≡ `/logs`). Query/hash are not part of
+  // `pathname` so they don't need handling. Matches any depth — once
+  // we descend into `/logs/<sub>` for a future nested route we'll still
+  // resolve to the Logs tab via `includes`.
+  const normalizedPath = location.pathname.replace(/\/+$/, '');
+  const tabValue: 'overview' | 'logs' =
+    normalizedPath.endsWith('/logs') || normalizedPath.includes('/logs/') ? 'logs' : 'overview';
 
   if (isLoading) {
     return (
@@ -356,11 +379,12 @@ export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetail
   }
 
   const taskName = typeof task.name === 'string' ? task.name : id;
+  const detailBase = `/plugins/${pluginName}/task/${encodeURIComponent(id)}`;
 
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-        <IconButton onClick={() => navigate('..')} aria-label="Back to list">
+        <IconButton onClick={() => navigate(`/plugins/${pluginName}`)} aria-label="Back to list">
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="overline" color="text.secondary">
@@ -387,8 +411,8 @@ export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetail
       <ActionBar schema={schema} pluginName={pluginName} taskId={id} />
 
       <Tabs value={tabValue} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
-        <Tab label="Overview" value="overview" component={Link} to="" replace />
-        <Tab label="Logs" value="logs" component={Link} to="logs" replace />
+        <Tab label="Overview" value="overview" component={Link} to={detailBase} replace />
+        <Tab label="Logs" value="logs" component={Link} to={`${detailBase}/logs`} replace />
       </Tabs>
 
       <Routes>

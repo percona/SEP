@@ -71,11 +71,15 @@ export function usePluginTask<T extends Record<string, unknown>>(
     enabled: !!taskId,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<T>(`/plugins/${pluginName}/${taskId}`);
+        const { data } = await apiClient.get<T>(
+          `/plugins/${pluginName}/${encodeURIComponent(taskId!)}`,
+        );
         return data;
       } catch (error) {
         if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
-          return mockTasks.find((t) => String(t.id) === taskId);
+          // Per-plugin detail/delete routes look up by `task_name`; mocks
+          // resolve by the same key so dev fallback matches prod semantics.
+          return mockTasks.find((t) => String(t.name ?? t.id) === taskId);
         }
         throw error;
       }
@@ -107,12 +111,24 @@ export function useCreatePluginTask<T extends Record<string, unknown>>(
   });
 }
 
-export function useDeletePluginTask(pluginName: string) {
+export function useDeletePluginTask<T extends Record<string, unknown>>(
+  pluginName: string,
+  mockTasks?: T[],
+) {
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, string>({
     mutationFn: async (taskId) => {
-      await apiClient.delete(`/plugins/${pluginName}/${taskId}`);
+      try {
+        await apiClient.delete(`/plugins/${pluginName}/${encodeURIComponent(taskId)}`);
+      } catch (error) {
+        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
+          // Mock mode: pretend the delete succeeded so the UI flow can be
+          // exercised offline, matching the create/list/detail hooks.
+          return;
+        }
+        throw error;
+      }
     },
     onSuccess: (_data, taskId) => {
       queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks'] });

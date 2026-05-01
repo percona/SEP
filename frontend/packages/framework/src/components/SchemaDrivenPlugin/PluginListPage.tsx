@@ -71,9 +71,11 @@ export function PluginListPage({ schema, pluginName, mockTasks }: PluginListPage
           // Backend per-plugin detail/delete routes look up by `task_name`
           // (string), not numeric `id`. The first listView column is
           // typically `name`; fall back to id only if name is absent.
+          // `encodeURIComponent` escapes characters that would otherwise
+          // change URL structure (`/`, `?`, `#`, space, ...).
           const key = row.name ?? row.id;
           if (key !== undefined && key !== null) {
-            navigate(String(key));
+            navigate(`task/${encodeURIComponent(String(key))}`);
           }
         }}
       />

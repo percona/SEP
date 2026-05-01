@@ -64,11 +64,13 @@ export function SchemaDrivenPlugin({ pluginName, mockSchema, mockTasks }: Schema
         path="new"
         element={<PluginCreatePage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />}
       />
+      <Route path="schedule" element={<PluginSchedulePage pluginName={pluginName} />} />
+      {/* Detail routes namespaced under `task/` so a task literally named
+          `new`, `schedule`, or any other static sibling stays reachable. */}
       <Route
-        path=":id/*"
+        path="task/:id/*"
         element={<PluginDetailPage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />}
       />
-      <Route path="schedule" element={<PluginSchedulePage pluginName={pluginName} />} />
     </Routes>
   );
 }
