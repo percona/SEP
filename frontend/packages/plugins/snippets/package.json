@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
-    "typescript": "~5.8.0"
+    "typescript": "~6.0.3"
   },
   "peerDependencies": {
     "@emotion/react": "^11.0.0",
