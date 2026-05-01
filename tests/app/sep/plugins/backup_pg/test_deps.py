@@ -57,9 +57,7 @@ async def test_build_backup_task_payload(
         backup_type=BackupType.PGBACKREST,
     )
 
-    task_payload: TaskWrite = await build_backup_task_payload(
-        backup_create, mock_remote_api
-    )
+    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
 
     assert isinstance(task_payload, TaskWrite)
     assert task_payload.name == backup_create.task_name
@@ -72,6 +70,7 @@ async def test_build_backup_task_payload(
     meta = data["meta"]
     assert meta["target"] == backup_create.hostname
     assert meta["requirements"] == "packaging\nPyYAML"
+    assert meta["_service_name"] == created_service.name
 
     cfg = yaml.safe_load(meta["config"])
     server_list = cfg["SERVER_LIST"]
@@ -104,9 +103,7 @@ async def test_build_backup_task_payload_preserves_raw_backup_type(
         backup_type="INVALID_BACKUP_TYPE",
     )
 
-    task_payload: TaskWrite = await build_backup_task_payload(
-        backup_create, mock_remote_api
-    )
+    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
     cfg = yaml.safe_load(task_payload.data["meta"]["config"])
     server_config = cfg["SERVER_LIST"][0]
 

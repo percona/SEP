@@ -14,6 +14,15 @@ export type { ExecutionEvent, ExecutionEventsState } from './useExecutionEvents'
 export { useLogDownload } from './useLogDownload';
 export type { DownloadLog } from './useLogDownload';
 
+export { useServices } from './useServices';
+export type { ServiceOption, ServiceType, UseServicesOptions } from './useServices';
+export { useSchemas } from './useSchemas';
+export type { SchemaOption, UseSchemasOptions } from './useSchemas';
+export { useTables } from './useTables';
+export type { TableOption, UseTablesOptions } from './useTables';
+export { useHosts } from './useHosts';
+export type { HostOption, HostsResult, UseHostsOptions } from './useHosts';
+
 export {
   useTaskHistory,
   useTaskHistoryByName,
