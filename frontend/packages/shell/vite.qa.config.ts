@@ -29,6 +29,8 @@ export default defineConfig({
       '/api': { target: BACKEND, changeOrigin: true },
       '/sep_app': { target: BACKEND, changeOrigin: true },
       '/legacy': { target: BACKEND, changeOrigin: true },
+      '/stream-logs': { target: BACKEND, changeOrigin: true },
+      '/execution-events': { target: BACKEND, changeOrigin: true },
     },
   },
   optimizeDeps: {
