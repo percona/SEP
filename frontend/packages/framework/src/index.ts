@@ -1,7 +1,12 @@
 // Components
 export { SchemaFormRenderer } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
-export { SchemaDrivenPlugin } from './components/SchemaDrivenPlugin';
+export {
+  SchemaDrivenPlugin,
+  PluginCreatePage,
+  PluginDetailPage,
+  PluginListPage,
+} from './components/SchemaDrivenPlugin';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';

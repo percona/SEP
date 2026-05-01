@@ -12,3 +12,18 @@ updates:
       interval: "weekly"
     labels:
       - "skip-test"
+    ignore:
+      # @percona/percona-ui@1.0.15 peer-deps require @mui/material@^7.3.7
+      # and is built against MUI v7's Autocomplete renderInput contract
+      # (params.InputProps). MUI v8/v9 moved this to params.slotProps.input,
+      # which breaks every component that wraps percona-ui's AutoCompleteInput
+      # (HostSelector, SchemaSelector, ServiceSelector, TableSelector).
+      # Re-enable major bumps once percona-ui ships v8/v9 support.
+      - dependency-name: "@mui/material"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@mui/icons-material"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@mui/utils"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@mui/x-date-pickers"
+        update-types: ["version-update:semver-major"]
