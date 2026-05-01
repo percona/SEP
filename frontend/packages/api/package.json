@@ -16,7 +16,7 @@
     "openapi-fetch": "^0.17.0"
   },
   "devDependencies": {
-    "@tanstack/react-query": "^5.75.0",
+    "@tanstack/react-query": "^5.100.7",
     "@types/node": "^20.0.0",
     "@types/react": "^19.1.0",
     "msw": "^2.13.6",
