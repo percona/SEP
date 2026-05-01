@@ -1,7 +1,24 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Alert, Box, CircularProgress, Divider, Link as MuiLink, Typography } from '@mui/material';
-import { SchemaFormRenderer, TaskHistoryTable } from '@sep/framework';
+import {
+  Alert,
+  Box,
+  CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  IconButton,
+  Link as MuiLink,
+  Typography,
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import {
+  SchemaFormRenderer,
+  TaskHistoryTable,
+  TaskLogViewer,
+  type TaskHistoryEntry,
+} from '@sep/framework';
 import { useSnippetExecution, useSnippetHistory, useSnippetSchema } from './hooks';
 
 const EXECUTION_RESERVED_NAMES = new Set(['executor_host', 'sudo', 'script_preview']);
@@ -24,6 +41,8 @@ export function SnippetDetailPage() {
   const historyQuery = useSnippetHistory(filename);
   const executionMutation = useSnippetExecution(filename);
 
+  const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
+
   const handleSubmit = (values: Record<string, unknown>) => {
     if (!filename) {
       return;
@@ -38,21 +57,24 @@ export function SnippetDetailPage() {
       }
       args[key] = value;
     }
-    executionMutation.mutate(
-      {
-        executor_host: String(values.executor_host ?? ''),
-        sudo: Boolean(values.sudo ?? false),
-        args,
-      },
-      {
-        onSuccess: (response) => {
-          if (response.task_id !== null) {
-            navigate(`/tasks/${response.task_id}`);
-          }
-        },
-      },
-    );
+    // Stay on the snippet detail page after execute — `useSnippetExecution`
+    // invalidates the per-snippet history query on success so the new run
+    // appears in the table without navigating away (mirrors legacy Jinja2
+    // behaviour and avoids the placeholder /tasks/* React route).
+    executionMutation.mutate({
+      executor_host: String(values.executor_host ?? ''),
+      sudo: Boolean(values.sudo ?? false),
+      args,
+    });
   };
+
+  const handleViewLogs = useCallback((entry: TaskHistoryEntry) => {
+    setLogsEntry(entry);
+  }, []);
+
+  const handleCloseLogs = useCallback(() => {
+    setLogsEntry(null);
+  }, []);
 
   const submitError = useMemo(() => {
     if (!executionMutation.isError) {
@@ -122,8 +144,40 @@ export function SnippetDetailPage() {
           data={historyQuery.data?.items ?? []}
           isLoading={historyQuery.isLoading}
           hideTaskNameColumn
+          onViewLogs={handleViewLogs}
         />
       )}
+
+      <Dialog
+        open={logsEntry !== null}
+        onClose={handleCloseLogs}
+        fullWidth
+        maxWidth="lg"
+        aria-labelledby="snippet-task-logs-title"
+      >
+        <DialogTitle
+          id="snippet-task-logs-title"
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <span>
+            Task logs
+            {logsEntry?.task?.name ? ` — ${logsEntry.task.name}` : ''}
+            {logsEntry?.id !== null && logsEntry?.id !== undefined ? ` #${logsEntry.id}` : ''}
+          </span>
+          <IconButton aria-label="Close logs dialog" onClick={handleCloseLogs} size="small">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0 }}>
+          {logsEntry?.id !== null && logsEntry?.id !== undefined ? (
+            <TaskLogViewer
+              taskHistoryId={logsEntry.id}
+              taskStatus={logsEntry.status}
+              height={520}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 }
