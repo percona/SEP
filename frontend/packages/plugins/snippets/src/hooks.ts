@@ -113,14 +113,30 @@ export function useSnippetExecution(filename: string | undefined) {
  */
 export function useApproveSnippet(filename: string) {
   const queryClient = useQueryClient();
-  return useMutation<SnippetApprovalResponse, Error>({
+  return useMutation<SnippetApprovalResponse, Error, void, { previous?: SnippetResponse[] }>({
     mutationFn: async () => {
       const { data } = await apiClient.put<SnippetApprovalResponse>(
         `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/approval`,
       );
       return data;
     },
-    onSuccess: () => {
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['snippets', 'list'] });
+      const previous = queryClient.getQueryData<SnippetResponse[]>(['snippets', 'list']);
+      if (previous) {
+        queryClient.setQueryData<SnippetResponse[]>(
+          ['snippets', 'list'],
+          previous.map((s) => (s.filename === filename ? { ...s, is_approved: true } : s)),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['snippets', 'list'], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
     },
   });
@@ -133,11 +149,27 @@ export function useApproveSnippet(filename: string) {
  */
 export function useRemoveSnippetApproval(filename: string) {
   const queryClient = useQueryClient();
-  return useMutation<void, Error>({
+  return useMutation<void, Error, void, { previous?: SnippetResponse[] }>({
     mutationFn: async () => {
       await apiClient.delete(`${SNIPPETS_BASE}/${encodeURIComponent(filename)}/approval`);
     },
-    onSuccess: () => {
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['snippets', 'list'] });
+      const previous = queryClient.getQueryData<SnippetResponse[]>(['snippets', 'list']);
+      if (previous) {
+        queryClient.setQueryData<SnippetResponse[]>(
+          ['snippets', 'list'],
+          previous.map((s) => (s.filename === filename ? { ...s, is_approved: false } : s)),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['snippets', 'list'], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
     },
   });

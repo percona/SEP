@@ -51,12 +51,14 @@ interface SnippetsListPageProps {
 interface BatchResult {
   success?: BatchApprovalResponse;
   error?: BatchApprovalErrorResponse;
+  generic?: string;
 }
 
 function ApproveButton({ snippet }: { snippet: SnippetResponse }) {
   const approve = useApproveSnippet(snippet.filename);
   const removeApproval = useRemoveSnippetApproval(snippet.filename);
   const isPending = approve.isPending || removeApproval.isPending;
+  const spinner = <CircularProgress size={16} color="inherit" />;
 
   if (snippet.is_approved) {
     return (
@@ -64,7 +66,7 @@ function ApproveButton({ snippet }: { snippet: SnippetResponse }) {
         <Button
           size="small"
           color="warning"
-          startIcon={<RemoveCircleOutlineIcon />}
+          startIcon={isPending ? spinner : <RemoveCircleOutlineIcon />}
           disabled={isPending}
           onClick={(e) => {
             e.stopPropagation();
@@ -82,7 +84,7 @@ function ApproveButton({ snippet }: { snippet: SnippetResponse }) {
       <Button
         size="small"
         color="success"
-        startIcon={<CheckCircleOutlineIcon />}
+        startIcon={isPending ? spinner : <CheckCircleOutlineIcon />}
         disabled={isPending}
         onClick={(e) => {
           e.stopPropagation();
@@ -140,9 +142,10 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
           setSelected(new Set());
         },
         onError: (err) => {
-          const errorResponse = (err as { response?: BatchApprovalErrorResponse }).response;
-          if (errorResponse) {
-            setBatchResult({ error: errorResponse });
+          if (err.response) {
+            setBatchResult({ error: err.response });
+          } else {
+            setBatchResult({ generic: 'Batch approval failed. Please try again.' });
           }
         },
       },
@@ -190,6 +193,12 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
               />
             )}
           </Stack>
+        </Alert>
+      )}
+
+      {batchResult?.generic && (
+        <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
+          {batchResult.generic}
         </Alert>
       )}
 
