@@ -53,7 +53,7 @@ export function parseNestedInventoryPath(
 }
 
 /**
- * Parse flat ``/…/schemas/5`` (legacy) for redirects and breadcrumbs fallback.
+ * Parse flat ``/…/schemas/5`` (legacy) for breadcrumbs and flat detail routes.
  */
 export function parseFlatInventoryRoute(
   pathname: string,

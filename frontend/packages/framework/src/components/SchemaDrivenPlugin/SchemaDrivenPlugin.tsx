@@ -18,9 +18,6 @@ import { SchemaFormRenderer } from '../SchemaFormRenderer';
 import { PluginListPage } from './PluginListPage';
 import { PluginCreatePage } from './PluginCreatePage';
 import { PluginDetailPage } from './PluginDetailPage';
-import { InventoryCanonicalTableRedirect } from './InventoryCanonicalTableRedirect';
-import { InventoryCanonicalServiceRedirect } from './InventoryCanonicalServiceRedirect';
-import { InventoryCanonicalSchemaRedirect } from './InventoryCanonicalSchemaRedirect';
 
 interface SchemaDrivenPluginProps {
   pluginName: string;
@@ -39,8 +36,8 @@ interface SchemaDrivenPluginProps {
   /** Hide multi-entity tab bar (e.g. inventory uses breadcrumbs instead). */
   hideEntityTabs?: boolean;
   /**
-   * Inventory: use nested URLs ``nodes/:id/services/:id/…`` and flat detail redirects
-   * instead of ``/services/:id``-style paths.
+   * Inventory: use nested URLs ``nodes/:id/services/:id/…`` for drill-down detail routes
+   * (flat ``/services/:id`` etc. remain available as alternate entry points).
    */
   inventoryNestedPaths?: boolean;
   renderEntityDetailChildren?: (args: {
@@ -264,15 +261,33 @@ export function SchemaDrivenPlugin({
               />
               <Route
                 path="nodes/:nodeId/services/:serviceId"
-                element={<InventoryCanonicalServiceRedirect />}
+                element={
+                  <PluginDetailPage
+                    {...detailProps}
+                    detailEntityName="services"
+                    detailIdParam="serviceId"
+                  />
+                }
               />
               <Route
                 path="nodes/:nodeId/services/:serviceId/schemas/:schemaId"
-                element={<InventoryCanonicalSchemaRedirect />}
+                element={
+                  <PluginDetailPage
+                    {...detailProps}
+                    detailEntityName="schemas"
+                    detailIdParam="schemaId"
+                  />
+                }
               />
               <Route
                 path="nodes/:nodeId/services/:serviceId/schemas/:schemaId/tables/:tableId"
-                element={<InventoryCanonicalTableRedirect />}
+                element={
+                  <PluginDetailPage
+                    {...detailProps}
+                    detailEntityName="tables"
+                    detailIdParam="tableId"
+                  />
+                }
               />
             </>
           )}

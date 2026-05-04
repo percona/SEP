@@ -6,8 +6,8 @@ export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPa
 export {
   renderInventoryDetailChildren,
   inventoryPluginBasePath,
-} from './components/SchemaDrivenPlugin/inventoryDetailChildren';
-export { InventoryBreadcrumbs } from './components/SchemaDrivenPlugin/InventoryBreadcrumbs';
+  InventoryBreadcrumbs,
+} from './components/SchemaDrivenPlugin/InventoryPluginNavigation';
 export {
   inventoryMountPrefix,
   parseFlatInventoryRoute,
