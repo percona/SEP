@@ -34,7 +34,6 @@ React plugin.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -51,8 +50,6 @@ from app.sep.plugins.inventory.deps import (
     unwrap_inventory_plugin_list_payload,
 )
 from app.sep.plugins.inventory.schema import inventory_schema
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
@@ -79,16 +76,8 @@ async def inventory_list_entity(
     """List inventory nodes, services, schemas, or tables."""
     entity = require_inventory_plugin_entity(entity)
     params = inventory_plugin_query_params(request)
-    try:
-        data = await inventory_api.get(
-            inventory_service_list_path(entity), params=params
-        )
-        return unwrap_inventory_plugin_list_payload(data)
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Inventory plugin list failure (entity=%s)", entity)
-        raise
+    data = await inventory_api.get(inventory_service_list_path(entity), params=params)
+    return unwrap_inventory_plugin_list_payload(data)
 
 
 @router.post("/{entity}/")
@@ -105,14 +94,8 @@ async def inventory_create_entity(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="JSON object body required",
         )
-    try:
-        inv_path = inventory_service_create_path(entity, body)
-        return await inventory_api.post(inv_path, json=body)
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Inventory plugin create failure (entity=%s)", entity)
-        raise
+    inv_path = inventory_service_create_path(entity, body)
+    return await inventory_api.post(inv_path, json=body)
 
 
 @router.get("/{entity}/{item_id:int}")
@@ -123,15 +106,7 @@ async def inventory_get_entity(
 ) -> Any:
     """Retrieve a single inventory node, service, schema, or table."""
     entity = require_inventory_plugin_entity(entity)
-    try:
-        return await inventory_api.get(inventory_service_detail_path(entity, item_id))
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception(
-            "Inventory plugin detail failure (entity=%s id=%s)", entity, item_id
-        )
-        raise
+    return await inventory_api.get(inventory_service_detail_path(entity, item_id))
 
 
 @router.put("/{entity}/{item_id:int}")
@@ -149,17 +124,9 @@ async def inventory_update_entity(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="JSON object body required",
         )
-    try:
-        return await inventory_api.put(
-            inventory_service_detail_path(entity, item_id), json=body
-        )
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception(
-            "Inventory plugin update failure (entity=%s id=%s)", entity, item_id
-        )
-        raise
+    return await inventory_api.put(
+        inventory_service_detail_path(entity, item_id), json=body
+    )
 
 
 @router.delete("/{entity}/{item_id:int}")
@@ -170,13 +137,5 @@ async def inventory_delete_entity(
 ) -> Response:
     """Delete an inventory node, service, schema, or table."""
     entity = require_inventory_plugin_entity(entity)
-    try:
-        await inventory_api.delete(inventory_service_detail_path(entity, item_id))
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception(
-            "Inventory plugin delete failure (entity=%s id=%s)", entity, item_id
-        )
-        raise
+    await inventory_api.delete(inventory_service_detail_path(entity, item_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
