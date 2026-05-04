@@ -6,7 +6,13 @@ import Typography from '@mui/material/Typography';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import AddIcon from '@mui/icons-material/Add';
-import { usePluginEntityList, usePluginTasks, type PluginSchema } from '@sep/api';
+import { useSnackbar } from 'notistack';
+import {
+  useDeletePluginEntity,
+  usePluginEntityList,
+  usePluginTasks,
+  type PluginSchema,
+} from '@sep/api';
 import { SchemaListView } from '../SchemaListView';
 
 interface PluginListPageProps {
@@ -27,6 +33,8 @@ interface PluginListPageProps {
    * ``(row) => \`\${pathname}/\${row.id}\```).
    */
   rowClickHref?: (row: Record<string, unknown>) => string;
+  /** When true, list views that declare an ``actions`` column show row delete controls. */
+  allowListEntityDelete?: boolean;
 }
 
 export function PluginListPage({
@@ -39,8 +47,10 @@ export function PluginListPage({
   hideEntityTabs = false,
   entityNameOverride,
   rowClickHref,
+  allowListEntityDelete = false,
 }: PluginListPageProps) {
   const navigate = useNavigate();
+  const { enqueueSnackbar } = useSnackbar();
   const { entityName: entityNameParam } = useParams<{ entityName?: string }>();
   const entityName = entityNameOverride ?? entityNameParam;
   const entitySchema = useMemo(
@@ -61,6 +71,35 @@ export function PluginListPage({
   const listView = multi ? entitySchema!.listView : schema.listView!;
   const title = multi ? entitySchema!.displayName : schema.displayName;
   const description = multi ? entitySchema?.description : schema.description;
+
+  const hasActionsColumn = listView.columns.some((c) => c.format === 'actions');
+  const deleteEntity = useDeletePluginEntity(
+    pluginName,
+    entityName ?? '',
+    multi ? mockEntityItems?.[entityName!] : undefined,
+  );
+
+  const onDeleteRow =
+    allowListEntityDelete && multi && entityName && hasActionsColumn
+      ? (row: Record<string, unknown>) => {
+          const rid = row.id;
+          if (rid === undefined || rid === null) {
+            return;
+          }
+          const sid = String(rid);
+          if (!window.confirm(`Delete ${title} #${sid}? This cannot be undone.`)) {
+            return;
+          }
+          deleteEntity.mutate(sid, {
+            onSuccess: () => {
+              enqueueSnackbar(`${title} deleted`, { variant: 'success' });
+            },
+            onError: (err: Error) => {
+              enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
+            },
+          });
+        }
+      : undefined;
 
   return (
     <Box>
@@ -121,6 +160,8 @@ export function PluginListPage({
                   ? navigate(rowClickHref(row as Record<string, unknown>))
                   : navigate(String(row.id), { relative: 'path' })
         }
+        onDeleteRow={onDeleteRow}
+        deletingRowId={deleteEntity.isPending ? deleteEntity.variables : null}
       />
     </Box>
   );

@@ -4,7 +4,9 @@ import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
+import { useSnackbar } from 'notistack';
 import {
+  useDeletePluginEntity,
   usePluginEntityDetail,
   usePluginSchema,
   type ListView,
@@ -439,13 +441,59 @@ function NestedListSection({
   listView,
   rows,
   rowHref,
+  listEntityName,
+  pluginName,
+  mockEntityItems,
+  allowListEntityDelete,
+  schema,
 }: {
   title: string;
   listView: ListView;
   rows: Row[];
   rowHref: (row: Row) => string;
+  listEntityName: string;
+  pluginName: string;
+  mockEntityItems?: Record<string, Record<string, unknown>[]>;
+  allowListEntityDelete?: boolean;
+  schema: PluginSchema;
 }) {
   const navigate = useNavigate();
+  const { enqueueSnackbar } = useSnackbar();
+  const entityTitle = useMemo(
+    () =>
+      schema.entities?.find((e: PluginEntitySchema) => e.name === listEntityName)?.displayName ??
+      listEntityName,
+    [listEntityName, schema.entities],
+  );
+
+  const deleteEntity = useDeletePluginEntity(
+    pluginName,
+    listEntityName,
+    mockEntityItems?.[listEntityName],
+  );
+
+  const hasActionsColumn = listView.columns.some((c) => c.format === 'actions');
+  const onDeleteRow =
+    allowListEntityDelete && hasActionsColumn
+      ? (row: Record<string, unknown>) => {
+          const rid = row.id;
+          if (rid === undefined || rid === null) {
+            return;
+          }
+          const sid = String(rid);
+          if (!window.confirm(`Delete ${entityTitle} #${sid}? This cannot be undone.`)) {
+            return;
+          }
+          deleteEntity.mutate(sid, {
+            onSuccess: () => {
+              enqueueSnackbar(`${entityTitle} deleted`, { variant: 'success' });
+            },
+            onError: (err: Error) => {
+              enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
+            },
+          });
+        }
+      : undefined;
 
   return (
     <Box sx={{ mt: 3 }}>
@@ -456,6 +504,8 @@ function NestedListSection({
         listView={listView}
         data={rows}
         onRowClick={rows.length > 0 ? (row) => navigate(rowHref(row as Row)) : undefined}
+        onDeleteRow={onDeleteRow}
+        deletingRowId={deleteEntity.isPending ? deleteEntity.variables : null}
       />
     </Box>
   );
@@ -484,11 +534,17 @@ export function renderInventoryDetailChildren({
   record,
   schema,
   pathname,
+  pluginName,
+  mockEntityItems,
+  allowListEntityDelete,
 }: {
   entityName: string;
   record: Row;
   schema: PluginSchema;
   pathname: string;
+  pluginName: string;
+  mockEntityItems?: Record<string, Record<string, unknown>[]>;
+  allowListEntityDelete?: boolean;
 }): ReactNode {
   const prefix = inventoryMountPrefix(pathname);
   const blocks: ReactNode[] = [];
@@ -503,6 +559,11 @@ export function renderInventoryDetailChildren({
           listView={lv}
           rows={record.services}
           rowHref={(row) => `${prefix}/services/${row.id}`}
+          listEntityName="services"
+          pluginName={pluginName}
+          mockEntityItems={mockEntityItems}
+          allowListEntityDelete={allowListEntityDelete}
+          schema={schema}
         />,
       );
     }
@@ -518,6 +579,11 @@ export function renderInventoryDetailChildren({
           listView={lv}
           rows={record.schemas}
           rowHref={(row) => `${prefix}/schemas/${row.id}`}
+          listEntityName="schemas"
+          pluginName={pluginName}
+          mockEntityItems={mockEntityItems}
+          allowListEntityDelete={allowListEntityDelete}
+          schema={schema}
         />,
       );
     }
@@ -553,6 +619,11 @@ export function renderInventoryDetailChildren({
           listView={lv}
           rows={record.tables}
           rowHref={(row) => `${prefix}/tables/${row.id}`}
+          listEntityName="tables"
+          pluginName={pluginName}
+          mockEntityItems={mockEntityItems}
+          allowListEntityDelete={allowListEntityDelete}
+          schema={schema}
         />,
       );
     }

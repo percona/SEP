@@ -22,7 +22,8 @@ const INVENTORY_DETAIL_SUPPRESS_KEYS = [
 
 /**
  * Inventory plugin — browse nodes, services, schemas, and tables with the same drill-down
- * as the legacy UI (node → services → schemas → tables), without create/edit/delete in React.
+ * as the legacy UI (node → services → schemas → tables). Row delete is available on list
+ * tables; detail chrome stays browse-only (no edit / header delete).
  */
 export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPluginProps) {
   return (
@@ -35,6 +36,7 @@ export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPlugin
         browseOnly
         hideEntityTabs
         inventoryNestedPaths
+        allowListEntityDelete
         suppressDetailKeys={INVENTORY_DETAIL_SUPPRESS_KEYS}
         renderEntityDetailChildren={renderInventoryDetailChildren}
       />

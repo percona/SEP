@@ -99,6 +99,9 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     :vartype RELATIVE: str
     :cvar CODE: Render the column value in a monospaced code font.
     :vartype CODE: str
+    :cvar ACTIONS: Row actions (for example delete); not bound to row data.
+        Use with a synthetic column key such as ``_actions``.
+    :vartype ACTIONS: str
     """
 
     TEXT = auto()
@@ -107,6 +110,7 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     DATE = auto()
     RELATIVE = auto()
     CODE = auto()
+    ACTIONS = auto()
 
 
 class BaseField(SchemaBaseModel):

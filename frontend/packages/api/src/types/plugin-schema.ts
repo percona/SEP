@@ -132,7 +132,7 @@ export interface ListColumn {
   key: string;
   label: string;
   sortable?: boolean;
-  format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code';
+  format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions';
 }
 
 export interface ListView {

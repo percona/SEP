@@ -37,6 +37,9 @@ export interface PluginDetailPageProps {
     record: Record<string, unknown>;
     schema: PluginSchema;
     pathname: string;
+    pluginName: string;
+    mockEntityItems?: Record<string, Record<string, unknown>[]>;
+    allowListEntityDelete?: boolean;
   }) => ReactNode;
   /** Nested inventory: resolve ``entityName`` / ``id`` from named params (e.g. ``nodeId``). */
   detailEntityName?: string;
@@ -45,6 +48,8 @@ export interface PluginDetailPageProps {
   useNestedInventoryNavigation?: boolean;
   /** When true, omit the header row (back button, ``{title} #{id}``, status chip, edit/delete). */
   hideDetailChrome?: boolean;
+  /** When true, nested list tables may show row delete (inventory ``actions`` column). */
+  allowListEntityDelete?: boolean;
 }
 
 /** Screen title when the back/status row is hidden (e.g. inventory browse-only). */
@@ -216,6 +221,7 @@ export function PluginDetailPage({
   detailIdParam,
   useNestedInventoryNavigation = false,
   hideDetailChrome = false,
+  allowListEntityDelete = false,
 }: PluginDetailPageProps) {
   const params = useParams<Record<string, string | undefined>>();
   const id = (detailIdParam && params[detailIdParam]) ?? params.id;
@@ -362,15 +368,18 @@ export function PluginDetailPage({
       )}
 
       <Paper sx={{ p: 3 }}>
-        {listView.columns.map((col) => (
-          <DetailField key={col.key} fieldKey={col.key} label={col.label} value={task[col.key]} />
-        ))}
+        {listView.columns
+          .filter((col) => col.format !== 'actions' && col.key !== '_actions')
+          .map((col) => (
+            <DetailField key={col.key} fieldKey={col.key} label={col.label} value={task[col.key]} />
+          ))}
 
         {Object.entries(task)
           .filter(
             ([key]) =>
               !listView.columns.some((c) => c.key === key) &&
               key !== 'id' &&
+              key !== '_actions' &&
               !suppressDetailKeys.includes(key),
           )
           .map(([key, value]) => (
@@ -386,6 +395,9 @@ export function PluginDetailPage({
           record: task as Record<string, unknown>,
           schema,
           pathname: location.pathname,
+          pluginName,
+          mockEntityItems,
+          allowListEntityDelete,
         })}
     </Box>
   );

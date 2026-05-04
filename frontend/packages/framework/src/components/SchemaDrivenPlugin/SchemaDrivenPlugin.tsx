@@ -28,7 +28,8 @@ interface SchemaDrivenPluginProps {
   listOnly?: boolean;
   /**
    * Browse mode: list + read-only detail (and optional ``renderEntityDetailChildren``),
-   * without create / edit / delete routes or actions.
+   * without create / edit / delete routes on detail chrome. List row delete is separate
+   * (see ``allowListEntityDelete``).
    */
   browseOnly?: boolean;
   /** Keys to hide from the generic detail field dump (nested relations, etc.). */
@@ -40,11 +41,19 @@ interface SchemaDrivenPluginProps {
    * (flat ``/services/:id`` etc. remain available as alternate entry points).
    */
   inventoryNestedPaths?: boolean;
+  /**
+   * When true, entity list tables that declare an ``actions`` column show a per-row delete
+   * control (inventory uses this with browse-only detail chrome).
+   */
+  allowListEntityDelete?: boolean;
   renderEntityDetailChildren?: (args: {
     entityName: string;
     record: Record<string, unknown>;
     schema: PluginSchema;
     pathname: string;
+    pluginName: string;
+    mockEntityItems?: Record<string, Record<string, unknown>[]>;
+    allowListEntityDelete?: boolean;
   }) => ReactNode;
 }
 
@@ -160,6 +169,7 @@ function InventoryNestedNodesList({
   listOnly,
   hideCreate,
   hideEntityTabs,
+  allowListEntityDelete,
 }: {
   schema: PluginSchema;
   pluginName: string;
@@ -167,6 +177,7 @@ function InventoryNestedNodesList({
   listOnly: boolean;
   hideCreate: boolean;
   hideEntityTabs: boolean;
+  allowListEntityDelete?: boolean;
 }) {
   const { pathname } = useLocation();
   return (
@@ -179,6 +190,7 @@ function InventoryNestedNodesList({
       hideEntityTabs={hideEntityTabs}
       entityNameOverride="nodes"
       rowClickHref={(row) => `${pathname}/${String(row.id)}`}
+      allowListEntityDelete={allowListEntityDelete}
     />
   );
 }
@@ -193,6 +205,7 @@ export function SchemaDrivenPlugin({
   suppressDetailKeys,
   hideEntityTabs = false,
   inventoryNestedPaths = false,
+  allowListEntityDelete = false,
   renderEntityDetailChildren,
 }: SchemaDrivenPluginProps) {
   const { data: schema, isLoading, error } = usePluginSchema(pluginName, mockSchema);
@@ -230,6 +243,7 @@ export function SchemaDrivenPlugin({
         renderEntityDetailChildren,
         useNestedInventoryNavigation: true as const,
         hideDetailChrome: browseOnly,
+        allowListEntityDelete,
       };
       return (
         <Routes>
@@ -244,6 +258,7 @@ export function SchemaDrivenPlugin({
                 listOnly={listOnly}
                 hideCreate={browseOnly && !listOnly}
                 hideEntityTabs={hideEntityTabs}
+                allowListEntityDelete={allowListEntityDelete}
               />
             }
           />
@@ -345,6 +360,7 @@ export function SchemaDrivenPlugin({
               listOnly={listOnly}
               hideCreate={browseOnly && !listOnly}
               hideEntityTabs={hideEntityTabs}
+              allowListEntityDelete={allowListEntityDelete}
             />
           }
         />
@@ -383,6 +399,7 @@ export function SchemaDrivenPlugin({
                 browseOnly={browseOnly}
                 suppressDetailKeys={suppressDetailKeys}
                 renderEntityDetailChildren={renderEntityDetailChildren}
+                allowListEntityDelete={allowListEntityDelete}
               />
             }
           />
@@ -424,6 +441,7 @@ export function SchemaDrivenPlugin({
               browseOnly={browseOnly}
               suppressDetailKeys={suppressDetailKeys}
               renderEntityDetailChildren={renderEntityDetailChildren}
+              allowListEntityDelete={allowListEntityDelete}
             />
           }
         />

@@ -1,6 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
+import IconButton from '@mui/material/IconButton';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import type { ListColumn, ListView } from '@sep/api';
 
@@ -9,9 +11,13 @@ interface SchemaListViewProps {
   data: Record<string, unknown>[];
   isLoading?: boolean;
   onRowClick?: (row: Record<string, unknown>) => void;
+  /** When set, ``format: 'actions'`` columns render a delete control for that row. */
+  onDeleteRow?: (row: Record<string, unknown>) => void;
+  /** Row id currently being deleted (disables that row's button). */
+  deletingRowId?: string | null;
 }
 
-function formatCellValue(value: unknown, format: ListColumn['format']): React.ReactNode {
+function formatCellValue(value: unknown, format: ListColumn['format']): ReactNode {
   if (value === null) {
     return '—';
   }
@@ -70,16 +76,50 @@ export function SchemaListView({
   data,
   isLoading = false,
   onRowClick,
+  onDeleteRow,
+  deletingRowId,
 }: SchemaListViewProps) {
   const columns = useMemo<MRT_ColumnDef<Record<string, unknown>>[]>(
     () =>
-      listView.columns.map((col) => ({
-        accessorKey: col.key,
-        header: col.label,
-        enableSorting: col.sortable ?? true,
-        Cell: ({ cell }) => formatCellValue(cell.getValue(), col.format),
-      })),
-    [listView.columns],
+      listView.columns.map((col) => {
+        if (col.format === 'actions') {
+          return {
+            id: col.key,
+            accessorKey: col.key,
+            header: col.label,
+            enableSorting: false,
+            size: 72,
+            Cell: ({ row }) => {
+              const id = row.original.id;
+              if (id === undefined || id === null || !onDeleteRow) {
+                return null;
+              }
+              const sid = String(id);
+              return (
+                <IconButton
+                  size="small"
+                  color="error"
+                  aria-label="Delete"
+                  disabled={deletingRowId === sid}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteRow(row.original);
+                  }}
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              );
+            },
+          };
+        }
+        return {
+          accessorKey: col.key,
+          header: col.label,
+          enableSorting: col.sortable ?? true,
+          Cell: ({ cell }) => formatCellValue(cell.getValue(), col.format),
+        };
+      }),
+    [deletingRowId, listView.columns, onDeleteRow],
   );
 
   return (

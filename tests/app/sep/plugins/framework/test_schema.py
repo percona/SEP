@@ -477,6 +477,13 @@ def test_column_format_serialises_to_lowercase_string():
     assert dumped["format"] == "status"
 
 
+def test_column_format_actions_serialises_to_lowercase_string():
+    """Serialise ``ColumnFormat.ACTIONS`` to ``actions`` in JSON output."""
+    column = Column(key="_actions", label="Actions", format=ColumnFormat.ACTIONS)
+    dumped = column.model_dump(mode="json", by_alias=True)
+    assert dumped["format"] == "actions"
+
+
 def test_column_format_rejects_unknown_values():
     """Reject ``Column.format`` values that are not ``ColumnFormat`` members."""
     with pytest.raises(ValidationError):
