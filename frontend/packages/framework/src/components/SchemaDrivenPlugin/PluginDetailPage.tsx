@@ -16,7 +16,7 @@
  */
 
 import { useState } from 'react';
-import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { Routes, Route, useParams, useNavigate, Link } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -347,19 +347,18 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
 }
 
 export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetailPageProps) {
-  const { id } = useParams<{ id: string }>();
+  const { id, '*': splat } = useParams<{ id: string; '*': string }>();
   const navigate = useNavigate();
   const { data: task, isLoading } = usePluginTask(pluginName, id, mockTasks);
 
-  const location = useLocation();
-  // Tab value from the trailing path segment, normalized to ignore
-  // trailing slashes (`/logs/` ≡ `/logs`). Query/hash are not part of
-  // `pathname` so they don't need handling. Matches any depth — once
-  // we descend into `/logs/<sub>` for a future nested route we'll still
-  // resolve to the Logs tab via `includes`.
-  const normalizedPath = location.pathname.replace(/\/+$/, '');
-  const tabValue: 'overview' | 'logs' =
-    normalizedPath.endsWith('/logs') || normalizedPath.includes('/logs/') ? 'logs' : 'overview';
+  // Derive the active tab from the splat (the path segment(s) after `:id`)
+  // rather than scanning the full pathname. Using the splat avoids a
+  // false-positive when the task itself is literally named `logs`
+  // (`/plugins/<name>/task/logs` would otherwise highlight the Logs tab
+  // while the inner `<Routes>` correctly renders Overview).
+  const tabValue: 'overview' | 'logs' = splat?.replace(/\/+$/, '').startsWith('logs')
+    ? 'logs'
+    : 'overview';
 
   if (isLoading) {
     return (

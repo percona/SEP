@@ -64,7 +64,13 @@ export function SchemaDrivenPlugin({ pluginName, mockSchema, mockTasks }: Schema
         path="new"
         element={<PluginCreatePage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />}
       />
-      <Route path="schedule" element={<PluginSchedulePage pluginName={pluginName} />} />
+      {/* Schedule route is only registered when the plugin schema opts in;
+          otherwise direct navigation to `/plugins/<name>/schedule` would
+          show the panel even though the entry-point buttons (which gate on
+          the same capability) are hidden. */}
+      {schema.capabilities?.scheduling && (
+        <Route path="schedule" element={<PluginSchedulePage pluginName={pluginName} />} />
+      )}
       {/* Detail routes namespaced under `task/` so a task literally named
           `new`, `schedule`, or any other static sibling stays reachable. */}
       <Route
