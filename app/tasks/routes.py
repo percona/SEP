@@ -617,7 +617,13 @@ async def sync_task_history(
     saved = await TaskHistoryManager.save(
         session,
         updated,
-        flag_modified_fields=["execution_request", "sync_in_progress_started_at"],
+        flag_modified_fields=[
+            "execution_request",
+            "status",
+            "started_at",
+            "finished_at",
+            "sync_in_progress_started_at",
+        ],
     )
     synced = await TaskHistoryManager.get_or_404(
         session,
