@@ -616,12 +616,9 @@ async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None
     should_chain = saved.status == TaskHistoryStatusEnum.SUCCESS or (
         chain_on_failure and is_terminal
     )
-    if not should_chain:
-        return
     chain_task_names = meta.get("_chain_task_names")
-    if not chain_task_names:
-        return
-    await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
+    if should_chain and chain_task_names:
+        await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
 
 
 async def _dispatch_chained_task(
