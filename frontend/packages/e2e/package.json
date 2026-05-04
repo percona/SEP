@@ -6,11 +6,10 @@
   "scripts": {
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.0",
+    "@playwright/test": "1.59.1",
     "@types/node": "^22.0.0",
     "typescript": "~6.0.3"
   }
