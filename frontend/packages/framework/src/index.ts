@@ -2,6 +2,20 @@
 export { SchemaFormRenderer } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
 export { SchemaDrivenPlugin } from './components/SchemaDrivenPlugin';
+export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
+export {
+  renderInventoryDetailChildren,
+  inventoryPluginBasePath,
+} from './components/SchemaDrivenPlugin/inventoryDetailChildren';
+export { InventoryBreadcrumbs } from './components/SchemaDrivenPlugin/InventoryBreadcrumbs';
+export {
+  inventoryMountPrefix,
+  parseFlatInventoryRoute,
+  parseNestedInventoryPath,
+  parseInventoryRoute,
+  pathThroughPairIndex,
+  pathToNestedInventoryParent,
+} from './components/SchemaDrivenPlugin/inventoryNestedPaths';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';

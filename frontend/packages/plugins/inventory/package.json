@@ -1,0 +1,32 @@
+{
+  "name": "@sep/inventory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sep/api": "workspace:*",
+    "@sep/framework": "workspace:*"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.75.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.1.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "jsdom": "^29.0.2",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.0",
+    "typescript": "~5.8.0",
+    "vite": "^8.0.0",
+    "vitest": "^4.0.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

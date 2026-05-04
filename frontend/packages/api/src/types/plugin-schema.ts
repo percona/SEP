@@ -149,6 +149,17 @@ export interface PluginCapabilities {
   scheduling?: boolean;
 }
 
+// ── Multi-entity plugins (inventory) ────────────────────────────────────
+
+/** One CRUD resource when a plugin exposes several (nodes, services, …). */
+export interface PluginEntitySchema {
+  name: string;
+  displayName: string;
+  description?: string;
+  forms: FormSection[];
+  listView: ListView;
+}
+
 // ── Top-level schema ────────────────────────────────────────────────────
 
 export interface PluginSchema {
@@ -156,7 +167,10 @@ export interface PluginSchema {
   displayName: string;
   description?: string;
   taskType?: string;
-  forms: FormSection[];
+  /** Task-style single entity: forms + listView (omit or leave entities unset). */
+  forms?: FormSection[];
   capabilities?: PluginCapabilities;
-  listView: ListView;
+  listView?: ListView;
+  /** When set, the shell renders one list/create/detail flow per entity. */
+  entities?: PluginEntitySchema[];
 }

@@ -20,6 +20,7 @@ export const ROUTES = {
   alertTroubleshooting: '/alerts/troubleshooting',
   schemaAlters: '/schema-change/alters',
   schemaChecksums: '/schema-change/checksums',
+  schemaInventory: '/schema-change/inventory',
   backupsMysql: '/backups/mysql',
   backupsMongodb: '/backups/mongodb',
   backupsPostgresql: '/backups/postgresql',

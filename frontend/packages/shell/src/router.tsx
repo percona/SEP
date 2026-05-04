@@ -13,6 +13,9 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const ChecksumsPlugin = lazy(() =>
   import('@sep/checksums').then((m) => ({ default: m.ChecksumsPlugin })),
 );
+const InventoryPlugin = lazy(() =>
+  import('@sep/inventory').then((m) => ({ default: m.InventoryPlugin })),
+);
 
 export const router = createBrowserRouter([
   {
@@ -31,7 +34,7 @@ export const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <DashboardPage /> },
-          { path: 'inventory', element: <PlaceholderPage /> },
+          { path: 'inventory/*', element: <InventoryPlugin /> },
           { path: 'tasks', element: <PlaceholderPage /> },
           { path: 'snippets', element: <PlaceholderPage /> },
           { path: 'atw', element: <PlaceholderPage /> },
@@ -41,6 +44,7 @@ export const router = createBrowserRouter([
           { path: 'schema-change/alters', element: <PlaceholderPage /> },
           // Checksums — schema-driven plugin (handles its own sub-routes)
           { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
+          { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
           { path: 'backups/mysql', element: <PlaceholderPage /> },
           { path: 'backups/mongodb', element: <PlaceholderPage /> },
           { path: 'backups/postgresql', element: <PlaceholderPage /> },

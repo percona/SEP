@@ -25,6 +25,7 @@
     "@sep/api": "workspace:*",
     "@sep/checksums": "workspace:*",
     "@sep/framework": "workspace:*",
+    "@sep/inventory": "workspace:*",
     "@sep/shared": "workspace:*",
     "@tanstack/react-query": "^5.75.0",
     "axios": "^1.15.2",
