@@ -18,11 +18,10 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.utils.fields import NonEmptyStr
 from app.sep.plugins.dipper.constants import CollectorTypeEnum, DIPPER_PAYLOADS_DIR
-
 from app.sep.snippets.models.snippet import BaseSnippet
 
 
@@ -52,7 +51,7 @@ class DipperExecuteWrite(BaseModel):
     collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT
     executor_host: NonEmptyStr
     sudo: bool = False
-    args: dict[str, Any] = {}
+    args: dict[str, Any] = Field(default_factory=dict)
 
 
 class DipperExecutionResponse(BaseModel):

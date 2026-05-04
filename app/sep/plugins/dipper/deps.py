@@ -16,7 +16,7 @@
 """Dependencies for the Dipper plugin."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Header, Request
 from pydantic import ValidationError
@@ -98,6 +98,32 @@ def has_pmm_script(service_type: ServiceTypeEnum) -> bool:
     return service_type in DIPPER_PMM_SCRIPT_BY_SERVICE_TYPE
 
 
+async def load_dipper_script(
+    service: CreatedService,
+    collector_type: CollectorTypeEnum,
+    *,
+    update_meta: bool = False,
+) -> DipperScript:
+    """Resolve and load a Dipper script for API helpers.
+
+    :param service: Inventory service that determines the payload.
+    :type service: CreatedService
+    :param collector_type: Environment or PMM collector type.
+    :type collector_type: CollectorTypeEnum
+    :param update_meta: Whether to load and validate script frontmatter.
+    :type update_meta: bool
+    :return: Loaded Dipper script.
+    :rtype: DipperScript
+    :raises HTTPNotFoundException: When no mapped or packaged payload exists.
+    """
+    filename = get_dipper_script_filename(service.type, collector_type)
+    try:
+        return await DipperScript.from_path(filename, update_meta=update_meta)
+    except FileNotFoundError as exc:
+        logger.warning("Missing dipper payload script %r", filename)
+        raise HTTPNotFoundException from exc
+
+
 async def get_dipper_script_preview(
     service: CreatedService,
     collector_type: CollectorTypeEnum,
@@ -113,8 +139,7 @@ async def get_dipper_script_preview(
     :raises HTTPNotFoundException: When no script exists for the service/collector combination.
     :raises HTTPUnprocessableEntityException: When the script contains non-UTF-8 bytes.
     """
-    filename = get_dipper_script_filename(service.type, collector_type)
-    script = await DipperScript.from_path(filename)
+    script = await load_dipper_script(service, collector_type)
     try:
         preview = await script.get_preview()
     except UnicodeDecodeError as exc:
@@ -344,46 +369,46 @@ async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
 SupportedDipperServices = Annotated[list[dict], Depends(list_supported_services)]
 
 
-def _assemble_snippet_execution_meta(
-    service_id: int,
+def clean_dipper_api_args(raw_args: dict[str, Any]) -> dict[str, Any]:
+    """Drop empty JSON form values without discarding meaningful falsy values."""
+    cleaned = {}
+    for key, value in raw_args.items():
+        if value is None:
+            continue
+        if isinstance(value, str) and value == "":
+            continue
+        if isinstance(value, list) and not value:
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
+def build_dipper_snippet_filename(service: CreatedService, script: DipperScript) -> str:
+    """Return the Dipper snippet filename used in task history metadata."""
+    return f"dipper/{service.id}/{script.filename}"
+
+
+def build_dipper_meta_from_args(
+    service: CreatedService,
     script: DipperScript,
-    execution_args: BaseSnippetArgs,
     script_source: str,
-    target: str,
+    execution_args: BaseSnippetArgs,
+    *,
     sudo_default: bool = False,
 ) -> SnippetExecutionMeta:
-    """Assemble a :class:`SnippetExecutionMeta` from resolved script and args.
-
-    Shared by both the JSON API path (``build_dipper_execution_meta``) and the
-    legacy Jinja2 form path (``get_dipper_execution_meta``).
-
-    :param service_id: Inventory ID of the target service, used in the snippet path.
-    :type service_id: int
-    :param script: The Dipper payload script with metadata already loaded.
-    :type script: DipperScript
-    :param execution_args: Validated execution arguments for the script.
-    :type execution_args: BaseSnippetArgs
-    :param script_source: Signed download URL for the script artifact.
-    :type script_source: str
-    :param target: Nomad client hostname to run the script on.
-    :type target: str
-    :param sudo_default: Fallback sudo flag when the execution model does not
-        declare a dedicated sudo field.  Defaults to ``False``.
-    :type sudo_default: bool
-    :return: The assembled execution metadata.
-    :rtype: SnippetExecutionMeta
-    """
-    snippet_filename = f"dipper/{service_id}/{script.filename}"
+    """Build shared execution metadata for legacy and JSON Dipper flows."""
     interpreter = script.execution_interpreter
     if script.sudo == SnippetSudoOption.ALWAYS or getattr(
         execution_args, execution_args.sudo_field, sudo_default
     ):
         interpreter = f"sudo {interpreter}"
+    if interpreter is None:
+        raise HTTPBadRequestException(detail="No interpreter configured for script")
     return SnippetExecutionMeta(
-        target=target,
+        target=execution_args.executor_host,
         interpreter=interpreter,
         snippet_source=script_source,
-        snippet_filename=snippet_filename,
+        snippet_filename=build_dipper_snippet_filename(service, script),
         md5_checksum=script.md5_digest,
         args=execution_args.to_args_string(),
         requirements=script.requirements,
@@ -414,7 +439,9 @@ async def build_dipper_execution_meta(
         args fail the script's execution model schema.
     """
     try:
-        filename = get_dipper_script_filename(service.type, body.collector_type)
+        script = await load_dipper_script(
+            service, body.collector_type, update_meta=True
+        )
     except HTTPNotFoundException as exc:
         raise HTTPUnprocessableEntityException(
             detail=(
@@ -422,7 +449,6 @@ async def build_dipper_execution_meta(
                 f" for {service.type.value!r} services."
             )
         ) from exc
-    script = await DipperScript.from_path(filename, update_meta=True)
 
     raw_args: dict = {**body.args, EXECUTOR_HOSTS_INPUT_NAME: body.executor_host}
 
@@ -442,19 +468,16 @@ async def build_dipper_execution_meta(
 
     execution_model = script.get_execution_model()
     try:
-        execution_args = execution_model.model_validate(
-            remove_falsy_values_from_dict(raw_args)
-        )
+        execution_args = execution_model.model_validate(clean_dipper_api_args(raw_args))
     except ValidationError as exc:
         raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
 
     script_source = get_dipper_script_source(request, script)
-    meta = _assemble_snippet_execution_meta(
-        service_id=service.id,
-        script=script,
-        execution_args=execution_args,
-        script_source=script_source,
-        target=body.executor_host,
+    meta = build_dipper_meta_from_args(
+        service,
+        script,
+        script_source,
+        execution_args,
         sudo_default=body.sudo,
     )
     return meta, script.execution_task_name
@@ -480,13 +503,9 @@ def get_dipper_execution_meta(
     :rtype: SnippetExecutionMeta
     :raises HTTPBadRequestException: If no interpreter is configured for the script.
     """
-    meta = _assemble_snippet_execution_meta(
-        service_id=service.id,
-        script=script,
-        execution_args=execution_args,
-        script_source=script_source,
-        target=execution_args.executor_host,
+    return build_dipper_meta_from_args(
+        service,
+        script,
+        script_source,
+        execution_args,
     )
-    if meta.interpreter is None:
-        raise HTTPBadRequestException(detail="No interpreter configured for script")
-    return meta

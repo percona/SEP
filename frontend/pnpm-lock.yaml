@@ -170,12 +170,36 @@ importers:
 
   packages/plugins/dipper:
     dependencies:
+      '@emotion/react':
+        specifier: ^11.0.0
+        version: 11.14.0(@types/react@19.2.14)(react@19.2.5)
+      '@emotion/styled':
+        specifier: ^11.0.0
+        version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5)
+      '@mui/icons-material':
+        specifier: ^7.3.7
+        version: 7.3.10(@mui/material@7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/react@19.2.14)(react@19.2.5)
+      '@mui/material':
+        specifier: ^7.3.7
+        version: 7.3.10(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react@19.2.5))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@sep/api':
+        specifier: workspace:*
+        version: link:../../api
       '@sep/framework':
         specifier: workspace:*
         version: link:../../framework
+      '@tanstack/react-query':
+        specifier: ^5.75.0
+        version: 5.100.7(react@19.2.5)
+      notistack:
+        specifier: ^3.0.0
+        version: 3.0.2(csstype@3.2.3)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       react:
         specifier: ^19.0.0
         version: 19.2.5
+      react-hook-form:
+        specifier: ^7.72.1
+        version: 7.74.0(react@19.2.5)
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.6.3

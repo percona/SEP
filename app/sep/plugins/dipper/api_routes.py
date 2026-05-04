@@ -20,7 +20,8 @@ Mounted at ``/api/plugins/dipper/`` via ``plugins_router`` in
 level and redeclared per route for safety. Route layout:
 
 * ``GET /schema``          — static plugin schema
-* ``GET /``                — placeholder list (dipper has no saved tasks)
+* ``GET /``                — Dipper execution history
+* ``GET /form-schema``     — context-specific execute form schema
 * ``GET /script-preview``  — preview the collector script for a service
 * ``POST /``               — execute a collector script against a service
 """
@@ -32,19 +33,23 @@ from fastapi import APIRouter, Request
 from fastapi import status as http_status
 
 from app.core.exceptions import HTTPNotFoundException, HTTPUnprocessableEntityException
-from app.sep.deps import InventoryAPI, IsApiAuthenticated, TaskAPI
+from app.sep.deps import ExecutorHosts, InventoryAPI, IsApiAuthenticated, TaskAPI
 from app.sep.inventory import CreatedService
 from app.sep.plugins.dipper.constants import CollectorTypeEnum
 from app.sep.plugins.dipper.deps import (
     build_dipper_execution_meta,
     get_dipper_script_preview,
+    get_pmm_form_defaults,
+    load_dipper_script,
+    resolve_pmm_executor_host,
 )
 from app.sep.plugins.dipper.models import (
     DipperExecuteWrite,
     DipperExecutionResponse,
 )
-from app.sep.plugins.dipper.schema import dipper_schema
+from app.sep.plugins.dipper.schema import build_dipper_form_schema, dipper_schema
 from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.framework.schema import PluginSchema
 from app.sep.plugins.snippets.models import ScriptPreviewResponse
 
 logger = logging.getLogger(__name__)
@@ -53,14 +58,89 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=dipper_schema)
 
 
-@router.get("/", dependencies=[IsApiAuthenticated])
-async def dipper_api_list() -> list[Any]:
-    """Return an empty list; dipper has no saved task configurations.
+def _execution_request_for(history: dict[str, Any]) -> dict[str, Any]:
+    """Return a task-history row's execution request mapping."""
+    value = history.get("execution_request") or history.get("executionRequest")
+    return value if isinstance(value, dict) else {}
 
-    :return: Empty list.
-    :rtype: list[Any]
+
+def _snippet_filename_for(history: dict[str, Any]) -> str | None:
+    """Return a task-history row's snippet filename metadata."""
+    request = _execution_request_for(history)
+    meta = request.get("meta")
+    if isinstance(meta, dict):
+        value = meta.get("_snippet_filename") or meta.get("snippet_filename")
+        return str(value) if value else None
+    value = request.get("_snippet_filename") or request.get("snippet_filename")
+    return str(value) if value else None
+
+
+@router.get("/", dependencies=[IsApiAuthenticated])
+async def dipper_api_list(tasks_api: TaskAPI) -> dict[str, Any]:
+    """Return Dipper execution history rows.
+
+    :param tasks_api: Async client for the tasks sub-app.
+    :type tasks_api: RemoteAPI
+    :return: Paginated task-history response filtered to Dipper runs.
+    :rtype: dict[str, Any]
     """
-    return []
+    response = await tasks_api.get("/history/")
+    items = [
+        item
+        for item in response.get("items", [])
+        if (_snippet_filename_for(item) or "").startswith("dipper/")
+    ]
+    return {**response, "items": items, "total": len(items)}
+
+
+@router.get(
+    "/form-schema",
+    response_model_by_alias=True,
+    dependencies=[IsApiAuthenticated],
+)
+async def dipper_api_form_schema(
+    service_id: int,
+    collector_type: CollectorTypeEnum,
+    inventory_api: InventoryAPI,
+    executor_hosts: ExecutorHosts,
+) -> PluginSchema:
+    """Return the selected Dipper payload's dynamic execution schema.
+
+    :param service_id: Inventory ID of the database service.
+    :type service_id: int
+    :param collector_type: Which collector variant to render.
+    :type collector_type: CollectorTypeEnum
+    :param inventory_api: Async client for the inventory sub-app.
+    :type inventory_api: RemoteAPI
+    :param executor_hosts: Available executor hosts keyed by hostname.
+    :type executor_hosts: dict
+    :return: Context-specific schema including payload parameters.
+    :rtype: PluginSchema
+    """
+    service_data = await inventory_api.get(f"/services/{service_id}")
+    service = CreatedService.model_validate(service_data)
+    try:
+        script = await load_dipper_script(service, collector_type, update_meta=True)
+    except HTTPNotFoundException as exc:
+        raise HTTPUnprocessableEntityException(
+            detail=(
+                f"No {collector_type.value!r} collector script is available"
+                f" for {service.type.value!r} services."
+            )
+        ) from exc
+    defaults = None
+    if collector_type == CollectorTypeEnum.PMM:
+        defaults = get_pmm_form_defaults(
+            resolve_pmm_executor_host(executor_hosts),
+            service.name,
+            service.node.name if service.node else "",
+        )
+    return build_dipper_form_schema(
+        script,
+        service.id,
+        collector_type.value,
+        defaults=defaults,
+    )
 
 
 @router.get("/script-preview", dependencies=[IsApiAuthenticated])
@@ -79,9 +159,9 @@ async def dipper_api_script_preview(
     :type inventory_api: RemoteAPI
     :return: Preview content alongside language and truncation metadata.
     :rtype: ScriptPreviewResponse
-    :raises HTTPNotFoundException: When the service does not exist or no
-        script is available for the service/collector combination.
-    :raises HTTPUnprocessableEntityException: When the script contains
+    :raises HTTPNotFoundException: When the service does not exist.
+    :raises HTTPUnprocessableEntityException: When no script is available for
+        the service/collector combination, or when the script contains
         non-UTF-8 bytes.
     """
     service_data = await inventory_api.get(f"/services/{service_id}")

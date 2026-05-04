@@ -15,12 +15,11 @@
 
 """Tests for the dipper plugin Jinja2 routes."""
 
+import logging
 from unittest.mock import AsyncMock, patch
 
-from fastapi.responses import HTMLResponse
+from fastapi import status
 
-from app.sep.deps import get_default_context
-from app.sep.main import sep_app
 from app.sep.plugins.dipper.routes import router as dipper_jinja_router
 from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 
@@ -32,44 +31,27 @@ class TestDipperRouterDeprecation:
         """Confirm the router is constructed with ``DeprecatedJinja2Route``."""
         assert dipper_jinja_router.route_class is DeprecatedJinja2Route
 
-    def test_deprecation_header_and_warning_on_index_route(
+    def test_legacy_route_sets_deprecation_header_and_logs(
         self,
         test_client,
         mock_inventory_api_dep,
         mock_task_api_dep,
+        mock_get_username_mapping,
+        caplog,
     ):
-        """GET /dipper/ carries ``Deprecation: true`` and emits a WARNING log.
-
-        Exercises the real Jinja2 route through the full dep chain to confirm
-        that ``DeprecatedJinja2Route`` sets the RFC 8594 header and logs at
-        WARNING level on each hit — verifying the behaviour rather than just
-        the class-attribute identity.
-        """
+        """A real Dipper Jinja2 route emits the deprecation contract."""
         mock_inventory_api_dep.get = AsyncMock(return_value={"items": []})
         mock_task_api_dep.get = AsyncMock(return_value={})
-        # Bypass Casdoor/username-mapping so DefaultContext resolves without
-        # a live Casdoor instance in CI.
-        sep_app.dependency_overrides[get_default_context] = lambda: {
-            "user": None,
-            "casdoor_url": "",
-            "base_uri": "",
-            "plugins": [],
-            "sync_refresh_time": 30,
-            "csrf_token": "",
-            "pmm_url": "",
-            "footer_text": "",
-            "user_id_to_username": {},
-        }
 
         with (
-            patch("app.sep.plugins.dipper.routes.templates") as mock_templates,
-            patch(
-                "app.sep.plugins.framework.deprecation.logger.warning"
-            ) as mock_warning,
+            caplog.at_level(
+                logging.WARNING, logger="app.sep.plugins.framework.deprecation"
+            ),
+            patch("app.sep.plugins.framework.deprecation.logger.warning") as warning,
         ):
-            mock_templates.TemplateResponse.return_value = HTMLResponse("<html>ok</html>")
             response = test_client.get("/dipper/")
 
-        assert response.headers.get("Deprecation") == "true"
-        assert mock_warning.called
-        assert "is deprecated" in mock_warning.call_args.args[0]
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["Deprecation"] == "true"
+        warning.assert_called_once()
+        assert warning.call_args.args[1] == "/dipper/"

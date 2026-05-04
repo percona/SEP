@@ -91,13 +91,96 @@ class TestDipperSchemaEndpoint:
 class TestDipperListEndpoint:
     """Tests for ``GET /api/plugins/dipper/``."""
 
-    def test_list_returns_empty_array(self, test_client):
-        """List endpoint returns an empty JSON array (dipper has no saved tasks)."""
+    def test_list_returns_dipper_history_rows(self, test_client, mock_task_api_dep):
+        """List endpoint returns task-history rows filtered to Dipper executions."""
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [
+                    {
+                        "id": 1,
+                        "execution_request": {
+                            "meta": {
+                                "_snippet_filename": "dipper/1/pcs-collect-environment-mysql.sh"
+                            }
+                        },
+                    },
+                    {
+                        "id": 2,
+                        "execution_request": {
+                            "meta": {"_snippet_filename": "snippets/example.sh"}
+                        },
+                    },
+                ],
+                "total": 2,
+                "offset": 0,
+                "limit": 100,
+            }
+        )
+
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
         assert "application/json" in response.headers["content-type"]
-        assert response.json() == []
+        body = response.json()
+        assert body["total"] == 1
+        assert [item["id"] for item in body["items"]] == [1]
+
+
+class TestDipperFormSchemaEndpoint:
+    """Tests for ``GET /api/plugins/dipper/form-schema``."""
+
+    def test_mysql_environment_schema_contains_payload_fields(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """MySQL environment schema includes legacy dynamic payload args."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "environment"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        fields = [
+            field for section in response.json()["forms"] for field in section["fields"]
+        ]
+        field_names = {field["name"] for field in fields}
+        assert {
+            "o",
+            "d",
+            "i",
+            "t",
+            "p",
+            "n",
+            "executor_host",
+            "script_preview",
+        } <= field_names
+
+    def test_pmm_schema_contains_defaults(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """PMM schema includes PMM args seeded from the selected service."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        fields = [
+            field for section in response.json()["forms"] for field in section["fields"]
+        ]
+        by_name = {field["name"]: field for field in fields}
+        assert {"pmmserver", "node", "service"} <= set(by_name)
+        assert by_name["node"]["default"] == "test-node"
+        assert by_name["service"]["default"] == "test-service"
 
 
 class TestDipperScriptPreviewEndpoint:
@@ -251,6 +334,30 @@ class TestDipperExecuteEndpoint:
         meta = mock_task_api_dep.post.call_args.kwargs["json"]["meta"]
         assert meta["target"] == "node1"
         assert "dipper/1/" in meta["_snippet_filename"]
+        assert meta["interpreter"].startswith("sudo ")
+
+    def test_execute_preserves_zero_arg(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Execute keeps integer 0 values instead of dropping them as falsy."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": FAKE_TASK_ID})
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json={
+                "service_id": 1,
+                "collector_type": "environment",
+                "executor_host": "node1",
+                "args": {"n": 0},
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        meta = mock_task_api_dep.post.call_args.kwargs["json"]["meta"]
+        assert "-n 0" in meta["args"]
 
     def test_execute_returns_422_when_required_fields_missing(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep
