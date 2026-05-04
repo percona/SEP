@@ -603,7 +603,7 @@ def _collect_reference_errors(
     declared_field_names: set[str],
     errors: list[str],
     *,
-    allow_implicit_self: bool = False,
+    implicit_self_name: str | None = None,
 ) -> None:
     """Append messages to ``errors`` for any unknown or hyphenated rule names.
 
@@ -617,10 +617,13 @@ def _collect_reference_errors(
     :type declared_field_names: set[str]
     :param errors: A mutable list to which failure messages are appended.
     :type errors: list[str]
-    :param allow_implicit_self: When ``True``, suppress the descriptive
-        suffix on unknown-field errors (used for ``BaseField`` gates whose
-        implicit-self target is the field carrying the rule).
-    :type allow_implicit_self: bool
+    :param implicit_self_name: When set, suppress the descriptive suffix on
+        the error for that one name (used for ``BaseField`` gates whose
+        implicit-self target is always present in ``names``). Predicate-
+        referenced fields with the same value as the implicit self also
+        keep the suffix-less form, since the underlying mistake is the
+        same: the field that should exist is missing.
+    :type implicit_self_name: str | None
     """
     for name in names:
         if "-" in name:
@@ -633,7 +636,7 @@ def _collect_reference_errors(
         if name not in declared_field_names:
             suffix = (
                 ""
-                if allow_implicit_self
+                if name == implicit_self_name
                 else " (the rule names a field that does not exist in any form section)"
             )
             errors.append(f"{scope_path} references unknown field {name!r}{suffix}.")
@@ -653,7 +656,7 @@ def _collect_basefield_gate_errors(
                 references,
                 declared_field_names,
                 errors,
-                allow_implicit_self=True,
+                implicit_self_name=field.name,
             )
 
 

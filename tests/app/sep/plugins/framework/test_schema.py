@@ -806,6 +806,43 @@ class TestSchemaTier2ReferenceResolution:
                 list_view=_minimal_list_view(),
             )
 
+    def test_basefield_predicate_typo_keeps_descriptive_suffix(self) -> None:
+        """Predicate typo in a basefield gate should keep the descriptive suffix.
+
+        Regression: previously, ``allow_implicit_self=True`` suppressed the
+        ``"(the rule names a field that does not exist in any form
+        section)"`` suffix for *every* unknown name in the set, not just the
+        implicit-self target. A typo'd predicate field would lose the
+        suffix, making the error message indistinguishable from a
+        deliberate self-reference.
+        """
+        with pytest.raises(
+            ValidationError,
+            match=(
+                r"unknown field 'NOT_THERE' \(the rule names a field "
+                r"that does not exist"
+            ),
+        ):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            StringField(
+                                name="x",
+                                label="X",
+                                requires=[
+                                    FieldGate(when=F("NOT_THERE") == "v"),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
     def test_unknown_field_in_section_cardinality_rejected(self) -> None:
         """Unknown field in section cardinality rejected."""
         with pytest.raises(ValidationError, match="unknown field 'gone'"):
