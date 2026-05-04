@@ -43,6 +43,23 @@ export interface PluginDetailPageProps {
   hideDetailChrome?: boolean;
 }
 
+/** Screen title when the back/status row is hidden (e.g. inventory browse-only). */
+function detailScreenHeading(
+  entityName: string | undefined,
+  entityDisplayName: string | undefined,
+): string | null {
+  if (!entityName) {
+    return null;
+  }
+  const known: Record<string, string> = {
+    nodes: 'Node detail',
+    services: 'Service detail',
+    schemas: 'Schema detail',
+    tables: 'Table detail',
+  };
+  return known[entityName] ?? `${entityDisplayName ?? entityName} detail`;
+}
+
 /** List URL for the current entity tab (path segment before ``:id``), e.g. ``/inventory/services``. */
 export function pathToEntityList(pathname: string, entityName: string): string {
   const parts = pathname.split('/').filter(Boolean);
@@ -129,6 +146,11 @@ export function PluginDetailPage({
   const { data: task, isLoading } = multi ? entityQuery : taskQuery;
   const listView = multi ? entitySchema!.listView : schema.listView!;
   const title = multi ? entitySchema!.displayName : schema.displayName;
+  const headingWhenChromeHidden = useMemo(
+    () =>
+      hideDetailChrome && multi ? detailScreenHeading(entityName, entitySchema?.displayName) : null,
+    [hideDetailChrome, multi, entityName, entitySchema?.displayName],
+  );
 
   const deleteEntity = useDeletePluginEntity(
     pluginName,
@@ -156,7 +178,13 @@ export function PluginDetailPage({
   if (isLoading) {
     return (
       <Box>
-        <Skeleton variant="text" width={300} height={40} />
+        {headingWhenChromeHidden ? (
+          <Typography component="h1" variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
+            {headingWhenChromeHidden}
+          </Typography>
+        ) : (
+          <Skeleton variant="text" width={300} height={40} />
+        )}
         <Skeleton variant="rectangular" height={200} sx={{ mt: 2 }} />
       </Box>
     );
@@ -165,6 +193,11 @@ export function PluginDetailPage({
   if (!task) {
     return (
       <Box>
+        {headingWhenChromeHidden ? (
+          <Typography component="h1" variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
+            {headingWhenChromeHidden}
+          </Typography>
+        ) : null}
         <Typography variant="h5">Not found</Typography>
       </Box>
     );
@@ -172,6 +205,11 @@ export function PluginDetailPage({
 
   return (
     <Box>
+      {headingWhenChromeHidden ? (
+        <Typography component="h1" variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
+          {headingWhenChromeHidden}
+        </Typography>
+      ) : null}
       {!hideDetailChrome && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, flexWrap: 'wrap' }}>
           <IconButton

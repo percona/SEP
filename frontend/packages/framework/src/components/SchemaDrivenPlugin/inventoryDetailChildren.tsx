@@ -41,19 +41,6 @@ function NestedListSection({
 }) {
   const navigate = useNavigate();
 
-  if (rows.length === 0) {
-    return (
-      <Box sx={{ mt: 3 }}>
-        <Typography variant="h6" sx={{ mb: 1 }}>
-          {title}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          No items.
-        </Typography>
-      </Box>
-    );
-  }
-
   return (
     <Box sx={{ mt: 3 }}>
       <Typography variant="h6" sx={{ mb: 2 }}>
@@ -62,7 +49,7 @@ function NestedListSection({
       <SchemaListView
         listView={listView}
         data={rows}
-        onRowClick={(row) => navigate(rowHref(row))}
+        onRowClick={rows.length > 0 ? (row) => navigate(rowHref(row as Row)) : undefined}
       />
     </Box>
   );
@@ -114,21 +101,6 @@ export function renderInventoryDetailChildren({
           listView={lv}
           rows={record.services}
           rowHref={(row) => `${prefix}/services/${row.id}`}
-        />,
-      );
-    }
-  }
-
-  if (entityName === 'services' && record.node && typeof record.node === 'object' && prefix) {
-    const node = record.node as Row;
-    const id = node.id;
-    if (typeof id === 'number' || typeof id === 'string') {
-      blocks.push(
-        <ParentLink
-          key="node"
-          label="Node"
-          to={`${prefix}/nodes/${id}`}
-          name={typeof node.name === 'string' ? (node.name as string) : `Node #${id}`}
         />,
       );
     }
