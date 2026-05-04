@@ -157,7 +157,7 @@ async def get_dipper_execution_args(
 ) -> BaseSnippetArgs:
     """Validate execution parameters for the selected payload script.
 
-    For PMM collector type, merges form values with SEP.PMM settings defaults.
+    For PMM collector type, merges form values with settings.PMM defaults.
 
     :param request: The incoming HTTP request.
     :type request: Request
@@ -183,7 +183,7 @@ async def get_dipper_execution_args(
         if not pmm_server:
             raise HTTPUnprocessableEntityException(
                 detail="PMM server URL is required."
-                " Provide it in the form or configure SEP__PMM__ENDPOINT.",
+                " Provide it in the form or configure PMM__ENDPOINT.",
             )
         form_data["pmmserver"] = pmm_server
         form_data["apikey"] = form_data.get("apikey") or (
