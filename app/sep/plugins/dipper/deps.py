@@ -42,15 +42,22 @@ from app.sep.deps import (
     get_base_url,
     InventoryAPI,
 )
+from app.sep.inventory import CreatedService
 from app.sep.middleware import messages
 from app.sep.plugins.dipper.constants import (
     CollectorTypeEnum,
     DIPPER_PMM_SCRIPT_BY_SERVICE_TYPE,
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
-from app.sep.plugins.dipper.models import DipperScript
+from app.sep.plugins.dipper.models import DipperExecuteRequest, DipperScript
+from app.sep.plugins.snippets.models import ScriptPreviewResponse
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
-from app.sep.snippets.models.snippet import BaseSnippetArgs, SnippetExecutionMeta
+from app.sep.snippets.models.snippet import (
+    BaseSnippetArgs,
+    EXECUTOR_HOSTS_INPUT_NAME,
+    SnippetExecutionMeta,
+)
+from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +96,36 @@ def has_pmm_script(service_type: ServiceTypeEnum) -> bool:
     :rtype: bool
     """
     return service_type in DIPPER_PMM_SCRIPT_BY_SERVICE_TYPE
+
+
+async def get_dipper_script_preview(
+    service: CreatedService,
+    collector_type: CollectorTypeEnum,
+) -> ScriptPreviewResponse:
+    """Return a script-preview response for the given service and collector type.
+
+    :param service: The inventory service whose script should be previewed.
+    :type service: CreatedService
+    :param collector_type: Which script variant to preview (environment or pmm).
+    :type collector_type: CollectorTypeEnum
+    :return: The preview content alongside language and truncation metadata.
+    :rtype: ScriptPreviewResponse
+    :raises HTTPNotFoundException: When no script exists for the service/collector combination.
+    :raises HTTPUnprocessableEntityException: When the script contains non-UTF-8 bytes.
+    """
+    filename = get_dipper_script_filename(service.type, collector_type)
+    script = await DipperScript.from_path(filename)
+    try:
+        preview = await script.get_preview()
+    except UnicodeDecodeError as exc:
+        raise HTTPUnprocessableEntityException(
+            detail=f"Dipper script {script.filename!r} contains non-UTF-8 bytes; preview unavailable."
+        ) from exc
+    return ScriptPreviewResponse(
+        content=preview.full_content,
+        language=mime_type_to_highlighter_language(guess_mime_type(script.path)),
+        is_truncated=preview.is_truncated,
+    )
 
 
 async def get_dipper_script(
@@ -305,6 +342,84 @@ async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
 
 
 SupportedDipperServices = Annotated[list[dict], Depends(list_supported_services)]
+
+
+async def build_dipper_execution_meta(
+    service: CreatedService,
+    body: DipperExecuteRequest,
+    request: Request,
+) -> tuple[SnippetExecutionMeta, str]:
+    """Build execution metadata for a Dipper JSON API execute request.
+
+    Resolves the collector script, merges PMM defaults, validates args against
+    the script's dynamic execution model, and assembles the ``SnippetExecutionMeta``
+    payload. Returns the metadata and the Celery task name used for dispatch.
+
+    :param service: The resolved inventory service.
+    :type service: CreatedService
+    :param body: The validated JSON request body.
+    :type body: DipperExecuteRequest
+    :param request: The HTTP request (used to derive the artifact download URL).
+    :type request: Request
+    :return: The execution metadata and the execution task name.
+    :rtype: tuple[SnippetExecutionMeta, str]
+    :raises HTTPUnprocessableEntityException: When no script exists for the
+        service/collector combination, when PMM args are missing, or when
+        args fail the script's execution model schema.
+    """
+    try:
+        filename = get_dipper_script_filename(service.type, body.collector_type)
+    except HTTPNotFoundException as exc:
+        raise HTTPUnprocessableEntityException(
+            detail=(
+                f"No {body.collector_type.value!r} collector script is available"
+                f" for {service.type.value!r} services."
+            )
+        ) from exc
+    script = await DipperScript.from_path(filename, update_meta=True)
+
+    raw_args: dict = {**body.args, EXECUTOR_HOSTS_INPUT_NAME: body.executor_host}
+
+    if body.collector_type == CollectorTypeEnum.PMM:
+        pmm = settings.PMM
+        pmm_server = raw_args.get("pmmserver") or pmm.endpoint
+        if not pmm_server:
+            raise HTTPUnprocessableEntityException(
+                detail=(
+                    "PMM server URL is required. Provide it in args.pmmserver"
+                    " or configure SEP__PMM__ENDPOINT."
+                )
+            )
+        raw_args["pmmserver"] = pmm_server
+        if not raw_args.get("apikey") and pmm.api_key:
+            raw_args["apikey"] = pmm.api_key.get_secret_value()
+
+    execution_model = script.get_execution_model()
+    try:
+        execution_args = execution_model.model_validate(
+            remove_falsy_values_from_dict(raw_args)
+        )
+    except ValidationError as exc:
+        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
+
+    script_source = get_dipper_script_source(request, script)
+    interpreter = script.execution_interpreter
+    if script.sudo == SnippetSudoOption.ALWAYS or getattr(
+        execution_args, execution_args.sudo_field, body.sudo
+    ):
+        interpreter = f"sudo {interpreter}"
+
+    snippet_filename = f"dipper/{service.id}/{script.filename}"
+    meta = SnippetExecutionMeta(
+        target=body.executor_host,
+        interpreter=interpreter,
+        snippet_source=script_source,
+        snippet_filename=snippet_filename,
+        md5_checksum=script.md5_digest,
+        args=execution_args.to_args_string(),
+        requirements=script.requirements,
+    )
+    return meta, script.execution_task_name
 
 
 def get_dipper_execution_meta(

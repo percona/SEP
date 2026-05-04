@@ -16,9 +16,13 @@
 """Models for the Dipper plugin."""
 
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
+from pydantic import BaseModel
+
+from app.core.utils.fields import NonEmptyStr
+from app.sep.plugins.dipper.constants import CollectorTypeEnum, DIPPER_PAYLOADS_DIR
+from app.sep.plugins.snippets.models import ScriptPreviewResponse  # noqa: F401
 from app.sep.snippets.models.snippet import BaseSnippet
 
 
@@ -26,3 +30,48 @@ class DipperScript(BaseSnippet):
     """Represent a Dipper payload script stored on the SEP server filesystem."""
 
     BASE_DIR: ClassVar[Path] = DIPPER_PAYLOADS_DIR
+
+
+class DipperExecuteRequest(BaseModel):
+    """Define the JSON body for ``POST /api/plugins/dipper/``.
+
+    :param service_id: Inventory ID of the database service to collect data from.
+    :type service_id: int
+    :param collector_type: Which collector script to run (environment or pmm).
+    :type collector_type: CollectorTypeEnum
+    :param executor_host: Nomad client hostname that will run the script.
+    :type executor_host: NonEmptyStr
+    :param sudo: Whether to invoke the script with ``sudo``.
+    :type sudo: bool
+    :param args: Per-parameter arguments keyed by script parameter name. Validated
+        server-side against the script's dynamic execution model.
+    :type args: dict[str, Any]
+    """
+
+    service_id: int
+    collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT
+    executor_host: NonEmptyStr
+    sudo: bool = False
+    args: dict[str, Any] = {}
+
+
+class DipperExecutionResponse(BaseModel):
+    """Represent the response from ``POST /api/plugins/dipper/``.
+
+    :param task_id: ID of the task-history row created by the tasks API.
+    :type task_id: int | None
+    :param task_name: The execution task name used to dispatch the script.
+    :type task_name: str
+    :param snippet_filename: Composite path used to correlate history rows.
+    :type snippet_filename: str
+    :param service_id: Inventory ID of the database service.
+    :type service_id: int
+    :param collector_type: Collector type that was executed.
+    :type collector_type: CollectorTypeEnum
+    """
+
+    task_id: int | None = None
+    task_name: str
+    snippet_filename: str
+    service_id: int
+    collector_type: CollectorTypeEnum
