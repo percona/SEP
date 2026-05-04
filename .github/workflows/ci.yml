@@ -69,13 +69,18 @@ jobs:
               - 'frontend/**'
               - 'package.json'
             docker:
-              - '**'
-              - '!**/*.md'
-              - '!changelog.d/**'
-              - '!.github/**'
-              - '!.vscode/**'
+              - 'Containerfile'
+              - 'Containerfile.base'
+              - 'app/**'
+              - 'frontend/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+              - 'Makefile'
+              - 'scripts/**'
+              - 'sep_installer.sh'
+              - 'sep_installer.sha256'
 
-  precommit:
+  precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
     needs:
       - label-gate
