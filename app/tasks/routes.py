@@ -39,11 +39,11 @@ from app.core.models import PaginatedResponse
 from app.core.utils import utc_now
 from app.core.utils.fields import NonEmptyStr
 from app.tasks.celery import (
-    _maybe_dispatch_chain,
     celery,
     dispatch_queue_item,
     execute_task_queue,
     get_executor_for_task,
+    maybe_dispatch_chain,
 )
 from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.constants import (
@@ -617,7 +617,7 @@ async def sync_task_history(
         query_options=[undefer(TaskHistory.execution_request)],
         id=saved.id,
     )
-    await _maybe_dispatch_chain(synced, was_running=True)
+    await maybe_dispatch_chain(synced, was_running=True)
     _set_has_logs(
         synced,
         value=await TaskHistoryLogManager.exists_for_task(session, synced.id)

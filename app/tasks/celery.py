@@ -588,11 +588,11 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
             ],
         )
         await session.refresh(saved, attribute_names=["execution_request"])
-    await _maybe_dispatch_chain(saved, was_running=was_running)
+    await maybe_dispatch_chain(saved, was_running=was_running)
     return saved
 
 
-async def _maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None:
+async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None:
     """Dispatch the next chained task when ``saved`` is in a chain-eligible state.
 
     Eligibility requires ``was_running`` (the parent transitioned out of
