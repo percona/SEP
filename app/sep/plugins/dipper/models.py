@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
 from app.sep.plugins.dipper.constants import CollectorTypeEnum, DIPPER_PAYLOADS_DIR
-from app.sep.plugins.snippets.models import ScriptPreviewResponse  # noqa: F401
+
 from app.sep.snippets.models.snippet import BaseSnippet
 
 
@@ -32,7 +32,7 @@ class DipperScript(BaseSnippet):
     BASE_DIR: ClassVar[Path] = DIPPER_PAYLOADS_DIR
 
 
-class DipperExecuteRequest(BaseModel):
+class DipperExecuteWrite(BaseModel):
     """Define the JSON body for ``POST /api/plugins/dipper/``.
 
     :param service_id: Inventory ID of the database service to collect data from.

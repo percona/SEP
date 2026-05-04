@@ -26,6 +26,7 @@ level and redeclared per route for safety. Route layout:
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi import status as http_status
@@ -39,12 +40,12 @@ from app.sep.plugins.dipper.deps import (
     get_dipper_script_preview,
 )
 from app.sep.plugins.dipper.models import (
-    DipperExecuteRequest,
+    DipperExecuteWrite,
     DipperExecutionResponse,
-    ScriptPreviewResponse,
 )
 from app.sep.plugins.dipper.schema import dipper_schema
 from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.snippets.models import ScriptPreviewResponse
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,11 @@ schema_endpoint(router=router, plugin_schema=dipper_schema)
 
 
 @router.get("/", dependencies=[IsApiAuthenticated])
-async def dipper_api_list() -> list:
+async def dipper_api_list() -> list[Any]:
     """Return an empty list; dipper has no saved task configurations.
 
     :return: Empty list.
-    :rtype: list
+    :rtype: list[Any]
     """
     return []
 
@@ -104,7 +105,7 @@ async def dipper_api_script_preview(
 )
 async def dipper_api_execute(
     request: Request,
-    body: DipperExecuteRequest,
+    body: DipperExecuteWrite,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
 ) -> DipperExecutionResponse:
@@ -116,7 +117,7 @@ async def dipper_api_execute(
     :param request: The HTTP request (used to derive the artifact download URL).
     :type request: Request
     :param body: Validated JSON request body.
-    :type body: DipperExecuteRequest
+    :type body: DipperExecuteWrite
     :param inventory_api: Async client for the inventory sub-app.
     :type inventory_api: RemoteAPI
     :param tasks_api: Async client for the tasks sub-app.

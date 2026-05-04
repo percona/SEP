@@ -49,7 +49,7 @@ from app.sep.plugins.dipper.constants import (
     DIPPER_PMM_SCRIPT_BY_SERVICE_TYPE,
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
-from app.sep.plugins.dipper.models import DipperExecuteRequest, DipperScript
+from app.sep.plugins.dipper.models import DipperExecuteWrite, DipperScript
 from app.sep.plugins.snippets.models import ScriptPreviewResponse
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import (
@@ -344,9 +344,55 @@ async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
 SupportedDipperServices = Annotated[list[dict], Depends(list_supported_services)]
 
 
+def _assemble_snippet_execution_meta(
+    service_id: int,
+    script: DipperScript,
+    execution_args: BaseSnippetArgs,
+    script_source: str,
+    target: str,
+    sudo_default: bool = False,
+) -> SnippetExecutionMeta:
+    """Assemble a :class:`SnippetExecutionMeta` from resolved script and args.
+
+    Shared by both the JSON API path (``build_dipper_execution_meta``) and the
+    legacy Jinja2 form path (``get_dipper_execution_meta``).
+
+    :param service_id: Inventory ID of the target service, used in the snippet path.
+    :type service_id: int
+    :param script: The Dipper payload script with metadata already loaded.
+    :type script: DipperScript
+    :param execution_args: Validated execution arguments for the script.
+    :type execution_args: BaseSnippetArgs
+    :param script_source: Signed download URL for the script artifact.
+    :type script_source: str
+    :param target: Nomad client hostname to run the script on.
+    :type target: str
+    :param sudo_default: Fallback sudo flag when the execution model does not
+        declare a dedicated sudo field.  Defaults to ``False``.
+    :type sudo_default: bool
+    :return: The assembled execution metadata.
+    :rtype: SnippetExecutionMeta
+    """
+    snippet_filename = f"dipper/{service_id}/{script.filename}"
+    interpreter = script.execution_interpreter
+    if script.sudo == SnippetSudoOption.ALWAYS or getattr(
+        execution_args, execution_args.sudo_field, sudo_default
+    ):
+        interpreter = f"sudo {interpreter}"
+    return SnippetExecutionMeta(
+        target=target,
+        interpreter=interpreter,
+        snippet_source=script_source,
+        snippet_filename=snippet_filename,
+        md5_checksum=script.md5_digest,
+        args=execution_args.to_args_string(),
+        requirements=script.requirements,
+    )
+
+
 async def build_dipper_execution_meta(
     service: CreatedService,
-    body: DipperExecuteRequest,
+    body: DipperExecuteWrite,
     request: Request,
 ) -> tuple[SnippetExecutionMeta, str]:
     """Build execution metadata for a Dipper JSON API execute request.
@@ -358,7 +404,7 @@ async def build_dipper_execution_meta(
     :param service: The resolved inventory service.
     :type service: CreatedService
     :param body: The validated JSON request body.
-    :type body: DipperExecuteRequest
+    :type body: DipperExecuteWrite
     :param request: The HTTP request (used to derive the artifact download URL).
     :type request: Request
     :return: The execution metadata and the execution task name.
@@ -403,21 +449,13 @@ async def build_dipper_execution_meta(
         raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
 
     script_source = get_dipper_script_source(request, script)
-    interpreter = script.execution_interpreter
-    if script.sudo == SnippetSudoOption.ALWAYS or getattr(
-        execution_args, execution_args.sudo_field, body.sudo
-    ):
-        interpreter = f"sudo {interpreter}"
-
-    snippet_filename = f"dipper/{service.id}/{script.filename}"
-    meta = SnippetExecutionMeta(
+    meta = _assemble_snippet_execution_meta(
+        service_id=service.id,
+        script=script,
+        execution_args=execution_args,
+        script_source=script_source,
         target=body.executor_host,
-        interpreter=interpreter,
-        snippet_source=script_source,
-        snippet_filename=snippet_filename,
-        md5_checksum=script.md5_digest,
-        args=execution_args.to_args_string(),
-        requirements=script.requirements,
+        sudo_default=body.sudo,
     )
     return meta, script.execution_task_name
 
@@ -442,20 +480,13 @@ def get_dipper_execution_meta(
     :rtype: SnippetExecutionMeta
     :raises HTTPBadRequestException: If no interpreter is configured for the script.
     """
-    snippet_filename = f"dipper/{service.id}/{script.filename}"
-    interpreter = script.execution_interpreter
-    if script.sudo == SnippetSudoOption.ALWAYS or getattr(
-        execution_args, execution_args.sudo_field, False
-    ):
-        interpreter = f"sudo {interpreter}"
-    if interpreter is None:
-        raise HTTPBadRequestException(detail="No interpreter configured for script")
-    return SnippetExecutionMeta(
+    meta = _assemble_snippet_execution_meta(
+        service_id=service.id,
+        script=script,
+        execution_args=execution_args,
+        script_source=script_source,
         target=execution_args.executor_host,
-        interpreter=interpreter,
-        snippet_source=script_source,
-        snippet_filename=snippet_filename,
-        md5_checksum=script.md5_digest,
-        args=execution_args.to_args_string(),
-        requirements=script.requirements,
     )
+    if meta.interpreter is None:
+        raise HTTPBadRequestException(detail="No interpreter configured for script")
+    return meta
