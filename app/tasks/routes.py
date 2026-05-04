@@ -609,22 +609,30 @@ async def sync_task_history(
         return task_history
 
     async_session = get_async_session_maker()
-    async with async_session() as writer_session:
-        updated = await executor.sync_task_history(
-            task_history, writer_session=writer_session
+    try:
+        async with async_session() as writer_session:
+            updated = await executor.sync_task_history(
+                task_history, writer_session=writer_session
+            )
+        updated.sync_in_progress_started_at = None
+        saved = await TaskHistoryManager.save(
+            session,
+            updated,
+            flag_modified_fields=[
+                "execution_request",
+                "status",
+                "started_at",
+                "finished_at",
+                "sync_in_progress_started_at",
+            ],
         )
-    updated.sync_in_progress_started_at = None
-    saved = await TaskHistoryManager.save(
-        session,
-        updated,
-        flag_modified_fields=[
-            "execution_request",
-            "status",
-            "started_at",
-            "finished_at",
-            "sync_in_progress_started_at",
-        ],
-    )
+    except Exception:
+        await TaskHistoryManager.update_where(
+            session,
+            {"sync_in_progress_started_at": None},
+            id=task_history.id,
+        )
+        raise
     synced = await TaskHistoryManager.get_or_404(
         session,
         select_related=(TaskHistory.task,),

@@ -1195,6 +1195,29 @@ class TestSyncTaskHistoryChainDispatch:
         mock_executor.sync_task_history.assert_not_called()
         mock_chain.assert_not_awaited()
 
+    async def test_clears_lock_when_executor_raises(
+        self, test_client, session, mock_executor, created_task_with_history
+    ):
+        """Assert the sync lock is cleared when ``executor.sync_task_history`` raises.
+
+        Without the cleanup, a transient executor error pins the row's
+        ``sync_in_progress_started_at`` until ``SYNC_LOCK_TTL`` elapses,
+        blocking both the celery ``sync_running_tasks`` periodic and any
+        subsequent UI sync — and silently delaying chain dispatch.
+        """
+        await self._arm_parent_chain(
+            session, created_task_with_history, chain_target_name=None
+        )
+        mock_executor.sync_task_history = AsyncMock(side_effect=RuntimeError("boom"))
+
+        with pytest.raises(RuntimeError, match="boom"):
+            test_client.post(f"/history/{created_task_with_history.id}/sync/")
+
+        refreshed = await TaskHistoryManager.get_or_404(
+            session, id=created_task_with_history.id
+        )
+        assert refreshed.sync_in_progress_started_at is None
+
 
 @pytest.mark.asyncio
 async def test_stop_task_running_populates_has_logs(
