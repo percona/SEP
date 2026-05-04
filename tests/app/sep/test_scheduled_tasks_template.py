@@ -24,8 +24,6 @@ failure** checkbox hydrates correctly.
 import re
 from types import SimpleNamespace
 
-from jinja2 import Environment, FileSystemLoader
-
 from app.sep.config import sep_settings
 
 _TEMPLATE = "tasks/partials/scheduled-tasks.html.j2"
@@ -41,18 +39,6 @@ _EDIT_CHAIN_BUILDER_RE = re.compile(
 def _stub_url_for(*_args: object, **_kwargs: object) -> str:
     """Return a constant placeholder URL so the rendered HTML stays parseable in tests."""
     return "/"
-
-
-def _build_env() -> Environment:
-    """Return a Jinja environment that can render the scheduled-tasks partial standalone."""
-    env = Environment(
-        loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
-        autoescape=True,
-        extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
-    )
-    env.globals["url_for"] = _stub_url_for
-    env.globals["csrf_token"] = "test-csrf"
-    return env
 
 
 def _make_periodic_task(*, chain_on_failure: bool) -> SimpleNamespace:
@@ -76,8 +62,16 @@ def _make_periodic_task(*, chain_on_failure: bool) -> SimpleNamespace:
 
 
 def _render(periodic_task: SimpleNamespace) -> str:
-    """Render the scheduled-tasks partial with one ``periodic_task`` in edit mode."""
-    template = _build_env().get_template(_TEMPLATE)
+    """Render the scheduled-tasks partial with one ``periodic_task`` in edit mode.
+
+    Uses :data:`sep_settings.JINJA_ENVIRONMENT` via :meth:`~jinja2.Environment.overlay`
+    so all production filters and globals are available; only ``url_for`` and
+    ``csrf_token`` are stubbed out for the render.
+    """
+    env = sep_settings.JINJA_ENVIRONMENT.overlay()
+    env.globals["url_for"] = _stub_url_for
+    env.globals["csrf_token"] = "test-csrf"
+    template = env.get_template(_TEMPLATE)
     return template.render(
         periodic_tasks=[periodic_task],
         chainable_tasks=[SimpleNamespace(name="other-task")],
