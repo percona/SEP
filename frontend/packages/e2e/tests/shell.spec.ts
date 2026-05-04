@@ -95,7 +95,9 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
  * - React dev-mode advisory messages use console.error (start with "Warning:")
  * - MUI Emotion emits an ":nth-child" warning in dev mode (SSR detection false positive)
  * - "Failed to load resource: 404" is the browser's log of our intentional 404
- *   response for plugin schema endpoints (triggers the mockSchema fallback path)
+ *   response for plugin schema endpoints (triggers the mockSchema fallback path).
+ *   The browser may not include the full URL path in the console message, so we
+ *   suppress all 404 resource-load failures in the smoke test context.
  */
 function isBenignConsoleError(msg: string): boolean {
   if (msg.startsWith('Warning:')) {
@@ -104,7 +106,7 @@ function isBenignConsoleError(msg: string): boolean {
   if (msg.includes(':nth-child')) {
     return true;
   }
-  if (msg.includes('Failed to load resource')) {
+  if (msg.includes('Failed to load resource') && msg.includes('404')) {
     return true;
   }
   return false;
