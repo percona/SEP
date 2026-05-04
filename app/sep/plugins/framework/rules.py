@@ -727,7 +727,7 @@ class And(Predicate):
 
     def referenced_fields(self) -> set[str]:
         """Return the field names this predicate reads from."""
-        refs: set[str] = set()
+        refs = set()
         for p in self.predicates:
             refs |= p.referenced_fields()
         return refs
@@ -757,7 +757,7 @@ class Or(Predicate):
 
     def referenced_fields(self) -> set[str]:
         """Return the field names this predicate reads from."""
-        refs: set[str] = set()
+        refs = set()
         for p in self.predicates:
             refs |= p.referenced_fields()
         return refs
@@ -1208,7 +1208,7 @@ def _extract_rule_plan(schema: Any) -> RulePlan:
         ``schema``.
     :rtype: RulePlan
     """
-    prepared: list[_PreparedRule] = []
+    prepared = []
 
     for section_index, section in enumerate(schema.forms):
         for field in section.fields:
@@ -1438,7 +1438,7 @@ def _validate_plan_against_model_fields(plan: RulePlan, cls: type) -> None:
     """
     model_fields = set(cls.model_fields)
     for rule in plan.rules:
-        referenced: set[str] = set(rule.fields)
+        referenced = set(rule.fields)
         if rule.predicate is not None:
             referenced |= rule.predicate.referenced_fields()
         missing = referenced - model_fields
