@@ -16,11 +16,15 @@
 """Define dependencies for the Support Snippets plugin."""
 
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
 from pydantic import BaseModel, Field, ValidationError
+from sqlmodel import col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
@@ -356,13 +360,75 @@ def get_executable_snippet_for_api(snippet: SnippetDep) -> Snippet:
 ExecutableSnippetForApi = Annotated[Snippet, Depends(get_executable_snippet_for_api)]
 
 
-class SnippetBatchApproveForm(BaseModel):
-    """Validate the body of the batch snippet-approval endpoint.
+class _SnippetBatchApproveBase(BaseModel):
+    """Shared validation for both Form-bound and JSON-bound batch approve bodies.
 
     :param filenames: Unique, non-empty list of snippet filenames to approve in a
-        single atomic operation. Duplicates in the submitted form are silently
-        deduplicated by ``UniqueList``.
+        single atomic operation. Duplicates are silently deduplicated by
+        ``UniqueList``.
     :type filenames: UniqueList[NonEmptyStr]
     """
 
     filenames: UniqueList[NonEmptyStr] = Field(min_length=1)
+
+
+class SnippetBatchApproveForm(_SnippetBatchApproveBase):
+    """Form-bound twin used by the legacy Jinja2 batch-approve route."""
+
+
+@dataclass(slots=True)
+class SnippetBatchExistenceResult:
+    """Structured outcome of the batch-approve precheck.
+
+    :param snippets: Rows fetched from the DB for the requested filenames.
+    :type snippets: list[Snippet]
+    :param missing_in_db: Filenames absent from the database, sorted.
+    :type missing_in_db: list[str]
+    :param missing_on_disk: Filenames present in the DB but whose underlying
+        file is absent from the snippets directory, sorted.
+    :type missing_on_disk: list[str]
+    """
+
+    snippets: list[Snippet] = field(default_factory=list)
+    missing_in_db: list[str] = field(default_factory=list)
+    missing_on_disk: list[str] = field(default_factory=list)
+
+    @property
+    def has_errors(self) -> bool:
+        """True when either error category is populated."""
+        return bool(self.missing_in_db or self.missing_on_disk)
+
+
+async def check_snippet_batch_existence(
+    session: AsyncSession, filenames: Sequence[str]
+) -> SnippetBatchExistenceResult:
+    """Verify that every filename has a DB row and an on-disk file.
+
+    Shared between the legacy Jinja2 batch route and the JSON API batch
+    endpoint so both surfaces report the same hard-error categories. The
+    helper deliberately does **not** check approval state — the JSON path
+    treats already-approved as a soft-skip via the atomic
+    ``update_where(... approved_at IS NULL)`` filter.
+
+    :param session: The active database session.
+    :type session: AsyncSession
+    :param filenames: The filenames the caller wants to act on.
+    :type filenames: Sequence[str]
+    :return: A populated :class:`SnippetBatchExistenceResult`.
+    :rtype: SnippetBatchExistenceResult
+    """
+    if not filenames:
+        return SnippetBatchExistenceResult()
+    snippets = await SnippetManager.list(
+        session, col(Snippet.filename).in_(list(filenames))
+    )
+    found = {snippet.filename for snippet in snippets}
+    missing_in_db = sorted(set(filenames) - found)
+    missing_on_disk = sorted(
+        snippet.filename for snippet in snippets if not Path(snippet).is_file()
+    )
+    return SnippetBatchExistenceResult(
+        snippets=list(snippets),
+        missing_in_db=missing_in_db,
+        missing_on_disk=missing_on_disk,
+    )

@@ -412,3 +412,48 @@ class TestSnippetsRouterDeprecation:
     def test_router_uses_deprecated_route_class(self):
         """Confirm the router is constructed with ``DeprecatedJinja2Route``."""
         assert snippets_jinja_router.route_class is DeprecatedJinja2Route
+
+
+class TestSnippetsApprovalRouteDeprecationHeaders:
+    """The three Jinja2 approval routes emit ``Deprecation: true`` (RFC 8594)."""
+
+    @pytest.mark.asyncio
+    async def test_approve_emits_deprecation_header(
+        self, admin_client: TestClient, create_snippet
+    ):
+        """Assert approve route carries the RFC 8594 Deprecation header."""
+        snippet = await create_snippet("hello.sh", approved=False)
+
+        response = admin_client.post(
+            f"/snippets/{snippet.filename}/approve", follow_redirects=False
+        )
+
+        assert response.headers.get("Deprecation") == "true"
+
+    @pytest.mark.asyncio
+    async def test_remove_approval_emits_deprecation_header(
+        self, admin_client: TestClient, create_snippet
+    ):
+        """Assert remove-approval route carries the RFC 8594 Deprecation header."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = admin_client.post(
+            f"/snippets/{snippet.filename}/remove-approval", follow_redirects=False
+        )
+
+        assert response.headers.get("Deprecation") == "true"
+
+    @pytest.mark.asyncio
+    async def test_approve_batch_emits_deprecation_header(
+        self, admin_client: TestClient, create_snippet
+    ):
+        """Assert approve-batch route carries the RFC 8594 Deprecation header."""
+        await create_snippet("a.sh", approved=False)
+
+        response = admin_client.post(
+            _BATCH_APPROVE_URL,
+            data={"filenames": ["a.sh"]},
+            follow_redirects=False,
+        )
+
+        assert response.headers.get("Deprecation") == "true"

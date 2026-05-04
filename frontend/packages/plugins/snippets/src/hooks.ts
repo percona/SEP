@@ -18,7 +18,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type PluginSchema } from '@sep/api';
 import type { PaginatedTaskHistory } from '@sep/framework';
-import type { SnippetExecutionRequest, SnippetExecutionResponse, SnippetResponse } from './types';
+import type {
+  BatchApprovalErrorResponse,
+  BatchApprovalResponse,
+  SnippetApprovalResponse,
+  SnippetBatchApproveRequest,
+  SnippetExecutionRequest,
+  SnippetExecutionResponse,
+  SnippetResponse,
+} from './types';
 
 const SNIPPETS_BASE = '/plugins/snippets';
 
@@ -93,6 +101,80 @@ export function useSnippetExecution(filename: string | undefined) {
           queryKey: ['snippets', filename, 'history'],
         });
       }
+    },
+  });
+}
+
+/**
+ * Mutation: approve a single snippet (idempotent PUT).
+ *
+ * On success, the snippets list query is invalidated so the list view
+ * reflects the new approval state immediately.
+ */
+export function useApproveSnippet(filename: string) {
+  const queryClient = useQueryClient();
+  return useMutation<SnippetApprovalResponse, Error>({
+    mutationFn: async () => {
+      const { data } = await apiClient.put<SnippetApprovalResponse>(
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/approval`,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
+    },
+  });
+}
+
+/**
+ * Mutation: remove approval from a single snippet (idempotent DELETE).
+ *
+ * On success, the snippets list query is invalidated.
+ */
+export function useRemoveSnippetApproval(filename: string) {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error>({
+    mutationFn: async () => {
+      await apiClient.delete(`${SNIPPETS_BASE}/${encodeURIComponent(filename)}/approval`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
+    },
+  });
+}
+
+/**
+ * Mutation: batch-approve snippets via PATCH /approvals (idempotent).
+ *
+ * Returns a {@link BatchApprovalResponse} on success (200) or throws a
+ * structured error carrying the {@link BatchApprovalErrorResponse} body
+ * on hard failures (400) so the UI can render per-category badges.
+ */
+export function useBatchApproveSnippets() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    BatchApprovalResponse,
+    { response: BatchApprovalErrorResponse },
+    SnippetBatchApproveRequest
+  >({
+    mutationFn: async (body) => {
+      try {
+        const { data } = await apiClient.patch<BatchApprovalResponse>(
+          `${SNIPPETS_BASE}/approvals`,
+          body,
+        );
+        return data;
+      } catch (err: unknown) {
+        const detail = (err as { response?: { data?: { detail?: BatchApprovalErrorResponse } } })
+          ?.response?.data?.detail;
+        if (detail) {
+          throw { response: detail };
+        }
+        throw err;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
     },
   });
 }

@@ -56,3 +56,26 @@ export interface ScriptPreviewResponse {
   language: string;
   is_truncated: boolean;
 }
+
+export interface SnippetApprovalResponse {
+  filename: string;
+  is_approved: boolean;
+  approved_at: string | null;
+  updated_by: string | null;
+  reason: string;
+}
+
+export interface SnippetBatchApproveRequest {
+  filenames: string[];
+}
+
+export interface BatchApprovalResponse {
+  approved: string[];
+  skipped_already_approved: string[];
+  count: number;
+}
+
+export interface BatchApprovalErrorResponse {
+  missing_in_db: string[];
+  missing_on_disk: string[];
+}

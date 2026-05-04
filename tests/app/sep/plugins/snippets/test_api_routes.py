@@ -30,6 +30,7 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
+from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -251,6 +252,337 @@ class TestSnippetsApiExecute:
         assert meta["target"] == "host1"
         assert meta["_snippet_filename"] == snippet.filename
         assert meta["md5_checksum"] == snippet.md5_digest
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiPutApproval:
+    """Tests for ``PUT /api/plugins/snippets/{filename}/approval``."""
+
+    async def test_approves_unapproved_snippet(
+        self, api_admin_client, create_snippet, admin_user, session: AsyncSession
+    ):
+        """An unapproved snippet flips to approved with admin attribution."""
+        snippet = await create_snippet("hello.sh", approved=False)
+
+        response = api_admin_client.put(f"{API_BASE}/{snippet.filename}/approval")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["filename"] == snippet.filename
+        assert body["is_approved"] is True
+        assert body["approved_at"] is not None
+        assert body["updated_by"] == str(admin_user.id)
+        assert f"Approved by {admin_user.username}" in body["reason"]
+
+        await session.refresh(snippet)
+        assert snippet.is_approved is True
+
+    async def test_idempotent_re_approval_does_not_overwrite_approved_at(
+        self, api_admin_client, create_snippet, session: AsyncSession
+    ):
+        """Re-approving an already-approved snippet returns 200 and is a no-op."""
+        snippet = await create_snippet("hello.sh", approved=True)
+        original_approved_at = snippet.approved_at
+        original_updated_by = snippet.updated_by
+        original_reason = snippet.reason
+
+        response = api_admin_client.put(f"{API_BASE}/{snippet.filename}/approval")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["is_approved"] is True
+
+        await session.refresh(snippet)
+        assert snippet.approved_at == original_approved_at
+        assert snippet.updated_by == original_updated_by
+        assert snippet.reason == original_reason
+
+    async def test_non_admin_forbidden(self, api_non_admin_client, create_snippet):
+        """A non-admin caller cannot approve."""
+        snippet = await create_snippet("hello.sh", approved=False)
+
+        response = api_non_admin_client.put(f"{API_BASE}/{snippet.filename}/approval")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    async def test_unauthenticated_unauthorized(
+        self, api_unauthenticated_client, create_snippet
+    ):
+        """No auth → 401, not a 303 redirect."""
+        snippet = await create_snippet("hello.sh", approved=False)
+
+        response = api_unauthenticated_client.put(
+            f"{API_BASE}/{snippet.filename}/approval"
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_missing_snippet_returns_404(self, api_admin_client):
+        """An unknown filename surfaces as 404."""
+        response = api_admin_client.put(f"{API_BASE}/missing.sh/approval")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiDeleteApproval:
+    """Tests for ``DELETE /api/plugins/snippets/{filename}/approval``."""
+
+    async def test_removes_approval(
+        self, api_admin_client, create_snippet, admin_user, session: AsyncSession
+    ):
+        """An approved snippet flips back to unapproved with admin attribution."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = api_admin_client.delete(f"{API_BASE}/{snippet.filename}/approval")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert response.content == b""
+
+        await session.refresh(snippet)
+        assert snippet.is_approved is False
+        assert snippet.updated_by == str(admin_user.id)
+        assert f"Approval removed by {admin_user.username}" in snippet.reason
+
+    async def test_idempotent_when_never_approved(
+        self, api_admin_client, create_snippet, session: AsyncSession
+    ):
+        """Removing an approval that doesn't exist is a no-op 204."""
+        snippet = await create_snippet("hello.sh", approved=False)
+        original_updated_by = snippet.updated_by
+        original_reason = snippet.reason
+
+        response = api_admin_client.delete(f"{API_BASE}/{snippet.filename}/approval")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(snippet)
+        assert snippet.updated_by == original_updated_by
+        assert snippet.reason == original_reason
+
+    async def test_non_admin_forbidden(self, api_non_admin_client, create_snippet):
+        """A non-admin caller cannot remove approval."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = api_non_admin_client.delete(
+            f"{API_BASE}/{snippet.filename}/approval"
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    async def test_missing_snippet_returns_404(self, api_admin_client):
+        """An unknown filename surfaces as 404 (distinct from the 204 idempotent path)."""
+        response = api_admin_client.delete(f"{API_BASE}/missing.sh/approval")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_unauthenticated_unauthorized(
+        self, api_unauthenticated_client, create_snippet
+    ):
+        """No auth → 401."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = api_unauthenticated_client.delete(
+            f"{API_BASE}/{snippet.filename}/approval"
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiPatchApprovals:
+    """Tests for ``PATCH /api/plugins/snippets/approvals``."""
+
+    URL = f"{API_BASE}/approvals"
+
+    async def test_happy_path(self, api_admin_client, create_snippet):
+        """All-unapproved input flips both rows and reports counts."""
+        await create_snippet("a.sh", approved=False)
+        await create_snippet("b.sh", approved=False)
+
+        response = api_admin_client.patch(
+            self.URL, json={"filenames": ["a.sh", "b.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert sorted(body["approved"]) == ["a.sh", "b.sh"]
+        assert body["skipped_already_approved"] == []
+        expected_count = 2
+        assert body["count"] == expected_count
+
+    async def test_soft_skip_already_approved(self, api_admin_client, create_snippet):
+        """Already-approved filenames are reported as skipped, not as errors."""
+        await create_snippet("a.sh", approved=False)
+        await create_snippet("b.sh", approved=True)
+
+        response = api_admin_client.patch(
+            self.URL, json={"filenames": ["a.sh", "b.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["approved"] == ["a.sh"]
+        assert body["skipped_already_approved"] == ["b.sh"]
+        assert body["count"] == 1
+
+    async def test_all_already_approved(self, api_admin_client, create_snippet):
+        """All-approved input is a 200 with empty ``approved`` and full skip list."""
+        await create_snippet("a.sh", approved=True)
+        await create_snippet("b.sh", approved=True)
+
+        response = api_admin_client.patch(
+            self.URL, json={"filenames": ["a.sh", "b.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["approved"] == []
+        assert sorted(body["skipped_already_approved"]) == ["a.sh", "b.sh"]
+        assert body["count"] == 0
+
+    async def test_missing_in_db_aborts_with_400(
+        self, api_admin_client, create_snippet, session: AsyncSession
+    ):
+        """A missing-in-db filename rejects the whole batch and writes nothing."""
+        snippet = await create_snippet("a.sh", approved=False)
+
+        response = api_admin_client.patch(
+            self.URL, json={"filenames": ["a.sh", "ghost.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        body = response.json()["detail"]
+        assert body["missing_in_db"] == ["ghost.sh"]
+        assert body["missing_on_disk"] == []
+
+        await session.refresh(snippet)
+        assert snippet.is_approved is False
+
+    async def test_missing_on_disk_aborts_with_400(
+        self, api_admin_client, create_snippet, session: AsyncSession
+    ):
+        """A missing-on-disk filename rejects the whole batch."""
+        good = await create_snippet("good.sh", approved=False)
+        await create_snippet("bad.sh", approved=False, create_file=False)
+
+        response = api_admin_client.patch(
+            self.URL, json={"filenames": ["good.sh", "bad.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        body = response.json()["detail"]
+        assert body["missing_in_db"] == []
+        assert body["missing_on_disk"] == ["bad.sh"]
+
+        await session.refresh(good)
+        assert good.is_approved is False
+
+    async def test_both_error_categories_reported_together(
+        self, api_admin_client, create_snippet
+    ):
+        """Both error arrays populate when both conditions apply in one request."""
+        await create_snippet("good.sh", approved=False)
+        await create_snippet("bad.sh", approved=False, create_file=False)
+
+        response = api_admin_client.patch(
+            self.URL, json={"filenames": ["good.sh", "bad.sh", "ghost.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        body = response.json()["detail"]
+        assert body["missing_in_db"] == ["ghost.sh"]
+        assert body["missing_on_disk"] == ["bad.sh"]
+
+    async def test_non_admin_forbidden(self, api_non_admin_client, create_snippet):
+        """A non-admin caller cannot batch-approve."""
+        await create_snippet("a.sh", approved=False)
+
+        response = api_non_admin_client.patch(self.URL, json={"filenames": ["a.sh"]})
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    async def test_unauthenticated_unauthorized(
+        self, api_unauthenticated_client, create_snippet
+    ):
+        """No auth → 401."""
+        await create_snippet("a.sh", approved=False)
+
+        response = api_unauthenticated_client.patch(
+            self.URL, json={"filenames": ["a.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_empty_filenames_returns_422(self, api_admin_client):
+        """Empty ``filenames`` is a 422 validation error from Pydantic."""
+        response = api_admin_client.patch(self.URL, json={"filenames": []})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    async def test_missing_filenames_returns_422(self, api_admin_client):
+        """Missing ``filenames`` field is a 422 (regression for SEP-1007 quirk)."""
+        response = api_admin_client.patch(self.URL, json={})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        # Confirm the error is about the field, not a Form-parsing 400.
+        body = response.json()
+        assert any(
+            "filenames" in str(err.get("loc", "")) for err in body.get("detail", [])
+        )
+
+    async def test_non_list_filenames_returns_422(self, api_admin_client):
+        """A non-list ``filenames`` value is a 422."""
+        response = api_admin_client.patch(self.URL, json={"filenames": "a.sh"})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    async def test_duplicate_filenames_silently_deduped(
+        self, api_admin_client, create_snippet
+    ):
+        """Duplicates in ``filenames`` are silently deduped by ``UniqueList``."""
+        await create_snippet("a.sh", approved=False)
+
+        response = api_admin_client.patch(
+            self.URL, json={"filenames": ["a.sh", "a.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["approved"] == ["a.sh"]
+        assert body["count"] == 1
+
+    async def test_atomic_concurrency_uses_db_filter(
+        self, api_admin_client, create_snippet, mocker
+    ):
+        """The endpoint relies on the DB-level ``approved_at IS NULL`` filter.
+
+        Mirrors the Jinja2 calibration test (``test_routes.py``) by
+        mocking ``update_where`` to return only one filename for a 2-row
+        request — simulating a concurrent admin who approved the second
+        row between our SELECT and our UPDATE — and asserting the
+        response derives ``skipped_already_approved`` from the real
+        UPDATE result.
+        """
+        await create_snippet("a.sh", approved=False)
+        await create_snippet("b.sh", approved=False)
+
+        # With ``returning=["filename"]``, ``update_where`` returns a list of
+        # the actually-updated filenames (one column → scalars()).
+        mocker.patch.object(
+            SnippetManager,
+            "update_where",
+            new=AsyncMock(return_value=["a.sh"]),
+        )
+
+        response = api_admin_client.patch(
+            self.URL, json={"filenames": ["a.sh", "b.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["approved"] == ["a.sh"]
+        assert body["skipped_already_approved"] == ["b.sh"]
+        assert body["count"] == 1
 
 
 # Override the module-level test_client fixture so it uses the same in-memory

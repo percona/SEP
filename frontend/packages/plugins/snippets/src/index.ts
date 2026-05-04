@@ -18,9 +18,21 @@
 export { SnippetsPlugin } from './SnippetsPlugin';
 export { SnippetsListPage } from './SnippetsListPage';
 export { SnippetDetailPage } from './SnippetDetailPage';
-export { useSnippets, useSnippetSchema, useSnippetHistory, useSnippetExecution } from './hooks';
+export {
+  useSnippets,
+  useSnippetSchema,
+  useSnippetHistory,
+  useSnippetExecution,
+  useApproveSnippet,
+  useRemoveSnippetApproval,
+  useBatchApproveSnippets,
+} from './hooks';
 export type {
+  BatchApprovalErrorResponse,
+  BatchApprovalResponse,
   ScriptPreviewResponse,
+  SnippetApprovalResponse,
+  SnippetBatchApproveRequest,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
   SnippetResponse,
