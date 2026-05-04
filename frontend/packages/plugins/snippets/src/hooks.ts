@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, ApiError, type PluginSchema } from '@sep/api';
 import type { PaginatedTaskHistory } from '@sep/framework';
 import type {
   BatchApprovalErrorResponse,
@@ -29,6 +29,34 @@ import type {
 } from './types';
 
 const SNIPPETS_BASE = '/plugins/snippets';
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function extractBatchApprovalError(data: unknown): BatchApprovalErrorResponse | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const detail = (data as { detail?: unknown }).detail;
+  if (!detail || typeof detail !== 'object') {
+    return null;
+  }
+
+  const candidate = detail as {
+    missing_in_db?: unknown;
+    missing_on_disk?: unknown;
+  };
+  if (!isStringArray(candidate.missing_in_db) || !isStringArray(candidate.missing_on_disk)) {
+    return null;
+  }
+
+  return {
+    missing_in_db: candidate.missing_in_db,
+    missing_on_disk: candidate.missing_on_disk,
+  };
+}
 
 /**
  * Fetch the list of snippet entities discovered by the backend.
@@ -197,8 +225,10 @@ export function useBatchApproveSnippets() {
         );
         return data;
       } catch (err: unknown) {
-        const detail = (err as { response?: { data?: { detail?: BatchApprovalErrorResponse } } })
-          ?.response?.data?.detail;
+        const detail =
+          err instanceof ApiError && err.status === 400
+            ? extractBatchApprovalError(err.data)
+            : null;
         if (detail) {
           throw { response: detail };
         }
