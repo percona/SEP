@@ -410,5 +410,3 @@ frontend/**/dist/
 
 /frontend/packages/e2e/playwright-report/data/*
 /frontend/packages/e2e/test-results/*
-README.md
-
