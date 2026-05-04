@@ -1,7 +1,10 @@
 import { useMemo, type ReactNode } from 'react';
+import { format as formatSql } from 'sql-formatter';
+import { Highlight, themes } from 'prism-react-renderer';
 import { useParams, useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import { useTheme } from '@mui/material/styles';
 import IconButton from '@mui/material/IconButton';
 import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
@@ -17,6 +20,7 @@ import {
   type PluginSchema,
 } from '@sep/api';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
+import { detailPrism } from './detailPrism';
 
 export interface PluginDetailPageProps {
   schema: PluginSchema;
@@ -70,24 +74,122 @@ export function pathToEntityList(pathname: string, entityName: string): string {
   return `/${parts.slice(0, idx + 1).join('/')}`;
 }
 
-function DetailField({ label, value }: { label: string; value: unknown }) {
-  if (value === null || value === '') {
+const detailCodeBlockSx = {
+  fontFamily: "'Roboto Mono', ui-monospace, monospace",
+  fontSize: '0.8125rem',
+  lineHeight: 1.6,
+  whiteSpace: 'pre-wrap' as const,
+  wordBreak: 'break-word' as const,
+  p: 2,
+  mt: 0.5,
+  borderRadius: 1,
+  bgcolor: 'action.hover',
+  border: 1,
+  borderColor: 'divider',
+  overflowX: 'auto' as const,
+};
+
+function formatCreateSql(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return raw;
+  }
+  try {
+    return formatSql(trimmed, { language: 'mysql', tabWidth: 2 });
+  } catch {
+    return raw;
+  }
+}
+
+function formatKeysForDisplay(value: unknown): string {
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (!t) {
+      return value;
+    }
+    try {
+      return JSON.stringify(JSON.parse(t), null, 2);
+    } catch {
+      return value;
+    }
+  }
+  if (value !== null && typeof value === 'object') {
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+}
+
+type DetailSyntaxLanguage = 'sql' | 'json';
+
+function DetailSyntaxBlock({ code, language }: { code: string; language: DetailSyntaxLanguage }) {
+  const muiTheme = useTheme();
+  const prismTheme = muiTheme.palette.mode === 'dark' ? themes.vsDark : themes.vsLight;
+
+  return (
+    <Highlight prism={detailPrism} theme={prismTheme} code={code} language={language}>
+      {({ className, style, tokens, getLineProps, getTokenProps }) => (
+        <Box
+          component="pre"
+          className={className}
+          style={style}
+          sx={{
+            ...detailCodeBlockSx,
+            margin: 0,
+          }}
+        >
+          {tokens.map((line, i) => (
+            <div key={i} {...getLineProps({ line })}>
+              {line.map((token, key) => (
+                <span key={key} {...getTokenProps({ token })} />
+              ))}
+            </div>
+          ))}
+        </Box>
+      )}
+    </Highlight>
+  );
+}
+
+function DetailField({
+  label,
+  value,
+  fieldKey,
+}: {
+  label: string;
+  value: unknown;
+  fieldKey: string;
+}) {
+  if (value === null || value === undefined || value === '') {
     return null;
+  }
+
+  if (fieldKey === 'create' && typeof value === 'string') {
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="caption" color="text.secondary">
+          {label}
+        </Typography>
+        <DetailSyntaxBlock code={formatCreateSql(value)} language="sql" />
+      </Box>
+    );
+  }
+
+  if (fieldKey === 'keys') {
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="caption" color="text.secondary">
+          {label}
+        </Typography>
+        <DetailSyntaxBlock code={formatKeysForDisplay(value)} language="json" />
+      </Box>
+    );
   }
 
   let display: React.ReactNode;
   if (typeof value === 'boolean') {
     display = value ? 'Yes' : 'No';
   } else if (typeof value === 'object') {
-    display = (
-      <Typography
-        component="pre"
-        variant="body2"
-        sx={{ fontFamily: "'Roboto Mono', monospace", whiteSpace: 'pre-wrap' }}
-      >
-        {JSON.stringify(value, null, 2) as string}
-      </Typography>
-    );
+    display = <DetailSyntaxBlock code={JSON.stringify(value, null, 2)} language="json" />;
   } else {
     display = String(value);
   }
@@ -261,7 +363,7 @@ export function PluginDetailPage({
 
       <Paper sx={{ p: 3 }}>
         {listView.columns.map((col) => (
-          <DetailField key={col.key} label={col.label} value={task[col.key]} />
+          <DetailField key={col.key} fieldKey={col.key} label={col.label} value={task[col.key]} />
         ))}
 
         {Object.entries(task)
@@ -272,7 +374,7 @@ export function PluginDetailPage({
               !suppressDetailKeys.includes(key),
           )
           .map(([key, value]) => (
-            <DetailField key={key} label={key} value={value} />
+            <DetailField key={key} fieldKey={key} label={key} value={value} />
           ))}
       </Paper>
 
