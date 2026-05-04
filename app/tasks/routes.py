@@ -576,9 +576,10 @@ async def sync_task_history(
     Atomically claim the ``sync_in_progress_started_at`` lock before calling
     the executor so the celery ``sync_running_tasks`` periodic and this route
     never both progress past the executor call for the same row. When the
-    lock is held by an in-flight syncer, return the current (stale) row
-    without re-syncing — the in-flight syncer will persist the terminal
-    status and dispatch any chained task.
+    claim returns no rows — either because another syncer holds the lock or
+    because the status has already flipped to terminal — refresh the row
+    from the DB and return without re-syncing. The holder (or completed
+    syncer) is responsible for dispatching any chained task.
     """
     logger.debug("Syncing task history %s", task_history.id)
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
@@ -597,6 +598,13 @@ async def sync_task_history(
         status=TaskHistoryStatusEnum.RUNNING,
     )
     if not claim_result.rowcount:
+        session.expunge(task_history)
+        task_history = await TaskHistoryManager.get_or_404(
+            session,
+            select_related=(TaskHistory.task,),
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=task_history.id,
+        )
         await _populate_has_logs(session, [task_history])
         return task_history
 

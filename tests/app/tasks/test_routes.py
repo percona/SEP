@@ -19,6 +19,7 @@ import base64
 import gzip
 import json as json_lib
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1072,7 +1073,8 @@ class TestSyncTaskHistoryChainDispatch:
         refreshed = await TaskHistoryManager.get_or_404(
             session, id=created_task_with_history.id
         )
-        assert refreshed.sync_in_progress_started_at == lock_pin
+        assert refreshed.sync_in_progress_started_at is not None
+        assert make_datetime_utc(refreshed.sync_in_progress_started_at) == lock_pin
 
     async def test_claims_expired_lock(
         self, test_client, session, mock_executor, created_task_with_history, mocker
@@ -1148,6 +1150,50 @@ class TestSyncTaskHistoryChainDispatch:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["has_logs"] is True
+
+    async def test_returns_fresh_status_when_terminal_between_dep_load_and_claim(
+        self, test_client, session, mock_executor, created_task_with_history, mocker
+    ):
+        """Assert the lock-claim's status=RUNNING filter returns the fresh terminal status.
+
+        The dep-loads ``task_history`` while it is RUNNING. Between dep load
+        and the lock-claim ``update_where``, the celery sync_running_tasks
+        path completes and flips the row to SUCCESS, clearing the lock.
+        The route's ``status=RUNNING`` filter rejects the claim
+        (rowcount=0); the route then refreshes the in-memory row and
+        returns the fresh terminal status rather than the stale RUNNING.
+        """
+        await self._arm_parent_chain(
+            session, created_task_with_history, chain_target_name=None
+        )
+        original_update_where = TaskHistoryManager.update_where
+
+        async def flip_to_terminal_then_zero(*args, **kwargs):
+            await original_update_where(
+                session,
+                {
+                    "status": TaskHistoryStatusEnum.SUCCESS,
+                    "sync_in_progress_started_at": None,
+                },
+                id=created_task_with_history.id,
+            )
+            return SimpleNamespace(rowcount=0)
+
+        mocker.patch.object(
+            TaskHistoryManager,
+            "update_where",
+            side_effect=flip_to_terminal_then_zero,
+        )
+        mock_chain = mocker.patch(
+            "app.tasks.celery._dispatch_chained_task", new_callable=AsyncMock
+        )
+
+        response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        mock_executor.sync_task_history.assert_not_called()
+        mock_chain.assert_not_awaited()
 
 
 @pytest.mark.asyncio
