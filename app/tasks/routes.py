@@ -24,8 +24,10 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
@@ -41,6 +43,7 @@ from app.tasks.celery import (
     dispatch_queue_item,
     execute_task_queue,
     get_executor_for_task,
+    maybe_dispatch_chain,
 )
 from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.constants import (
@@ -547,25 +550,75 @@ async def stop_task_history(
 async def sync_task_history(
     session: SessionDep, executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
 ) -> TaskHistoryResponse:
-    """Sync task history with the executor and persist the latest status."""
+    """Sync task history with the executor and persist the latest status.
+
+    Atomically claim the ``sync_in_progress_started_at`` lock before calling
+    the executor so the celery ``sync_running_tasks`` periodic and this route
+    never both progress past the executor call for the same row. When the
+    claim returns no rows — either because another syncer holds the lock or
+    because the status has already flipped to terminal — refresh the row
+    from the DB and return without re-syncing. The holder (or completed
+    syncer) is responsible for dispatching any chained task.
+    """
     logger.debug("Syncing task history %s", task_history.id)
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
         await _populate_has_logs(session, [task_history])
         return task_history
-    async_session = get_async_session_maker()
-    async with async_session() as writer_session:
-        updated = await executor.sync_task_history(
-            task_history, writer_session=writer_session
-        )
-    saved = await TaskHistoryManager.save(
-        session, updated, flag_modified_fields=["execution_request"]
+
+    claim_result = await TaskHistoryManager.update_where(
+        session,
+        {"sync_in_progress_started_at": utc_now()},
+        or_(
+            col(TaskHistory.sync_in_progress_started_at).is_(None),
+            col(TaskHistory.sync_in_progress_started_at)
+            < (utc_now() - tasks_settings.SYNC_LOCK_TTL),
+        ),
+        id=task_history.id,
+        status=TaskHistoryStatusEnum.RUNNING,
     )
+    if not claim_result.rowcount:
+        session.expunge(task_history)
+        task_history = await TaskHistoryManager.get_or_404(
+            session,
+            select_related=(TaskHistory.task,),
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=task_history.id,
+        )
+        await _populate_has_logs(session, [task_history])
+        return task_history
+
+    async_session = get_async_session_maker()
+    try:
+        async with async_session() as writer_session:
+            updated = await executor.sync_task_history(
+                task_history, writer_session=writer_session
+            )
+        updated.sync_in_progress_started_at = None
+        saved = await TaskHistoryManager.save(
+            session,
+            updated,
+            flag_modified_fields=[
+                "execution_request",
+                "status",
+                "started_at",
+                "finished_at",
+                "sync_in_progress_started_at",
+            ],
+        )
+    except Exception:
+        await TaskHistoryManager.update_where(
+            session,
+            {"sync_in_progress_started_at": None},
+            id=task_history.id,
+        )
+        raise
     synced = await TaskHistoryManager.get_or_404(
         session,
         select_related=(TaskHistory.task,),
         query_options=[undefer(TaskHistory.execution_request)],
         id=saved.id,
     )
+    await maybe_dispatch_chain(synced, was_running=True)
     _set_has_logs(
         synced,
         value=await TaskHistoryLogManager.exists_for_task(session, synced.id)

@@ -44,6 +44,7 @@ from app.tasks.celery import (
     delete_task_history,
     dispatch_queue_item,
     get_executor_for_task,
+    maybe_dispatch_chain,
     prepare_periodic_task_history,
     sync_queue_item,
     sync_running_items,
@@ -1733,6 +1734,30 @@ class TestSyncQueueItemChainDispatch:
             await sync_queue_item(1)
 
         mock_chain.assert_not_awaited()
+
+
+class TestMaybeDispatchChainMetaNone:
+    """Cover ``maybe_dispatch_chain`` against ``execution_request.meta = None``.
+
+    ``TaskExecutionRequest.meta`` is typed ``dict | None``; legacy rows or
+    explicit-null payloads can surface a ``None`` here. Reading ``.get(...)``
+    without normalising raises ``AttributeError`` and silently kills the
+    chain dispatch path.
+    """
+
+    @pytest.mark.asyncio
+    async def test_meta_none_does_not_raise_or_dispatch(self) -> None:
+        """Assert ``meta=None`` short-circuits cleanly without dispatching a chain."""
+        main_task = _make_chain_task("main-task")
+        history = _make_chain_history(main_task, TaskHistoryStatusEnum.SUCCESS, {})
+        history.execution_request.meta = None
+
+        with patch(
+            "app.tasks.celery._dispatch_chained_task", new_callable=AsyncMock
+        ) as mock_dispatch:
+            await maybe_dispatch_chain(history, was_running=True)
+
+        mock_dispatch.assert_not_awaited()
 
 
 async def _create_tables(engine):
