@@ -118,7 +118,7 @@ interface ExecutionData {
   target?: unknown;
 }
 
-function pickExecutionData(task: Record<string, unknown>): ExecutionData | null {
+export function pickExecutionData(task: Record<string, unknown>): ExecutionData | null {
   // Backend task model nests the executed command under `data.meta` (see
   // e.g. `app/sep/plugins/checksums/deps.py`). Older flows may put the
   // same keys at `data.*` directly, so check both for forward-compat.
@@ -136,6 +136,10 @@ function pickExecutionData(task: Record<string, unknown>): ExecutionData | null 
     return null;
   }
   return { command, args, target };
+}
+
+export function resolveTabFromSplat(splat: string | undefined): 'overview' | 'logs' {
+  return splat?.replace(/\/+$/, '').startsWith('logs') ? 'logs' : 'overview';
 }
 
 interface OverviewTabProps {
@@ -356,9 +360,7 @@ export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetail
   // false-positive when the task itself is literally named `logs`
   // (`/plugins/<name>/task/logs` would otherwise highlight the Logs tab
   // while the inner `<Routes>` correctly renders Overview).
-  const tabValue: 'overview' | 'logs' = splat?.replace(/\/+$/, '').startsWith('logs')
-    ? 'logs'
-    : 'overview';
+  const tabValue = resolveTabFromSplat(splat);
 
   if (isLoading) {
     return (
