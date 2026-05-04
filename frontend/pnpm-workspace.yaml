@@ -1,4 +1,3 @@
-# Test comment
 packages:
   - 'packages/*'
   - 'packages/plugins/*'
