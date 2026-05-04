@@ -76,16 +76,15 @@ class TestDipperSchemaEndpoint:
         assert "collector_type" in field_names
         assert "executor_host" in field_names
 
-    def test_schema_contains_script_preview_field(self, test_client):
-        """Schema includes a script_preview field pointing at the preview endpoint."""
+    def test_schema_has_no_static_script_preview_field(self, test_client):
+        """Static schema does not include a script_preview field (preview lives in the dynamic form schema)."""
         response = test_client.get(f"{API_BASE}/schema")
 
         all_fields = [
             field for section in response.json()["forms"] for field in section["fields"]
         ]
         preview_fields = [f for f in all_fields if f["type"] == "script_preview"]
-        assert len(preview_fields) == 1
-        assert "dipper" in preview_fields[0]["endpointUrl"]
+        assert len(preview_fields) == 0
 
 
 class TestDipperListEndpoint:
@@ -335,6 +334,29 @@ class TestDipperExecuteEndpoint:
         assert meta["target"] == "node1"
         assert "dipper/1/" in meta["_snippet_filename"]
         assert meta["interpreter"].startswith("sudo ")
+
+    def test_execute_sudo_false_overrides_script_default(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Explicit sudo=false in the request body disables sudo even when the script defaults to sudo."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": FAKE_TASK_ID})
+
+        test_client.post(
+            f"{API_BASE}/",
+            json={
+                "service_id": 1,
+                "collector_type": "environment",
+                "executor_host": "node1",
+                "sudo": False,
+            },
+        )
+
+        mock_task_api_dep.post.assert_awaited_once()
+        meta = mock_task_api_dep.post.call_args.kwargs["json"]["meta"]
+        assert not meta["interpreter"].startswith("sudo ")
 
     def test_execute_preserves_zero_arg(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep

@@ -77,12 +77,6 @@ dipper_schema = PluginSchema(
                     label="Executor Host",
                     required=True,
                 ),
-                ScriptPreviewField(
-                    name=_SCRIPT_PREVIEW_FIELD_NAME,
-                    label="Script Preview",
-                    endpoint_url="/plugins/dipper/script-preview",
-                    depends_on=[_SERVICE_FIELD_NAME, _COLLECTOR_FIELD_NAME],
-                ),
             ],
         ),
     ],

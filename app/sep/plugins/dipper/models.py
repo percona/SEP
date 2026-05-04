@@ -40,8 +40,9 @@ class DipperExecuteWrite(BaseModel):
     :type collector_type: CollectorTypeEnum
     :param executor_host: Nomad client hostname that will run the script.
     :type executor_host: NonEmptyStr
-    :param sudo: Whether to invoke the script with ``sudo``.
-    :type sudo: bool
+    :param sudo: Whether to invoke the script with ``sudo``. ``None`` defers
+        to the script's own sudo policy (the default).
+    :type sudo: bool | None
     :param args: Per-parameter arguments keyed by script parameter name. Validated
         server-side against the script's dynamic execution model.
     :type args: dict[str, Any]
@@ -50,7 +51,7 @@ class DipperExecuteWrite(BaseModel):
     service_id: int
     collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT
     executor_host: NonEmptyStr
-    sudo: bool = False
+    sudo: bool | None = None
     args: dict[str, Any] = Field(default_factory=dict)
 
 

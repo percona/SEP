@@ -56,6 +56,7 @@ from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     EXECUTOR_HOSTS_INPUT_NAME,
     SnippetExecutionMeta,
+    SUDO_INPUT_NAME,
 )
 from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
 
@@ -192,7 +193,7 @@ async def get_dipper_script_with_meta(script: DipperScriptDep) -> DipperScript:
 DipperScriptWithMetaDep = Annotated[DipperScript, Depends(get_dipper_script_with_meta)]
 
 
-def get_dipper_script_source(request: Request, script: DipperScriptDep) -> str:
+def get_dipper_script_source(request: Request, script: DipperScript) -> str:
     """Return a signed URL for Nomad to download the dipper payload script.
 
     :param request: The HTTP request object.
@@ -451,6 +452,8 @@ async def build_dipper_execution_meta(
         ) from exc
 
     raw_args: dict = {**body.args, EXECUTOR_HOSTS_INPUT_NAME: body.executor_host}
+    if body.sudo is not None:
+        raw_args[SUDO_INPUT_NAME] = body.sudo
 
     if body.collector_type == CollectorTypeEnum.PMM:
         pmm = settings.PMM
@@ -478,7 +481,7 @@ async def build_dipper_execution_meta(
         script,
         script_source,
         execution_args,
-        sudo_default=body.sudo,
+        sudo_default=body.sudo or False,
     )
     return meta, script.execution_task_name
 
