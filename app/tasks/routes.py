@@ -24,8 +24,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
@@ -37,6 +39,7 @@ from app.core.models import PaginatedResponse
 from app.core.utils import utc_now
 from app.core.utils.fields import NonEmptyStr
 from app.tasks.celery import (
+    _maybe_dispatch_chain,
     celery,
     dispatch_queue_item,
     execute_task_queue,
@@ -568,18 +571,45 @@ async def stop_task_history(
 async def sync_task_history(
     session: SessionDep, executor: TaskExecutor, task_history: TaskHistoryWithTaskDep
 ) -> TaskHistory:
-    """Sync task history with the executor and persist the latest status."""
+    """Sync task history with the executor and persist the latest status.
+
+    Atomically claim the ``sync_in_progress_started_at`` lock before calling
+    the executor so the celery ``sync_running_tasks`` periodic and this route
+    never both progress past the executor call for the same row. When the
+    lock is held by an in-flight syncer, return the current (stale) row
+    without re-syncing — the in-flight syncer will persist the terminal
+    status and dispatch any chained task.
+    """
     logger.debug("Syncing task history %s", task_history.id)
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
         await _populate_has_logs(session, [task_history])
         return task_history
+
+    claim_result = await TaskHistoryManager.update_where(
+        session,
+        {"sync_in_progress_started_at": utc_now()},
+        or_(
+            col(TaskHistory.sync_in_progress_started_at).is_(None),
+            col(TaskHistory.sync_in_progress_started_at)
+            < (utc_now() - tasks_settings.SYNC_LOCK_TTL),
+        ),
+        id=task_history.id,
+        status=TaskHistoryStatusEnum.RUNNING,
+    )
+    if not claim_result.rowcount:
+        await _populate_has_logs(session, [task_history])
+        return task_history
+
     async_session = get_async_session_maker()
     async with async_session() as writer_session:
         updated = await executor.sync_task_history(
             task_history, writer_session=writer_session
         )
+    updated.sync_in_progress_started_at = None
     saved = await TaskHistoryManager.save(
-        session, updated, flag_modified_fields=["execution_request"]
+        session,
+        updated,
+        flag_modified_fields=["execution_request", "sync_in_progress_started_at"],
     )
     synced = await TaskHistoryManager.get_or_404(
         session,
@@ -587,6 +617,7 @@ async def sync_task_history(
         query_options=[undefer(TaskHistory.execution_request)],
         id=saved.id,
     )
+    await _maybe_dispatch_chain(synced, was_running=True)
     _set_has_logs(
         synced,
         value=await TaskHistoryLogManager.exists_for_task(session, synced.id)
