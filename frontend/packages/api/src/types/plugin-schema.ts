@@ -1,4 +1,21 @@
 /**
+ * Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
  * Plugin Schema types — defines the contract for schema-driven plugins.
  *
  * These types mirror the backend PluginSchema Pydantic model.
@@ -100,6 +117,25 @@ export interface HostField extends BaseField {
   type: 'host';
 }
 
+// ── Read-only preview ───────────────────────────────────────────────────
+
+export interface ScriptPreviewField extends BaseField {
+  type: 'script_preview';
+  /**
+   * Fully-resolved URL the renderer fetches preview content from. Schema
+   * synthesisers should bake plugin-specific path segments here at schema
+   * build time rather than templating client-side.
+   */
+  endpointUrl: string;
+  /**
+   * Names of sibling fields whose values trigger a debounced re-fetch.
+   * Empty (the default) means fetch once on mount.
+   */
+  dependsOn: string[];
+  /** Optional default highlighter language hint. */
+  language?: string;
+}
+
 // ── Discriminated union ─────────────────────────────────────────────────
 
 export type PluginField =
@@ -116,7 +152,8 @@ export type PluginField =
   | ServiceField
   | SchemaField
   | TableField
-  | HostField;
+  | HostField
+  | ScriptPreviewField;
 
 // ── Form structure ──────────────────────────────────────────────────────
 
