@@ -29,9 +29,9 @@ import type { PluginSchema } from '@sep/api';
  */
 export const checksumsSchema: PluginSchema = {
   name: 'checksums',
-  displayName: 'Checksums',
+  display_name: 'Checksums',
   description: 'Run pt-table-checksum to verify data consistency between MySQL replicas.',
-  taskType: 'pt-table-checksum',
+  task_type: 'pt-table-checksum',
 
   forms: [
     {
@@ -43,7 +43,7 @@ export const checksumsSchema: PluginSchema = {
           label: 'MySQL Service',
           type: 'service',
           required: true,
-          serviceTypes: ['mysql'],
+          service_types: ['mysql'],
         },
         {
           name: 'schema',
@@ -88,11 +88,11 @@ export const checksumsSchema: PluginSchema = {
   ],
 
   capabilities: {
-    alertOnFail: true,
+    alert_on_fail: true,
     scheduling: true,
   },
 
-  listView: {
+  list_view: {
     columns: [
       { key: 'id', label: 'ID', sortable: true },
       { key: 'service', label: 'Service', format: 'chip' },
@@ -101,6 +101,6 @@ export const checksumsSchema: PluginSchema = {
       { key: 'differences', label: 'Differences' },
       { key: 'last_run', label: 'Last Run', format: 'relative', sortable: true },
     ],
-    defaultSort: '-last_run',
+    default_sort: '-last_run',
   },
 };

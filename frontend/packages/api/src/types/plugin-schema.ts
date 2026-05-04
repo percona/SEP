@@ -22,8 +22,53 @@
  * The backend serves schemas at GET /api/plugins/{name}/schema as JSON.
  * The SchemaFormRenderer auto-generates the UI from these definitions.
  *
- * Uses a discriminated union on `type` for type-safe field rendering.
+ * Wire format is snake_case end-to-end. Uses a discriminated union on
+ * `type` for type-safe field rendering.
  */
+
+// ── Conditional-rule primitives (SEP-1071) ──────────────────────────────
+
+/**
+ * Predicate JSON shape — a single-key object whose key is the operator
+ * name (`equals`, `truthy`, `all`, `any`, `xor`, `not`, etc.). The full
+ * operator catalogue lives alongside the BE DSL; we keep this open here
+ * because the FE counterpart (SEP-1077) consumes the wire format directly.
+ */
+export type Predicate = Record<string, unknown>;
+
+/**
+ * Binary self-cardinality gate at BaseField scope — when `when` matches,
+ * the field carrying the gate is required (for `requires`) or forbidden
+ * (for `forbidden`).
+ */
+export interface FieldGate {
+  when: Predicate;
+  message?: string;
+}
+
+/**
+ * Cross-field cardinality constraint at FormSection or PluginSchema scope.
+ * When `when` matches (or always if `when` is null), the count of present
+ * fields in `fields` must satisfy `min` / `max` (null bounds = unbounded).
+ */
+export interface CardinalityRule {
+  when: Predicate | null;
+  fields: string[];
+  min: number | null;
+  max: number | null;
+  message?: string;
+}
+
+/**
+ * Predicate-only invariant: the rule fails iff `fail_when` matches.
+ * `error_fields` is an FE rendering hint pointing at the inputs to
+ * highlight when the rule fires.
+ */
+export interface FailRule {
+  fail_when: Predicate;
+  error_fields: string[];
+  message?: string;
+}
 
 // ── Base field ──────────────────────────────────────────────────────────
 
@@ -33,14 +78,18 @@ interface BaseField {
   required?: boolean;
   description?: string;
   default?: unknown;
+  /** Self-cardinality gates: when matched, the field is required. */
+  requires?: FieldGate[];
+  /** Self-cardinality gates: when matched, the field is forbidden. */
+  forbidden?: FieldGate[];
 }
 
 // ── Concrete field types ────────────────────────────────────────────────
 
 export interface StringField extends BaseField {
   type: 'string';
-  minLength?: number;
-  maxLength?: number;
+  min_length?: number;
+  max_length?: number;
   pattern?: string;
   placeholder?: string;
 }
@@ -71,8 +120,8 @@ export interface ChoiceField extends BaseField {
 export interface MultiChoiceField extends BaseField {
   type: 'multichoice';
   choices: Array<{ label: string; value: string }>;
-  minItems?: number;
-  maxItems?: number;
+  min_items?: number;
+  max_items?: number;
 }
 
 export interface TextAreaField extends BaseField {
@@ -100,17 +149,17 @@ export interface YamlField extends BaseField {
 
 export interface ServiceField extends BaseField {
   type: 'service';
-  serviceTypes: string[];
+  service_types: string[];
 }
 
 export interface SchemaField extends BaseField {
   type: 'schema';
-  dependsOn: string;
+  depends_on: string;
 }
 
 export interface TableField extends BaseField {
   type: 'table';
-  dependsOn: string;
+  depends_on: string;
 }
 
 export interface HostField extends BaseField {
@@ -126,12 +175,12 @@ export interface ScriptPreviewField extends BaseField {
    * synthesisers should bake plugin-specific path segments here at schema
    * build time rather than templating client-side.
    */
-  endpointUrl: string;
+  endpoint_url: string;
   /**
    * Names of sibling fields whose values trigger a debounced re-fetch.
    * Empty (the default) means fetch once on mount.
    */
-  dependsOn: string[];
+  depends_on: string[];
   /** Optional default highlighter language hint. */
   language?: string;
 }
@@ -161,6 +210,10 @@ export interface FormSection {
   title: string;
   description?: string;
   fields: PluginField[];
+  /** Cross-field cardinality constraints scoped to this section. */
+  cardinality_rules?: CardinalityRule[];
+  /** Predicate-only invariants scoped to this section. */
+  fail_when?: FailRule[];
 }
 
 // ── List view ───────────────────────────────────────────────────────────
@@ -174,15 +227,15 @@ export interface ListColumn {
 
 export interface ListView {
   columns: ListColumn[];
-  /** Column key to sort by. Prefix with '-' for descending (e.g. '-lastRun'). */
-  defaultSort?: string;
+  /** Column key to sort by. Prefix with '-' for descending (e.g. '-last_run'). */
+  default_sort?: string;
 }
 
 // ── Capabilities ────────────────────────────────────────────────────────
 
 export interface PluginCapabilities {
   chaining?: boolean;
-  alertOnFail?: boolean;
+  alert_on_fail?: boolean;
   scheduling?: boolean;
 }
 
@@ -190,10 +243,14 @@ export interface PluginCapabilities {
 
 export interface PluginSchema {
   name: string;
-  displayName: string;
+  display_name: string;
   description?: string;
-  taskType?: string;
+  task_type?: string;
   forms: FormSection[];
   capabilities?: PluginCapabilities;
-  listView: ListView;
+  list_view: ListView;
+  /** Schema-wide cross-field cardinality constraints. */
+  cardinality_rules?: CardinalityRule[];
+  /** Schema-wide predicate-only invariants. */
+  fail_when?: FailRule[];
 }

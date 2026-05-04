@@ -92,7 +92,7 @@ export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetail
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="h4">
-          {schema.displayName} #{id}
+          {schema.display_name} #{id}
         </Typography>
         {typeof task.status === 'string' && (
           <Chip
@@ -110,13 +110,13 @@ export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetail
       </Box>
 
       <Paper sx={{ p: 3 }}>
-        {schema.listView.columns.map((col) => (
+        {schema.list_view.columns.map((col) => (
           <DetailField key={col.key} label={col.label} value={task[col.key]} />
         ))}
 
         {/* Show any extra fields not in listView columns */}
         {Object.entries(task)
-          .filter(([key]) => !schema.listView.columns.some((c) => c.key === key) && key !== 'id')
+          .filter(([key]) => !schema.list_view.columns.some((c) => c.key === key) && key !== 'id')
           .map(([key, value]) => (
             <DetailField key={key} label={key} value={value} />
           ))}

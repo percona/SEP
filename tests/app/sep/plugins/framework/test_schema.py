@@ -296,26 +296,28 @@ def test_schema_base_model_rejects_unknown_keys():
 # ── JSON serialisation round-trip ────────────────────────────────────────
 
 
-def test_plugin_schema_serialises_to_camel_case_json():
-    """Serialise ``PluginSchema`` to camelCase JSON matching the React contract."""
+def test_plugin_schema_serialises_to_snake_case_json():
+    """Serialise ``PluginSchema`` to snake_case JSON matching the React contract."""
     dumped = _CHECKSUMS_LIKE_SCHEMA.model_dump(mode="json", by_alias=True)
 
-    assert "displayName" in dumped
-    assert "taskType" in dumped
-    assert "listView" in dumped
-    assert "defaultSort" in dumped["listView"]
-    assert "alertOnFail" in dumped["capabilities"]
+    assert "display_name" in dumped
+    assert "task_type" in dumped
+    assert "list_view" in dumped
+    assert "default_sort" in dumped["list_view"]
+    assert "alert_on_fail" in dumped["capabilities"]
+    assert "displayName" not in dumped
+    assert "listView" not in dumped
 
     service_field = dumped["forms"][0]["fields"][0]
     assert service_field["type"] == "service"
-    assert "serviceTypes" in service_field
+    assert "service_types" in service_field
     assert "fieldType" not in service_field
     assert "field_type" not in service_field
 
     string_field = dumped["forms"][0]["fields"][1]
     assert string_field["type"] == "string"
-    assert "minLength" in string_field
-    assert "maxLength" in string_field
+    assert "min_length" in string_field
+    assert "max_length" in string_field
 
 
 @pytest.mark.parametrize(
@@ -399,14 +401,14 @@ def test_plugin_schema_accepts_snake_case_python_construction():
     assert schema.forms[0].fields[0].min_length == expected_min_length
 
 
-def test_plugin_schema_accepts_camel_case_json_input():
-    """Accept camelCase JSON input when validating a ``PluginSchema``."""
+def test_plugin_schema_accepts_snake_case_json_input():
+    """Accept snake_case JSON input when validating a ``PluginSchema``."""
     expected_min_length = 3
     schema = PluginSchema.model_validate(
         {
             "name": "p",
-            "displayName": "P",
-            "taskType": "python",
+            "display_name": "P",
+            "task_type": "python",
             "forms": [
                 {
                     "title": "T",
@@ -415,12 +417,12 @@ def test_plugin_schema_accepts_camel_case_json_input():
                             "name": "x",
                             "label": "X",
                             "type": "string",
-                            "minLength": expected_min_length,
+                            "min_length": expected_min_length,
                         },
                     ],
                 },
             ],
-            "listView": {"columns": [{"key": "id", "label": "ID"}]},
+            "list_view": {"columns": [{"key": "id", "label": "ID"}]},
         },
     )
 
@@ -428,6 +430,19 @@ def test_plugin_schema_accepts_camel_case_json_input():
     assert schema.task_type == "python"
     assert isinstance(schema.forms[0].fields[0], StringField)
     assert schema.forms[0].fields[0].min_length == expected_min_length
+
+
+def test_plugin_schema_rejects_camel_case_json_input():
+    """Reject camelCase JSON input — alias generator was removed in SEP-1071."""
+    with pytest.raises(ValidationError):
+        PluginSchema.model_validate(
+            {
+                "name": "p",
+                "displayName": "P",
+                "forms": [],
+                "listView": {"columns": [{"key": "id", "label": "ID"}]},
+            },
+        )
 
 
 def test_column_format_serialises_to_lowercase_string():
@@ -450,7 +465,7 @@ def test_service_field_service_types_round_trip():
     field = ServiceField(name="svc", label="S", service_types=[ServiceTypeEnum.MYSQL])
 
     dumped = field.model_dump(mode="json", by_alias=True)
-    assert dumped["serviceTypes"] == ["mysql"]
+    assert dumped["service_types"] == ["mysql"]
 
     rehydrated = ServiceField.model_validate(dumped)
     assert rehydrated.service_types == [ServiceTypeEnum.MYSQL]
@@ -638,8 +653,8 @@ class TestScriptPreviewField:
 
         dumped = field.model_dump(by_alias=True)
         assert dumped["type"] == "script_preview"
-        assert dumped["endpointUrl"] == "/api/plugins/x/y"
-        assert dumped["dependsOn"] == []
+        assert dumped["endpoint_url"] == "/api/plugins/x/y"
+        assert dumped["depends_on"] == []
 
     def test_dispatch_via_any_field_discriminator(self):
         """A ScriptPreviewField round-trips through the AnyField union."""
@@ -659,3 +674,274 @@ class TestScriptPreviewField:
 
         assert isinstance(section.fields[0], ScriptPreviewField)
         assert section.fields[0].endpoint_url == "/api/plugins/x/y"
+
+
+# ── Conditional-rule primitives (SEP-1071) ──────────────────────────────
+
+
+from app.sep.plugins.framework.rules import (  # noqa: E402 — group near tests
+    CardinalityRule,
+    F,
+    FailRule,
+    FieldGate,
+    truthy,
+)
+
+
+class TestConditionalRulePrimitivesAcceptance:
+    """Verify the new declarative primitives are accepted on each scope."""
+
+    def test_basefield_requires_accepts_field_gate_list(self) -> None:
+        """Basefield requires accepts field gate list."""
+        field = StringField(
+            name="dsn_table",
+            label="T",
+            requires=[FieldGate(when=F("recursion_method") == "dsn")],
+        )
+
+        assert field.requires is not None
+        assert len(field.requires) == 1
+
+    def test_basefield_forbidden_accepts_field_gate_list(self) -> None:
+        """Basefield forbidden accepts field gate list."""
+        field = StringField(
+            name="where",
+            label="W",
+            forbidden=[FieldGate(when=F("swap_drop") == "swap_drop")],
+        )
+
+        assert field.forbidden is not None
+        assert len(field.forbidden) == 1
+
+    def test_basefield_primitives_default_to_none(self) -> None:
+        """Basefield primitives default to none."""
+        field = StringField(name="x", label="X")
+
+        assert field.requires is None
+        assert field.forbidden is None
+
+    def test_form_section_cardinality_rules_and_fail_when_default_to_none(
+        self,
+    ) -> None:
+        """Form section cardinality rules and fail when default to none."""
+        section = FormSection(title="S", fields=[StringField(name="x", label="X")])
+
+        assert section.cardinality_rules is None
+        assert section.fail_when is None
+
+    def test_form_section_accepts_cardinality_rules(self) -> None:
+        """Form section accepts cardinality rules."""
+        section = FormSection(
+            title="S",
+            fields=[StringField(name="x", label="X")],
+            cardinality_rules=[
+                CardinalityRule(when=None, fields=["x"], min=1),
+            ],
+        )
+
+        assert section.cardinality_rules is not None
+        assert len(section.cardinality_rules) == 1
+
+    def test_plugin_schema_accepts_top_level_fail_when(self) -> None:
+        """Plugin schema accepts top level fail when."""
+        schema = PluginSchema(
+            name="t",
+            display_name="T",
+            forms=[
+                FormSection(
+                    title="S",
+                    fields=[StringField(name="x", label="X")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+            fail_when=[
+                FailRule(
+                    fail_when=truthy("x"),
+                    error_fields=["x"],
+                    message="m",
+                ),
+            ],
+        )
+
+        assert schema.fail_when is not None
+        assert len(schema.fail_when) == 1
+
+    def test_existing_checksums_like_schema_unchanged(self) -> None:
+        """Regression: a schema without the new primitives still validates."""
+        # _CHECKSUMS_LIKE_SCHEMA was constructed at module import; here we
+        # assert it does NOT carry any of the new primitive keys.
+        assert _CHECKSUMS_LIKE_SCHEMA.cardinality_rules is None
+        assert _CHECKSUMS_LIKE_SCHEMA.fail_when is None
+        for section in _CHECKSUMS_LIKE_SCHEMA.forms:
+            assert section.cardinality_rules is None
+            assert section.fail_when is None
+            for field in section.fields:
+                assert field.requires is None
+                assert field.forbidden is None
+
+
+class TestSchemaTier2ReferenceResolution:
+    """Verify Tier-2 PluginSchema-level field-reference checks fire."""
+
+    def test_unknown_field_in_basefield_requires_rejected(self) -> None:
+        """Unknown field in basefield requires rejected."""
+        with pytest.raises(ValidationError, match="unknown field 'NOT_THERE'"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            StringField(
+                                name="x",
+                                label="X",
+                                requires=[
+                                    FieldGate(when=F("NOT_THERE") == "v"),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
+    def test_unknown_field_in_section_cardinality_rejected(self) -> None:
+        """Unknown field in section cardinality rejected."""
+        with pytest.raises(ValidationError, match="unknown field 'gone'"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[StringField(name="x", label="X")],
+                        cardinality_rules=[
+                            CardinalityRule(
+                                when=None,
+                                fields=["gone"],
+                                min=1,
+                            ),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
+    def test_unknown_field_in_schema_fail_when_rejected(self) -> None:
+        """Unknown field in schema fail when rejected."""
+        with pytest.raises(ValidationError, match="unknown field 'unknown'"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[StringField(name="x", label="X")],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+                fail_when=[
+                    FailRule(
+                        fail_when=truthy("unknown"),
+                        error_fields=["unknown"],
+                    ),
+                ],
+            )
+
+    def test_cross_section_reference_accepted(self) -> None:
+        """Edge case #9 — cross-section references resolve at schema level.
+
+        References span sections; the resolver covers the whole schema tree.
+        """
+        schema = PluginSchema(
+            name="t",
+            display_name="T",
+            forms=[
+                FormSection(
+                    title="A",
+                    fields=[StringField(name="gate", label="G")],
+                ),
+                FormSection(
+                    title="B",
+                    fields=[StringField(name="target", label="T")],
+                    cardinality_rules=[
+                        CardinalityRule(
+                            when=truthy("gate"),
+                            fields=["target"],
+                            min=1,
+                        ),
+                    ],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.forms[1].cardinality_rules is not None
+
+    def test_hyphenated_field_in_rule_rejected(self) -> None:
+        """Edge case for the Python-identifier requirement on rule fields."""
+        with pytest.raises(ValidationError, match="no hyphens"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            StringField(name="hy-phen", label="H"),
+                            StringField(
+                                name="x",
+                                label="X",
+                                requires=[
+                                    FieldGate(when=truthy("hy-phen")),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
+    def test_hyphenated_basefield_self_target_rejected(self) -> None:
+        """Edge case #27 — implicit self target also enforces the rule."""
+        with pytest.raises(ValidationError, match="no hyphens"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            StringField(name="recursion_method", label="M"),
+                            StringField(
+                                name="hy-phen-field",
+                                label="H",
+                                requires=[
+                                    FieldGate(when=F("recursion_method") == "dsn"),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
+    def test_existing_unique_field_check_still_fires(self) -> None:
+        """Edge case #7 — duplicate-name check runs alongside the new resolver."""
+        with pytest.raises(ValidationError, match="duplicate field name"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="A",
+                        fields=[StringField(name="dup", label="A")],
+                    ),
+                    FormSection(
+                        title="B",
+                        fields=[StringField(name="dup", label="B")],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )

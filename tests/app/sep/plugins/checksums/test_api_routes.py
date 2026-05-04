@@ -387,7 +387,7 @@ class TestChecksumsSchemaEndpoint:
         caps = response.json()["capabilities"]
 
         assert caps["chaining"] is True
-        assert caps["alertOnFail"] is True
+        assert caps["alert_on_fail"] is True
         assert caps["scheduling"] is True
 
 
