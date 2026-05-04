@@ -21,6 +21,7 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: './tests',
+  testIgnore: ['**/_template.spec.ts'],
   fullyParallel: true,
   // Fail CI immediately if a test file contains a .only call
   forbidOnly: isCI,
