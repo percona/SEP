@@ -36,11 +36,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
-from typing import Any, ClassVar, Literal, Self
+from enum import Enum, StrEnum
+from typing import Any, ClassVar, Self, TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic_core import core_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from app.sep.plugins.framework.schema import PluginSchema
 
 __all__ = [
     "AllEqual",
@@ -351,7 +356,7 @@ class Predicate(ABC):
             "additionalProperties": True,
             "description": (
                 "Predicate wire shape — a single-key object whose key is "
-                "the operator name (equals, truthy, all_, any_, xor, not, "
+                "the operator name (equals, truthy, all, any, xor, not, "
                 "etc.). See the plan for the full operator catalogue."
             ),
         }
@@ -598,13 +603,14 @@ class _MultiFieldPredicate(Predicate):
     _WIRE_OP: ClassVar[str]
     _MIN_FIELDS: ClassVar[int] = 1
 
-    def __init__(self, fields: list[str]) -> None:
-        if len(fields) < self._MIN_FIELDS:
+    def __init__(self, fields: Iterable[str]) -> None:
+        items = list(fields)
+        if len(items) < self._MIN_FIELDS:
             raise ValueError(
                 f"{type(self).__name__} requires at least "
                 f"{self._MIN_FIELDS} field name(s)."
             )
-        self.fields = list(fields)
+        self.fields = items
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON wire shape for this predicate."""
@@ -703,64 +709,52 @@ class AllEqual(_MultiFieldPredicate):
 # ── Boolean composition ──────────────────────────────────────────────────
 
 
-class And(Predicate):
-    """Match when every child predicate matches.
+class _BoolListPredicate(Predicate):
+    """Common machinery for predicates that AND/OR a list of children.
 
     :ivar predicates: The non-empty list of child predicates.
     :vartype predicates: list[Predicate]
     """
 
     __slots__ = ("predicates",)
+    _WIRE_OP: ClassVar[str]
 
-    def __init__(self, predicates: list[Predicate]) -> None:
-        if len(predicates) < 1:
-            raise ValueError("And requires at least one predicate")
-        self.predicates = list(predicates)
+    def __init__(self, predicates: Iterable[Predicate]) -> None:
+        items = list(predicates)
+        if not items:
+            raise ValueError(f"{type(self).__name__} requires at least one predicate")
+        self.predicates = items
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the JSON wire shape for this predicate."""
+        return {self._WIRE_OP: [p.to_dict() for p in self.predicates]}
+
+    def referenced_fields(self) -> set[str]:
+        """Return the field names this predicate reads from."""
+        refs = set()
+        for p in self.predicates:
+            refs |= p.referenced_fields()
+        return refs
+
+
+class And(_BoolListPredicate):
+    """Match when every child predicate matches."""
+
+    _WIRE_OP = "all"
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
         return all(p.evaluate(instance) for p in self.predicates)
 
-    def to_dict(self) -> dict[str, Any]:
-        """Return the JSON wire shape for this predicate."""
-        return {"all": [p.to_dict() for p in self.predicates]}
 
-    def referenced_fields(self) -> set[str]:
-        """Return the field names this predicate reads from."""
-        refs = set()
-        for p in self.predicates:
-            refs |= p.referenced_fields()
-        return refs
+class Or(_BoolListPredicate):
+    """Match when at least one child predicate matches."""
 
-
-class Or(Predicate):
-    """Match when at least one child predicate matches.
-
-    :ivar predicates: The non-empty list of child predicates.
-    :vartype predicates: list[Predicate]
-    """
-
-    __slots__ = ("predicates",)
-
-    def __init__(self, predicates: list[Predicate]) -> None:
-        if len(predicates) < 1:
-            raise ValueError("Or requires at least one predicate")
-        self.predicates = list(predicates)
+    _WIRE_OP = "any"
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
         return any(p.evaluate(instance) for p in self.predicates)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return the JSON wire shape for this predicate."""
-        return {"any": [p.to_dict() for p in self.predicates]}
-
-    def referenced_fields(self) -> set[str]:
-        """Return the field names this predicate reads from."""
-        refs = set()
-        for p in self.predicates:
-            refs |= p.referenced_fields()
-        return refs
 
 
 class Xor(Predicate):
@@ -878,7 +872,7 @@ def all_truthy(*names: str) -> Predicate:
     :return: An :class:`AllTruthy` predicate.
     :rtype: Predicate
     """
-    return AllTruthy(list(names))
+    return AllTruthy(names)
 
 
 def all_falsy(*names: str) -> Predicate:
@@ -889,7 +883,7 @@ def all_falsy(*names: str) -> Predicate:
     :return: An :class:`AllFalsy` predicate.
     :rtype: Predicate
     """
-    return AllFalsy(list(names))
+    return AllFalsy(names)
 
 
 def any_truthy(*names: str) -> Predicate:
@@ -900,7 +894,7 @@ def any_truthy(*names: str) -> Predicate:
     :return: An :class:`AnyTruthy` predicate.
     :rtype: Predicate
     """
-    return AnyTruthy(list(names))
+    return AnyTruthy(names)
 
 
 def any_falsy(*names: str) -> Predicate:
@@ -911,7 +905,7 @@ def any_falsy(*names: str) -> Predicate:
     :return: An :class:`AnyFalsy` predicate.
     :rtype: Predicate
     """
-    return AnyFalsy(list(names))
+    return AnyFalsy(names)
 
 
 def any_present(*names: str) -> Predicate:
@@ -922,7 +916,7 @@ def any_present(*names: str) -> Predicate:
     :return: An :class:`AnyPresent` predicate.
     :rtype: Predicate
     """
-    return AnyPresent(list(names))
+    return AnyPresent(names)
 
 
 def all_present(*names: str) -> Predicate:
@@ -933,7 +927,7 @@ def all_present(*names: str) -> Predicate:
     :return: An :class:`AllPresent` predicate.
     :rtype: Predicate
     """
-    return AllPresent(list(names))
+    return AllPresent(names)
 
 
 def none_present(*names: str) -> Predicate:
@@ -944,7 +938,7 @@ def none_present(*names: str) -> Predicate:
     :return: A :class:`NonePresent` predicate.
     :rtype: Predicate
     """
-    return NonePresent(list(names))
+    return NonePresent(names)
 
 
 def all_equal(*names: str) -> Predicate:
@@ -958,7 +952,7 @@ def all_equal(*names: str) -> Predicate:
     :rtype: Predicate
     :raises ValueError: If fewer than two names are supplied.
     """
-    return AllEqual(list(names))
+    return AllEqual(names)
 
 
 def all_(*predicates: Predicate) -> Predicate:
@@ -970,9 +964,7 @@ def all_(*predicates: Predicate) -> Predicate:
     :rtype: Predicate
     :raises ValueError: If no predicates are supplied.
     """
-    if not predicates:
-        raise ValueError("all_() requires at least one predicate")
-    return And(list(predicates))
+    return And(predicates)
 
 
 def any_(*predicates: Predicate) -> Predicate:
@@ -984,9 +976,7 @@ def any_(*predicates: Predicate) -> Predicate:
     :rtype: Predicate
     :raises ValueError: If no predicates are supplied.
     """
-    if not predicates:
-        raise ValueError("any_() requires at least one predicate")
-    return Or(list(predicates))
+    return Or(predicates)
 
 
 def xor_(*predicates: Predicate) -> Predicate:
@@ -1086,21 +1076,33 @@ class CardinalityRule(_RuleBase):
     max: int | None = None
     message: str | None = None
 
+    @field_validator("fields")
+    @classmethod
+    def _fields_non_empty(cls, value: list[str]) -> list[str]:
+        """Reject an empty ``fields`` list at field-validator scope.
+
+        :param value: The candidate ``fields`` list.
+        :type value: list[str]
+        :return: The validated list.
+        :rtype: list[str]
+        :raises ValueError: If ``value`` is empty.
+        """
+        if not value:
+            raise ValueError(
+                "CardinalityRule requires non-empty `fields`. Use `fail_when` "
+                "(FailRule) for predicate-only invariants."
+            )
+        return value
+
     @model_validator(mode="after")
     def _validate_cardinality_shape(self) -> Self:
         """Reject malformed cardinality bounds.
 
         :return: The validated rule instance.
         :rtype: CardinalityRule
-        :raises ValueError: If ``fields`` is empty, both bounds are unset,
-            either bound is negative, ``min > max``, or ``min >
-            len(fields)``.
+        :raises ValueError: If both bounds are unset, either bound is
+            negative, ``min > max``, or ``min > len(fields)``.
         """
-        if not self.fields:
-            raise ValueError(
-                "CardinalityRule requires non-empty `fields`. Use `fail_when` "
-                "(FailRule) for predicate-only invariants."
-            )
         if self.min is None and self.max is None:
             raise ValueError(
                 "CardinalityRule requires at least one of `min` or `max` "
@@ -1146,12 +1148,14 @@ class FailRule(_RuleBase):
 
 # ── Runtime / wiring (Layer C) ───────────────────────────────────────────
 
-_RuleKind = Literal[
-    "field_gate_requires",
-    "field_gate_forbidden",
-    "cardinality",
-    "fail",
-]
+
+class _RuleKind(StrEnum):
+    """Tag distinguishing the four runtime rule shapes."""
+
+    FIELD_GATE_REQUIRES = "field_gate_requires"
+    FIELD_GATE_FORBIDDEN = "field_gate_forbidden"
+    CARDINALITY = "cardinality"
+    FAIL = "fail"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1199,7 +1203,7 @@ class RulePlan:
     rules: tuple[_PreparedRule, ...]
 
 
-def _extract_rule_plan(schema: Any) -> RulePlan:
+def _extract_rule_plan(schema: PluginSchema) -> RulePlan:
     """Walk a :class:`PluginSchema` and emit one :class:`_PreparedRule` per rule.
 
     :param schema: The plugin schema to extract rules from.
@@ -1216,7 +1220,7 @@ def _extract_rule_plan(schema: Any) -> RulePlan:
             for rule_index, gate in enumerate(field.requires or []):
                 prepared.append(
                     _PreparedRule(
-                        kind="field_gate_requires",
+                        kind=_RuleKind.FIELD_GATE_REQUIRES,
                         scope_path=(f"BaseField {field.name!r} requires[{rule_index}]"),
                         predicate=gate.when,
                         fields=(self_name,),
@@ -1228,7 +1232,7 @@ def _extract_rule_plan(schema: Any) -> RulePlan:
             for rule_index, gate in enumerate(field.forbidden or []):
                 prepared.append(
                     _PreparedRule(
-                        kind="field_gate_forbidden",
+                        kind=_RuleKind.FIELD_GATE_FORBIDDEN,
                         scope_path=(
                             f"BaseField {field.name!r} forbidden[{rule_index}]"
                         ),
@@ -1280,7 +1284,7 @@ def _prepare_cardinality_rules(
         return []
     return [
         _PreparedRule(
-            kind="cardinality",
+            kind=_RuleKind.CARDINALITY,
             scope_path=f"{scope_label} cardinality_rules[{index}]",
             predicate=rule.when,
             fields=tuple(rule.fields),
@@ -1308,7 +1312,7 @@ def _prepare_fail_rules(
         return []
     return [
         _PreparedRule(
-            kind="fail",
+            kind=_RuleKind.FAIL,
             scope_path=f"{scope_label} fail_when[{index}]",
             predicate=rule.fail_when,
             fields=tuple(rule.error_fields),
@@ -1395,10 +1399,10 @@ def _evaluate_fail(rule: _PreparedRule, instance: Any) -> str | None:
 
 
 _RULE_EVALUATORS = {
-    "field_gate_requires": _evaluate_field_gate_requires,
-    "field_gate_forbidden": _evaluate_field_gate_forbidden,
-    "cardinality": _evaluate_cardinality,
-    "fail": _evaluate_fail,
+    _RuleKind.FIELD_GATE_REQUIRES: _evaluate_field_gate_requires,
+    _RuleKind.FIELD_GATE_FORBIDDEN: _evaluate_field_gate_forbidden,
+    _RuleKind.CARDINALITY: _evaluate_cardinality,
+    _RuleKind.FAIL: _evaluate_fail,
 }
 
 
@@ -1422,7 +1426,9 @@ def evaluate_conditional_rules(instance: Any, plan: RulePlan) -> list[str]:
     return failures
 
 
-def _validate_plan_against_model_fields(plan: RulePlan, cls: type) -> None:
+def _validate_plan_against_model_fields(
+    plan: RulePlan, cls: type[ConditionalRulesModel]
+) -> None:
     """Verify every rule's referenced fields exist on ``cls.model_fields``.
 
     Performs Tier-3 validation at decoration time so a schema/model
@@ -1432,7 +1438,7 @@ def _validate_plan_against_model_fields(plan: RulePlan, cls: type) -> None:
     :param plan: The extracted :class:`RulePlan`.
     :type plan: RulePlan
     :param cls: The :class:`ConditionalRulesModel` subclass being decorated.
-    :type cls: type
+    :type cls: type[ConditionalRulesModel]
     :raises TypeError: If any referenced name is missing from
         ``cls.model_fields``.
     """
@@ -1487,7 +1493,9 @@ class ConditionalRulesModel(BaseModel):
         return self
 
 
-def apply_conditional_rules(schema: Any) -> Any:
+def apply_conditional_rules(
+    schema: PluginSchema,
+) -> Callable[[type[ConditionalRulesModel]], type[ConditionalRulesModel]]:
     """Return a class decorator that wires ``schema``'s rule plan onto the model.
 
     Performs Tier-3 validation against the decorated class's
@@ -1507,7 +1515,9 @@ def apply_conditional_rules(schema: Any) -> Any:
     """
     plan = _extract_rule_plan(schema)
 
-    def decorator(cls: type) -> type:
+    def decorator(
+        cls: type[ConditionalRulesModel],
+    ) -> type[ConditionalRulesModel]:
         if not issubclass(cls, ConditionalRulesModel):
             raise TypeError(
                 f"@apply_conditional_rules on {cls.__name__}: class must "

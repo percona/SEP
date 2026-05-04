@@ -48,14 +48,16 @@ export interface FieldGate {
 
 /**
  * Cross-field cardinality constraint at FormSection or PluginSchema scope.
- * When `when` matches (or always if `when` is null), the count of present
- * fields in `fields` must satisfy `min` / `max` (null bounds = unbounded).
+ * When `when` matches (omitted means always), the count of present fields
+ * in `fields` must satisfy `min` / `max` (omitted bound = unbounded). The
+ * backend strips `None`-valued keys from the wire payload, so optional
+ * properties may be absent rather than `null`.
  */
 export interface CardinalityRule {
-  when: Predicate | null;
+  when?: Predicate;
   fields: string[];
-  min: number | null;
-  max: number | null;
+  min?: number;
+  max?: number;
   message?: string;
 }
 

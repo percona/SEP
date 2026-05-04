@@ -42,16 +42,17 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
         router = APIRouter()
         schema_endpoint(router, checksums_schema)
 
-    The route pins ``response_model_by_alias=True``,
-    ``response_model_exclude_none=True``, and redeclares
-    ``IsApiAuthenticated`` at the route level even though ``api_router``
-    applies the same dependency at router level; the duplicate declaration
-    guarantees a JSON 401 even if a plugin mounts the router outside that
-    tree, and FastAPI's dependency cache deduplicates it per request.
-    Excluding ``None``-valued fields keeps the wire payload free of the
-    new conditional-rule primitive keys (``requires``, ``forbidden``,
-    ``cardinality_rules``, ``fail_when``) for schemas that don't opt into
-    them.
+    The route pins ``response_model_by_alias=True`` so the
+    ``field_type → "type"`` discriminator alias on each field serialises
+    to the wire key the FE renderer expects (no top-level alias generator
+    exists post-snake_case flip). ``response_model_exclude_none=True``
+    keeps the payload free of the new conditional-rule primitive keys
+    (``requires``, ``forbidden``, ``cardinality_rules``, ``fail_when``)
+    for schemas that don't opt into them. ``IsApiAuthenticated`` is
+    redeclared at the route level even though ``api_router`` applies the
+    same dependency at router level; the duplicate declaration guarantees
+    a JSON 401 even if a plugin mounts the router outside that tree, and
+    FastAPI's dependency cache deduplicates it per request.
 
     :param router: The plugin's ``APIRouter``.
     :type router: APIRouter

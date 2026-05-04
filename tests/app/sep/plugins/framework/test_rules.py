@@ -834,7 +834,7 @@ class TestConditionalRulesModel:
             extra_fields=[StringField(name="y", label="Y")],
         )
 
-        observed: list[str] = []
+        observed = []
 
         @apply_conditional_rules(schema)
         class Body(ConditionalRulesModel):

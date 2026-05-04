@@ -24,6 +24,13 @@ from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
 from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
 from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.framework.rules import (
+    CardinalityRule,
+    F,
+    FailRule,
+    FieldGate,
+    truthy,
+)
 from app.sep.plugins.framework.schema import (
     BoolField,
     Capabilities,
@@ -412,14 +419,6 @@ class TestSchemaEndpointAllFieldsRoundTrip:
 
 # ── Conditional-rule primitives wire-shape regression (SEP-1071) ────────
 
-
-from app.sep.plugins.framework.rules import (  # noqa: E402 — group near tests
-    CardinalityRule,
-    F,
-    FailRule,
-    FieldGate,
-    truthy,
-)
 
 _CONDITIONAL_RULES_SCHEMA = PluginSchema(
     name="test-conditional-rules",
