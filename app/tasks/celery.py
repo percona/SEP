@@ -595,20 +595,21 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
 async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None:
     """Dispatch the next chained task when ``saved`` is in a chain-eligible state.
 
-    Eligibility requires ``was_running`` (the parent transitioned out of
-    RUNNING during this sync) AND a chain-eligible terminal status: SUCCESS,
-    or any finished/LOST status when ``_chain_on_failure`` is set on the
-    parent's ``execution_request.meta``. The helper short-circuits when no
+    Eligibility requires ``was_running`` (the parent was RUNNING when this sync
+    started, before the executor call) AND a chain-eligible terminal status:
+    SUCCESS, or any finished/LOST status when ``_chain_on_failure`` is set on
+    the parent's ``execution_request.meta``. The helper short-circuits when no
     ``_chain_task_names`` pointer is set.
 
     :param saved: The post-save TaskHistory to inspect.
     :type saved: TaskHistory
-    :param was_running: Whether the parent was RUNNING before this sync.
+    :param was_running: Whether the parent was RUNNING when this sync started.
     :type was_running: bool
     """
     if not was_running:
         return
-    chain_on_failure = saved.execution_request.meta.get("_chain_on_failure", False)
+    meta = saved.execution_request.meta or {}
+    chain_on_failure = meta.get("_chain_on_failure", False)
     is_terminal = (
         saved.status.is_finished() or saved.status == TaskHistoryStatusEnum.LOST
     )
@@ -617,7 +618,7 @@ async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None
     )
     if not should_chain:
         return
-    chain_task_names = saved.execution_request.meta.get("_chain_task_names")
+    chain_task_names = meta.get("_chain_task_names")
     if not chain_task_names:
         return
     await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
