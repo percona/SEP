@@ -51,9 +51,14 @@ async def connectivity_check(
     """
     task = await get_executable_task_by_name(session, "run-python")
     executor = get_executor_for_task(task)
-    if request.target not in executor.get_hosts():
+    registered_targets = executor.get_hosts()
+    if request.target not in registered_targets:
+        sample = sorted(registered_targets)[:5]
         raise HTTPBadRequestException(
             f"Target {request.target!r} is not available in "
-            f"{executor.__class__.__name__}"
+            f"{executor.__class__.__name__} "
+            f"(registered targets: {len(registered_targets)}; sample: {sample}). "
+            f"The dispatch caller must pass the executor node name, not an "
+            f"inventory display name."
         )
     return await check_connectivity(session, request)
