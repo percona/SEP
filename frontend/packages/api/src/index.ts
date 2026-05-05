@@ -87,6 +87,7 @@ export {
   usePluginTasks,
   usePluginTask,
   useCreatePluginTask,
+  useDeletePluginTask,
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
 } from './hooks';
