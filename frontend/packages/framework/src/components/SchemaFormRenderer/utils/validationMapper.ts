@@ -27,16 +27,16 @@ export function buildValidationRules(field: PluginField): RegisterOptions {
 
   switch (field.type) {
     case 'string': {
-      if (field.minLength !== undefined) {
+      if (field.min_length !== undefined) {
         rules.minLength = {
-          value: field.minLength,
-          message: `Minimum ${field.minLength} characters`,
+          value: field.min_length,
+          message: `Minimum ${field.min_length} characters`,
         };
       }
-      if (field.maxLength !== undefined) {
+      if (field.max_length !== undefined) {
         rules.maxLength = {
-          value: field.maxLength,
-          message: `Maximum ${field.maxLength} characters`,
+          value: field.max_length,
+          message: `Maximum ${field.max_length} characters`,
         };
       }
       if (field.pattern) {
@@ -72,7 +72,7 @@ export function buildValidationRules(field: PluginField): RegisterOptions {
       break;
     }
     case 'multichoice': {
-      const { minItems, maxItems, label } = field;
+      const { min_items: minItems, max_items: maxItems, label } = field;
       if (minItems !== undefined || maxItems !== undefined) {
         rules.validate = (value: unknown) => {
           const len = Array.isArray(value) ? value.length : 0;

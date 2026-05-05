@@ -24,6 +24,13 @@ from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
 from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
 from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.framework.rules import (
+    CardinalityRule,
+    F,
+    FailRule,
+    FieldGate,
+    truthy,
+)
 from app.sep.plugins.framework.schema import (
     BoolField,
     Capabilities,
@@ -318,7 +325,9 @@ class TestSchemaEndpointAuthenticated:
         response = authed_client.get("/api/plugins/test-schema-endpoint/schema")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == _TEST_SCHEMA.model_dump(mode="json", by_alias=True)
+        assert response.json() == _TEST_SCHEMA.model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
 
     def test_response_content_type_is_json(self, authed_client: TestClient) -> None:
         """Assert the response carries a JSON ``content-type``."""
@@ -326,14 +335,14 @@ class TestSchemaEndpointAuthenticated:
 
         assert response.headers["content-type"].startswith("application/json")
 
-    def test_response_uses_camel_case_keys(self, authed_client: TestClient) -> None:
-        """Assert the response emits camelCase wire keys (not snake_case)."""
+    def test_response_uses_snake_case_keys(self, authed_client: TestClient) -> None:
+        """Assert the response emits snake_case wire keys (not camelCase)."""
         body = authed_client.get("/api/plugins/test-schema-endpoint/schema").json()
 
-        assert "displayName" in body
-        assert "listView" in body
-        assert "display_name" not in body
-        assert "list_view" not in body
+        assert "display_name" in body
+        assert "list_view" in body
+        assert "displayName" not in body
+        assert "listView" not in body
 
     def test_field_discriminator_key_is_type(self, authed_client: TestClient) -> None:
         """Assert each field carries ``type`` (not ``field_type``) as its discriminator."""
@@ -354,7 +363,7 @@ class TestSchemaEndpointAuthenticated:
         resolved = openapi["components"]["schemas"][schema_name]
         property_keys = set(resolved["properties"].keys())
 
-        assert {"displayName", "listView", "forms"} <= property_keys
+        assert {"display_name", "list_view", "forms"} <= property_keys
 
     def test_empty_forms_serialises_as_empty_list(
         self, authed_empty_forms_client: TestClient
@@ -406,3 +415,128 @@ class TestSchemaEndpointAllFieldsRoundTrip:
 
         reparsed = PluginSchema.model_validate(body)
         assert reparsed == _ALL_FIELDS_SCHEMA
+
+
+# ── Conditional-rule primitives wire-shape regression (SEP-1071) ────────
+
+
+_CONDITIONAL_RULES_SCHEMA = PluginSchema(
+    name="test-conditional-rules",
+    display_name="Test Conditional Rules",
+    forms=[
+        FormSection(
+            title="Recursion",
+            fields=[
+                StringField(name="recursion_method", label="Method"),
+                StringField(
+                    name="dsn_table",
+                    label="DSN Table",
+                    requires=[
+                        FieldGate(when=F("recursion_method") == "dsn"),
+                    ],
+                    forbidden=[
+                        FieldGate(when=F("recursion_method") == "none"),
+                    ],
+                ),
+            ],
+            cardinality_rules=[
+                CardinalityRule(
+                    when=truthy("recursion_method"),
+                    fields=["dsn_table"],
+                    max=1,
+                    message="at most one",
+                ),
+            ],
+        ),
+    ],
+    list_view=ListView(columns=[Column(key="id", label="ID")]),
+    fail_when=[
+        FailRule(
+            fail_when=truthy("recursion_method"),
+            error_fields=["recursion_method"],
+            message="must not be set",
+        ),
+    ],
+)
+
+
+@pytest.fixture
+def authed_conditional_rules_client(regular_user: CasdoorUser) -> TestClient:
+    """Yield an authed client whose schema exercises the new rule primitives."""
+    app = _build_composed_app(_CONDITIONAL_RULES_SCHEMA, "/test-conditional-rules")
+    app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestConditionalRulePrimitivesWireShape:
+    """Verify the new primitive keys serialize correctly over HTTP."""
+
+    def test_response_carries_snake_case_primitive_keys(
+        self, authed_conditional_rules_client: TestClient
+    ) -> None:
+        """Hit the live route and confirm snake_case primitive keys appear."""
+        body = authed_conditional_rules_client.get(
+            "/api/plugins/test-conditional-rules/schema"
+        ).json()
+
+        # PluginSchema-scope primitive
+        assert "fail_when" in body
+        assert isinstance(body["fail_when"], list)
+
+        # FormSection-scope primitive
+        section = body["forms"][0]
+        assert "cardinality_rules" in section
+        assert isinstance(section["cardinality_rules"], list)
+
+        # BaseField-scope primitives
+        dsn_table = section["fields"][1]
+        assert dsn_table["name"] == "dsn_table"
+        assert "requires" in dsn_table
+        assert "forbidden" in dsn_table
+
+    def test_predicate_serializes_via_to_dict(
+        self, authed_conditional_rules_client: TestClient
+    ) -> None:
+        """Predicate serialises via to_dict."""
+        body = authed_conditional_rules_client.get(
+            "/api/plugins/test-conditional-rules/schema"
+        ).json()
+
+        gate = body["forms"][0]["fields"][1]["requires"][0]
+        assert gate["when"] == {"equals": {"recursion_method": "dsn"}}
+
+        rule = body["forms"][0]["cardinality_rules"][0]
+        assert rule["when"] == {"truthy": "recursion_method"}
+        assert rule["fields"] == ["dsn_table"]
+        assert rule["max"] == 1
+
+
+class TestSchemaResponseExcludeNone:
+    """Verify ``response_model_exclude_none=True`` keeps unused keys absent."""
+
+    def test_no_new_primitive_keys_when_unused(
+        self, authed_all_fields_client: TestClient
+    ) -> None:
+        """A schema without conditional rules emits no rule-primitive keys."""
+        body = authed_all_fields_client.get(
+            "/api/plugins/test-all-fields/schema"
+        ).json()
+
+        for forbidden_key in (
+            "requires",
+            "forbidden",
+            "cardinality_rules",
+            "fail_when",
+        ):
+            assert forbidden_key not in body, f"{forbidden_key!r} leaked at top level"
+
+        for section in body["forms"]:
+            for forbidden_key in ("cardinality_rules", "fail_when"):
+                assert forbidden_key not in section, (
+                    f"{forbidden_key!r} leaked into a section"
+                )
+            for field in section["fields"]:
+                for forbidden_key in ("requires", "forbidden"):
+                    assert forbidden_key not in field, (
+                        f"{forbidden_key!r} leaked into field {field['name']!r}"
+                    )

@@ -13,7 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Routes for the Dipper plugin."""
+"""Define routes for the Dipper plugin.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/plugins/dipper/`` and the React UI consumes them via
+``frontend/packages/plugins/dipper``. Every response from this router
+carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
+hit; the routes remain mounted so users can fall back to the legacy UI
+while the React UI reaches full feature parity.
+"""
 
 import logging
 from typing import Annotated
@@ -47,12 +55,13 @@ from app.sep.plugins.dipper.deps import (
     SupportedDipperServices,
 )
 from app.sep.plugins.dipper.models import DipperScript
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.snippets.models.snippet import SnippetExecutionMeta
 from app.sep.utils.jinja import syntax_highlight
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 ExecutionMetaDep = Annotated[SnippetExecutionMeta, Depends(get_dipper_execution_meta)]

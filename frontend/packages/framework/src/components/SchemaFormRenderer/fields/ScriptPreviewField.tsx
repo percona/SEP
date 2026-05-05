@@ -63,10 +63,10 @@ export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
   const theme = useTheme();
   const dependsOnValues = useWatch({
     control,
-    name: field.dependsOn,
+    name: field.depends_on,
   });
   const dependsOnKey = useMemo(() => JSON.stringify(dependsOnValues ?? []), [dependsOnValues]);
-  const dependsOnSchema = useMemo(() => JSON.stringify(field.dependsOn), [field.dependsOn]);
+  const dependsOnSchema = useMemo(() => JSON.stringify(field.depends_on), [field.depends_on]);
 
   const [state, setState] = useState<PreviewState>({
     status: 'idle',
@@ -84,7 +84,7 @@ export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
       () => {
         setState((prev) => ({ ...prev, status: 'loading', error: null }));
         apiClient
-          .get<ScriptPreviewResponse>(field.endpointUrl, { signal: controller.signal })
+          .get<ScriptPreviewResponse>(field.endpoint_url, { signal: controller.signal })
           .then((response) => {
             setState({ status: 'success', data: response.data, error: null });
           })
@@ -96,14 +96,14 @@ export function ScriptPreviewField({ field }: ScriptPreviewFieldProps) {
             setState({ status: 'error', data: null, error: message });
           });
       },
-      field.dependsOn.length > 0 ? DEBOUNCE_MS : 0,
+      field.depends_on.length > 0 ? DEBOUNCE_MS : 0,
     );
 
     return () => {
       clearTimeout(handle);
       controller.abort();
     };
-  }, [field.endpointUrl, dependsOnSchema, dependsOnKey]);
+  }, [field.endpoint_url, dependsOnSchema, dependsOnKey]);
 
   return (
     <Box
