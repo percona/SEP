@@ -10,13 +10,13 @@ pnpm test:e2e                  # run all E2E tests (headless)
 pnpm --filter @sep/e2e test:e2e:ui   # open Playwright UI mode for debugging
 ```
 
-> **Note:** The tests use the Vite dev server (`pnpm dev`) as the test target, so no prior build is needed. The first run starts the dev server automatically.
+> **Note:** The first run builds the shell with `VITE_MOCK_API=true` and serves the production bundle via `vite preview` on port 5174. Cold builds take longer than a dev-server start — Playwright's `webServer.timeout` is set to 180 s to accommodate that.
 
 ## How it works
 
-`playwright.config.ts` spins up `pnpm --filter @sep/shell dev` (the Vite dev server on port 5174) as the `webServer`. All API calls are intercepted inside each spec via `page.route('**/api/**', …)` so no real backend is required.
+`playwright.config.ts` runs `VITE_MOCK_API=true pnpm --filter @sep/shell build && pnpm --filter @sep/shell preview --port 5174 --strictPort` as the `webServer`. All API calls are intercepted inside each spec via `page.route('**/api/**', …)` so no real backend is required.
 
-Using the Vite **dev** server (not `preview`) is intentional: `import.meta.env.DEV = true` enables the mock-data fallbacks inside `usePluginTasks`, so the schema-driven plugin list pages render without a live `/api/plugins/*` endpoint.
+Testing the **production** bundle (not the dev server) is intentional: it exercises the same code path users get. The mock-data fallbacks inside `usePluginTasks` are gated on `import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true'`, and Vite statically replaces both expressions at build time. Setting `VITE_MOCK_API=true` for this build lights up the fallback branch in the bundle so the schema-driven plugin list pages render without a live `/api/plugins/*` endpoint, while real production builds (which never set the flag) get the fallback dead-code-eliminated.
 
 ## Adding a smoke test for a new plugin
 

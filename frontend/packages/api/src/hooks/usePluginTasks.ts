@@ -80,7 +80,9 @@ export function usePluginTask<T extends Record<string, unknown>>(
         return data;
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
-          return mockTasks.find((t) => String(t.id) === taskId);
+          // Per-plugin detail/delete routes look up by `task_name`; mocks
+          // resolve by the same key so dev fallback matches prod semantics.
+          return mockTasks.find((t) => String(t.name ?? t.id) === taskId);
         }
         throw error;
       }
