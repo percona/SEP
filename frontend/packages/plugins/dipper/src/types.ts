@@ -15,9 +15,20 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenPlugin } from '@sep/framework';
-import { PLUGIN_NAME } from './routes';
+export type DipperCollectorType = 'environment' | 'pmm';
 
-export function ChecksumsPlugin() {
-  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} />;
+export interface DipperExecutionWrite {
+  service_id: number;
+  collector_type: DipperCollectorType;
+  executor_host: string;
+  sudo: boolean;
+  args: Record<string, unknown>;
+}
+
+export interface DipperExecutionResponse {
+  task_id: number | null;
+  task_name: string;
+  snippet_filename: string;
+  service_id: number;
+  collector_type: DipperCollectorType;
 }
