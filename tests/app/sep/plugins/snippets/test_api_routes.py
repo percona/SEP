@@ -20,8 +20,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import status
+from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.sep.deps import (
+    get_api_authenticated_user,
+    get_current_user,
+    get_session,
+    validate_csrf,
+)
+from app.sep.main import sep_app
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -72,7 +80,7 @@ class TestSnippetsPluginSchema:
         body = response.json()
         assert body["name"] == "snippets"
         assert body["forms"] == []
-        column_keys = [column["key"] for column in body["listView"]["columns"]]
+        column_keys = [column["key"] for column in body["list_view"]["columns"]]
         assert "filename" in column_keys
         assert "isApproved" in column_keys
 
@@ -109,7 +117,7 @@ class TestSnippetsApiPerSnippetSchema:
             for field in execution_section["fields"]
             if field["type"] == "script_preview"
         )
-        assert preview_field["endpointUrl"] == (
+        assert preview_field["endpoint_url"] == (
             f"/plugins/snippets/{snippet.filename}/script-preview"
         )
 
@@ -253,16 +261,6 @@ class TestSnippetsApiExecute:
 @pytest.fixture
 def test_client(regular_user, session, snippets_dir):
     """Return a TestClient sharing the in-memory session and snippets dir."""
-    from fastapi.testclient import TestClient
-
-    from app.sep.deps import (
-        get_api_authenticated_user,
-        get_current_user,
-        get_session,
-        validate_csrf,
-    )
-    from app.sep.main import sep_app
-
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user

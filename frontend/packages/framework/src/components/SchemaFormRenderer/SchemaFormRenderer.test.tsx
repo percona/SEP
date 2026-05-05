@@ -44,8 +44,8 @@ describe('buildValidationRules', () => {
       name: 'title',
       label: 'Title',
       required: true,
-      minLength: 3,
-      maxLength: 10,
+      min_length: 3,
+      max_length: 10,
       pattern: '^[a-z]+$',
     });
     expect(rules.required).toBe('Title is required');
@@ -72,8 +72,8 @@ describe('buildValidationRules', () => {
       name: 'tags',
       label: 'Tags',
       choices: [{ label: 'A', value: 'a' }],
-      minItems: 1,
-      maxItems: 2,
+      min_items: 1,
+      max_items: 2,
     });
     const validate = rules.validate as (value: unknown) => true | string;
     expect(validate([])).toMatch(/at least 1/);
@@ -112,11 +112,11 @@ describe('coerceFormValues', () => {
         empty: '',
       },
       [
-        { type: 'service', name: 'serviceId', label: 'Service', serviceTypes: [] },
-        { type: 'schema', name: 'schemaName', label: 'Schema', dependsOn: 'serviceId' },
-        { type: 'table', name: 'tbl', label: 'Table', dependsOn: 'schemaName' },
+        { type: 'service', name: 'serviceId', label: 'Service', service_types: [] },
+        { type: 'schema', name: 'schemaName', label: 'Schema', depends_on: 'serviceId' },
+        { type: 'table', name: 'tbl', label: 'Table', depends_on: 'schemaName' },
         { type: 'host', name: 'hostId', label: 'Host' },
-        { type: 'service', name: 'empty', label: 'Empty', serviceTypes: [] },
+        { type: 'service', name: 'empty', label: 'Empty', service_types: [] },
       ],
     );
     expect(out.serviceId).toBe(7);
@@ -137,7 +137,7 @@ describe('SchemaFormRenderer — field rendering', () => {
     {
       title: 'Basics',
       fields: [
-        { type: 'string', name: 'title', label: 'Title', required: true, minLength: 3 },
+        { type: 'string', name: 'title', label: 'Title', required: true, min_length: 3 },
         { type: 'integer', name: 'count', label: 'Count', ge: 1, le: 10 },
         { type: 'float', name: 'rate', label: 'Rate', ge: 0, le: 1, step: 0.01 },
         { type: 'bool', name: 'active', label: 'Active' },
@@ -165,7 +165,7 @@ describe('SchemaFormRenderer — field rendering', () => {
         { type: 'datetime', name: 'when', label: 'When' },
         { type: 'yaml', name: 'cfg', label: 'Config' },
         { type: 'file', name: 'upload', label: 'Upload' },
-        { type: 'table', name: 'tbl', label: 'Table', dependsOn: 'schemaName' },
+        { type: 'table', name: 'tbl', label: 'Table', depends_on: 'schemaName' },
         { type: 'host', name: 'hostId', label: 'Host' },
       ],
     },
@@ -266,7 +266,7 @@ describe('SchemaFormRenderer — multichoice minItems', () => {
               { label: 'Alpha', value: 'a' },
               { label: 'Beta', value: 'b' },
             ],
-            minItems: 1,
+            min_items: 1,
           },
         ],
       },
@@ -343,9 +343,9 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
             type: 'service',
             name: 'serviceId',
             label: 'Service',
-            serviceTypes: ['mysql'],
+            service_types: ['mysql'],
           },
-          { type: 'schema', name: 'schemaName', label: 'Schema', dependsOn: 'serviceId' },
+          { type: 'schema', name: 'schemaName', label: 'Schema', depends_on: 'serviceId' },
         ],
       },
     ];

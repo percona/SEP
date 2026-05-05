@@ -104,7 +104,9 @@ async def snippets_api_list(session: SessionDep) -> list[SnippetResponse]:
 
 @router.get(
     "/{snippet_filename}/schema",
+    response_model=PluginSchema,
     response_model_by_alias=True,
+    response_model_exclude_none=True,
     dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_per_snippet_schema(snippet: SnippetDep) -> PluginSchema:

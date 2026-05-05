@@ -131,7 +131,7 @@ export function SnippetDetailPage() {
         ← Back to snippets
       </MuiLink>
       <Typography variant="h4" sx={{ mb: 1 }}>
-        {schemaQuery.data.displayName}
+        {schemaQuery.data.display_name}
       </Typography>
       {schemaQuery.data.description && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
