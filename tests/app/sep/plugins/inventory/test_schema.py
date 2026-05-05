@@ -26,13 +26,13 @@ def test_inventory_schema_has_four_entities():
 
 
 def test_inventory_schema_serialises_entities():
-    """Assert ``inventory_schema`` serialises ``entities`` with camelCase keys for JSON."""
+    """Assert ``inventory_schema`` serialises ``entities`` with snake_case keys for JSON."""
     dumped = inventory_schema.model_dump(mode="json", by_alias=True)
     assert dumped["name"] == "inventory"
     assert "entities" in dumped
-    assert dumped["entities"][0]["displayName"] == "Nodes"
-    assert "listView" in dumped["entities"][0]
-    assert dumped["entities"][3]["detailHighlights"] == {
+    assert dumped["entities"][0]["display_name"] == "Nodes"
+    assert "list_view" in dumped["entities"][0]
+    assert dumped["entities"][3]["detail_highlights"] == {
         "create": "sql",
         "keys": "json",
     }

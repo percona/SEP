@@ -167,23 +167,23 @@ def test_plugin_schema_entities_mode_omits_root_list_view():
 
 
 def test_plugin_entity_schema_detail_highlights_round_trip():
-    """Round-trip detail highlight hints through camelCase JSON aliases."""
+    """Round-trip detail highlight hints through snake_case JSON (wire format)."""
     entity = PluginEntitySchema.model_validate(
         {
             "name": "things",
-            "displayName": "Things",
+            "display_name": "Things",
             "forms": [
                 {
                     "title": "T",
                     "fields": [{"name": "title", "label": "Title", "type": "string"}],
                 }
             ],
-            "listView": {"columns": [{"key": "title", "label": "Title"}]},
-            "detailHighlights": {"ddl": "sql", "metadata": "json"},
+            "list_view": {"columns": [{"key": "title", "label": "Title"}]},
+            "detail_highlights": {"ddl": "sql", "metadata": "json"},
         }
     )
     dumped = entity.model_dump(mode="json", by_alias=True)
-    assert dumped["detailHighlights"] == {"ddl": "sql", "metadata": "json"}
+    assert dumped["detail_highlights"] == {"ddl": "sql", "metadata": "json"}
 
 
 def test_plugin_entity_schema_rejects_duplicate_field_names():
