@@ -91,12 +91,22 @@ const inventoryNestedMockSchema: PluginSchema = {
 };
 
 const inventoryDetailFixtures: Record<string, Record<string, unknown>> = {
-  'nodes:1': { id: 1, name: 'n1' },
-  'services:2': { id: 2, name: 'svc', node: { id: 1, name: 'n1' } },
+  'nodes:1': {
+    id: 1,
+    name: 'n1',
+    services: [{ id: 2, name: 'svc' }],
+  },
+  'services:2': {
+    id: 2,
+    name: 'svc',
+    node: { id: 1, name: 'n1' },
+    schemas: [{ id: 3, name: 'db' }],
+  },
   'schemas:3': {
     id: 3,
     name: 'db',
     service: { id: 2, name: 'svc', node: { id: 1, name: 'n1' } },
+    tables: [{ id: 4, name: 'mytbl' }],
   },
   'tables:4': {
     id: 4,
@@ -219,6 +229,56 @@ describe('InventoryPlugin', () => {
       });
 
       expect(await screen.findByRole('heading', { name: /Schema detail/i })).toBeInTheDocument();
+    });
+
+    it('drills into a service via the nested route from a node detail page', async () => {
+      const { router } = renderWithProviders(
+        <InventoryPlugin mockSchema={inventoryNestedMockSchema} />,
+        ['/inventory/nodes/1'],
+      );
+
+      await screen.findByRole('heading', { name: /Node detail/i });
+
+      const serviceRow = await screen.findByRole('row', { name: /svc/ });
+      fireEvent.click(serviceRow);
+
+      await waitFor(() => {
+        expect(router.state.location.pathname).toBe('/inventory/nodes/1/services/2');
+      });
+    });
+
+    it('drills into a schema via the nested route from a service detail page', async () => {
+      const { router } = renderWithProviders(
+        <InventoryPlugin mockSchema={inventoryNestedMockSchema} />,
+        ['/inventory/nodes/1/services/2'],
+      );
+
+      await screen.findByRole('heading', { name: /Service detail/i });
+
+      const schemaRow = await screen.findByRole('row', { name: /db/ });
+      fireEvent.click(schemaRow);
+
+      await waitFor(() => {
+        expect(router.state.location.pathname).toBe('/inventory/nodes/1/services/2/schemas/3');
+      });
+    });
+
+    it('drills into a table via the nested route from a schema detail page', async () => {
+      const { router } = renderWithProviders(
+        <InventoryPlugin mockSchema={inventoryNestedMockSchema} />,
+        ['/inventory/nodes/1/services/2/schemas/3'],
+      );
+
+      await screen.findByRole('heading', { name: /Schema detail/i });
+
+      const tableRow = await screen.findByRole('row', { name: /mytbl/ });
+      fireEvent.click(tableRow);
+
+      await waitFor(() => {
+        expect(router.state.location.pathname).toBe(
+          '/inventory/nodes/1/services/2/schemas/3/tables/4',
+        );
+      });
     });
   });
 });
