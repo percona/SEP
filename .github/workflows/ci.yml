@@ -103,6 +103,24 @@ jobs:
           restore-keys: |
             pre-commit-${{ runner.os }}-
 
+      - name: Write lightweight pre-commit config
+        run: |
+          cat > .pre-commit-light-config.yaml <<'EOF'
+          repos:
+            - repo: https://github.com/pre-commit/pre-commit-hooks
+              rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b
+              hooks:
+                - id: check-yaml
+                - id: check-json
+                - id: check-toml
+                - id: check-merge-conflict
+                - id: check-case-conflict
+                - id: check-added-large-files
+                - id: end-of-file-fixer
+                - id: trailing-whitespace
+                - id: fix-byte-order-marker
+          EOF
+
       - name: Perform lightweight pre-commit checks
         run: |
           status=0
@@ -117,7 +135,7 @@ jobs:
             trailing-whitespace \
             fix-byte-order-marker
           do
-            pre-commit run --all-files "$hook" || status=$?
+            pre-commit run --config .pre-commit-light-config.yaml --all-files "$hook" || status=$?
           done
           exit "$status"
 
