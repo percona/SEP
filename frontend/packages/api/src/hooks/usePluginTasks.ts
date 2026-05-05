@@ -114,6 +114,10 @@ function entityQueryKey(pluginName: string, entityName: string) {
   return ['plugins', pluginName, 'entity', entityName] as const;
 }
 
+function entityQueriesRootKey(pluginName: string) {
+  return ['plugins', pluginName, 'entity'] as const;
+}
+
 /** List rows for one entity of a multi-entity plugin (GET ``/plugins/{name}/{entity}/``). */
 export function usePluginEntityList<T extends Record<string, unknown>>(
   pluginName: string,
@@ -183,7 +187,7 @@ export function useCreatePluginEntity<T extends Record<string, unknown>>(
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: entityQueryKey(pluginName, entityName) });
+      queryClient.invalidateQueries({ queryKey: entityQueriesRootKey(pluginName) });
     },
   });
 }
@@ -210,11 +214,8 @@ export function useUpdatePluginEntity<T extends Record<string, unknown>>(
         throw error;
       }
     },
-    onSuccess: (_data, { id }) => {
-      queryClient.invalidateQueries({ queryKey: entityQueryKey(pluginName, entityName) });
-      queryClient.invalidateQueries({
-        queryKey: [...entityQueryKey(pluginName, entityName), id],
-      });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: entityQueriesRootKey(pluginName) });
     },
   });
 }
@@ -238,7 +239,7 @@ export function useDeletePluginEntity(
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: entityQueryKey(pluginName, entityName) });
+      queryClient.invalidateQueries({ queryKey: entityQueriesRootKey(pluginName) });
     },
   });
 }
