@@ -24,8 +24,7 @@ import { ApiError } from '../errors';
 // builds explicitly opted-in via `VITE_MOCK_API=true` (e.g. the Playwright
 // preview target). Vite statically replaces both expressions at build time,
 // so the fallback branches are dead-code-eliminated in real production.
-const MOCK_FALLBACKS_ENABLED =
-  import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true';
+const MOCK_FALLBACKS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true';
 
 function isBackendUnavailable(error: unknown): boolean {
   if (error instanceof ApiError) {
