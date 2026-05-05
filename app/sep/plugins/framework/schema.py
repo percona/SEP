@@ -36,6 +36,7 @@ __all__ = [
     "PluginSchema",
     "SchemaBaseModel",
     "SchemaField",
+    "ScriptPreviewField",
     "ServiceField",
     "StringField",
     "TableField",
@@ -422,6 +423,41 @@ class TableField(BaseField):
     depends_on: NonEmptyStr
 
 
+class ScriptPreviewField(BaseField):
+    """Represent a read-only field that renders a backend-fetched script preview.
+
+    The renderer fetches ``endpoint_url`` on mount, and re-fetches whenever
+    any sibling field listed in ``depends_on`` changes value (debounced and
+    cancellation-safe). The response shape is
+    ``{content: str, language: str, is_truncated: bool}``.
+
+    :param field_type: The discriminator literal; always
+        ``"script_preview"`` for this class. Serialised as the JSON key
+        ``"type"``.
+    :type field_type: Literal["script_preview"]
+    :param endpoint_url: The fully-resolved URL the renderer fetches preview
+        content from, relative to the FE ``apiClient`` base (``/api``). Schema
+        synthesisers should bake any plugin-specific path segments (for
+        example, ``/plugins/snippets/{filename}/script-preview``) here at
+        schema build time rather than templating client-side.
+    :type endpoint_url: NonEmptyStr
+    :param depends_on: Names of sibling fields whose values trigger a
+        re-fetch when changed. Empty (the default) means fetch once on
+        mount.
+    :type depends_on: list[NonEmptyStr]
+    :param language: Optional default highlighter language hint used when
+        the backend response omits ``language``. Defaults to ``None``.
+    :type language: NonEmptyStr | None
+    """
+
+    field_type: Literal["script_preview"] = Field(
+        "script_preview", alias="type", serialization_alias="type"
+    )
+    endpoint_url: NonEmptyStr
+    depends_on: list[NonEmptyStr] = Field(default_factory=list)
+    language: NonEmptyStr | None = None
+
+
 AnyField = Annotated[
     BoolField
     | ChoiceField
@@ -432,6 +468,7 @@ AnyField = Annotated[
     | IntegerField
     | MultiChoiceField
     | SchemaField
+    | ScriptPreviewField
     | ServiceField
     | StringField
     | TableField

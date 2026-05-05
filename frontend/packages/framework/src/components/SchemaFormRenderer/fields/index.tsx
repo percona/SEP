@@ -1,3 +1,20 @@
+/**
+ * Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import type { PluginField } from '../types';
 import { StringField } from './StringField';
 import { IntegerField } from './IntegerField';
@@ -13,6 +30,7 @@ import { ServiceField } from './ServiceField';
 import { SchemaField } from './SchemaField';
 import { TableField } from './TableField';
 import { HostField } from './HostField';
+import { ScriptPreviewField } from './ScriptPreviewField';
 
 export {
   StringField,
@@ -29,6 +47,7 @@ export {
   SchemaField,
   TableField,
   HostField,
+  ScriptPreviewField,
 };
 
 interface FieldRendererProps {
@@ -71,6 +90,8 @@ export function FieldRenderer({ field }: FieldRendererProps) {
       return <TableField field={field} />;
     case 'host':
       return <HostField field={field} />;
+    case 'script_preview':
+      return <ScriptPreviewField field={field} />;
     default: {
       const exhaustive: never = field;
       void exhaustive;

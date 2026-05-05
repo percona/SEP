@@ -15,24 +15,43 @@
 
 """Define utilities for the SEP app snippets."""
 
-__all__ = ["generate_unique_identifiers", "guess_mime_type"]
+__all__ = [
+    "generate_unique_identifiers",
+    "guess_mime_type",
+    "mime_type_to_highlighter_language",
+]
 
 import string
 from collections.abc import Generator
 from itertools import product
 from pathlib import Path
+from typing import Final
 
 from app.core.utils import ttl_cache
 from app.sep.snippets.config import snippets_settings
 
 _ONE_HOUR = 60 * 60
 
+_MIME_TYPE_TO_HIGHLIGHTER_LANGUAGE: Final[dict[str, str]] = {
+    "text/x-shellscript": "bash",
+    "application/x-sh": "bash",
+    "application/x-shellscript": "bash",
+    "text/x-python": "python",
+    "application/x-python-code": "python",
+    "text/x-perl": "perl",
+    "application/x-perl": "perl",
+    "text/x-ruby": "ruby",
+    "application/x-ruby": "ruby",
+    "text/x-php": "php",
+    "application/x-php": "php",
+}
+
 
 @ttl_cache(ttl=_ONE_HOUR, maxsize=16)
 def guess_mime_type(file_path: Path) -> str:
     """Guess the MIME type of a file based on its path.
 
-    Uses the `python-magic` library if `USE_MAGIC` is enabled in settings,
+    Uses the ``python-magic`` library if ``USE_MAGIC`` is enabled in settings,
     otherwise falls back to using the file extension.
 
     :param file_path: The path to the file.
@@ -47,6 +66,20 @@ def guess_mime_type(file_path: Path) -> str:
     import mimetypes
 
     return mimetypes.types_map.get(file_path.suffix) or "text/plain"
+
+
+def mime_type_to_highlighter_language(mime_type: str) -> str:
+    """Map a MIME type to a JS syntax-highlighter language identifier.
+
+    Falls back to ``"plaintext"`` when the type is unknown.
+
+    :param mime_type: The MIME type as returned by :func:`guess_mime_type`.
+    :type mime_type: str
+    :return: A highlighter language identifier (for example, ``"bash"``,
+        ``"python"``).
+    :rtype: str
+    """
+    return _MIME_TYPE_TO_HIGHLIGHTER_LANGUAGE.get(mime_type, "plaintext")
 
 
 def generate_unique_identifiers() -> Generator[str]:

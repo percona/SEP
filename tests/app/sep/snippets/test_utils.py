@@ -18,7 +18,11 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.sep.snippets.utils import generate_unique_identifiers, guess_mime_type
+from app.sep.snippets.utils import (
+    generate_unique_identifiers,
+    guess_mime_type,
+    mime_type_to_highlighter_language,
+)
 
 EXPECTED_TWO_CHAR_ID_LENGTH = 2
 
@@ -114,3 +118,44 @@ class TestGenerateUniqueIdentifiers:
         gen = generate_unique_identifiers()
         identifiers = [next(gen) for _ in range(500)]
         assert len(identifiers) == len(set(identifiers))
+
+
+class TestMimeTypeToHighlighterLanguage:
+    """Test the mime_type_to_highlighter_language mapping."""
+
+    def test_shellscript_variants_map_to_bash(self):
+        """Each known shellscript MIME variant maps to bash."""
+        for mime_type in (
+            "text/x-shellscript",
+            "application/x-sh",
+            "application/x-shellscript",
+        ):
+            assert mime_type_to_highlighter_language(mime_type) == "bash"
+
+    def test_python_variants_map_to_python(self):
+        """Each known Python MIME variant maps to python."""
+        for mime_type in ("text/x-python", "application/x-python-code"):
+            assert mime_type_to_highlighter_language(mime_type) == "python"
+
+    def test_perl_variants_map_to_perl(self):
+        """Each known Perl MIME variant maps to perl."""
+        for mime_type in ("text/x-perl", "application/x-perl"):
+            assert mime_type_to_highlighter_language(mime_type) == "perl"
+
+    def test_ruby_variants_map_to_ruby(self):
+        """Each known Ruby MIME variant maps to ruby."""
+        for mime_type in ("text/x-ruby", "application/x-ruby"):
+            assert mime_type_to_highlighter_language(mime_type) == "ruby"
+
+    def test_php_variants_map_to_php(self):
+        """Each known PHP MIME variant maps to php."""
+        for mime_type in ("text/x-php", "application/x-php"):
+            assert mime_type_to_highlighter_language(mime_type) == "php"
+
+    def test_unknown_mime_type_falls_back_to_plaintext(self):
+        """Unknown MIME types fall back to the plaintext language."""
+        assert mime_type_to_highlighter_language("text/plain") == "plaintext"
+        assert mime_type_to_highlighter_language("application/octet-stream") == (
+            "plaintext"
+        )
+        assert mime_type_to_highlighter_language("") == "plaintext"

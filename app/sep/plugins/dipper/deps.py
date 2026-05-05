@@ -32,6 +32,10 @@ from app.core.exceptions import (
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.inventory.models import ServiceTypeEnum
+from app.sep.artifact_constants import (
+    ARTIFACT_DOWNLOAD_SALT,
+    ARTIFACT_TYPE_DIPPER,
+)
 from app.sep.deps import (
     CreatedServiceDep,
     ExecutorHosts,
@@ -45,7 +49,6 @@ from app.sep.plugins.dipper.constants import (
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
 from app.sep.plugins.dipper.models import DipperScript
-from app.sep.routes.artifacts import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_DIPPER
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippetArgs, SnippetExecutionMeta
 
@@ -117,7 +120,7 @@ async def get_dipper_script_with_meta(script: DipperScriptDep) -> DipperScript:
 
     This dependency ensures that the script's metadata is retrieved and up to date.
 
-    :return The DipperScript instance with updated metadata.
+    :return: The DipperScript instance with updated metadata.
     :rtype: DipperScript
     """
     await script.update_meta()
@@ -157,7 +160,7 @@ async def get_dipper_execution_args(
 ) -> BaseSnippetArgs:
     """Validate execution parameters for the selected payload script.
 
-    For PMM collector type, merges form values with SEP.PMM settings defaults.
+    For PMM collector type, merges form values with settings.PMM defaults.
 
     :param request: The incoming HTTP request.
     :type request: Request
@@ -183,7 +186,7 @@ async def get_dipper_execution_args(
         if not pmm_server:
             raise HTTPUnprocessableEntityException(
                 detail="PMM server URL is required."
-                " Provide it in the form or configure SEP__PMM__ENDPOINT.",
+                " Provide it in the form or configure PMM__ENDPOINT.",
             )
         form_data["pmmserver"] = pmm_server
         form_data["apikey"] = form_data.get("apikey") or (

@@ -24,7 +24,10 @@ from fastapi import status
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
-from app.sep.connectivity import _fetch_connectivity_result, _LATEST_RESULTS
+from app.sep.connectivity import (
+    clear_connectivity_caches,
+    get_latest_connectivity_result,
+)
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -73,11 +76,9 @@ def build_checksum_task(
 @pytest.fixture(autouse=True)
 def _clear_connectivity_caches():
     """Clear the connectivity alru_cache and snapshot between tests."""
-    _fetch_connectivity_result.cache_clear()
-    _LATEST_RESULTS.clear()
+    clear_connectivity_caches()
     yield
-    _fetch_connectivity_result.cache_clear()
-    _LATEST_RESULTS.clear()
+    clear_connectivity_caches()
 
 
 def build_checksum_write_body(
@@ -658,7 +659,7 @@ class TestChecksumsCreateEndpoint:
             "service_type": "mysql",
             "message": "connection refused",
         }
-        assert _LATEST_RESULTS[("host1", "mysql")] is False
+        assert get_latest_connectivity_result("host1", "mysql") is False
 
     def test_checksums_create_with_connectivity_check_success_warning_is_null(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
@@ -679,7 +680,7 @@ class TestChecksumsCreateEndpoint:
         data = response.json()
         assert "connectivity_warning" in data
         assert data["connectivity_warning"] is None
-        assert _LATEST_RESULTS[("host1", "mysql")] is True
+        assert get_latest_connectivity_result("host1", "mysql") is True
 
     def test_checksums_create_with_meta_missing_connectivity_keys_warning_is_null(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
@@ -698,7 +699,7 @@ class TestChecksumsCreateEndpoint:
         data = response.json()
         assert data["connectivity_warning"] is None
         assert mock_task_api_dep.post.await_count == 1
-        assert _LATEST_RESULTS == {}
+        assert get_latest_connectivity_result("host1", "mysql") is None
 
     def test_checksums_create_opt_out_skips_connectivity_check(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
@@ -721,7 +722,7 @@ class TestChecksumsCreateEndpoint:
         data = response.json()
         assert data["connectivity_warning"] is None
         assert mock_task_api_dep.post.await_count == 1
-        assert _LATEST_RESULTS == {}
+        assert get_latest_connectivity_result("host1", "mysql") is None
 
     def test_checksums_create_opt_in_explicit_true_runs_check(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
@@ -745,7 +746,7 @@ class TestChecksumsCreateEndpoint:
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
         assert data["connectivity_warning"] is None
-        assert _LATEST_RESULTS[("host1", "mysql")] is True
+        assert get_latest_connectivity_result("host1", "mysql") is True
 
     def test_checksums_create_invalid_check_connectivity_returns_422(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep

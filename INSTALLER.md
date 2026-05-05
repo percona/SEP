@@ -193,7 +193,7 @@ Related environment variables (advanced):
 
 | CLI flag | Environment variable | Purpose | Default |
 |---|---|---|---|
-| `--plugins LIST` | `SEP_ENABLED_PLUGINS` | Comma-separated plugin internal names | `schema_change,archive,backups,checksums,snippets` |
+| `--plugins LIST` | `SEP_ENABLED_PLUGINS` | Comma-separated plugin internal names | `schema_change,archive,backups,checksums` |
 
 Available plugin names:
 
@@ -202,8 +202,12 @@ Available plugin names:
 - `backups`
 - `checksums`
 - `snippets`
-- `task_manager`
 - `mongodb_backups`
+- `backup_pg`
+- `dipper`
+- `alerts`
+- `alert_troubleshooting`
+- `report`
 
 ### UI and logging controls
 

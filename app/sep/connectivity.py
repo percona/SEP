@@ -103,6 +103,36 @@ def _record_latest_result(target: str, service_type: str, *, success: bool) -> N
         _LATEST_RESULTS.popitem(last=False)
 
 
+def clear_connectivity_caches() -> None:
+    """Reset the connectivity ``alru_cache`` and the latest-results snapshot.
+
+    Provide a single public entry point for tests to wipe both the
+    ``alru_cache`` on :func:`_fetch_connectivity_result` and the
+    ``_LATEST_RESULTS`` snapshot in one call. Production code does not need
+    this — ``alru_cache`` honors its own TTL and the snapshot is intentionally
+    process-lifetime state.
+
+    :return: ``None``.
+    :rtype: None
+    """
+    _fetch_connectivity_result.cache_clear()
+    _LATEST_RESULTS.clear()
+
+
+def get_latest_connectivity_result(target: str, service_type: str) -> bool | None:
+    """Return the latest connectivity outcome for a ``(target, service_type)`` pair.
+
+    :param target: The Nomad node name.
+    :type target: str
+    :param service_type: The lowercase service type (e.g. ``mysql``).
+    :type service_type: str
+    :return: ``True`` if the last recorded check succeeded, ``False`` if it
+        failed, or ``None`` when no result has been recorded for that pair.
+    :rtype: bool | None
+    """
+    return _LATEST_RESULTS.get((target, service_type))
+
+
 @alru_cache(maxsize=CACHE_MAXSIZE, ttl=CACHE_TTL)
 async def _fetch_connectivity_result(
     tasks_api: RemoteAPI,

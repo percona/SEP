@@ -31,6 +31,8 @@ from app.sep.deps import (
     get_session,
 )
 from app.sep.main import sep_app
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
+from app.sep.plugins.snippets.routes import router as snippets_jinja_router
 from app.sep.snippets.crud import SnippetManager
 
 _BATCH_APPROVE_URL = "/snippets/approve-batch"
@@ -402,3 +404,11 @@ class TestCompletedTasksPartialHasLogs:
         rendered = self._render(self._make_history(history_id=1, has_logs=False))
 
         assert "view-logs-button" not in rendered
+
+
+class TestSnippetsRouterDeprecation:
+    """The snippets Jinja2 router uses the deprecation route class."""
+
+    def test_router_uses_deprecated_route_class(self):
+        """Confirm the router is constructed with ``DeprecatedJinja2Route``."""
+        assert snippets_jinja_router.route_class is DeprecatedJinja2Route

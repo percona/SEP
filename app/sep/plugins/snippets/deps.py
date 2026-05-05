@@ -22,6 +22,7 @@ from typing import Annotated
 from fastapi import Depends, Header, Request, status
 from pydantic import BaseModel, Field, ValidationError
 
+from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPRedirectException,
@@ -29,9 +30,12 @@ from app.core.exceptions import (
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.core.utils.fields import NonEmptyStr, UniqueList
+from app.sep.artifact_constants import (
+    ARTIFACT_DOWNLOAD_SALT,
+    ARTIFACT_TYPE_SNIPPET,
+)
 from app.sep.deps import get_base_url, SessionDep
 from app.sep.middleware import messages
-from app.sep.routes.artifacts import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
@@ -223,6 +227,9 @@ def get_snippet_source(request: Request, snippet: SnippetDep) -> str:
     return str(base_url.replace(path=f"/artifacts/download/{token}"))
 
 
+SnippetSource = Annotated[str, Depends(get_snippet_source)]
+
+
 async def get_validated_execution_args(
     request: Request,
     snippet: ExecutableSnippet,
@@ -259,19 +266,24 @@ async def get_validated_execution_args(
         raise _get_snippet_redirect_exc(request, referer) from None
 
 
-def get_snippet_execution_request_meta(
-    snippet: ExecutableSnippet,
-    snippet_source: Annotated[str, Depends(get_snippet_source)],
-    execution_args: Annotated[BaseSnippetArgs, Depends(get_validated_execution_args)],
+def build_snippet_execution_meta(
+    snippet: Snippet,
+    execution_args: BaseSnippetArgs,
+    snippet_source: str,
 ) -> SnippetExecutionMeta:
-    """Prepare and return the execution metadata for a snippet execution request.
+    """Build the :class:`SnippetExecutionMeta` payload for a snippet execution.
+
+    Shared between the form-based execute route and the JSON API execute
+    route so both produce a byte-identical payload for the same inputs
+    (modulo ``snippet_source`` URL host, which is request-scoped).
 
     :param snippet: The executable snippet.
     :type snippet: Snippet
-    :param snippet_source: The signed URL to download the snippet artifact.
-    :type snippet_source: str
-    :param execution_args: The execution arguments for the snippet.
+    :param execution_args: Validated execution arguments for the snippet.
     :type execution_args: BaseSnippetArgs
+    :param snippet_source: Signed URL the executor uses to download the
+        snippet artifact.
+    :type snippet_source: str
     :return: The prepared execution metadata.
     :rtype: SnippetExecutionMeta
     """
@@ -291,9 +303,57 @@ def get_snippet_execution_request_meta(
     )
 
 
+def get_snippet_execution_request_meta(
+    snippet: ExecutableSnippet,
+    snippet_source: SnippetSource,
+    execution_args: Annotated[BaseSnippetArgs, Depends(get_validated_execution_args)],
+) -> SnippetExecutionMeta:
+    """Prepare and return the execution metadata for a snippet execution request.
+
+    :param snippet: The executable snippet.
+    :type snippet: Snippet
+    :param snippet_source: The signed URL to download the snippet artifact.
+    :type snippet_source: str
+    :param execution_args: The execution arguments for the snippet.
+    :type execution_args: BaseSnippetArgs
+    :return: The prepared execution metadata.
+    :rtype: SnippetExecutionMeta
+    """
+    return build_snippet_execution_meta(snippet, execution_args, snippet_source)
+
+
 SnippetExecutionRequestMeta = Annotated[
     SnippetExecutionMeta, Depends(get_snippet_execution_request_meta)
 ]
+
+
+def get_executable_snippet_for_api(snippet: SnippetDep) -> Snippet:
+    """Return the snippet if it can be executed, otherwise raise 403.
+
+    JSON API analogue of :func:`get_executable_snippet`. Where the form
+    flow flashes a message and redirects to the snippet's detail page,
+    the API surfaces a structured 403 the FE can render inline.
+
+    :param snippet: The snippet to verify.
+    :type snippet: Snippet
+    :return: The same snippet when it is executable.
+    :rtype: Snippet
+    :raises HTTPForbiddenException: If the snippet cannot be executed
+        (for example, it is unapproved or has no resolvable
+        interpreter).
+    """
+    if snippet.can_execute:
+        return snippet
+    if not snippet.is_approved:
+        raise HTTPForbiddenException(
+            detail=f"Snippet {snippet.filename!r} is not approved.",
+        )
+    raise HTTPForbiddenException(
+        detail=f"Snippet {snippet.filename!r} cannot be executed.",
+    )
+
+
+ExecutableSnippetForApi = Annotated[Snippet, Depends(get_executable_snippet_for_api)]
 
 
 class SnippetBatchApproveForm(BaseModel):
