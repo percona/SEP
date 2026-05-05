@@ -36,9 +36,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import RedirectResponse
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.sep.deps import InventoryAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory.deps import (
@@ -90,10 +91,7 @@ async def inventory_create_entity(
     entity = require_inventory_plugin_entity(entity)
     body = await request.json()
     if not isinstance(body, dict):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="JSON object body required",
-        )
+        raise HTTPUnprocessableEntityException("JSON object body required")
     inv_path = inventory_service_create_path(entity, body)
     return await inventory_api.post(inv_path, json=body)
 
@@ -120,10 +118,7 @@ async def inventory_update_entity(
     entity = require_inventory_plugin_entity(entity)
     body = await request.json()
     if not isinstance(body, dict):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="JSON object body required",
-        )
+        raise HTTPUnprocessableEntityException("JSON object body required")
     return await inventory_api.put(
         inventory_service_detail_path(entity, item_id), json=body
     )

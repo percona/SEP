@@ -18,9 +18,14 @@
 from collections.abc import Callable
 from typing import Annotated, Any, NamedTuple
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
 
 from app.core.config import settings
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPNotFoundException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.utils import import_var
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
@@ -236,12 +241,10 @@ def require_inventory_plugin_entity(entity: str) -> str:
     :return: The same value when it is one of ``nodes``, ``services``,
         ``schemas``, or ``tables``.
     :rtype: str
-    :raises HTTPException: With status 404 when ``entity`` is unknown.
+    :raises HTTPNotFoundException: When ``entity`` is unknown.
     """
     if entity not in INVENTORY_PLUGIN_ENTITY_NAMES:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Unknown entity"
-        )
+        raise HTTPNotFoundException("Unknown entity")
     return entity
 
 
@@ -253,7 +256,7 @@ def unwrap_inventory_plugin_list_payload(data: Any) -> list[Any]:
     :return: ``data["items"]`` when that key holds a list; otherwise ``data``
         when it is already a list.
     :rtype: list[Any]
-    :raises HTTPException: With status 502 when the payload shape is unexpected.
+    :raises HTTPBadGatewayException: When the payload shape is unexpected.
     """
     if isinstance(data, dict) and "items" in data:
         items = data["items"]
@@ -261,10 +264,7 @@ def unwrap_inventory_plugin_list_payload(data: Any) -> list[Any]:
             return items
     if isinstance(data, list):
         return data
-    raise HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        detail="Unexpected inventory list response shape",
-    )
+    raise HTTPBadGatewayException("Unexpected inventory list response shape")
 
 
 def inventory_service_list_path(entity: str) -> str:
@@ -300,10 +300,7 @@ def _coerce_parent_id(value: Any, detail: str) -> int:
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=detail,
-        ) from exc
+        raise HTTPUnprocessableEntityException(detail) from exc
 
 
 def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
@@ -318,36 +315,34 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
     :type body: dict[str, Any]
     :return: Path relative to the inventory API root.
     :rtype: str
-    :raises HTTPException: With status 422 when a required parent id is absent,
-        or 404 when ``entity`` is unknown.
+    :raises HTTPUnprocessableEntityException: When a required parent id is absent
+        or not coercible to ``int``.
+    :raises HTTPNotFoundException: When ``entity`` is unknown.
     """
     if entity == "nodes":
         return "/"
     if entity == "services":
         node_id = body.get("node_id")
         if node_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="node_id is required to create a service",
+            raise HTTPUnprocessableEntityException(
+                "node_id is required to create a service",
             )
         return f"/{_coerce_parent_id(node_id, 'node_id is required to create a service')}/services/"
     if entity == "schemas":
         service_id = body.get("service_id")
         if service_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="service_id is required to create a schema",
+            raise HTTPUnprocessableEntityException(
+                "service_id is required to create a schema",
             )
         return f"/services/{_coerce_parent_id(service_id, 'service_id is required to create a schema')}/schemas/"
     if entity == "tables":
         schema_id = body.get("schema_id")
         if schema_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="schema_id is required to create a table",
+            raise HTTPUnprocessableEntityException(
+                "schema_id is required to create a table",
             )
         return f"/schemas/{_coerce_parent_id(schema_id, 'schema_id is required to create a table')}/tables/"
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown entity")
+    raise HTTPNotFoundException("Unknown entity")
 
 
 def inventory_plugin_query_params(request: Request) -> dict[str, Any]:

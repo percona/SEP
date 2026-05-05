@@ -237,7 +237,7 @@ def test_require_inventory_plugin_entity_returns_known_segment():
 
 
 def test_require_inventory_plugin_entity_raises_404_for_unknown():
-    """Ensure an unknown entity segment raises ``HTTPException`` with status 404."""
+    """Ensure an unknown entity segment raises ``HTTPNotFoundException`` (404)."""
     with pytest.raises(HTTPException) as excinfo:
         require_inventory_plugin_entity("unknown")
     assert excinfo.value.status_code == status.HTTP_404_NOT_FOUND
@@ -258,7 +258,7 @@ def test_unwrap_inventory_plugin_list_payload_from_bare_list():
 
 
 def test_unwrap_inventory_plugin_list_payload_raises_502_for_bad_shape():
-    """Ensure unexpected payloads raise ``HTTPException`` with status 502."""
+    """Ensure unexpected payloads raise ``HTTPBadGatewayException`` (502)."""
     with pytest.raises(HTTPException) as excinfo:
         unwrap_inventory_plugin_list_payload({"items": "not-a-list"})
     assert excinfo.value.status_code == status.HTTP_502_BAD_GATEWAY
