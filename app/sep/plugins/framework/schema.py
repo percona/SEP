@@ -25,6 +25,7 @@ __all__ = [
     "Column",
     "ColumnFormat",
     "DateTimeField",
+    "DetailHighlightLanguage",
     "FileField",
     "FloatField",
     "FormSection",
@@ -112,6 +113,13 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     RELATIVE = auto()
     CODE = auto()
     ACTIONS = auto()
+
+
+class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
+    """Enumerate supported syntax highlighters for detail fields."""
+
+    SQL = auto()
+    JSON = auto()
 
 
 class BaseField(SchemaBaseModel):
@@ -598,6 +606,10 @@ class PluginEntitySchema(SchemaBaseModel):
     :type forms: list[FormSection]
     :param list_view: Column configuration for this entity's list table.
     :type list_view: ListView
+    :param detail_highlights: Optional per-field syntax highlighter hints for
+        detail pages. Keys are field names; values are highlighting languages.
+        Defaults to an empty mapping.
+    :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -605,6 +617,9 @@ class PluginEntitySchema(SchemaBaseModel):
     description: NonEmptyStr | None = None
     forms: list[FormSection]
     list_view: ListView
+    detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:

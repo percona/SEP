@@ -21,6 +21,7 @@ from app.sep.plugins.framework.schema import (
     ChoiceField,
     Column,
     ColumnFormat,
+    DetailHighlightLanguage,
     FormSection,
     IntegerField,
     ListView,
@@ -198,6 +199,10 @@ _tables_entity = PluginEntitySchema(
         ],
         default_sort="-created_at",
     ),
+    detail_highlights={
+        "create": DetailHighlightLanguage.SQL,
+        "keys": DetailHighlightLanguage.JSON,
+    },
 )
 
 inventory_schema = PluginSchema(

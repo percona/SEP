@@ -295,6 +295,17 @@ def inventory_service_detail_path(entity: str, item_id: int) -> str:
     return f"/{entity}/{item_id}"
 
 
+def _coerce_parent_id(value: Any, detail: str) -> int:
+    """Convert nested parent ids to int and normalize validation failures."""
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=detail,
+        ) from exc
+
+
 def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
     """Map a plugin entity and JSON body to the inventory path for POST.
 
@@ -319,7 +330,7 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="node_id is required to create a service",
             )
-        return f"/{int(node_id)}/services/"
+        return f"/{_coerce_parent_id(node_id, 'node_id is required to create a service')}/services/"
     if entity == "schemas":
         service_id = body.get("service_id")
         if service_id is None:
@@ -327,7 +338,7 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="service_id is required to create a schema",
             )
-        return f"/services/{int(service_id)}/schemas/"
+        return f"/services/{_coerce_parent_id(service_id, 'service_id is required to create a schema')}/schemas/"
     if entity == "tables":
         schema_id = body.get("schema_id")
         if schema_id is None:
@@ -335,7 +346,7 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="schema_id is required to create a table",
             )
-        return f"/schemas/{int(schema_id)}/tables/"
+        return f"/schemas/{_coerce_parent_id(schema_id, 'schema_id is required to create a table')}/tables/"
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown entity")
 
 

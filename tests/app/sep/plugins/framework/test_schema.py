@@ -166,6 +166,26 @@ def test_plugin_schema_entities_mode_omits_root_list_view():
     assert schema.list_view is None
 
 
+def test_plugin_entity_schema_detail_highlights_round_trip():
+    """Round-trip detail highlight hints through camelCase JSON aliases."""
+    entity = PluginEntitySchema.model_validate(
+        {
+            "name": "things",
+            "displayName": "Things",
+            "forms": [
+                {
+                    "title": "T",
+                    "fields": [{"name": "title", "label": "Title", "type": "string"}],
+                }
+            ],
+            "listView": {"columns": [{"key": "title", "label": "Title"}]},
+            "detailHighlights": {"ddl": "sql", "metadata": "json"},
+        }
+    )
+    dumped = entity.model_dump(mode="json", by_alias=True)
+    assert dumped["detailHighlights"] == {"ddl": "sql", "metadata": "json"}
+
+
 def test_plugin_entity_schema_rejects_duplicate_field_names():
     """Reject a ``PluginEntitySchema`` with duplicate field ``name`` values across sections."""
     with pytest.raises(ValueError, match="duplicate field name"):

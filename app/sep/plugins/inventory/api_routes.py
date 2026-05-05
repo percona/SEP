@@ -62,7 +62,7 @@ async def inventory_entity_redirect_slash(
     """Redirect ``GET /{entity}`` to ``GET /{entity}/`` for list routes."""
     require_inventory_plugin_entity(entity)
     return RedirectResponse(
-        url=str(request.url.include_query_params()).rstrip("/") + "/",
+        url=str(request.url.replace(path=request.url.path.rstrip("/") + "/")),
         status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     )
 

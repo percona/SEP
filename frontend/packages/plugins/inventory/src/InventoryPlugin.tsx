@@ -15,12 +15,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { PluginSchema } from '@sep/api';
-import {
-  InventoryBreadcrumbs,
-  SchemaDrivenPlugin,
-  renderInventoryDetailChildren,
-} from '@sep/framework';
+import { usePluginSchema, type PluginSchema } from '@sep/api';
+import Box from '@mui/material/Box';
+import CircularProgress from '@mui/material/CircularProgress';
+import Typography from '@mui/material/Typography';
+import { InventoryBreadcrumbs } from './InventoryPluginNavigation';
+import { InventoryRoutes } from './InventoryRoutes';
 
 export interface InventoryPluginProps {
   /** Optional mock schema for Storybook / offline tests. */
@@ -28,35 +28,38 @@ export interface InventoryPluginProps {
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
 }
 
-const INVENTORY_DETAIL_SUPPRESS_KEYS = [
-  'services',
-  'schemas',
-  'tables',
-  'node',
-  'service',
-  'database',
-];
-
 /**
  * Inventory plugin — browse nodes, services, schemas, and tables with the same drill-down
  * as the legacy UI (node → services → schemas → tables). Row delete is available on list
  * tables; detail chrome stays browse-only (no edit / header delete).
  */
 export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPluginProps) {
+  const { data: schema, isLoading, error } = usePluginSchema('inventory', mockSchema);
+
+  if (isLoading && !schema) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error && !schema) {
+    return (
+      <Box sx={{ py: 4 }}>
+        <Typography color="error">Failed to load plugin schema: {error.message}</Typography>
+      </Box>
+    );
+  }
+
+  if (!schema) {
+    return null;
+  }
+
   return (
     <>
       <InventoryBreadcrumbs mockSchema={mockSchema} />
-      <SchemaDrivenPlugin
-        pluginName="inventory"
-        mockSchema={mockSchema}
-        mockEntityItems={mockEntityItems}
-        browseOnly
-        hideEntityTabs
-        inventoryNestedPaths
-        allowListEntityDelete
-        suppressDetailKeys={INVENTORY_DETAIL_SUPPRESS_KEYS}
-        renderEntityDetailChildren={renderInventoryDetailChildren}
-      />
+      <InventoryRoutes schema={schema} mockEntityItems={mockEntityItems} />
     </>
   );
 }

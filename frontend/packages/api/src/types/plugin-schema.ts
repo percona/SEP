@@ -195,6 +195,8 @@ export interface PluginEntitySchema {
   description?: string;
   forms: FormSection[];
   listView: ListView;
+  /** Optional detail-view syntax hints keyed by field name. */
+  detailHighlights?: Partial<Record<string, 'sql' | 'json'>>;
 }
 
 // ── Top-level schema ────────────────────────────────────────────────────

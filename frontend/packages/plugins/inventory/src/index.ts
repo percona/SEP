@@ -19,8 +19,21 @@
  * @sep/inventory — Inventory plugin entry point.
  *
  * Exports:
- * - InventoryPlugin: list-only schema-driven tables for ``pluginName="inventory"``.
+ * - InventoryPlugin: inventory-specific nested routes and drill-down UI.
  */
 
 export { InventoryPlugin } from './InventoryPlugin';
 export type { InventoryPluginProps } from './InventoryPlugin';
+export {
+  InventoryBreadcrumbs,
+  inventoryPluginBasePath,
+  renderInventoryDetailChildren,
+} from './InventoryPluginNavigation';
+export {
+  inventoryMountPrefix,
+  parseFlatInventoryRoute,
+  parseNestedInventoryPath,
+  parseInventoryRoute,
+  pathThroughPairIndex,
+  pathToNestedInventoryParent,
+} from './inventoryNestedPaths';

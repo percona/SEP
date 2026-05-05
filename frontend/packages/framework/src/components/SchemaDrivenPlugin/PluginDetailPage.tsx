@@ -36,7 +36,6 @@ import {
   type PluginEntitySchema,
   type PluginSchema,
 } from '@sep/api';
-import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
 import { detailPrism } from './detailPrism';
 
 export interface PluginDetailPageProps {
@@ -61,8 +60,8 @@ export interface PluginDetailPageProps {
   /** Nested inventory: resolve ``entityName`` / ``id`` from named params (e.g. ``nodeId``). */
   detailEntityName?: string;
   detailIdParam?: string;
-  /** When true, back/delete target the nested inventory parent path instead of flat entity list. */
-  useNestedInventoryNavigation?: boolean;
+  /** Optional callback that resolves a custom back/delete target from current pathname. */
+  resolveParentPath?: (pathname: string) => string | null;
   /** When true, omit the header row (back button, ``{title} #{id}``, status chip, edit/delete). */
   hideDetailChrome?: boolean;
   /** When true, nested list tables may show row delete (inventory ``actions`` column). */
@@ -143,6 +142,13 @@ function formatKeysForDisplay(value: unknown): string {
 
 type DetailSyntaxLanguage = 'sql' | 'json';
 
+function formatDetailSyntaxCode(value: unknown, language: DetailSyntaxLanguage): string {
+  if (language === 'sql') {
+    return typeof value === 'string' ? formatCreateSql(value) : String(value);
+  }
+  return formatKeysForDisplay(value);
+}
+
 function DetailSyntaxBlock({ code, language }: { code: string; language: DetailSyntaxLanguage }) {
   const muiTheme = useTheme();
   const prismTheme = muiTheme.palette.mode === 'dark' ? themes.vsDark : themes.vsLight;
@@ -175,34 +181,26 @@ function DetailSyntaxBlock({ code, language }: { code: string; language: DetailS
 function DetailField({
   label,
   value,
-  fieldKey,
+  highlightLanguage,
 }: {
   label: string;
   value: unknown;
-  fieldKey: string;
+  highlightLanguage?: DetailSyntaxLanguage;
 }) {
   if (value === null || value === undefined || value === '') {
     return null;
   }
 
-  if (fieldKey === 'create' && typeof value === 'string') {
+  if (highlightLanguage) {
     return (
       <Box sx={{ mb: 2 }}>
         <Typography variant="caption" color="text.secondary">
           {label}
         </Typography>
-        <DetailSyntaxBlock code={formatCreateSql(value)} language="sql" />
-      </Box>
-    );
-  }
-
-  if (fieldKey === 'keys') {
-    return (
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="caption" color="text.secondary">
-          {label}
-        </Typography>
-        <DetailSyntaxBlock code={formatKeysForDisplay(value)} language="json" />
+        <DetailSyntaxBlock
+          code={formatDetailSyntaxCode(value, highlightLanguage)}
+          language={highlightLanguage}
+        />
       </Box>
     );
   }
@@ -236,7 +234,7 @@ export function PluginDetailPage({
   renderEntityDetailChildren,
   detailEntityName,
   detailIdParam,
-  useNestedInventoryNavigation = false,
+  resolveParentPath,
   hideDetailChrome = false,
   allowListEntityDelete = false,
 }: PluginDetailPageProps) {
@@ -251,13 +249,12 @@ export function PluginDetailPage({
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
 
-  const nestedParentPath = useMemo(() => {
-    if (!useNestedInventoryNavigation) {
+  const customParentPath = useMemo(() => {
+    if (!resolveParentPath) {
       return null;
     }
-    const prefix = inventoryMountPrefix(location.pathname);
-    return prefix ? pathToNestedInventoryParent(location.pathname, prefix) : null;
-  }, [location.pathname, useNestedInventoryNavigation]);
+    return resolveParentPath(location.pathname);
+  }, [location.pathname, resolveParentPath]);
 
   const taskQuery = usePluginTask(pluginName, id, mockTasks, { enabled: !multi && Boolean(id) });
   const entityQuery = usePluginEntityDetail(
@@ -292,8 +289,8 @@ export function PluginDetailPage({
     }
     deleteEntity.mutate(id, {
       onSuccess: () =>
-        nestedParentPath
-          ? navigate(nestedParentPath)
+        customParentPath
+          ? navigate(customParentPath)
           : entityName
             ? navigate(pathToEntityList(location.pathname, entityName))
             : navigate('..', { relative: 'path' }),
@@ -339,8 +336,8 @@ export function PluginDetailPage({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, flexWrap: 'wrap' }}>
           <IconButton
             onClick={() =>
-              nestedParentPath
-                ? navigate(nestedParentPath)
+              customParentPath
+                ? navigate(customParentPath)
                 : multi && entityName
                   ? navigate(pathToEntityList(location.pathname, entityName))
                   : navigate('..', { relative: 'path' })
@@ -388,7 +385,12 @@ export function PluginDetailPage({
         {listView.columns
           .filter((col) => col.format !== 'actions' && col.key !== '_actions')
           .map((col) => (
-            <DetailField key={col.key} fieldKey={col.key} label={col.label} value={task[col.key]} />
+            <DetailField
+              key={col.key}
+              highlightLanguage={entitySchema?.detailHighlights?.[col.key]}
+              label={col.label}
+              value={task[col.key]}
+            />
           ))}
 
         {Object.entries(task)
@@ -400,7 +402,12 @@ export function PluginDetailPage({
               !suppressDetailKeys.includes(key),
           )
           .map(([key, value]) => (
-            <DetailField key={key} fieldKey={key} label={key} value={value} />
+            <DetailField
+              key={key}
+              highlightLanguage={entitySchema?.detailHighlights?.[key]}
+              label={key}
+              value={value}
+            />
           ))}
       </Paper>
 

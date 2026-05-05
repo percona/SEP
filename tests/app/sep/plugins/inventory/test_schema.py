@@ -32,3 +32,7 @@ def test_inventory_schema_serialises_entities():
     assert "entities" in dumped
     assert dumped["entities"][0]["displayName"] == "Nodes"
     assert "listView" in dumped["entities"][0]
+    assert dumped["entities"][3]["detailHighlights"] == {
+        "create": "sql",
+        "keys": "json",
+    }

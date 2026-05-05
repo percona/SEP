@@ -30,7 +30,7 @@ import {
   type PluginEntitySchema,
   type PluginSchema,
 } from '@sep/api';
-import { SchemaListView } from '../SchemaListView';
+import { SchemaListView } from '@sep/framework/src/components/SchemaListView';
 import {
   inventoryMountPrefix,
   parseFlatInventoryRoute,

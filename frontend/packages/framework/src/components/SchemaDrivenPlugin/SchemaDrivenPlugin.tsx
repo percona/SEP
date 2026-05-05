@@ -16,7 +16,7 @@
  */
 
 import { useMemo, type ReactNode } from 'react';
-import { Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
@@ -53,11 +53,6 @@ interface SchemaDrivenPluginProps {
   suppressDetailKeys?: string[];
   /** Hide multi-entity tab bar (e.g. inventory uses breadcrumbs instead). */
   hideEntityTabs?: boolean;
-  /**
-   * Inventory: use nested URLs ``nodes/:id/services/:id/…`` for drill-down detail routes
-   * (flat ``/services/:id`` etc. remain available as alternate entry points).
-   */
-  inventoryNestedPaths?: boolean;
   /**
    * When true, entity list tables that declare an ``actions`` column show a per-row delete
    * control (inventory uses this with browse-only detail chrome).
@@ -179,39 +174,6 @@ function PluginEditPage({
   );
 }
 
-function InventoryNestedNodesList({
-  schema,
-  pluginName,
-  mockEntityItems,
-  listOnly,
-  hideCreate,
-  hideEntityTabs,
-  allowListEntityDelete,
-}: {
-  schema: PluginSchema;
-  pluginName: string;
-  mockEntityItems?: Record<string, Record<string, unknown>[]>;
-  listOnly: boolean;
-  hideCreate: boolean;
-  hideEntityTabs: boolean;
-  allowListEntityDelete?: boolean;
-}) {
-  const { pathname } = useLocation();
-  return (
-    <PluginListPage
-      schema={schema}
-      pluginName={pluginName}
-      mockEntityItems={mockEntityItems}
-      listOnly={listOnly}
-      hideCreate={hideCreate}
-      hideEntityTabs={hideEntityTabs}
-      entityNameOverride="nodes"
-      rowClickHref={(row) => `${pathname}/${String(row.id)}`}
-      allowListEntityDelete={allowListEntityDelete}
-    />
-  );
-}
-
 export function SchemaDrivenPlugin({
   pluginName,
   mockSchema,
@@ -221,7 +183,6 @@ export function SchemaDrivenPlugin({
   browseOnly = false,
   suppressDetailKeys,
   hideEntityTabs = false,
-  inventoryNestedPaths = false,
   allowListEntityDelete = false,
   renderEntityDetailChildren,
 }: SchemaDrivenPluginProps) {
@@ -250,119 +211,6 @@ export function SchemaDrivenPlugin({
   }
 
   if (schema.entities?.length) {
-    if (inventoryNestedPaths) {
-      const detailProps = {
-        schema,
-        pluginName,
-        mockEntityItems,
-        browseOnly,
-        suppressDetailKeys,
-        renderEntityDetailChildren,
-        useNestedInventoryNavigation: true as const,
-        hideDetailChrome: browseOnly,
-        allowListEntityDelete,
-      };
-      return (
-        <Routes>
-          <Route index element={<Navigate to="nodes" replace />} />
-          <Route
-            path="nodes"
-            element={
-              <InventoryNestedNodesList
-                schema={schema}
-                pluginName={pluginName}
-                mockEntityItems={mockEntityItems}
-                listOnly={listOnly}
-                hideCreate={browseOnly && !listOnly}
-                hideEntityTabs={hideEntityTabs}
-                allowListEntityDelete={allowListEntityDelete}
-              />
-            }
-          />
-          {showDetailRoutes && (
-            <>
-              <Route
-                path="nodes/:nodeId"
-                element={
-                  <PluginDetailPage
-                    {...detailProps}
-                    detailEntityName="nodes"
-                    detailIdParam="nodeId"
-                  />
-                }
-              />
-              <Route
-                path="nodes/:nodeId/services/:serviceId"
-                element={
-                  <PluginDetailPage
-                    {...detailProps}
-                    detailEntityName="services"
-                    detailIdParam="serviceId"
-                  />
-                }
-              />
-              <Route
-                path="nodes/:nodeId/services/:serviceId/schemas/:schemaId"
-                element={
-                  <PluginDetailPage
-                    {...detailProps}
-                    detailEntityName="schemas"
-                    detailIdParam="schemaId"
-                  />
-                }
-              />
-              <Route
-                path="nodes/:nodeId/services/:serviceId/schemas/:schemaId/tables/:tableId"
-                element={
-                  <PluginDetailPage
-                    {...detailProps}
-                    detailEntityName="tables"
-                    detailIdParam="tableId"
-                  />
-                }
-              />
-            </>
-          )}
-          <Route path="services" element={<Navigate to="../nodes" replace relative="path" />} />
-          <Route path="schemas" element={<Navigate to="../nodes" replace relative="path" />} />
-          <Route path="tables" element={<Navigate to="../nodes" replace relative="path" />} />
-          <Route
-            path="tables/:id"
-            element={
-              <PluginDetailPage
-                {...detailProps}
-                detailEntityName="tables"
-                detailIdParam="id"
-                useNestedInventoryNavigation={false}
-              />
-            }
-          />
-          <Route
-            path="services/:id"
-            element={
-              <PluginDetailPage
-                {...detailProps}
-                detailEntityName="services"
-                detailIdParam="id"
-                useNestedInventoryNavigation={false}
-              />
-            }
-          />
-          <Route
-            path="schemas/:id"
-            element={
-              <PluginDetailPage
-                {...detailProps}
-                detailEntityName="schemas"
-                detailIdParam="id"
-                useNestedInventoryNavigation={false}
-              />
-            }
-          />
-        </Routes>
-      );
-    }
-
     const first = schema.entities[0].name;
     return (
       <Routes>
