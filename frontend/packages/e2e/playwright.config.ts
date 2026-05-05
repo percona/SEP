@@ -45,15 +45,23 @@ export default defineConfig({
   ],
   outputDir: './test-results',
   webServer: {
-    // Run the Vite dev server (IS_DEV=true) so mock-data fallbacks in the
-    // schema-driven plugin hooks work without a real backend.
+    // Build the shell with the mock-fallback opt-in flag, then serve the
+    // production bundle via `vite preview`. The flag is statically replaced
+    // at build time, so the schema-driven hooks fall back to mock data when
+    // the smoke tests reply with 404/5xx — no real backend needed.
     //
     // pnpm traverses up the directory tree to find pnpm-workspace.yaml, so
-    // this filter command works from packages/e2e/ without an explicit cwd.
-    command: 'pnpm --filter @sep/shell dev',
+    // these filter commands work from packages/e2e/ without an explicit cwd.
+    // `--port 5174 --strictPort` keeps the baseURL above stable and fails
+    // fast if the port is taken (instead of silently picking another).
+    command:
+      'VITE_MOCK_API=true pnpm --filter @sep/shell build && ' +
+      'pnpm --filter @sep/shell preview --port 5174 --strictPort',
     url: 'http://localhost:5174',
     // In CI always start a fresh server; locally reuse one if already running.
     reuseExistingServer: !isCI,
-    timeout: 60_000,
+    // Building the shell from cold takes longer than spinning up the dev
+    // server — give it room before declaring the webServer dead.
+    timeout: 180_000,
   },
 });

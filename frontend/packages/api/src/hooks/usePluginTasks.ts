@@ -20,10 +20,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';
 
-// Only allow mock fallback in development builds. Vite statically replaces
-// `import.meta.env.DEV` at build time, so this path is dead-code-eliminated
-// in production.
-const IS_DEV = import.meta.env.DEV;
+// Mock-fallback gate. Active in dev builds (`pnpm dev`) and in production
+// builds explicitly opted-in via `VITE_MOCK_API=true` (e.g. the Playwright
+// preview target). Vite statically replaces both expressions at build time,
+// so the fallback branches are dead-code-eliminated in real production.
+const MOCK_FALLBACKS_ENABLED =
+  import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true';
 
 function isBackendUnavailable(error: unknown): boolean {
   if (error instanceof ApiError) {
@@ -35,9 +37,11 @@ function isBackendUnavailable(error: unknown): boolean {
 /**
  * Generic CRUD hooks for plugin tasks.
  *
- * In development, the real API is attempted first. If the backend is
- * unavailable (network error or 5xx), mock data is used as a fallback.
- * In production builds, mock data is never used.
+ * The real API is always attempted first. When the backend is unavailable
+ * (network error or 5xx), mock data is used as a fallback only when the
+ * mock-fallback gate is on — that is, in dev builds, and in production
+ * builds explicitly opted in via `VITE_MOCK_API=true` (the Playwright
+ * preview target). Real production bundles never use the fallback.
  */
 
 export function usePluginTasks<T extends Record<string, unknown>>(
@@ -51,13 +55,13 @@ export function usePluginTasks<T extends Record<string, unknown>>(
         const { data } = await apiClient.get<T[]>(`/plugins/${pluginName}/`);
         return data;
       } catch (error) {
-        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           return mockTasks;
         }
         throw error;
       }
     },
-    ...(IS_DEV && mockTasks && { placeholderData: mockTasks }),
+    ...(MOCK_FALLBACKS_ENABLED && mockTasks && { placeholderData: mockTasks }),
   });
 }
 
@@ -76,10 +80,8 @@ export function usePluginTask<T extends Record<string, unknown>>(
         );
         return data;
       } catch (error) {
-        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
-          // Per-plugin detail/delete routes look up by `task_name`; mocks
-          // resolve by the same key so dev fallback matches prod semantics.
-          return mockTasks.find((t) => String(t.name ?? t.id) === taskId);
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
+          return mockTasks.find((t) => String(t.id) === taskId);
         }
         throw error;
       }
@@ -99,7 +101,7 @@ export function useCreatePluginTask<T extends Record<string, unknown>>(
         const { data } = await apiClient.post<T>(`/plugins/${pluginName}/`, values);
         return data;
       } catch (error) {
-        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           return values as T;
         }
         throw error;
@@ -122,7 +124,7 @@ export function useDeletePluginTask<T extends Record<string, unknown>>(
       try {
         await apiClient.delete(`/plugins/${pluginName}/${encodeURIComponent(taskId)}`);
       } catch (error) {
-        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           // Mock mode: pretend the delete succeeded so the UI flow can be
           // exercised offline, matching the create/list/detail hooks.
           return;

@@ -23,6 +23,10 @@ declare global {
     readonly DEV: boolean;
     readonly PROD: boolean;
     readonly MODE: string;
+    // Opt-in mock-fallback flag — set at build time (e.g. via
+    // `VITE_MOCK_API=true vite build`) to enable mock data fallbacks in
+    // production-mode bundles such as the Playwright preview target.
+    readonly VITE_MOCK_API?: string;
   }
 
   interface ImportMeta {
