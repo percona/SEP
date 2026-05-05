@@ -214,7 +214,7 @@ export function useBatchApproveSnippets() {
   const queryClient = useQueryClient();
   return useMutation<
     BatchApprovalResponse,
-    { response: BatchApprovalErrorResponse },
+    { response?: BatchApprovalErrorResponse },
     SnippetBatchApproveRequest
   >({
     mutationFn: async (body) => {

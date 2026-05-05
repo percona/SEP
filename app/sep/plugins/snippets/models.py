@@ -27,6 +27,7 @@ __all__ = [
     "BatchApprovalResponse",
     "ScriptPreviewResponse",
     "SnippetApprovalResponse",
+    "SnippetBatchApproveBase",
     "SnippetBatchApproveRequest",
     "SnippetExecutionRequest",
     "SnippetExecutionResponse",
@@ -36,10 +37,21 @@ __all__ = [
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.core.utils.fields import NonEmptyStr
-from app.sep.plugins.snippets.deps import _SnippetBatchApproveBase
+from app.core.utils.fields import NonEmptyStr, UniqueList
+
+
+class SnippetBatchApproveBase(BaseModel):
+    """Shared validation for both Form-bound and JSON-bound batch approve bodies.
+
+    :param filenames: Unique, non-empty list of snippet filenames to approve in a
+        single atomic operation. Duplicates are silently deduplicated by
+        ``UniqueList``.
+    :type filenames: UniqueList[NonEmptyStr]
+    """
+
+    filenames: UniqueList[NonEmptyStr] = Field(min_length=1)
 
 
 class SnippetResponse(BaseModel):
@@ -189,13 +201,13 @@ class SnippetApprovalResponse(BaseModel):
     reason: str
 
 
-class SnippetBatchApproveRequest(_SnippetBatchApproveBase):
+class SnippetBatchApproveRequest(SnippetBatchApproveBase):
     """JSON body for ``PATCH /api/plugins/snippets/approvals``.
 
     Shares ``filenames`` validation with :class:`SnippetBatchApproveForm`
-    via ``_SnippetBatchApproveBase``. Unlike the Form-bound twin this is a
-    plain Pydantic body — no ``Form()`` annotations — so FastAPI parses it
-    as JSON.
+    via :class:`SnippetBatchApproveBase`. Unlike the Form-bound twin this
+    is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
+    parses it as JSON.
     """
 
 

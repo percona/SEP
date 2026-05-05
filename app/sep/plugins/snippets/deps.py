@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -33,13 +33,13 @@ from app.core.exceptions import (
 )
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
-from app.core.utils.fields import NonEmptyStr, UniqueList
 from app.sep.artifact_constants import (
     ARTIFACT_DOWNLOAD_SALT,
     ARTIFACT_TYPE_SNIPPET,
 )
 from app.sep.deps import get_base_url, SessionDep
 from app.sep.middleware import messages
+from app.sep.plugins.snippets.models import SnippetBatchApproveBase
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
@@ -360,19 +360,7 @@ def get_executable_snippet_for_api(snippet: SnippetDep) -> Snippet:
 ExecutableSnippetForApi = Annotated[Snippet, Depends(get_executable_snippet_for_api)]
 
 
-class _SnippetBatchApproveBase(BaseModel):
-    """Shared validation for both Form-bound and JSON-bound batch approve bodies.
-
-    :param filenames: Unique, non-empty list of snippet filenames to approve in a
-        single atomic operation. Duplicates are silently deduplicated by
-        ``UniqueList``.
-    :type filenames: UniqueList[NonEmptyStr]
-    """
-
-    filenames: UniqueList[NonEmptyStr] = Field(min_length=1)
-
-
-class SnippetBatchApproveForm(_SnippetBatchApproveBase):
+class SnippetBatchApproveForm(SnippetBatchApproveBase):
     """Form-bound twin used by the legacy Jinja2 batch-approve route."""
 
 
