@@ -21,7 +21,6 @@ import type { PaginatedTaskHistory } from '@sep/framework';
 import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,
-  SnippetApprovalResponse,
   SnippetBatchApproveRequest,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
@@ -141,9 +140,9 @@ export function useSnippetExecution(filename: string | undefined) {
  */
 export function useApproveSnippet(filename: string) {
   const queryClient = useQueryClient();
-  return useMutation<SnippetApprovalResponse, Error, void, { previous?: SnippetResponse[] }>({
+  return useMutation<SnippetResponse, Error, void, { previous?: SnippetResponse[] }>({
     mutationFn: async () => {
-      const { data } = await apiClient.put<SnippetApprovalResponse>(
+      const { data } = await apiClient.put<SnippetResponse>(
         `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/approval`,
       );
       return data;

@@ -62,7 +62,6 @@ from app.sep.plugins.snippets.models import (
     BatchApprovalErrorResponse,
     BatchApprovalResponse,
     ScriptPreviewResponse,
-    SnippetApprovalResponse,
     SnippetBatchApproveRequest,
     SnippetExecutionRequest,
     SnippetExecutionResponse,
@@ -93,6 +92,7 @@ def _build_snippet_response(snippet: Snippet) -> SnippetResponse:
         md5_digest=snippet.md5_digest,
         is_approved=snippet.is_approved,
         approved_at=snippet.approved_at,
+        updated_by=snippet.updated_by,
         reason=snippet.reason,
         requires_sudo=(
             snippet.sudo == SnippetSudoOption.ALWAYS or snippet.sudo.is_optional
@@ -258,21 +258,10 @@ async def snippets_api_execute(
     )
 
 
-def _build_approval_response(snippet: Snippet) -> SnippetApprovalResponse:
-    """Project a :class:`Snippet` into its approval-state response shape."""
-    return SnippetApprovalResponse(
-        filename=snippet.filename,
-        is_approved=snippet.is_approved,
-        approved_at=snippet.approved_at,
-        updated_by=snippet.updated_by,
-        reason=snippet.reason,
-    )
-
-
 @router.put("/{snippet_filename}/approval", dependencies=[IsApiAuthenticated])
 async def snippets_api_approve(
     snippet: SnippetDep, user: ApiAdminUser, session: SessionDep
-) -> SnippetApprovalResponse:
+) -> SnippetResponse:
     """Approve a single snippet (idempotent).
 
     Re-approving an already-approved snippet returns ``200`` with the
@@ -285,14 +274,14 @@ async def snippets_api_approve(
     :type user: User
     :param session: The active database session.
     :type session: AsyncSession
-    :return: The snippet's approval state after the call.
-    :rtype: SnippetApprovalResponse
+    :return: The snippet entity after the call, including approval state.
+    :rtype: SnippetResponse
     """
     if not snippet.is_approved:
         snippet.approve(f"Approved by {user.username}", str(user.id))
         await SnippetManager.save(session, snippet)
         logger.info("Snippet %r approved by %s", snippet.filename, user.username)
-    return _build_approval_response(snippet)
+    return _build_snippet_response(snippet)
 
 
 @router.delete(

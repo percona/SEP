@@ -26,8 +26,6 @@ __all__ = [
     "BatchApprovalErrorResponse",
     "BatchApprovalResponse",
     "ScriptPreviewResponse",
-    "SnippetApprovalResponse",
-    "SnippetBatchApproveBase",
     "SnippetBatchApproveRequest",
     "SnippetExecutionRequest",
     "SnippetExecutionResponse",
@@ -40,18 +38,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.core.utils.fields import NonEmptyStr, UniqueList
-
-
-class SnippetBatchApproveBase(BaseModel):
-    """Shared validation for both Form-bound and JSON-bound batch approve bodies.
-
-    :param filenames: Unique, non-empty list of snippet filenames to approve in a
-        single atomic operation. Duplicates are silently deduplicated by
-        ``UniqueList``.
-    :type filenames: UniqueList[NonEmptyStr]
-    """
-
-    filenames: UniqueList[NonEmptyStr] = Field(min_length=1)
 
 
 class SnippetResponse(BaseModel):
@@ -75,6 +61,9 @@ class SnippetResponse(BaseModel):
     :param approved_at: When the snippet was last approved, or ``None`` if
         unapproved.
     :type approved_at: datetime | None
+    :param updated_by: User id that last toggled the approval state, or
+        ``None`` if no toggle has occurred.
+    :type updated_by: str | None
     :param reason: Free-form reason recorded the last time the snippet's
         approval state changed.
     :type reason: str
@@ -105,6 +94,7 @@ class SnippetResponse(BaseModel):
     md5_digest: str
     is_approved: bool
     approved_at: datetime | None = None
+    updated_by: str | None = None
     reason: str
     requires_sudo: bool
     sudo_optional: bool
@@ -176,39 +166,20 @@ class ScriptPreviewResponse(BaseModel):
     is_truncated: bool
 
 
-class SnippetApprovalResponse(BaseModel):
-    """Represent a snippet's approval state after a successful PUT.
-
-    :param filename: The snippet's filename on disk.
-    :type filename: NonEmptyStr
-    :param is_approved: Whether the snippet is approved for execution.
-    :type is_approved: bool
-    :param approved_at: When the snippet was approved, or ``None`` if it
-        is currently unapproved.
-    :type approved_at: datetime | None
-    :param updated_by: User id that last toggled the approval state, or
-        ``None`` if no toggle has occurred.
-    :type updated_by: str | None
-    :param reason: Free-form reason recorded with the most recent approval
-        toggle.
-    :type reason: str
-    """
-
-    filename: NonEmptyStr
-    is_approved: bool
-    approved_at: datetime | None = None
-    updated_by: str | None = None
-    reason: str
-
-
-class SnippetBatchApproveRequest(SnippetBatchApproveBase):
+class SnippetBatchApproveRequest(BaseModel):
     """JSON body for ``PATCH /api/plugins/snippets/approvals``.
 
-    Shares ``filenames`` validation with :class:`SnippetBatchApproveForm`
-    via :class:`SnippetBatchApproveBase`. Unlike the Form-bound twin this
-    is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
+    Unlike the Form-bound :class:`~app.sep.plugins.snippets.deps.SnippetBatchApproveForm`
+    twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
     parses it as JSON.
+
+    :param filenames: Unique, non-empty list of snippet filenames to approve in a
+        single atomic operation. Duplicates are silently deduplicated by
+        ``UniqueList``.
+    :type filenames: UniqueList[NonEmptyStr]
     """
+
+    filenames: UniqueList[NonEmptyStr] = Field(min_length=1)
 
 
 class BatchApprovalResponse(BaseModel):

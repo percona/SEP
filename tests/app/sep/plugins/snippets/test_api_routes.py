@@ -33,7 +33,7 @@ from app.sep.deps import (
 from app.sep.main import sep_app
 from app.sep.plugins.snippets.models import (
     BatchApprovalErrorResponse,
-    SnippetApprovalResponse,
+    SnippetResponse,
 )
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
@@ -45,12 +45,13 @@ API_BASE = "/api/plugins/snippets"
 class TestSnippetsApprovalApiReviewContracts:
     """Review-comment contracts for the snippets approval API surface."""
 
-    def test_approval_response_docstring_mentions_put_only(self):
-        """Approval response docs match the actual PUT-only response body."""
-        docstring = SnippetApprovalResponse.__doc__ or ""
+    def test_approval_response_collapses_into_snippet_response(self):
+        """Single approval returns the snippet entity plus admin attribution."""
+        from app.sep.plugins.snippets import models as snippets_models
 
-        assert "successful PUT" in docstring
-        assert "DELETE" not in docstring
+        assert "SnippetApprovalResponse" not in snippets_models.__all__
+        assert not hasattr(snippets_models, "SnippetApprovalResponse")
+        assert "updated_by" in SnippetResponse.model_fields
 
     def test_api_routes_module_docstring_lists_approval_routes(self):
         """The module route inventory includes all approval endpoints."""
@@ -59,6 +60,19 @@ class TestSnippetsApprovalApiReviewContracts:
         assert "PUT /{snippet_filename}/approval" in docstring
         assert "DELETE /{snippet_filename}/approval" in docstring
         assert "PATCH /approvals" in docstring
+
+    def test_batch_approve_base_is_not_exported(self):
+        """``SnippetBatchApproveBase`` is gone; callers use ``SnippetBatchApproveRequest``."""
+        from app.sep.plugins.snippets import models as snippets_models
+
+        assert "SnippetBatchApproveBase" not in snippets_models.__all__
+        assert not hasattr(snippets_models, "SnippetBatchApproveBase")
+
+    def test_batch_approve_request_has_filenames_directly(self):
+        """``SnippetBatchApproveRequest`` owns ``filenames`` — no delegation to a base."""
+        from app.sep.plugins.snippets.models import SnippetBatchApproveRequest
+
+        assert "filenames" in SnippetBatchApproveRequest.model_fields
 
     def test_batch_approval_error_defaults_use_independent_factories(self):
         """Batch error array defaults are conventional and per-instance."""
@@ -613,7 +627,7 @@ class TestSnippetsApiPatchApprovals:
             "../evil.sh",
             "../../etc/passwd",
             ".hidden.sh",
-            "sub/dir.sh",
+            "sub//double.sh",
             "no-extension",
         ],
     )

@@ -190,6 +190,10 @@ class TestValidateSnippetFilename:
             "check.py",
             "run.rb",
             "audit.sql",
+            # safe subdirectory paths
+            "sub/dir.sh",
+            "team/check.sh",
+            "v2/scripts/run.py",
         ],
     )
     def test_accepts_valid_filenames(self, safe):
@@ -207,13 +211,16 @@ class TestValidateSnippetFilename:
             "../../etc/passwd",
             "./relative.sh",
             ".hidden.sh",
-            "sub/dir.sh",
             "back\\slash.sh",
             "no-extension",
             "bad name.sh",
             "semi;colon.sh",
             "ümlaut.sh",
             "",
+            "sub//double.sh",
+            "sub/no-ext",
+            "sub/.hidden.sh",
+            "sub/../escape.sh",
         ],
     )
     def test_rejects_unsafe_filenames(self, bad):

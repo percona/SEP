@@ -18,7 +18,7 @@
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
@@ -40,7 +40,7 @@ from app.sep.artifact_constants import (
 )
 from app.sep.deps import get_base_url, SessionDep
 from app.sep.middleware import messages
-from app.sep.plugins.snippets.models import SnippetBatchApproveBase
+from app.sep.plugins.snippets.models import SnippetBatchApproveRequest
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
@@ -51,48 +51,61 @@ from app.sep.snippets.models.snippet import (
 
 logger = logging.getLogger(__name__)
 
+_SNIPPET_FILENAME_PUNCTUATION = {"_", "-", "."}
+
+
+def _invalid_snippet_filename(filename: str) -> HTTPBadRequestException:
+    """Return the standard bad-request exception for invalid snippet names."""
+    return HTTPBadRequestException(detail=f"Invalid snippet filename: {filename!r}")
+
+
+def _is_safe_snippet_path_component(part: str) -> bool:
+    """Return whether one POSIX path component is safe for snippet lookup."""
+    if not part:
+        return False
+    if not part.isascii():
+        return False
+    if not (part[0].isalnum() or part[0] == "_"):
+        return False
+    return all(c.isalnum() or c in _SNIPPET_FILENAME_PUNCTUATION for c in part)
+
+
+def _has_lowercase_alpha_suffix(part: str) -> bool:
+    """Return whether a filename has a lowercase alphabetic extension."""
+    suffix = PurePosixPath(part).suffix[1:]
+    return bool(suffix) and suffix.isascii() and suffix.isalpha() and suffix.islower()
+
 
 def validate_snippet_filename(filename: str) -> None:
-    """Raise 400 if ``filename`` is not a safe single snippet filename.
+    """Raise 400 if ``filename`` is not a safe snippet filename or path.
 
-    Prevents path-traversal attacks on single-snippet endpoints and the batch
-    API handler before any DB or disk access occurs.
+    Accepts plain filenames (``check.sh``) and safe relative subdirectory
+    paths (``team/check.sh``) that mirror what ``update_snippets()`` stores
+    via ``path.relative_to(BASE_DIR)``. Rejects absolute paths, Windows
+    separators, traversal components, and any component that does not meet
+    the safe-name rules.
 
     :param filename: The raw filename string to validate.
     :type filename: str
     :raises HTTPBadRequestException: If the filename is unsafe or malformed.
     """
+    # Reject any Windows separator — these never appear in POSIX-stored paths.
+    if "\\" in filename:
+        raise _invalid_snippet_filename(filename)
+
     posix_path = PurePosixPath(filename)
-    windows_path = PureWindowsPath(filename)
-    suffix = posix_path.suffix[1:]
-    allowed_punctuation = {"_", "-", "."}
+    if posix_path.is_absolute():
+        raise _invalid_snippet_filename(filename)
 
-    has_safe_first_character = bool(filename) and (
-        filename[0].isascii() and (filename[0].isalnum() or filename[0] == "_")
-    )
-    has_only_safe_characters = filename.isascii() and all(
-        char.isalnum() or char in allowed_punctuation for char in filename
-    )
-    is_single_filename = (
-        posix_path.name == filename
-        and windows_path.name == filename
-        and not posix_path.is_absolute()
-        and not windows_path.is_absolute()
-    )
-    has_lowercase_alpha_suffix = (
-        bool(suffix)
-        and suffix.isascii()
-        and suffix.isalpha()
-        and suffix == suffix.lower()
-    )
+    parts = filename.split("/")
+    # Reject traversal or hidden-file components, and empty parts (consecutive //).
+    for part in parts:
+        if part in ("", ".", "..") or not _is_safe_snippet_path_component(part):
+            raise _invalid_snippet_filename(filename)
 
-    if (
-        not is_single_filename
-        or not has_safe_first_character
-        or not has_only_safe_characters
-        or not has_lowercase_alpha_suffix
-    ):
-        raise HTTPBadRequestException(detail=f"Invalid snippet filename: {filename!r}")
+    # The last component (the actual file) must have a lowercase alpha extension.
+    if not _has_lowercase_alpha_suffix(parts[-1]):
+        raise _invalid_snippet_filename(filename)
 
 
 async def get_snippet(
@@ -407,7 +420,7 @@ def get_executable_snippet_for_api(snippet: SnippetDep) -> Snippet:
 ExecutableSnippetForApi = Annotated[Snippet, Depends(get_executable_snippet_for_api)]
 
 
-class SnippetBatchApproveForm(SnippetBatchApproveBase):
+class SnippetBatchApproveForm(SnippetBatchApproveRequest):
     """Form-bound twin used by the legacy Jinja2 batch-approve route."""
 
 
