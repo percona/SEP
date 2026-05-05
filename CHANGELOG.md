@@ -14,6 +14,14 @@ via `make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="..."` where
 See `changelog.d/README.md` for the full workflow.
 -->
 
+## [v0.12.1] - 2026-05-05
+
+### Fixed
+
+- SEP-1093: Restore chained task dispatch when the task page is open during the parent task's completion
+- SEP-1101: Dipper PMM collector now references the top-level PMM config path in error messages and form-field descriptions
+- SEP-1103: Continue chain on failure setting on chained periodic tasks now hydrates correctly when editing the task in the legacy Scheduled tasks panel
+
 ## [v0.12.0] - 2026-04-30
 
 ### Added
@@ -251,7 +259,8 @@ See `changelog.d/README.md` for the full workflow.
 - SEP-701: Update `aiohttp` to 3.13.3
 - SEP-728: Update `python-multipart` to 0.0.22
 
-[Unreleased]: https://github.com/percona/SEP/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/percona/SEP/compare/v0.12.1...HEAD
+[v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1
 [v0.12.0]: https://github.com/percona/SEP/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/percona/SEP/compare/v0.10.3...v0.11.0
 [v0.10.3]: https://github.com/percona/SEP/compare/v0.10.2...v0.10.3

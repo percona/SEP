@@ -39,7 +39,7 @@ export function PluginListPage({ schema, pluginName, mockTasks }: PluginListPage
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4">{schema.displayName}</Typography>
+          <Typography variant="h4">{schema.display_name}</Typography>
           {schema.description && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {schema.description}
@@ -58,13 +58,13 @@ export function PluginListPage({ schema, pluginName, mockTasks }: PluginListPage
             </Button>
           )}
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('new')}>
-            New {schema.displayName}
+            New {schema.display_name}
           </Button>
         </Stack>
       </Box>
 
       <SchemaListView
-        listView={schema.listView}
+        listView={schema.list_view}
         data={tasks}
         isLoading={isLoading}
         onRowClick={(row) => {

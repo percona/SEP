@@ -38,7 +38,7 @@ export function PluginCreatePage({ schema, pluginName, mockTasks }: PluginCreate
   const handleSubmit = (data: Record<string, unknown>) => {
     createTask.mutate(data, {
       onSuccess: () => {
-        enqueueSnackbar(`${schema.displayName} task created`, { variant: 'success' });
+        enqueueSnackbar(`${schema.display_name} task created`, { variant: 'success' });
         navigate('..');
       },
       onError: (error) => {
@@ -53,14 +53,14 @@ export function PluginCreatePage({ schema, pluginName, mockTasks }: PluginCreate
         <IconButton onClick={() => navigate('..')}>
           <ArrowBackIcon />
         </IconButton>
-        <Typography variant="h4">New {schema.displayName}</Typography>
+        <Typography variant="h4">New {schema.display_name}</Typography>
       </Box>
 
       <SchemaFormRenderer
         sections={schema.forms}
         onSubmit={handleSubmit}
         loading={createTask.isPending}
-        submitLabel={`Create ${schema.displayName}`}
+        submitLabel={`Create ${schema.display_name}`}
       />
     </Box>
   );

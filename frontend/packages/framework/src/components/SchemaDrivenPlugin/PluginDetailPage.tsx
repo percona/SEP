@@ -53,7 +53,7 @@ interface PluginDetailPageProps {
 
 // Fields hidden from the auto-rendered "extras" loop on the Overview tab.
 // Numeric `id`, internal worker plumbing (`backend`, `protected`), and
-// timestamps already shown in the listView columns. The `data` payload is
+// timestamps already shown in the list_view columns. The `data` payload is
 // rendered as the structured "Execution" section.
 const OVERVIEW_HIDDEN_FIELDS = new Set([
   'id',
@@ -151,12 +151,12 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
   const execution = pickExecutionData(task);
   const connectivityWarning = task.connectivity_warning;
 
-  // Extra fields beyond the schema's listView columns, excluding internal
+  // Extra fields beyond the schema's list_view columns, excluding internal
   // noise. Lets future plugin schemas surface fields without listing them
-  // in `listView.columns` (which is meant for the table view).
+  // in `list_view.columns` (which is meant for the table view).
   const extraEntries = Object.entries(task).filter(
     ([key]) =>
-      !schema.listView.columns.some((c) => c.key === key) && !OVERVIEW_HIDDEN_FIELDS.has(key),
+      !schema.list_view.columns.some((c) => c.key === key) && !OVERVIEW_HIDDEN_FIELDS.has(key),
   );
 
   return (
@@ -173,7 +173,7 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
         )}
 
       <SectionCard title="Task information">
-        {schema.listView.columns.map((col) => (
+        {schema.list_view.columns.map((col) => (
           <DetailField key={col.key} label={col.label} value={task[col.key]} />
         ))}
         {extraEntries.map(([key, value]) => (
@@ -255,7 +255,7 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
   const handleDelete = async () => {
     try {
       await deleteTask.mutateAsync(taskId);
-      enqueueSnackbar(`${schema.displayName} task deleted`, { variant: 'success' });
+      enqueueSnackbar(`${schema.display_name} task deleted`, { variant: 'success' });
       // Anchor to the plugin root explicitly. Relative `..` chains depend
       // on which tab the user is on (Overview vs. Logs renders a deeper
       // sub-route via nested `<Routes>`), so use an absolute path.
@@ -326,7 +326,7 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
       </Stack>
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>Delete {schema.displayName} task?</DialogTitle>
+        <DialogTitle>Delete {schema.display_name} task?</DialogTitle>
         <DialogContent>
           <DialogContentText>
             This will permanently remove the task definition. Past run history is unaffected.
@@ -389,7 +389,7 @@ export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetail
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="overline" color="text.secondary">
-          {schema.displayName}
+          {schema.display_name}
         </Typography>
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, ml: 5 }}>
