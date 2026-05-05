@@ -35,6 +35,7 @@ React plugin.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -56,6 +57,20 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
 
 
+def _inventory_list_redirect_url(request: Request) -> str:
+    """Build ``GET /…/{entity}/`` URL preserving query string and fragment.
+
+    Starlette's ``URL.replace(path=…)`` can mishandle query strings for this
+    redirect; splitting with ``urlsplit`` ensures the slash is appended to the
+    path before ``?limit=…`` is reattached (e.g. ``…/nodes/?limit=10``).
+    """
+    parts = urlsplit(str(request.url))
+    new_path = parts.path.rstrip("/") + "/"
+    return urlunsplit(
+        (parts.scheme, parts.netloc, new_path, parts.query, parts.fragment)
+    )
+
+
 @router.get("/{entity}")
 async def inventory_entity_redirect_slash(
     request: Request, entity: str
@@ -63,7 +78,7 @@ async def inventory_entity_redirect_slash(
     """Redirect ``GET /{entity}`` to ``GET /{entity}/`` for list routes."""
     require_inventory_plugin_entity(entity)
     return RedirectResponse(
-        url=str(request.url.replace(path=request.url.path.rstrip("/") + "/")),
+        url=_inventory_list_redirect_url(request),
         status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     )
 

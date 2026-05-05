@@ -307,3 +307,40 @@ def test_inventory_service_create_path_raises_422_when_parent_id_missing():
     with pytest.raises(HTTPException) as excinfo:
         inventory_service_create_path("services", {"name": "x", "type": "mysql"})
     assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+@pytest.mark.parametrize(
+    ("entity", "body"),
+    [
+        (
+            "services",
+            {"node_id": "abc", "name": "x", "type": "mysql"},
+        ),
+        (
+            "services",
+            {"node_id": True, "name": "x", "type": "mysql"},
+        ),
+        (
+            "services",
+            {"node_id": 0, "name": "x", "type": "mysql"},
+        ),
+        (
+            "schemas",
+            {"service_id": "xyz", "name": "db"},
+        ),
+        (
+            "tables",
+            {
+                "schema_id": {},
+                "name": "t",
+                "create": "CREATE TABLE t (id INT)",
+                "keys": "{}",
+            },
+        ),
+    ],
+)
+def test_inventory_service_create_path_raises_422_for_invalid_parent_id(entity, body):
+    """Ensure malformed parent ids raise HTTP 422 (never bare ``ValueError``)."""
+    with pytest.raises(HTTPException) as excinfo:
+        inventory_service_create_path(entity, body)
+    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT

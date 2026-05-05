@@ -20,6 +20,8 @@ implemented in ``app.sep.plugins.inventory.deps``; see
 ``tests/app/sep/plugins/inventory/test_deps.py`` for direct unit coverage.
 """
 
+from urllib.parse import urlsplit
+
 from fastapi import status
 
 from app.sep.plugins.inventory.deps import INVENTORY_PLUGIN_ENTITY_NAMES
@@ -56,6 +58,22 @@ class TestInventoryGateway:
         assert response.json() == [{"id": 1, "name": "n"}]
         mock_inventory_api_dep.get.assert_awaited_once_with("/", params={})
 
+    def test_list_no_trailing_slash_redirect_preserves_query_string(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure ``GET …/nodes`` redirects to ``…/nodes/?…`` with query params intact."""
+        mock_inventory_api_dep.get.return_value = {"items": [], "total": 0}
+        response = test_client.get(
+            "/api/plugins/inventory/nodes",
+            params={"limit": 10},
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+        location = response.headers["location"]
+        parts = urlsplit(location)
+        assert parts.path.endswith("/nodes/")
+        assert parts.query == "limit=10"
+
     def test_unknown_entity_404(self, test_client, mock_inventory_api_dep):
         """Ensure GET on an unknown entity segment returns HTTP 404."""
         response = test_client.get("/api/plugins/inventory/unknown/")
@@ -79,6 +97,21 @@ class TestInventoryGateway:
         call_args = mock_inventory_api_dep.post.await_args
         assert call_args[0][0] == f"/{_CREATE_SERVICE_TEST_NODE_ID}/services/"
         assert call_args[1]["json"]["node_id"] == _CREATE_SERVICE_TEST_NODE_ID
+
+    def test_create_service_invalid_node_id_returns_422(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure non-numeric ``node_id`` returns HTTP 422 and does not call inventory."""
+        response = test_client.post(
+            "/api/plugins/inventory/services/",
+            json={
+                "node_id": "abc",
+                "name": "db",
+                "type": "mysql",
+            },
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_inventory_api_dep.post.assert_not_called()
 
     def test_create_schema_requires_service_id(
         self, test_client, mock_inventory_api_dep

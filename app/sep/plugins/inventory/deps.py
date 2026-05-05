@@ -295,12 +295,41 @@ def inventory_service_detail_path(entity: str, item_id: int) -> str:
     return f"/{entity}/{item_id}"
 
 
-def _coerce_parent_id(value: Any, detail: str) -> int:
-    """Convert nested parent ids to int and normalize validation failures."""
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise HTTPUnprocessableEntityException(detail) from exc
+def _parse_positive_int_parent_id(value: Any, *, field_name: str) -> int:
+    """Parse a parent id from JSON for nested inventory POST paths.
+
+    Raw dict bodies skip FastAPI path/query validation; malformed values must
+    surface as HTTP 422 instead of propagating ``ValueError`` as a 500.
+
+    :param value: ``node_id``, ``service_id``, or ``schema_id`` from the body.
+    :type value: Any
+    :param field_name: Field label for error messages (e.g. ``node_id``).
+    :type field_name: str
+    :return: Strict positive integer id.
+    :rtype: int
+    :raises HTTPUnprocessableEntityException: When ``value`` is not a positive int.
+    """
+    if isinstance(value, bool):
+        raise HTTPUnprocessableEntityException(f"{field_name} must be a valid integer")
+    if isinstance(value, int):
+        if value < 1:
+            raise HTTPUnprocessableEntityException(
+                f"{field_name} must be a positive integer",
+            )
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped.isdigit():
+            raise HTTPUnprocessableEntityException(
+                f"{field_name} must be a valid integer"
+            )
+        parsed = int(stripped)
+        if parsed < 1:
+            raise HTTPUnprocessableEntityException(
+                f"{field_name} must be a positive integer",
+            )
+        return parsed
+    raise HTTPUnprocessableEntityException(f"{field_name} must be a valid integer")
 
 
 def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
@@ -327,21 +356,28 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
             raise HTTPUnprocessableEntityException(
                 "node_id is required to create a service",
             )
-        return f"/{_coerce_parent_id(node_id, 'node_id is required to create a service')}/services/"
+        parsed_node_id = _parse_positive_int_parent_id(node_id, field_name="node_id")
+        return f"/{parsed_node_id}/services/"
     if entity == "schemas":
         service_id = body.get("service_id")
         if service_id is None:
             raise HTTPUnprocessableEntityException(
                 "service_id is required to create a schema",
             )
-        return f"/services/{_coerce_parent_id(service_id, 'service_id is required to create a schema')}/schemas/"
+        parsed_service_id = _parse_positive_int_parent_id(
+            service_id, field_name="service_id"
+        )
+        return f"/services/{parsed_service_id}/schemas/"
     if entity == "tables":
         schema_id = body.get("schema_id")
         if schema_id is None:
             raise HTTPUnprocessableEntityException(
                 "schema_id is required to create a table",
             )
-        return f"/schemas/{_coerce_parent_id(schema_id, 'schema_id is required to create a table')}/tables/"
+        parsed_schema_id = _parse_positive_int_parent_id(
+            schema_id, field_name="schema_id"
+        )
+        return f"/schemas/{parsed_schema_id}/tables/"
     raise HTTPNotFoundException("Unknown entity")
 
 
