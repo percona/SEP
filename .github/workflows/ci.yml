@@ -123,21 +123,7 @@ jobs:
 
       - name: Perform lightweight pre-commit checks
         run: |
-          status=0
-          for hook in \
-            check-yaml \
-            check-json \
-            check-toml \
-            check-merge-conflict \
-            check-case-conflict \
-            check-added-large-files \
-            end-of-file-fixer \
-            trailing-whitespace \
-            fix-byte-order-marker
-          do
-            pre-commit run --config .pre-commit-light-config.yaml --all-files "$hook" || status=$?
-          done
-          exit "$status"
+          pre-commit run --config .pre-commit-light-config.yaml --all-files
 
   precommit-heavy:
     if: >-
