@@ -23,12 +23,12 @@
 # parameters:
 #   - name: pmmserver
 #     label: PMM server URL
-#     description: Base URL of PMM server. Leave empty to use configured default (SEP.PMM.ENDPOINT).
+#     description: Base URL of PMM server. Leave empty to use configured default (PMM.ENDPOINT).
 #     positional: true
 #     required: false
 #   - name: apikey
 #     label: API key
-#     description: API key for PMM server. Leave empty to use configured default (SEP.PMM.API_KEY).
+#     description: API key for PMM server. Leave empty to use configured default (PMM.API_KEY).
 #   - name: node
 #     label: Node name
 #     description: Node name of audit target (required unless using --list).
