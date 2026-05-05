@@ -67,7 +67,6 @@ _nodes_entity = PluginEntitySchema(
     ],
     list_view=ListView(
         columns=[
-            Column(key="id", label="ID", sortable=True),
             Column(key="name", label="Name", sortable=True),
             Column(key="address", label="Address"),
             Column(key="type", label="Type", format=ColumnFormat.CHIP),
@@ -79,7 +78,7 @@ _nodes_entity = PluginEntitySchema(
                 format=ColumnFormat.ACTIONS,
             ),
         ],
-        default_sort="-id",
+        default_sort="-created_at",
     ),
 )
 
@@ -114,7 +113,6 @@ _services_entity = PluginEntitySchema(
     ],
     list_view=ListView(
         columns=[
-            Column(key="id", label="ID", sortable=True),
             Column(key="name", label="Name", sortable=True),
             Column(key="type", label="Type", format=ColumnFormat.CHIP),
             Column(key="port", label="Port"),
@@ -127,7 +125,7 @@ _services_entity = PluginEntitySchema(
                 format=ColumnFormat.ACTIONS,
             ),
         ],
-        default_sort="-id",
+        default_sort="-name",
     ),
 )
 
@@ -148,7 +146,6 @@ _schemas_entity = PluginEntitySchema(
     ],
     list_view=ListView(
         columns=[
-            Column(key="id", label="ID", sortable=True),
             Column(key="name", label="Name", sortable=True),
             Column(key="service_id", label="Service ID", sortable=True),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
@@ -158,7 +155,7 @@ _schemas_entity = PluginEntitySchema(
                 format=ColumnFormat.ACTIONS,
             ),
         ],
-        default_sort="-id",
+        default_sort="-created_at",
     ),
 )
 
@@ -190,7 +187,6 @@ _tables_entity = PluginEntitySchema(
     ],
     list_view=ListView(
         columns=[
-            Column(key="id", label="ID", sortable=True),
             Column(key="name", label="Name", sortable=True),
             Column(key="schema_id", label="Schema ID", sortable=True),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
@@ -200,7 +196,7 @@ _tables_entity = PluginEntitySchema(
                 format=ColumnFormat.ACTIONS,
             ),
         ],
-        default_sort="-id",
+        default_sort="-created_at",
     ),
 )
 
