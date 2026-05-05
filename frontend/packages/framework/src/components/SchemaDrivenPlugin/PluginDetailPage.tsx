@@ -86,7 +86,7 @@ export interface PluginDetailPageProps {
   allowListEntityDelete?: boolean;
 }
 
-/** Screen title when the back/status row is hidden (e.g. inventory browse-only). */
+/** Screen title when the back/status row is hidden (browse-only multi-entity plugins). */
 function detailScreenHeading(
   entityName: string | undefined,
   entityDisplayName: string | undefined,
@@ -94,13 +94,7 @@ function detailScreenHeading(
   if (!entityName) {
     return null;
   }
-  const known: Record<string, string> = {
-    nodes: 'Node detail',
-    services: 'Service detail',
-    schemas: 'Schema detail',
-    tables: 'Table detail',
-  };
-  return known[entityName] ?? `${entityDisplayName ?? entityName} detail`;
+  return `${entityDisplayName ?? entityName} detail`;
 }
 
 /** List URL for the current entity tab (path segment before ``:id``), e.g. ``/inventory/services``. */

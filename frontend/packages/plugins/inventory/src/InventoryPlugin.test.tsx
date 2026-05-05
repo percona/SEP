@@ -192,7 +192,7 @@ describe('InventoryPlugin', () => {
         '/inventory/nodes/1/services/2/schemas/3/tables/4',
       ]);
 
-      expect(await screen.findByRole('heading', { name: /Table detail/i })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: /Tables? detail/i })).toBeInTheDocument();
       expect(await screen.findByText('CREATE statement')).toBeInTheDocument();
       expect(await screen.findByText('Keys')).toBeInTheDocument();
     });
@@ -202,7 +202,7 @@ describe('InventoryPlugin', () => {
         '/inventory/nodes/1/services/2/schemas/3/tables/4',
       ]);
 
-      await screen.findByRole('heading', { name: /Table detail/i });
+      await screen.findByRole('heading', { name: /Tables? detail/i });
 
       await waitFor(() => {
         const pres = [...document.querySelectorAll('pre')];
@@ -219,7 +219,7 @@ describe('InventoryPlugin', () => {
         ['/inventory/nodes/1/services/2/schemas/3/tables/4'],
       );
 
-      await screen.findByRole('heading', { name: /Table detail/i });
+      await screen.findByRole('heading', { name: /Tables? detail/i });
 
       const schemaCrumb = screen.getByRole('link', { name: 'schemas #3' });
       fireEvent.click(schemaCrumb);
@@ -228,7 +228,7 @@ describe('InventoryPlugin', () => {
         expect(router.state.location.pathname).toBe('/inventory/nodes/1/services/2/schemas/3');
       });
 
-      expect(await screen.findByRole('heading', { name: /Schema detail/i })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: /Schemas? detail/i })).toBeInTheDocument();
     });
 
     it('drills into a service via the nested route from a node detail page', async () => {
@@ -237,7 +237,7 @@ describe('InventoryPlugin', () => {
         ['/inventory/nodes/1'],
       );
 
-      await screen.findByRole('heading', { name: /Node detail/i });
+      await screen.findByRole('heading', { name: /Nodes? detail/i });
 
       const serviceRow = await screen.findByRole('row', { name: /svc/ });
       fireEvent.click(serviceRow);
@@ -253,7 +253,7 @@ describe('InventoryPlugin', () => {
         ['/inventory/nodes/1/services/2'],
       );
 
-      await screen.findByRole('heading', { name: /Service detail/i });
+      await screen.findByRole('heading', { name: /Services? detail/i });
 
       const schemaRow = await screen.findByRole('row', { name: /db/ });
       fireEvent.click(schemaRow);
@@ -269,7 +269,7 @@ describe('InventoryPlugin', () => {
         ['/inventory/nodes/1/services/2/schemas/3'],
       );
 
-      await screen.findByRole('heading', { name: /Schema detail/i });
+      await screen.findByRole('heading', { name: /Schemas? detail/i });
 
       const tableRow = await screen.findByRole('row', { name: /mytbl/ });
       fireEvent.click(tableRow);
