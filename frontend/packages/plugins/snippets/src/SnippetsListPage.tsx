@@ -41,6 +41,7 @@ import {
   useApproveSnippet,
   useRemoveSnippetApproval,
   useBatchApproveSnippets,
+  type BatchApproveError,
 } from './hooks';
 import type { BatchApprovalErrorResponse, BatchApprovalResponse, SnippetResponse } from './types';
 
@@ -141,9 +142,9 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
           setBatchResult({ success: data });
           setSelected(new Set());
         },
-        onError: (err) => {
-          if (err.response) {
-            setBatchResult({ error: err.response });
+        onError: (err: BatchApproveError) => {
+          if (err.structured) {
+            setBatchResult({ error: err.detail });
           } else {
             setBatchResult({ generic: 'Batch approval failed. Please try again.' });
           }
@@ -181,7 +182,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         history.
       </Typography>
 
-      {batchResult?.success && (
+      {isAdmin && batchResult?.success && (
         <Alert severity="success" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} flexWrap="wrap">
             <Chip label={`${batchResult.success.count} approved`} color="success" size="small" />
@@ -196,13 +197,13 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         </Alert>
       )}
 
-      {batchResult?.generic && (
+      {isAdmin && batchResult?.generic && (
         <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           {batchResult.generic}
         </Alert>
       )}
 
-      {batchResult?.error && (
+      {isAdmin && batchResult?.error && (
         <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           <Stack spacing={0.5}>
             {batchResult.error.missing_in_db.length > 0 && (

@@ -457,3 +457,57 @@ class TestSnippetsApprovalRouteDeprecationHeaders:
         )
 
         assert response.headers.get("Deprecation") == "true"
+
+
+class TestSnippetsCsrfEnforcement:
+    """Single-snippet approve/remove-approval require a valid CSRF token."""
+
+    @pytest.mark.asyncio
+    async def test_approve_without_csrf_token_redirects_with_error(
+        self,
+        admin_client_no_csrf: TestClient,
+        create_snippet,
+        mocker: MockerFixture,
+    ):
+        """POST approve with no form CSRF token → 303 redirect with CSRF error flash.
+
+        The global exception handler converts HTTPBadRequestException (from the
+        missing CSRF token) into a 303 redirect with a flash message rather than
+        returning a 400 directly — consistent with the batch-approve behaviour.
+        """
+        snippet = await create_snippet("hello.sh", approved=False)
+        error = mocker.patch("app.sep.main.messages.error")
+
+        response = admin_client_no_csrf.post(
+            f"/snippets/{snippet.filename}/approve",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        error.assert_called_once()
+        message = str(error.call_args.args[1])
+        assert "CSRF" in message or "csrf" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_remove_approval_without_csrf_token_redirects_with_error(
+        self,
+        admin_client_no_csrf: TestClient,
+        create_snippet,
+        mocker: MockerFixture,
+    ):
+        """POST remove-approval with no form CSRF token → 303 redirect with CSRF error flash.
+
+        Same global-exception-handler behaviour as the approve route above.
+        """
+        snippet = await create_snippet("hello.sh", approved=True)
+        error = mocker.patch("app.sep.main.messages.error")
+
+        response = admin_client_no_csrf.post(
+            f"/snippets/{snippet.filename}/remove-approval",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        error.assert_called_once()
+        message = str(error.call_args.args[1])
+        assert "CSRF" in message or "csrf" in message.lower()

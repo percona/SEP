@@ -18,7 +18,7 @@
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
@@ -28,6 +28,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
+    HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPRedirectException,
 )
@@ -51,6 +52,49 @@ from app.sep.snippets.models.snippet import (
 logger = logging.getLogger(__name__)
 
 
+def validate_snippet_filename(filename: str) -> None:
+    """Raise 400 if ``filename`` is not a safe single snippet filename.
+
+    Prevents path-traversal attacks on single-snippet endpoints and the batch
+    API handler before any DB or disk access occurs.
+
+    :param filename: The raw filename string to validate.
+    :type filename: str
+    :raises HTTPBadRequestException: If the filename is unsafe or malformed.
+    """
+    posix_path = PurePosixPath(filename)
+    windows_path = PureWindowsPath(filename)
+    suffix = posix_path.suffix[1:]
+    allowed_punctuation = {"_", "-", "."}
+
+    has_safe_first_character = bool(filename) and (
+        filename[0].isascii() and (filename[0].isalnum() or filename[0] == "_")
+    )
+    has_only_safe_characters = filename.isascii() and all(
+        char.isalnum() or char in allowed_punctuation for char in filename
+    )
+    is_single_filename = (
+        posix_path.name == filename
+        and windows_path.name == filename
+        and not posix_path.is_absolute()
+        and not windows_path.is_absolute()
+    )
+    has_lowercase_alpha_suffix = (
+        bool(suffix)
+        and suffix.isascii()
+        and suffix.isalpha()
+        and suffix == suffix.lower()
+    )
+
+    if (
+        not is_single_filename
+        or not has_safe_first_character
+        or not has_only_safe_characters
+        or not has_lowercase_alpha_suffix
+    ):
+        raise HTTPBadRequestException(detail=f"Invalid snippet filename: {filename!r}")
+
+
 async def get_snippet(
     session: SessionDep,
     snippet_filename: str,
@@ -63,9 +107,12 @@ async def get_snippet(
     :type session: AsyncSession
     :return: The retrieved snippet.
     :rtype: Snippet
+    :raises HTTPBadRequestException: If the filename is not a safe single snippet
+        filename.
     :raises HTTPNotFoundException: If a snippet with the specified filename is not
         found, of if the snippet file does not exist.
     """
+    validate_snippet_filename(snippet_filename)
     snippet = await SnippetManager.get_or_404(session, filename=snippet_filename)
     if not Path(snippet).is_file():
         raise HTTPNotFoundException

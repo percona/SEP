@@ -177,7 +177,7 @@ class ScriptPreviewResponse(BaseModel):
 
 
 class SnippetApprovalResponse(BaseModel):
-    """Represent a snippet's approval state after a successful PUT or DELETE.
+    """Represent a snippet's approval state after a successful PUT.
 
     :param filename: The snippet's filename on disk.
     :type filename: NonEmptyStr
@@ -246,5 +246,5 @@ class BatchApprovalErrorResponse(BaseModel):
     :type missing_on_disk: list[str]
     """
 
-    missing_in_db: list[str] = []
-    missing_on_disk: list[str] = []
+    missing_in_db: list[str] = Field(default_factory=list)
+    missing_on_disk: list[str] = Field(default_factory=list)

@@ -115,6 +115,19 @@ def api_unauthenticated_client(session: AsyncSession) -> TestClient:
 
 
 @pytest.fixture
+def admin_client_no_csrf(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
+    """Return a TestClient authenticated as admin but with real CSRF validation.
+
+    Unlike :func:`admin_client`, ``validate_csrf`` is **not** overridden, so
+    requests that omit the CSRF token in their form body will receive a 400.
+    """
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
 def create_snippet(
     session: AsyncSession, snippets_dir: Path
 ) -> Callable[..., Awaitable[Snippet]]:

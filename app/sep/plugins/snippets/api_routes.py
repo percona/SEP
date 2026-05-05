@@ -25,10 +25,13 @@ level and redeclared per route for safety. Route layout is snippet-centric:
 * ``GET /{snippet_filename}/script-preview``   — script preview
 * ``GET /{snippet_filename}/history``          — execution history
 * ``POST /{snippet_filename}/execute``         — execute the snippet
+* ``PUT /{snippet_filename}/approval``         — approve the snippet
+* ``DELETE /{snippet_filename}/approval``      — remove snippet approval
+* ``PATCH /approvals``                         — batch-approve snippets
 
 All dynamic segments live under two-segment ``/{snippet_filename}/...``
 paths; there is no single-segment dynamic catch-all, so the static
-``/schema`` and ``/`` routes are unambiguous.
+collection routes ``/schema``, ``/approvals``, and ``/`` are unambiguous.
 """
 
 import logging
@@ -53,6 +56,7 @@ from app.sep.plugins.snippets.deps import (
     ExecutableSnippetForApi,
     SnippetDep,
     SnippetSource,
+    validate_snippet_filename,
 )
 from app.sep.plugins.snippets.models import (
     BatchApprovalErrorResponse,
@@ -265,7 +269,7 @@ def _build_approval_response(snippet: Snippet) -> SnippetApprovalResponse:
     )
 
 
-@router.put("/{snippet_filename}/approval")
+@router.put("/{snippet_filename}/approval", dependencies=[IsApiAuthenticated])
 async def snippets_api_approve(
     snippet: SnippetDep, user: ApiAdminUser, session: SessionDep
 ) -> SnippetApprovalResponse:
@@ -295,6 +299,7 @@ async def snippets_api_approve(
     "/{snippet_filename}/approval",
     status_code=http_status.HTTP_204_NO_CONTENT,
     response_class=Response,
+    dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_remove_approval(
     snippet: SnippetDep, user: ApiAdminUser, session: SessionDep
@@ -323,7 +328,7 @@ async def snippets_api_remove_approval(
     return Response(status_code=http_status.HTTP_204_NO_CONTENT)
 
 
-@router.patch("/approvals")
+@router.patch("/approvals", dependencies=[IsApiAuthenticated])
 async def snippets_api_batch_approve(
     body: SnippetBatchApproveRequest,
     user: ApiAdminUser,
@@ -351,6 +356,8 @@ async def snippets_api_batch_approve(
         a :class:`BatchApprovalErrorResponse` body.
     """
     filenames = body.filenames
+    for filename in filenames:
+        validate_snippet_filename(filename)
     existence = await check_snippet_batch_existence(session, filenames)
     if existence.has_errors:
         error_body = BatchApprovalErrorResponse(

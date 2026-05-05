@@ -204,19 +204,27 @@ export function useRemoveSnippetApproval(filename: string) {
 }
 
 /**
+ * Discriminated error union for {@link useBatchApproveSnippets}.
+ *
+ * `structured: true` — the backend returned a 400 with a parseable
+ * {@link BatchApprovalErrorResponse} payload (missing DB rows / disk files).
+ * `structured: false` — any other failure (network error, 5xx, etc.); the
+ * raw value is preserved in `raw` for logging.
+ */
+export type BatchApproveError =
+  | (Error & { structured: true; detail: BatchApprovalErrorResponse })
+  | (Error & { structured: false; raw: unknown });
+
+/**
  * Mutation: batch-approve snippets via PATCH /approvals (idempotent).
  *
  * Returns a {@link BatchApprovalResponse} on success (200) or throws a
- * structured error carrying the {@link BatchApprovalErrorResponse} body
- * on hard failures (400) so the UI can render per-category badges.
+ * {@link BatchApproveError} so callers can narrow on `err.structured`
+ * to render per-category badges (400) vs. a generic fallback message.
  */
 export function useBatchApproveSnippets() {
   const queryClient = useQueryClient();
-  return useMutation<
-    BatchApprovalResponse,
-    { response?: BatchApprovalErrorResponse },
-    SnippetBatchApproveRequest
-  >({
+  return useMutation<BatchApprovalResponse, BatchApproveError, SnippetBatchApproveRequest>({
     mutationFn: async (body) => {
       try {
         const { data } = await apiClient.patch<BatchApprovalResponse>(
@@ -230,9 +238,17 @@ export function useBatchApproveSnippets() {
             ? extractBatchApprovalError(err.data)
             : null;
         if (detail) {
-          throw { response: detail };
+          const batchError: BatchApproveError = Object.assign(new Error('Batch approval failed'), {
+            structured: true as const,
+            detail,
+          });
+          throw batchError;
         }
-        throw err;
+        const batchError: BatchApproveError = Object.assign(new Error('Batch approval failed'), {
+          structured: false as const,
+          raw: err,
+        });
+        throw batchError;
       }
     },
     onSuccess: () => {

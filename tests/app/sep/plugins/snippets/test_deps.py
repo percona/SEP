@@ -20,13 +20,16 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import status
 
+import app.sep.plugins.snippets.deps as snippets_deps
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.exceptions import HTTPBadRequestException
 from app.sep.plugins.snippets.deps import (
     build_snippet_execution_meta,
     check_snippet_batch_existence,
     get_executable_snippet_for_api,
     get_snippet_execution_request_meta,
     SnippetBatchExistenceResult,
+    validate_snippet_filename,
 )
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import (
@@ -168,3 +171,53 @@ class TestCheckSnippetBatchExistence:
         result = await check_snippet_batch_existence(session, ["z.sh", "a.sh"])
 
         assert result.missing_in_db == ["a.sh", "z.sh"]
+
+
+class TestValidateSnippetFilename:
+    """Unit tests for the ``_validate_snippet_filename`` guard."""
+
+    def test_uses_built_in_filename_checks_without_regex_sentinel(self):
+        """Filename validation is implemented with built-ins, not a regex sentinel."""
+        assert not hasattr(snippets_deps, "_SAFE_FILENAME_RE")
+
+    @pytest.mark.parametrize(
+        "safe",
+        [
+            "hello.sh",
+            "my-script.sh",
+            "my_script.sh",
+            "script_v2.sh",
+            "check.py",
+            "run.rb",
+            "audit.sql",
+        ],
+    )
+    def test_accepts_valid_filenames(self, safe):
+        """Safe filenames pass without raising."""
+        validate_snippet_filename(safe)  # must not raise
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "/tmp/evil.sh",
+            "C:\\tmp\\evil.sh",
+            "\\server\\share\\evil.sh",
+            "C:evil.sh",
+            "../evil.sh",
+            "../../etc/passwd",
+            "./relative.sh",
+            ".hidden.sh",
+            "sub/dir.sh",
+            "back\\slash.sh",
+            "no-extension",
+            "bad name.sh",
+            "semi;colon.sh",
+            "ümlaut.sh",
+            "",
+        ],
+    )
+    def test_rejects_unsafe_filenames(self, bad):
+        """Traversal, hidden-file, separator, and extension-less names all raise 400."""
+        with pytest.raises(HTTPBadRequestException) as exc_info:
+            validate_snippet_filename(bad)
+        assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST

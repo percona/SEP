@@ -23,6 +23,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.sep.plugins.snippets.api_routes as snippets_api_routes
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -30,11 +31,49 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
+from app.sep.plugins.snippets.models import (
+    BatchApprovalErrorResponse,
+    SnippetApprovalResponse,
+)
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 
 API_BASE = "/api/plugins/snippets"
+
+
+class TestSnippetsApprovalApiReviewContracts:
+    """Review-comment contracts for the snippets approval API surface."""
+
+    def test_approval_response_docstring_mentions_put_only(self):
+        """Approval response docs match the actual PUT-only response body."""
+        docstring = SnippetApprovalResponse.__doc__ or ""
+
+        assert "successful PUT" in docstring
+        assert "DELETE" not in docstring
+
+    def test_api_routes_module_docstring_lists_approval_routes(self):
+        """The module route inventory includes all approval endpoints."""
+        docstring = snippets_api_routes.__doc__ or ""
+
+        assert "PUT /{snippet_filename}/approval" in docstring
+        assert "DELETE /{snippet_filename}/approval" in docstring
+        assert "PATCH /approvals" in docstring
+
+    def test_batch_approval_error_defaults_use_independent_factories(self):
+        """Batch error array defaults are conventional and per-instance."""
+        fields = BatchApprovalErrorResponse.model_fields
+
+        assert fields["missing_in_db"].default_factory is list
+        assert fields["missing_on_disk"].default_factory is list
+
+        first = BatchApprovalErrorResponse()
+        second = BatchApprovalErrorResponse()
+        first.missing_in_db.append("ghost.sh")
+        first.missing_on_disk.append("missing.sh")
+
+        assert second.missing_in_db == []
+        assert second.missing_on_disk == []
 
 
 @pytest.mark.asyncio
@@ -323,6 +362,22 @@ class TestSnippetsApiPutApproval:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    @pytest.mark.parametrize(
+        "bad_filename",
+        [
+            "..evil.sh",
+            ".hidden.sh",
+            "no-extension",
+        ],
+    )
+    async def test_traversal_or_unsafe_filename_returns_400(
+        self, api_admin_client, bad_filename
+    ):
+        """Filenames with traversal sequences or invalid forms return 400."""
+        response = api_admin_client.put(f"{API_BASE}/{bad_filename}/approval")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
 
 @pytest.mark.asyncio
 class TestSnippetsApiDeleteApproval:
@@ -374,6 +429,22 @@ class TestSnippetsApiDeleteApproval:
         response = api_admin_client.delete(f"{API_BASE}/missing.sh/approval")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize(
+        "bad_filename",
+        [
+            "..evil.sh",
+            ".hidden.sh",
+            "no-extension",
+        ],
+    )
+    async def test_traversal_or_unsafe_filename_returns_400(
+        self, api_admin_client, bad_filename
+    ):
+        """Filenames with traversal sequences or invalid forms return 400."""
+        response = api_admin_client.delete(f"{API_BASE}/{bad_filename}/approval")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     async def test_unauthenticated_unauthorized(
         self, api_unauthenticated_client, create_snippet
@@ -535,6 +606,26 @@ class TestSnippetsApiPatchApprovals:
         response = api_admin_client.patch(self.URL, json={"filenames": "a.sh"})
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.parametrize(
+        "bad_filename",
+        [
+            "../evil.sh",
+            "../../etc/passwd",
+            ".hidden.sh",
+            "sub/dir.sh",
+            "no-extension",
+        ],
+    )
+    async def test_traversal_or_unsafe_filename_in_batch_returns_400(
+        self, api_admin_client, bad_filename
+    ):
+        """Traversal and invalid filenames in the batch body are rejected with 400."""
+        response = api_admin_client.patch(self.URL, json={"filenames": [bad_filename]})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        detail = response.json().get("detail", "")
+        assert "Invalid snippet filename" in str(detail)
 
     async def test_duplicate_filenames_silently_deduped(
         self, api_admin_client, create_snippet

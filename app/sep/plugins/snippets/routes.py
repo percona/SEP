@@ -145,7 +145,7 @@ def _get_snippet_success_redirect(
     )
 
 
-@router.post("/{snippet_filename}/approve")
+@router.post("/{snippet_filename}/approve", dependencies=[IsCsrfValidated])
 async def snippets_approve(
     request: Request, user: AdminUser, snippet: UnapprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
@@ -155,7 +155,7 @@ async def snippets_approve(
     return _get_snippet_success_redirect(request, user, snippet, "Snippet approved")
 
 
-@router.post("/{snippet_filename}/remove-approval")
+@router.post("/{snippet_filename}/remove-approval", dependencies=[IsCsrfValidated])
 async def snippets_remove_approval(
     request: Request, user: AdminUser, snippet: ApprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
