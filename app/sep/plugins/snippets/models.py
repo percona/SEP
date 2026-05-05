@@ -177,7 +177,7 @@ class ScriptPreviewResponse(BaseModel):
 
 
 class SnippetApprovalResponse(BaseModel):
-    """Represent a snippet's approval state after a successful PUT or GET.
+    """Represent a snippet's approval state after a successful PUT or DELETE.
 
     :param filename: The snippet's filename on disk.
     :type filename: NonEmptyStr
