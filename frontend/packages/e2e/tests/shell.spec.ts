@@ -30,6 +30,17 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
+// Minimal schema served for /api/plugins/:name/schema. SchemaDrivenPlugin
+// renders `displayName` as an h4 heading and "New {displayName}" as the
+// create-button label, which is enough surface for the smoke assertions.
+// Fields kept intentionally minimal: empty form/listView ⇒ no extra UI.
+const MOCK_PLUGIN_SCHEMA = {
+  name: 'checksums',
+  displayName: 'Checksums',
+  forms: [],
+  listView: { columns: [] },
+};
+
 /**
  * Wire up a single catch-all /api/** route handler that simulates a logged-in
  * session with no real backend.  Using one handler (rather than many) ensures
@@ -43,7 +54,7 @@ const MOCK_USER = {
  * Dispatch logic:
  *   /api/oauth/refresh           -> fake access token (bootstraps AuthProvider)
  *   /api/users/me                -> fake user profile (completes session bootstrap)
- *   /api/plugins/:name/schema    -> 404 so usePluginSchema falls back to mockSchema prop
+ *   /api/plugins/:name/schema    -> minimal valid PluginSchema (renders heading)
  *   everything else              -> 200 [] (empty task list; sufficient for smoke assertions)
  */
 async function mockAuthenticatedApis(page: Page): Promise<void> {
@@ -71,12 +82,11 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    // 404 triggers the mockSchema fallback in usePluginSchema
     if (pathname.endsWith('/schema')) {
       return route.fulfill({
-        status: 404,
+        status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ detail: 'not found' }),
+        body: JSON.stringify(MOCK_PLUGIN_SCHEMA),
       });
     }
 
@@ -94,19 +104,12 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
  *
  * - React dev-mode advisory messages use console.error (start with "Warning:")
  * - MUI Emotion emits an ":nth-child" warning in dev mode (SSR detection false positive)
- * - "Failed to load resource: 404" is the browser's log of our intentional 404
- *   response for plugin schema endpoints (triggers the mockSchema fallback path).
- *   The browser may not include the full URL path in the console message, so we
- *   suppress all 404 resource-load failures in the smoke test context.
  */
 function isBenignConsoleError(msg: string): boolean {
   if (msg.startsWith('Warning:')) {
     return true;
   }
   if (msg.includes(':nth-child')) {
-    return true;
-  }
-  if (msg.includes('Failed to load resource') && msg.includes('404')) {
     return true;
   }
   return false;
@@ -159,11 +162,11 @@ test.describe('shell sanity smoke', () => {
     });
 
     await mockAuthenticatedApis(page);
-    await page.goto('/schema-change/checksums');
+    await page.goto('/plugins/checksums');
 
     // SchemaDrivenPlugin renders the schema displayName as an h4 heading.
-    // Allow extra time because the first navigation to this route triggers
-    // Vite's on-demand compilation of the lazy-loaded @sep/checksums chunk.
+    // Allow extra time for the lazy-loaded @sep/plugin-checksums chunk to
+    // load (Vite preview serves a cold network roundtrip on first nav).
     await expect(page.getByRole('heading', { name: 'Checksums' })).toBeVisible({
       timeout: 30_000,
     });
