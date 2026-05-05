@@ -205,7 +205,7 @@ importers:
         version: link:../../framework
       '@tanstack/react-query':
         specifier: ^5.75.0
-        version: 5.100.7(react@19.2.5)
+        version: 5.100.9(react@19.2.5)
       notistack:
         specifier: ^3.0.0
         version: 3.0.2(csstype@3.2.3)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -214,7 +214,7 @@ importers:
         version: 19.2.5
       react-hook-form:
         specifier: ^7.72.1
-        version: 7.74.0(react@19.2.5)
+        version: 7.75.0(react@19.2.5)
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.6.3
@@ -227,7 +227,7 @@ importers:
         version: 19.2.14
       '@vitejs/plugin-react':
         specifier: ^6.0.1
-        version: 6.0.1(vite@8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0))
+        version: 6.0.1(vite@8.0.10(@types/node@22.19.17)(esbuild@0.27.7)(tsx@4.21.0))
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
@@ -236,7 +236,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^4.0.0
-        version: 4.1.5(@types/node@20.19.39)(jsdom@29.1.1)(msw@2.13.6(@types/node@20.19.39)(typescript@6.0.3))(vite@8.0.10(@types/node@20.19.39)(esbuild@0.27.7)(tsx@4.21.0))
+        version: 4.1.5(@types/node@22.19.17)(jsdom@29.1.1)(msw@2.14.3(@types/node@22.19.17)(typescript@6.0.3))(vite@8.0.10(@types/node@22.19.17)(esbuild@0.27.7)(tsx@4.21.0))
 
   packages/plugins/snippets:
     dependencies:
