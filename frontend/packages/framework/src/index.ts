@@ -23,6 +23,7 @@ export {
   PluginCreatePage,
   PluginDetailPage,
   PluginListPage,
+  PluginSchedulePage,
 } from './components/SchemaDrivenPlugin';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';

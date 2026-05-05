@@ -63,7 +63,7 @@ const defaultNavItems: NavItem[] = [
     icon: StorageIcon,
     children: [
       { title: 'Alters', icon: TableChartIcon, to: '/schema-change/alters' },
-      { title: 'Checksums', icon: CheckCircleIcon, to: '/schema-change/checksums' },
+      { title: 'Checksums', icon: CheckCircleIcon, to: '/plugins/checksums' },
     ],
   },
   {
