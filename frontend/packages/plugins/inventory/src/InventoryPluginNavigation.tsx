@@ -334,7 +334,7 @@ export function InventoryBreadcrumbs({ mockSchema }: { mockSchema?: PluginSchema
 
     if (!id) {
       const label =
-        schema?.entities?.find((e: PluginEntitySchema) => e.name === entityName)?.displayName ??
+        schema?.entities?.find((e: PluginEntitySchema) => e.name === entityName)?.display_name ??
         entityName;
       out.push(crumbCurrent('list-entity', label));
       return out;
@@ -442,7 +442,7 @@ function isRecordArray(v: unknown): v is Row[] {
 }
 
 function listViewFor(schema: PluginSchema, entityName: string): ListView | undefined {
-  return schema.entities?.find((e: PluginEntitySchema) => e.name === entityName)?.listView;
+  return schema.entities?.find((e: PluginEntitySchema) => e.name === entityName)?.list_view;
 }
 
 /**
@@ -521,7 +521,7 @@ function NestedListSection({
   const { enqueueSnackbar } = useSnackbar();
   const entityTitle = useMemo(
     () =>
-      schema.entities?.find((e: PluginEntitySchema) => e.name === listEntityName)?.displayName ??
+      schema.entities?.find((e: PluginEntitySchema) => e.name === listEntityName)?.display_name ??
       listEntityName,
     [listEntityName, schema.entities],
   );

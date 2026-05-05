@@ -91,7 +91,7 @@ export function DipperPlugin() {
   const execution = useDipperExecution();
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
-  const title = pluginSchema.data?.displayName ?? 'Collect Diagnostic Data';
+  const title = pluginSchema.data?.display_name ?? 'Collect Diagnostic Data';
   const description =
     pluginSchema.data?.description ?? 'Run diagnostic data collection scripts on managed hosts.';
 

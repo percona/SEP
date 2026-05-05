@@ -28,7 +28,7 @@ export function TableField({ field }: TableFieldProps) {
       name={field.name}
       label={field.label}
       required={field.required}
-      dependsOn={field.dependsOn}
+      dependsOn={field.depends_on}
     />
   );
 }

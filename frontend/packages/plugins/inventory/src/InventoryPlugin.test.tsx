@@ -25,27 +25,27 @@ import { InventoryPlugin } from './InventoryPlugin';
 
 const mockSchema: PluginSchema = {
   name: 'inventory',
-  displayName: 'Inventory',
+  display_name: 'Inventory',
   entities: [
     {
       name: 'nodes',
-      displayName: 'Nodes',
+      display_name: 'Nodes',
       forms: [{ title: 'N', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
-      listView: { columns: [{ key: 'id', label: 'ID' }] },
+      list_view: { columns: [{ key: 'id', label: 'ID' }] },
     },
   ],
 };
 
-/** Full multi-entity schema for nested URL + ``detailHighlights`` integration coverage. */
+/** Full multi-entity schema for nested URL + ``detail_highlights`` integration coverage. */
 const inventoryNestedMockSchema: PluginSchema = {
   name: 'inventory',
-  displayName: 'Inventory',
+  display_name: 'Inventory',
   entities: [
     {
       name: 'nodes',
-      displayName: 'Nodes',
+      display_name: 'Nodes',
       forms: [{ title: 'N', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
-      listView: {
+      list_view: {
         columns: [
           { key: 'id', label: 'ID' },
           { key: 'name', label: 'Name' },
@@ -54,9 +54,9 @@ const inventoryNestedMockSchema: PluginSchema = {
     },
     {
       name: 'services',
-      displayName: 'Services',
+      display_name: 'Services',
       forms: [{ title: 'S', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
-      listView: {
+      list_view: {
         columns: [
           { key: 'id', label: 'ID' },
           { key: 'name', label: 'Name' },
@@ -65,9 +65,9 @@ const inventoryNestedMockSchema: PluginSchema = {
     },
     {
       name: 'schemas',
-      displayName: 'Schemas',
+      display_name: 'Schemas',
       forms: [{ title: 'Sch', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
-      listView: {
+      list_view: {
         columns: [
           { key: 'id', label: 'ID' },
           { key: 'name', label: 'Name' },
@@ -76,16 +76,16 @@ const inventoryNestedMockSchema: PluginSchema = {
     },
     {
       name: 'tables',
-      displayName: 'Tables',
+      display_name: 'Tables',
       forms: [{ title: 'T', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
-      listView: {
+      list_view: {
         columns: [
           { key: 'name', label: 'Name' },
           { key: 'create', label: 'CREATE statement' },
           { key: 'keys', label: 'Keys' },
         ],
       },
-      detailHighlights: { create: 'sql', keys: 'json' },
+      detail_highlights: { create: 'sql', keys: 'json' },
     },
   ],
 };

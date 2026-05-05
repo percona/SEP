@@ -238,7 +238,7 @@ function EntityDetailField({
 
 // Fields hidden from the auto-rendered "extras" loop on the Overview tab.
 // Numeric `id`, internal worker plumbing (`backend`, `protected`), and
-// timestamps already shown in the listView columns. The `data` payload is
+// timestamps already shown in the list_view columns. The `data` payload is
 // rendered as the structured "Execution" section.
 const OVERVIEW_HIDDEN_FIELDS = new Set([
   'id',
@@ -335,8 +335,11 @@ interface OverviewTabProps {
 function OverviewTab({ schema, task }: OverviewTabProps) {
   const execution = pickExecutionData(task);
   const connectivityWarning = task.connectivity_warning;
-  const columns = schema.listView!.columns;
+  const columns = schema.list_view!.columns;
 
+  // Extra fields beyond the schema's list_view columns, excluding internal
+  // noise. Lets future plugin schemas surface fields without listing them
+  // in `list_view.columns` (which is meant for the table view).
   const extraEntries = Object.entries(task).filter(
     ([key]) => !columns.some((c) => c.key === key) && !OVERVIEW_HIDDEN_FIELDS.has(key),
   );
@@ -439,7 +442,10 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
   const handleDelete = async () => {
     try {
       await deleteTask.mutateAsync(taskId);
-      enqueueSnackbar(`${schema.displayName} task deleted`, { variant: 'success' });
+      enqueueSnackbar(`${schema.display_name} task deleted`, { variant: 'success' });
+      // Anchor to the plugin root explicitly. Relative `..` chains depend
+      // on which tab the user is on (Overview vs. Logs renders a deeper
+      // sub-route via nested `<Routes>`), so use an absolute path.
       navigate(`/plugins/${pluginName}`);
     } catch (e) {
       enqueueSnackbar(e instanceof Error ? e.message : 'Failed to delete task', {
@@ -507,7 +513,7 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
       </Stack>
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>Delete {schema.displayName} task?</DialogTitle>
+        <DialogTitle>Delete {schema.display_name} task?</DialogTitle>
         <DialogContent>
           <DialogContentText>
             This will permanently remove the task definition. Past run history is unaffected.
@@ -574,12 +580,14 @@ export function PluginDetailPage({
   );
 
   const { data: task, isLoading } = multi ? entityQuery : taskQuery;
-  const listView = multi ? entitySchema!.listView : schema.listView!;
-  const title = multi ? entitySchema!.displayName : schema.displayName;
+  const listView = multi ? entitySchema!.list_view : schema.list_view!;
+  const title = multi ? entitySchema!.display_name : schema.display_name;
   const headingWhenChromeHidden = useMemo(
     () =>
-      hideDetailChrome && multi ? detailScreenHeading(entityName, entitySchema?.displayName) : null,
-    [hideDetailChrome, multi, entityName, entitySchema?.displayName],
+      hideDetailChrome && multi
+        ? detailScreenHeading(entityName, entitySchema?.display_name)
+        : null,
+    [hideDetailChrome, multi, entityName, entitySchema?.display_name],
   );
 
   const deleteEntity = useDeletePluginEntity(
@@ -696,7 +704,7 @@ export function PluginDetailPage({
             .map((col) => (
               <EntityDetailField
                 key={col.key}
-                highlightLanguage={entitySchema?.detailHighlights?.[col.key]}
+                highlightLanguage={entitySchema?.detail_highlights?.[col.key]}
                 label={col.label}
                 value={task[col.key]}
               />
@@ -713,7 +721,7 @@ export function PluginDetailPage({
             .map(([key, value]) => (
               <EntityDetailField
                 key={key}
-                highlightLanguage={entitySchema?.detailHighlights?.[key]}
+                highlightLanguage={entitySchema?.detail_highlights?.[key]}
                 label={key}
                 value={value}
               />
@@ -765,7 +773,7 @@ export function PluginDetailPage({
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="overline" color="text.secondary">
-          {schema.displayName}
+          {schema.display_name}
         </Typography>
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, ml: 5 }}>

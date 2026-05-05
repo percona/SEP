@@ -148,11 +148,11 @@ export function SchemaListView({
       enableDensityToggle={false}
       enableFullScreenToggle={false}
       initialState={{
-        sorting: listView.defaultSort
+        sorting: listView.default_sort
           ? [
               {
-                id: listView.defaultSort.replace(/^-/, ''),
-                desc: listView.defaultSort.startsWith('-'),
+                id: listView.default_sort.replace(/^-/, ''),
+                desc: listView.default_sort.startsWith('-'),
               },
             ]
           : [],

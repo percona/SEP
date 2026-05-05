@@ -102,7 +102,7 @@ function PluginEditPage({
     { enabled: multi && Boolean(id) },
   );
 
-  const title = entitySchema?.displayName ?? schema.displayName;
+  const title = entitySchema?.display_name ?? schema.display_name;
   const sections = entitySchema?.forms ?? schema.forms!;
 
   const handleSubmit = (data: Record<string, unknown>) => {

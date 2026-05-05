@@ -49,10 +49,14 @@ from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic.alias_generators import to_camel
 
 from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework.rules import (
+    CardinalityRule,
+    FailRule,
+    FieldGate,
+)
 
 _FIELD_NAME_PATTERN = r"^[A-Za-z_](?:[\w-]*\w)?$"
 
@@ -60,15 +64,16 @@ _FIELD_NAME_PATTERN = r"^[A-Za-z_](?:[\w-]*\w)?$"
 class SchemaBaseModel(BaseModel):
     """Define the base model for every model in the plugin schema DSL.
 
-    :cvar model_config: Serialises to camelCase JSON, accepts either camelCase
-        or snake_case keys on input, and forbids unknown keys.
+    :cvar model_config: Serialises to snake_case JSON (no alias translation),
+        forbids unknown keys, and accepts arbitrary types so rule envelopes
+        carrying :class:`Predicate` instances validate.
     :vartype model_config: ConfigDict
     """
 
     model_config = ConfigDict(
-        alias_generator=to_camel,
         populate_by_name=True,
         extra="forbid",
+        arbitrary_types_allowed=True,
     )
 
 
@@ -147,6 +152,14 @@ class BaseField(SchemaBaseModel):
         scalars, lists, or dicts depending on the field type. Defaults to
         ``None``.
     :type default: Any | None
+    :param requires: Optional list of binary self-cardinality gates: when
+        any gate's ``when`` predicate matches, the field must be present.
+        Defaults to ``None``.
+    :type requires: list[FieldGate] | None
+    :param forbidden: Optional list of binary self-cardinality gates: when
+        any gate's ``when`` predicate matches, the field must be absent.
+        Defaults to ``None``.
+    :type forbidden: list[FieldGate] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -154,6 +167,8 @@ class BaseField(SchemaBaseModel):
     required: bool = False
     description: NonEmptyStr | None = None
     default: Any | None = None
+    requires: list[FieldGate] | None = None
+    forbidden: list[FieldGate] | None = None
 
 
 class BoolField(BaseField):
@@ -497,11 +512,19 @@ class FormSection(SchemaBaseModel):
     :type description: NonEmptyStr | None
     :param fields: The list of fields belonging to this section.
     :type fields: list[AnyField]
+    :param cardinality_rules: Optional cross-field cardinality constraints
+        scoped to the fields in this section. Defaults to ``None``.
+    :type cardinality_rules: list[CardinalityRule] | None
+    :param fail_when: Optional predicate-only invariants scoped to this
+        section. Defaults to ``None``.
+    :type fail_when: list[FailRule] | None
     """
 
     title: NonEmptyStr
     description: NonEmptyStr | None = None
     fields: list[AnyField]
+    cardinality_rules: list[CardinalityRule] | None = None
+    fail_when: list[FailRule] | None = None
 
 
 class Column(SchemaBaseModel):
@@ -587,6 +610,105 @@ class Capabilities(SchemaBaseModel):
     scheduling: bool = False
 
 
+def _collect_reference_errors(
+    scope_path: str,
+    names: set[str],
+    declared_field_names: set[str],
+    errors: list[str],
+    *,
+    implicit_self_name: str | None = None,
+) -> None:
+    """Append messages to ``errors`` for any unknown or hyphenated rule names.
+
+    :param scope_path: A human-readable path to the rule emitting the names,
+        used in failure messages.
+    :type scope_path: str
+    :param names: The set of field names referenced by the rule.
+    :type names: set[str]
+    :param declared_field_names: The set of names declared anywhere in the
+        plugin schema's form tree.
+    :type declared_field_names: set[str]
+    :param errors: A mutable list to which failure messages are appended.
+    :type errors: list[str]
+    :param implicit_self_name: When set, suppress the descriptive suffix on
+        the error for that one name (used for ``BaseField`` gates whose
+        implicit-self target is always present in ``names``). Predicate-
+        referenced fields with the same value as the implicit self also
+        keep the suffix-less form, since the underlying mistake is the
+        same: the field that should exist is missing.
+    :type implicit_self_name: str | None
+    """
+    for name in names:
+        if "-" in name:
+            errors.append(
+                f"{scope_path} references field {name!r}, but field names that "
+                "participate in conditional rules must be valid Python "
+                "identifiers (no hyphens)."
+            )
+            continue
+        if name not in declared_field_names:
+            suffix = (
+                ""
+                if name == implicit_self_name
+                else " (the rule names a field that does not exist in any form section)"
+            )
+            errors.append(f"{scope_path} references unknown field {name!r}{suffix}.")
+
+
+def _collect_basefield_gate_errors(
+    field: "AnyField",
+    declared_field_names: set[str],
+    errors: list[str],
+) -> None:
+    """Walk a BaseField's ``requires`` / ``forbidden`` gates."""
+    for primitive in ("requires", "forbidden"):
+        for rule_index, gate in enumerate(getattr(field, primitive) or []):
+            references = gate.when.referenced_fields() | {field.name}
+            _collect_reference_errors(
+                f"BaseField {field.name!r} {primitive}[{rule_index}]",
+                references,
+                declared_field_names,
+                errors,
+                implicit_self_name=field.name,
+            )
+
+
+def _collect_cardinality_rule_errors(
+    rules: list[CardinalityRule] | None,
+    scope_label: str,
+    declared_field_names: set[str],
+    errors: list[str],
+) -> None:
+    """Walk a list of :class:`CardinalityRule` instances."""
+    for rule_index, rule in enumerate(rules or []):
+        references = set(rule.fields)
+        if rule.when is not None:
+            references |= rule.when.referenced_fields()
+        _collect_reference_errors(
+            f"{scope_label} cardinality_rules[{rule_index}]",
+            references,
+            declared_field_names,
+            errors,
+        )
+
+
+def _collect_fail_rule_errors(
+    rules: list[FailRule] | None,
+    scope_label: str,
+    declared_field_names: set[str],
+    errors: list[str],
+) -> None:
+    """Walk a list of :class:`FailRule` instances."""
+    for rule_index, rule in enumerate(rules or []):
+        references = rule.fail_when.referenced_fields() | set(rule.error_fields)
+        _collect_reference_errors(
+            f"{scope_label} fail_when[{rule_index}]",
+            references,
+            declared_field_names,
+            errors,
+        )
+
+
 class PluginEntitySchema(SchemaBaseModel):
     """Describe one CRUD entity for a multi-entity schema-driven plugin.
 
@@ -610,6 +732,12 @@ class PluginEntitySchema(SchemaBaseModel):
         detail pages. Keys are field names; values are highlighting languages.
         Defaults to an empty mapping.
     :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
+    :param cardinality_rules: Optional entity-wide cross-field cardinality
+        constraints. Defaults to ``None``.
+    :type cardinality_rules: list[CardinalityRule] | None
+    :param fail_when: Optional entity-wide predicate-only invariants.
+        Defaults to ``None``.
+    :type fail_when: list[FailRule] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -620,6 +748,8 @@ class PluginEntitySchema(SchemaBaseModel):
     detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage] = Field(
         default_factory=dict
     )
+    cardinality_rules: list[CardinalityRule] | None = None
+    fail_when: list[FailRule] | None = None
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
@@ -667,6 +797,13 @@ class PluginSchema(SchemaBaseModel):
         When non-empty, the React shell renders one list/create/detail flow
         per entity. Defaults to ``None`` (legacy single-entity mode).
     :type entities: list[PluginEntitySchema] | None
+    :param cardinality_rules: Optional plugin-wide cross-field cardinality
+        constraints (task-style plugins only; ignored when ``entities`` is set).
+        Defaults to ``None``.
+    :type cardinality_rules: list[CardinalityRule] | None
+    :param fail_when: Optional plugin-wide predicate-only invariants (task-style
+        plugins only; ignored when ``entities`` is set). Defaults to ``None``.
+    :type fail_when: list[FailRule] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -677,6 +814,8 @@ class PluginSchema(SchemaBaseModel):
     capabilities: Capabilities | None = None
     list_view: ListView | None = None
     entities: list[PluginEntitySchema] | None = None
+    cardinality_rules: list[CardinalityRule] | None = None
+    fail_when: list[FailRule] | None = None
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
@@ -709,4 +848,84 @@ class PluginSchema(SchemaBaseModel):
                 f"duplicate field name(s) across form sections: "
                 f"{sorted(set(duplicates))}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_rule_field_references(self) -> Self:
+        """Resolve every conditional-rule field reference against the schema tree.
+
+        Performs Tier-2 validation: walks every BaseField ``requires`` /
+        ``forbidden`` rule, every FormSection ``cardinality_rules`` /
+        ``fail_when`` rule, and every PluginSchema- or PluginEntitySchema-scope
+        rule. For each, it collects the predicate's referenced fields plus the
+        rule's target ``fields`` / ``error_fields`` / implicit-self target (for
+        BaseField gates) and verifies each name resolves to a known field
+        declared in the schema. Hyphenated field names are also rejected here
+        since they cannot resolve to Python attributes via ``getattr`` at
+        runtime.
+
+        :return: The validated plugin schema instance.
+        :rtype: PluginSchema
+        :raises ValueError: If any rule references a field that does not
+            exist in the schema, or whose name contains a hyphen.
+        """
+        errors: list[str] = []
+        if self.entities:
+            for entity_index, entity in enumerate(self.entities):
+                declared_field_names = {
+                    field.name for section in entity.forms for field in section.fields
+                }
+                entity_label = f"PluginEntitySchema[{entity_index}] {entity.name!r}"
+                for section_index, section in enumerate(entity.forms):
+                    section_label = (
+                        f"{entity_label} FormSection[{section_index}] {section.title!r}"
+                    )
+                    for field in section.fields:
+                        _collect_basefield_gate_errors(
+                            field, declared_field_names, errors
+                        )
+                    _collect_cardinality_rule_errors(
+                        section.cardinality_rules,
+                        section_label,
+                        declared_field_names,
+                        errors,
+                    )
+                    _collect_fail_rule_errors(
+                        section.fail_when, section_label, declared_field_names, errors
+                    )
+                _collect_cardinality_rule_errors(
+                    entity.cardinality_rules,
+                    entity_label,
+                    declared_field_names,
+                    errors,
+                )
+                _collect_fail_rule_errors(
+                    entity.fail_when, entity_label, declared_field_names, errors
+                )
+        else:
+            declared_field_names = {
+                field.name for section in self.forms for field in section.fields
+            }
+            for section_index, section in enumerate(self.forms):
+                section_label = f"FormSection[{section_index}] {section.title!r}"
+                for field in section.fields:
+                    _collect_basefield_gate_errors(field, declared_field_names, errors)
+                _collect_cardinality_rule_errors(
+                    section.cardinality_rules,
+                    section_label,
+                    declared_field_names,
+                    errors,
+                )
+                _collect_fail_rule_errors(
+                    section.fail_when, section_label, declared_field_names, errors
+                )
+            schema_label = f"PluginSchema {self.name!r}"
+            _collect_cardinality_rule_errors(
+                self.cardinality_rules, schema_label, declared_field_names, errors
+            )
+            _collect_fail_rule_errors(
+                self.fail_when, schema_label, declared_field_names, errors
+            )
+        if errors:
+            raise ValueError("; ".join(errors))
         return self

@@ -46,15 +46,15 @@ vi.mock('../../hooks', () => ({
 
 const schema: PluginSchema = {
   pluginName: 'checksums',
-  displayName: 'Checksum',
+  display_name: 'Checksum',
   description: 'Test',
   capabilities: { scheduling: true },
-  listView: {
+  list_view: {
     columns: [
       { key: 'name', label: 'Name' },
       { key: 'status', label: 'Status', format: 'status' },
     ],
-    defaultSort: '-id',
+    default_sort: '-id',
   },
   formSchema: { sections: [] },
 } as unknown as PluginSchema;

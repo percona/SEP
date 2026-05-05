@@ -54,7 +54,7 @@ export function PluginCreatePage({
   );
 
   const create = multi ? createEntity : createTask;
-  const title = multi ? entitySchema!.displayName : schema.displayName;
+  const title = multi ? entitySchema!.display_name : schema.display_name;
   const sections = multi ? entitySchema!.forms : schema.forms!;
 
   const handleSubmit = (data: Record<string, unknown>) => {

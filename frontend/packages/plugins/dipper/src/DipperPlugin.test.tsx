@@ -100,10 +100,10 @@ describe('DipperPlugin', () => {
     mockPluginSchema.mockReturnValue({
       data: {
         name: 'dipper',
-        displayName: 'Collect Diagnostic Data',
+        display_name: 'Collect Diagnostic Data',
         description: 'Run diagnostics.',
         forms: [],
-        listView: { columns: [] },
+        list_view: { columns: [] },
       },
       isLoading: false,
       error: null,
@@ -111,9 +111,9 @@ describe('DipperPlugin', () => {
     mockFormSchema.mockReturnValue({
       data: {
         name: 'dipper',
-        displayName: 'MySQL Dipper',
+        display_name: 'MySQL Dipper',
         forms: [{ title: 'Execution', fields: [] }],
-        listView: { columns: [] },
+        list_view: { columns: [] },
       },
       isLoading: false,
       error: null,

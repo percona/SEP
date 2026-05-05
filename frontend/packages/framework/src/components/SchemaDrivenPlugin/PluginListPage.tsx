@@ -87,8 +87,8 @@ export function PluginListPage({
   );
 
   const { data: rows = [], isLoading } = multi ? entityQuery : singleQuery;
-  const listView = multi ? entitySchema!.listView : schema.listView!;
-  const title = multi ? entitySchema!.displayName : schema.displayName;
+  const listView = multi ? entitySchema!.list_view : schema.list_view!;
+  const title = multi ? entitySchema!.display_name : schema.display_name;
   const description = multi ? entitySchema?.description : schema.description;
 
   const hasActionsColumn = listView.columns.some((c) => c.format === 'actions');
@@ -135,7 +135,7 @@ export function PluginListPage({
           scrollButtons="auto"
         >
           {schema.entities.map((e) => (
-            <Tab key={e.name} label={e.displayName} value={e.name} />
+            <Tab key={e.name} label={e.display_name} value={e.name} />
           ))}
         </Tabs>
       )}
@@ -174,7 +174,7 @@ export function PluginListPage({
                 startIcon={<AddIcon />}
                 onClick={() => navigate('new', { relative: 'path' })}
               >
-                New {multi ? title : schema.displayName}
+                New {multi ? title : schema.display_name}
               </Button>
             )}
           </Stack>
