@@ -166,7 +166,7 @@ _FIELD_BUILDERS = {
 }
 
 
-def _field_for(parameter: SnippetMetaParameter) -> AnyField:
+def field_for(parameter: SnippetMetaParameter) -> AnyField:
     """Map a snippet meta parameter to its framework field counterpart.
 
     A parameter declaring ``choices`` always maps to :class:`ChoiceField`
@@ -199,7 +199,7 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     parameter_sections: dict[str, list[AnyField]] = {}
     for parameter in snippet.validated_parameters.parameters:
         section_title = parameter.group or "Parameters"
-        parameter_sections.setdefault(section_title, []).append(_field_for(parameter))
+        parameter_sections.setdefault(section_title, []).append(field_for(parameter))
 
     forms = [
         FormSection(title=title, fields=fields)

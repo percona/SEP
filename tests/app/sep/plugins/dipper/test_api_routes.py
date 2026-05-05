@@ -121,8 +121,46 @@ class TestDipperListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert "application/json" in response.headers["content-type"]
         body = response.json()
-        assert body["total"] == 1
+        assert body["total"] == 2  # noqa: PLR2004 — upstream total preserved, not filtered count
         assert [item["id"] for item in body["items"]] == [1]
+
+    def test_list_preserves_upstream_total(self, test_client, mock_task_api_dep):
+        """Upstream ``total`` is passed through unchanged, not replaced with filtered count."""
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [
+                    {
+                        "id": 10,
+                        "execution_request": {
+                            "meta": {
+                                "_snippet_filename": "dipper/1/pcs-collect-environment-mysql.sh"
+                            }
+                        },
+                    },
+                    {
+                        "id": 11,
+                        "execution_request": {
+                            "meta": {"_snippet_filename": "snippets/other.sh"}
+                        },
+                    },
+                    {
+                        "id": 12,
+                        "execution_request": {
+                            "meta": {"_snippet_filename": "snippets/another.sh"}
+                        },
+                    },
+                ],
+                "total": 500,
+                "offset": 0,
+                "limit": 3,
+            }
+        )
+
+        response = test_client.get(f"{API_BASE}/")
+
+        body = response.json()
+        assert body["total"] == 500  # noqa: PLR2004 — matches upstream mock total
+        assert [item["id"] for item in body["items"]] == [10]
 
 
 class TestDipperFormSchemaEndpoint:

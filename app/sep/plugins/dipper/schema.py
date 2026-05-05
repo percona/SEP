@@ -34,7 +34,7 @@ from app.sep.plugins.framework.schema import (
     ScriptPreviewField,
     ServiceField,
 )
-from app.sep.plugins.snippets.schema import _field_for
+from app.sep.plugins.snippets.schema import field_for
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet
 
@@ -103,7 +103,7 @@ def build_dipper_form_schema(
     parameter_sections: dict[str, list[AnyField]] = {}
     for parameter in script.validated_parameters.parameters:
         section_title = parameter.group or "Parameters"
-        field = _field_for(parameter)
+        field = field_for(parameter)
         if defaults and field.name in defaults and field.default in (None, ""):
             field.default = defaults[field.name]
         parameter_sections.setdefault(section_title, []).append(field)

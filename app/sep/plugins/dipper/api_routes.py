@@ -68,6 +68,9 @@ def _snippet_filename_for(history: dict[str, Any]) -> str | None:
     """Return a task-history row's snippet filename metadata."""
     request = _execution_request_for(history)
     meta = request.get("meta")
+    # The tasks API serialises snippet_filename inside a nested ``meta`` dict for
+    # newer Nomad driver versions, and directly on the request for older records;
+    # both snake_case and camelCase keys appear across task history rows.
     if isinstance(meta, dict):
         value = meta.get("_snippet_filename") or meta.get("snippet_filename")
         return str(value) if value else None
@@ -90,7 +93,9 @@ async def dipper_api_list(tasks_api: TaskAPI) -> dict[str, Any]:
         for item in response.get("items", [])
         if (_snippet_filename_for(item) or "").startswith("dipper/")
     ]
-    return {**response, "items": items, "total": len(items)}
+    # total reflects all tasks in the upstream response, not just the Dipper-filtered
+    # subset; accurate Dipper-specific counts require server-side filtering support.
+    return {**response, "items": items}
 
 
 @router.get(

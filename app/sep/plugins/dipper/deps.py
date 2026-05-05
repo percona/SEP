@@ -399,12 +399,12 @@ def build_dipper_meta_from_args(
 ) -> SnippetExecutionMeta:
     """Build shared execution metadata for legacy and JSON Dipper flows."""
     interpreter = script.execution_interpreter
+    if interpreter is None:
+        raise HTTPBadRequestException(detail="No interpreter configured for script")
     if script.sudo == SnippetSudoOption.ALWAYS or getattr(
         execution_args, execution_args.sudo_field, sudo_default
     ):
         interpreter = f"sudo {interpreter}"
-    if interpreter is None:
-        raise HTTPBadRequestException(detail="No interpreter configured for script")
     return SnippetExecutionMeta(
         target=execution_args.executor_host,
         interpreter=interpreter,
