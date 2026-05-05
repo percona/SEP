@@ -278,7 +278,9 @@ function TaskHistoryTableView({
           sorting: [{ id: 'started_at', desc: true }],
           pagination: { pageIndex: 0, pageSize: 10 },
         }}
-        getRowId={(row) => String(row.id ?? `${row.task?.name ?? ''}-${row.started_at ?? ''}`)}
+        getRowId={(row, index) =>
+          String(row.id ?? `${row.task?.name ?? 'row'}-${row.started_at ?? index}`)
+        }
         muiTableBodyRowProps={({ row }) =>
           isRunningStatus(row.original.status)
             ? { 'data-running': 'true', sx: { backgroundColor: 'action.hover' } }
