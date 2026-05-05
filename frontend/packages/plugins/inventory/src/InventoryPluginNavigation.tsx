@@ -30,7 +30,7 @@ import {
   type PluginEntitySchema,
   type PluginSchema,
 } from '@sep/api';
-import { SchemaListView } from '@sep/framework/src/components/SchemaListView';
+import { SchemaListView } from '@sep/framework';
 import {
   inventoryMountPrefix,
   parseFlatInventoryRoute,
@@ -453,6 +453,49 @@ export function inventoryPluginBasePath(pathname: string, entityName: string): s
   return inventoryMountPrefix(pathname);
 }
 
+function isIdLike(v: unknown): v is string | number {
+  return typeof v === 'string' || typeof v === 'number';
+}
+
+/**
+ * Build a child URL that preserves the current nested drill-down context. If the
+ * current path is already nested, append ``childEntity/childId`` to it; otherwise
+ * derive the parent chain from ``record`` and fall back to a flat URL only when
+ * the chain cannot be reconstructed.
+ */
+function nestedChildHref(
+  prefix: string,
+  pathname: string,
+  parentEntityName: string,
+  parentRecord: Row,
+  childEntityName: string,
+  childId: string | number,
+): string {
+  const nested = parseNestedInventoryPath(pathname, prefix);
+  if (nested) {
+    const trail = nested.pairs.map((p) => `${p.entity}/${p.id}`).join('/');
+    return `${prefix}/${trail}/${childEntityName}/${childId}`;
+  }
+  const pid = parentRecord.id;
+  if (parentEntityName === 'nodes' && isIdLike(pid)) {
+    return `${prefix}/nodes/${pid}/${childEntityName}/${childId}`;
+  }
+  if (parentEntityName === 'services' && isIdLike(pid)) {
+    const node = parentRecord.node as Row | undefined;
+    if (node && isIdLike(node.id)) {
+      return `${prefix}/nodes/${node.id}/services/${pid}/${childEntityName}/${childId}`;
+    }
+  }
+  if (parentEntityName === 'schemas' && isIdLike(pid)) {
+    const svc = parentRecord.service as Row | undefined;
+    const node = svc?.node as Row | undefined;
+    if (svc && isIdLike(svc.id) && node && isIdLike(node.id)) {
+      return `${prefix}/nodes/${node.id}/services/${svc.id}/schemas/${pid}/${childEntityName}/${childId}`;
+    }
+  }
+  return `${prefix}/${childEntityName}/${childId}`;
+}
+
 function NestedListSection({
   title,
   listView,
@@ -575,7 +618,11 @@ export function renderInventoryDetailChildren({
           title="Services on this node"
           listView={lv}
           rows={record.services}
-          rowHref={(row) => `${prefix}/services/${row.id}`}
+          rowHref={(row) =>
+            isIdLike(row.id)
+              ? nestedChildHref(prefix, pathname, 'nodes', record, 'services', row.id)
+              : `${prefix}/services/${row.id}`
+          }
           listEntityName="services"
           pluginName={pluginName}
           mockEntityItems={mockEntityItems}
@@ -595,7 +642,11 @@ export function renderInventoryDetailChildren({
           title="Schemas in this service"
           listView={lv}
           rows={record.schemas}
-          rowHref={(row) => `${prefix}/schemas/${row.id}`}
+          rowHref={(row) =>
+            isIdLike(row.id)
+              ? nestedChildHref(prefix, pathname, 'services', record, 'schemas', row.id)
+              : `${prefix}/schemas/${row.id}`
+          }
           listEntityName="schemas"
           pluginName={pluginName}
           mockEntityItems={mockEntityItems}
@@ -635,7 +686,11 @@ export function renderInventoryDetailChildren({
           title="Tables in this schema"
           listView={lv}
           rows={record.tables}
-          rowHref={(row) => `${prefix}/tables/${row.id}`}
+          rowHref={(row) =>
+            isIdLike(row.id)
+              ? nestedChildHref(prefix, pathname, 'schemas', record, 'tables', row.id)
+              : `${prefix}/tables/${row.id}`
+          }
           listEntityName="tables"
           pluginName={pluginName}
           mockEntityItems={mockEntityItems}

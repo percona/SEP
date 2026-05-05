@@ -17,8 +17,7 @@
 
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import type { PluginSchema } from '@sep/api';
-import { PluginDetailPage } from '@sep/framework/src/components/SchemaDrivenPlugin/PluginDetailPage';
-import { PluginListPage } from '@sep/framework/src/components/SchemaDrivenPlugin/PluginListPage';
+import { PluginDetailPage, PluginListPage } from '@sep/framework';
 import { renderInventoryDetailChildren } from './InventoryPluginNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
 
