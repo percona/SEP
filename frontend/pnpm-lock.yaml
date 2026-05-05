@@ -160,6 +160,9 @@ importers:
       react:
         specifier: ^19.0.0
         version: 19.2.5
+      react-router-dom:
+        specifier: ^7.0.0
+        version: 7.14.2(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
     devDependencies:
       '@types/react':
         specifier: ^19.1.0
@@ -252,12 +255,12 @@ importers:
       '@sep/api':
         specifier: workspace:*
         version: link:../api
-      '@sep/checksums':
-        specifier: workspace:*
-        version: link:../plugins/checksums
       '@sep/framework':
         specifier: workspace:*
         version: link:../framework
+      '@sep/plugin-checksums':
+        specifier: workspace:*
+        version: link:../plugins/checksums
       '@sep/plugins-snippets':
         specifier: workspace:*
         version: link:../plugins/snippets

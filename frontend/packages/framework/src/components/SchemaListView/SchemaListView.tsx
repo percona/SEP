@@ -118,6 +118,18 @@ export function SchemaListView({
           : [],
         density: 'compact',
       }}
+      muiTablePaperProps={{
+        elevation: 0,
+        variant: 'outlined',
+        // The Percona theme's `background.paper` doesn't always resolve to
+        // an opaque colour, leaving the table looking transparent against
+        // tinted page backgrounds. Force `common.white` (light mode) so the
+        // table is always readable; revisit when dark mode lands.
+        sx: { bgcolor: 'common.white' },
+      }}
+      muiTableContainerProps={{
+        sx: { bgcolor: 'common.white' },
+      }}
       muiTableBodyRowProps={
         onRowClick
           ? ({ row }) => ({
