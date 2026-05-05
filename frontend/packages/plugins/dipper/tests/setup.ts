@@ -15,9 +15,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenPlugin } from '@sep/framework';
-import { PLUGIN_NAME } from './routes';
+import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
 
-export function ChecksumsPlugin() {
-  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} />;
-}
+afterEach(() => {
+  cleanup();
+});

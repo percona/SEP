@@ -28,7 +28,10 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 // Schema-driven plugins — each is a single lazy import
 const ChecksumsPlugin = lazy(() =>
-  import('@sep/checksums').then((m) => ({ default: m.ChecksumsPlugin })),
+  import('@sep/plugin-checksums').then((m) => ({ default: m.ChecksumsPlugin })),
+);
+const DipperPlugin = lazy(() =>
+  import('@sep/plugin-dipper').then((m) => ({ default: m.DipperPlugin })),
 );
 const InventoryPlugin = lazy(() =>
   import('@sep/inventory').then((m) => ({ default: m.InventoryPlugin })),
@@ -58,11 +61,12 @@ export const router = createBrowserRouter([
           { path: 'tasks/*', element: <PlaceholderPage /> },
           { path: 'snippets/*', element: <SnippetsPlugin /> },
           { path: 'atw', element: <PlaceholderPage /> },
-          { path: 'dipper', element: <PlaceholderPage /> },
+          { path: 'dipper/*', element: <DipperPlugin /> },
           { path: 'alerts/templates', element: <PlaceholderPage /> },
           { path: 'alerts/troubleshooting', element: <PlaceholderPage /> },
           { path: 'schema-change/alters', element: <PlaceholderPage /> },
           // Checksums — schema-driven plugin (handles its own sub-routes)
+          { path: 'plugins/checksums/*', element: <ChecksumsPlugin /> },
           { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
           { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
           { path: 'backups/mysql', element: <PlaceholderPage /> },

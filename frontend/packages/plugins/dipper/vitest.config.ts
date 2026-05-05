@@ -15,9 +15,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenPlugin } from '@sep/framework';
-import { PLUGIN_NAME } from './routes';
+import react from '@vitejs/plugin-react';
+import path from 'node:path';
+import { defineConfig } from 'vitest/config';
 
-export function ChecksumsPlugin() {
-  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} />;
-}
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+    alias: {
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./tests/setup.ts'],
+    css: false,
+  },
+});

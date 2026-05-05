@@ -23,6 +23,7 @@ export {
   PluginCreatePage,
   PluginDetailPage,
   PluginListPage,
+  PluginSchedulePage,
 } from './components/SchemaDrivenPlugin';
 export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { ServiceSelector } from './components/ServiceSelector';

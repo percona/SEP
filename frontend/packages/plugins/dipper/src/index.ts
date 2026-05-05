@@ -15,9 +15,4 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenPlugin } from '@sep/framework';
-import { PLUGIN_NAME } from './routes';
-
-export function ChecksumsPlugin() {
-  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} />;
-}
+export { DipperPlugin } from './DipperPlugin';

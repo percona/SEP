@@ -93,6 +93,7 @@ export {
   useCreatePluginEntity,
   useUpdatePluginEntity,
   useDeletePluginEntity,
+  useDeletePluginTask,
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
 } from './hooks';
