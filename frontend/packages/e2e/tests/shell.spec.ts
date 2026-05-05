@@ -31,14 +31,16 @@ const MOCK_USER = {
 };
 
 // Minimal schema served for /api/plugins/:name/schema. SchemaDrivenPlugin
-// renders `displayName` as an h4 heading and "New {displayName}" as the
+// renders `display_name` as an h4 heading and "New {display_name}" as the
 // create-button label, which is enough surface for the smoke assertions.
-// Fields kept intentionally minimal: empty form/listView ⇒ no extra UI.
+// Keys are snake_case to match the backend PluginSchema shape — the React
+// components read `schema.display_name` / `schema.list_view` directly.
+// Fields kept intentionally minimal: empty forms/list_view ⇒ no extra UI.
 const MOCK_PLUGIN_SCHEMA = {
   name: 'checksums',
-  displayName: 'Checksums',
+  display_name: 'Checksums',
   forms: [],
-  listView: { columns: [] },
+  list_view: { columns: [] },
 };
 
 /**
