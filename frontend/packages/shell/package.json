@@ -25,6 +25,7 @@
     "@sep/api": "workspace:*",
     "@sep/framework": "workspace:*",
     "@sep/plugin-checksums": "workspace:*",
+    "@sep/plugin-dipper": "workspace:*",
     "@sep/plugins-snippets": "workspace:*",
     "@sep/shared": "workspace:*",
     "@tanstack/react-query": "^5.100.7",
