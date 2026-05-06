@@ -311,7 +311,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
   it('clears downstream schema value when the upstream service changes', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url === '/api/inventory/services/') {
+      if (url === '/inventory/services/') {
         return Promise.resolve({
           data: {
             items: [
@@ -356,7 +356,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
     // Wait for services to load.
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/api/inventory/services/', expect.anything()),
+      expect(mockedApi.get).toHaveBeenCalledWith('/inventory/services/', expect.anything()),
     );
 
     // Pick first service.
