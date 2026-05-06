@@ -22,6 +22,7 @@ implemented in ``app.sep.plugins.inventory.deps``; see
 
 from urllib.parse import urlsplit
 
+import pytest
 from fastapi import status
 
 from app.sep.plugins.inventory.deps import INVENTORY_PLUGIN_ENTITY_NAMES
@@ -130,3 +131,68 @@ class TestInventoryGateway:
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert response.content == b""
         mock_inventory_api_dep.delete.assert_awaited_once_with("/3")
+
+    @pytest.mark.parametrize(
+        ("entity", "item_id", "inventory_path"),
+        [
+            ("nodes", 3, "/3"),
+            ("services", 9, "/services/9"),
+            ("schemas", 11, "/schemas/11"),
+            ("tables", 42, "/tables/42"),
+        ],
+    )
+    def test_get_entity_detail_forwards_inventory_path(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        entity: str,
+        item_id: int,
+        inventory_path: str,
+    ):
+        """Ensure GET ``…/{entity}/{id}`` proxies to the inventory service detail path."""
+        payload = {"id": item_id, "name": "x"}
+        mock_inventory_api_dep.get.return_value = payload
+        response = test_client.get(f"/api/plugins/inventory/{entity}/{item_id}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == payload
+        mock_inventory_api_dep.get.assert_awaited_once_with(inventory_path)
+
+    @pytest.mark.parametrize(
+        ("entity", "item_id", "inventory_path"),
+        [
+            ("nodes", 3, "/3"),
+            ("services", 9, "/services/9"),
+            ("schemas", 11, "/schemas/11"),
+            ("tables", 42, "/tables/42"),
+        ],
+    )
+    def test_put_entity_detail_forwards_inventory_path_and_body(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        entity: str,
+        item_id: int,
+        inventory_path: str,
+    ):
+        """Ensure PUT ``…/{entity}/{id}`` forwards JSON to the inventory service detail path."""
+        request_body = {"name": "updated"}
+        updated = {"id": item_id, **request_body}
+        mock_inventory_api_dep.put.return_value = updated
+        response = test_client.put(
+            f"/api/plugins/inventory/{entity}/{item_id}",
+            json=request_body,
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == updated
+        mock_inventory_api_dep.put.assert_awaited_once_with(
+            inventory_path,
+            json=request_body,
+        )
+
+    def test_get_unknown_entity_detail_returns_404(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure GET on an unknown entity segment returns HTTP 404 before inventory."""
+        response = test_client.get("/api/plugins/inventory/unknown/1")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_inventory_api_dep.get.assert_not_called()
