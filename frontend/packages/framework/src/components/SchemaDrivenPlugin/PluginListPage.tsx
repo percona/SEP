@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -33,6 +33,7 @@ import {
   type PluginSchema,
 } from '@sep/api';
 import { SchemaListView } from '../SchemaListView';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
 interface PluginListPageProps {
   schema: PluginSchema;
@@ -70,6 +71,10 @@ export function PluginListPage({
 }: PluginListPageProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    name?: string;
+  } | null>(null);
   const { entityName: entityNameParam } = useParams<{ entityName?: string }>();
   const entityName = entityNameOverride ?? entityNameParam;
   const entitySchema = useMemo(
@@ -105,20 +110,32 @@ export function PluginListPage({
           if (rid === undefined || rid === null) {
             return;
           }
-          const sid = String(rid);
-          if (!window.confirm(`Delete ${title} #${sid}? This cannot be undone.`)) {
-            return;
-          }
-          deleteEntity.mutate(sid, {
-            onSuccess: () => {
-              enqueueSnackbar(`${title} deleted`, { variant: 'success' });
-            },
-            onError: (err: Error) => {
-              enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
-            },
-          });
+          const rawName = row.name;
+          const rowName =
+            typeof rawName === 'string' && rawName.trim()
+              ? rawName.trim()
+              : typeof rawName === 'number'
+                ? String(rawName)
+                : undefined;
+          setPendingDelete({ id: String(rid), name: rowName });
         }
       : undefined;
+
+  const confirmListDelete = () => {
+    const sid = pendingDelete?.id;
+    setPendingDelete(null);
+    if (!sid) {
+      return;
+    }
+    deleteEntity.mutate(sid, {
+      onSuccess: () => {
+        enqueueSnackbar(`${title} deleted`, { variant: 'success' });
+      },
+      onError: (err: Error) => {
+        enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
+      },
+    });
+  };
 
   return (
     <Box>
@@ -180,6 +197,20 @@ export function PluginListPage({
           </Stack>
         )}
       </Box>
+
+      <DeleteConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={confirmListDelete}
+        title={`Delete from ${schema.display_name}?`}
+        description={
+          pendingDelete
+            ? pendingDelete.name
+              ? `Permanently delete ${title} "${pendingDelete.name}" (id ${pendingDelete.id}) from ${schema.display_name}? This cannot be undone.`
+              : `Permanently delete ${title} (id ${pendingDelete.id}) from ${schema.display_name}? This cannot be undone.`
+            : ''
+        }
+      />
 
       <SchemaListView
         listView={listView}

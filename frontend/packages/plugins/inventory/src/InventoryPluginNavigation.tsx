@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Box from '@mui/material/Box';
@@ -29,7 +29,7 @@ import {
   type PluginEntitySchema,
   type PluginSchema,
 } from '@sep/api';
-import { SchemaListView } from '@sep/framework';
+import { DeleteConfirmDialog, SchemaListView } from '@sep/framework';
 import {
   inventoryMountPrefix,
   parseFlatInventoryRoute,
@@ -509,6 +509,10 @@ function NestedListSection({
 }) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    name?: string;
+  } | null>(null);
   const entityTitle = useMemo(
     () =>
       schema.entities?.find((e: PluginEntitySchema) => e.name === listEntityName)?.display_name ??
@@ -530,23 +534,48 @@ function NestedListSection({
           if (rid === undefined || rid === null) {
             return;
           }
-          const sid = String(rid);
-          if (!window.confirm(`Delete ${entityTitle} #${sid}? This cannot be undone.`)) {
-            return;
-          }
-          deleteEntity.mutate(sid, {
-            onSuccess: () => {
-              enqueueSnackbar(`${entityTitle} deleted`, { variant: 'success' });
-            },
-            onError: (err: Error) => {
-              enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
-            },
-          });
+          const rawName = row.name;
+          const rowName =
+            typeof rawName === 'string' && rawName.trim()
+              ? rawName.trim()
+              : typeof rawName === 'number'
+                ? String(rawName)
+                : undefined;
+          setPendingDelete({ id: String(rid), name: rowName });
         }
       : undefined;
 
+  const confirmNestedListDelete = () => {
+    const sid = pendingDelete?.id;
+    setPendingDelete(null);
+    if (!sid) {
+      return;
+    }
+    deleteEntity.mutate(sid, {
+      onSuccess: () => {
+        enqueueSnackbar(`${entityTitle} deleted`, { variant: 'success' });
+      },
+      onError: (err: Error) => {
+        enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
+      },
+    });
+  };
+
   return (
     <Box sx={{ mt: 3 }}>
+      <DeleteConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={confirmNestedListDelete}
+        title={`Delete from ${schema.display_name}?`}
+        description={
+          pendingDelete
+            ? pendingDelete.name
+              ? `Permanently delete ${entityTitle} "${pendingDelete.name}" (id ${pendingDelete.id}) from ${schema.display_name}? This cannot be undone.`
+              : `Permanently delete ${entityTitle} (id ${pendingDelete.id}) from ${schema.display_name}? This cannot be undone.`
+            : ''
+        }
+      />
       <Typography variant="h6" sx={{ mb: 2 }}>
         {title}
       </Typography>

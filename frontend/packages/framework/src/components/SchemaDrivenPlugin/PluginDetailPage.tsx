@@ -54,6 +54,7 @@ import {
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { useTaskHistoryByName } from '../../hooks';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailPrism } from './detailPrism';
 
 export interface PluginDetailPageProps {
@@ -596,11 +597,11 @@ export function PluginDetailPage({
     multi ? mockEntityItems?.[entityName!] : undefined,
   );
 
-  const handleDelete = () => {
+  const [entityDeleteOpen, setEntityDeleteOpen] = useState(false);
+
+  const confirmEntityDelete = () => {
+    setEntityDeleteOpen(false);
     if (!id || !multi) {
-      return;
-    }
-    if (!window.confirm(`Delete ${title} #${id}? This cannot be undone.`)) {
       return;
     }
     deleteEntity.mutate(id, {
@@ -642,8 +643,27 @@ export function PluginDetailPage({
       );
     }
 
+    const recordName =
+      typeof task.name === 'string' && task.name.trim()
+        ? task.name.trim()
+        : typeof task.name === 'number'
+          ? String(task.name)
+          : undefined;
+
     return (
       <Box>
+        <DeleteConfirmDialog
+          open={entityDeleteOpen}
+          onClose={() => setEntityDeleteOpen(false)}
+          onConfirm={confirmEntityDelete}
+          title={`Delete from ${schema.display_name}?`}
+          description={
+            recordName
+              ? `Permanently delete ${title} "${recordName}" (id ${id}) from ${schema.display_name}? This cannot be undone.`
+              : `Permanently delete ${title} (id ${id}) from ${schema.display_name}? This cannot be undone.`
+          }
+        />
+
         {headingWhenChromeHidden ? (
           <Typography component="h1" variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
             {headingWhenChromeHidden}
@@ -690,7 +710,13 @@ export function PluginDetailPage({
                 >
                   Edit
                 </Button>
-                <Button color="error" variant="outlined" size="small" onClick={handleDelete}>
+                <Button
+                  color="error"
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setEntityDeleteOpen(true)}
+                  disabled={deleteEntity.isPending}
+                >
                   Delete
                 </Button>
               </>
