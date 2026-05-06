@@ -58,7 +58,7 @@ class HTTPBadRequestException(HTTPException):
 
 
 class HTTPUnprocessableEntityException(HTTPException):
-    """Define exception raised for unprocessable entity (HTTP 422).
+    """Define exception raised for unprocessable content (HTTP 422).
 
     :param detail: A message providing additional details about the exception.
         Defaults to "Unprocessable Entity".
@@ -67,7 +67,7 @@ class HTTPUnprocessableEntityException(HTTPException):
 
     def __init__(self, detail: str = "Unprocessable Entity") -> None:
         super().__init__(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
         )
 
 

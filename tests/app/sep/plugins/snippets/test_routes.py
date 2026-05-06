@@ -184,7 +184,7 @@ class TestSnippetsApproveBatch:
             _BATCH_APPROVE_URL, data={}, follow_redirects=False
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     @pytest.mark.asyncio
     async def test_non_admin_blocked_by_admin_dep(
