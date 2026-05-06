@@ -28,6 +28,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
+import { useNavigate } from 'react-router-dom';
 import { SchemaFormRenderer } from '@sep/framework';
 import { useAtwCategories, useSnippetExecution, useSnippetSchema } from './hooks';
 import type { AtwCategoryListing, AtwSnippetSummary } from './types';
@@ -35,6 +36,7 @@ import type { AtwCategoryListing, AtwSnippetSummary } from './types';
 const EXECUTION_RESERVED_NAMES = new Set(['executor_host', 'sudo', 'script_preview']);
 
 export function AtwPage() {
+  const navigate = useNavigate();
   const [selectedTechnology, setSelectedTechnology] = useState<string>('');
   const [selectedParent, setSelectedParent] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -86,12 +88,11 @@ export function AtwPage() {
     ? (executionMutation.error?.message ?? 'Execution failed')
     : null;
 
-  const successMessage =
-    executionMutation.isSuccess && executionMutation.data
-      ? `Snippet queued as ${executionMutation.data.task_name}.`
-      : null;
-
   const handleSubmit = (values: Record<string, unknown>) => {
+    if (!selectedSnippetRow) {
+      return;
+    }
+
     const args: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
       if (EXECUTION_RESERVED_NAMES.has(key)) {
@@ -102,11 +103,18 @@ export function AtwPage() {
       }
       args[key] = value;
     }
-    executionMutation.mutate({
-      executor_host: String(values.executor_host ?? ''),
-      sudo: Boolean(values.sudo ?? false),
-      args,
-    });
+    executionMutation.mutate(
+      {
+        executor_host: String(values.executor_host ?? ''),
+        sudo: Boolean(values.sudo ?? false),
+        args,
+      },
+      {
+        onSuccess: () => {
+          navigate(`/snippets/${encodeURIComponent(selectedSnippetRow.name)}`);
+        },
+      },
+    );
   };
 
   if (categoriesQuery.isLoading) {
@@ -213,12 +221,6 @@ export function AtwPage() {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {selectedSnippetRow.description}
         </Typography>
-      )}
-
-      {successMessage && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          {successMessage}
-        </Alert>
       )}
 
       {selectedSnippetRow && schemaQuery.isLoading && (
