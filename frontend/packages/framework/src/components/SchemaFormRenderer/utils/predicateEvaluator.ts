@@ -38,7 +38,7 @@ function isTruthy(value: unknown): boolean {
   return Boolean(value);
 }
 
-function isPresent(value: unknown): boolean {
+export function isPresent(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.length > 0;
   }

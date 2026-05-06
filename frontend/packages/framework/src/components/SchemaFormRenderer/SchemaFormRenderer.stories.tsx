@@ -269,9 +269,6 @@ export const AltersRecursionMethod: Story = {
  * Mirrors the pt-archiver (archives) plugin's purge-conditions section.
  * When Swap Drop = 1 (SWAP_DROP) the WHERE clause is forbidden — pt-archiver
  * selects all rows. Any other swap_drop value requires a WHERE clause.
- *
- * Note: the source_db_id / source_table_id XOR constraint is a section-level
- * cardinality_rule and will be demonstrated once that primitive is wired up.
  */
 export const ArchivesSwapDrop: Story = {
   args: {
@@ -297,6 +294,49 @@ export const ArchivesSwapDrop: Story = {
             description: 'SQL WHERE clause selecting rows to purge (e.g. id < 1000).',
             forbidden: [{ when: { equals: { swap_drop: 1 } } }],
             requires: [{ when: { not_equals: { swap_drop: 1 } } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run archive',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/**
+ * Mirrors the pt-archiver source selection: exactly one of source_db_id or
+ * source_table_id must be filled (XOR / exactly-one cardinality rule).
+ * The error banner appears immediately when both are filled or both are empty.
+ */
+export const ArchivesSourceXor: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Source',
+        description: 'Fill exactly one of DB or Table as the archiver source.',
+        cardinality_rules: [
+          {
+            fields: ['source_db_id', 'source_table_id'],
+            min: 1,
+            max: 1,
+            message: 'Specify exactly one source: either DB or Table, not both.',
+          },
+        ],
+        fields: [
+          {
+            type: 'string',
+            name: 'source_db_id',
+            label: 'Source DB',
+            description: 'Archive from an entire database.',
+          },
+          {
+            type: 'string',
+            name: 'source_table_id',
+            label: 'Source Table',
+            description: 'Archive from a single table.',
           },
         ],
       },

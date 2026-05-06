@@ -22,7 +22,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import { buildValidationRules, coerceFormValues } from './utils/validationMapper';
-import { evaluatePredicate } from './utils/predicateEvaluator';
+import { evaluatePredicate, isPresent } from './utils/predicateEvaluator';
 import type { FormSection } from './types';
 
 vi.mock('@sep/api', () => ({
@@ -599,6 +599,229 @@ describe('SchemaFormRenderer — conditional visibility', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ advancedOption: 'secret' }));
+  });
+});
+
+// ── isPresent unit tests ───────────────────────────────────────────────────
+
+describe('isPresent', () => {
+  it('treats null / undefined / empty string as absent', () => {
+    expect(isPresent(null)).toBe(false);
+    expect(isPresent(undefined)).toBe(false);
+    expect(isPresent('')).toBe(false);
+  });
+
+  it('treats empty array as absent', () => {
+    expect(isPresent([])).toBe(false);
+    expect(isPresent(['x'])).toBe(true);
+  });
+
+  it('treats empty plain object as absent', () => {
+    expect(isPresent({})).toBe(false);
+    expect(isPresent({ k: 1 })).toBe(true);
+  });
+
+  it('treats non-empty scalars as present', () => {
+    expect(isPresent(0)).toBe(true);
+    expect(isPresent(false)).toBe(true);
+    expect(isPresent('x')).toBe(true);
+  });
+});
+
+// ── Cardinality rules ──────────────────────────────────────────────────────
+
+describe('SchemaFormRenderer — cardinality_rules', () => {
+  it('shows a violation banner when neither required field is filled', async () => {
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [
+              {
+                fields: ['source_db_id', 'source_table_id'],
+                min: 1,
+                max: 1,
+                message: 'Specify exactly one source: either DB or Table, not both.',
+              },
+            ],
+            fields: [
+              { type: 'string', name: 'source_db_id', label: 'Source DB' },
+              { type: 'string', name: 'source_table_id', label: 'Source Table' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    // Both fields empty at mount → violation fires immediately
+    expect(
+      await screen.findByText('Specify exactly one source: either DB or Table, not both.'),
+    ).toBeInTheDocument();
+  });
+
+  it('clears the violation when exactly one field is filled', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [
+              {
+                fields: ['source_db_id', 'source_table_id'],
+                min: 1,
+                max: 1,
+                message: 'Specify exactly one source.',
+              },
+            ],
+            fields: [
+              { type: 'string', name: 'source_db_id', label: 'Source DB' },
+              { type: 'string', name: 'source_table_id', label: 'Source Table' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Source DB'), 'mydb');
+    await waitFor(() =>
+      expect(screen.queryByText('Specify exactly one source.')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('re-shows the violation when both fields are filled (exceeds max)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [
+              {
+                fields: ['source_db_id', 'source_table_id'],
+                min: 1,
+                max: 1,
+                message: 'Specify exactly one source.',
+              },
+            ],
+            fields: [
+              { type: 'string', name: 'source_db_id', label: 'Source DB' },
+              { type: 'string', name: 'source_table_id', label: 'Source Table' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Source DB'), 'db');
+    await user.type(screen.getByLabelText('Source Table'), 'tbl');
+    expect(await screen.findByText('Specify exactly one source.')).toBeInTheDocument();
+  });
+
+  it('blocks submission when a cardinality violation is active', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1, max: 1, message: 'Exactly one.' }],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    // Both empty → violation active → submit blocked
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('allows submission when cardinality is satisfied', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1, max: 1, message: 'Exactly one.' }],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('A'), 'hello');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('respects the when predicate — skips rule when guard is inactive', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Conditional',
+            cardinality_rules: [
+              {
+                when: { truthy: 'enable' },
+                fields: ['a', 'b'],
+                min: 1,
+                max: 1,
+                message: 'Exactly one when enabled.',
+              },
+            ],
+            fields: [
+              { type: 'bool', name: 'enable', label: 'Enable' },
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    // enable=false → guard inactive → no violation → submit succeeds
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('uses a default message when none is provided', async () => {
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1 }],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    // Both empty → min=1 violation → default message rendered
+    expect(await screen.findByText(/At least 1 of these 2 fields/)).toBeInTheDocument();
   });
 });
 

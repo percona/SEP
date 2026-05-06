@@ -16,7 +16,7 @@
  */
 
 import { memo, useMemo } from 'react';
-import { FormProvider, useForm, type SubmitHandler } from 'react-hook-form';
+import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -24,6 +24,7 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { FieldRenderer } from './fields';
 import { useConditionalField } from './hooks/useConditionalField';
+import { useCardinalityRules, type CardinalityViolation } from './hooks/useCardinalityRules';
 import { coerceFormValues } from './utils/validationMapper';
 import type { FormSection, PluginField } from './types';
 
@@ -72,6 +73,40 @@ const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { fie
   );
 });
 
+interface SectionRendererProps {
+  section: FormSection;
+  idx: number;
+  violations: CardinalityViolation[];
+}
+
+const SectionRenderer = memo(function SectionRenderer({
+  section,
+  idx,
+  violations,
+}: SectionRendererProps) {
+  return (
+    <Box component="fieldset" sx={{ border: 0, p: 0, mb: 3 }}>
+      {idx > 0 && <Divider sx={{ mb: 2 }} />}
+      <Typography component="legend" variant="h6" sx={{ mb: 1, px: 0 }}>
+        {section.title}
+      </Typography>
+      {section.description && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          {section.description}
+        </Typography>
+      )}
+      {violations.map((v, i) => (
+        <Alert key={i} severity="error" sx={{ mb: 1 }}>
+          {v.message}
+        </Alert>
+      ))}
+      {section.fields.map((field) => (
+        <ConditionalFieldSlot key={field.name} field={field} />
+      ))}
+    </Box>
+  );
+});
+
 export interface SchemaFormRendererProps {
   sections: FormSection[];
   onSubmit: (data: Record<string, unknown>) => void;
@@ -82,14 +117,64 @@ export interface SchemaFormRendererProps {
   submitError?: string | null;
 }
 
-export function SchemaFormRenderer({
+/** Inner form body — lives inside FormProvider so it can call useFormContext / useCardinalityRules. */
+function SchemaFormBody({
   sections,
   onSubmit,
   submitLabel = 'Run',
   loading = false,
-  defaultValues,
   submitError,
 }: SchemaFormRendererProps) {
+  const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
+  const allFields = useMemo(() => flattenFields(sections), [sections]);
+  const violationsPerSection = useCardinalityRules(sections);
+
+  const hasCardinalityViolations = violationsPerSection.some((vs) => vs.length > 0);
+  const hasInlineErrors = Object.keys(formState.errors).length > 0;
+
+  const handleFormSubmit: SubmitHandler<Record<string, unknown>> = (values) => {
+    if (hasCardinalityViolations) {
+      return;
+    }
+    onSubmit(coerceFormValues(values, allFields));
+  };
+
+  return (
+    <Box
+      component="form"
+      onSubmit={handleSubmit(handleFormSubmit)}
+      noValidate
+      sx={{ maxWidth: 640 }}
+    >
+      {submitError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {submitError}
+        </Alert>
+      )}
+      {hasInlineErrors && formState.isSubmitted && !submitError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Fix the highlighted fields before submitting.
+        </Alert>
+      )}
+
+      {sections.map((section, idx) => (
+        <SectionRenderer
+          key={section.title}
+          section={section}
+          idx={idx}
+          violations={violationsPerSection[idx] ?? []}
+        />
+      ))}
+
+      <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
+        {submitLabel}
+      </Button>
+    </Box>
+  );
+}
+
+export function SchemaFormRenderer(props: SchemaFormRendererProps) {
+  const { sections, defaultValues } = props;
   const allFields = useMemo(() => flattenFields(sections), [sections]);
 
   const formDefaults = useMemo(
@@ -102,53 +187,10 @@ export function SchemaFormRenderer({
   );
 
   const methods = useForm<Record<string, unknown>>({ defaultValues: formDefaults });
-  const { formState } = methods;
-  const hasInlineErrors = Object.keys(formState.errors).length > 0;
-
-  const handleSubmit: SubmitHandler<Record<string, unknown>> = (values) => {
-    onSubmit(coerceFormValues(values, allFields));
-  };
 
   return (
     <FormProvider {...methods}>
-      <Box
-        component="form"
-        onSubmit={methods.handleSubmit(handleSubmit)}
-        noValidate
-        sx={{ maxWidth: 640 }}
-      >
-        {submitError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {submitError}
-          </Alert>
-        )}
-        {hasInlineErrors && formState.isSubmitted && !submitError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            Fix the highlighted fields before submitting.
-          </Alert>
-        )}
-
-        {sections.map((section, idx) => (
-          <Box key={section.title} component="fieldset" sx={{ border: 0, p: 0, mb: 3 }}>
-            {idx > 0 && <Divider sx={{ mb: 2 }} />}
-            <Typography component="legend" variant="h6" sx={{ mb: 1, px: 0 }}>
-              {section.title}
-            </Typography>
-            {section.description && (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                {section.description}
-              </Typography>
-            )}
-            {section.fields.map((field) => (
-              <ConditionalFieldSlot key={field.name} field={field} />
-            ))}
-          </Box>
-        ))}
-
-        <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
-          {submitLabel}
-        </Button>
-      </Box>
+      <SchemaFormBody {...props} />
     </FormProvider>
   );
 }
