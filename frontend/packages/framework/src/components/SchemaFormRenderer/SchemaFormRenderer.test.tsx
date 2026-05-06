@@ -22,6 +22,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import { buildValidationRules, coerceFormValues } from './utils/validationMapper';
+import { evaluatePredicate } from './utils/predicateEvaluator';
 import type { FormSection } from './types';
 
 vi.mock('@sep/api', () => ({
@@ -380,5 +381,219 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
     await waitFor(() => {
       expect((schemaCombo as HTMLInputElement).value).toBe('');
     });
+  });
+});
+
+// ── evaluatePredicate ──────────────────────────────────────────────────────
+
+describe('evaluatePredicate', () => {
+  const v = (overrides: Record<string, unknown>) => overrides;
+
+  it('truthy / falsy', () => {
+    expect(evaluatePredicate({ truthy: 'x' }, v({ x: 'yes' }))).toBe(true);
+    expect(evaluatePredicate({ truthy: 'x' }, v({ x: '' }))).toBe(false);
+    expect(evaluatePredicate({ falsy: 'x' }, v({ x: '' }))).toBe(true);
+    expect(evaluatePredicate({ falsy: 'x' }, v({ x: 1 }))).toBe(false);
+    expect(evaluatePredicate({ truthy: 'arr' }, v({ arr: ['a'] }))).toBe(true);
+    expect(evaluatePredicate({ truthy: 'arr' }, v({ arr: [] }))).toBe(false);
+  });
+
+  it('equals / not_equals', () => {
+    expect(evaluatePredicate({ equals: { mode: 'advanced' } }, v({ mode: 'advanced' }))).toBe(true);
+    expect(evaluatePredicate({ equals: { mode: 'basic' } }, v({ mode: 'advanced' }))).toBe(false);
+    expect(evaluatePredicate({ not_equals: { mode: 'basic' } }, v({ mode: 'advanced' }))).toBe(
+      true,
+    );
+  });
+
+  it('equals with $field ref', () => {
+    expect(evaluatePredicate({ equals: { a: { $field: 'b' } } }, v({ a: 'x', b: 'x' }))).toBe(true);
+    expect(evaluatePredicate({ equals: { a: { $field: 'b' } } }, v({ a: 'x', b: 'y' }))).toBe(
+      false,
+    );
+  });
+
+  it('gt / gte / lt / lte', () => {
+    expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: 6 }))).toBe(true);
+    expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: 5 }))).toBe(false);
+    expect(evaluatePredicate({ gte: { n: 5 } }, v({ n: 5 }))).toBe(true);
+    expect(evaluatePredicate({ lt: { n: 5 } }, v({ n: 4 }))).toBe(true);
+    expect(evaluatePredicate({ lte: { n: 5 } }, v({ n: 5 }))).toBe(true);
+  });
+
+  it('any_present / all_present / none_present', () => {
+    expect(evaluatePredicate({ any_present: ['a', 'b'] }, v({ a: '', b: 'x' }))).toBe(true);
+    expect(evaluatePredicate({ any_present: ['a', 'b'] }, v({ a: '', b: '' }))).toBe(false);
+    expect(evaluatePredicate({ all_present: ['a', 'b'] }, v({ a: '1', b: '2' }))).toBe(true);
+    expect(evaluatePredicate({ all_present: ['a', 'b'] }, v({ a: '1', b: '' }))).toBe(false);
+    expect(evaluatePredicate({ none_present: ['a', 'b'] }, v({ a: '', b: '' }))).toBe(true);
+    expect(evaluatePredicate({ none_present: ['a', 'b'] }, v({ a: 'x', b: '' }))).toBe(false);
+  });
+
+  it('all_truthy / any_truthy / all_falsy / any_falsy', () => {
+    expect(evaluatePredicate({ all_truthy: ['a', 'b'] }, v({ a: 1, b: 2 }))).toBe(true);
+    expect(evaluatePredicate({ all_truthy: ['a', 'b'] }, v({ a: 1, b: 0 }))).toBe(false);
+    expect(evaluatePredicate({ any_truthy: ['a', 'b'] }, v({ a: 0, b: 1 }))).toBe(true);
+    expect(evaluatePredicate({ all_falsy: ['a', 'b'] }, v({ a: 0, b: '' }))).toBe(true);
+    expect(evaluatePredicate({ any_falsy: ['a', 'b'] }, v({ a: 1, b: 0 }))).toBe(true);
+  });
+
+  it('all_equal', () => {
+    expect(evaluatePredicate({ all_equal: ['a', 'b', 'c'] }, v({ a: 'x', b: 'x', c: 'x' }))).toBe(
+      true,
+    );
+    expect(evaluatePredicate({ all_equal: ['a', 'b'] }, v({ a: 'x', b: 'y' }))).toBe(false);
+  });
+
+  it('all / any (logical combinators)', () => {
+    expect(evaluatePredicate({ all: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 1 }))).toBe(
+      true,
+    );
+    expect(evaluatePredicate({ all: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 0 }))).toBe(
+      false,
+    );
+    expect(evaluatePredicate({ any: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 0, b: 1 }))).toBe(
+      true,
+    );
+  });
+
+  it('xor', () => {
+    expect(evaluatePredicate({ xor: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 0 }))).toBe(
+      true,
+    );
+    expect(evaluatePredicate({ xor: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 1 }))).toBe(
+      false,
+    );
+    expect(evaluatePredicate({ xor: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 0, b: 0 }))).toBe(
+      false,
+    );
+  });
+
+  it('not', () => {
+    expect(evaluatePredicate({ not: { truthy: 'x' } }, v({ x: '' }))).toBe(true);
+    expect(evaluatePredicate({ not: { truthy: 'x' } }, v({ x: 'yes' }))).toBe(false);
+  });
+
+  it('returns false for unknown operator', () => {
+    expect(evaluatePredicate({ unknown_op: 'x' } as Record<string, unknown>, v({}))).toBe(false);
+  });
+});
+
+// ── Conditional visibility (forbidden gates) ───────────────────────────────
+
+describe('SchemaFormRenderer — conditional visibility', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Main',
+      fields: [
+        { type: 'bool', name: 'advanced', label: 'Advanced mode' },
+        {
+          type: 'string',
+          name: 'advancedOption',
+          label: 'Advanced option',
+          forbidden: [{ when: { falsy: 'advanced' } }],
+        },
+      ],
+    },
+  ];
+
+  it('hides a field when its forbidden gate fires', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    // advanced = false (default) → forbidden gate fires → advancedOption hidden
+    expect(screen.queryByLabelText('Advanced option')).toBeNull();
+  });
+
+  it('shows a field when its forbidden gate no longer fires', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    // Flip the bool — advanced becomes true → falsy('advanced') = false → gate doesn't fire
+    await user.click(screen.getByLabelText('Advanced mode'));
+    expect(await screen.findByLabelText('Advanced option')).toBeInTheDocument();
+  });
+
+  it('excludes hidden field from submission', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    // advanced=false → advancedOption hidden → submit without it
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.not.objectContaining({ advancedOption: expect.anything() }),
+    );
+  });
+
+  it('includes revealed field in submission', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByLabelText('Advanced mode'));
+    const input = await screen.findByLabelText('Advanced option');
+    await user.type(input, 'secret');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ advancedOption: 'secret' }));
+  });
+});
+
+// ── Conditional required (requires gates) ─────────────────────────────────
+
+describe('SchemaFormRenderer — conditional required', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Main',
+      fields: [
+        { type: 'bool', name: 'needsReason', label: 'Needs reason' },
+        {
+          type: 'string',
+          name: 'reason',
+          label: 'Reason',
+          requires: [{ when: { truthy: 'needsReason' } }],
+        },
+      ],
+    },
+  ];
+
+  it('does not block submission when gate is inactive', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    // needsReason=false → requires gate inactive → reason not required
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('blocks submission and shows required error when gate fires and field is empty', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByLabelText('Needs reason'));
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Reason is required/)).toBeInTheDocument();
+  });
+
+  it('submits when gate fires and field is filled', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByLabelText('Needs reason'));
+    // Use data-testid (set by percona-ui's TextInput) to find the input directly,
+    // since the label-for association is briefly stale while isRequired flips.
+    await user.type(screen.getByTestId('text-input-reason'), 'because');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'because', needsReason: true }),
+    );
   });
 });

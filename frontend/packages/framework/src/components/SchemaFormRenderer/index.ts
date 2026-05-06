@@ -19,4 +19,7 @@ export { SchemaFormRenderer } from './SchemaFormRenderer';
 export type { SchemaFormRendererProps } from './SchemaFormRenderer';
 export { FieldRenderer } from './fields';
 export { useCascadingField } from './hooks/useCascadingField';
+export { useConditionalField } from './hooks/useConditionalField';
+export type { ConditionalFieldState } from './hooks/useConditionalField';
 export { buildValidationRules, coerceFormValues } from './utils/validationMapper';
+export { evaluatePredicate } from './utils/predicateEvaluator';

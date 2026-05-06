@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { FormProvider, useForm, type SubmitHandler } from 'react-hook-form';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -23,6 +23,7 @@ import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { FieldRenderer } from './fields';
+import { useConditionalField } from './hooks/useConditionalField';
 import { coerceFormValues } from './utils/validationMapper';
 import type { FormSection, PluginField } from './types';
 
@@ -50,6 +51,22 @@ function fieldDefault(field: PluginField): unknown {
 function flattenFields(sections: FormSection[]): PluginField[] {
   return sections.flatMap((s) => s.fields);
 }
+
+const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { field: PluginField }) {
+  const { isHidden, isRequired } = useConditionalField(field);
+
+  if (isHidden) {
+    return null;
+  }
+
+  const resolvedField = isRequired !== field.required ? { ...field, required: isRequired } : field;
+
+  return (
+    <Box sx={{ mb: 2 }}>
+      <FieldRenderer field={resolvedField} />
+    </Box>
+  );
+});
 
 export interface SchemaFormRendererProps {
   sections: FormSection[];
@@ -119,9 +136,7 @@ export function SchemaFormRenderer({
               </Typography>
             )}
             {section.fields.map((field) => (
-              <Box key={field.name} sx={{ mb: 2 }}>
-                <FieldRenderer field={field} />
-              </Box>
+              <ConditionalFieldSlot key={field.name} field={field} />
             ))}
           </Box>
         ))}

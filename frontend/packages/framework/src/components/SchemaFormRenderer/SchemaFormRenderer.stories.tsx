@@ -186,3 +186,38 @@ export const MinimalForm: Story = {
     },
   },
 };
+
+export const ConditionalFields: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Mode',
+        description:
+          'Toggle "Advanced mode" to reveal the hidden field. Check "Needs reason" to make Reason required.',
+        fields: [
+          { type: 'bool', name: 'advanced', label: 'Advanced mode' },
+          {
+            type: 'string',
+            name: 'advancedOption',
+            label: 'Advanced option (hidden when advanced=false)',
+            description: 'Visible only when Advanced mode is on.',
+            forbidden: [{ when: { falsy: 'advanced' } }],
+          },
+          { type: 'bool', name: 'needsReason', label: 'Needs reason' },
+          {
+            type: 'string',
+            name: 'reason',
+            label: 'Reason (dynamically required)',
+            description: 'Required only when Needs reason is checked.',
+            requires: [{ when: { truthy: 'needsReason' } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Submit',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
