@@ -64,8 +64,11 @@ lint: ruff djlint
 
 audit: bandit pip-audit
 
+# python.org macOS builds ship without etc/openssl/cert.pem until you run
+# "Install Certificates.command"; urllib then fails for hooks that fetch remotes.
 run-pre-commit: venv
-	@"${VENV_BIN}"/pre-commit run --all-files
+	@SSL_CERT_FILE=$$("${VENV_BIN}"/python -c 'import certifi; print(certifi.where())') \
+		"${VENV_BIN}"/pre-commit run --all-files
 
 # Local development only; production startup uses container/entrypoint paths.
 dev-backend: venv
