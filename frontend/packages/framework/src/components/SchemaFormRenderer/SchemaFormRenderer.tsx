@@ -59,6 +59,10 @@ const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { fie
     return null;
   }
 
+  // Clone the field with the resolved required flag so FieldRenderer passes it
+  // to register(). RHF's register() is idempotent — re-calling it on each
+  // render updates the validation rules in place, so the required constraint
+  // stays in sync with gate state without a separate validate callback.
   const resolvedField = isRequired !== field.required ? { ...field, required: isRequired } : field;
 
   return (

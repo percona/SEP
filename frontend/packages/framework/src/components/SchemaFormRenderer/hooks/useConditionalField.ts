@@ -69,6 +69,11 @@ export function useConditionalField(field: PluginField): ConditionalFieldState {
     return field.requires.some((gate) => evaluatePredicate(gate.when, map));
   }, [rawValues, field, watchedNames]);
 
+  // When a field becomes hidden its value must not appear in the submission
+  // payload. Unregistering removes it from RHF state immediately.
+  // On re-show, ConditionalFieldSlot remounts FieldRenderer, which re-calls
+  // register() and the field starts fresh — intentional: the hidden value
+  // is stale and should not silently resubmit.
   useEffect(() => {
     if (isHidden) {
       unregister(field.name);

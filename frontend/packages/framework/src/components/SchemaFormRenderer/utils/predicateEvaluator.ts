@@ -57,7 +57,12 @@ function resolveValue(raw: unknown, values: FormValues): unknown {
   return isFieldRef(raw) ? values[(raw as { $field: string }).$field] : raw;
 }
 
-/** Coerces a value to number for ordered comparisons, matching backend numeric semantics. */
+/**
+ * Coerces a value to number for ordered comparisons.
+ * Intentional divergence from Python (which raises TypeError on "10" > 5):
+ * RHF stores text-input values as strings until coerceFormValues runs at submit,
+ * so predicate evaluation must handle string representations of numbers.
+ */
 function toNum(v: unknown): number {
   return typeof v === 'number' ? v : Number(v);
 }
@@ -171,11 +176,13 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
     case 'any':
       return (operand as Predicate[]).some((p) => evaluatePredicate(p, values));
     case 'xor': {
+      // n-ary XOR: true when exactly one operand evaluates to true.
+      // Subsumes binary XOR and handles any arity the BE may emit.
       const preds = operand as Predicate[];
-      if (preds.length !== 2) {
+      if (preds.length === 0) {
         return false;
       }
-      return evaluatePredicate(preds[0], values) !== evaluatePredicate(preds[1], values);
+      return preds.filter((p) => evaluatePredicate(p, values)).length === 1;
     }
     case 'not':
       return !evaluatePredicate(operand as Predicate, values);
@@ -224,14 +231,8 @@ function getPredicateFieldNames(predicate: Predicate): string[] {
       return operand as string[];
     case 'all':
     case 'any':
+    case 'xor':
       return (operand as Predicate[]).flatMap((p) => getPredicateFieldNames(p));
-    case 'xor': {
-      const preds = operand as Predicate[];
-      if (preds.length !== 2) {
-        return [];
-      }
-      return [...getPredicateFieldNames(preds[0]), ...getPredicateFieldNames(preds[1])];
-    }
     case 'not':
       return getPredicateFieldNames(operand as Predicate);
     default:

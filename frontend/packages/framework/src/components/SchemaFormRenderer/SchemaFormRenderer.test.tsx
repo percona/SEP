@@ -492,7 +492,8 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ all: [] }, v({}))).toBe(false);
   });
 
-  it('xor', () => {
+  it('xor — binary and n-ary (exactly one truthy)', () => {
+    // binary cases
     expect(evaluatePredicate({ xor: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 0 }))).toBe(
       true,
     );
@@ -502,6 +503,21 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ xor: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 0, b: 0 }))).toBe(
       false,
     );
+    // n-ary: exactly one of three
+    expect(
+      evaluatePredicate(
+        { xor: [{ truthy: 'a' }, { truthy: 'b' }, { truthy: 'c' }] },
+        v({ a: 1, b: 0, c: 0 }),
+      ),
+    ).toBe(true);
+    expect(
+      evaluatePredicate(
+        { xor: [{ truthy: 'a' }, { truthy: 'b' }, { truthy: 'c' }] },
+        v({ a: 1, b: 1, c: 0 }),
+      ),
+    ).toBe(false);
+    // empty → false
+    expect(evaluatePredicate({ xor: [] }, v({}))).toBe(false);
   });
 
   it('not', () => {
