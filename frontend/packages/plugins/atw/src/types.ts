@@ -26,7 +26,6 @@ export interface AtwSnippetSummary {
 
 export interface AtwCategoryListing {
   category_root: string;
-  name: string;
   parent_category: string;
   parent_category_label: string;
   category: string;

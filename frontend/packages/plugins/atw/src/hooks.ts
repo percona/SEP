@@ -25,6 +25,8 @@ import type {
 
 const ATW_BASE = '/plugins/atw';
 
+const ATW_STALE_TIME_MS = 5 * 60 * 1000;
+
 export function useAtwCategories() {
   return useQuery<AtwCategoryListing[]>({
     queryKey: ['atw', 'categories'],
@@ -32,6 +34,7 @@ export function useAtwCategories() {
       const { data } = await apiClient.get<AtwCategoryListing[]>(`${ATW_BASE}/`);
       return data;
     },
+    staleTime: ATW_STALE_TIME_MS,
   });
 }
 
@@ -46,7 +49,7 @@ export function useSnippetSchema(schemaUrl: string | null) {
       return data;
     },
     enabled: Boolean(schemaUrl),
-    staleTime: 5 * 60 * 1000,
+    staleTime: ATW_STALE_TIME_MS,
   });
 }
 

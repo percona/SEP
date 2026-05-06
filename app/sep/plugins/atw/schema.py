@@ -16,6 +16,15 @@
 """Define the PluginSchema for the ATW plugin."""
 
 from app.sep.plugins.atw.models import ATWCategory, ParentCategory
+from app.sep.plugins.framework.rules import (
+    all_,
+    any_,
+    F,
+    FailRule,
+    falsy,
+    not_,
+    truthy,
+)
 from app.sep.plugins.framework.schema import (
     Choice,
     ChoiceField,
@@ -31,6 +40,33 @@ _PARENT_CATEGORY_CHOICES = [
 _CATEGORY_CHOICES = [
     Choice(label=category.value, value=category.name) for category in ATWCategory
 ]
+
+
+def _atw_category_browser_fail_rules() -> list[FailRule]:
+    """Declare parent/category consistency for schema-driven and API consumers (SEP-1071)."""
+    rules: list[FailRule] = [
+        FailRule(
+            fail_when=all_(truthy("category"), falsy("parent_category")),
+            error_fields=["parent_category"],
+            message="parent_category is required when category is set.",
+        ),
+    ]
+    for parent in ParentCategory:
+        allowed = [cat.name for cat in ATWCategory if cat.parent == parent]
+        category_matches_allowed = any_(*(F("category") == name for name in allowed))
+        rules.append(
+            FailRule(
+                fail_when=all_(
+                    F("parent_category") == parent.name,
+                    truthy("category"),
+                    not_(category_matches_allowed),
+                ),
+                error_fields=["category"],
+                message=f'category must belong to "{parent.value}".',
+            )
+        )
+    return rules
+
 
 atw_schema = PluginSchema(
     name="atw",
@@ -56,6 +92,7 @@ atw_schema = PluginSchema(
                     choices=_CATEGORY_CHOICES,
                 ),
             ],
+            fail_when=_atw_category_browser_fail_rules(),
         ),
     ],
     list_view=ListView(

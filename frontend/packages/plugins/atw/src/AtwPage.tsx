@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -35,58 +35,67 @@ import type { AtwCategoryListing, AtwSnippetSummary } from './types';
 
 export function AtwPage() {
   const navigate = useNavigate();
-  const [selectedCategory1, setSelectedCategory1] = useState<string>('');
-  const [selectedSubcategory1, setSelectedSubcategory1] = useState<string>('');
-  const [selectedSubcategory2, setSelectedSubcategory2] = useState<string>('');
+  const [selectedRoot, setSelectedRoot] = useState<string>('');
+  const [selectedParent, setSelectedParent] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedSnippet, setSelectedSnippet] = useState<string>('');
 
   const categoriesQuery = useAtwCategories();
 
-  const category1Options = useMemo(() => {
+  const rootOptions = useMemo(() => {
     const listing = categoriesQuery.data ?? [];
     return Array.from(new Set(listing.map((item: AtwCategoryListing) => item.category_root)));
   }, [categoriesQuery.data]);
 
-  const subcategory1Options = useMemo(() => {
+  useEffect(() => {
+    if (rootOptions.length !== 1) {
+      return;
+    }
+    const only = rootOptions[0];
+    if (selectedRoot === only) {
+      return;
+    }
+    setSelectedRoot(only);
+    setSelectedParent('');
+    setSelectedCategory('');
+    setSelectedSnippet('');
+  }, [rootOptions, selectedRoot]);
+
+  const parentOptions = useMemo((): AtwCategoryListing[] => {
     const listing = categoriesQuery.data ?? [];
     const seen = new Set<string>();
     return listing
-      .filter((item: AtwCategoryListing) => item.category_root === selectedCategory1)
+      .filter((item: AtwCategoryListing) => item.category_root === selectedRoot)
       .filter((item: AtwCategoryListing) => {
         if (seen.has(item.parent_category)) {
           return false;
         }
         seen.add(item.parent_category);
         return true;
-      })
-      .map((item: AtwCategoryListing) => ({
-        value: item.parent_category,
-        label: item.parent_category_label,
-      }));
-  }, [categoriesQuery.data, selectedCategory1]);
+      });
+  }, [categoriesQuery.data, selectedRoot]);
 
-  const subcategory2Options = useMemo(() => {
+  const leafListingOptions = useMemo(() => {
     const listing = categoriesQuery.data ?? [];
     return listing.filter(
       (item: AtwCategoryListing) =>
-        item.category_root === selectedCategory1 && item.parent_category === selectedSubcategory1,
+        item.category_root === selectedRoot && item.parent_category === selectedParent,
     );
-  }, [categoriesQuery.data, selectedCategory1, selectedSubcategory1]);
+  }, [categoriesQuery.data, selectedRoot, selectedParent]);
 
-  const selectedSubcategory2Row = useMemo<AtwCategoryListing | null>(
+  const selectedCategoryRow = useMemo<AtwCategoryListing | null>(
     () =>
-      subcategory2Options.find(
-        (item: AtwCategoryListing) => item.category === selectedSubcategory2,
-      ) ?? null,
-    [subcategory2Options, selectedSubcategory2],
+      leafListingOptions.find((item: AtwCategoryListing) => item.category === selectedCategory) ??
+      null,
+    [leafListingOptions, selectedCategory],
   );
 
   const selectedSnippetRow = useMemo<AtwSnippetSummary | null>(
     () =>
-      selectedSubcategory2Row?.snippets.find(
+      selectedCategoryRow?.snippets.find(
         (snippet: AtwSnippetSummary) => snippet.name === selectedSnippet,
       ) ?? null,
-    [selectedSubcategory2Row, selectedSnippet],
+    [selectedCategoryRow, selectedSnippet],
   );
 
   const schemaQuery = useSnippetSchema(selectedSnippetRow?.snippet_schema_url ?? null);
@@ -133,19 +142,19 @@ export function AtwPage() {
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 3 }}>
         <FormControl fullWidth>
-          <InputLabel id="atw-category1-label">Category</InputLabel>
+          <InputLabel id="atw-root-label">Category</InputLabel>
           <Select
-            labelId="atw-category1-label"
-            value={selectedCategory1}
+            labelId="atw-root-label"
+            value={selectedRoot}
             label="Category"
             onChange={(event: SelectChangeEvent) => {
-              setSelectedCategory1(event.target.value);
-              setSelectedSubcategory1('');
-              setSelectedSubcategory2('');
+              setSelectedRoot(event.target.value);
+              setSelectedParent('');
+              setSelectedCategory('');
               setSelectedSnippet('');
             }}
           >
-            {category1Options.map((option) => (
+            {rootOptions.map((option) => (
               <MenuItem key={option} value={option}>
                 {option}
               </MenuItem>
@@ -154,46 +163,46 @@ export function AtwPage() {
         </FormControl>
 
         <FormControl fullWidth>
-          <InputLabel id="atw-category2-label">Subcategory 1</InputLabel>
+          <InputLabel id="atw-parent-label">Subcategory 1</InputLabel>
           <Select
-            labelId="atw-category2-label"
-            value={selectedSubcategory1}
+            labelId="atw-parent-label"
+            value={selectedParent}
             label="Subcategory 1"
-            disabled={!selectedCategory1}
+            disabled={!selectedRoot}
             onChange={(event: SelectChangeEvent) => {
-              setSelectedSubcategory1(event.target.value);
-              setSelectedSubcategory2('');
+              setSelectedParent(event.target.value);
+              setSelectedCategory('');
               setSelectedSnippet('');
             }}
           >
-            {subcategory1Options.map((option: { value: string; label: string }) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
+            {parentOptions.map((row: AtwCategoryListing) => (
+              <MenuItem key={row.parent_category} value={row.parent_category}>
+                {row.parent_category_label}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
 
-        <FormControl fullWidth disabled={!selectedCategory1 || !selectedSubcategory1}>
-          <InputLabel id="atw-category3-label">Subcategory 2</InputLabel>
+        <FormControl fullWidth disabled={!selectedRoot || !selectedParent}>
+          <InputLabel id="atw-category-label">Subcategory 2</InputLabel>
           <Select
-            labelId="atw-category3-label"
-            value={selectedSubcategory2}
+            labelId="atw-category-label"
+            value={selectedCategory}
             label="Subcategory 2"
             onChange={(event: SelectChangeEvent) => {
-              setSelectedSubcategory2(event.target.value);
+              setSelectedCategory(event.target.value);
               setSelectedSnippet('');
             }}
           >
-            {subcategory2Options.map((category: AtwCategoryListing) => (
-              <MenuItem key={category.category} value={category.category}>
-                {category.category_label}
+            {leafListingOptions.map((row: AtwCategoryListing) => (
+              <MenuItem key={row.category} value={row.category}>
+                {row.category_label}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
 
-        <FormControl fullWidth disabled={!selectedCategory1 || !selectedSubcategory2Row}>
+        <FormControl fullWidth disabled={!selectedRoot || !selectedCategoryRow}>
           <InputLabel id="atw-snippet-label">Snippet</InputLabel>
           <Select
             labelId="atw-snippet-label"
@@ -203,7 +212,7 @@ export function AtwPage() {
               setSelectedSnippet(event.target.value);
             }}
           >
-            {(selectedSubcategory2Row?.snippets ?? []).map((snippet) => (
+            {(selectedCategoryRow?.snippets ?? []).map((snippet) => (
               <MenuItem key={snippet.name} value={snippet.name}>
                 {snippet.title}
               </MenuItem>

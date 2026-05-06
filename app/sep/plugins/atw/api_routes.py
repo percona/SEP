@@ -15,6 +15,7 @@
 
 """Define the JSON API router for the ATW plugin."""
 
+from collections import defaultdict
 from urllib.parse import quote
 
 from fastapi import APIRouter
@@ -27,6 +28,7 @@ from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 
+# TODO: Derive category_root from snippet/meta for multi-root ATW.  # noqa: TD002, TD003
 ATW_CATEGORY_ROOT = "MySQL"
 
 
@@ -45,7 +47,6 @@ class ATWCategoryListing(BaseModel):
     """Represent one ATW category row and its snippet members."""
 
     category_root: str
-    name: str
     parent_category: str
     parent_category_label: str
     category: str
@@ -74,18 +75,22 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
 async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     """List ATW-tagged snippets grouped by category."""
     snippets = await SnippetManager.list(session)
-    grouped: list[ATWCategoryListing] = []
+    snippets_by_atw_tag: defaultdict[str, list[Snippet]] = defaultdict(list)
+    for snippet in snippets:
+        raw_atw = snippet.meta.get("atw", [])
+        tags = raw_atw if isinstance(raw_atw, list) else []
+        for tag in dict.fromkeys(tags):
+            snippets_by_atw_tag[tag].append(snippet)
 
+    grouped: list[ATWCategoryListing] = []
     for category in ATWCategory:
         category_snippets = [
             _build_summary(snippet)
-            for snippet in snippets
-            if category.name in snippet.meta.get("atw", [])
+            for snippet in snippets_by_atw_tag.get(category.name, [])
         ]
         grouped.append(
             ATWCategoryListing(
                 category_root=ATW_CATEGORY_ROOT,
-                name=category.name,
                 parent_category=category.parent.name,
                 parent_category_label=category.parent.value,
                 category=category.name,

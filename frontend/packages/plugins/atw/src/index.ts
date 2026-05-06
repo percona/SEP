@@ -15,8 +15,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { AtwPlugin } from './AtwPlugin';
-export { AtwPage } from './AtwPage';
-export { atwRoute, PLUGIN_NAME, PLUGIN_BASE_PATH } from './routes';
+export { AtwPage, AtwPage as AtwPlugin } from './AtwPage';
 export { useAtwCategories, useSnippetExecution, useSnippetSchema } from './hooks';
 export type { AtwCategoryListing, AtwSnippetSummary } from './types';
