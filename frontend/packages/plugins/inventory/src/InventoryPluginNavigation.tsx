@@ -25,7 +25,6 @@ import { useSnackbar } from 'notistack';
 import {
   useDeletePluginEntity,
   usePluginEntityDetail,
-  usePluginSchema,
   type ListView,
   type PluginEntitySchema,
   type PluginSchema,
@@ -169,9 +168,8 @@ function crumbsFromNestedPath(
  * Name-based trail: Inventory → node → service → schema → (table), with nested URLs
  * ``/…/nodes/:id/services/:id/…`` when applicable.
  */
-export function InventoryBreadcrumbs({ mockSchema }: { mockSchema?: PluginSchema }) {
+export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
   const location = useLocation();
-  const { data: schema } = usePluginSchema('inventory', mockSchema);
 
   const prefix = useMemo(() => inventoryMountPrefix(location.pathname), [location.pathname]);
 

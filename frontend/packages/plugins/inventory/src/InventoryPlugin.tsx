@@ -58,7 +58,7 @@ export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPlugin
 
   return (
     <>
-      <InventoryBreadcrumbs mockSchema={mockSchema} />
+      <InventoryBreadcrumbs schema={schema} />
       <InventoryRoutes schema={schema} mockEntityItems={mockEntityItems} />
     </>
   );
