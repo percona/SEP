@@ -390,3 +390,27 @@ def inventory_plugin_query_params(request: Request) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     return {k: v for k, v in request.query_params.items() if v is not None and v != ""}
+
+
+async def inventory_plugin_json_object_body(request: Request) -> dict[str, Any]:
+    """Parse JSON from ``request`` and require a top-level object.
+
+    Shared by inventory plugin POST/PUT handlers so body validation is not
+    duplicated on each route.
+
+    :param request: The inbound HTTP request.
+    :type request: Request
+    :return: Parsed JSON object body.
+    :rtype: dict[str, Any]
+    :raises HTTPUnprocessableEntityException: When the payload is not a JSON object.
+    """
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPUnprocessableEntityException("JSON object body required")
+    return body
+
+
+InventoryPluginJsonObjectBody = Annotated[
+    dict[str, Any],
+    Depends(inventory_plugin_json_object_body),
+]

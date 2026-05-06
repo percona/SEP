@@ -632,7 +632,6 @@ class RemoteAPI(BaseRemoteAPI):
         """
         async with self._request(method, path, **kwargs) as response:
             if response.status == status.HTTP_204_NO_CONTENT:
-                response.raise_for_status()
                 return {}
             try:
                 response_data = await response.json()

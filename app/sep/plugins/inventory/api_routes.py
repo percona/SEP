@@ -23,7 +23,10 @@ route for safety.
 Proxies CRUD for nodes, services, schemas, and tables to the inventory HTTP API
 through ``InventoryAPI`` in ``app.sep.deps`` (``RemoteAPI`` toward the
 inventory service). List handlers unwrap paginated ``items`` into a JSON array
-for the schema-driven React client.
+for the schema-driven React client. POST and PUT bodies are parsed with the
+``InventoryPluginJsonObjectBody`` in ``app.sep.plugins.inventory.deps`` (see
+``inventory_plugin_json_object_body``) so non-object JSON consistently yields
+HTTP 422.
 
 Schedule and periodic sync routes are not mounted here so SEP-1058 can own the
 React schedule UI; do not add schedule or inventory-sync proxy routes without
@@ -40,7 +43,6 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import RedirectResponse
 
-from app.core.exceptions import HTTPUnprocessableEntityException
 from app.sep.deps import InventoryAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory.deps import (
@@ -48,6 +50,7 @@ from app.sep.plugins.inventory.deps import (
     inventory_service_create_path,
     inventory_service_detail_path,
     inventory_service_list_path,
+    InventoryPluginJsonObjectBody,
     require_inventory_plugin_entity,
     unwrap_inventory_plugin_list_payload,
 )
@@ -100,13 +103,10 @@ async def inventory_list_entity(
 async def inventory_create_entity(
     entity: str,
     inventory_api: InventoryAPI,
-    request: Request,
+    body: InventoryPluginJsonObjectBody,
 ) -> Any:
     """Create an inventory node, service, schema, or table."""
     entity = require_inventory_plugin_entity(entity)
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPUnprocessableEntityException("JSON object body required")
     inv_path = inventory_service_create_path(entity, body)
     return await inventory_api.post(inv_path, json=body)
 
@@ -127,13 +127,10 @@ async def inventory_update_entity(
     entity: str,
     item_id: int,
     inventory_api: InventoryAPI,
-    request: Request,
+    body: InventoryPluginJsonObjectBody,
 ) -> Any:
     """Update an inventory node, service, schema, or table."""
     entity = require_inventory_plugin_entity(entity)
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPUnprocessableEntityException("JSON object body required")
     return await inventory_api.put(
         inventory_service_detail_path(entity, item_id), json=body
     )
