@@ -42,6 +42,7 @@ class ATWSnippetSummary(BaseModel):
 class ATWCategoryListing(BaseModel):
     """Represent one ATW category row and its snippet members."""
 
+    category_root: str
     name: str
     parent_category: str
     parent_category_label: str
@@ -81,6 +82,7 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
         ]
         grouped.append(
             ATWCategoryListing(
+                category_root="MySQL",
                 name=category.name,
                 parent_category=category.parent.name,
                 parent_category_label=category.parent.value,

@@ -62,6 +62,7 @@ class TestAtwListEndpoint:
         )
         assert overall is not None
         assert overall["snippet_count"] == 1
+        assert overall["category_root"] == "MySQL"
         assert overall["parent_category"] == "PERFORMANCE_ISSUES"
         assert overall["snippets"][0]["name"] == "diag/slow-query.sh"
         assert overall["snippets"][0]["snippet_schema_url"].endswith(

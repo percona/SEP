@@ -44,10 +44,16 @@ export function AtwPage() {
 
   const categoriesQuery = useAtwCategories();
 
+  const category1Options = useMemo(() => {
+    const listing = categoriesQuery.data ?? [];
+    return Array.from(new Set(listing.map((item: AtwCategoryListing) => item.category_root)));
+  }, [categoriesQuery.data]);
+
   const parentOptions = useMemo(() => {
     const listing = categoriesQuery.data ?? [];
     const seen = new Set<string>();
     return listing
+      .filter((item: AtwCategoryListing) => item.category_root === selectedTechnology)
       .filter((item: AtwCategoryListing) => {
         if (seen.has(item.parent_category)) {
           return false;
@@ -63,8 +69,11 @@ export function AtwPage() {
 
   const categoriesForParent = useMemo(() => {
     const listing = categoriesQuery.data ?? [];
-    return listing.filter((item: AtwCategoryListing) => item.parent_category === selectedParent);
-  }, [categoriesQuery.data, selectedParent]);
+    return listing.filter(
+      (item: AtwCategoryListing) =>
+        item.category_root === selectedTechnology && item.parent_category === selectedParent,
+    );
+  }, [categoriesQuery.data, selectedTechnology, selectedParent]);
 
   const selectedCategoryRow = useMemo<AtwCategoryListing | null>(
     () =>
@@ -134,7 +143,7 @@ export function AtwPage() {
   return (
     <Box>
       <Typography variant="h4" sx={{ mb: 1 }}>
-        Ask Know The World
+        Collect Diagnostic Data
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Select an issue category, then run the matching troubleshooting snippet.
@@ -142,9 +151,9 @@ export function AtwPage() {
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 3 }}>
         <FormControl fullWidth>
-          <InputLabel id="atw-technology-label">Category</InputLabel>
+          <InputLabel id="atw-category1-label">Category</InputLabel>
           <Select
-            labelId="atw-technology-label"
+            labelId="atw-category1-label"
             value={selectedTechnology}
             label="Category"
             onChange={(event: SelectChangeEvent) => {
@@ -154,17 +163,21 @@ export function AtwPage() {
               setSelectedSnippet('');
             }}
           >
-            <MenuItem value="MySQL">MySQL</MenuItem>
+            {category1Options.map((option) => (
+              <MenuItem key={option} value={option}>
+                {option}
+              </MenuItem>
+            ))}
           </Select>
         </FormControl>
 
         <FormControl fullWidth>
-          <InputLabel id="atw-parent-label">Parent Category</InputLabel>
+          <InputLabel id="atw-category2-label">Subcategory 1</InputLabel>
           <Select
-            labelId="atw-parent-label"
+            labelId="atw-category2-label"
             value={selectedParent}
-            label="Parent Category"
-            disabled={selectedTechnology !== 'MySQL'}
+            label="Subcategory 1"
+            disabled={!selectedTechnology}
             onChange={(event: SelectChangeEvent) => {
               setSelectedParent(event.target.value);
               setSelectedCategory('');
@@ -179,12 +192,12 @@ export function AtwPage() {
           </Select>
         </FormControl>
 
-        <FormControl fullWidth disabled={selectedTechnology !== 'MySQL' || !selectedParent}>
-          <InputLabel id="atw-category-label">Category</InputLabel>
+        <FormControl fullWidth disabled={!selectedTechnology || !selectedParent}>
+          <InputLabel id="atw-category3-label">Subcategory 2</InputLabel>
           <Select
-            labelId="atw-category-label"
+            labelId="atw-category3-label"
             value={selectedCategory}
-            label="Category"
+            label="Subcategory 2"
             onChange={(event: SelectChangeEvent) => {
               setSelectedCategory(event.target.value);
               setSelectedSnippet('');
@@ -198,7 +211,7 @@ export function AtwPage() {
           </Select>
         </FormControl>
 
-        <FormControl fullWidth disabled={selectedTechnology !== 'MySQL' || !selectedCategoryRow}>
+        <FormControl fullWidth disabled={!selectedTechnology || !selectedCategoryRow}>
           <InputLabel id="atw-snippet-label">Snippet</InputLabel>
           <Select
             labelId="atw-snippet-label"
