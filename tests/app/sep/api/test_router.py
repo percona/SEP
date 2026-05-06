@@ -56,6 +56,13 @@ class TestApiRouterComposition:
         """Assert the plugins sub-router carries the ``/plugins`` prefix."""
         assert plugins_router.prefix == "/plugins"
 
+    def test_atw_router_registered_under_plugins(self) -> None:
+        """Assert the ATW schema route is resolvable under ``/plugins/atw``."""
+        plugin_paths = {
+            route.path for route in plugins_router.routes if hasattr(route, "path")
+        }
+        assert "/plugins/atw/schema" in plugin_paths
+
     def test_checksums_router_registered_under_plugins(self) -> None:
         """Assert the checksums schema route is resolvable under ``/plugins/checksums``."""
         plugin_paths = {
@@ -78,6 +85,7 @@ class TestApiRouterComposition:
         api_plugin_paths = {
             route.path for route in sep_app.routes if hasattr(route, "path")
         }
+        assert "/api/plugins/atw/schema" in api_plugin_paths
         assert "/api/plugins/checksums/schema" in api_plugin_paths
 
 
