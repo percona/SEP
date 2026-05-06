@@ -210,7 +210,7 @@ class TestChecksumsListEndpoint:
             params={"service_type": "not_a_valid_type"},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.get.assert_not_called()
 
     def test_checksums_list_returns_422_for_invalid_status(
@@ -222,7 +222,7 @@ class TestChecksumsListEndpoint:
             params={"status": "not_a_valid_status"},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.get.assert_not_called()
 
     def test_checksums_list_excludes_tasks_whose_status_does_not_match_filter(
@@ -435,7 +435,7 @@ class TestChecksumsCreateEndpoint:
         """Ensure POST returns 422 when all required fields are absent."""
         response = test_client.post("/api/plugins/checksums/", json={})
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_returns_422_missing_task_name(
@@ -447,7 +447,7 @@ class TestChecksumsCreateEndpoint:
             json={"hostname": "host1", "service_id": 1},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_returns_422_missing_hostname(
@@ -459,7 +459,7 @@ class TestChecksumsCreateEndpoint:
             json={"task_name": "my-task", "service_id": 1},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_returns_422_missing_service_id(
@@ -471,7 +471,7 @@ class TestChecksumsCreateEndpoint:
             json={"task_name": "my-task", "hostname": "host1"},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_returns_404_when_service_not_found(
@@ -544,7 +544,7 @@ class TestChecksumsCreateEndpoint:
             json={"task_name": "", "hostname": "host1", "service_id": 1},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_returns_422_for_empty_hostname(
@@ -556,7 +556,7 @@ class TestChecksumsCreateEndpoint:
             json={"task_name": "my-task", "hostname": "", "service_id": 1},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_returns_422_for_null_task_name(
@@ -568,7 +568,7 @@ class TestChecksumsCreateEndpoint:
             json={"task_name": None, "hostname": "host1", "service_id": 1},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_returns_422_for_null_hostname(
@@ -580,7 +580,7 @@ class TestChecksumsCreateEndpoint:
             json={"task_name": "my-task", "hostname": None, "service_id": 1},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_returns_422_for_non_integer_service_id(
@@ -592,7 +592,7 @@ class TestChecksumsCreateEndpoint:
             json={"task_name": "my-task", "hostname": "host1", "service_id": "abc"},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_checksums_create_propagates_tasks_api_error(
@@ -759,7 +759,7 @@ class TestChecksumsCreateEndpoint:
             params={"check_connectivity": "garbage"},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
 

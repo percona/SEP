@@ -272,7 +272,7 @@ class TestDipperScriptPreviewEndpoint:
             params={"service_id": 1, "collector_type": "pmm"},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_preview_returns_404_when_service_not_found(
         self, test_client, mock_inventory_api_dep
@@ -296,7 +296,7 @@ class TestDipperScriptPreviewEndpoint:
             params={"service_id": 1, "collector_type": "invalid"},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_inventory_api_dep.get.assert_not_called()
 
 
@@ -428,7 +428,7 @@ class TestDipperExecuteEndpoint:
             json={"service_id": 1, "collector_type": "environment"},
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_execute_returns_404_when_service_not_found(
@@ -497,7 +497,7 @@ class TestDipperExecuteEndpoint:
             },
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_execute_returns_422_when_args_fail_schema_validation(
@@ -528,7 +528,7 @@ class TestDipperExecuteEndpoint:
                 },
             )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
     def test_execute_pmm_returns_422_when_no_pmmserver_configured(
@@ -553,5 +553,5 @@ class TestDipperExecuteEndpoint:
                 },
             )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()

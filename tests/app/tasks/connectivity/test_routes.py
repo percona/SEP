@@ -165,7 +165,7 @@ class TestConnectivityCheckEndpoint:
                 "service_type": "REDIS",
             },
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_invalid_timeout_returns_422(self, test_client):
         """Verify 422 when timeout exceeds the maximum."""
@@ -179,7 +179,7 @@ class TestConnectivityCheckEndpoint:
                 "timeout": 120,
             },
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_zero_timeout_returns_422(self, test_client):
         """Verify 422 when timeout is zero."""
@@ -193,7 +193,7 @@ class TestConnectivityCheckEndpoint:
                 "timeout": 0,
             },
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_unauthenticated_returns_401(self):
         """Verify 401 when no authentication is provided."""
