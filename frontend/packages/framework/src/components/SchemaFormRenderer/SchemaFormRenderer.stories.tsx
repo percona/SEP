@@ -221,3 +221,90 @@ export const ConditionalFields: Story = {
     },
   },
 };
+
+/**
+ * Mirrors the pt-online-schema-change (alters) plugin's Recursion section.
+ * "DSN Table" is only needed when Recursion Method is "DSN" — otherwise it
+ * is hidden and excluded from the submission payload.
+ */
+export const AltersRecursionMethod: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Recursion',
+        description: 'Select "DSN" as the recursion method to reveal the DSN Table field.',
+        fields: [
+          {
+            type: 'choice',
+            name: 'recursion_method',
+            label: 'Recursion Method',
+            required: true,
+            choices: [
+              { label: 'Default', value: 'default' },
+              { label: 'Processlist', value: 'processlist' },
+              { label: 'Hosts', value: 'hosts' },
+              { label: 'DSN', value: 'dsn' },
+              { label: 'None', value: 'none' },
+            ],
+          },
+          {
+            type: 'string',
+            name: 'dsn_table',
+            label: 'DSN Table',
+            description: 'DSN table in D=db,t=table format (e.g. D=percona,t=dsns).',
+            forbidden: [{ when: { not_equals: { recursion_method: 'dsn' } } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run alter',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/**
+ * Mirrors the pt-archiver (archives) plugin's purge-conditions section.
+ * When Swap Drop = 1 (SWAP_DROP) the WHERE clause is forbidden — pt-archiver
+ * selects all rows. Any other swap_drop value requires a WHERE clause.
+ *
+ * Note: the source_db_id / source_table_id XOR constraint is a section-level
+ * cardinality_rule and will be demonstrated once that primitive is wired up.
+ */
+export const ArchivesSwapDrop: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Purge conditions',
+        description:
+          'Set Swap Drop to 1 (SWAP_DROP) to hide the WHERE field. Any other value makes WHERE required.',
+        fields: [
+          {
+            type: 'integer',
+            name: 'swap_drop',
+            label: 'Swap Drop',
+            required: true,
+            ge: 0,
+            le: 2,
+            description: '0 = no swap, 1 = SWAP_DROP (no WHERE), 2 = SWAP_ARCHIVE_DROP',
+          },
+          {
+            type: 'string',
+            name: 'where',
+            label: 'WHERE Condition',
+            description: 'SQL WHERE clause selecting rows to purge (e.g. id < 1000).',
+            forbidden: [{ when: { equals: { swap_drop: 1 } } }],
+            requires: [{ when: { not_equals: { swap_drop: 1 } } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run archive',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};

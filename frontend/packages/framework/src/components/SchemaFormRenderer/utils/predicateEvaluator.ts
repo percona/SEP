@@ -58,10 +58,13 @@ function resolveValue(raw: unknown, values: FormValues): unknown {
 }
 
 /**
- * Coerces a value to number for ordered comparisons.
+ * Coerces a value to number for numeric comparisons.
  * Intentional divergence from Python (which raises TypeError on "10" > 5):
  * RHF stores text-input values as strings until coerceFormValues runs at submit,
  * so predicate evaluation must handle string representations of numbers.
+ * Used for ordered comparisons (gt/gte/lt/lte) and equality against numeric
+ * literals, because the BE wire format serialises IntEnum and int values as
+ * JSON numbers (e.g. { equals: { swap_drop: 1 } }).
  */
 function toNum(v: unknown): number {
   return typeof v === 'number' ? v : Number(v);
@@ -95,7 +98,11 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
         return false;
       }
       const [field, raw] = entry;
-      return values[field] === resolveValue(raw, values);
+      const rhs = resolveValue(raw, values);
+      // Coerce field value when the literal is numeric: BE emits int/IntEnum
+      // values as JSON numbers, but RHF stores text inputs as strings.
+      const lhs = typeof rhs === 'number' ? toNum(values[field]) : values[field];
+      return lhs === rhs;
     }
     case 'not_equals': {
       const entry = Object.entries(operand as Record<string, unknown>)[0];
@@ -103,7 +110,9 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
         return false;
       }
       const [field, raw] = entry;
-      return values[field] !== resolveValue(raw, values);
+      const rhs = resolveValue(raw, values);
+      const lhs = typeof rhs === 'number' ? toNum(values[field]) : values[field];
+      return lhs !== rhs;
     }
     case 'gt': {
       const entry = Object.entries(operand as Record<string, unknown>)[0];

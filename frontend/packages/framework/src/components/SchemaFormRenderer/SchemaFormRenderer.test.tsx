@@ -417,6 +417,17 @@ describe('evaluatePredicate', () => {
     );
   });
 
+  it('equals / not_equals coerce numeric literals (RHF stores int inputs as strings)', () => {
+    // BE emits integer literals as JSON numbers; RHF stores text inputs as strings
+    expect(evaluatePredicate({ equals: { swap_drop: 1 } }, v({ swap_drop: '1' }))).toBe(true);
+    expect(evaluatePredicate({ equals: { swap_drop: 1 } }, v({ swap_drop: '0' }))).toBe(false);
+    expect(evaluatePredicate({ not_equals: { swap_drop: 1 } }, v({ swap_drop: '0' }))).toBe(true);
+    expect(evaluatePredicate({ not_equals: { swap_drop: 1 } }, v({ swap_drop: '1' }))).toBe(false);
+    // string literals still use strict equality (no coercion)
+    expect(evaluatePredicate({ equals: { mode: 'dsn' } }, v({ mode: 'dsn' }))).toBe(true);
+    expect(evaluatePredicate({ equals: { mode: 'dsn' } }, v({ mode: 'none' }))).toBe(false);
+  });
+
   it('gt / gte / lt / lte', () => {
     expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: 6 }))).toBe(true);
     expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: 5 }))).toBe(false);
