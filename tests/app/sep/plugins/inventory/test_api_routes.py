@@ -20,8 +20,6 @@ implemented in ``app.sep.plugins.inventory.deps``; see
 ``tests/app/sep/plugins/inventory/test_deps.py`` for direct unit coverage.
 """
 
-from urllib.parse import urlsplit
-
 import pytest
 from fastapi import status
 
@@ -59,21 +57,20 @@ class TestInventoryGateway:
         assert response.json() == [{"id": 1, "name": "n"}]
         mock_inventory_api_dep.get.assert_awaited_once_with("/", params={})
 
-    def test_list_no_trailing_slash_redirect_preserves_query_string(
+    def test_list_forwards_query_params_to_inventory(
         self, test_client, mock_inventory_api_dep
     ):
-        """Ensure ``GET …/nodes`` redirects to ``…/nodes/?…`` with query params intact."""
+        """Ensure list route forwards query params to the inventory API."""
         mock_inventory_api_dep.get.return_value = {"items": [], "total": 0}
         response = test_client.get(
-            "/api/plugins/inventory/nodes",
+            "/api/plugins/inventory/nodes/",
             params={"limit": 10},
-            follow_redirects=False,
         )
-        assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
-        location = response.headers["location"]
-        parts = urlsplit(location)
-        assert parts.path.endswith("/nodes/")
-        assert parts.query == "limit=10"
+        assert response.status_code == status.HTTP_200_OK
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/",
+            params={"limit": "10"},
+        )
 
     def test_unknown_entity_404(self, test_client, mock_inventory_api_dep):
         """Ensure GET on an unknown entity segment returns HTTP 404."""
