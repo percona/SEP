@@ -111,6 +111,18 @@ async def test_request_methods(
             assert response == response_data
 
 
+@pytest.mark.asyncio
+async def test_delete_204_no_content_returns_none(remote_api, base_url):
+    """Ensure HTTP 204 yields ``None`` so callers do not confuse no body with ``{}``."""
+    test_path = "test/delete-no-body"
+    full_url = base_url + test_path
+    with aioresponses() as m:
+        m.delete(full_url, status=status.HTTP_204_NO_CONTENT)
+        async with remote_api:
+            response = await remote_api.delete(test_path)
+            assert response is None
+
+
 @pytest.mark.parametrize(
     ("endpoint, input_path, expected_path"),  # noqa: PT006
     [

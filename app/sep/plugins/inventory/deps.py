@@ -15,6 +15,7 @@
 
 """Define dependencies for the Inventory plugin."""
 
+import json
 from collections.abc import Callable
 from typing import Annotated, Any, NamedTuple
 
@@ -402,9 +403,15 @@ async def inventory_plugin_json_object_body(request: Request) -> dict[str, Any]:
     :type request: Request
     :return: Parsed JSON object body.
     :rtype: dict[str, Any]
-    :raises HTTPUnprocessableEntityException: When the payload is not a JSON object.
+    :raises HTTPUnprocessableEntityException: When the body is not valid JSON,
+        cannot be decoded as UTF-8 for JSON parsing, or is not a JSON object.
     """
-    body = await request.json()
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPUnprocessableEntityException(
+            "JSON object body required",
+        ) from None
     if not isinstance(body, dict):
         raise HTTPUnprocessableEntityException("JSON object body required")
     return body

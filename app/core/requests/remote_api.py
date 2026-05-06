@@ -557,7 +557,8 @@ class RemoteAPI(BaseRemoteAPI):
     """Interact with external services via HTTP requests.
 
     Extends `BaseRemoteAPI` to include authentication mechanisms and provides
-    methods for standard HTTP operations (GET, POST, PUT, PATCH, DELETE) returning JSON.
+    methods for standard HTTP operations (GET, POST, PUT, PATCH, DELETE) returning
+    parsed JSON, or ``None`` when the response has no body (for example HTTP 204).
 
     :param endpoint: The base URL for the external API endpoint.
     :type endpoint: HttpUrl
@@ -617,7 +618,7 @@ class RemoteAPI(BaseRemoteAPI):
         method: str,
         path: str,
         **kwargs: Any,
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Perform an HTTP request and return the JSON response.
 
         :param method: The HTTP method to use for the request.
@@ -626,13 +627,14 @@ class RemoteAPI(BaseRemoteAPI):
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a Python object.
-        :rtype: dict[str, Any] | list[dict[str, Any]]
+        :return: The JSON response as a Python object, or ``None`` when the
+            server returns HTTP 204 No Content (no response body).
+        :rtype: dict[str, Any] | list[dict[str, Any]] | None
         :raises HTTPException: If the request returns an error response.
         """
         async with self._request(method, path, **kwargs) as response:
             if response.status == status.HTTP_204_NO_CONTENT:
-                return {}
+                return None
             try:
                 response_data = await response.json()
                 self.logger.debug(
@@ -674,70 +676,70 @@ class RemoteAPI(BaseRemoteAPI):
 
     async def get(
         self, path: str, **kwargs: Any
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Perform a GET request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a Python object.
-        :rtype: dict[str, Any] | list[dict[str, Any]]
+        :return: The JSON response as a Python object, or ``None`` on HTTP 204.
+        :rtype: dict[str, Any] | list[dict[str, Any]] | None
         """
         return await self.request("GET", path, **kwargs)
 
     async def post(
         self, path: str, **kwargs: Any
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Perform a POST request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a Python object.
-        :rtype: dict[str, Any] | list[dict[str, Any]]
+        :return: The JSON response as a Python object, or ``None`` on HTTP 204.
+        :rtype: dict[str, Any] | list[dict[str, Any]] | None
         """
         return await self.request("POST", path, **kwargs)
 
     async def put(
         self, path: str, **kwargs: Any
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Perform a PUT request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a Python object.
-        :rtype: dict[str, Any] | list[dict[str, Any]]
+        :return: The JSON response as a Python object, or ``None`` on HTTP 204.
+        :rtype: dict[str, Any] | list[dict[str, Any]] | None
         """
         return await self.request("PUT", path, **kwargs)
 
     async def patch(
         self, path: str, **kwargs: Any
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Perform a PATCH request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a Python object.
-        :rtype: dict[str, Any] | list[dict[str, Any]]
+        :return: The JSON response as a Python object, or ``None`` on HTTP 204.
+        :rtype: dict[str, Any] | list[dict[str, Any]] | None
         """
         return await self.request("PATCH", path, **kwargs)
 
     async def delete(
         self, path: str, **kwargs: Any
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Perform a DELETE request and return the JSON response.
 
         :param path: The API endpoint path to request.
         :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
         :type kwargs: Any
-        :return: The JSON response as a Python object.
-        :rtype: dict[str, Any] | list[dict[str, Any]]
+        :return: The JSON response as a Python object, or ``None`` on HTTP 204.
+        :rtype: dict[str, Any] | list[dict[str, Any]] | None
         """
         return await self.request("DELETE", path, **kwargs)

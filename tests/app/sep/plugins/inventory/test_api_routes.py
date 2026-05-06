@@ -108,7 +108,7 @@ class TestInventoryGateway:
                 "type": "mysql",
             },
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_inventory_api_dep.post.assert_not_called()
 
     def test_create_schema_requires_service_id(
@@ -119,11 +119,36 @@ class TestInventoryGateway:
             "/api/plugins/inventory/schemas/",
             json={"name": "db1"},
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.parametrize(
+        ("raw_content", "content_type"),
+        [
+            (b"", "application/json"),
+            (b"{not-json", "application/json"),
+            (b"\xff", "application/json; charset=utf-8"),
+        ],
+    )
+    def test_post_rejects_empty_or_malformed_json_body_with_422(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        raw_content: bytes,
+        content_type: str,
+    ) -> None:
+        """Ensure invalid JSON on POST returns HTTP 422 and does not call inventory."""
+        response = test_client.post(
+            "/api/plugins/inventory/nodes/",
+            content=raw_content,
+            headers={"Content-Type": content_type},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.json()["detail"] == "JSON object body required"
+        mock_inventory_api_dep.post.assert_not_called()
 
     def test_delete_returns_204(self, test_client, mock_inventory_api_dep):
         """Ensure DELETE ``/api/plugins/inventory/nodes/{id}`` returns HTTP 204 with an empty body."""
-        mock_inventory_api_dep.delete.return_value = {}
+        mock_inventory_api_dep.delete.return_value = None
         response = test_client.delete("/api/plugins/inventory/nodes/3")
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert response.content == b""
