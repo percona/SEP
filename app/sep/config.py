@@ -88,6 +88,18 @@ class Plugin(BaseCaseInsensitiveModel):
     :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
     :type sidebar: bool
+    :param api_router_path: Optional dot-separated import path to the plugin's
+        JSON ``APIRouter`` instance (e.g. ``"app.sep.plugins.checksums.api_routes.router"``).
+        When set, the router is mounted under ``/api/plugins/{key}`` by the
+        shared API router loop. Three input states:
+
+        * **Field omitted** — auto-derive from ``module_name`` when the
+          plugin ships ``api_routes.router`` (convention).
+        * **Explicit string** — use as-is; fail-fast if the path cannot be
+          imported.
+        * **Explicit ``null``** — opt the plugin out of the JSON API mount,
+          even if a conventional module exists.
+    :type api_router_path: str | None
     """
 
     name: str
@@ -95,6 +107,7 @@ class Plugin(BaseCaseInsensitiveModel):
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
+    api_router_path: str | None = None
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Plugin):
@@ -124,6 +137,31 @@ class Plugin(BaseCaseInsensitiveModel):
             data["uri_path"] = data.get("uri_path") or f"/{slug}"
             data["css_class"] = data.get("css_class") or slug
         return data
+
+    @model_validator(mode="after")
+    def _default_api_router_from_convention(self) -> Self:
+        """Auto-derive ``api_router_path`` from ``module_name`` when not set.
+
+        Run only when the field was not present in the input data.
+        ``None`` in the input is a deliberate opt-out and is preserved.
+
+        Probe by filesystem, not by import, so that this validator can run
+        during settings construction without triggering circular imports
+        through plugin ``__init__`` modules. Fail-fast on a missing
+        ``router`` attribute is still enforced later in
+        ``build_plugins_router`` via ``import_var``.
+
+        :return: ``self`` with ``api_router_path`` populated when the
+            plugin module ships an ``api_routes.py`` file.
+        :rtype: Self
+        """
+        if "api_router_path" in self.model_fields_set:
+            return self
+        basename = self.module_name.rsplit(".", 1)[-1]
+        candidate_file = Path(__file__).parent / "plugins" / basename / "api_routes.py"
+        if candidate_file.is_file():
+            self.api_router_path = f"{self.module_name}.api_routes.router"
+        return self
 
     @computed_field
     @property
