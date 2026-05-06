@@ -85,6 +85,7 @@ jobs:
           restore-keys: playwright-
 
       - name: Install Playwright Chromium and system deps
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --filter @sep/e2e exec playwright install chromium --with-deps
 
       - name: Run E2E tests
