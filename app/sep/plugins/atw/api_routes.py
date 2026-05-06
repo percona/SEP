@@ -27,6 +27,8 @@ from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 
+ATW_CATEGORY_ROOT = "MySQL"
+
 
 class ATWSnippetSummary(BaseModel):
     """Represent one snippet entry under an ATW category."""
@@ -82,7 +84,7 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
         ]
         grouped.append(
             ATWCategoryListing(
-                category_root="MySQL",
+                category_root=ATW_CATEGORY_ROOT,
                 name=category.name,
                 parent_category=category.parent.name,
                 parent_category_label=category.parent.value,

@@ -19,9 +19,10 @@ import type { RouteObject } from 'react-router-dom';
 import { AtwPlugin } from './AtwPlugin';
 
 export const PLUGIN_NAME = 'atw';
-export const PLUGIN_BASE_PATH = '/plugins/atw';
+/** Base URL path for the ATW page in the shell (see `router.tsx`). */
+export const PLUGIN_BASE_PATH = '/atw';
 
 export const atwRoute: RouteObject = {
-  path: 'plugins/atw/*',
+  path: 'atw/*',
   element: <AtwPlugin />,
 };

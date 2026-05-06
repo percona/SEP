@@ -92,4 +92,4 @@ class TestAtwSchemaEndpoint:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["name"] == "atw"
-        assert data["display_name"] == "Ask Know The World"
+        assert data["display_name"] == "Collect Diagnostic Data"

@@ -94,3 +94,9 @@ export type {
   ExecutionEventsState,
   DownloadLog,
 } from './hooks';
+
+export {
+  SNIPPET_FORM_RESERVED_FIELD_NAMES,
+  buildSnippetExecutionFormPayload,
+} from './utils/snippetFormSubmission';
+export type { SnippetExecutionFormPayload } from './utils/snippetFormSubmission';

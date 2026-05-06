@@ -39,7 +39,10 @@ export function useSnippetSchema(schemaUrl: string | null) {
   return useQuery<PluginSchema>({
     queryKey: ['atw', 'snippet-schema', schemaUrl],
     queryFn: async () => {
-      const { data } = await apiClient.get<PluginSchema>(schemaUrl ?? '');
+      if (!schemaUrl) {
+        throw new Error('Missing snippet schema URL');
+      }
+      const { data } = await apiClient.get<PluginSchema>(schemaUrl);
       return data;
     },
     enabled: Boolean(schemaUrl),
@@ -50,7 +53,10 @@ export function useSnippetSchema(schemaUrl: string | null) {
 export function useSnippetExecution(executeUrl: string | null) {
   return useMutation<SnippetExecutionResponse, Error, SnippetExecutionRequest>({
     mutationFn: async (body) => {
-      const { data } = await apiClient.post<SnippetExecutionResponse>(executeUrl ?? '', body);
+      if (!executeUrl) {
+        throw new Error('Missing snippet execute URL');
+      }
+      const { data } = await apiClient.post<SnippetExecutionResponse>(executeUrl, body);
       return data;
     },
   });

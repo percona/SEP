@@ -42,8 +42,11 @@ export function useSnippetSchema(filename: string | undefined) {
   return useQuery<PluginSchema>({
     queryKey: ['snippets', filename, 'schema'],
     queryFn: async () => {
+      if (!filename) {
+        throw new Error('Missing snippet filename');
+      }
       const { data } = await apiClient.get<PluginSchema>(
-        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/schema`,
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/schema`,
       );
       return data;
     },
@@ -62,8 +65,11 @@ export function useSnippetHistory(filename: string | undefined) {
   return useQuery<PaginatedTaskHistory>({
     queryKey: ['snippets', filename, 'history'],
     queryFn: async () => {
+      if (!filename) {
+        throw new Error('Missing snippet filename');
+      }
       const { data } = await apiClient.get<PaginatedTaskHistory>(
-        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/history`,
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/history`,
       );
       return data;
     },
@@ -81,8 +87,11 @@ export function useSnippetExecution(filename: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation<SnippetExecutionResponse, Error, SnippetExecutionRequest>({
     mutationFn: async (body) => {
+      if (!filename) {
+        throw new Error('Missing snippet filename');
+      }
       const { data } = await apiClient.post<SnippetExecutionResponse>(
-        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/execute`,
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/execute`,
         body,
       );
       return data;

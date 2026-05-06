@@ -29,17 +29,15 @@ import {
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import { useNavigate } from 'react-router-dom';
-import { SchemaFormRenderer } from '@sep/framework';
+import { SchemaFormRenderer, buildSnippetExecutionFormPayload } from '@sep/framework';
 import { useAtwCategories, useSnippetExecution, useSnippetSchema } from './hooks';
 import type { AtwCategoryListing, AtwSnippetSummary } from './types';
 
-const EXECUTION_RESERVED_NAMES = new Set(['executor_host', 'sudo', 'script_preview']);
-
 export function AtwPage() {
   const navigate = useNavigate();
-  const [selectedTechnology, setSelectedTechnology] = useState<string>('');
-  const [selectedParent, setSelectedParent] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedCategory1, setSelectedCategory1] = useState<string>('');
+  const [selectedSubcategory1, setSelectedSubcategory1] = useState<string>('');
+  const [selectedSubcategory2, setSelectedSubcategory2] = useState<string>('');
   const [selectedSnippet, setSelectedSnippet] = useState<string>('');
 
   const categoriesQuery = useAtwCategories();
@@ -49,11 +47,11 @@ export function AtwPage() {
     return Array.from(new Set(listing.map((item: AtwCategoryListing) => item.category_root)));
   }, [categoriesQuery.data]);
 
-  const parentOptions = useMemo(() => {
+  const subcategory1Options = useMemo(() => {
     const listing = categoriesQuery.data ?? [];
     const seen = new Set<string>();
     return listing
-      .filter((item: AtwCategoryListing) => item.category_root === selectedTechnology)
+      .filter((item: AtwCategoryListing) => item.category_root === selectedCategory1)
       .filter((item: AtwCategoryListing) => {
         if (seen.has(item.parent_category)) {
           return false;
@@ -65,29 +63,30 @@ export function AtwPage() {
         value: item.parent_category,
         label: item.parent_category_label,
       }));
-  }, [categoriesQuery.data]);
+  }, [categoriesQuery.data, selectedCategory1]);
 
-  const categoriesForParent = useMemo(() => {
+  const subcategory2Options = useMemo(() => {
     const listing = categoriesQuery.data ?? [];
     return listing.filter(
       (item: AtwCategoryListing) =>
-        item.category_root === selectedTechnology && item.parent_category === selectedParent,
+        item.category_root === selectedCategory1 && item.parent_category === selectedSubcategory1,
     );
-  }, [categoriesQuery.data, selectedTechnology, selectedParent]);
+  }, [categoriesQuery.data, selectedCategory1, selectedSubcategory1]);
 
-  const selectedCategoryRow = useMemo<AtwCategoryListing | null>(
+  const selectedSubcategory2Row = useMemo<AtwCategoryListing | null>(
     () =>
-      categoriesForParent.find((item: AtwCategoryListing) => item.category === selectedCategory) ??
-      null,
-    [categoriesForParent, selectedCategory],
+      subcategory2Options.find(
+        (item: AtwCategoryListing) => item.category === selectedSubcategory2,
+      ) ?? null,
+    [subcategory2Options, selectedSubcategory2],
   );
 
   const selectedSnippetRow = useMemo<AtwSnippetSummary | null>(
     () =>
-      selectedCategoryRow?.snippets.find(
+      selectedSubcategory2Row?.snippets.find(
         (snippet: AtwSnippetSummary) => snippet.name === selectedSnippet,
       ) ?? null,
-    [selectedCategoryRow, selectedSnippet],
+    [selectedSubcategory2Row, selectedSnippet],
   );
 
   const schemaQuery = useSnippetSchema(selectedSnippetRow?.snippet_schema_url ?? null);
@@ -102,28 +101,11 @@ export function AtwPage() {
       return;
     }
 
-    const args: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(values)) {
-      if (EXECUTION_RESERVED_NAMES.has(key)) {
-        continue;
-      }
-      if (value === '' || value === undefined) {
-        continue;
-      }
-      args[key] = value;
-    }
-    executionMutation.mutate(
-      {
-        executor_host: String(values.executor_host ?? ''),
-        sudo: Boolean(values.sudo ?? false),
-        args,
+    executionMutation.mutate(buildSnippetExecutionFormPayload(values), {
+      onSuccess: () => {
+        navigate(`/snippets/${encodeURIComponent(selectedSnippetRow.name)}`);
       },
-      {
-        onSuccess: () => {
-          navigate(`/snippets/${encodeURIComponent(selectedSnippetRow.name)}`);
-        },
-      },
-    );
+    });
   };
 
   if (categoriesQuery.isLoading) {
@@ -154,12 +136,12 @@ export function AtwPage() {
           <InputLabel id="atw-category1-label">Category</InputLabel>
           <Select
             labelId="atw-category1-label"
-            value={selectedTechnology}
+            value={selectedCategory1}
             label="Category"
             onChange={(event: SelectChangeEvent) => {
-              setSelectedTechnology(event.target.value);
-              setSelectedParent('');
-              setSelectedCategory('');
+              setSelectedCategory1(event.target.value);
+              setSelectedSubcategory1('');
+              setSelectedSubcategory2('');
               setSelectedSnippet('');
             }}
           >
@@ -175,16 +157,16 @@ export function AtwPage() {
           <InputLabel id="atw-category2-label">Subcategory 1</InputLabel>
           <Select
             labelId="atw-category2-label"
-            value={selectedParent}
+            value={selectedSubcategory1}
             label="Subcategory 1"
-            disabled={!selectedTechnology}
+            disabled={!selectedCategory1}
             onChange={(event: SelectChangeEvent) => {
-              setSelectedParent(event.target.value);
-              setSelectedCategory('');
+              setSelectedSubcategory1(event.target.value);
+              setSelectedSubcategory2('');
               setSelectedSnippet('');
             }}
           >
-            {parentOptions.map((option: { value: string; label: string }) => (
+            {subcategory1Options.map((option: { value: string; label: string }) => (
               <MenuItem key={option.value} value={option.value}>
                 {option.label}
               </MenuItem>
@@ -192,18 +174,18 @@ export function AtwPage() {
           </Select>
         </FormControl>
 
-        <FormControl fullWidth disabled={!selectedTechnology || !selectedParent}>
+        <FormControl fullWidth disabled={!selectedCategory1 || !selectedSubcategory1}>
           <InputLabel id="atw-category3-label">Subcategory 2</InputLabel>
           <Select
             labelId="atw-category3-label"
-            value={selectedCategory}
+            value={selectedSubcategory2}
             label="Subcategory 2"
             onChange={(event: SelectChangeEvent) => {
-              setSelectedCategory(event.target.value);
+              setSelectedSubcategory2(event.target.value);
               setSelectedSnippet('');
             }}
           >
-            {categoriesForParent.map((category: AtwCategoryListing) => (
+            {subcategory2Options.map((category: AtwCategoryListing) => (
               <MenuItem key={category.category} value={category.category}>
                 {category.category_label}
               </MenuItem>
@@ -211,7 +193,7 @@ export function AtwPage() {
           </Select>
         </FormControl>
 
-        <FormControl fullWidth disabled={!selectedTechnology || !selectedCategoryRow}>
+        <FormControl fullWidth disabled={!selectedCategory1 || !selectedSubcategory2Row}>
           <InputLabel id="atw-snippet-label">Snippet</InputLabel>
           <Select
             labelId="atw-snippet-label"
@@ -221,7 +203,7 @@ export function AtwPage() {
               setSelectedSnippet(event.target.value);
             }}
           >
-            {(selectedCategoryRow?.snippets ?? []).map((snippet) => (
+            {(selectedSubcategory2Row?.snippets ?? []).map((snippet) => (
               <MenuItem key={snippet.name} value={snippet.name}>
                 {snippet.title}
               </MenuItem>

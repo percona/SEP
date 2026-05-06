@@ -34,7 +34,7 @@ _CATEGORY_CHOICES = [
 
 atw_schema = PluginSchema(
     name="atw",
-    display_name="Ask Know The World",
+    display_name="Collect Diagnostic Data",
     description=(
         "Browse curated troubleshooting snippets by issue category and launch"
         " execution through the snippets API flow."
@@ -45,13 +45,13 @@ atw_schema = PluginSchema(
             fields=[
                 ChoiceField(
                     name="parent_category",
-                    label="Parent Category",
+                    label="Subcategory 1",
                     required=False,
                     choices=_PARENT_CATEGORY_CHOICES,
                 ),
                 ChoiceField(
                     name="category",
-                    label="Category",
+                    label="Subcategory 2",
                     required=False,
                     choices=_CATEGORY_CHOICES,
                 ),
@@ -60,10 +60,11 @@ atw_schema = PluginSchema(
     ],
     list_view=ListView(
         columns=[
-            Column(key="parent_category_label", label="Parent Category", sortable=True),
-            Column(key="category_label", label="Category", sortable=True),
+            Column(key="category_root", label="Category", sortable=True),
+            Column(key="parent_category_label", label="Subcategory 1", sortable=True),
+            Column(key="category_label", label="Subcategory 2", sortable=True),
             Column(key="snippet_count", label="Snippets", sortable=True),
         ],
-        default_sort="parent_category_label",
+        default_sort="category_root",
     ),
 )
