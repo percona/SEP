@@ -15,9 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, useState, type ReactNode } from 'react';
-import { format as formatSql } from 'sql-formatter';
-import { Highlight, themes } from 'prism-react-renderer';
+import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
 import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -36,7 +34,6 @@ import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import { useTheme } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -55,7 +52,9 @@ import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { useTaskHistoryByName } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
-import { detailPrism } from './detailPrism';
+import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
+
+const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
 
 export interface PluginDetailPageProps {
   schema: PluginSchema;
@@ -108,89 +107,6 @@ export function pathToEntityList(pathname: string, entityName: string): string {
   return `/${parts.slice(0, idx + 1).join('/')}`;
 }
 
-const detailCodeBlockSx = {
-  fontFamily: "'Roboto Mono', ui-monospace, monospace",
-  fontSize: '0.8125rem',
-  lineHeight: 1.6,
-  whiteSpace: 'pre-wrap' as const,
-  wordBreak: 'break-word' as const,
-  p: 2,
-  mt: 0.5,
-  borderRadius: 1,
-  bgcolor: 'action.hover',
-  border: 1,
-  borderColor: 'divider',
-  overflowX: 'auto' as const,
-};
-
-function formatCreateSql(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return raw;
-  }
-  try {
-    return formatSql(trimmed, { language: 'mysql', tabWidth: 2 });
-  } catch {
-    return raw;
-  }
-}
-
-function formatKeysForDisplay(value: unknown): string {
-  if (typeof value === 'string') {
-    const t = value.trim();
-    if (!t) {
-      return value;
-    }
-    try {
-      return JSON.stringify(JSON.parse(t), null, 2);
-    } catch {
-      return value;
-    }
-  }
-  if (value !== null && typeof value === 'object') {
-    return JSON.stringify(value, null, 2);
-  }
-  return String(value);
-}
-
-type DetailSyntaxLanguage = 'sql' | 'json';
-
-function formatDetailSyntaxCode(value: unknown, language: DetailSyntaxLanguage): string {
-  if (language === 'sql') {
-    return typeof value === 'string' ? formatCreateSql(value) : String(value);
-  }
-  return formatKeysForDisplay(value);
-}
-
-function DetailSyntaxBlock({ code, language }: { code: string; language: DetailSyntaxLanguage }) {
-  const muiTheme = useTheme();
-  const prismTheme = muiTheme.palette.mode === 'dark' ? themes.vsDark : themes.vsLight;
-
-  return (
-    <Highlight prism={detailPrism} theme={prismTheme} code={code} language={language}>
-      {({ className, style, tokens, getLineProps, getTokenProps }) => (
-        <Box
-          component="pre"
-          className={className}
-          style={style}
-          sx={{
-            ...detailCodeBlockSx,
-            margin: 0,
-          }}
-        >
-          {tokens.map((line, i) => (
-            <div key={i} {...getLineProps({ line })}>
-              {line.map((token, key) => (
-                <span key={key} {...getTokenProps({ token })} />
-              ))}
-            </div>
-          ))}
-        </Box>
-      )}
-    </Highlight>
-  );
-}
-
 function EntityDetailField({
   label,
   value,
@@ -204,16 +120,19 @@ function EntityDetailField({
     return null;
   }
 
+  const syntaxFallback = (
+    <Skeleton variant="rectangular" height={120} sx={{ ...detailSyntaxBlockSx, mt: 0.5 }} />
+  );
+
   if (highlightLanguage) {
     return (
       <Box sx={{ mb: 2 }}>
         <Typography variant="caption" color="text.secondary">
           {label}
         </Typography>
-        <DetailSyntaxBlock
-          code={formatDetailSyntaxCode(value, highlightLanguage)}
-          language={highlightLanguage}
-        />
+        <Suspense fallback={syntaxFallback}>
+          <DetailSyntaxHighlighter value={value} language={highlightLanguage} />
+        </Suspense>
       </Box>
     );
   }
@@ -222,7 +141,11 @@ function EntityDetailField({
   if (typeof value === 'boolean') {
     display = value ? 'Yes' : 'No';
   } else if (typeof value === 'object') {
-    display = <DetailSyntaxBlock code={JSON.stringify(value, null, 2)} language="json" />;
+    display = (
+      <Suspense fallback={syntaxFallback}>
+        <DetailSyntaxHighlighter value={value} language="json" />
+      </Suspense>
+    );
   } else {
     display = String(value);
   }
