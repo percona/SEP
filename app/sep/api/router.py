@@ -33,11 +33,13 @@ from fastapi import APIRouter
 
 from app.sep.api.routes.hosts import router as hosts_router
 from app.sep.deps import IsApiAuthenticated
+from app.sep.plugins.atw.api_routes import router as atw_api_router
 from app.sep.plugins.checksums.api_routes import router as checksums_api_router
 from app.sep.plugins.dipper.api_routes import router as dipper_api_router
 from app.sep.plugins.snippets.api_routes import router as snippets_api_router
 
 plugins_router = APIRouter(prefix="/plugins")
+plugins_router.include_router(atw_api_router, prefix="/atw", tags=["atw"])
 plugins_router.include_router(
     checksums_api_router, prefix="/checksums", tags=["checksums"]
 )
