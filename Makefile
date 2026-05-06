@@ -23,6 +23,20 @@ PIP?="${VENV_BIN}/pip"
 APPS=tasks inventory sep
 PYTEST_WORKERS?=auto
 
+# WeasyPrint loads native libs (libgobject-2.0, libpango, libcairo) at import
+# time. Homebrew installs them under /opt/homebrew/lib (Apple Silicon) or
+# /usr/local/lib (Intel) — neither is on dyld's default search path. macOS SIP
+# also strips DYLD_* from any env inherited by /usr/bin/make, so the export
+# must happen inside each recipe shell. No-op on Linux/CI/Docker. (SEP-1125)
+DARWIN_DYLD = if [ "$$(uname -s)" = "Darwin" ]; then \
+		for d in /opt/homebrew/lib /usr/local/lib; do \
+			if [ -d "$$d" ]; then \
+				export DYLD_FALLBACK_LIBRARY_PATH="$$d:$${DYLD_FALLBACK_LIBRARY_PATH}"; \
+				break; \
+			fi; \
+		done; \
+	fi;
+
 venv: pyproject.toml poetry.lock
 	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "venv" ] || "${PYTHON}" -m venv "${VENV}"
 	@"${PIP}" install --no-cache ${START_PKGS};
@@ -64,12 +78,15 @@ lint: ruff djlint
 
 audit: bandit pip-audit
 
+# python.org macOS builds ship without etc/openssl/cert.pem until you run
+# "Install Certificates.command"; urllib then fails for hooks that fetch remotes.
 run-pre-commit: venv
-	@"${VENV_BIN}"/pre-commit run --all-files
+	@SSL_CERT_FILE=$$("${VENV_BIN}"/python -c 'import certifi; print(certifi.where())') \
+		"${VENV_BIN}"/pre-commit run --all-files
 
 # Local development only; production startup uses container/entrypoint paths.
 dev-backend: venv
-	@"${VENV_BIN}"/python -m app.main $(if $(START_CELERY),--start-celery,)
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python -m app.main $(if $(START_CELERY),--start-celery,)
 
 # Local development only; production frontend startup stays outside Make.
 dev-frontend:
@@ -138,7 +155,7 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@"${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app tests/
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app tests/
 
 changelog-add:
 ifndef TICKET
