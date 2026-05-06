@@ -421,6 +421,14 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ lte: { n: 5 } }, v({ n: 5 }))).toBe(true);
   });
 
+  it('gt / gte / lt / lte with $field ref', () => {
+    expect(evaluatePredicate({ gt: { a: { $field: 'b' } } }, v({ a: 6, b: 5 }))).toBe(true);
+    expect(evaluatePredicate({ gt: { a: { $field: 'b' } } }, v({ a: 5, b: 5 }))).toBe(false);
+    expect(evaluatePredicate({ gte: { a: { $field: 'b' } } }, v({ a: 5, b: 5 }))).toBe(true);
+    expect(evaluatePredicate({ lt: { a: { $field: 'b' } } }, v({ a: 4, b: 5 }))).toBe(true);
+    expect(evaluatePredicate({ lte: { a: { $field: 'b' } } }, v({ a: 5, b: 5 }))).toBe(true);
+  });
+
   it('any_present / all_present / none_present', () => {
     expect(evaluatePredicate({ any_present: ['a', 'b'] }, v({ a: '', b: 'x' }))).toBe(true);
     expect(evaluatePredicate({ any_present: ['a', 'b'] }, v({ a: '', b: '' }))).toBe(false);
@@ -428,6 +436,11 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ all_present: ['a', 'b'] }, v({ a: '1', b: '' }))).toBe(false);
     expect(evaluatePredicate({ none_present: ['a', 'b'] }, v({ a: '', b: '' }))).toBe(true);
     expect(evaluatePredicate({ none_present: ['a', 'b'] }, v({ a: 'x', b: '' }))).toBe(false);
+    // empty arrays are absent (mirrors BE behaviour for multiselect/list fields)
+    expect(evaluatePredicate({ any_present: ['tags'] }, v({ tags: [] }))).toBe(false);
+    expect(evaluatePredicate({ all_present: ['tags'] }, v({ tags: [] }))).toBe(false);
+    expect(evaluatePredicate({ none_present: ['tags'] }, v({ tags: [] }))).toBe(true);
+    expect(evaluatePredicate({ any_present: ['tags'] }, v({ tags: ['x'] }))).toBe(true);
   });
 
   it('all_truthy / any_truthy / all_falsy / any_falsy', () => {

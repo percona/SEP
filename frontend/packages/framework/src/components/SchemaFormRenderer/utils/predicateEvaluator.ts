@@ -27,6 +27,9 @@ function isTruthy(value: unknown): boolean {
 }
 
 function isPresent(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
   return value !== null && value !== undefined && value !== '';
 }
 
@@ -67,19 +70,19 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
     }
     case 'gt': {
       const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
-      return (values[field] as number) > (raw as number);
+      return (values[field] as number) > (resolveValue(raw, values) as number);
     }
     case 'gte': {
       const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
-      return (values[field] as number) >= (raw as number);
+      return (values[field] as number) >= (resolveValue(raw, values) as number);
     }
     case 'lt': {
       const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
-      return (values[field] as number) < (raw as number);
+      return (values[field] as number) < (resolveValue(raw, values) as number);
     }
     case 'lte': {
       const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
-      return (values[field] as number) <= (raw as number);
+      return (values[field] as number) <= (resolveValue(raw, values) as number);
     }
 
     case 'all_truthy':
