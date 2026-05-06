@@ -42,9 +42,12 @@ export function useConditionalField(field: PluginField): ConditionalFieldState {
     // field schema is static for the form's lifetime; dep on field is safe.
   }, [field]);
 
+  // disabled=true when there are no gate fields — avoids subscribing to the
+  // whole form when useWatch receives an empty name array.
   const rawValues = useWatch({
     control,
     name: watchedNames,
+    disabled: watchedNames.length === 0,
   }) as unknown[];
 
   const isHidden = useMemo(() => {

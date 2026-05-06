@@ -396,6 +396,10 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ falsy: 'x' }, v({ x: 1 }))).toBe(false);
     expect(evaluatePredicate({ truthy: 'arr' }, v({ arr: ['a'] }))).toBe(true);
     expect(evaluatePredicate({ truthy: 'arr' }, v({ arr: [] }))).toBe(false);
+    // empty plain objects are falsy — mirrors Python bool({}) = False
+    expect(evaluatePredicate({ truthy: 'obj' }, v({ obj: {} }))).toBe(false);
+    expect(evaluatePredicate({ truthy: 'obj' }, v({ obj: { k: 1 } }))).toBe(true);
+    expect(evaluatePredicate({ falsy: 'obj' }, v({ obj: {} }))).toBe(true);
   });
 
   it('equals / not_equals', () => {
@@ -419,6 +423,10 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ gte: { n: 5 } }, v({ n: 5 }))).toBe(true);
     expect(evaluatePredicate({ lt: { n: 5 } }, v({ n: 4 }))).toBe(true);
     expect(evaluatePredicate({ lte: { n: 5 } }, v({ n: 5 }))).toBe(true);
+    // RHF stores text-input values as strings — coerce before comparing
+    expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: '6' }))).toBe(true);
+    expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: '10' }))).toBe(true); // would be false lexicographically
+    expect(evaluatePredicate({ lt: { n: 10 } }, v({ n: '9' }))).toBe(true); // "9" < "10" is false lexicographically
   });
 
   it('gt / gte / lt / lte with $field ref', () => {
@@ -441,6 +449,12 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ all_present: ['tags'] }, v({ tags: [] }))).toBe(false);
     expect(evaluatePredicate({ none_present: ['tags'] }, v({ tags: [] }))).toBe(true);
     expect(evaluatePredicate({ any_present: ['tags'] }, v({ tags: ['x'] }))).toBe(true);
+    // empty plain objects are absent — mirrors BE _field_is_present({}) = False
+    expect(evaluatePredicate({ any_present: ['obj'] }, v({ obj: {} }))).toBe(false);
+    expect(evaluatePredicate({ any_present: ['obj'] }, v({ obj: { k: 1 } }))).toBe(true);
+    // empty operand list → false (no vacuous truth)
+    expect(evaluatePredicate({ all_present: [] }, v({}))).toBe(false);
+    expect(evaluatePredicate({ none_present: [] }, v({}))).toBe(false);
   });
 
   it('all_truthy / any_truthy / all_falsy / any_falsy', () => {
@@ -449,6 +463,9 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ any_truthy: ['a', 'b'] }, v({ a: 0, b: 1 }))).toBe(true);
     expect(evaluatePredicate({ all_falsy: ['a', 'b'] }, v({ a: 0, b: '' }))).toBe(true);
     expect(evaluatePredicate({ any_falsy: ['a', 'b'] }, v({ a: 1, b: 0 }))).toBe(true);
+    // empty operand list → false (no vacuous truth)
+    expect(evaluatePredicate({ all_truthy: [] }, v({}))).toBe(false);
+    expect(evaluatePredicate({ all_falsy: [] }, v({}))).toBe(false);
   });
 
   it('all_equal', () => {
@@ -456,6 +473,9 @@ describe('evaluatePredicate', () => {
       true,
     );
     expect(evaluatePredicate({ all_equal: ['a', 'b'] }, v({ a: 'x', b: 'y' }))).toBe(false);
+    // requires at least 2 fields — fewer returns false
+    expect(evaluatePredicate({ all_equal: [] }, v({}))).toBe(false);
+    expect(evaluatePredicate({ all_equal: ['a'] }, v({ a: 'x' }))).toBe(false);
   });
 
   it('all / any (logical combinators)', () => {
@@ -468,6 +488,8 @@ describe('evaluatePredicate', () => {
     expect(evaluatePredicate({ any: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 0, b: 1 }))).toBe(
       true,
     );
+    // empty all combinator → false (no vacuous truth)
+    expect(evaluatePredicate({ all: [] }, v({}))).toBe(false);
   });
 
   it('xor', () => {

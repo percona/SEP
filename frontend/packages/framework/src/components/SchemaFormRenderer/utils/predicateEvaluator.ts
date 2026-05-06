@@ -19,9 +19,21 @@ import type { FieldGate, Predicate } from '../types';
 
 type FormValues = Record<string, unknown>;
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(v) as unknown;
+  return proto === Object.prototype || proto === null;
+}
+
 function isTruthy(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.length > 0;
+  }
+  // mirror Python bool({}): empty plain objects are falsy
+  if (isPlainObject(value)) {
+    return Object.keys(value).length > 0;
   }
   return Boolean(value);
 }
@@ -29,6 +41,10 @@ function isTruthy(value: unknown): boolean {
 function isPresent(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.length > 0;
+  }
+  // mirror Python _field_is_present: empty plain objects are absent
+  if (isPlainObject(value)) {
+    return Object.keys(value).length > 0;
   }
   return value !== null && value !== undefined && value !== '';
 }
@@ -41,10 +57,18 @@ function resolveValue(raw: unknown, values: FormValues): unknown {
   return isFieldRef(raw) ? values[(raw as { $field: string }).$field] : raw;
 }
 
+/** Coerces a value to number for ordered comparisons, matching backend numeric semantics. */
+function toNum(v: unknown): number {
+  return typeof v === 'number' ? v : Number(v);
+}
+
 /**
  * Evaluate a predicate wire-format object against the current form values.
  *
  * Mirrors the backend DSL operators from `app/sep/plugins/framework/rules.py`.
+ * Each predicate is a single-key object `{ <operator>: <operand> }` — the BE
+ * schema validator enforces this; multi-key predicates are not valid wire format
+ * and only the first entry would be evaluated.
  * Unknown operators return false so malformed schemas degrade gracefully.
  */
 export function evaluatePredicate(predicate: Predicate, values: FormValues): boolean {
@@ -61,57 +85,97 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
       return !isTruthy(values[operand as string]);
 
     case 'equals': {
-      const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
+      const entry = Object.entries(operand as Record<string, unknown>)[0];
+      if (!entry) {
+        return false;
+      }
+      const [field, raw] = entry;
       return values[field] === resolveValue(raw, values);
     }
     case 'not_equals': {
-      const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
+      const entry = Object.entries(operand as Record<string, unknown>)[0];
+      if (!entry) {
+        return false;
+      }
+      const [field, raw] = entry;
       return values[field] !== resolveValue(raw, values);
     }
     case 'gt': {
-      const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
-      return (values[field] as number) > (resolveValue(raw, values) as number);
+      const entry = Object.entries(operand as Record<string, unknown>)[0];
+      if (!entry) {
+        return false;
+      }
+      const [field, raw] = entry;
+      return toNum(values[field]) > toNum(resolveValue(raw, values));
     }
     case 'gte': {
-      const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
-      return (values[field] as number) >= (resolveValue(raw, values) as number);
+      const entry = Object.entries(operand as Record<string, unknown>)[0];
+      if (!entry) {
+        return false;
+      }
+      const [field, raw] = entry;
+      return toNum(values[field]) >= toNum(resolveValue(raw, values));
     }
     case 'lt': {
-      const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
-      return (values[field] as number) < (resolveValue(raw, values) as number);
+      const entry = Object.entries(operand as Record<string, unknown>)[0];
+      if (!entry) {
+        return false;
+      }
+      const [field, raw] = entry;
+      return toNum(values[field]) < toNum(resolveValue(raw, values));
     }
     case 'lte': {
-      const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
-      return (values[field] as number) <= (resolveValue(raw, values) as number);
+      const entry = Object.entries(operand as Record<string, unknown>)[0];
+      if (!entry) {
+        return false;
+      }
+      const [field, raw] = entry;
+      return toNum(values[field]) <= toNum(resolveValue(raw, values));
     }
 
-    case 'all_truthy':
-      return (operand as string[]).every((f) => isTruthy(values[f]));
-    case 'all_falsy':
-      return (operand as string[]).every((f) => !isTruthy(values[f]));
+    case 'all_truthy': {
+      const fs = operand as string[];
+      return fs.length > 0 && fs.every((f) => isTruthy(values[f]));
+    }
+    case 'all_falsy': {
+      const fs = operand as string[];
+      return fs.length > 0 && fs.every((f) => !isTruthy(values[f]));
+    }
     case 'any_truthy':
       return (operand as string[]).some((f) => isTruthy(values[f]));
     case 'any_falsy':
       return (operand as string[]).some((f) => !isTruthy(values[f]));
     case 'any_present':
       return (operand as string[]).some((f) => isPresent(values[f]));
-    case 'all_present':
-      return (operand as string[]).every((f) => isPresent(values[f]));
-    case 'none_present':
-      return (operand as string[]).every((f) => !isPresent(values[f]));
+    case 'all_present': {
+      const fs = operand as string[];
+      return fs.length > 0 && fs.every((f) => isPresent(values[f]));
+    }
+    case 'none_present': {
+      const fs = operand as string[];
+      return fs.length > 0 && fs.every((f) => !isPresent(values[f]));
+    }
     case 'all_equal': {
       const fields = operand as string[];
+      if (fields.length < 2) {
+        return false;
+      }
       const first = values[fields[0]];
       return fields.slice(1).every((f) => values[f] === first);
     }
 
-    case 'all':
-      return (operand as Predicate[]).every((p) => evaluatePredicate(p, values));
+    case 'all': {
+      const ps = operand as Predicate[];
+      return ps.length > 0 && ps.every((p) => evaluatePredicate(p, values));
+    }
     case 'any':
       return (operand as Predicate[]).some((p) => evaluatePredicate(p, values));
     case 'xor': {
-      const [left, right] = operand as [Predicate, Predicate];
-      return evaluatePredicate(left, values) !== evaluatePredicate(right, values);
+      const preds = operand as Predicate[];
+      if (preds.length !== 2) {
+        return false;
+      }
+      return evaluatePredicate(preds[0], values) !== evaluatePredicate(preds[1], values);
     }
     case 'not':
       return !evaluatePredicate(operand as Predicate, values);
@@ -138,7 +202,11 @@ function getPredicateFieldNames(predicate: Predicate): string[] {
     case 'gte':
     case 'lt':
     case 'lte': {
-      const [field, raw] = Object.entries(operand as Record<string, unknown>)[0];
+      const entry = Object.entries(operand as Record<string, unknown>)[0];
+      if (!entry) {
+        return [];
+      }
+      const [field, raw] = entry;
       const names: string[] = [field];
       if (isFieldRef(raw)) {
         names.push((raw as { $field: string }).$field);
@@ -158,8 +226,11 @@ function getPredicateFieldNames(predicate: Predicate): string[] {
     case 'any':
       return (operand as Predicate[]).flatMap((p) => getPredicateFieldNames(p));
     case 'xor': {
-      const [left, right] = operand as [Predicate, Predicate];
-      return [...getPredicateFieldNames(left), ...getPredicateFieldNames(right)];
+      const preds = operand as Predicate[];
+      if (preds.length !== 2) {
+        return [];
+      }
+      return [...getPredicateFieldNames(preds[0]), ...getPredicateFieldNames(preds[1])];
     }
     case 'not':
       return getPredicateFieldNames(operand as Predicate);
