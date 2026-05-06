@@ -61,9 +61,9 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
         name=snippet.filename,
         title=snippet.title,
         description=snippet.description,
-        snippet_schema_url=f"/api/plugins/snippets/{encoded_filename}/schema",
-        snippet_execute_url=f"/api/plugins/snippets/{encoded_filename}/execute",
-        snippet_preview_url=f"/api/plugins/snippets/{encoded_filename}/script-preview",
+        snippet_schema_url=f"/plugins/snippets/{encoded_filename}/schema",
+        snippet_execute_url=f"/plugins/snippets/{encoded_filename}/execute",
+        snippet_preview_url=f"/plugins/snippets/{encoded_filename}/script-preview",
     )
 
 

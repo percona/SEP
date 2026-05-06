@@ -65,7 +65,7 @@ class TestAtwListEndpoint:
         assert overall["parent_category"] == "PERFORMANCE_ISSUES"
         assert overall["snippets"][0]["name"] == "diag/slow-query.sh"
         assert overall["snippets"][0]["snippet_schema_url"].endswith(
-            "/api/plugins/snippets/diag%2Fslow-query.sh/schema"
+            "/plugins/snippets/diag%2Fslow-query.sh/schema"
         )
 
     def test_atw_list_requires_authentication(
