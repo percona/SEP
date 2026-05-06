@@ -69,16 +69,75 @@ jobs:
               - 'frontend/**'
               - 'package.json'
             docker:
-              - '**'
-              - '!**/*.md'
-              - '!changelog.d/**'
-              - '!.github/**'
-              - '!.vscode/**'
+              - 'Containerfile'
+              - 'Containerfile.base'
+              - 'app/**'
+              - 'frontend/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+              - 'Makefile'
+              - 'scripts/**'
+              - 'sep_installer.sh'
+              - 'sep_installer.sha256'
 
-  precommit:
+  precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
     needs:
       - label-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+
+      - name: Install pre-commit
+        run: python -m pip install pre-commit==4.5.1
+
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Write lightweight pre-commit config
+        run: |
+          cat > .pre-commit-light-config.yaml <<'EOF'
+          repos:
+            - repo: https://github.com/pre-commit/pre-commit-hooks
+              rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b
+              hooks:
+                - id: check-yaml
+                - id: check-json
+                - id: check-toml
+                - id: check-merge-conflict
+                - id: check-case-conflict
+                - id: check-added-large-files
+                - id: end-of-file-fixer
+                - id: trailing-whitespace
+                - id: fix-byte-order-marker
+          EOF
+
+      - name: Perform lightweight pre-commit checks
+        run: |
+          pre-commit run --config .pre-commit-light-config.yaml --all-files
+
+  precommit-heavy:
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        (
+          needs.changes.outputs.python == 'true' ||
+          needs.changes.outputs.frontend == 'true' ||
+          needs.changes.outputs.docker == 'true'
+        )
+      }}
+    needs:
+      - label-gate
+      - changes
     runs-on: ubuntu-latest
     steps:
       - name: Checkout codebase
@@ -183,7 +242,8 @@ jobs:
     needs:
       - label-gate
       - changes
-      - precommit
+      - precommit-light
+      - precommit-heavy
       - python
       - frontend
       - build

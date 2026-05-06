@@ -67,6 +67,14 @@ audit: bandit pip-audit
 run-pre-commit: venv
 	@"${VENV_BIN}"/pre-commit run --all-files
 
+# Local development only; production startup uses container/entrypoint paths.
+dev-backend: venv
+	@"${VENV_BIN}"/python -m app.main $(if $(START_CELERY),--start-celery,)
+
+# Local development only; production frontend startup stays outside Make.
+dev-frontend:
+	@cd frontend && pnpm dev
+
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
 		$$($(PYTHON) -c "import tomllib,pathlib;c=tomllib.loads(pathlib.Path('pyproject.toml').read_text());print(' '.join(f'--ignore-vuln {v}' for v in c.get('tool',{}).get('pip-audit',{}).get('ignore-vulnerabilities',[])))" 2>/dev/null)
@@ -194,4 +202,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
