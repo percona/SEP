@@ -138,7 +138,10 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@"${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app tests/
+	@if [ "$$(uname -s)" = "Darwin" ] && [ -d /opt/homebrew/lib ]; then \
+		export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib:$${DYLD_FALLBACK_LIBRARY_PATH}"; \
+	fi; \
+        "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app tests/
 
 changelog-add:
 ifndef TICKET
