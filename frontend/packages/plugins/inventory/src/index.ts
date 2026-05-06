@@ -24,11 +24,7 @@
 
 export { InventoryPlugin } from './InventoryPlugin';
 export type { InventoryPluginProps } from './InventoryPlugin';
-export {
-  InventoryBreadcrumbs,
-  inventoryPluginBasePath,
-  renderInventoryDetailChildren,
-} from './InventoryPluginNavigation';
+export { InventoryBreadcrumbs, renderInventoryDetailChildren } from './InventoryPluginNavigation';
 export {
   inventoryMountPrefix,
   parseFlatInventoryRoute,

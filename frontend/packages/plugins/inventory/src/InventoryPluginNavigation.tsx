@@ -443,14 +443,6 @@ function listViewFor(schema: PluginSchema, entityName: string): ListView | undef
   return schema.entities?.find((e: PluginEntitySchema) => e.name === entityName)?.list_view;
 }
 
-/**
- * @deprecated Prefer ``inventoryMountPrefix`` from ``inventoryNestedPaths``.
- */
-export function inventoryPluginBasePath(pathname: string, entityName: string): string {
-  void entityName;
-  return inventoryMountPrefix(pathname);
-}
-
 function isIdLike(v: unknown): v is string | number {
   return typeof v === 'string' || typeof v === 'number';
 }
