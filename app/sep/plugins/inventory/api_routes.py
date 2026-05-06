@@ -16,9 +16,10 @@
 """Define the JSON API router for the Inventory plugin.
 
 Mounted at ``/api/plugins/inventory/`` via ``plugins_router`` in
-``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level; the ``schema_endpoint`` helper also pins ``IsApiAuthenticated`` per
-route for safety.
+``app/sep/api/router.py``. Like other plugin proxies, these routes rely on the
+parent ``api_router`` for API authentication. The ``schema_endpoint`` helper
+additionally attaches ``IsApiAuthenticated`` to the schema route only; list,
+detail, create, update, and delete handlers do not duplicate that dependency.
 
 Proxies CRUD for nodes, services, schemas, and tables to the inventory HTTP API
 through ``InventoryAPI`` in ``app.sep.deps`` (``RemoteAPI`` toward the
