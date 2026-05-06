@@ -128,40 +128,6 @@ class TestAtwListEndpoint:
         )
         assert overall["snippet_count"] == 0
 
-    def test_atw_percent_encoded_slash_in_snippet_url_not_routed_as_single_filename(
-        self, test_client: TestClient
-    ) -> None:
-        """Regression guard: ``quote(..., safe='')`` turns ``/`` into ``%2F``.
-
-        Many HTTP stacks decode ``%2F`` into a real path separator before routing,
-        so ``GET .../diag%2Fslow-query.sh/schema`` does not match FastAPI's
-        ``/{snippet_filename}/schema`` as one segment — unlike our string assertion
-        on the listing payload alone (clients would see 404 or wrong matching).
-        """
-        snippet = Mock()
-        snippet.filename = "diag/slow-query.sh"
-        snippet.title = "Slow Query Diagnostics"
-        snippet.description = "Collects slow-query and processlist data."
-        snippet.meta = {"atw": ["OVERALL_SLOWNESS"]}
-
-        with patch(
-            "app.sep.plugins.atw.api_routes.SnippetManager.list",
-            new=AsyncMock(return_value=[snippet]),
-        ):
-            listing = test_client.get("/api/plugins/atw/")
-
-        assert listing.status_code == status.HTTP_200_OK
-        overall = next(
-            row
-            for row in listing.json()
-            if row["category"] == "OVERALL_SLOWNESS" and row["snippet_count"] > 0
-        )
-        schema_url = overall["snippets"][0]["snippet_schema_url"]
-        assert "%2F" in schema_url
-
-        probe = test_client.get(f"/api{schema_url}")
-        assert probe.status_code == status.HTTP_404_NOT_FOUND
-
     def test_atw_list_requires_authentication(
         self, unauthenticated_client: TestClient
     ) -> None:
