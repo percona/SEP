@@ -188,7 +188,7 @@ class TestCreateNode:
         data["external_id"] = "some-id"
         data["source"] = None
         response = test_client.post("/", json=data)
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class TestUpdateNode:
