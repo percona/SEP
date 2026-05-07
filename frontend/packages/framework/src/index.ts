@@ -20,11 +20,14 @@ export { SchemaFormRenderer } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
 export {
   SchemaDrivenPlugin,
+  DeleteConfirmDialog,
   PluginCreatePage,
   PluginDetailPage,
   PluginListPage,
   PluginSchedulePage,
 } from './components/SchemaDrivenPlugin';
+export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
+export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';

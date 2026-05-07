@@ -22,6 +22,7 @@ import pytest
 from pydantic import BaseModel, model_validator, ValidationError
 
 from app.sep.plugins.framework.rules import (
+    _extract_rule_plan,
     absent,
     all_,
     all_equal,
@@ -70,6 +71,7 @@ from app.sep.plugins.framework.schema import (
     Column,
     FormSection,
     ListView,
+    PluginEntitySchema,
     PluginSchema,
     StringField,
 )
@@ -1232,3 +1234,95 @@ class TestMultipleRulesSameScope:
         joined = str(exc_info.value)
         assert "rule one fired" in joined
         assert "rule two fired" in joined
+
+
+# ── Multi-entity PluginSchema + rule plan extraction ─────────────────────
+
+
+def _multi_entity_two_alpha_beta_schema() -> PluginSchema:
+    """Build a minimal two-entity schema; ``alpha`` carries a requires gate on ``x``."""
+    return PluginSchema(
+        name="p",
+        display_name="P",
+        entities=[
+            PluginEntitySchema(
+                name="alpha",
+                display_name="Alpha",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            StringField(
+                                name="x",
+                                label="X",
+                                requires=[FieldGate(when=truthy("y"))],
+                            ),
+                            StringField(name="y", label="Y"),
+                        ],
+                    ),
+                ],
+                list_view=ListView(columns=[Column(key="x", label="X")]),
+            ),
+            PluginEntitySchema(
+                name="beta",
+                display_name="Beta",
+                forms=[
+                    FormSection(
+                        title="T",
+                        fields=[StringField(name="z", label="Z")],
+                    ),
+                ],
+                list_view=ListView(columns=[Column(key="z", label="Z")]),
+            ),
+        ],
+    )
+
+
+class TestMultiEntityRulePlan:
+    """``_extract_rule_plan`` / ``apply_conditional_rules`` for ``entities`` schemas."""
+
+    def test_extract_requires_entity_name(self) -> None:
+        """Multi-entity schemas refuse a plan without ``entity_name``."""
+        schema = _multi_entity_two_alpha_beta_schema()
+        with pytest.raises(ValueError, match="entity_name"):
+            _extract_rule_plan(schema)
+
+    def test_extract_unknown_entity_name(self) -> None:
+        """Unknown ``entity_name`` raises with known entity list."""
+        schema = _multi_entity_two_alpha_beta_schema()
+        with pytest.raises(ValueError, match="not a PluginEntitySchema.name"):
+            _extract_rule_plan(schema, entity_name="gamma")
+
+    def test_extract_scopes_rules_to_named_entity(self) -> None:
+        """Plans for ``alpha`` and ``beta`` differ; ``beta`` has no declarative rules."""
+        schema = _multi_entity_two_alpha_beta_schema()
+        plan_alpha = _extract_rule_plan(schema, entity_name="alpha")
+        assert len(plan_alpha.rules) >= 1
+        assert any(
+            r.kind == "field_gate_requires" and "alpha" in r.scope_path
+            for r in plan_alpha.rules
+        )
+
+        plan_beta = _extract_rule_plan(schema, entity_name="beta")
+        assert plan_beta.rules == ()
+
+    def test_single_entity_schema_rejects_entity_name(self) -> None:
+        """Task-style schema rejects a stray ``entity_name``."""
+        schema = _build_schema(StringField(name="x", label="X"))
+        with pytest.raises(ValueError, match="no `entities`"):
+            _extract_rule_plan(schema, entity_name="alpha")
+
+    def test_apply_conditional_rules_with_entity_name(self) -> None:
+        """Decorator accepts ``entity_name`` for multi-entity schemas."""
+        schema = _multi_entity_two_alpha_beta_schema()
+
+        @apply_conditional_rules(schema, entity_name="alpha")
+        class Body(ConditionalRulesModel):
+            x: str = ""
+            y: str = ""
+
+        Body(x="", y="")
+        Body(x="ok", y="y")
+
+        with pytest.raises(ValidationError, match="x"):
+            Body(x="", y="y")

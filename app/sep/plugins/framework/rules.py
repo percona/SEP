@@ -25,7 +25,12 @@ This module exposes three layers:
   ``FormSection`` / ``PluginSchema`` scopes.
 * **Runtime/wiring** — :class:`ConditionalRulesModel` and
   :func:`apply_conditional_rules` opt a plugin ``Write`` model into runtime
-  enforcement of the declarative rules.
+  enforcement of the declarative rules. Multi-entity plugins (non-empty
+  ``PluginSchema.entities``) must pass ``entity_name=...`` to
+  :func:`apply_conditional_rules` so the plan is scoped to one entity's
+  ``forms`` / section rules / entity-level rules; root ``forms`` and
+  plugin-level ``cardinality_rules`` / ``fail_when`` are not used in that
+  mode.
 
 The JSON wire format produced by :meth:`Predicate.to_dict` is the contract
 consumed verbatim by the SEP-1077 frontend renderer; predicate authoring
@@ -1203,25 +1208,37 @@ class RulePlan:
     rules: tuple[_PreparedRule, ...]
 
 
-def _extract_rule_plan(schema: PluginSchema) -> RulePlan:
-    """Walk a :class:`PluginSchema` and emit one :class:`_PreparedRule` per rule.
+def _append_rules_for_form_sections(
+    prepared: list[_PreparedRule],
+    forms: list,
+    *,
+    field_scope_prefix: str,
+    section_label_for_index: Callable[[int, Any], str],
+) -> None:
+    """Append prepared rules for every section in ``forms``.
 
-    :param schema: The plugin schema to extract rules from.
-    :type schema: PluginSchema
-    :return: A frozen :class:`RulePlan` over every declarative rule in
-        ``schema``.
-    :rtype: RulePlan
+    :param prepared: Mutable list to extend.
+    :param forms: ``FormSection`` list from root ``PluginSchema.forms`` or one
+        :class:`PluginEntitySchema.forms`.
+    :param field_scope_prefix: Prefix for field-gate ``scope_path`` values
+        (empty string for single-entity schemas; entity label for multi-entity).
+    :param section_label_for_index: Returns the scope label for a section's
+        cardinality / fail rules.
     """
-    prepared = []
-
-    for section_index, section in enumerate(schema.forms):
+    for section_index, section in enumerate(forms):
+        section_scope = section_label_for_index(section_index, section)
         for field in section.fields:
             self_name = field.name
+            base_scope = (
+                f"{field_scope_prefix}BaseField {field.name!r}"
+                if field_scope_prefix
+                else f"BaseField {field.name!r}"
+            )
             for rule_index, gate in enumerate(field.requires or []):
                 prepared.append(
                     _PreparedRule(
                         kind=_RuleKind.FIELD_GATE_REQUIRES,
-                        scope_path=(f"BaseField {field.name!r} requires[{rule_index}]"),
+                        scope_path=f"{base_scope} requires[{rule_index}]",
                         predicate=gate.when,
                         fields=(self_name,),
                         min=None,
@@ -1233,9 +1250,7 @@ def _extract_rule_plan(schema: PluginSchema) -> RulePlan:
                 prepared.append(
                     _PreparedRule(
                         kind=_RuleKind.FIELD_GATE_FORBIDDEN,
-                        scope_path=(
-                            f"BaseField {field.name!r} forbidden[{rule_index}]"
-                        ),
+                        scope_path=f"{base_scope} forbidden[{rule_index}]",
                         predicate=gate.when,
                         fields=(self_name,),
                         min=None,
@@ -1244,26 +1259,97 @@ def _extract_rule_plan(schema: PluginSchema) -> RulePlan:
                     )
                 )
         prepared.extend(
+            _prepare_cardinality_rules(section.cardinality_rules, section_scope)
+        )
+        prepared.extend(_prepare_fail_rules(section.fail_when, section_scope))
+
+
+def _extract_rule_plan(
+    schema: PluginSchema, *, entity_name: str | None = None
+) -> RulePlan:
+    """Walk a :class:`PluginSchema` and emit one :class:`_PreparedRule` per rule.
+
+    For task-style (single-entity) schemas, walks root ``forms`` plus
+    ``PluginSchema``-level ``cardinality_rules`` / ``fail_when``.
+
+    For multi-entity schemas (non-empty ``entities``), ``entity_name`` must
+    name one ``PluginEntitySchema.name``; only that entity's ``forms`` and
+    entity-level ``cardinality_rules`` / ``fail_when`` are included. Root
+    ``forms`` and plugin-level rule lists are omitted in that mode, matching
+    tier-1 schema validation.
+
+    :param schema: The plugin schema to extract rules from.
+    :type schema: PluginSchema
+    :param entity_name: When ``schema.entities`` is set, the entity segment
+        whose rules to extract. Must be ``None`` when ``schema.entities`` is
+        unset.
+    :type entity_name: str | None
+    :return: A frozen :class:`RulePlan` over every declarative rule in the
+        selected scope.
+    :rtype: RulePlan
+    :raises ValueError: When ``entities`` is set but ``entity_name`` is
+        missing or unknown, or when ``entity_name`` is set for a non-entity
+        schema.
+    """
+    prepared: list[_PreparedRule] = []
+
+    if schema.entities:
+        if entity_name is None:
+            raise ValueError(
+                "PluginSchema defines `entities`; pass entity_name=<segment> "
+                "to apply_conditional_rules / _extract_rule_plan so the rule plan "
+                "is scoped to one PluginEntitySchema (e.g. entity_name='nodes')."
+            )
+        entity_index = None
+        entity = None
+        for idx, ent in enumerate(schema.entities):
+            if ent.name == entity_name:
+                entity_index = idx
+                entity = ent
+                break
+        if entity is None:
+            known = ", ".join(sorted(e.name for e in schema.entities))
+            raise ValueError(
+                f"entity_name {entity_name!r} is not a PluginEntitySchema.name "
+                f"on this schema; known entities: {known}"
+            )
+        entity_label = f"PluginEntitySchema[{entity_index}] {entity.name!r}"
+        field_prefix = f"{entity_label} "
+        _append_rules_for_form_sections(
+            prepared,
+            entity.forms,
+            field_scope_prefix=field_prefix,
+            section_label_for_index=lambda i, s: (
+                f"{entity_label} FormSection[{i}] {s.title!r}"
+            ),
+        )
+        prepared.extend(
             _prepare_cardinality_rules(
-                section.cardinality_rules,
-                f"FormSection[{section_index}] {section.title!r}",
+                entity.cardinality_rules,
+                entity_label,
+            )
+        )
+        prepared.extend(_prepare_fail_rules(entity.fail_when, entity_label))
+    else:
+        if entity_name is not None:
+            raise ValueError(
+                "entity_name was given but this PluginSchema has no `entities`; "
+                "omit entity_name for task-style (single-entity) plugins."
+            )
+        _append_rules_for_form_sections(
+            prepared,
+            schema.forms,
+            field_scope_prefix="",
+            section_label_for_index=lambda i, s: f"FormSection[{i}] {s.title!r}",
+        )
+        prepared.extend(
+            _prepare_cardinality_rules(
+                schema.cardinality_rules, f"PluginSchema {schema.name!r}"
             )
         )
         prepared.extend(
-            _prepare_fail_rules(
-                section.fail_when,
-                f"FormSection[{section_index}] {section.title!r}",
-            )
+            _prepare_fail_rules(schema.fail_when, f"PluginSchema {schema.name!r}")
         )
-
-    prepared.extend(
-        _prepare_cardinality_rules(
-            schema.cardinality_rules, f"PluginSchema {schema.name!r}"
-        )
-    )
-    prepared.extend(
-        _prepare_fail_rules(schema.fail_when, f"PluginSchema {schema.name!r}")
-    )
 
     return RulePlan(rules=tuple(prepared))
 
@@ -1495,6 +1581,8 @@ class ConditionalRulesModel(BaseModel):
 
 def apply_conditional_rules(
     schema: PluginSchema,
+    *,
+    entity_name: str | None = None,
 ) -> Callable[[type[ConditionalRulesModel]], type[ConditionalRulesModel]]:
     """Return a class decorator that wires ``schema``'s rule plan onto the model.
 
@@ -1504,16 +1592,25 @@ def apply_conditional_rules(
     decorator only sets ``__conditional_rules_plan__`` on the class — it
     does not subclass via :func:`type`, so class identity is preserved.
 
+    When ``schema.entities`` is non-empty, pass ``entity_name`` matching one
+    entity's ``name`` so the plan includes only that entity's declarative
+    rules (see :func:`_extract_rule_plan`).
+
     :param schema: The plugin schema whose declarative rules drive runtime
         enforcement.
     :type schema: PluginSchema
+    :param entity_name: Required for multi-entity schemas; must be ``None``
+        for legacy task-style schemas.
+    :type entity_name: str | None
     :return: A class decorator.
     :rtype: Callable[[type], type]
     :raises TypeError: When the decorated class does not inherit from
         :class:`ConditionalRulesModel`, or any rule references an attribute
         that is not declared on the class.
+    :raises ValueError: When ``entity_name`` is incompatible with
+        ``schema.entities`` (see :func:`_extract_rule_plan`).
     """
-    plan = _extract_rule_plan(schema)
+    plan = _extract_rule_plan(schema, entity_name=entity_name)
 
     def decorator(
         cls: type[ConditionalRulesModel],
