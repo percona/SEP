@@ -15,18 +15,17 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
-export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
-export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
-export type { AlertConfig } from './useAlertConfig';
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-router', 'react-router-dom', '@tanstack/react-query'],
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/vitest-setup.ts'],
+  },
+});

@@ -15,18 +15,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
-export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
-export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
-export type { AlertConfig } from './useAlertConfig';
+import type { SxProps, Theme } from '@mui/material/styles';
+
+/** Matches backend ``DetailHighlightLanguage``. */
+export type DetailSyntaxLanguage = 'sql' | 'json';
+
+/** Shared layout for syntax blocks and matching Suspense fallbacks (no prism/sql deps). */
+export const detailSyntaxBlockSx: SxProps<Theme> = {
+  fontFamily: "'Roboto Mono', ui-monospace, monospace",
+  fontSize: '0.8125rem',
+  lineHeight: 1.6,
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  p: 2,
+  mt: 0.5,
+  borderRadius: 1,
+  bgcolor: 'action.hover',
+  border: 1,
+  borderColor: 'divider',
+  overflowX: 'auto',
+};

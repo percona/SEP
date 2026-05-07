@@ -15,18 +15,4 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
-export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
-export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
-export type { AlertConfig } from './useAlertConfig';
+import '@testing-library/jest-dom/vitest';
