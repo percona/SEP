@@ -52,7 +52,7 @@ async function fetchServicesPage(
   if (serviceType) {
     params.service_type = serviceType;
   }
-  const { data } = await apiClient.get<PaginatedServices>('/api/inventory/services/', { params });
+  const { data } = await apiClient.get<PaginatedServices>('/inventory/services/', { params });
   return data;
 }
 
