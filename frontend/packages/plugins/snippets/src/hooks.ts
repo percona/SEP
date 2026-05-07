@@ -71,6 +71,26 @@ export function useSnippetHistory(filename: string | undefined) {
   });
 }
 
+export function useSnippetDownload(filename: string | undefined) {
+  return useMutation<Blob, Error, void>({
+    mutationFn: async () => {
+      const { data } = await apiClient.get<Blob>(
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/download`,
+        { responseType: 'blob' },
+      );
+      const url = URL.createObjectURL(data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename ?? 'snippet';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      return data;
+    },
+  });
+}
+
 /**
  * Mutation: execute a snippet against the tasks API.
  *
