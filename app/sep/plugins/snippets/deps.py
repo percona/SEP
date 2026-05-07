@@ -16,7 +16,7 @@
 """Define dependencies for the Support Snippets plugin."""
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Annotated
@@ -40,7 +40,10 @@ from app.sep.artifact_constants import (
 )
 from app.sep.deps import get_base_url, SessionDep
 from app.sep.middleware import messages
-from app.sep.plugins.snippets.models import SnippetBatchApproveRequest
+from app.sep.plugins.snippets.models import (
+    BatchApprovalErrorResponse,
+    SnippetBatchApproveRequest,
+)
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
@@ -448,7 +451,7 @@ class SnippetBatchExistenceResult:
 
 
 async def check_snippet_batch_existence(
-    session: AsyncSession, filenames: Sequence[str]
+    session: AsyncSession, filenames: Iterable[str]
 ) -> SnippetBatchExistenceResult:
     """Verify that every filename has a DB row and an on-disk file.
 
@@ -461,22 +464,54 @@ async def check_snippet_batch_existence(
     :param session: The active database session.
     :type session: AsyncSession
     :param filenames: The filenames the caller wants to act on.
-    :type filenames: Sequence[str]
+    :type filenames: Iterable[str]
     :return: A populated :class:`SnippetBatchExistenceResult`.
     :rtype: SnippetBatchExistenceResult
     """
-    if not filenames:
+    filenames_set = set(filenames)
+    if not filenames_set:
         return SnippetBatchExistenceResult()
     snippets = await SnippetManager.list(
-        session, col(Snippet.filename).in_(list(filenames))
+        session, col(Snippet.filename).in_(filenames_set)
     )
     found = {snippet.filename for snippet in snippets}
-    missing_in_db = sorted(set(filenames) - found)
+    missing_in_db = sorted(filenames_set - found)
     missing_on_disk = sorted(
         snippet.filename for snippet in snippets if not Path(snippet).is_file()
     )
     return SnippetBatchExistenceResult(
-        snippets=list(snippets),
+        snippets=snippets,
         missing_in_db=missing_in_db,
         missing_on_disk=missing_on_disk,
     )
+
+
+async def get_batch_existence(
+    body: SnippetBatchApproveRequest,
+    session: SessionDep,
+) -> SnippetBatchExistenceResult:
+    """Resolve and validate batch snippet existence, raising 400 on hard errors.
+
+    :param body: The parsed JSON body containing the filenames to approve.
+    :type body: SnippetBatchApproveRequest
+    :param session: The active database session.
+    :type session: AsyncSession
+    :return: Existence result guaranteed to have no hard errors.
+    :rtype: SnippetBatchExistenceResult
+    :raises HTTPBadRequestException: When any filename is missing from the DB
+        or has no corresponding file on disk.
+    """
+    existence = await check_snippet_batch_existence(session, body.filenames)
+    if existence.has_errors:
+        raise HTTPBadRequestException(
+            detail=BatchApprovalErrorResponse(
+                missing_in_db=existence.missing_in_db,
+                missing_on_disk=existence.missing_on_disk,
+            ).model_dump()
+        )
+    return existence
+
+
+SnippetBatchExistenceDep = Annotated[
+    SnippetBatchExistenceResult, Depends(get_batch_existence)
+]

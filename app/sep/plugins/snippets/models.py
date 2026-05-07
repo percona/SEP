@@ -35,7 +35,7 @@ __all__ = [
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, computed_field, Field
 
 from app.core.utils.fields import NonEmptyStr, UniqueList
 
@@ -167,7 +167,7 @@ class ScriptPreviewResponse(BaseModel):
 
 
 class SnippetBatchApproveRequest(BaseModel):
-    """JSON body for ``PATCH /api/plugins/snippets/approvals``.
+    """Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.
 
     Unlike the Form-bound :class:`~app.sep.plugins.snippets.deps.SnippetBatchApproveForm`
     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
@@ -192,13 +192,20 @@ class BatchApprovalResponse(BaseModel):
         when the call started; the request is treated as a soft-skip
         (idempotent).
     :type skipped_already_approved: list[str]
-    :param count: Length of ``approved``; convenience for callers.
-    :type count: int
     """
 
     approved: list[str]
     skipped_already_approved: list[str]
-    count: int
+
+    @computed_field
+    @property
+    def count(self) -> int:
+        """Return the number of newly approved snippets.
+
+        :return: Length of ``approved``.
+        :rtype: int
+        """
+        return len(self.approved)
 
 
 class BatchApprovalErrorResponse(BaseModel):

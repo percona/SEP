@@ -42,27 +42,21 @@ from fastapi import status as http_status
 from pydantic import ValidationError
 from sqlmodel import col
 
-from app.core.exceptions import (
-    HTTPBadRequestException,
-    HTTPUnprocessableEntityException,
-)
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.utils import utc_now
 from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.framework.schema import PluginSchema
 from app.sep.plugins.snippets.deps import (
     build_snippet_execution_meta,
-    check_snippet_batch_existence,
     ExecutableSnippetForApi,
+    SnippetBatchExistenceDep,
     SnippetDep,
     SnippetSource,
-    validate_snippet_filename,
 )
 from app.sep.plugins.snippets.models import (
-    BatchApprovalErrorResponse,
     BatchApprovalResponse,
     ScriptPreviewResponse,
-    SnippetBatchApproveRequest,
     SnippetExecutionRequest,
     SnippetExecutionResponse,
     SnippetResponse,
@@ -292,7 +286,7 @@ async def snippets_api_approve(
 )
 async def snippets_api_remove_approval(
     snippet: SnippetDep, user: ApiAdminUser, session: SessionDep
-) -> Response:
+) -> None:
     """Remove approval from a single snippet (idempotent).
 
     Removing an approval that doesn't exist is a no-op ``204``. The
@@ -314,16 +308,15 @@ async def snippets_api_remove_approval(
         logger.info(
             "Snippet %r approval removed by %s", snippet.filename, user.username
         )
-    return Response(status_code=http_status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/approvals", dependencies=[IsApiAuthenticated])
 async def snippets_api_batch_approve(
-    body: SnippetBatchApproveRequest,
+    existence: SnippetBatchExistenceDep,
     user: ApiAdminUser,
     session: SessionDep,
 ) -> BatchApprovalResponse:
-    """Atomically approve a set of snippets (idempotent partial-update).
+    """Approve a set of snippets atomically (idempotent partial-update).
 
     Reject the whole batch with ``400`` and a
     :class:`BatchApprovalErrorResponse` payload when any filename has no
@@ -333,8 +326,8 @@ async def snippets_api_batch_approve(
     ``approved_at IS NULL`` as a CAS filter so two concurrent admins
     cannot double-approve.
 
-    :param body: The validated JSON body.
-    :type body: SnippetBatchApproveRequest
+    :param existence: Pre-validated batch existence result from the dependency.
+    :type existence: SnippetBatchExistenceResult
     :param user: The authenticated admin performing the action.
     :type user: User
     :param session: The active database session.
@@ -344,23 +337,15 @@ async def snippets_api_batch_approve(
     :raises HTTPBadRequestException: On hard-error precheck failures with
         a :class:`BatchApprovalErrorResponse` body.
     """
-    filenames = body.filenames
-    for filename in filenames:
-        validate_snippet_filename(filename)
-    existence = await check_snippet_batch_existence(session, filenames)
-    if existence.has_errors:
-        error_body = BatchApprovalErrorResponse(
-            missing_in_db=existence.missing_in_db,
-            missing_on_disk=existence.missing_on_disk,
-        )
-        raise HTTPBadRequestException(detail=error_body.model_dump())
-
-    pre_already_approved = sorted(
-        snippet.filename for snippet in existence.snippets if snippet.is_approved
-    )
-    to_approve = sorted(
-        snippet.filename for snippet in existence.snippets if not snippet.is_approved
-    )
+    pre_already_approved = []
+    to_approve = []
+    for snippet in existence.snippets:
+        if snippet.is_approved:
+            pre_already_approved.append(snippet.filename)
+        else:
+            to_approve.append(snippet.filename)
+    pre_already_approved.sort()
+    to_approve.sort()
     approved: list[str] = []
     if to_approve:
         approved_rows = await SnippetManager.update_where(
@@ -387,5 +372,4 @@ async def snippets_api_batch_approve(
     return BatchApprovalResponse(
         approved=approved,
         skipped_already_approved=skipped,
-        count=len(approved),
     )

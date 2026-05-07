@@ -634,12 +634,16 @@ class TestSnippetsApiPatchApprovals:
     async def test_traversal_or_unsafe_filename_in_batch_returns_400(
         self, api_admin_client, bad_filename
     ):
-        """Traversal and invalid filenames in the batch body are rejected with 400."""
+        """Traversal and invalid filenames in the batch body are rejected with 400.
+
+        Unsafe filenames have no DB row, so the existence precheck returns them
+        in ``missing_in_db`` and raises 400.
+        """
         response = api_admin_client.patch(self.URL, json={"filenames": [bad_filename]})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        detail = response.json().get("detail", "")
-        assert "Invalid snippet filename" in str(detail)
+        detail = response.json().get("detail", {})
+        assert bad_filename in detail.get("missing_in_db", [])
 
     async def test_duplicate_filenames_silently_deduped(
         self, api_admin_client, create_snippet
