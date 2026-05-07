@@ -16,26 +16,34 @@
 """Define dependencies for the Support Snippets plugin."""
 
 import logging
-from pathlib import Path
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
 from typing import Annotated
 
 from fastapi import Depends, Header, Request, status
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
+from sqlmodel import col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
+    HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPRedirectException,
 )
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
-from app.core.utils.fields import NonEmptyStr, UniqueList
 from app.sep.artifact_constants import (
     ARTIFACT_DOWNLOAD_SALT,
     ARTIFACT_TYPE_SNIPPET,
 )
 from app.sep.deps import get_base_url, SessionDep
 from app.sep.middleware import messages
+from app.sep.plugins.snippets.models import (
+    BatchApprovalErrorResponse,
+    SnippetBatchApproveRequest,
+)
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
@@ -45,6 +53,62 @@ from app.sep.snippets.models.snippet import (
 )
 
 logger = logging.getLogger(__name__)
+
+_SNIPPET_FILENAME_PUNCTUATION = {"_", "-", "."}
+
+
+def _invalid_snippet_filename(filename: str) -> HTTPBadRequestException:
+    """Return the standard bad-request exception for invalid snippet names."""
+    return HTTPBadRequestException(detail=f"Invalid snippet filename: {filename!r}")
+
+
+def _is_safe_snippet_path_component(part: str) -> bool:
+    """Return whether one POSIX path component is safe for snippet lookup."""
+    if not part:
+        return False
+    if not part.isascii():
+        return False
+    if not (part[0].isalnum() or part[0] == "_"):
+        return False
+    return all(c.isalnum() or c in _SNIPPET_FILENAME_PUNCTUATION for c in part)
+
+
+def _has_lowercase_alpha_suffix(part: str) -> bool:
+    """Return whether a filename has a lowercase alphabetic extension."""
+    suffix = PurePosixPath(part).suffix[1:]
+    return bool(suffix) and suffix.isascii() and suffix.isalpha() and suffix.islower()
+
+
+def validate_snippet_filename(filename: str) -> None:
+    """Raise 400 if ``filename`` is not a safe snippet filename or path.
+
+    Accepts plain filenames (``check.sh``) and safe relative subdirectory
+    paths (``team/check.sh``) that mirror what ``update_snippets()`` stores
+    via ``path.relative_to(BASE_DIR)``. Rejects absolute paths, Windows
+    separators, traversal components, and any component that does not meet
+    the safe-name rules.
+
+    :param filename: The raw filename string to validate.
+    :type filename: str
+    :raises HTTPBadRequestException: If the filename is unsafe or malformed.
+    """
+    # Reject any Windows separator — these never appear in POSIX-stored paths.
+    if "\\" in filename:
+        raise _invalid_snippet_filename(filename)
+
+    posix_path = PurePosixPath(filename)
+    if posix_path.is_absolute():
+        raise _invalid_snippet_filename(filename)
+
+    parts = filename.split("/")
+    # Reject traversal or hidden-file components, and empty parts (consecutive //).
+    for part in parts:
+        if part in ("", ".", "..") or not _is_safe_snippet_path_component(part):
+            raise _invalid_snippet_filename(filename)
+
+    # The last component (the actual file) must have a lowercase alpha extension.
+    if not _has_lowercase_alpha_suffix(parts[-1]):
+        raise _invalid_snippet_filename(filename)
 
 
 async def get_snippet(
@@ -59,9 +123,12 @@ async def get_snippet(
     :type session: AsyncSession
     :return: The retrieved snippet.
     :rtype: Snippet
+    :raises HTTPBadRequestException: If the filename is not a safe single snippet
+        filename.
     :raises HTTPNotFoundException: If a snippet with the specified filename is not
         found, of if the snippet file does not exist.
     """
+    validate_snippet_filename(snippet_filename)
     snippet = await SnippetManager.get_or_404(session, filename=snippet_filename)
     if not Path(snippet).is_file():
         raise HTTPNotFoundException
@@ -356,13 +423,95 @@ def get_executable_snippet_for_api(snippet: SnippetDep) -> Snippet:
 ExecutableSnippetForApi = Annotated[Snippet, Depends(get_executable_snippet_for_api)]
 
 
-class SnippetBatchApproveForm(BaseModel):
-    """Validate the body of the batch snippet-approval endpoint.
+class SnippetBatchApproveForm(SnippetBatchApproveRequest):
+    """Form-bound twin used by the legacy Jinja2 batch-approve route."""
 
-    :param filenames: Unique, non-empty list of snippet filenames to approve in a
-        single atomic operation. Duplicates in the submitted form are silently
-        deduplicated by ``UniqueList``.
-    :type filenames: UniqueList[NonEmptyStr]
+
+@dataclass(slots=True)
+class SnippetBatchExistenceResult:
+    """Structured outcome of the batch-approve precheck.
+
+    :param snippets: Rows fetched from the DB for the requested filenames.
+    :type snippets: list[Snippet]
+    :param missing_in_db: Filenames absent from the database, sorted.
+    :type missing_in_db: list[str]
+    :param missing_on_disk: Filenames present in the DB but whose underlying
+        file is absent from the snippets directory, sorted.
+    :type missing_on_disk: list[str]
     """
 
-    filenames: UniqueList[NonEmptyStr] = Field(min_length=1)
+    snippets: list[Snippet] = field(default_factory=list)
+    missing_in_db: list[str] = field(default_factory=list)
+    missing_on_disk: list[str] = field(default_factory=list)
+
+    @property
+    def has_errors(self) -> bool:
+        """True when either error category is populated."""
+        return bool(self.missing_in_db or self.missing_on_disk)
+
+
+async def check_snippet_batch_existence(
+    session: AsyncSession, filenames: Iterable[str]
+) -> SnippetBatchExistenceResult:
+    """Verify that every filename has a DB row and an on-disk file.
+
+    Shared between the legacy Jinja2 batch route and the JSON API batch
+    endpoint so both surfaces report the same hard-error categories. The
+    helper deliberately does **not** check approval state — the JSON path
+    treats already-approved as a soft-skip via the atomic
+    ``update_where(... approved_at IS NULL)`` filter.
+
+    :param session: The active database session.
+    :type session: AsyncSession
+    :param filenames: The filenames the caller wants to act on.
+    :type filenames: Iterable[str]
+    :return: A populated :class:`SnippetBatchExistenceResult`.
+    :rtype: SnippetBatchExistenceResult
+    """
+    filenames_set = set(filenames)
+    if not filenames_set:
+        return SnippetBatchExistenceResult()
+    snippets = await SnippetManager.list(
+        session, col(Snippet.filename).in_(filenames_set)
+    )
+    found = {snippet.filename for snippet in snippets}
+    missing_in_db = sorted(filenames_set - found)
+    missing_on_disk = sorted(
+        snippet.filename for snippet in snippets if not Path(snippet).is_file()
+    )
+    return SnippetBatchExistenceResult(
+        snippets=snippets,
+        missing_in_db=missing_in_db,
+        missing_on_disk=missing_on_disk,
+    )
+
+
+async def get_batch_existence(
+    body: SnippetBatchApproveRequest,
+    session: SessionDep,
+) -> SnippetBatchExistenceResult:
+    """Resolve and validate batch snippet existence, raising 400 on hard errors.
+
+    :param body: The parsed JSON body containing the filenames to approve.
+    :type body: SnippetBatchApproveRequest
+    :param session: The active database session.
+    :type session: AsyncSession
+    :return: Existence result guaranteed to have no hard errors.
+    :rtype: SnippetBatchExistenceResult
+    :raises HTTPBadRequestException: When any filename is missing from the DB
+        or has no corresponding file on disk.
+    """
+    existence = await check_snippet_batch_existence(session, body.filenames)
+    if existence.has_errors:
+        raise HTTPBadRequestException(
+            detail=BatchApprovalErrorResponse(
+                missing_in_db=existence.missing_in_db,
+                missing_on_disk=existence.missing_on_disk,
+            ).model_dump()
+        )
+    return existence
+
+
+SnippetBatchExistenceDep = Annotated[
+    SnippetBatchExistenceResult, Depends(get_batch_existence)
+]
