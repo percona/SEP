@@ -245,7 +245,7 @@ export function AtwPage() {
 
       {selectedSnippetRow && schemaQuery.data && (
         <SchemaFormRenderer
-          sections={schemaQuery.data.forms}
+          sections={schemaQuery.data.forms ?? []}
           onSubmit={handleSubmit}
           submitLabel="Execute"
           loading={executionMutation.isPending}
