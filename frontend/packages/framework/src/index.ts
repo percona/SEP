@@ -55,6 +55,8 @@ export type {
   TaskHistoryStatus,
   PaginatedTaskHistory,
 } from './components/TaskHistoryTable';
+export { SnippetExecutionAccordion } from './components/SnippetExecutionAccordion';
+export type { SnippetExecutionAccordionProps } from './components/SnippetExecutionAccordion';
 export { ChainBuilder } from './components/ChainBuilder';
 
 export type { ChainBuilderProps, ChainValue, AvailableTask } from './components/ChainBuilder';

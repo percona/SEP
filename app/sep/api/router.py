@@ -33,6 +33,9 @@ from fastapi import APIRouter
 
 from app.sep.api.routes.hosts import router as hosts_router
 from app.sep.deps import IsApiAuthenticated
+from app.sep.plugins.alert_troubleshooting.api_routes import (
+    router as alert_troubleshooting_api_router,
+)
 from app.sep.plugins.checksums.api_routes import router as checksums_api_router
 from app.sep.plugins.dipper.api_routes import router as dipper_api_router
 from app.sep.plugins.inventory.api_routes import router as inventory_api_router
@@ -48,6 +51,11 @@ plugins_router.include_router(
 )
 plugins_router.include_router(
     snippets_api_router, prefix="/snippets", tags=["snippets"]
+)
+plugins_router.include_router(
+    alert_troubleshooting_api_router,
+    prefix="/alert_troubleshooting",
+    tags=["alert_troubleshooting"],
 )
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
