@@ -15,30 +15,12 @@
 
 """Define tests for the shared SEP API router at ``/api/plugins/``."""
 
-from collections.abc import Iterator
-
-import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from app.sep.api.router import api_router, plugins_router
 from app.sep.deps import IsApiAuthenticated
 from app.sep.main import sep_app
-
-
-@pytest.fixture
-def unauthenticated_client() -> Iterator[TestClient]:
-    """Yield a ``TestClient`` with ``sep_app`` dependency overrides cleared.
-
-    Save and restore ``sep_app.dependency_overrides`` so the temporary removal
-    of auth overrides does not leak into subsequent tests.
-    """
-    previous = sep_app.dependency_overrides
-    sep_app.dependency_overrides = {}
-    try:
-        yield TestClient(sep_app, raise_server_exceptions=False)
-    finally:
-        sep_app.dependency_overrides = previous
 
 
 class TestApiRouterComposition:

@@ -15,27 +15,13 @@
 
 """Tests for the ATW plugin JSON API routes under /api/plugins/atw/."""
 
-from collections.abc import Iterator
 from unittest.mock import AsyncMock, Mock, patch
 
-import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from app.sep.main import sep_app
 from app.sep.plugins.atw.models import ParentCategory
 from app.sep.snippets.models import Snippet
-
-
-@pytest.fixture
-def unauthenticated_client() -> Iterator[TestClient]:
-    """Yield a test client with authentication dependency overrides cleared."""
-    previous = sep_app.dependency_overrides
-    sep_app.dependency_overrides = {}
-    try:
-        yield TestClient(sep_app, raise_server_exceptions=False)
-    finally:
-        sep_app.dependency_overrides = previous
 
 
 class TestAtwListEndpoint:

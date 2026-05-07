@@ -28,7 +28,8 @@ from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 
-# TODO: Derive category_root from snippet/meta for multi-root ATW.  # noqa: TD002, TD003
+# TODO(SEP-1127): Derive category_root from snippet/meta for multi-root ATW.
+# https://percona.atlassian.net/browse/SEP-1127
 ATW_CATEGORY_ROOT = "MySQL"
 
 
@@ -60,6 +61,9 @@ schema_endpoint(router=router, plugin_schema=atw_schema)
 
 
 def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
+    # TODO(SEP-1128): Replace path-segment filename URLs with a routing-safe contract.
+    # https://percona.atlassian.net/browse/SEP-1128
+    # (e.g., query param or opaque id); %2F in snippet filenames can misroute in ASGI stacks.
     encoded_filename = quote(snippet.filename, safe="")
     return ATWSnippetSummary(
         name=snippet.filename,

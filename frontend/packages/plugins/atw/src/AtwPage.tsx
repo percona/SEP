@@ -61,7 +61,7 @@ export function AtwPage() {
     setSelectedSnippet('');
   }, [rootOptions, selectedRoot]);
 
-  const parentOptions = useMemo((): AtwCategoryListing[] => {
+  const parentOptions = useMemo((): Array<{ value: string; label: string }> => {
     const listing = categoriesQuery.data ?? [];
     const seen = new Set<string>();
     return listing
@@ -72,7 +72,11 @@ export function AtwPage() {
         }
         seen.add(item.parent_category);
         return true;
-      });
+      })
+      .map((item: AtwCategoryListing) => ({
+        value: item.parent_category,
+        label: item.parent_category_label,
+      }));
   }, [categoriesQuery.data, selectedRoot]);
 
   const leafListingOptions = useMemo(() => {
@@ -175,9 +179,9 @@ export function AtwPage() {
               setSelectedSnippet('');
             }}
           >
-            {parentOptions.map((row: AtwCategoryListing) => (
-              <MenuItem key={row.parent_category} value={row.parent_category}>
-                {row.parent_category_label}
+            {parentOptions.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
               </MenuItem>
             ))}
           </Select>

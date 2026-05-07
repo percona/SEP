@@ -95,6 +95,8 @@ atw_schema = PluginSchema(
             fail_when=_atw_category_browser_fail_rules(),
         ),
     ],
+    # ATW currently uses a custom React page (`AtwPage`) instead of SchemaDrivenPlugin;
+    # keep `list_view` for schema/non-UI consumers and future UI convergence.
     list_view=ListView(
         columns=[
             Column(key="category_root", label="Category", sortable=True),
