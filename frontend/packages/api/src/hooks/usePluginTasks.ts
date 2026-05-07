@@ -20,10 +20,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';
 
-// Only allow mock fallback in development builds. Vite statically replaces
-// `import.meta.env.DEV` at build time, so this path is dead-code-eliminated
-// in production.
-const IS_DEV = import.meta.env.DEV;
+// Mock-fallback gate. Active in dev builds (`pnpm dev`) and in production
+// builds explicitly opted-in via `VITE_MOCK_API=true` (e.g. the Playwright
+// preview target). Vite statically replaces both expressions at build time,
+// so the fallback branches are dead-code-eliminated in real production.
+const MOCK_FALLBACKS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true';
 
 function isBackendUnavailable(error: unknown): boolean {
   if (error instanceof ApiError) {
@@ -35,29 +36,33 @@ function isBackendUnavailable(error: unknown): boolean {
 /**
  * Generic CRUD hooks for plugin tasks.
  *
- * In development, the real API is attempted first. If the backend is
- * unavailable (network error or 5xx), mock data is used as a fallback.
- * In production builds, mock data is never used.
+ * The real API is always attempted first. When the backend is unavailable
+ * (network error or 5xx), mock data is used as a fallback only when the
+ * mock-fallback gate is on — that is, in dev builds, and in production
+ * builds explicitly opted in via `VITE_MOCK_API=true` (the Playwright
+ * preview target). Real production bundles never use the fallback.
  */
 
 export function usePluginTasks<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
+  options?: { enabled?: boolean },
 ) {
   return useQuery<T[]>({
     queryKey: ['plugins', pluginName, 'tasks'],
+    enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
         const { data } = await apiClient.get<T[]>(`/plugins/${pluginName}/`);
         return data;
       } catch (error) {
-        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           return mockTasks;
         }
         throw error;
       }
     },
-    ...(IS_DEV && mockTasks && { placeholderData: mockTasks }),
+    ...(MOCK_FALLBACKS_ENABLED && mockTasks && { placeholderData: mockTasks }),
   });
 }
 
@@ -65,10 +70,11 @@ export function usePluginTask<T extends Record<string, unknown>>(
   pluginName: string,
   taskId: string | undefined,
   mockTasks?: T[],
+  options?: { enabled?: boolean },
 ) {
   return useQuery<T | undefined>({
     queryKey: ['plugins', pluginName, 'tasks', taskId],
-    enabled: !!taskId,
+    enabled: options?.enabled !== false && !!taskId,
     queryFn: async () => {
       try {
         const { data } = await apiClient.get<T>(
@@ -76,7 +82,7 @@ export function usePluginTask<T extends Record<string, unknown>>(
         );
         return data;
       } catch (error) {
-        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           // Per-plugin detail/delete routes look up by `task_name`; mocks
           // resolve by the same key so dev fallback matches prod semantics.
           return mockTasks.find((t) => String(t.name ?? t.id) === taskId);
@@ -99,7 +105,7 @@ export function useCreatePluginTask<T extends Record<string, unknown>>(
         const { data } = await apiClient.post<T>(`/plugins/${pluginName}/`, values);
         return data;
       } catch (error) {
-        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           return values as T;
         }
         throw error;
@@ -107,6 +113,140 @@ export function useCreatePluginTask<T extends Record<string, unknown>>(
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks'] });
+    },
+  });
+}
+
+function entityQueryKey(pluginName: string, entityName: string) {
+  return ['plugins', pluginName, 'entity', entityName] as const;
+}
+
+function entityQueriesRootKey(pluginName: string) {
+  return ['plugins', pluginName, 'entity'] as const;
+}
+
+/** List rows for one entity of a multi-entity plugin (GET ``/plugins/{name}/{entity}/``). */
+export function usePluginEntityList<T extends Record<string, unknown>>(
+  pluginName: string,
+  entityName: string,
+  mockItems?: T[],
+  options?: { enabled?: boolean },
+) {
+  return useQuery<T[]>({
+    queryKey: entityQueryKey(pluginName, entityName),
+    enabled: options?.enabled !== false,
+    queryFn: async () => {
+      try {
+        const { data } = await apiClient.get<T[]>(`/plugins/${pluginName}/${entityName}/`);
+        return data;
+      } catch (error) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
+          return mockItems;
+        }
+        throw error;
+      }
+    },
+    ...(MOCK_FALLBACKS_ENABLED && mockItems && { placeholderData: mockItems }),
+  });
+}
+
+export function usePluginEntityDetail<T extends Record<string, unknown>>(
+  pluginName: string,
+  entityName: string,
+  itemId: string | undefined,
+  mockItems?: T[],
+  options?: { enabled?: boolean },
+) {
+  return useQuery<T | undefined>({
+    queryKey: [...entityQueryKey(pluginName, entityName), itemId],
+    enabled: options?.enabled !== false && !!itemId,
+    queryFn: async () => {
+      try {
+        const { data } = await apiClient.get<T>(`/plugins/${pluginName}/${entityName}/${itemId}`);
+        return data;
+      } catch (error) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
+          return mockItems.find((t) => String(t.id) === itemId);
+        }
+        throw error;
+      }
+    },
+  });
+}
+
+export function useCreatePluginEntity<T extends Record<string, unknown>>(
+  pluginName: string,
+  entityName: string,
+  mockItems?: T[],
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<T, Error, Record<string, unknown>>({
+    mutationFn: async (values) => {
+      try {
+        const { data } = await apiClient.post<T>(`/plugins/${pluginName}/${entityName}/`, values);
+        return data;
+      } catch (error) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
+          return values as T;
+        }
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: entityQueriesRootKey(pluginName) });
+    },
+  });
+}
+
+export function useUpdatePluginEntity<T extends Record<string, unknown>>(
+  pluginName: string,
+  entityName: string,
+  mockItems?: T[],
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<T, Error, { id: string; values: Record<string, unknown> }>({
+    mutationFn: async ({ id, values }) => {
+      try {
+        const { data } = await apiClient.put<T>(
+          `/plugins/${pluginName}/${entityName}/${id}`,
+          values,
+        );
+        return data;
+      } catch (error) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
+          return { ...values, id } as unknown as T;
+        }
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: entityQueriesRootKey(pluginName) });
+    },
+  });
+}
+
+export function useDeletePluginEntity(
+  pluginName: string,
+  entityName: string,
+  mockItems?: unknown[],
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, string>({
+    mutationFn: async (id) => {
+      try {
+        await apiClient.delete(`/plugins/${pluginName}/${entityName}/${id}`);
+      } catch (error) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
+          return;
+        }
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: entityQueriesRootKey(pluginName) });
     },
   });
 }
@@ -122,7 +262,7 @@ export function useDeletePluginTask<T extends Record<string, unknown>>(
       try {
         await apiClient.delete(`/plugins/${pluginName}/${encodeURIComponent(taskId)}`);
       } catch (error) {
-        if (IS_DEV && mockTasks && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           // Mock mode: pretend the delete succeeded so the UI flow can be
           // exercised offline, matching the create/list/detail hooks.
           return;

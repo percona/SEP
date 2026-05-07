@@ -203,7 +203,7 @@ def test_spa_login_invalid_credentials(test_client, valid_username, mocker):
 def test_spa_login_missing_body(test_client):
     """Assert /login returns 422 on a missing JSON body."""
     response = test_client.post("/api/oauth/login")
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
 def test_refresh_from_cookie_success(
