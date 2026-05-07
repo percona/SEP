@@ -23,7 +23,10 @@ to the task-history view backed by ``app/sep/routes/stream_logs.py``.
 """
 
 __all__ = [
+    "BatchApprovalErrorResponse",
+    "BatchApprovalResponse",
     "ScriptPreviewResponse",
+    "SnippetBatchApproveRequest",
     "SnippetExecutionRequest",
     "SnippetExecutionResponse",
     "SnippetResponse",
@@ -32,9 +35,9 @@ __all__ = [
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field, Field
 
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import NonEmptyStr, UniqueList
 
 
 class SnippetResponse(BaseModel):
@@ -58,6 +61,9 @@ class SnippetResponse(BaseModel):
     :param approved_at: When the snippet was last approved, or ``None`` if
         unapproved.
     :type approved_at: datetime | None
+    :param updated_by: User id that last toggled the approval state, or
+        ``None`` if no toggle has occurred.
+    :type updated_by: str | None
     :param reason: Free-form reason recorded the last time the snippet's
         approval state changed.
     :type reason: str
@@ -88,6 +94,7 @@ class SnippetResponse(BaseModel):
     md5_digest: str
     is_approved: bool
     approved_at: datetime | None = None
+    updated_by: str | None = None
     reason: str
     requires_sudo: bool
     sudo_optional: bool
@@ -157,3 +164,65 @@ class ScriptPreviewResponse(BaseModel):
     content: str
     language: str
     is_truncated: bool
+
+
+class SnippetBatchApproveRequest(BaseModel):
+    """Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.
+
+    Unlike the Form-bound :class:`~app.sep.plugins.snippets.deps.SnippetBatchApproveForm`
+    twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
+    parses it as JSON.
+
+    :param filenames: Unique, non-empty list of snippet filenames to approve in a
+        single atomic operation. Duplicates are silently deduplicated by
+        ``UniqueList``.
+    :type filenames: UniqueList[NonEmptyStr]
+    """
+
+    filenames: UniqueList[NonEmptyStr] = Field(min_length=1)
+
+
+class BatchApprovalResponse(BaseModel):
+    """Successful response for the batch-approve endpoint.
+
+    :param approved: Filenames whose approval state was toggled by this
+        request (newly approved as a result of the call).
+    :type approved: list[str]
+    :param skipped_already_approved: Filenames that were already approved
+        when the call started; the request is treated as a soft-skip
+        (idempotent).
+    :type skipped_already_approved: list[str]
+    """
+
+    approved: list[str]
+    skipped_already_approved: list[str]
+
+    @computed_field
+    @property
+    def count(self) -> int:
+        """Return the number of newly approved snippets.
+
+        :return: Length of ``approved``.
+        :rtype: int
+        """
+        return len(self.approved)
+
+
+class BatchApprovalErrorResponse(BaseModel):
+    """Hard-error response payload for the batch-approve endpoint (400).
+
+    Returned only when the precheck rejects the whole request — either
+    because some filenames have no DB row, or because the underlying
+    files have been removed from disk. ``already_approved`` is *not*
+    listed here; that is treated as a soft-skip in the success path.
+
+    :param missing_in_db: Filenames the request asked to approve that have
+        no matching snippet row.
+    :type missing_in_db: list[str]
+    :param missing_on_disk: Filenames whose row exists but whose underlying
+        file is no longer present.
+    :type missing_on_disk: list[str]
+    """
+
+    missing_in_db: list[str] = Field(default_factory=list)
+    missing_on_disk: list[str] = Field(default_factory=list)
