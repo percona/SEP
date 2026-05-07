@@ -140,13 +140,13 @@ export function usePluginEntityList<T extends Record<string, unknown>>(
         const { data } = await apiClient.get<T[]>(`/plugins/${pluginName}/${entityName}/`);
         return data;
       } catch (error) {
-        if (IS_DEV && mockItems && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return mockItems;
         }
         throw error;
       }
     },
-    ...(IS_DEV && mockItems && { placeholderData: mockItems }),
+    ...(MOCK_FALLBACKS_ENABLED && mockItems && { placeholderData: mockItems }),
   });
 }
 
@@ -165,7 +165,7 @@ export function usePluginEntityDetail<T extends Record<string, unknown>>(
         const { data } = await apiClient.get<T>(`/plugins/${pluginName}/${entityName}/${itemId}`);
         return data;
       } catch (error) {
-        if (IS_DEV && mockItems && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return mockItems.find((t) => String(t.id) === itemId);
         }
         throw error;
@@ -187,7 +187,7 @@ export function useCreatePluginEntity<T extends Record<string, unknown>>(
         const { data } = await apiClient.post<T>(`/plugins/${pluginName}/${entityName}/`, values);
         return data;
       } catch (error) {
-        if (IS_DEV && mockItems && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return values as T;
         }
         throw error;
@@ -215,7 +215,7 @@ export function useUpdatePluginEntity<T extends Record<string, unknown>>(
         );
         return data;
       } catch (error) {
-        if (IS_DEV && mockItems && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return { ...values, id } as unknown as T;
         }
         throw error;
@@ -239,7 +239,7 @@ export function useDeletePluginEntity(
       try {
         await apiClient.delete(`/plugins/${pluginName}/${entityName}/${id}`);
       } catch (error) {
-        if (IS_DEV && mockItems && isBackendUnavailable(error)) {
+        if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return;
         }
         throw error;
