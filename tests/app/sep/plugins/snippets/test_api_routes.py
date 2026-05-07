@@ -33,7 +33,9 @@ from app.sep.deps import (
 from app.sep.main import sep_app
 from app.sep.plugins.snippets.models import (
     BatchApprovalErrorResponse,
+    RefreshResponse,
     SnippetResponse,
+    SnippetsCapabilities,
 )
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
@@ -692,6 +694,209 @@ class TestSnippetsApiPatchApprovals:
         assert body["approved"] == ["a.sh"]
         assert body["skipped_already_approved"] == ["b.sh"]
         assert body["count"] == 1
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiCapabilities:
+    """Tests for ``GET /api/plugins/snippets/capabilities``."""
+
+    URL = f"{API_BASE}/capabilities"
+
+    async def test_returns_true_when_manual_sync_enabled(
+        self, api_admin_client, mocker
+    ):
+        """Capabilities surface ``manual_sync_enabled=True`` when enabled."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+
+        response = api_admin_client.get(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"manual_sync_enabled": True}
+        # Validate the response body fits the declared model contract.
+        SnippetsCapabilities.model_validate(response.json())
+
+    async def test_returns_false_when_manual_sync_disabled(
+        self, api_admin_client, mocker
+    ):
+        """Capabilities surface ``manual_sync_enabled=False`` when disabled."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=False,
+        )
+
+        response = api_admin_client.get(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"manual_sync_enabled": False}
+
+    async def test_non_admin_can_read(self, api_non_admin_client, mocker):
+        """Any authenticated user reads capabilities; no admin gate."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+
+        response = api_non_admin_client.get(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"manual_sync_enabled": True}
+
+    async def test_unauthenticated_returns_401(
+        self, api_unauthenticated_client, mocker
+    ):
+        """No auth → 401, regardless of the underlying flag."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+
+        response = api_unauthenticated_client.get(self.URL)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiRefresh:
+    """Tests for ``POST /api/plugins/snippets/refresh``."""
+
+    URL = f"{API_BASE}/refresh"
+
+    async def test_admin_with_manual_sync_enabled_returns_200(
+        self, api_admin_client, mocker
+    ):
+        """Admin happy path: 200 with ISO ``refreshed_at`` and one call."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert "refreshed_at" in body
+        # ISO 8601 round-trip: parsing must succeed.
+        parsed = datetime.fromisoformat(body["refreshed_at"])
+        assert parsed.tzinfo is not None
+        # Validate body fits the declared model contract.
+        RefreshResponse.model_validate(body)
+        update_mock.assert_awaited_once()
+
+    async def test_admin_with_manual_sync_disabled_returns_403(
+        self, api_admin_client, mocker
+    ):
+        """Disabled deployment: 403 with structured detail; no work done."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=False,
+        )
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json() == {
+            "detail": "Manual snippet sync is disabled in this deployment."
+        }
+        update_mock.assert_not_called()
+
+    async def test_non_admin_returns_403_even_when_enabled(
+        self, api_non_admin_client, mocker
+    ):
+        """Non-admin caller: 403; no refresh work done."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_non_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        update_mock.assert_not_called()
+
+    async def test_unauthenticated_returns_401(
+        self, api_unauthenticated_client, mocker
+    ):
+        """No auth: 401; no refresh work done."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_unauthenticated_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        update_mock.assert_not_called()
+
+    async def test_dependency_order_auth_runs_before_config_gate(
+        self, api_unauthenticated_client, mocker
+    ):
+        """Unauth probe with flag True → 401, never the disabled-detail 403.
+
+        Prevents leaking deployment-flag state to anonymous callers via the
+        403-vs-401 differential.
+        """
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=False,
+        )
+
+        response = api_unauthenticated_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        # Detail must NOT echo the gate-state message.
+        body = response.json()
+        assert body.get("detail") != (
+            "Manual snippet sync is disabled in this deployment."
+        )
+
+    async def test_update_snippets_failure_propagates(self, api_admin_client, mocker):
+        """Backend errors are not silently swallowed (500 to caller)."""
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+        mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(side_effect=RuntimeError("disk walk failed")),
+        )
+
+        response = api_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 # Override the module-level test_client fixture so it uses the same in-memory

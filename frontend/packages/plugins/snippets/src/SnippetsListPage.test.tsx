@@ -17,12 +17,15 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@sep/api';
 import { SnippetsListPage } from './SnippetsListPage';
 import {
   useSnippets,
   useApproveSnippet,
   useRemoveSnippetApproval,
   useBatchApproveSnippets,
+  useSnippetsCapabilities,
+  useRefreshSnippets,
 } from './hooks';
 
 vi.mock('react-router-dom', () => ({
@@ -34,12 +37,16 @@ vi.mock('./hooks', () => ({
   useApproveSnippet: vi.fn(),
   useRemoveSnippetApproval: vi.fn(),
   useBatchApproveSnippets: vi.fn(),
+  useSnippetsCapabilities: vi.fn(),
+  useRefreshSnippets: vi.fn(),
 }));
 
 const mockUseSnippets = vi.mocked(useSnippets);
 const mockUseApproveSnippet = vi.mocked(useApproveSnippet);
 const mockUseRemoveSnippetApproval = vi.mocked(useRemoveSnippetApproval);
 const mockUseBatchApproveSnippets = vi.mocked(useBatchApproveSnippets);
+const mockUseSnippetsCapabilities = vi.mocked(useSnippetsCapabilities);
+const mockUseRefreshSnippets = vi.mocked(useRefreshSnippets);
 
 const unapprovedSnippet = {
   filename: 'check.sh',
@@ -69,6 +76,7 @@ describe('SnippetsListPage — ApproveButton', () => {
   const approveMutate = vi.fn();
   const removeMutate = vi.fn();
   const batchMutate = vi.fn();
+  const refreshMutate = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -84,6 +92,15 @@ describe('SnippetsListPage — ApproveButton', () => {
       mutate: batchMutate,
       isPending: false,
     } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    // Default: manual sync disabled, no pending refresh.
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: refreshMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
   });
 
   describe('per-row approval requires confirmation', () => {
@@ -213,6 +230,196 @@ describe('SnippetsListPage — ApproveButton', () => {
       expect(screen.getByRole('checkbox', { name: /select approved\.sh/i })).not.toBeChecked();
       expect(screen.getByRole('checkbox', { name: /select approved\.sh/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /batch approve \(1\)/i })).toBeInTheDocument();
+    });
+  });
+});
+
+describe('SnippetsListPage — RefreshButton', () => {
+  const refreshMutate = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseSnippets.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseApproveSnippet.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useApproveSnippet>);
+    mockUseRemoveSnippetApproval.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRemoveSnippetApproval>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: refreshMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+  });
+
+  it('hides refresh button when manual_sync_enabled is false (admin)', () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+
+    render(<SnippetsListPage isAdmin />);
+
+    expect(screen.queryByRole('button', { name: /refresh snippets/i })).not.toBeInTheDocument();
+  });
+
+  it('hides refresh button when user is not admin (sync enabled)', () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+
+    render(<SnippetsListPage isAdmin={false} />);
+
+    expect(screen.queryByRole('button', { name: /refresh snippets/i })).not.toBeInTheDocument();
+  });
+
+  it('shows refresh button when isAdmin and manual_sync_enabled', () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+
+    render(<SnippetsListPage isAdmin />);
+
+    expect(screen.getByRole('button', { name: /refresh snippets/i })).toBeInTheDocument();
+  });
+
+  it('click opens confirmation dialog with correct text', () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+
+    render(<SnippetsListPage isAdmin />);
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      /Are you sure you want to refresh the saved snippets now\?/i,
+    );
+    expect(refreshMutate).not.toHaveBeenCalled();
+  });
+
+  it('Cancel closes dialog without calling mutation', async () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+
+    render(<SnippetsListPage isAdmin />);
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(refreshMutate).not.toHaveBeenCalled();
+  });
+
+  it('Confirm calls refresh mutation', () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+
+    render(<SnippetsListPage isAdmin />);
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
+
+    expect(refreshMutate).toHaveBeenCalledOnce();
+  });
+
+  it('disables refresh button while mutation is pending', () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: refreshMutate,
+      isPending: true,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+
+    render(<SnippetsListPage isAdmin />);
+
+    expect(screen.getByRole('button', { name: /refresh snippets/i })).toBeDisabled();
+  });
+
+  it('shows generic error alert on non-HTTP failure', async () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn((_, callbacks) => {
+        callbacks?.onError?.(new Error('disk walk failed'));
+      }),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+
+    render(<SnippetsListPage isAdmin />);
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/refresh failed/i);
+    });
+  });
+
+  it('surfaces backend detail for HTTP error responses', async () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    const httpErr = new ApiError({
+      kind: 'http',
+      status: 403,
+      message: 'Manual snippet sync is disabled in this deployment.',
+    });
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn((_, callbacks) => {
+        callbacks?.onError?.(httpErr);
+      }),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+
+    render(<SnippetsListPage isAdmin />);
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/Manual snippet sync is disabled/i);
+    });
+  });
+
+  it('shows formatted timestamp on success', async () => {
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn((_, callbacks) => {
+        callbacks?.onSuccess?.({ refreshed_at: '2026-05-07T12:34:56Z' });
+      }),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+
+    render(<SnippetsListPage isAdmin />);
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/Snippets refreshed at/i);
     });
   });
 });
