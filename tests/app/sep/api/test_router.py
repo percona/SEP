@@ -20,6 +20,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.sep.api.router import api_router, build_plugins_router, plugins_router
 from app.sep.config import Plugin, sep_settings
@@ -191,14 +192,18 @@ class TestApiRouterConfigDrivenLoop:
         assert all("dipper" in tags for tags in tagged)
 
     def test_invalid_api_router_path_module_raises(self) -> None:
-        """Assert a non-importable module path fails fast at construction."""
-        plugin = Plugin(
-            name="Ghost",
-            module_name="snippets",
-            api_router_path="app.does.not.exist.router",
-        )
-        with pytest.raises(ImportError):
-            build_plugins_router([plugin])
+        """Assert a non-importable module path fails fast at Plugin construction.
+
+        With ``api_router_path`` typed as ``StrImportableAttribute | None``,
+        Pydantic validates the module component at model construction time so
+        the error surfaces before ``build_plugins_router`` is ever called.
+        """
+        with pytest.raises(ValidationError):
+            Plugin(
+                name="Ghost",
+                module_name="snippets",
+                api_router_path="app.does.not.exist.router",
+            )
 
     def test_api_router_path_pointing_at_missing_attribute_raises(self) -> None:
         """Assert pointing at a missing attribute fails fast at construction."""
@@ -298,6 +303,49 @@ class TestApiRouterConfigDrivenLoop:
         assert any(p.startswith("/plugins/snippets/") for p in paths)
         assert any(p.startswith("/plugins/checksums/") for p in paths)
         assert any(p.startswith("/plugins/dipper/") for p in paths)
+
+    def test_build_plugins_router_skips_empty_string_path(self) -> None:
+        """Assert an empty-string ``api_router_path`` is treated as no-mount.
+
+        Defense-in-depth: even if a falsy non-None value reaches the loop
+        (e.g. programmatic construction bypassing Pydantic), no routes are
+        mounted and no confusing ``ValueError`` is raised by ``import_var``.
+        """
+        plugin = Plugin.model_construct(
+            name="Ghost",
+            module_name="app.sep.plugins.checksums",
+            api_router_path="",
+        )
+        router = build_plugins_router([plugin])
+        assert router.routes == []
+
+    def test_build_plugins_router_raises_type_error_for_non_router(self) -> None:
+        """Assert importing a non-``APIRouter`` attribute raises ``TypeError``.
+
+        The error must identify the offending plugin key and path so operators
+        can diagnose YAML misconfigurations without reading tracebacks from
+        ``include_router``.
+        """
+        plugin = Plugin(
+            name="Checksums",
+            module_name="checksums",
+            api_router_path="app.sep.config.Plugin",
+        )
+        with pytest.raises(TypeError, match="checksums"):
+            build_plugins_router([plugin])
+
+    def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
+        """Assert an explicit ``api_router_path`` with a non-importable module raises ``ValidationError``.
+
+        Errors should be caught at settings construction, not at application
+        startup when ``build_plugins_router`` is first called.
+        """
+        with pytest.raises(ValidationError):
+            Plugin(
+                name="Ghost",
+                module_name="checksums",
+                api_router_path="not.a.real.module.router",
+            )
 
     def test_module_level_plugins_router_matches_settings(self) -> None:
         """Assert module-level ``plugins_router`` mirrors ``sep_settings.PLUGINS``."""

@@ -99,7 +99,7 @@ class Plugin(BaseCaseInsensitiveModel):
           imported.
         * **Explicit ``null``** — opt the plugin out of the JSON API mount,
           even if a conventional module exists.
-    :type api_router_path: str | None
+    :type api_router_path: StrImportableAttribute | None
     """
 
     name: str
@@ -107,7 +107,7 @@ class Plugin(BaseCaseInsensitiveModel):
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
-    api_router_path: str | None = None
+    api_router_path: StrImportableAttribute | None = None
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Plugin):

@@ -54,10 +54,15 @@ def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
     """
     plugins_router = APIRouter(prefix="/plugins")
     for plugin in plugins:
-        if plugin.api_router_path is None:
+        if not plugin.api_router_path:
             continue
         key = plugin.module_name.split(".")[-1]
         plugin_api_router = import_var(plugin.api_router_path)
+        if not isinstance(plugin_api_router, APIRouter):
+            raise TypeError(
+                f"Plugin '{key}': '{plugin.api_router_path}' must resolve to an"
+                f" APIRouter, got {type(plugin_api_router).__name__}"
+            )
         plugins_router.include_router(plugin_api_router, prefix=f"/{key}", tags=[key])
     return plugins_router
 
