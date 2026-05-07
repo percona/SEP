@@ -16,6 +16,8 @@
  */
 
 export { SchemaDrivenPlugin } from './SchemaDrivenPlugin';
+export { DeleteConfirmDialog } from './DeleteConfirmDialog';
+export type { DeleteConfirmDialogProps } from './DeleteConfirmDialog';
 export { PluginCreatePage } from './PluginCreatePage';
 export { PluginDetailPage } from './PluginDetailPage';
 export { PluginListPage } from './PluginListPage';

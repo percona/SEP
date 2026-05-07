@@ -58,6 +58,7 @@ export { mainApi, inventoryApi, tasksApi, sepApi } from './typed-client';
 
 export type {
   PluginSchema,
+  PluginEntitySchema,
   PluginField,
   FormSection,
   ListColumn,
@@ -91,6 +92,11 @@ export {
   usePluginTasks,
   usePluginTask,
   useCreatePluginTask,
+  usePluginEntityList,
+  usePluginEntityDetail,
+  useCreatePluginEntity,
+  useUpdatePluginEntity,
+  useDeletePluginEntity,
   useDeletePluginTask,
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,

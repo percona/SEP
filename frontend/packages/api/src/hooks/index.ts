@@ -21,6 +21,11 @@ export {
   usePluginTasks,
   usePluginTask,
   useCreatePluginTask,
+  usePluginEntityList,
+  usePluginEntityDetail,
+  useCreatePluginEntity,
+  useUpdatePluginEntity,
+  useDeletePluginEntity,
   useDeletePluginTask,
 } from './usePluginTasks';
 export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
