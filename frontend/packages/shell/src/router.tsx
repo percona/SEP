@@ -20,6 +20,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import RootLayout from './layouts/RootLayout';
 import MainLayout from './layouts/MainLayout';
 import AuthGuard from './components/AuthGuard';
+import { useAuth } from './contexts/auth';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -37,9 +38,14 @@ const DipperPlugin = lazy(() =>
 const InventoryPlugin = lazy(() =>
   import('@sep/inventory').then((m) => ({ default: m.InventoryPlugin })),
 );
-const SnippetsPlugin = lazy(() =>
+const SnippetsPluginLazy = lazy(() =>
   import('@sep/plugins-snippets').then((m) => ({ default: m.SnippetsPlugin })),
 );
+
+function SnippetsPlugin() {
+  const { isAdmin } = useAuth();
+  return <SnippetsPluginLazy isAdmin={isAdmin} />;
+}
 
 export const router = createBrowserRouter([
   {
