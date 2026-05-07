@@ -37,6 +37,7 @@ from app.sep.config import sep_settings
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
+    get_api_authenticated_admin,
     get_api_authenticated_user,
     get_base_url,
     get_created_entity,
@@ -380,6 +381,24 @@ class TestGetCurrentAdmin:
         admin_user = CasdoorUserFactory.build(is_admin=True)
         result = await get_current_admin(admin_user)
         assert result is admin_user
+
+
+class TestGetApiAuthenticatedAdmin:
+    """Test get_api_authenticated_admin dependency."""
+
+    @pytest.mark.asyncio
+    async def test_admin_returns_user(self) -> None:
+        """Assert an admin user is returned unchanged."""
+        admin_user = CasdoorUserFactory.build(is_admin=True)
+        result = await get_api_authenticated_admin(admin_user)
+        assert result is admin_user
+
+    @pytest.mark.asyncio
+    async def test_non_admin_raises_forbidden(self) -> None:
+        """Assert an authenticated non-admin gets 403 (not 401)."""
+        regular_user = CasdoorUserFactory.build(is_admin=False)
+        with pytest.raises(HTTPForbiddenException):
+            await get_api_authenticated_admin(regular_user)
 
 
 class TestGetUsernameMapping:

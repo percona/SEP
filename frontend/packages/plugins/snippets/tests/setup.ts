@@ -15,24 +15,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { SnippetsPlugin } from './SnippetsPlugin';
-export { SnippetsListPage } from './SnippetsListPage';
-export { SnippetDetailPage } from './SnippetDetailPage';
-export {
-  useSnippets,
-  useSnippetSchema,
-  useSnippetHistory,
-  useSnippetExecution,
-  useApproveSnippet,
-  useRemoveSnippetApproval,
-  useBatchApproveSnippets,
-} from './hooks';
-export type {
-  BatchApprovalErrorResponse,
-  BatchApprovalResponse,
-  ScriptPreviewResponse,
-  SnippetBatchApproveRequest,
-  SnippetExecutionRequest,
-  SnippetExecutionResponse,
-  SnippetResponse,
-} from './types';
+import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+
+afterEach(() => {
+  cleanup();
+});
