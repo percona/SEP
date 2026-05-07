@@ -15,8 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useState } from 'react';
-import { Routes, Route, useParams, useNavigate, Link } from 'react-router-dom';
+import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
+import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -40,15 +40,124 @@ import EditIcon from '@mui/icons-material/Edit';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import { useSnackbar } from 'notistack';
-import { useDeletePluginTask, usePluginTask, type PluginSchema } from '@sep/api';
+import {
+  useDeletePluginEntity,
+  useDeletePluginTask,
+  usePluginEntityDetail,
+  usePluginTask,
+  type PluginEntitySchema,
+  type PluginSchema,
+} from '@sep/api';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { useTaskHistoryByName } from '../../hooks';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
+import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
 
-interface PluginDetailPageProps {
+const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
+
+export interface PluginDetailPageProps {
   schema: PluginSchema;
   pluginName: string;
   mockTasks?: Record<string, unknown>[];
+  mockEntityItems?: Record<string, Record<string, unknown>[]>;
+  /** Hide edit/delete (browse-only mode for multi-entity plugins). */
+  browseOnly?: boolean;
+  /** Omit these keys from the auto-rendered detail section (e.g. nested relations shown elsewhere). */
+  suppressDetailKeys?: string[];
+  /** Extra content under the main detail card (e.g. child entity tables). */
+  renderEntityDetailChildren?: (args: {
+    entityName: string;
+    record: Record<string, unknown>;
+    schema: PluginSchema;
+    pathname: string;
+    pluginName: string;
+    mockEntityItems?: Record<string, Record<string, unknown>[]>;
+    allowListEntityDelete?: boolean;
+  }) => ReactNode;
+  /** Nested inventory: resolve ``entityName`` / ``id`` from named params (e.g. ``nodeId``). */
+  detailEntityName?: string;
+  detailIdParam?: string;
+  /** Optional callback that resolves a custom back/delete target from current pathname. */
+  resolveParentPath?: (pathname: string) => string | null;
+  /** When true, omit the header row (back button, ``{title} #{id}``, status chip, edit/delete). */
+  hideDetailChrome?: boolean;
+  /** When true, nested list tables may show row delete (inventory ``actions`` column). */
+  allowListEntityDelete?: boolean;
+}
+
+/** Screen title when the back/status row is hidden (browse-only multi-entity plugins). */
+function detailScreenHeading(
+  entityName: string | undefined,
+  entityDisplayName: string | undefined,
+): string | null {
+  if (!entityName) {
+    return null;
+  }
+  return `${entityDisplayName ?? entityName} detail`;
+}
+
+/** List URL for the current entity tab (path segment before ``:id``), e.g. ``/inventory/services``. */
+export function pathToEntityList(pathname: string, entityName: string): string {
+  const parts = pathname.split('/').filter(Boolean);
+  const idx = parts.lastIndexOf(entityName);
+  if (idx < 0) {
+    return '/';
+  }
+  return `/${parts.slice(0, idx + 1).join('/')}`;
+}
+
+function EntityDetailField({
+  label,
+  value,
+  highlightLanguage,
+}: {
+  label: string;
+  value: unknown;
+  highlightLanguage?: DetailSyntaxLanguage;
+}) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const syntaxFallback = (
+    <Skeleton variant="rectangular" height={120} sx={{ ...detailSyntaxBlockSx, mt: 0.5 }} />
+  );
+
+  if (highlightLanguage) {
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="caption" color="text.secondary">
+          {label}
+        </Typography>
+        <Suspense fallback={syntaxFallback}>
+          <DetailSyntaxHighlighter value={value} language={highlightLanguage} />
+        </Suspense>
+      </Box>
+    );
+  }
+
+  let display: React.ReactNode;
+  if (typeof value === 'boolean') {
+    display = value ? 'Yes' : 'No';
+  } else if (typeof value === 'object') {
+    display = (
+      <Suspense fallback={syntaxFallback}>
+        <DetailSyntaxHighlighter value={value} language="json" />
+      </Suspense>
+    );
+  } else {
+    display = String(value);
+  }
+
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      {typeof value === 'object' ? display : <Typography variant="body1">{display}</Typography>}
+    </Box>
+  );
 }
 
 // Fields hidden from the auto-rendered "extras" loop on the Overview tab.
@@ -67,38 +176,6 @@ const OVERVIEW_HIDDEN_FIELDS = new Set([
 
 function formatLabel(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function DetailField({ label, value }: { label: string; value: unknown }) {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-
-  let display: React.ReactNode;
-  if (typeof value === 'boolean') {
-    display = value ? 'Yes' : 'No';
-  } else if (typeof value === 'object') {
-    display = (
-      <Typography
-        component="pre"
-        variant="body2"
-        sx={{ fontFamily: "'Roboto Mono', monospace", whiteSpace: 'pre-wrap', m: 0 }}
-      >
-        {JSON.stringify(value, null, 2) as string}
-      </Typography>
-    );
-  } else {
-    display = String(value);
-  }
-
-  return (
-    <Box sx={{ mb: 2, '&:last-child': { mb: 0 } }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-        {label}
-      </Typography>
-      {typeof value === 'object' ? display : <Typography variant="body1">{display}</Typography>}
-    </Box>
-  );
 }
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -142,6 +219,38 @@ export function resolveTabFromSplat(splat: string | undefined): 'overview' | 'lo
   return splat?.replace(/\/+$/, '').startsWith('logs') ? 'logs' : 'overview';
 }
 
+function TaskOverviewDetailField({ label, value }: { label: string; value: unknown }) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  let display: React.ReactNode;
+  if (typeof value === 'boolean') {
+    display = value ? 'Yes' : 'No';
+  } else if (typeof value === 'object') {
+    display = (
+      <Typography
+        component="pre"
+        variant="body2"
+        sx={{ fontFamily: "'Roboto Mono', monospace", whiteSpace: 'pre-wrap', m: 0 }}
+      >
+        {JSON.stringify(value, null, 2) as string}
+      </Typography>
+    );
+  } else {
+    display = String(value);
+  }
+
+  return (
+    <Box sx={{ mb: 2, '&:last-child': { mb: 0 } }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+        {label}
+      </Typography>
+      {typeof value === 'object' ? display : <Typography variant="body1">{display}</Typography>}
+    </Box>
+  );
+}
+
 interface OverviewTabProps {
   schema: PluginSchema;
   task: Record<string, unknown>;
@@ -150,13 +259,13 @@ interface OverviewTabProps {
 function OverviewTab({ schema, task }: OverviewTabProps) {
   const execution = pickExecutionData(task);
   const connectivityWarning = task.connectivity_warning;
+  const columns = schema.list_view!.columns;
 
   // Extra fields beyond the schema's list_view columns, excluding internal
   // noise. Lets future plugin schemas surface fields without listing them
   // in `list_view.columns` (which is meant for the table view).
   const extraEntries = Object.entries(task).filter(
-    ([key]) =>
-      !schema.list_view.columns.some((c) => c.key === key) && !OVERVIEW_HIDDEN_FIELDS.has(key),
+    ([key]) => !columns.some((c) => c.key === key) && !OVERVIEW_HIDDEN_FIELDS.has(key),
   );
 
   return (
@@ -173,22 +282,24 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
         )}
 
       <SectionCard title="Task information">
-        {schema.list_view.columns.map((col) => (
-          <DetailField key={col.key} label={col.label} value={task[col.key]} />
+        {columns.map((col) => (
+          <TaskOverviewDetailField key={col.key} label={col.label} value={task[col.key]} />
         ))}
         {extraEntries.map(([key, value]) => (
-          <DetailField key={key} label={formatLabel(key)} value={value} />
+          <TaskOverviewDetailField key={key} label={formatLabel(key)} value={value} />
         ))}
       </SectionCard>
 
       {execution && (
         <SectionCard title="Execution">
           {execution.command !== undefined && (
-            <DetailField label="Command" value={execution.command} />
+            <TaskOverviewDetailField label="Command" value={execution.command} />
           )}
-          {execution.args !== undefined && <DetailField label="Args" value={execution.args} />}
+          {execution.args !== undefined && (
+            <TaskOverviewDetailField label="Args" value={execution.args} />
+          )}
           {execution.target !== undefined && (
-            <DetailField label="Target" value={execution.target} />
+            <TaskOverviewDetailField label="Target" value={execution.target} />
           )}
         </SectionCard>
       )}
@@ -350,16 +461,238 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
   );
 }
 
-export function PluginDetailPage({ schema, pluginName, mockTasks }: PluginDetailPageProps) {
-  const { id, '*': splat } = useParams<{ id: string; '*': string }>();
+export function PluginDetailPage({
+  schema,
+  pluginName,
+  mockTasks,
+  mockEntityItems,
+  browseOnly = false,
+  suppressDetailKeys = [],
+  renderEntityDetailChildren,
+  detailEntityName,
+  detailIdParam,
+  resolveParentPath,
+  hideDetailChrome = false,
+  allowListEntityDelete = false,
+}: PluginDetailPageProps) {
+  const params = useParams<Record<string, string | undefined>>();
+  const id = (detailIdParam && params[detailIdParam]) ?? params.id;
+  const entityName = detailEntityName ?? params.entityName;
+  const splat = params['*'];
   const navigate = useNavigate();
-  const { data: task, isLoading } = usePluginTask(pluginName, id, mockTasks);
+  const location = useLocation();
+  const entitySchema = useMemo(
+    () => schema.entities?.find((e: PluginEntitySchema) => e.name === entityName),
+    [schema.entities, entityName],
+  );
+  const multi = Boolean(schema.entities?.length && entityName && entitySchema);
 
-  // Derive the active tab from the splat (the path segment(s) after `:id`)
-  // rather than scanning the full pathname. Using the splat avoids a
-  // false-positive when the task itself is literally named `logs`
-  // (`/plugins/<name>/task/logs` would otherwise highlight the Logs tab
-  // while the inner `<Routes>` correctly renders Overview).
+  const customParentPath = useMemo(() => {
+    if (!resolveParentPath) {
+      return null;
+    }
+    return resolveParentPath(location.pathname);
+  }, [location.pathname, resolveParentPath]);
+
+  const taskQuery = usePluginTask(pluginName, id, mockTasks, { enabled: !multi && Boolean(id) });
+  const entityQuery = usePluginEntityDetail(
+    pluginName,
+    entityName ?? '',
+    id,
+    multi ? mockEntityItems?.[entityName!] : undefined,
+    { enabled: multi && Boolean(id) },
+  );
+
+  const { data: task, isLoading } = multi ? entityQuery : taskQuery;
+  const listView = multi ? entitySchema!.list_view : schema.list_view!;
+  const title = multi ? entitySchema!.display_name : schema.display_name;
+  const headingWhenChromeHidden = useMemo(
+    () =>
+      hideDetailChrome && multi
+        ? detailScreenHeading(entityName, entitySchema?.display_name)
+        : null,
+    [hideDetailChrome, multi, entityName, entitySchema?.display_name],
+  );
+
+  const deleteEntity = useDeletePluginEntity(
+    pluginName,
+    entityName ?? '',
+    multi ? mockEntityItems?.[entityName!] : undefined,
+  );
+
+  const [entityDeleteOpen, setEntityDeleteOpen] = useState(false);
+
+  const confirmEntityDelete = () => {
+    setEntityDeleteOpen(false);
+    if (!id || !multi) {
+      return;
+    }
+    deleteEntity.mutate(id, {
+      onSuccess: () =>
+        customParentPath
+          ? navigate(customParentPath)
+          : entityName
+            ? navigate(pathToEntityList(location.pathname, entityName))
+            : navigate('..', { relative: 'path' }),
+    });
+  };
+
+  if (multi) {
+    if (isLoading) {
+      return (
+        <Box>
+          {headingWhenChromeHidden ? (
+            <Typography component="h1" variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
+              {headingWhenChromeHidden}
+            </Typography>
+          ) : (
+            <Skeleton variant="text" width={300} height={40} />
+          )}
+          <Skeleton variant="rectangular" height={200} sx={{ mt: 2 }} />
+        </Box>
+      );
+    }
+
+    if (!task) {
+      return (
+        <Box>
+          {headingWhenChromeHidden ? (
+            <Typography component="h1" variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
+              {headingWhenChromeHidden}
+            </Typography>
+          ) : null}
+          <Typography variant="h5">Not found</Typography>
+        </Box>
+      );
+    }
+
+    const recordName =
+      typeof task.name === 'string' && task.name.trim()
+        ? task.name.trim()
+        : typeof task.name === 'number'
+          ? String(task.name)
+          : undefined;
+
+    return (
+      <Box>
+        <DeleteConfirmDialog
+          open={entityDeleteOpen}
+          onClose={() => setEntityDeleteOpen(false)}
+          onConfirm={confirmEntityDelete}
+          title={`Delete from ${schema.display_name}?`}
+          description={
+            recordName
+              ? `Permanently delete ${title} "${recordName}" (id ${id}) from ${schema.display_name}? This cannot be undone.`
+              : `Permanently delete ${title} (id ${id}) from ${schema.display_name}? This cannot be undone.`
+          }
+        />
+
+        {headingWhenChromeHidden ? (
+          <Typography component="h1" variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
+            {headingWhenChromeHidden}
+          </Typography>
+        ) : null}
+        {!hideDetailChrome && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, flexWrap: 'wrap' }}>
+            <IconButton
+              onClick={() =>
+                customParentPath
+                  ? navigate(customParentPath)
+                  : multi && entityName
+                    ? navigate(pathToEntityList(location.pathname, entityName))
+                    : navigate('..', { relative: 'path' })
+              }
+            >
+              <ArrowBackIcon />
+            </IconButton>
+            <Typography variant="h4">
+              {title} #{id}
+            </Typography>
+            {typeof task.status === 'string' && (
+              <Chip
+                label={task.status}
+                size="small"
+                color={
+                  task.status === 'completed' || task.status === 'success'
+                    ? 'success'
+                    : task.status === 'failed'
+                      ? 'error'
+                      : 'default'
+                }
+              />
+            )}
+            {multi && !browseOnly && (
+              <>
+                <Button
+                  component={Link}
+                  to="edit"
+                  relative="path"
+                  startIcon={<EditIcon />}
+                  variant="outlined"
+                  size="small"
+                >
+                  Edit
+                </Button>
+                <Button
+                  color="error"
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setEntityDeleteOpen(true)}
+                  disabled={deleteEntity.isPending}
+                >
+                  Delete
+                </Button>
+              </>
+            )}
+          </Box>
+        )}
+
+        <Paper sx={{ p: 3 }}>
+          {listView.columns
+            .filter((col) => col.format !== 'actions' && col.key !== '_actions')
+            .map((col) => (
+              <EntityDetailField
+                key={col.key}
+                highlightLanguage={entitySchema?.detail_highlights?.[col.key]}
+                label={col.label}
+                value={task[col.key]}
+              />
+            ))}
+
+          {Object.entries(task)
+            .filter(
+              ([key]) =>
+                !listView.columns.some((c) => c.key === key) &&
+                key !== 'id' &&
+                key !== '_actions' &&
+                !suppressDetailKeys.includes(key),
+            )
+            .map(([key, value]) => (
+              <EntityDetailField
+                key={key}
+                highlightLanguage={entitySchema?.detail_highlights?.[key]}
+                label={key}
+                value={value}
+              />
+            ))}
+        </Paper>
+
+        {multi &&
+          entityName &&
+          renderEntityDetailChildren &&
+          renderEntityDetailChildren({
+            entityName,
+            record: task as Record<string, unknown>,
+            schema,
+            pathname: location.pathname,
+            pluginName,
+            mockEntityItems,
+            allowListEntityDelete,
+          })}
+      </Box>
+    );
+  }
+
   const tabValue = resolveTabFromSplat(splat);
 
   if (isLoading) {

@@ -34,6 +34,9 @@ const AtwPlugin = lazy(() => import('@sep/plugin-atw').then((m) => ({ default: m
 const DipperPlugin = lazy(() =>
   import('@sep/plugin-dipper').then((m) => ({ default: m.DipperPlugin })),
 );
+const InventoryPlugin = lazy(() =>
+  import('@sep/inventory').then((m) => ({ default: m.InventoryPlugin })),
+);
 const SnippetsPlugin = lazy(() =>
   import('@sep/plugins-snippets').then((m) => ({ default: m.SnippetsPlugin })),
 );
@@ -55,7 +58,7 @@ export const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <DashboardPage /> },
-          { path: 'inventory', element: <PlaceholderPage /> },
+          { path: 'inventory/*', element: <InventoryPlugin /> },
           { path: 'tasks/*', element: <PlaceholderPage /> },
           { path: 'snippets/*', element: <SnippetsPlugin /> },
           { path: 'atw/*', element: <AtwPlugin /> },
@@ -65,6 +68,8 @@ export const router = createBrowserRouter([
           { path: 'schema-change/alters', element: <PlaceholderPage /> },
           // Checksums — schema-driven plugin (handles its own sub-routes)
           { path: 'plugins/checksums/*', element: <ChecksumsPlugin /> },
+          { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
+          { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
           { path: 'backups/mysql', element: <PlaceholderPage /> },
           { path: 'backups/mongodb', element: <PlaceholderPage /> },
           { path: 'backups/postgresql', element: <PlaceholderPage /> },

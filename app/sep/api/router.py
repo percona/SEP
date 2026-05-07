@@ -36,6 +36,7 @@ from app.sep.deps import IsApiAuthenticated
 from app.sep.plugins.atw.api_routes import router as atw_api_router
 from app.sep.plugins.checksums.api_routes import router as checksums_api_router
 from app.sep.plugins.dipper.api_routes import router as dipper_api_router
+from app.sep.plugins.inventory.api_routes import router as inventory_api_router
 from app.sep.plugins.snippets.api_routes import router as snippets_api_router
 
 plugins_router = APIRouter(prefix="/plugins")
@@ -44,6 +45,9 @@ plugins_router.include_router(
     checksums_api_router, prefix="/checksums", tags=["checksums"]
 )
 plugins_router.include_router(dipper_api_router, prefix="/dipper", tags=["dipper"])
+plugins_router.include_router(
+    inventory_api_router, prefix="/inventory", tags=["inventory"]
+)
 plugins_router.include_router(
     snippets_api_router, prefix="/snippets", tags=["snippets"]
 )

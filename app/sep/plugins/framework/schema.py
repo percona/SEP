@@ -25,6 +25,7 @@ __all__ = [
     "Column",
     "ColumnFormat",
     "DateTimeField",
+    "DetailHighlightLanguage",
     "FileField",
     "FloatField",
     "FormSection",
@@ -32,6 +33,7 @@ __all__ = [
     "IntegerField",
     "ListView",
     "MultiChoiceField",
+    "PluginEntitySchema",
     "PluginSchema",
     "SchemaBaseModel",
     "SchemaField",
@@ -104,6 +106,9 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     :vartype RELATIVE: str
     :cvar CODE: Render the column value in a monospaced code font.
     :vartype CODE: str
+    :cvar ACTIONS: Row actions (for example delete); not bound to row data.
+        Use with a synthetic column key such as ``_actions``.
+    :vartype ACTIONS: str
     """
 
     TEXT = auto()
@@ -112,6 +117,14 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     DATE = auto()
     RELATIVE = auto()
     CODE = auto()
+    ACTIONS = auto()
+
+
+class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
+    """Enumerate supported syntax highlighters for detail fields."""
+
+    SQL = auto()
+    JSON = auto()
 
 
 class BaseField(SchemaBaseModel):
@@ -696,6 +709,67 @@ def _collect_fail_rule_errors(
         )
 
 
+class PluginEntitySchema(SchemaBaseModel):
+    """Describe one CRUD entity for a multi-entity schema-driven plugin.
+
+    Used when a plugin exposes several independent resources (for example
+    inventory nodes, services, schemas, and tables), each with its own list
+    view and create/edit forms. Task-style plugins omit ``entities`` and use
+    the root ``forms`` / ``list_view`` instead.
+
+    :param name: URL segment and API key for the entity (for example ``nodes``).
+    :type name: NonEmptyStr
+    :param display_name: Human-readable title for this entity's screens.
+    :type display_name: NonEmptyStr
+    :param description: Optional helper text for this entity. Defaults to
+        ``None``.
+    :type description: NonEmptyStr | None
+    :param forms: Form sections for create (and edit when the UI supports it).
+    :type forms: list[FormSection]
+    :param list_view: Column configuration for this entity's list table.
+    :type list_view: ListView
+    :param detail_highlights: Optional per-field syntax highlighter hints for
+        detail pages. Keys are field names; values are highlighting languages.
+        Defaults to an empty mapping.
+    :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
+    :param cardinality_rules: Optional entity-wide cross-field cardinality
+        constraints. Defaults to ``None``.
+    :type cardinality_rules: list[CardinalityRule] | None
+    :param fail_when: Optional entity-wide predicate-only invariants.
+        Defaults to ``None``.
+    :type fail_when: list[FailRule] | None
+    """
+
+    name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
+    display_name: NonEmptyStr
+    description: NonEmptyStr | None = None
+    forms: list[FormSection]
+    list_view: ListView
+    detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage] = Field(
+        default_factory=dict
+    )
+    cardinality_rules: list[CardinalityRule] | None = None
+    fail_when: list[FailRule] | None = None
+
+    @model_validator(mode="after")
+    def _validate_unique_field_names(self) -> Self:
+        """Ensure field ``name`` values are unique within this entity's forms."""
+        seen = set()
+        duplicates = []
+        for section in self.forms:
+            for field in section.fields:
+                if field.name in seen:
+                    duplicates.append(field.name)
+                else:
+                    seen.add(field.name)
+        if duplicates:
+            raise ValueError(
+                f"duplicate field name(s) across form sections: "
+                f"{sorted(set(duplicates))}"
+            )
+        return self
+
+
 class PluginSchema(SchemaBaseModel):
     """Represent a plugin's complete schema: form sections, list view, capabilities.
 
@@ -710,19 +784,25 @@ class PluginSchema(SchemaBaseModel):
     :param task_type: Optional task-type identifier used when creating tasks
         via the shared task API. Defaults to ``None``.
     :type task_type: NonEmptyStr | None
-    :param forms: The ordered list of form sections the plugin renders when
-        creating a task.
+    :param forms: Form sections for single-entity / task plugins. Defaults to
+        an empty list when ``entities`` is used instead.
     :type forms: list[FormSection]
     :param capabilities: Optional plugin-level feature flags. Defaults to
         ``None``.
     :type capabilities: Capabilities | None
-    :param list_view: The list-view configuration for the plugin.
-    :type list_view: ListView
-    :param cardinality_rules: Optional schema-wide cross-field cardinality
-        constraints. Defaults to ``None``.
-    :type cardinality_rules: list[CardinalityRule] | None
-    :param fail_when: Optional schema-wide predicate-only invariants.
+    :param list_view: List-view configuration when ``entities`` is unset
+        (single-entity / task plugins). Ignored when ``entities`` is set.
+    :type list_view: ListView | None
+    :param entities: Optional list of CRUD entities for multi-resource plugins.
+        When non-empty, the React shell renders one list/create/detail flow
+        per entity. Defaults to ``None`` (legacy single-entity mode).
+    :type entities: list[PluginEntitySchema] | None
+    :param cardinality_rules: Optional plugin-wide cross-field cardinality
+        constraints (task-style plugins only; ignored when ``entities`` is set).
         Defaults to ``None``.
+    :type cardinality_rules: list[CardinalityRule] | None
+    :param fail_when: Optional plugin-wide predicate-only invariants (task-style
+        plugins only; ignored when ``entities`` is set). Defaults to ``None``.
     :type fail_when: list[FailRule] | None
     """
 
@@ -730,21 +810,31 @@ class PluginSchema(SchemaBaseModel):
     display_name: NonEmptyStr
     description: NonEmptyStr | None = None
     task_type: NonEmptyStr | None = None
-    forms: list[FormSection]
+    forms: list[FormSection] = Field(default_factory=list)
     capabilities: Capabilities | None = None
-    list_view: ListView
+    list_view: ListView | None = None
+    entities: list[PluginEntitySchema] | None = None
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
-        """Ensure every field across every section has a unique ``name``.
+        """Ensure every field name is unique within the active form set.
+
+        When ``entities`` is set, each entity validates its own ``forms``.
+        Otherwise root ``forms`` are validated (task-style plugins).
 
         :return: The validated plugin schema instance.
         :rtype: PluginSchema
-        :raises ValueError: If any field ``name`` is reused across form
-            sections.
+        :raises ValueError: If duplicate field names appear in the same form
+            set, or if neither ``entities`` nor ``list_view`` is usable.
         """
+        if self.entities:
+            return self
+        if self.list_view is None:
+            raise ValueError(
+                "list_view is required when entities is not set (task-style plugins)"
+            )
         seen = set()
         duplicates = []
         for section in self.forms:
@@ -766,39 +856,76 @@ class PluginSchema(SchemaBaseModel):
 
         Performs Tier-2 validation: walks every BaseField ``requires`` /
         ``forbidden`` rule, every FormSection ``cardinality_rules`` /
-        ``fail_when`` rule, and every PluginSchema-scope rule. For each, it
-        collects the predicate's referenced fields plus the rule's target
-        ``fields`` / ``error_fields`` / implicit-self target (for BaseField
-        gates) and verifies each name resolves to a known field declared in
-        the schema. Hyphenated field names are also rejected here since they
-        cannot resolve to Python attributes via ``getattr`` at runtime.
+        ``fail_when`` rule, and every PluginSchema- or PluginEntitySchema-scope
+        rule. For each, it collects the predicate's referenced fields plus the
+        rule's target ``fields`` / ``error_fields`` / implicit-self target (for
+        BaseField gates) and verifies each name resolves to a known field
+        declared in the schema. Hyphenated field names are also rejected here
+        since they cannot resolve to Python attributes via ``getattr`` at
+        runtime.
 
         :return: The validated plugin schema instance.
         :rtype: PluginSchema
         :raises ValueError: If any rule references a field that does not
             exist in the schema, or whose name contains a hyphen.
         """
-        declared_field_names = {
-            field.name for section in self.forms for field in section.fields
-        }
-        errors = []
-        for section_index, section in enumerate(self.forms):
-            section_label = f"FormSection[{section_index}] {section.title!r}"
-            for field in section.fields:
-                _collect_basefield_gate_errors(field, declared_field_names, errors)
+        errors: list[str] = []
+        if self.entities:
+            for entity_index, entity in enumerate(self.entities):
+                declared_field_names = {
+                    field.name for section in entity.forms for field in section.fields
+                }
+                entity_label = f"PluginEntitySchema[{entity_index}] {entity.name!r}"
+                for section_index, section in enumerate(entity.forms):
+                    section_label = (
+                        f"{entity_label} FormSection[{section_index}] {section.title!r}"
+                    )
+                    for field in section.fields:
+                        _collect_basefield_gate_errors(
+                            field, declared_field_names, errors
+                        )
+                    _collect_cardinality_rule_errors(
+                        section.cardinality_rules,
+                        section_label,
+                        declared_field_names,
+                        errors,
+                    )
+                    _collect_fail_rule_errors(
+                        section.fail_when, section_label, declared_field_names, errors
+                    )
+                _collect_cardinality_rule_errors(
+                    entity.cardinality_rules,
+                    entity_label,
+                    declared_field_names,
+                    errors,
+                )
+                _collect_fail_rule_errors(
+                    entity.fail_when, entity_label, declared_field_names, errors
+                )
+        else:
+            declared_field_names = {
+                field.name for section in self.forms for field in section.fields
+            }
+            for section_index, section in enumerate(self.forms):
+                section_label = f"FormSection[{section_index}] {section.title!r}"
+                for field in section.fields:
+                    _collect_basefield_gate_errors(field, declared_field_names, errors)
+                _collect_cardinality_rule_errors(
+                    section.cardinality_rules,
+                    section_label,
+                    declared_field_names,
+                    errors,
+                )
+                _collect_fail_rule_errors(
+                    section.fail_when, section_label, declared_field_names, errors
+                )
+            schema_label = f"PluginSchema {self.name!r}"
             _collect_cardinality_rule_errors(
-                section.cardinality_rules, section_label, declared_field_names, errors
+                self.cardinality_rules, schema_label, declared_field_names, errors
             )
             _collect_fail_rule_errors(
-                section.fail_when, section_label, declared_field_names, errors
+                self.fail_when, schema_label, declared_field_names, errors
             )
-        schema_label = f"PluginSchema {self.name!r}"
-        _collect_cardinality_rule_errors(
-            self.cardinality_rules, schema_label, declared_field_names, errors
-        )
-        _collect_fail_rule_errors(
-            self.fail_when, schema_label, declared_field_names, errors
-        )
         if errors:
             raise ValueError("; ".join(errors))
         return self

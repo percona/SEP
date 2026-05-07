@@ -63,12 +63,17 @@ class TestApiRouterComposition:
         assert all("checksums" in tags for tags in checksums_route_tags)
 
     def test_plugins_router_included_via_api_router(self) -> None:
-        """Assert every checksums route resolves on ``sep_app`` under ``/api/plugins/``."""
+        """Assert checksums and inventory plugin schema routes resolve on ``sep_app``.
+
+        Both plugins mount under ``/api/plugins/{name}/schema`` on the composed
+        application router.
+        """
         api_plugin_paths = {
             route.path for route in sep_app.routes if hasattr(route, "path")
         }
         assert "/api/plugins/atw/schema" in api_plugin_paths
         assert "/api/plugins/checksums/schema" in api_plugin_paths
+        assert "/api/plugins/inventory/schema" in api_plugin_paths
 
 
 class TestApiRouterAuthenticated:
