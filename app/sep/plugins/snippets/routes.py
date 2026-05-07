@@ -25,7 +25,6 @@ yet expose.
 """
 
 import logging
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request, status
@@ -49,6 +48,7 @@ from app.sep.middleware import messages
 from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.snippets.deps import (
     ApprovedSnippet,
+    check_snippet_batch_existence,
     ExecutableSnippet,
     SnippetBatchApproveForm,
     SnippetExecutionRequestMeta,
@@ -145,7 +145,7 @@ def _get_snippet_success_redirect(
     )
 
 
-@router.post("/{snippet_filename}/approve")
+@router.post("/{snippet_filename}/approve", dependencies=[IsCsrfValidated])
 async def snippets_approve(
     request: Request, user: AdminUser, snippet: UnapprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
@@ -155,7 +155,7 @@ async def snippets_approve(
     return _get_snippet_success_redirect(request, user, snippet, "Snippet approved")
 
 
-@router.post("/{snippet_filename}/remove-approval")
+@router.post("/{snippet_filename}/remove-approval", dependencies=[IsCsrfValidated])
 async def snippets_remove_approval(
     request: Request, user: AdminUser, snippet: ApprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
@@ -208,23 +208,20 @@ async def snippets_approve_batch(
         request.url_for("snippets_index"), status_code=status.HTTP_303_SEE_OTHER
     )
     filenames = body.filenames
-    snippets = await SnippetManager.list(session, col(Snippet.filename).in_(filenames))
-    found = {snippet.filename for snippet in snippets}
-    missing_in_db = sorted(set(filenames) - found)
-    if missing_in_db:
-        messages.error(request, f"Unknown snippet(s): {', '.join(missing_in_db)}")
+    existence = await check_snippet_batch_existence(session, filenames)
+    if existence.missing_in_db:
+        messages.error(
+            request, f"Unknown snippet(s): {', '.join(existence.missing_in_db)}"
+        )
         return index_redirect
-    missing_on_disk = sorted(
-        snippet.filename for snippet in snippets if not Path(snippet).is_file()
-    )
-    if missing_on_disk:
+    if existence.missing_on_disk:
         messages.error(
             request,
-            f"Snippet file(s) missing on disk: {', '.join(missing_on_disk)}",
+            f"Snippet file(s) missing on disk: {', '.join(existence.missing_on_disk)}",
         )
         return index_redirect
     already_approved = sorted(
-        snippet.filename for snippet in snippets if snippet.is_approved
+        snippet.filename for snippet in existence.snippets if snippet.is_approved
     )
     if already_approved:
         messages.error(request, f"Already approved: {', '.join(already_approved)}")
