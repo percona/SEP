@@ -256,6 +256,29 @@ IsAdminDep = Depends(get_current_admin)
 AdminUser = Annotated[User, IsAdminDep]
 
 
+async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> User:
+    """Return the authenticated API admin user.
+
+    Mirror :func:`get_current_admin` but ride on the API auth path
+    (:func:`get_api_authenticated_user`) so failures surface as 401 / 403
+    JSON responses rather than the cookie-based 303 redirect to the login
+    page.
+
+    :param api_user: The current API-authenticated user.
+    :type api_user: ApiCurrentUser
+    :return: The authenticated admin user.
+    :rtype: User
+    :raises HTTPForbiddenException: If the user is not an admin.
+    """
+    if not api_user.is_admin:
+        raise HTTPForbiddenException
+    return api_user
+
+
+IsApiAdmin = Depends(get_api_authenticated_admin)
+ApiAdminUser = Annotated[User, IsApiAdmin]
+
+
 async def redirect_if_user_is_authenticated(request: Request) -> None:
     """Redirect authenticated users to homepage.
 

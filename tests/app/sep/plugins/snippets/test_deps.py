@@ -20,11 +20,16 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import status
 
+import app.sep.plugins.snippets.deps as snippets_deps
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.exceptions import HTTPBadRequestException
 from app.sep.plugins.snippets.deps import (
     build_snippet_execution_meta,
+    check_snippet_batch_existence,
     get_executable_snippet_for_api,
     get_snippet_execution_request_meta,
+    SnippetBatchExistenceResult,
+    validate_snippet_filename,
 )
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import (
@@ -104,3 +109,122 @@ async def test_get_executable_snippet_for_api_raises_403_for_uninterpretable(
 
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
     assert "cannot be executed" in str(exc_info.value.detail)
+
+
+class TestCheckSnippetBatchExistence:
+    """Tests for ``check_snippet_batch_existence`` precheck helper."""
+
+    @pytest.mark.asyncio
+    async def test_all_present_returns_empty_result(self, session, create_snippet):
+        """All filenames in DB and on disk → empty error arrays."""
+        await create_snippet("a.sh")
+        await create_snippet("b.sh")
+
+        result = await check_snippet_batch_existence(session, ["a.sh", "b.sh"])
+
+        assert isinstance(result, SnippetBatchExistenceResult)
+        assert result.missing_in_db == []
+        assert result.missing_on_disk == []
+        assert result.has_errors is False
+        assert {s.filename for s in result.snippets} == {"a.sh", "b.sh"}
+
+    @pytest.mark.asyncio
+    async def test_missing_in_db_listed(self, session, create_snippet):
+        """A filename absent from the DB is listed in ``missing_in_db``."""
+        await create_snippet("a.sh")
+
+        result = await check_snippet_batch_existence(session, ["a.sh", "ghost.sh"])
+
+        assert result.missing_in_db == ["ghost.sh"]
+        assert result.missing_on_disk == []
+        assert result.has_errors is True
+
+    @pytest.mark.asyncio
+    async def test_missing_on_disk_listed(self, session, create_snippet):
+        """A row whose file is absent from disk is listed in ``missing_on_disk``."""
+        await create_snippet("a.sh", create_file=True)
+        await create_snippet("b.sh", create_file=False)
+
+        result = await check_snippet_batch_existence(session, ["a.sh", "b.sh"])
+
+        assert result.missing_in_db == []
+        assert result.missing_on_disk == ["b.sh"]
+        assert result.has_errors is True
+
+    @pytest.mark.asyncio
+    async def test_both_categories_populated(self, session, create_snippet):
+        """Both error arrays populate when the input mixes the two failures."""
+        await create_snippet("on-disk.sh", create_file=True)
+        await create_snippet("missing-file.sh", create_file=False)
+
+        result = await check_snippet_batch_existence(
+            session, ["on-disk.sh", "missing-file.sh", "ghost.sh"]
+        )
+
+        assert result.missing_in_db == ["ghost.sh"]
+        assert result.missing_on_disk == ["missing-file.sh"]
+        assert result.has_errors is True
+
+    @pytest.mark.asyncio
+    async def test_results_are_sorted(self, session, create_snippet):
+        """Both arrays are sorted alphabetically for stable error rendering."""
+        result = await check_snippet_batch_existence(session, ["z.sh", "a.sh"])
+
+        assert result.missing_in_db == ["a.sh", "z.sh"]
+
+
+class TestValidateSnippetFilename:
+    """Unit tests for the ``_validate_snippet_filename`` guard."""
+
+    def test_uses_built_in_filename_checks_without_regex_sentinel(self):
+        """Filename validation is implemented with built-ins, not a regex sentinel."""
+        assert not hasattr(snippets_deps, "_SAFE_FILENAME_RE")
+
+    @pytest.mark.parametrize(
+        "safe",
+        [
+            "hello.sh",
+            "my-script.sh",
+            "my_script.sh",
+            "script_v2.sh",
+            "check.py",
+            "run.rb",
+            "audit.sql",
+            # safe subdirectory paths
+            "sub/dir.sh",
+            "team/check.sh",
+            "v2/scripts/run.py",
+        ],
+    )
+    def test_accepts_valid_filenames(self, safe):
+        """Safe filenames pass without raising."""
+        validate_snippet_filename(safe)  # must not raise
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "/tmp/evil.sh",
+            "C:\\tmp\\evil.sh",
+            "\\server\\share\\evil.sh",
+            "C:evil.sh",
+            "../evil.sh",
+            "../../etc/passwd",
+            "./relative.sh",
+            ".hidden.sh",
+            "back\\slash.sh",
+            "no-extension",
+            "bad name.sh",
+            "semi;colon.sh",
+            "ümlaut.sh",
+            "",
+            "sub//double.sh",
+            "sub/no-ext",
+            "sub/.hidden.sh",
+            "sub/../escape.sh",
+        ],
+    )
+    def test_rejects_unsafe_filenames(self, bad):
+        """Traversal, hidden-file, separator, and extension-less names all raise 400."""
+        with pytest.raises(HTTPBadRequestException) as exc_info:
+            validate_snippet_filename(bad)
+        assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
