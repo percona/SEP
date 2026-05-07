@@ -359,6 +359,17 @@ async def check_service_connectivity(
         return redirect
     try:
         executor_hosts: dict[str, str] = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        logger.warning(
+            "Tasks API error fetching executor hosts for service %s: %s",
+            service.id,
+            exc.detail,
+        )
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: {exc.detail}",
+        )
+        return redirect
     except Exception:
         logger.exception(
             "Failed to fetch executor hosts for connectivity check on service %s",
