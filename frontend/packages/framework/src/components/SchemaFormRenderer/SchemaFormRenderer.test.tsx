@@ -825,6 +825,154 @@ describe('SchemaFormRenderer — cardinality_rules', () => {
   });
 });
 
+// ── fail_when rules ───────────────────────────────────────────────────────
+
+describe('SchemaFormRenderer — fail_when', () => {
+  it('shows a violation banner when the fail_when predicate fires', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            fail_when: [
+              {
+                fail_when: { truthy: 'flag' },
+                error_fields: ['flag'],
+                message: 'Flag must not be set.',
+              },
+            ],
+            fields: [{ type: 'bool', name: 'flag', label: 'Flag' }],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    // flag=false at mount → predicate inactive → no banner
+    expect(screen.queryByText('Flag must not be set.')).toBeNull();
+
+    // flip flag → predicate fires → banner appears
+    await user.click(screen.getByLabelText('Flag'));
+    expect(await screen.findByText('Flag must not be set.')).toBeInTheDocument();
+  });
+
+  it('clears the banner when the predicate stops firing', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            fail_when: [
+              {
+                fail_when: { truthy: 'flag' },
+                error_fields: ['flag'],
+                message: 'Flag must not be set.',
+              },
+            ],
+            fields: [{ type: 'bool', name: 'flag', label: 'Flag' }],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Flag'));
+    expect(await screen.findByText('Flag must not be set.')).toBeInTheDocument();
+
+    // flip back → predicate inactive → banner gone
+    await user.click(screen.getByLabelText('Flag'));
+    await waitFor(() =>
+      expect(screen.queryByText('Flag must not be set.')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('blocks submission when a fail_when rule is active', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            fail_when: [
+              {
+                fail_when: { truthy: 'flag' },
+                error_fields: ['flag'],
+                message: 'Blocked.',
+              },
+            ],
+            fields: [{ type: 'bool', name: 'flag', label: 'Flag' }],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Flag'));
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('uses a default message when none is provided', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            fail_when: [{ fail_when: { truthy: 'x' }, error_fields: [] }],
+            fields: [{ type: 'bool', name: 'x', label: 'X' }],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('X'));
+    expect(
+      await screen.findByText('This combination of values is not allowed.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows both cardinality and fail_when violations together', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1, message: 'Need at least one.' }],
+            fail_when: [
+              {
+                fail_when: { all_present: ['a', 'b'] },
+                error_fields: ['a', 'b'],
+                message: 'Cannot have both.',
+              },
+            ],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    // Both empty → cardinality fires, fail_when inactive
+    expect(await screen.findByText('Need at least one.')).toBeInTheDocument();
+    expect(screen.queryByText('Cannot have both.')).toBeNull();
+
+    // Fill both → cardinality satisfied, fail_when fires
+    await user.type(screen.getByLabelText('A'), 'x');
+    await user.type(screen.getByLabelText('B'), 'y');
+    await waitFor(() => expect(screen.queryByText('Need at least one.')).not.toBeInTheDocument());
+    expect(await screen.findByText('Cannot have both.')).toBeInTheDocument();
+  });
+});
+
 // ── Conditional required (requires gates) ─────────────────────────────────
 
 describe('SchemaFormRenderer — conditional required', () => {

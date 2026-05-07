@@ -24,7 +24,8 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { FieldRenderer } from './fields';
 import { useConditionalField } from './hooks/useConditionalField';
-import { useCardinalityRules, type CardinalityViolation } from './hooks/useCardinalityRules';
+import { useCardinalityRules } from './hooks/useCardinalityRules';
+import { useFailRules } from './hooks/useFailRules';
 import { coerceFormValues } from './utils/validationMapper';
 import type { FormSection, PluginField } from './types';
 
@@ -64,7 +65,8 @@ const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { fie
   // to register(). RHF's register() is idempotent — re-calling it on each
   // render updates the validation rules in place, so the required constraint
   // stays in sync with gate state without a separate validate callback.
-  const resolvedField = isRequired !== field.required ? { ...field, required: isRequired } : field;
+  const resolvedField =
+    Boolean(field.required) !== isRequired ? { ...field, required: isRequired } : field;
 
   return (
     <Box sx={{ mb: 2 }}>
@@ -76,7 +78,7 @@ const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { fie
 interface SectionRendererProps {
   section: FormSection;
   idx: number;
-  violations: CardinalityViolation[];
+  violations: Array<{ message: string }>;
 }
 
 const SectionRenderer = memo(function SectionRenderer({
@@ -127,13 +129,21 @@ function SchemaFormBody({
 }: SchemaFormRendererProps) {
   const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
   const allFields = useMemo(() => flattenFields(sections), [sections]);
-  const violationsPerSection = useCardinalityRules(sections);
+  const cardinalityViolations = useCardinalityRules(sections);
+  const failViolations = useFailRules(sections);
 
-  const hasCardinalityViolations = violationsPerSection.some((vs) => vs.length > 0);
+  // Merge cardinality and fail violations per section into a flat list for SectionRenderer.
+  const violationsPerSection = useMemo(
+    () =>
+      sections.map((_, i) => [...(cardinalityViolations[i] ?? []), ...(failViolations[i] ?? [])]),
+    [sections, cardinalityViolations, failViolations],
+  );
+
+  const hasSectionViolations = violationsPerSection.some((vs) => vs.length > 0);
   const hasInlineErrors = Object.keys(formState.errors).length > 0;
 
   const handleFormSubmit: SubmitHandler<Record<string, unknown>> = (values) => {
-    if (hasCardinalityViolations) {
+    if (hasSectionViolations) {
       return;
     }
     onSubmit(coerceFormValues(values, allFields));

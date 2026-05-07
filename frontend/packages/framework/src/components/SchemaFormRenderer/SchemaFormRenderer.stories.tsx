@@ -307,6 +307,82 @@ export const ArchivesSwapDrop: Story = {
 };
 
 /**
+ * Combined end-to-end story covering all three section-level rule primitives
+ * in a single realistic archives-like schema:
+ *
+ *  - cardinality_rule:  source_db_id XOR source_table_id (exactly one)
+ *  - fail_when:         SWAP_DROP mode is incompatible with table-level source
+ *  - forbidden + requires on `where`: hidden when swap_drop=1, required otherwise
+ *
+ * This is the "combined 5-validator" shape referenced in SEP-1077 AC #4 —
+ * intended as living documentation for plugin authors migrating to Wave 2.
+ */
+export const ArchivesCombined: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Archives — full rule set',
+        description:
+          'Fill exactly one source (DB or Table). Set swap_drop and configure the WHERE clause.',
+        cardinality_rules: [
+          {
+            fields: ['source_db_id', 'source_table_id'],
+            min: 1,
+            max: 1,
+            message: 'Specify exactly one source: either DB or Table, not both.',
+          },
+        ],
+        fail_when: [
+          {
+            fail_when: {
+              all: [{ equals: { swap_drop: 1 } }, { truthy: 'source_table_id' }],
+            },
+            error_fields: ['swap_drop', 'source_table_id'],
+            message: 'SWAP_DROP mode (swap_drop=1) cannot be combined with a table-level source.',
+          },
+        ],
+        fields: [
+          {
+            type: 'string',
+            name: 'source_db_id',
+            label: 'Source DB',
+            description: 'Archive from an entire database.',
+          },
+          {
+            type: 'string',
+            name: 'source_table_id',
+            label: 'Source Table',
+            description: 'Archive from a single table.',
+          },
+          {
+            type: 'integer',
+            name: 'swap_drop',
+            label: 'Swap Drop',
+            required: true,
+            ge: 0,
+            le: 2,
+            description: '0 = no swap, 1 = SWAP_DROP (no WHERE), 2 = SWAP_ARCHIVE_DROP',
+          },
+          {
+            type: 'string',
+            name: 'where',
+            label: 'WHERE Condition',
+            description: 'SQL WHERE clause selecting rows to purge (e.g. id < 1000).',
+            forbidden: [{ when: { equals: { swap_drop: 1 } } }],
+            requires: [{ when: { not_equals: { swap_drop: 1 } } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run archive',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/**
  * Mirrors the pt-archiver source selection: exactly one of source_db_id or
  * source_table_id must be filled (XOR / exactly-one cardinality rule).
  * The error banner appears immediately when both are filled or both are empty.

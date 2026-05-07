@@ -23,5 +23,7 @@ export { useConditionalField } from './hooks/useConditionalField';
 export type { ConditionalFieldState } from './hooks/useConditionalField';
 export { useCardinalityRules } from './hooks/useCardinalityRules';
 export type { CardinalityViolation } from './hooks/useCardinalityRules';
+export { useFailRules } from './hooks/useFailRules';
+export type { FailViolation } from './hooks/useFailRules';
 export { buildValidationRules, coerceFormValues } from './utils/validationMapper';
 export { evaluatePredicate } from './utils/predicateEvaluator';

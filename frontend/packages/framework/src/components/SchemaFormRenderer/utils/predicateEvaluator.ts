@@ -185,8 +185,11 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
     case 'any':
       return (operand as Predicate[]).some((p) => evaluatePredicate(p, values));
     case 'xor': {
-      // n-ary XOR: true when exactly one operand evaluates to true.
-      // Subsumes binary XOR and handles any arity the BE may emit.
+      // BE Xor is binary-only by design (rules.py always emits exactly 2 children).
+      // The "exactly one truthy" check is equivalent to binary parity for arity 2.
+      // For arity >= 3 these diverge: binary parity = odd count truthy, exactly-one
+      // = count === 1. If BE ever extends xor to n-ary it would use parity semantics,
+      // so a new `exactly_one_of` operator should be introduced instead of reusing xor.
       const preds = operand as Predicate[];
       if (preds.length === 0) {
         return false;
