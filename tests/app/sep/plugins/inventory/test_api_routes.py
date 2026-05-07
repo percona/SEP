@@ -108,7 +108,7 @@ class TestInventoryGateway:
                 "type": "mysql",
             },
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_inventory_api_dep.post.assert_not_called()
 
     def test_create_schema_requires_service_id(
@@ -119,7 +119,7 @@ class TestInventoryGateway:
             "/api/plugins/inventory/schemas/",
             json={"name": "db1"},
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     @pytest.mark.parametrize(
         ("raw_content", "content_type"),
@@ -142,7 +142,7 @@ class TestInventoryGateway:
             content=raw_content,
             headers={"Content-Type": content_type},
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert response.json()["detail"] == "JSON object body required"
         mock_inventory_api_dep.post.assert_not_called()
 

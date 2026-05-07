@@ -314,7 +314,7 @@ def test_inventory_service_create_path_raises_422_when_parent_id_missing():
     """Ensure nested creates require the parent id field in the JSON body."""
     with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
         inventory_service_create_path("services", {"name": "x", "type": "mysql"})
-    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 @pytest.mark.parametrize(
@@ -351,7 +351,7 @@ def test_inventory_service_create_path_raises_422_for_invalid_parent_id(entity, 
     """Ensure malformed parent ids raise HTTP 422 (never bare ``ValueError``)."""
     with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
         inventory_service_create_path(entity, body)
-    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 @pytest.mark.parametrize(
@@ -370,7 +370,7 @@ async def test_inventory_plugin_json_object_body_raises_422_on_decode_errors(
     request.json = AsyncMock(side_effect=side_effect)
     with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
         await inventory_plugin_json_object_body(request)
-    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     assert excinfo.value.detail == "JSON object body required"
 
 
@@ -381,7 +381,7 @@ async def test_inventory_plugin_json_object_body_raises_422_when_not_object() ->
     request.json = AsyncMock(return_value=[])
     with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
         await inventory_plugin_json_object_body(request)
-    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 @pytest.mark.asyncio
