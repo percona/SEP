@@ -15,18 +15,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
-export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
-export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
-export type { AlertConfig } from './useAlertConfig';
+import Prism from 'prismjs';
+import type { PrismLib } from 'prism-react-renderer';
+import 'prismjs/components/prism-sql.js';
+import 'prismjs/components/prism-json.js';
+
+/** Prism instance with SQL + JSON grammars for ``Highlight`` (``prism-react-renderer``). */
+export const detailPrism: PrismLib = Prism as unknown as PrismLib;

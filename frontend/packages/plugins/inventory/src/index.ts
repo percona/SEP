@@ -15,18 +15,21 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
+/**
+ * @sep/inventory — Inventory plugin entry point.
+ *
+ * Exports:
+ * - InventoryPlugin: inventory-specific nested routes and drill-down UI.
+ */
+
+export { InventoryPlugin } from './InventoryPlugin';
+export type { InventoryPluginProps } from './InventoryPlugin';
+export { InventoryBreadcrumbs, renderInventoryDetailChildren } from './InventoryPluginNavigation';
 export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
-export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
-export type { AlertConfig } from './useAlertConfig';
+  inventoryMountPrefix,
+  parseFlatInventoryRoute,
+  parseNestedInventoryPath,
+  parseInventoryRoute,
+  pathThroughPairIndex,
+  pathToNestedInventoryParent,
+} from './inventoryNestedPaths';
