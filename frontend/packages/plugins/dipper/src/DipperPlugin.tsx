@@ -192,7 +192,7 @@ export function DipperPlugin() {
       ) : (
         <SchemaFormRenderer
           key={`${serviceId}-${collectorType}`}
-          sections={formSchema.data.forms}
+          sections={formSchema.data.forms ?? []}
           onSubmit={handleSubmit}
           submitLabel="Execute"
           loading={execution.isPending}

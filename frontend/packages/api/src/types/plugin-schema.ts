@@ -224,7 +224,7 @@ export interface ListColumn {
   key: string;
   label: string;
   sortable?: boolean;
-  format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code';
+  format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions';
 }
 
 export interface ListView {
@@ -241,6 +241,19 @@ export interface PluginCapabilities {
   scheduling?: boolean;
 }
 
+// ── Multi-entity plugins (inventory) ────────────────────────────────────
+
+/** One CRUD resource when a plugin exposes several (nodes, services, …). */
+export interface PluginEntitySchema {
+  name: string;
+  display_name: string;
+  description?: string;
+  forms: FormSection[];
+  list_view: ListView;
+  /** Optional detail-view syntax hints keyed by field name. */
+  detail_highlights?: Partial<Record<string, 'sql' | 'json'>>;
+}
+
 // ── Top-level schema ────────────────────────────────────────────────────
 
 export interface PluginSchema {
@@ -248,11 +261,14 @@ export interface PluginSchema {
   display_name: string;
   description?: string;
   task_type?: string;
-  forms: FormSection[];
+  /** Task-style single entity: forms + list_view (omit or leave entities unset). */
+  forms?: FormSection[];
   capabilities?: PluginCapabilities;
-  list_view: ListView;
-  /** Schema-wide cross-field cardinality constraints. */
+  list_view?: ListView;
+  /** When set, the shell renders one list/create/detail flow per entity. */
+  entities?: PluginEntitySchema[];
+  /** Schema-wide cross-field cardinality constraints (task-style plugins). */
   cardinality_rules?: CardinalityRule[];
-  /** Schema-wide predicate-only invariants. */
+  /** Schema-wide predicate-only invariants (task-style plugins). */
   fail_when?: FailRule[];
 }

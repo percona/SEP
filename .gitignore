@@ -407,3 +407,5 @@ data/casdoor_init_data.json
 
 # Frontend build artifacts
 frontend/**/dist/
+frontend/packages/e2e/playwright-report/data/*
+frontend/packages/e2e/test-results/*

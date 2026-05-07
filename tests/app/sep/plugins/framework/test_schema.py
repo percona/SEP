@@ -34,6 +34,7 @@ from app.sep.plugins.framework.schema import (
     IntegerField,
     ListView,
     MultiChoiceField,
+    PluginEntitySchema,
     PluginSchema,
     SchemaField,
     ScriptPreviewField,
@@ -140,6 +141,69 @@ def test_plugin_schema_constructs_with_minimal_fields():
     assert schema.name == "minimal"
     assert schema.capabilities is None
     assert schema.forms == []
+
+
+def test_plugin_schema_entities_mode_omits_root_list_view():
+    """Construct a ``PluginSchema`` with ``entities`` set and no root ``list_view``."""
+    entity = PluginEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
+    schema = PluginSchema(
+        name="multi",
+        display_name="Multi",
+        entities=[entity],
+    )
+    assert schema.entities is not None
+    assert len(schema.entities) == 1
+    assert schema.list_view is None
+
+
+def test_plugin_entity_schema_detail_highlights_round_trip():
+    """Round-trip detail highlight hints through snake_case JSON (wire format)."""
+    entity = PluginEntitySchema.model_validate(
+        {
+            "name": "things",
+            "display_name": "Things",
+            "forms": [
+                {
+                    "title": "T",
+                    "fields": [{"name": "title", "label": "Title", "type": "string"}],
+                }
+            ],
+            "list_view": {"columns": [{"key": "title", "label": "Title"}]},
+            "detail_highlights": {"ddl": "sql", "metadata": "json"},
+        }
+    )
+    dumped = entity.model_dump(mode="json", by_alias=True)
+    assert dumped["detail_highlights"] == {"ddl": "sql", "metadata": "json"}
+
+
+def test_plugin_entity_schema_rejects_duplicate_field_names():
+    """Reject a ``PluginEntitySchema`` with duplicate field ``name`` values across sections."""
+    with pytest.raises(ValueError, match="duplicate field name"):
+        PluginEntitySchema(
+            name="dup",
+            display_name="Dup",
+            forms=[
+                FormSection(
+                    title="A",
+                    fields=[StringField(name="x", label="X")],
+                ),
+                FormSection(
+                    title="B",
+                    fields=[StringField(name="x", label="X2")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
 
 
 def test_plugin_schema_constructs_with_all_capabilities_on():
@@ -452,6 +516,13 @@ def test_column_format_serialises_to_lowercase_string():
     dumped = column.model_dump(mode="json", by_alias=True)
 
     assert dumped["format"] == "status"
+
+
+def test_column_format_actions_serialises_to_lowercase_string():
+    """Serialise ``ColumnFormat.ACTIONS`` to ``actions`` in JSON output."""
+    column = Column(key="_actions", label="Actions", format=ColumnFormat.ACTIONS)
+    dumped = column.model_dump(mode="json", by_alias=True)
+    assert dumped["format"] == "actions"
 
 
 def test_column_format_rejects_unknown_values():
