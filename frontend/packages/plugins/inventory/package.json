@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mui/material": "^7.3.7",
+    "@mui/material": "^7.3.11",
     "@sep/api": "workspace:*",
     "@sep/framework": "workspace:*",
     "notistack": "^3.0.2"
