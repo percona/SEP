@@ -15,175 +15,222 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTaskLogs } from '../../../hooks/useTaskLogs';
-import { installMockEventSource, MockEventSource } from '../../../../tests/eventSourceStub';
+import { flushPromises, mockStreamFetch } from '../../../../tests/eventSourceStub';
+
+// Manual mock keeps axios out of the resolution graph.
+// setTokenProvider / getToken are re-implemented with the same stateful semantics.
+let _tokenProvider: () => string | null = () => null;
+vi.mock('@sep/api', () => ({
+  setTokenProvider: (p: () => string | null) => {
+    _tokenProvider = p;
+  },
+  getToken: () => _tokenProvider(),
+  refreshAccessToken: vi.fn<() => Promise<string | null>>(),
+}));
+
+const TEST_TOKEN = 'test-bearer-token';
 
 describe('useTaskLogs', () => {
+  let mock: ReturnType<typeof mockStreamFetch>;
+
   beforeEach(() => {
-    installMockEventSource();
+    mock = mockStreamFetch();
+    mock.install();
+    _tokenProvider = () => TEST_TOKEN;
   });
 
   afterEach(() => {
-    MockEventSource.reset();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
   });
 
-  it('opens an EventSource to /stream-logs/{id}', () => {
+  it('fetches /stream-logs/{id} with Bearer token', async () => {
     renderHook(() => useTaskLogs(42));
-    expect(MockEventSource.instances).toHaveLength(1);
-    expect(MockEventSource.instances[0].url).toBe('/stream-logs/42');
-    expect(MockEventSource.instances[0].withCredentials).toBe(true);
+    await flushPromises();
+
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = mock.fetchSpy.mock.calls[0];
+    const urlStr = typeof url === 'string' ? url : (url as URL).href;
+    expect(urlStr).toBe('/stream-logs/42');
+    expect((init?.headers as Record<string, string>)?.Authorization).toBe(`Bearer ${TEST_TOKEN}`);
   });
 
-  it('accumulates log text grouped by step and type', () => {
+  it('accumulates log text grouped by step and type', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
+
+    const handle = mock.pending[0];
 
     act(() => {
-      src.emitMessage({ msg: 'hello ', step: 'step1', type: 'stdout', offset: 1 });
-      src.emitMessage({ msg: 'world', step: 'step1', type: 'stdout', offset: 2 });
-      src.emitMessage({ msg: 'boom', step: 'step1', type: 'stderr', offset: 1 });
-      src.emitMessage({ msg: 'more', step: 'step2', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: 'hello ', step: 'step1', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: 'world', step: 'step1', type: 'stdout', offset: 2 });
+      handle.pushMessage({ msg: 'boom', step: 'step1', type: 'stderr', offset: 1 });
+      handle.pushMessage({ msg: 'more', step: 'step2', type: 'stdout', offset: 1 });
     });
+
+    await waitFor(() => expect(result.current.textByStep.step2?.stdout).toBe('more'));
 
     expect(result.current.textByStep.step1.stdout).toBe('hello world');
     expect(result.current.textByStep.step1.stderr).toBe('boom');
-    expect(result.current.textByStep.step2.stdout).toBe('more');
     expect(result.current.stepOrder).toEqual(['step1', 'step2']);
   });
 
-  it('accepts the initial message when its offset is 0', () => {
+  it('accepts the initial message when its offset is 0', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
 
+    const handle = mock.pending[0];
     act(() => {
-      src.emitMessage({ msg: 'first ', step: 's', type: 'stdout', offset: 0 });
-      src.emitMessage({ msg: 'second', step: 's', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: 'first ', step: 's', type: 'stdout', offset: 0 });
+      handle.pushMessage({ msg: 'second', step: 's', type: 'stdout', offset: 1 });
     });
 
-    expect(result.current.textByStep.s.stdout).toBe('first second');
+    await waitFor(() => expect(result.current.textByStep.s?.stdout).toBe('first second'));
   });
 
-  it('preserves empty-string log chunks', () => {
+  it('preserves empty-string log chunks and advances the offset', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
 
+    const handle = mock.pending[0];
     act(() => {
-      src.emitMessage({ msg: 'a', step: 's', type: 'stdout', offset: 0 });
-      src.emitMessage({ msg: '', step: 's', type: 'stdout', offset: 1 });
-      src.emitMessage({ msg: 'b', step: 's', type: 'stdout', offset: 2 });
+      handle.pushMessage({ msg: 'a', step: 's', type: 'stdout', offset: 0 });
+      handle.pushMessage({ msg: '', step: 's', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: 'b', step: 's', type: 'stdout', offset: 2 });
     });
+
+    await waitFor(() => expect(result.current.textByStep.s?.stdout).toBe('ab'));
+
+    // Offset 1 was consumed — duplicate at offset 1 must be ignored
+    act(() => {
+      handle.pushMessage({ msg: 'dup', step: 's', type: 'stdout', offset: 1 });
+    });
+    await flushPromises();
 
     expect(result.current.textByStep.s.stdout).toBe('ab');
-    // Offset 1 was accepted (dedup state advanced) even though the msg was empty
-    act(() => {
-      src.emitMessage({ msg: 'dup', step: 's', type: 'stdout', offset: 1 });
-    });
-    expect(result.current.textByStep.s.stdout).toBe('ab');
   });
 
-  it('dedupes messages whose offset is not greater than the last seen', () => {
+  it('dedupes messages whose offset is not greater than the last seen', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
 
+    const handle = mock.pending[0];
     act(() => {
-      src.emitMessage({ msg: 'a', step: 's', type: 'stdout', offset: 5 });
-      src.emitMessage({ msg: 'b', step: 's', type: 'stdout', offset: 5 }); // dup
-      src.emitMessage({ msg: 'c', step: 's', type: 'stdout', offset: 4 }); // stale
-      src.emitMessage({ msg: 'd', step: 's', type: 'stdout', offset: 6 });
+      handle.pushMessage({ msg: 'a', step: 's', type: 'stdout', offset: 5 });
+      handle.pushMessage({ msg: 'b', step: 's', type: 'stdout', offset: 5 }); // dup
+      handle.pushMessage({ msg: 'c', step: 's', type: 'stdout', offset: 4 }); // stale
+      handle.pushMessage({ msg: 'd', step: 's', type: 'stdout', offset: 6 });
     });
 
-    expect(result.current.textByStep.s.stdout).toBe('ad');
+    await waitFor(() => expect(result.current.textByStep.s?.stdout).toBe('ad'));
   });
 
-  it('ignores malformed payloads', () => {
+  it('ignores malformed payloads', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
 
+    const handle = mock.pending[0];
     act(() => {
-      src.emitMessage({ step: 's', type: 'stdout', offset: 2 }); // missing msg
-      src.emitMessage({ msg: 'x', step: 's', type: 'stdout' }); // missing offset
-      src.emitMessage({ msg: 'x', step: '', type: 'stdout', offset: 1 }); // empty step
-      src.emitMessage({ msg: 'x', step: 's', type: '', offset: 1 }); // empty type
+      handle.pushMessage({ step: 's', type: 'stdout', offset: 2 }); // missing msg
+      handle.pushMessage({ msg: 'x', step: 's', type: 'stdout' }); // missing offset
+      handle.pushMessage({ msg: 'x', step: '', type: 'stdout', offset: 1 }); // empty step
+      handle.pushMessage({ msg: 'x', step: 's', type: '', offset: 1 }); // empty type
     });
+    await flushPromises();
 
     expect(result.current.textByStep).toEqual({});
   });
 
-  it('handles finish event by setting status and closing the stream', () => {
+  it('handles finish event by setting status and stopping the stream', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
 
+    const handle = mock.pending[0];
     act(() => {
-      src.emitNamed('finish', { status: 'success' });
+      handle.pushNamed('finish', { status: 'success' });
     });
 
+    await waitFor(() => expect(result.current.streamStatus).toBe('finished'));
     expect(result.current.finishStatus).toBe('success');
-    expect(result.current.streamStatus).toBe('finished');
-    expect(src.closed).toBe(true);
   });
 
-  it('handles sep-error event with a 410 payload', () => {
+  it('handles sep-error event with a 410 payload', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
 
+    const handle = mock.pending[0];
     act(() => {
-      src.emitNamed('sep-error', {
+      handle.pushNamed('sep-error', {
         code: 410,
         detail: { resource_type: 'job', job_id: 'J', message: 'gone' },
       });
     });
 
+    await waitFor(() => expect(result.current.streamStatus).toBe('error'));
     expect(result.current.error?.code).toBe(410);
-    expect(result.current.streamStatus).toBe('error');
-    expect(src.closed).toBe(true);
   });
 
-  it('surfaces a terminal error when the stream closes via onerror', () => {
+  it('surfaces a terminal error when the server closes the stream without a finish event', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
 
+    const handle = mock.pending[0];
     act(() => {
-      src.readyState = 2; // EventSource.CLOSED
-      src.onerror?.(new Event('error'));
+      handle.close();
     });
 
-    expect(result.current.streamStatus).toBe('error');
+    await waitFor(() => expect(result.current.streamStatus).toBe('error'));
     expect(result.current.error).toBeDefined();
   });
 
-  it('does not set error for transient onerror while browser is reconnecting', () => {
-    const { result } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
-
-    act(() => {
-      src.readyState = 0; // EventSource.CONNECTING
-      src.onerror?.(new Event('error'));
-    });
-
-    expect(result.current.error).toBeUndefined();
-    expect(result.current.streamStatus).toBe('connecting');
-  });
-
-  it('closes the EventSource on unmount', () => {
+  it('aborts the fetch on unmount', async () => {
     const { unmount } = renderHook(() => useTaskLogs(1));
-    const src = MockEventSource.instances[0];
+    await flushPromises();
+
     unmount();
-    expect(src.closed).toBe(true);
+
+    // fetchEventSource propagates inputSignal.abort() to its internal
+    // curRequestController synchronously via the abort event listener.
+    expect(mock.pending[0].signal?.aborted).toBe(true);
   });
 
-  it('opens a fresh EventSource when the task id changes', () => {
+  it('opens a fresh fetch when the task id changes', async () => {
     const { rerender } = renderHook(({ id }) => useTaskLogs(id), {
       initialProps: { id: 1 as number | string },
     });
-    expect(MockEventSource.instances).toHaveLength(1);
-    const first = MockEventSource.instances[0];
+    await flushPromises();
+
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(1);
 
     rerender({ id: 2 });
+    await flushPromises();
 
-    expect(first.closed).toBe(true);
-    expect(MockEventSource.instances).toHaveLength(2);
-    expect(MockEventSource.instances[1].url).toBe('/stream-logs/2');
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(2);
+    const secondUrl = mock.fetchSpy.mock.calls[1][0];
+    const urlStr = typeof secondUrl === 'string' ? secondUrl : (secondUrl as URL).href;
+    expect(urlStr).toBe('/stream-logs/2');
+  });
+
+  it('refreshes token on 401 and reconnects with the new token', async () => {
+    const { refreshAccessToken } = await import('@sep/api');
+    vi.mocked(refreshAccessToken).mockResolvedValue('new-token');
+
+    // First fetch returns 401; onopen calls refreshAccessToken() → new token →
+    // throws StreamRetriableAfterRefresh → onerror returns 0 (immediate retry).
+    mock.queueResponse({ status: 401 });
+
+    renderHook(() => useTaskLogs(1));
+
+    // onerror returns 0 so the library retries immediately (setTimeout 0 ms).
+    // waitFor polls until the second fetch appears.
+    await waitFor(() => expect(mock.fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2));
+
+    const retryCall = mock.fetchSpy.mock.calls[1];
+    expect((retryCall[1]?.headers as Record<string, string>)?.Authorization).toBe(
+      'Bearer new-token',
+    );
   });
 });

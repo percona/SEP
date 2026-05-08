@@ -15,10 +15,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { installMockEventSource, MockEventSource } from '../../../../tests/eventSourceStub';
+import {
+  flushPromises,
+  mockStreamFetch,
+  type SseStreamHandle,
+} from '../../../../tests/eventSourceStub';
 import { QueryWrapper } from '../../../../tests/queryWrapper';
 import { TaskLogViewer } from '../TaskLogViewer';
 
@@ -27,41 +31,53 @@ vi.mock('@melloware/react-logviewer', () => ({
   LazyLog: ({ text }: { text: string }) => <pre data-testid="log-output">{text}</pre>,
 }));
 
-function getLogSource(id: string): MockEventSource {
-  const src = MockEventSource.instances.find((s) => s.url === `/stream-logs/${id}`);
-  if (!src) {
-    throw new Error(`No MockEventSource for /stream-logs/${id}`);
-  }
-  return src;
-}
+// Manual mock keeps axios out of the resolution graph.
+let _tokenProvider: () => string | null = () => null;
+vi.mock('@sep/api', () => ({
+  setTokenProvider: (p: () => string | null) => {
+    _tokenProvider = p;
+  },
+  getToken: () => _tokenProvider(),
+  refreshAccessToken: vi.fn<() => Promise<string | null>>(),
+  apiClient: { get: vi.fn(), defaults: {} },
+}));
 
 describe('TaskLogViewer', () => {
+  let mock: ReturnType<typeof mockStreamFetch>;
+
   beforeEach(() => {
-    installMockEventSource();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) })),
-    );
+    mock = mockStreamFetch();
+    mock.install();
+    _tokenProvider = () => 'test-token';
   });
 
   afterEach(() => {
-    MockEventSource.reset();
     vi.unstubAllGlobals();
+    vi.clearAllMocks();
   });
 
-  it('renders accumulated stdout for the first step by default', () => {
+  function getHandle(id: string): SseStreamHandle {
+    const handle = mock.pending.find((h) => h.url === `/stream-logs/${id}`);
+    if (!handle) {
+      throw new Error(`No stream handle for /stream-logs/${id}`);
+    }
+    return handle;
+  }
+
+  it('renders accumulated stdout for the first step by default', async () => {
     render(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
       </QueryWrapper>,
     );
-    const src = getLogSource('7');
+    await flushPromises();
 
+    const handle = getHandle('7');
     act(() => {
-      src.emitMessage({ msg: 'line-1\n', step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: 'line-1\n', step: 'setup', type: 'stdout', offset: 1 });
     });
 
-    expect(screen.getByTestId('log-output').textContent).toBe('line-1\n');
+    await waitFor(() => expect(screen.getByTestId('log-output').textContent).toBe('line-1\n'));
   });
 
   it('marks the stderr top tab as unread when stderr arrives while on stdout', async () => {
@@ -70,17 +86,21 @@ describe('TaskLogViewer', () => {
         <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
       </QueryWrapper>,
     );
-    const src = getLogSource('1');
+    await flushPromises();
 
+    const handle = getHandle('1');
     act(() => {
-      src.emitMessage({ msg: 'err\n', step: 'setup', type: 'stderr', offset: 1 });
+      handle.pushMessage({ msg: 'err\n', step: 'setup', type: 'stderr', offset: 1 });
+    });
+
+    await waitFor(() => {
+      const stderrTab = screen.getByRole('tab', { name: /stderr/i });
+      const dot = stderrTab.querySelector('.MuiBadge-dot');
+      expect(dot).toBeTruthy();
+      expect(dot?.classList.contains('MuiBadge-invisible')).toBe(false);
     });
 
     const stderrTab = screen.getByRole('tab', { name: /stderr/i });
-    const dot = stderrTab.querySelector('.MuiBadge-dot');
-    expect(dot).toBeTruthy();
-    expect(dot?.classList.contains('MuiBadge-invisible')).toBe(false);
-
     const user = userEvent.setup();
     await user.click(stderrTab);
 
@@ -95,11 +115,13 @@ describe('TaskLogViewer', () => {
         <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
       </QueryWrapper>,
     );
-    const src = getLogSource('1');
+    await flushPromises();
+
+    const handle = getHandle('1');
     act(() => {
-      src.emitMessage({ msg: 'out\n', step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: 'out\n', step: 'setup', type: 'stdout', offset: 1 });
     });
-    expect(screen.getByTestId('log-output')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('log-output')).toBeInTheDocument());
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: /execution events/i }));
@@ -119,10 +141,13 @@ describe('TaskLogViewer', () => {
         <TaskLogViewer taskHistoryId="99" taskStatus="RUNNING" />
       </QueryWrapper>,
     );
-    const src = getLogSource('99');
+    await flushPromises();
+
+    const handle = getHandle('99');
     act(() => {
-      src.emitMessage({ msg: 'payload', step: 'run', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: 'payload', step: 'run', type: 'stdout', offset: 1 });
     });
+    await waitFor(() => expect(screen.getByTestId('log-output')).toBeInTheDocument());
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /download log/i }));
@@ -132,64 +157,72 @@ describe('TaskLogViewer', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock');
   });
 
-  it('renders a status badge when the stream finishes', () => {
+  it('renders a status badge when the stream finishes', async () => {
     render(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
       </QueryWrapper>,
     );
-    const src = getLogSource('1');
+    await flushPromises();
+
+    const handle = getHandle('1');
     act(() => {
-      src.emitNamed('finish', { status: 'success' });
+      handle.pushNamed('finish', { status: 'success' });
     });
-    expect(screen.getByText('Done')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
   });
 
-  it('resets active step and unread state when taskHistoryId changes', () => {
+  it('resets active step and unread state when taskHistoryId changes', async () => {
     const { rerender } = render(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
       </QueryWrapper>,
     );
-    const first = getLogSource('1');
+    await flushPromises();
+
+    const first = getHandle('1');
     act(() => {
-      first.emitMessage({ msg: 'a\n', step: 'alpha', type: 'stdout', offset: 1 });
+      first.pushMessage({ msg: 'a\n', step: 'alpha', type: 'stdout', offset: 1 });
     });
-    expect(screen.getByTestId('log-output').textContent).toBe('a\n');
+    await waitFor(() => expect(screen.getByTestId('log-output').textContent).toBe('a\n'));
 
     rerender(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="2" taskStatus="RUNNING" />
       </QueryWrapper>,
     );
+    await flushPromises();
+
     // Previous step alpha no longer exists; empty state until new data arrives
     expect(screen.queryByTestId('log-output')).not.toBeInTheDocument();
     expect(screen.getByText(/no output yet/i)).toBeInTheDocument();
 
-    const second = getLogSource('2');
+    const second = getHandle('2');
     act(() => {
-      second.emitMessage({ msg: 'b\n', step: 'beta', type: 'stdout', offset: 1 });
+      second.pushMessage({ msg: 'b\n', step: 'beta', type: 'stdout', offset: 1 });
     });
-    expect(screen.getByTestId('log-output').textContent).toBe('b\n');
+    await waitFor(() => expect(screen.getByTestId('log-output').textContent).toBe('b\n'));
     // New step auto-selected, no unread dots from the prior task
     const stepTab = screen.getByRole('tab', { name: /beta/i });
     expect(within(stepTab).queryByRole('status')).toBeNull();
   });
 
-  it('renders the executor-gone error block for 410', () => {
+  it('renders the executor-gone error block for 410', async () => {
     render(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
       </QueryWrapper>,
     );
-    const src = getLogSource('1');
+    await flushPromises();
+
+    const handle = getHandle('1');
     act(() => {
-      src.emitNamed('sep-error', {
+      handle.pushNamed('sep-error', {
         code: 410,
         detail: { message: 'gone', job_id: 'J-1', executor_name: 'nomad-a' },
       });
     });
-    expect(screen.getByText('gone')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('gone')).toBeInTheDocument());
     expect(screen.getByText(/J-1/)).toBeInTheDocument();
     expect(screen.getByText(/nomad-a/)).toBeInTheDocument();
     expect(screen.getByText('Not in executor')).toBeInTheDocument();

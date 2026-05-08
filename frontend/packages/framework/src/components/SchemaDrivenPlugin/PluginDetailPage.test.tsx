@@ -21,24 +21,27 @@ import { describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
-import type * as SepApi from '@sep/api';
 import type { PluginSchema } from '@sep/api';
 import { PluginDetailPage, pickExecutionData, resolveTabFromSplat } from './PluginDetailPage';
 
 const mockDeleteMutate = vi.fn();
 const mockUsePluginTask = vi.fn();
 
-vi.mock('@sep/api', async () => {
-  const actual = await vi.importActual<typeof SepApi>('@sep/api');
-  return {
-    ...actual,
-    usePluginTask: (...args: unknown[]) => mockUsePluginTask(...args),
-    useDeletePluginTask: () => ({
-      mutateAsync: mockDeleteMutate,
-      isPending: false,
-    }),
-  };
-});
+// Manual factory keeps axios out of the resolution graph.
+vi.mock('@sep/api', () => ({
+  usePluginTask: (...args: unknown[]) => mockUsePluginTask(...args),
+  useDeletePluginTask: () => ({
+    mutateAsync: mockDeleteMutate,
+    isPending: false,
+  }),
+  useDeletePluginEntity: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  usePluginEntityDetail: () => ({ data: undefined, isLoading: false, error: null }),
+  // Needed by useTaskLogs / useExecutionEvents in the component tree
+  getToken: () => null,
+  refreshAccessToken: vi.fn(),
+  apiClient: { get: vi.fn(), defaults: {} },
+  setTokenProvider: vi.fn(),
+}));
 
 vi.mock('../../hooks', () => ({
   useTaskHistoryByName: () => ({ data: { items: [] }, isLoading: false, error: null }),

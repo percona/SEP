@@ -15,6 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
+import { apiClient, getToken, refreshAccessToken } from '@sep/api';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -34,6 +36,9 @@ export interface ExecutionEventsState {
 }
 
 const STEPLESS_KEY = '';
+
+// See useTaskLogs.ts for the rationale behind this local sentinel class.
+class StreamRetriableAfterRefresh extends Error {}
 
 function compositeKey(ev: ExecutionEvent): string {
   return `${ev.timestamp ?? ''}|${ev.type ?? ''}|${ev.description ?? ''}|${ev.step ?? ''}`;
@@ -58,12 +63,12 @@ function groupByStep(events: ExecutionEvent[]): {
 }
 
 async function fetchExecutionEvents(taskHistoryId: string): Promise<ExecutionEvent[]> {
-  const res = await fetch(`/execution-events/${taskHistoryId}`, { credentials: 'include' });
-  if (!res.ok) {
-    throw new Error(`Execution events request failed with status ${res.status}`);
-  }
-  const data = (await res.json()) as unknown;
-  return Array.isArray(data) ? (data as ExecutionEvent[]) : [];
+  // Use apiClient (Bearer interceptor + 401-refresh) with baseURL: '' to reach
+  // the legacy /execution-events/{id} route that is not under /api.
+  const res = await apiClient.get<ExecutionEvent[]>(`/execution-events/${taskHistoryId}`, {
+    baseURL: '',
+  });
+  return Array.isArray(res.data) ? res.data : [];
 }
 
 /**
@@ -73,8 +78,8 @@ async function fetchExecutionEvents(taskHistoryId: string): Promise<ExecutionEve
  * Completed tasks fetch REST /execution-events/{id} through react-query for
  * consistent error/loading/cache semantics with the rest of @sep/framework.
  *
- * Both endpoints are cookie-authenticated (same-origin). See useTaskLogs for
- * the auth rationale.
+ * Both paths attach the Bearer token from @sep/api's token provider so the
+ * SPA OAuth session is honoured without a session cookie.
  */
 export function useExecutionEvents(
   taskHistoryId: number | string | undefined,
@@ -109,58 +114,95 @@ export function useExecutionEvents(
     setSseError(undefined);
     setSseLoading(true);
 
-    const src = new EventSource(`/stream-logs/${idStr}/execution-events`, {
-      withCredentials: true,
-    });
+    const ctrl = new AbortController();
+    let currentToken = getToken() ?? '';
+    let refreshAttempted = false;
 
-    src.onerror = () => {
-      if (src.readyState === EventSource.CLOSED) {
+    fetchEventSource(`/stream-logs/${idStr}/execution-events`, {
+      signal: ctrl.signal,
+      openWhenHidden: true,
+
+      fetch: (input, init) =>
+        globalThis.fetch(input as RequestInfo, {
+          ...init,
+          headers: {
+            ...init?.headers,
+            Authorization: `Bearer ${currentToken}`,
+          },
+        }),
+
+      onopen: async (response) => {
+        if (response.ok && response.headers.get('content-type')?.includes(EventStreamContentType)) {
+          return;
+        }
+        if (response.status === 401 && !refreshAttempted) {
+          refreshAttempted = true;
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            currentToken = newToken;
+            throw new StreamRetriableAfterRefresh();
+          }
+        }
+        throw new Error(`Stream open failed with status ${response.status}`);
+      },
+
+      onmessage: (ev) => {
+        if (ev.data === '') {
+          return;
+        }
+
+        if (ev.event === 'finish') {
+          setSseLoading(false);
+          ctrl.abort();
+          return;
+        }
+
+        if (ev.event === 'sep-error') {
+          let payload: unknown = ev.data;
+          try {
+            payload = JSON.parse(ev.data);
+          } catch {
+            // keep raw
+          }
+          setSseError(payload);
+          setSseLoading(false);
+          ctrl.abort();
+          return;
+        }
+
+        // Default message — execution event
+        let payload: ExecutionEvent;
+        try {
+          payload = JSON.parse(ev.data) as ExecutionEvent;
+        } catch {
+          return;
+        }
+        const key = compositeKey(payload);
+        if (seenKeysRef.current.has(key)) {
+          return;
+        }
+        seenKeysRef.current.add(key);
+        setSseEvents((prev) => [...prev, payload]);
+        setSseLoading(false);
+      },
+
+      onerror: (err): number | undefined => {
+        if (err instanceof StreamRetriableAfterRefresh) {
+          return 0;
+        }
         setSseError({ message: 'Execution events stream connection closed.' });
         setSseLoading(false);
-      }
-    };
+        return undefined; // library retries with backoff (transient network error)
+      },
 
-    src.onmessage = (event: MessageEvent<string>) => {
-      let payload: ExecutionEvent;
-      try {
-        payload = JSON.parse(event.data) as ExecutionEvent;
-      } catch {
-        return;
-      }
-      const key = compositeKey(payload);
-      if (seenKeysRef.current.has(key)) {
-        return;
-      }
-      seenKeysRef.current.add(key);
-      setSseEvents((prev) => [...prev, payload]);
-      setSseLoading(false);
-    };
+      onclose: () => {
+        setSseLoading(false);
+      },
+    }).catch(() => {
+      // Expected abort on unmount / isRunning flip
+    });
 
-    const handleFinish = () => {
-      setSseLoading(false);
-      src.close();
-    };
-
-    const handleSepError = (event: MessageEvent<string>) => {
-      let payload: unknown = event.data;
-      try {
-        payload = JSON.parse(event.data);
-      } catch {
-        // keep raw
-      }
-      setSseError(payload);
-      setSseLoading(false);
-      src.close();
-    };
-
-    src.addEventListener('finish', handleFinish as EventListener);
-    src.addEventListener('sep-error', handleSepError as EventListener);
-
-    return () => {
-      src.removeEventListener('finish', handleFinish as EventListener);
-      src.removeEventListener('sep-error', handleSepError as EventListener);
-      src.close();
-    };
+    return () => ctrl.abort();
   }, [idStr, isRunning]);
 
   const events = isRunning ? sseEvents : (query.data ?? []);

@@ -15,6 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
+import { getToken, refreshAccessToken } from '@sep/api';
 import { useEffect, useRef, useState } from 'react';
 
 export type LogType = 'stdout' | 'stderr';
@@ -45,6 +47,12 @@ interface IncomingLog {
   offset: number;
 }
 
+// Local sentinel class: thrown from onopen after a successful token refresh so
+// that onerror can return 0 (immediate retry) with the new token.  We define
+// it here rather than importing from fetch-event-source because version 2.0.1
+// does not export RetriableError / FatalError.
+class StreamRetriableAfterRefresh extends Error {}
+
 /**
  * SSE-backed log stream for a task history.
  *
@@ -52,8 +60,9 @@ interface IncomingLog {
  * the server streams historical log lines then emits a `finish` event with
  * terminal status. No REST fallback needed.
  *
- * Cookie auth: EventSource cannot send Bearer headers. Same-origin SSE
- * endpoints remain cookie-authenticated during the Bearer-token migration.
+ * Uses @microsoft/fetch-event-source so the Bearer token can be attached as a
+ * header — the browser EventSource API has no headers option and could only
+ * carry cookies, which are not in scope for the SPA OAuth session.
  */
 export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLogsState {
   const [textByStep, setTextByStep] = useState<Record<string, StepText>>({});
@@ -63,6 +72,8 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
   const [error, setError] = useState<StreamError | undefined>();
 
   const offsetsRef = useRef<Record<string, number>>({});
+  // Stable ref so onclose can read current streamStatus without re-registering.
+  const streamStatusRef = useRef<StreamStatus>('idle');
 
   useEffect(() => {
     if (taskHistoryId === undefined || taskHistoryId === null || taskHistoryId === '') {
@@ -75,86 +86,141 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
     setStepOrder([]);
     setFinishStatus(undefined);
     setError(undefined);
+    streamStatusRef.current = 'connecting';
     setStreamStatus('connecting');
 
+    const ctrl = new AbortController();
+    let currentToken = getToken() ?? '';
+    let refreshAttempted = false;
+
     const url = `/stream-logs/${encodeURIComponent(String(taskHistoryId))}`;
-    const src = new EventSource(url, { withCredentials: true });
 
-    src.onopen = () => setStreamStatus('streaming');
+    fetchEventSource(url, {
+      signal: ctrl.signal,
+      openWhenHidden: true,
 
-    src.onerror = () => {
-      // EventSource auto-reconnects while readyState is CONNECTING.
-      // Only surface a terminal error when the stream is permanently closed.
-      if (src.readyState === EventSource.CLOSED) {
-        setError({ detail: { message: 'Task log stream connection closed.' } });
-        setStreamStatus('error');
-      } else {
-        setStreamStatus('connecting');
-      }
-    };
+      // Custom fetch so we can inject a fresh token on every (re)connect,
+      // including after a 401-triggered refresh.
+      fetch: (input, init) =>
+        globalThis.fetch(input as RequestInfo, {
+          ...init,
+          headers: {
+            ...init?.headers,
+            Authorization: `Bearer ${currentToken}`,
+          },
+        }),
 
-    src.onmessage = (event: MessageEvent<string>) => {
-      let payload: IncomingLog;
-      try {
-        payload = JSON.parse(event.data) as IncomingLog;
-      } catch {
-        return;
-      }
-      const { msg, step, type, offset } = payload;
-      if (typeof msg !== 'string' || !step || !type || typeof offset !== 'number') {
-        return;
-      }
-      const key = `${step}_${type}`;
-      const previousOffset = offsetsRef.current[key];
-      if (previousOffset !== undefined && offset <= previousOffset) {
-        return;
-      }
-      offsetsRef.current[key] = offset;
-
-      setTextByStep((prev) => {
-        const existing = prev[step] ?? { stdout: '', stderr: '' };
-        return {
-          ...prev,
-          [step]: { ...existing, [type]: existing[type] + msg },
-        };
-      });
-      setStepOrder((prev) => (prev.includes(step) ? prev : [...prev, step]));
-    };
-
-    const handleFinish = (event: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(event.data) as { status?: FinishStatus };
-        if (data.status) {
-          setFinishStatus(data.status);
+      onopen: async (response) => {
+        if (response.ok && response.headers.get('content-type')?.includes(EventStreamContentType)) {
+          streamStatusRef.current = 'streaming';
+          setStreamStatus('streaming');
+          return;
         }
-      } catch {
-        // ignore malformed finish payload
-      }
-      setStreamStatus('finished');
-      src.close();
-    };
+        if (response.status === 401 && !refreshAttempted) {
+          refreshAttempted = true;
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            currentToken = newToken;
+            // Throw our local sentinel so onerror can return 0 (immediate retry)
+            // with the updated token — without confusing it for a generic error.
+            throw new StreamRetriableAfterRefresh();
+          }
+        }
+        throw new Error(`Stream open failed with status ${response.status}`);
+      },
 
-    const handleSepError = (event: MessageEvent<string>) => {
-      let payload: StreamError;
-      try {
-        const parsed = JSON.parse(event.data) as { code?: number; detail?: unknown };
-        payload = { code: parsed.code, detail: parsed.detail ?? event.data };
-      } catch {
-        payload = { detail: String(event.data || 'Unknown stream error') };
-      }
-      setError(payload);
-      setStreamStatus('error');
-      src.close();
-    };
+      onmessage: (ev) => {
+        if (ev.data === '') {
+          return; // keepalive comment line
+        }
 
-    src.addEventListener('finish', handleFinish as EventListener);
-    src.addEventListener('sep-error', handleSepError as EventListener);
+        if (ev.event === 'finish') {
+          try {
+            const data = JSON.parse(ev.data) as { status?: FinishStatus };
+            if (data.status) {
+              setFinishStatus(data.status);
+            }
+          } catch {
+            // ignore malformed finish payload
+          }
+          streamStatusRef.current = 'finished';
+          setStreamStatus('finished');
+          ctrl.abort();
+          return;
+        }
 
-    return () => {
-      src.removeEventListener('finish', handleFinish as EventListener);
-      src.removeEventListener('sep-error', handleSepError as EventListener);
-      src.close();
-    };
+        if (ev.event === 'sep-error') {
+          let payload: StreamError;
+          try {
+            const parsed = JSON.parse(ev.data) as { code?: number; detail?: unknown };
+            payload = { code: parsed.code, detail: parsed.detail ?? ev.data };
+          } catch {
+            payload = { detail: String(ev.data || 'Unknown stream error') };
+          }
+          setError(payload);
+          streamStatusRef.current = 'error';
+          setStreamStatus('error');
+          ctrl.abort();
+          return;
+        }
+
+        // Default message event — log line
+        let payload: IncomingLog;
+        try {
+          payload = JSON.parse(ev.data) as IncomingLog;
+        } catch {
+          return;
+        }
+        const { msg, step, type, offset } = payload;
+        if (typeof msg !== 'string' || !step || !type || typeof offset !== 'number') {
+          return;
+        }
+        const key = `${step}_${type}`;
+        const previousOffset = offsetsRef.current[key];
+        if (previousOffset !== undefined && offset <= previousOffset) {
+          return;
+        }
+        offsetsRef.current[key] = offset;
+
+        setTextByStep((prev) => {
+          const existing = prev[step] ?? { stdout: '', stderr: '' };
+          return {
+            ...prev,
+            [step]: { ...existing, [type]: existing[type] + msg },
+          };
+        });
+        setStepOrder((prev) => (prev.includes(step) ? prev : [...prev, step]));
+      },
+
+      onerror: (err): number | undefined => {
+        if (err instanceof StreamRetriableAfterRefresh) {
+          // Immediate retry: token was just refreshed, no need to back off.
+          return 0;
+        }
+        // All other errors (transient network blips, wrong content-type, etc.)
+        // surface as 'connecting' and let fetchEventSource retry with backoff.
+        streamStatusRef.current = 'connecting';
+        setStreamStatus('connecting');
+        return undefined; // library retries after default 1 000 ms backoff
+      },
+
+      onclose: () => {
+        // Server closed the connection cleanly without a finish/sep-error frame.
+        // Surface as a terminal error only if we haven't already reached a
+        // finished/error state (abort() from onmessage arrives after onclose).
+        const s = streamStatusRef.current;
+        if (s !== 'finished' && s !== 'error') {
+          setError({ detail: { message: 'Task log stream connection closed.' } });
+          streamStatusRef.current = 'error';
+          setStreamStatus('error');
+        }
+      },
+    }).catch(() => {
+      // fetchEventSource rejects when AbortController fires — expected on
+      // unmount / id change. Only surface unexpected rejections.
+    });
+
+    return () => ctrl.abort();
   }, [taskHistoryId]);
 
   return { textByStep, stepOrder, streamStatus, finishStatus, error };

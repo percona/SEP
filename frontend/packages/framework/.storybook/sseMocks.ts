@@ -29,75 +29,62 @@
 //
 // Unmocked fetches fall through to the host's real `fetch`. Stories that
 // shouldn't hit the network must register every URL they touch.
+//
+// Implementation note: hooks now use @microsoft/fetch-event-source which calls
+// globalThis.fetch (not the browser EventSource constructor). This wrapper
+// intercepts fetch for SSE URLs and returns a text/event-stream Response
+// backed by a controllable ReadableStream, keeping the story script API
+// (emitMessage / emitNamed / close) identical to the prior EventSource-based
+// version.
 
-type Listener = (event: MessageEvent<string>) => void;
+const encoder = new TextEncoder();
 
+/**
+ * Stream driver handed to story scripts — same shape as the old EventSource
+ * class so existing story scripts work unchanged.
+ */
 export class StoryEventSource {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
 
   readonly url: string;
-  readonly withCredentials: boolean;
+  readonly withCredentials = false;
   readyState: number = StoryEventSource.OPEN;
-  onmessage: Listener | null = null;
-  onerror: ((ev: Event) => void) | null = null;
-  onopen: ((ev: Event) => void) | null = null;
-  readonly listeners: Record<string, Listener[]> = {};
   closed = false;
 
-  constructor(url: string, init?: EventSourceInit) {
+  private readonly ctrl: ReadableStreamDefaultController<Uint8Array>;
+
+  constructor(url: string, ctrl: ReadableStreamDefaultController<Uint8Array>) {
     this.url = url;
-    this.withCredentials = init?.withCredentials ?? false;
-
-    queueMicrotask(() => {
-      if (this.closed) {
-        return;
-      }
-      this.onopen?.(new Event('open'));
-      const script = scripts.get(url);
-      if (script) {
-        script(this);
-      }
-    });
-  }
-
-  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    const fn = listener as Listener;
-    (this.listeners[type] ??= []).push(fn);
-  }
-
-  removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    const fn = listener as Listener;
-    const list = this.listeners[type];
-    if (!list) {
-      return;
-    }
-    const idx = list.indexOf(fn);
-    if (idx >= 0) {
-      list.splice(idx, 1);
-    }
-  }
-
-  close(): void {
-    this.closed = true;
-    this.readyState = StoryEventSource.CLOSED;
+    this.ctrl = ctrl;
   }
 
   emitMessage(data: unknown): void {
     if (this.closed) {
       return;
     }
-    const event = new MessageEvent('message', { data: JSON.stringify(data) });
-    this.onmessage?.(event);
+    this.ctrl.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
   }
 
   emitNamed(type: string, data: unknown): void {
     if (this.closed) {
       return;
     }
-    const event = new MessageEvent(type, { data: JSON.stringify(data) });
-    (this.listeners[type] ?? []).forEach((fn) => fn(event));
+    this.ctrl.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    this.readyState = StoryEventSource.CLOSED;
+    try {
+      this.ctrl.close();
+    } catch {
+      // already closed
+    }
   }
 }
 
@@ -121,7 +108,6 @@ const ORIGINAL_FETCH_KEY = Symbol.for('@sep/framework.storybook.sseMocks.origina
 interface MockGlobals {
   [INSTALLED_KEY]?: true;
   [ORIGINAL_FETCH_KEY]?: typeof globalThis.fetch;
-  EventSource: typeof globalThis.EventSource;
   fetch: typeof globalThis.fetch;
 }
 
@@ -133,12 +119,29 @@ export function installStorybookSseMocks(): void {
   g[INSTALLED_KEY] = true;
   g[ORIGINAL_FETCH_KEY] = g.fetch?.bind(globalThis);
 
-  g.EventSource = StoryEventSource as unknown as typeof globalThis.EventSource;
-
   g.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    // Longest-prefix match so a more specific registration wins over a more
-    // general one (e.g. `/execution-events/sb-success` over `/execution-events`).
+
+    // SSE script match — exact URL
+    if (scripts.has(url)) {
+      const script = scripts.get(url)!;
+      let streamCtrl!: ReadableStreamDefaultController<Uint8Array>;
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          streamCtrl = c;
+        },
+      });
+      const driver = new StoryEventSource(url, streamCtrl);
+      // Schedule the story script after the current microtask so the hook's
+      // onopen handler has a chance to run first.
+      queueMicrotask(() => script(driver));
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+
+    // JSON fetch match — longest-prefix wins
     let bestPrefix: string | undefined;
     for (const prefix of fetchResponses.keys()) {
       if (url.startsWith(prefix) && (!bestPrefix || prefix.length > bestPrefix.length)) {
@@ -151,6 +154,7 @@ export function installStorybookSseMocks(): void {
         headers: { 'Content-Type': 'application/json' },
       });
     }
+
     const original = g[ORIGINAL_FETCH_KEY];
     if (original) {
       return original(input as RequestInfo, init);
