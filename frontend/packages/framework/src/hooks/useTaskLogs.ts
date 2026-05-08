@@ -47,11 +47,13 @@ interface IncomingLog {
   offset: number;
 }
 
-// Local sentinel class: thrown from onopen after a successful token refresh so
-// that onerror can return 0 (immediate retry) with the new token.  We define
-// it here rather than importing from fetch-event-source because version 2.0.1
-// does not export RetriableError / FatalError.
+// Thrown from onopen after a successful token refresh so onerror can return 0
+// (immediate retry) with the new token.
 class StreamRetriableAfterRefresh extends Error {}
+
+// Thrown from onopen for terminal open failures so onerror re-throws and stops
+// the retry loop permanently. Prevents infinite reconnects after auth failure.
+class StreamFatalError extends Error {}
 
 /**
  * SSE-backed log stream for a task history.
@@ -92,6 +94,9 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
     const ctrl = new AbortController();
     let currentToken = getToken() ?? '';
     let refreshAttempted = false;
+    // Guards all state setters: set to true in cleanup so stale callbacks
+    // from an aborted stream cannot write into a subsequent stream's state.
+    let disposed = false;
 
     const url = `/stream-logs/${encodeURIComponent(String(taskHistoryId))}`;
 
@@ -112,8 +117,10 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
 
       onopen: async (response) => {
         if (response.ok && response.headers.get('content-type')?.includes(EventStreamContentType)) {
-          streamStatusRef.current = 'streaming';
-          setStreamStatus('streaming');
+          if (!disposed) {
+            streamStatusRef.current = 'streaming';
+            setStreamStatus('streaming');
+          }
           return;
         }
         if (response.status === 401 && !refreshAttempted) {
@@ -121,15 +128,30 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
           const newToken = await refreshAccessToken();
           if (newToken) {
             currentToken = newToken;
-            // Throw our local sentinel so onerror can return 0 (immediate retry)
-            // with the updated token — without confusing it for a generic error.
+            // Throw retriable sentinel so onerror returns 0 (immediate retry)
+            // with the updated token.
             throw new StreamRetriableAfterRefresh();
           }
         }
-        throw new Error(`Stream open failed with status ${response.status}`);
+        // Terminal open failure (auth exhausted or non-200 non-401).
+        // Set error state here, abort, then throw fatal sentinel so onerror
+        // re-throws it and permanently stops the retry loop.
+        if (!disposed) {
+          const errPayload: StreamError = {
+            detail: { message: `Stream open failed with status ${response.status}` },
+          };
+          setError(errPayload);
+          streamStatusRef.current = 'error';
+          setStreamStatus('error');
+        }
+        ctrl.abort();
+        throw new StreamFatalError(`Stream open failed: ${response.status}`);
       },
 
       onmessage: (ev) => {
+        if (disposed) {
+          return;
+        }
         if (ev.data === '') {
           return; // keepalive comment line
         }
@@ -197,14 +219,23 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
           // Immediate retry: token was just refreshed, no need to back off.
           return 0;
         }
-        // All other errors (transient network blips, wrong content-type, etc.)
-        // surface as 'connecting' and let fetchEventSource retry with backoff.
-        streamStatusRef.current = 'connecting';
-        setStreamStatus('connecting');
-        return undefined; // library retries after default 1 000 ms backoff
+        if (err instanceof StreamFatalError) {
+          // State already set in onopen; re-throw to stop the retry loop.
+          throw err;
+        }
+        // Transient network blip — stay in 'connecting' and let fetchEventSource
+        // retry with default 1 000 ms backoff.
+        if (!disposed) {
+          streamStatusRef.current = 'connecting';
+          setStreamStatus('connecting');
+        }
+        return undefined;
       },
 
       onclose: () => {
+        if (disposed) {
+          return;
+        }
         // Server closed the connection cleanly without a finish/sep-error frame.
         // Surface as a terminal error only if we haven't already reached a
         // finished/error state (abort() from onmessage arrives after onclose).
@@ -217,10 +248,14 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
       },
     }).catch(() => {
       // fetchEventSource rejects when AbortController fires — expected on
-      // unmount / id change. Only surface unexpected rejections.
+      // unmount / id change. StreamFatalError re-thrown from onerror also
+      // lands here; state is already set so we can ignore it.
     });
 
-    return () => ctrl.abort();
+    return () => {
+      disposed = true;
+      ctrl.abort();
+    };
   }, [taskHistoryId]);
 
   return { textByStep, stepOrder, streamStatus, finishStatus, error };

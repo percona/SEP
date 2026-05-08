@@ -37,8 +37,9 @@ export interface ExecutionEventsState {
 
 const STEPLESS_KEY = '';
 
-// See useTaskLogs.ts for the rationale behind this local sentinel class.
+// See useTaskLogs.ts for the rationale behind these local sentinel classes.
 class StreamRetriableAfterRefresh extends Error {}
+class StreamFatalError extends Error {}
 
 function compositeKey(ev: ExecutionEvent): string {
   return `${ev.timestamp ?? ''}|${ev.type ?? ''}|${ev.description ?? ''}|${ev.step ?? ''}`;
@@ -117,6 +118,12 @@ export function useExecutionEvents(
     const ctrl = new AbortController();
     let currentToken = getToken() ?? '';
     let refreshAttempted = false;
+    // Guards state setters so stale callbacks from an aborted stream cannot
+    // write into a subsequent stream's state (e.g. on rapid id changes).
+    let disposed = false;
+    // Tracks intentional terminal events (finish / sep-error) so onclose can
+    // distinguish a clean shutdown from an unexpected connection drop.
+    let terminatedCleanly = false;
 
     fetchEventSource(`/stream-logs/${idStr}/execution-events`, {
       signal: ctrl.signal,
@@ -143,21 +150,30 @@ export function useExecutionEvents(
             throw new StreamRetriableAfterRefresh();
           }
         }
-        throw new Error(`Stream open failed with status ${response.status}`);
+        // Terminal open failure — set error, abort, throw fatal sentinel so
+        // onerror re-throws and permanently stops the retry loop.
+        if (!disposed) {
+          setSseError({ message: `Stream open failed with status ${response.status}` });
+          setSseLoading(false);
+        }
+        ctrl.abort();
+        throw new StreamFatalError(`Stream open failed: ${response.status}`);
       },
 
       onmessage: (ev) => {
-        if (ev.data === '') {
+        if (disposed || ev.data === '') {
           return;
         }
 
         if (ev.event === 'finish') {
+          terminatedCleanly = true;
           setSseLoading(false);
           ctrl.abort();
           return;
         }
 
         if (ev.event === 'sep-error') {
+          terminatedCleanly = true;
           let payload: unknown = ev.data;
           try {
             payload = JSON.parse(ev.data);
@@ -190,19 +206,33 @@ export function useExecutionEvents(
         if (err instanceof StreamRetriableAfterRefresh) {
           return 0;
         }
-        setSseError({ message: 'Execution events stream connection closed.' });
-        setSseLoading(false);
-        return undefined; // library retries with backoff (transient network error)
+        if (err instanceof StreamFatalError) {
+          // State already set in onopen; re-throw to stop the retry loop.
+          throw err;
+        }
+        // Transient network error — let library retry with backoff silently.
+        // Do not set sseError: the previous events remain visible and loading
+        // stays false; the next successful open will resume streaming.
+        return undefined;
       },
 
       onclose: () => {
+        if (disposed || terminatedCleanly) {
+          return;
+        }
+        // Stream closed unexpectedly without a finish/sep-error frame.
+        setSseError({ message: 'Execution events stream connection closed.' });
         setSseLoading(false);
       },
     }).catch(() => {
-      // Expected abort on unmount / isRunning flip
+      // Expected abort on unmount / isRunning flip. StreamFatalError re-thrown
+      // from onerror also lands here; state is already set.
     });
 
-    return () => ctrl.abort();
+    return () => {
+      disposed = true;
+      ctrl.abort();
+    };
   }, [idStr, isRunning]);
 
   const events = isRunning ? sseEvents : (query.data ?? []);

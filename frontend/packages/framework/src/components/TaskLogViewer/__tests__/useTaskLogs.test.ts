@@ -233,4 +233,48 @@ describe('useTaskLogs', () => {
       'Bearer new-token',
     );
   });
+
+  it('surfaces an error and stops retrying when token refresh returns null', async () => {
+    const { refreshAccessToken } = await import('@sep/api');
+    vi.mocked(refreshAccessToken).mockResolvedValue(null);
+
+    mock.queueResponse({ status: 401 });
+
+    const { result } = renderHook(() => useTaskLogs(1));
+
+    await waitFor(() => expect(result.current.streamStatus).toBe('error'));
+    // Exactly one fetch: refresh failed → StreamFatalError → no retry.
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces an error and stops retrying on a non-401 open failure', async () => {
+    mock.queueResponse({ status: 503 });
+
+    const { result } = renderHook(() => useTaskLogs(1));
+
+    await waitFor(() => expect(result.current.streamStatus).toBe('error'));
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not write state from a stale aborted stream after id changes', async () => {
+    const { rerender, result } = renderHook(({ id }) => useTaskLogs(id), {
+      initialProps: { id: 1 as number | string },
+    });
+    await flushPromises();
+
+    const firstHandle = mock.pending[0];
+
+    // Change id before the first stream emits anything
+    rerender({ id: 2 });
+    await flushPromises();
+
+    // Push a message on the old (aborted) stream
+    act(() => {
+      firstHandle.pushMessage({ msg: 'stale', step: 's', type: 'stdout', offset: 1 });
+    });
+    await flushPromises();
+
+    // New stream has no data; stale message must not appear
+    expect(result.current.textByStep).toEqual({});
+  });
 });
