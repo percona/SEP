@@ -10,7 +10,7 @@
 #    type: str
 #    label: Destination directory
 #    description: Directory where samples and pt-summary output are stored.
-#    default: /tmp/for-percona
+#    default: /tmp/mongodb-diagnostics
 #    pattern: ^/[A-Za-z0-9._/-]+$
 #  - name: port
 #    type: int
@@ -70,12 +70,12 @@
 #       [--retention-days=DAYS]
 #
 # Stop early by creating the marker file in the destination directory:
-#   touch /tmp/for-percona/exit-percona-monitor
+#   touch /tmp/mongodb-diagnostics/exit-percona-monitor
 
 set -u
 set -o pipefail
 
-DEST="/tmp/for-percona"
+DEST="/tmp/mongodb-diagnostics"
 PORT=27017
 USER=""
 PASSWORD=""
@@ -92,7 +92,7 @@ Sample MongoDB and OS diagnostics into a destination directory.
 
 Command line options:
 
-   --dest               Destination directory (default: /tmp/for-percona)
+   --dest               Destination directory (default: /tmp/mongodb-diagnostics)
    --port               MongoDB port (default: 27017)
    --user               MongoDB user
    --password           MongoDB password
