@@ -129,17 +129,17 @@ export function useExecutionEvents(
       signal: ctrl.signal,
       openWhenHidden: true,
 
-      fetch: (input, init) =>
-        globalThis.fetch(input as RequestInfo, {
-          ...init,
-          headers: {
-            ...init?.headers,
-            Authorization: `Bearer ${currentToken}`,
-          },
-        }),
+      fetch: (input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        if (currentToken) {
+          headers.set('Authorization', `Bearer ${currentToken}`);
+        }
+        return globalThis.fetch(input as RequestInfo, { ...init, headers });
+      },
 
       onopen: async (response) => {
         if (response.ok && response.headers.get('content-type')?.includes(EventStreamContentType)) {
+          refreshAttempted = false;
           return;
         }
         if (response.status === 401 && !refreshAttempted) {
@@ -156,6 +156,7 @@ export function useExecutionEvents(
           setSseError({ message: `Stream open failed with status ${response.status}` });
           setSseLoading(false);
         }
+        terminatedCleanly = true;
         ctrl.abort();
         throw new StreamFatalError(`Stream open failed: ${response.status}`);
       },

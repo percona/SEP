@@ -106,17 +106,23 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
 
       // Custom fetch so we can inject a fresh token on every (re)connect,
       // including after a 401-triggered refresh.
-      fetch: (input, init) =>
-        globalThis.fetch(input as RequestInfo, {
-          ...init,
-          headers: {
-            ...init?.headers,
-            Authorization: `Bearer ${currentToken}`,
-          },
-        }),
+      fetch: (input, init) => {
+        // Preserve existing headers (fetchEventSource passes a plain object,
+        // but guard against Headers/string[][] just in case).
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        // Only attach the header when a token is available; an empty Bearer
+        // value could confuse backend Bearer-detection logic.
+        if (currentToken) {
+          headers.set('Authorization', `Bearer ${currentToken}`);
+        }
+        return globalThis.fetch(input as RequestInfo, { ...init, headers });
+      },
 
       onopen: async (response) => {
         if (response.ok && response.headers.get('content-type')?.includes(EventStreamContentType)) {
+          // Reset so that future reconnects (e.g. after a network blip that
+          // expires the token) are still allowed to attempt a refresh.
+          refreshAttempted = false;
           if (!disposed) {
             streamStatusRef.current = 'streaming';
             setStreamStatus('streaming');

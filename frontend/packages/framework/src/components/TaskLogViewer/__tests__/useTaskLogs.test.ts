@@ -52,10 +52,11 @@ describe('useTaskLogs', () => {
     await flushPromises();
 
     expect(mock.fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, init] = mock.fetchSpy.mock.calls[0];
+    const [url] = mock.fetchSpy.mock.calls[0];
     const urlStr = typeof url === 'string' ? url : (url as URL).href;
     expect(urlStr).toBe('/stream-logs/42');
-    expect((init?.headers as Record<string, string>)?.Authorization).toBe(`Bearer ${TEST_TOKEN}`);
+    // Headers instance lowercases names; stub normalises via Object.fromEntries(headers.entries())
+    expect(mock.pending[0].requestHeaders.authorization).toBe(`Bearer ${TEST_TOKEN}`);
   });
 
   it('accumulates log text grouped by step and type', async () => {
@@ -228,10 +229,8 @@ describe('useTaskLogs', () => {
     // waitFor polls until the second fetch appears.
     await waitFor(() => expect(mock.fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2));
 
-    const retryCall = mock.fetchSpy.mock.calls[1];
-    expect((retryCall[1]?.headers as Record<string, string>)?.Authorization).toBe(
-      'Bearer new-token',
-    );
+    // pending[0] is the successful retry (non-200 responses skip pending); headers are lowercased
+    expect(mock.pending[0].requestHeaders.authorization).toBe('Bearer new-token');
   });
 
   it('surfaces an error and stops retrying when token refresh returns null', async () => {

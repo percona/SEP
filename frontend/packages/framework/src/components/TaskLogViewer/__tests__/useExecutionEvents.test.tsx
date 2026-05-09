@@ -75,10 +75,11 @@ describe('useExecutionEvents', () => {
       await flushPromises();
 
       expect(mock.fetchSpy).toHaveBeenCalledTimes(1);
-      const [url, init] = mock.fetchSpy.mock.calls[0];
+      const [url] = mock.fetchSpy.mock.calls[0];
       const urlStr = typeof url === 'string' ? url : (url as URL).href;
       expect(urlStr).toBe('/stream-logs/42/execution-events');
-      expect((init?.headers as Record<string, string>)?.Authorization).toBe(`Bearer ${TEST_TOKEN}`);
+      // Headers instance lowercases names; stub normalises via Object.fromEntries(headers.entries())
+      expect(mock.pending[0].requestHeaders.authorization).toBe(`Bearer ${TEST_TOKEN}`);
     });
 
     it('accumulates events and groups them by step', async () => {
