@@ -2,8 +2,8 @@
 
 # ---
 # title: "pt-pmp (MongoDB)"
-# description: "Collects aggregated stack traces from a MongoDB process using pt-pmp. Defaults to attaching to the running mongod and using the eu-stack (pteu) dumper, which requires the elfutils/eu-stack package to be installed on the target host. Extra args are passed to pt-pmp after known options."
-# allow_extra_args: true
+# description: "Collects aggregated stack traces from a MongoDB process using pt-pmp. Defaults to attaching to the running mongod and using the eu-stack (pteu) dumper, which requires the elfutils/eu-stack package to be installed on the target host."
+# allow_extra_args: false
 # sudo: always
 # parameters:
 #  - name: pid
@@ -48,20 +48,21 @@
 #   - MongoDBReplicaState
 # ---
 
-# Usage: ./mongodb_pt_pmp.sh [--pid PID] [--binary mongod] [--dumper pteu|gdb] [--iterations N] [--interval S] [--dest DIR] [-- other args...]
+# Usage: ./mongodb_pt_pmp.sh [--pid PID] [--binary mongod] [--dumper pteu|gdb] [--iterations N] [--interval S]
 # Example: ./mongodb_pt_pmp.sh --iterations 5 --interval 2
+
+set -euo pipefail
 
 declare TARGET_PID=""
 declare BINARY="mongod"
 declare DUMPER="pteu"
-declare PTDEST=""
 declare -i ITERATIONS=10
 declare -i INTERVAL=1
 
 usage() {
     local -i exit_code="${1:-0}"
     cat << EOS
-Usage: $(basename "${0}") [OPTIONS] [-- extra pt-pmp args]
+Usage: $(basename "${0}") [OPTIONS]
 Collect aggregated stack traces from a MongoDB process with pt-pmp.
 
 Command line options:
@@ -73,8 +74,6 @@ Command line options:
                        or gdb. Default: pteu
    --iterations N      Number of stack samples to collect. Default: 10
    --interval S        Seconds between samples. Default: 1
-   -d, --dest DIR      Destination directory for the saved samples.
-                       Default: \$(pwd)/\$(hostname)-\$(date +%Y-%m-%d-%H-%M-%S)
    -h, --help          Show this help message
 
 Notes:
@@ -85,7 +84,7 @@ EOS
     exit ${exit_code}
 }
 
-if ! OPTS=$(getopt --options -d:h --longoptions 'pid:,binary:,dumper:,iterations:,interval:,dest:,help' -- "$@"); then
+if ! OPTS=$(getopt --options -h --longoptions 'pid:,binary:,dumper:,iterations:,interval:,help' -- "$@"); then
     echo "Error parsing options"
     usage 1
 fi
@@ -112,10 +111,6 @@ while [[ -n $* ]]; do
             ;;
         --interval)
             INTERVAL="$2"
-            shift 2
-            ;;
-        -d | --dest)
-            PTDEST="$2"
             shift 2
             ;;
         -h | --help)
@@ -145,7 +140,11 @@ if [ "${DUMPER}" = "pteu" ] && ! command -v eu-stack > /dev/null 2>&1; then
 fi
 
 if [ -z "${TARGET_PID}" ]; then
-    TARGET_PID="$(pgrep -x "${BINARY}" | head -n 1 || true)"
+    mapfile -t _CANDIDATES < <(pgrep -x "${BINARY}" || true)
+    TARGET_PID="${_CANDIDATES[0]:-}"
+    if [ "${#_CANDIDATES[@]}" -gt 1 ]; then
+        echo "Multiple '${BINARY}' processes found (${_CANDIDATES[*]}); selected PID ${TARGET_PID}." >&2
+    fi
 fi
 
 if [ -z "${TARGET_PID}" ]; then
@@ -158,10 +157,10 @@ if ! kill -0 "${TARGET_PID}" 2> /dev/null; then
     exit 5
 fi
 
-test -n "${PTDEST}" || PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
 
-if [ -d "${PTDEST}" ]; then
-    echo "Rejecting use of existing destination directory '${PTDEST}'" >&2
+if [ -e "${PTDEST}" ]; then
+    echo "Rejecting use of existing destination path '${PTDEST}'" >&2
     exit 11
 fi
 
@@ -170,9 +169,6 @@ SAMPLES_FILE="${PTDEST}/pt-pmp.log"
 
 echo "Running pt-pmp against PID ${TARGET_PID} (${BINARY}) with --dumper=${DUMPER}, iterations=${ITERATIONS}, interval=${INTERVAL}"
 echo "Saving samples to ${SAMPLES_FILE}"
-if [ $# -gt 0 ]; then
-    echo "Extra pt-pmp args: $*"
-fi
 
 pt-pmp \
     --pid "${TARGET_PID}" \
@@ -180,8 +176,7 @@ pt-pmp \
     --dumper "${DUMPER}" \
     --iterations "${ITERATIONS}" \
     --interval "${INTERVAL}" \
-    --save-samples "${SAMPLES_FILE}" \
-    "$@"
+    --save-samples "${SAMPLES_FILE}"
 
 tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
 echo "Output archive: ${PTDEST}.tar.gz"
