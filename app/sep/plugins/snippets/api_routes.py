@@ -25,6 +25,7 @@ level and redeclared per route for safety. Route layout is snippet-centric:
 * ``GET /``                                    — list snippets
 * ``GET /{snippet_filename}/schema``           — per-snippet form schema
 * ``GET /{snippet_filename}/script-preview``   — script preview
+* ``GET /{snippet_filename}/download``         — raw snippet file download
 * ``GET /{snippet_filename}/history``          — execution history
 * ``POST /{snippet_filename}/execute``         — execute the snippet
 * ``PUT /{snippet_filename}/approval``         — approve the snippet
@@ -41,6 +42,7 @@ from typing import Any
 
 from fastapi import APIRouter, Response
 from fastapi import status as http_status
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlmodel import col
 
@@ -195,6 +197,32 @@ async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewRespo
         content=preview.full_content,
         language=mime_type_to_highlighter_language(guess_mime_type(snippet.path)),
         is_truncated=preview.is_truncated,
+    )
+
+
+@router.get(
+    "/{snippet_filename}/download",
+    dependencies=[IsApiAuthenticated],
+)
+async def snippets_api_download(snippet: SnippetDep) -> FileResponse:
+    """Stream the raw snippet file as a download attachment.
+
+    Returns the on-disk source verbatim — full bash/Python body plus its
+    YAML frontmatter — so end users can save the file locally without
+    being capped by the script-preview truncation limits. The
+    ``SnippetDep`` dependency already validates both the DB row and the
+    on-disk file, so a missing snippet or missing file surfaces as 404.
+
+    :param snippet: The snippet whose raw file is requested.
+    :type snippet: Snippet
+    :return: The snippet file streamed as ``attachment; filename=...``
+        with a MIME type guessed from the on-disk path.
+    :rtype: FileResponse
+    """
+    return FileResponse(
+        snippet.path,
+        filename=snippet.filename,
+        media_type=guess_mime_type(snippet.path),
     )
 
 

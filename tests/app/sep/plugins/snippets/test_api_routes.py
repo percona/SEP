@@ -232,6 +232,57 @@ class TestSnippetsApiScriptPreview:
 
 
 @pytest.mark.asyncio
+class TestSnippetsApiDownload:
+    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/download``."""
+
+    async def test_returns_raw_file_with_attachment_headers(
+        self, test_client, create_snippet, snippets_dir
+    ):
+        """The endpoint streams the on-disk bytes verbatim with attachment headers."""
+        snippet = await create_snippet("hello.sh", approved=True)
+        on_disk = (snippets_dir / snippet.filename).read_bytes()
+
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/download")
+
+        assert response.status_code == status.HTTP_200_OK
+        # ``FileResponse`` sets the disposition with a quoted filename.
+        disposition = response.headers["content-disposition"]
+        assert "attachment" in disposition
+        assert f'filename="{snippet.filename}"' in disposition
+        assert response.content == on_disk
+
+    async def test_returns_401_for_unauthenticated_caller(
+        self, api_unauthenticated_client, create_snippet
+    ):
+        """Anonymous callers are rejected with a structured 401, not a redirect."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = api_unauthenticated_client.get(
+            f"{API_BASE}/{snippet.filename}/download",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_returns_404_for_unknown_snippet(self, test_client):
+        """A missing DB row surfaces as a 404."""
+        response = test_client.get(f"{API_BASE}/missing.sh/download")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_returns_404_when_file_missing_on_disk(
+        self, test_client, create_snippet, snippets_dir
+    ):
+        """A persisted row whose file was deleted on disk surfaces as 404."""
+        snippet = await create_snippet("hello.sh", approved=True)
+        (snippets_dir / snippet.filename).unlink()
+
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/download")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
 class TestSnippetsApiHistory:
     """Tests for ``GET /api/plugins/snippets/{snippet_filename}/history``."""
 
