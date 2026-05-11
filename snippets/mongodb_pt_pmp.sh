@@ -56,6 +56,7 @@ set -euo pipefail
 declare TARGET_PID=""
 declare BINARY="mongod"
 declare DUMPER="pteu"
+declare PTDEST=
 declare -i ITERATIONS=10
 declare -i INTERVAL=1
 
@@ -74,6 +75,8 @@ Command line options:
                        or gdb. Default: pteu
    --iterations N      Number of stack samples to collect. Default: 10
    --interval S        Seconds between samples. Default: 1
+   -d, --dest          Destination for the samples and archive.
+                       Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
    -h, --help          Show this help message
 
 Notes:
@@ -84,7 +87,11 @@ EOS
     exit ${exit_code}
 }
 
-if ! OPTS=$(getopt --options -h --longoptions 'pid:,binary:,dumper:,iterations:,interval:,help' -- "$@"); then
+compress_data() {
+    tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
+}
+
+if ! OPTS=$(getopt --options -d:h --longoptions 'pid:,binary:,dumper:,iterations:,interval:,dest:,help' -- "$@"); then
     echo "Error parsing options"
     usage 1
 fi
@@ -111,6 +118,10 @@ while [[ -n $* ]]; do
             ;;
         --interval)
             INTERVAL="$2"
+            shift 2
+            ;;
+        -d | --dest)
+            PTDEST="$2"
             shift 2
             ;;
         -h | --help)
@@ -157,10 +168,12 @@ if ! kill -0 "${TARGET_PID}" 2> /dev/null; then
     exit 5
 fi
 
-PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+test -n "${PTDEST}" || {
+    PTDEST="$(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)"
+}
 
-if [ -e "${PTDEST}" ]; then
-    echo "Rejecting use of existing destination path '${PTDEST}'" >&2
+if [ -d "${PTDEST}" ]; then
+    echo Rejecting use of "${PTDEST}"
     exit 11
 fi
 
@@ -178,5 +191,5 @@ pt-pmp \
     --interval "${INTERVAL}" \
     --save-samples "${SAMPLES_FILE}"
 
-tar czf "${PTDEST}.tar.gz" -C "$(dirname "${PTDEST}")" "$(basename "${PTDEST}")"
+compress_data
 echo "Output archive: ${PTDEST}.tar.gz"
