@@ -44,6 +44,8 @@ function makeWrapper() {
 }
 
 const originalAdapter = apiClient.defaults.adapter;
+const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
 
 describe('useSnippetDownload', () => {
   let lastConfig: CapturedRequestConfig | null = null;
@@ -93,6 +95,16 @@ describe('useSnippetDownload', () => {
   afterEach(() => {
     (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
     setTokenProvider(() => null);
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: originalCreateObjectURL,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: originalRevokeObjectURL,
+      writable: true,
+      configurable: true,
+    });
     clickSpy.mockRestore();
   });
 
