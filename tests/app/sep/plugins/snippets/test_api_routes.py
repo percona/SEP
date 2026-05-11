@@ -236,22 +236,15 @@ class TestSnippetsApiDownload:
         assert response.content == on_disk
 
     async def test_returns_401_for_unauthenticated_caller(
-        self, session, create_snippet
+        self, api_unauthenticated_client, create_snippet
     ):
         """Anonymous callers are rejected with a structured 401, not a redirect."""
         snippet = await create_snippet("hello.sh", approved=True)
-        sep_app.dependency_overrides[validate_csrf] = lambda: True
-        sep_app.dependency_overrides[get_session] = lambda: session
-        # Intentionally do NOT override ``get_api_authenticated_user`` so the
-        # request hits the real auth dependency and surfaces a 401.
-        try:
-            with TestClient(sep_app, raise_server_exceptions=False) as client:
-                response = client.get(
-                    f"{API_BASE}/{snippet.filename}/download",
-                    follow_redirects=False,
-                )
-        finally:
-            sep_app.dependency_overrides = {}
+
+        response = api_unauthenticated_client.get(
+            f"{API_BASE}/{snippet.filename}/download",
+            follow_redirects=False,
+        )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
