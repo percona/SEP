@@ -16,6 +16,7 @@ ENV FASTAPI_ENV=production_docker
 # Install dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends g++ git && \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Export requirements
