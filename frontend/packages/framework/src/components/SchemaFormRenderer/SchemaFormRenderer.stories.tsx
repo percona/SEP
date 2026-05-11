@@ -186,3 +186,241 @@ export const MinimalForm: Story = {
     },
   },
 };
+
+export const ConditionalFields: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Mode',
+        description:
+          'Toggle "Advanced mode" to reveal the hidden field. Check "Needs reason" to make Reason required.',
+        fields: [
+          { type: 'bool', name: 'advanced', label: 'Advanced mode' },
+          {
+            type: 'string',
+            name: 'advancedOption',
+            label: 'Advanced option (hidden when advanced=false)',
+            description: 'Visible only when Advanced mode is on.',
+            forbidden: [{ when: { falsy: 'advanced' } }],
+          },
+          { type: 'bool', name: 'needsReason', label: 'Needs reason' },
+          {
+            type: 'string',
+            name: 'reason',
+            label: 'Reason (dynamically required)',
+            description: 'Required only when Needs reason is checked.',
+            requires: [{ when: { truthy: 'needsReason' } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Submit',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/**
+ * Mirrors the pt-online-schema-change (alters) plugin's Recursion section.
+ * "DSN Table" is only needed when Recursion Method is "DSN" — otherwise it
+ * is hidden and excluded from the submission payload.
+ */
+export const AltersRecursionMethod: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Recursion',
+        description: 'Select "DSN" as the recursion method to reveal the DSN Table field.',
+        fields: [
+          {
+            type: 'choice',
+            name: 'recursion_method',
+            label: 'Recursion Method',
+            required: true,
+            choices: [
+              { label: 'Default', value: 'default' },
+              { label: 'Processlist', value: 'processlist' },
+              { label: 'Hosts', value: 'hosts' },
+              { label: 'DSN', value: 'dsn' },
+              { label: 'None', value: 'none' },
+            ],
+          },
+          {
+            type: 'string',
+            name: 'dsn_table',
+            label: 'DSN Table',
+            description: 'DSN table in D=db,t=table format (e.g. D=percona,t=dsns).',
+            forbidden: [{ when: { not_equals: { recursion_method: 'dsn' } } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run alter',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/**
+ * Mirrors the pt-archiver (archives) plugin's purge-conditions section.
+ * When Swap Drop = 1 (SWAP_DROP) the WHERE clause is forbidden — pt-archiver
+ * selects all rows. Any other swap_drop value requires a WHERE clause.
+ */
+export const ArchivesSwapDrop: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Purge conditions',
+        description:
+          'Set Swap Drop to 1 (SWAP_DROP) to hide the WHERE field. Any other value makes WHERE required.',
+        fields: [
+          {
+            type: 'integer',
+            name: 'swap_drop',
+            label: 'Swap Drop',
+            required: true,
+            ge: 0,
+            le: 2,
+            description: '0 = no swap, 1 = SWAP_DROP (no WHERE), 2 = SWAP_ARCHIVE_DROP',
+          },
+          {
+            type: 'string',
+            name: 'where',
+            label: 'WHERE Condition',
+            description: 'SQL WHERE clause selecting rows to purge (e.g. id < 1000).',
+            forbidden: [{ when: { equals: { swap_drop: 1 } } }],
+            requires: [{ when: { not_equals: { swap_drop: 1 } } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run archive',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/**
+ * Combined end-to-end story covering all three section-level rule primitives
+ * in a single realistic archives-like schema:
+ *
+ *  - cardinality_rule:  source_db_id XOR source_table_id (exactly one)
+ *  - fail_when:         SWAP_DROP mode is incompatible with table-level source
+ *  - forbidden + requires on `where`: hidden when swap_drop=1, required otherwise
+ *
+ * This is the "combined 5-validator" shape referenced in SEP-1077 AC #4 —
+ * intended as living documentation for plugin authors migrating to Wave 2.
+ */
+export const ArchivesCombined: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Archives — full rule set',
+        description:
+          'Fill exactly one source (DB or Table). Set swap_drop and configure the WHERE clause.',
+        cardinality_rules: [
+          {
+            fields: ['source_db_id', 'source_table_id'],
+            min: 1,
+            max: 1,
+            message: 'Specify exactly one source: either DB or Table, not both.',
+          },
+        ],
+        fail_when: [
+          {
+            fail_when: {
+              all: [{ equals: { swap_drop: 1 } }, { truthy: 'source_table_id' }],
+            },
+            error_fields: ['swap_drop', 'source_table_id'],
+            message: 'SWAP_DROP mode (swap_drop=1) cannot be combined with a table-level source.',
+          },
+        ],
+        fields: [
+          {
+            type: 'string',
+            name: 'source_db_id',
+            label: 'Source DB',
+            description: 'Archive from an entire database.',
+          },
+          {
+            type: 'string',
+            name: 'source_table_id',
+            label: 'Source Table',
+            description: 'Archive from a single table.',
+          },
+          {
+            type: 'integer',
+            name: 'swap_drop',
+            label: 'Swap Drop',
+            required: true,
+            ge: 0,
+            le: 2,
+            description: '0 = no swap, 1 = SWAP_DROP (no WHERE), 2 = SWAP_ARCHIVE_DROP',
+          },
+          {
+            type: 'string',
+            name: 'where',
+            label: 'WHERE Condition',
+            description: 'SQL WHERE clause selecting rows to purge (e.g. id < 1000).',
+            forbidden: [{ when: { equals: { swap_drop: 1 } } }],
+            requires: [{ when: { not_equals: { swap_drop: 1 } } }],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run archive',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/**
+ * Mirrors the pt-archiver source selection: exactly one of source_db_id or
+ * source_table_id must be filled (XOR / exactly-one cardinality rule).
+ * The error banner appears immediately when both are filled or both are empty.
+ */
+export const ArchivesSourceXor: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Source',
+        description: 'Fill exactly one of DB or Table as the archiver source.',
+        cardinality_rules: [
+          {
+            fields: ['source_db_id', 'source_table_id'],
+            min: 1,
+            max: 1,
+            message: 'Specify exactly one source: either DB or Table, not both.',
+          },
+        ],
+        fields: [
+          {
+            type: 'string',
+            name: 'source_db_id',
+            label: 'Source DB',
+            description: 'Archive from an entire database.',
+          },
+          {
+            type: 'string',
+            name: 'source_table_id',
+            label: 'Source Table',
+            description: 'Archive from a single table.',
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run archive',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
