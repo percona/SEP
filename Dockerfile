@@ -37,7 +37,8 @@ RUN apt-get update && \
         libpango-1.0-0 \
         libpangoft2-1.0-0 \
         fontconfig \
-        fonts-dejavu && \
+        fonts-dejavu \
+        shared-mime-info && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
