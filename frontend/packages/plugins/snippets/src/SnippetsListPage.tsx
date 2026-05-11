@@ -376,7 +376,11 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
               setRefreshError(null);
               setRefreshSuccess(null);
               refresh.mutate(undefined, {
-                onSuccess: (data) => setRefreshSuccess(data),
+                onSuccess: (data) => {
+                  setRefreshSuccess(data);
+                  setDownloaded(new Set());
+                  setSelected(new Set());
+                },
                 onError: (err) => {
                   const detail =
                     err instanceof ApiError && err.kind === 'http' && err.message

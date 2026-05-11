@@ -422,4 +422,70 @@ describe('SnippetsListPage — RefreshButton', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(/Snippets refreshed at/i);
     });
   });
+
+  it('clears downloaded set after successful refresh', async () => {
+    mockUseSnippets.mockReturnValue({
+      data: [unapprovedSnippet],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn((_, callbacks) => {
+        callbacks?.onSuccess?.({ refreshed_at: '2026-05-07T12:34:56Z' });
+      }),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+
+    render(<SnippetsListPage isAdmin />);
+
+    // Download enables the Approve button.
+    fireEvent.click(screen.getByRole('link', { name: /download/i }));
+    expect(screen.getByRole('button', { name: /approve/i })).not.toBeDisabled();
+
+    // Trigger refresh.
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
+
+    // Approve should be disabled again — downloaded set cleared.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /approve/i })).toBeDisabled();
+    });
+  });
+
+  it('clears selected set after successful refresh', async () => {
+    mockUseSnippets.mockReturnValue({
+      data: [unapprovedSnippet],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn((_, callbacks) => {
+        callbacks?.onSuccess?.({ refreshed_at: '2026-05-07T12:34:56Z' });
+      }),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+
+    render(<SnippetsListPage isAdmin />);
+
+    // Select the snippet.
+    fireEvent.click(screen.getByRole('checkbox', { name: /select check\.sh/i }));
+    expect(screen.getByRole('button', { name: /batch approve \(1\)/i })).toBeInTheDocument();
+
+    // Trigger refresh.
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
+
+    // Checkbox unchecked — selected set cleared.
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /select check\.sh/i })).not.toBeChecked();
+    });
+  });
 });
