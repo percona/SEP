@@ -42,4 +42,8 @@ export type {
   TableField,
   HostField,
   ScriptPreviewField,
+  Predicate,
+  FieldGate,
+  CardinalityRule,
+  FailRule,
 } from '@sep/api';
