@@ -199,12 +199,12 @@ async function selectAtwSnippetAndOpenForm(page: Page): Promise<void> {
     timeout: 30_000,
   });
 
-  await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toContainText(
-    'MySQL',
-    {
-      timeout: 15_000,
-    },
-  );
+  const categoryCombo = page.getByRole('combobox', { name: 'Category', exact: true });
+  if ((await categoryCombo.count()) > 0) {
+    await expect(categoryCombo).toContainText('MySQL', { timeout: 15_000 });
+    await categoryCombo.click();
+    await page.getByRole('option', { name: 'MySQL' }).click();
+  }
 
   await page.getByRole('combobox', { name: 'Subcategory 1' }).click();
   await page.getByRole('option', { name: 'Performance Issues' }).click();

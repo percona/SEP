@@ -87,12 +87,56 @@ describe('AtwPage', () => {
     } as unknown as ReturnType<typeof useSnippetPluginExecution>);
   });
 
-  it('renders the category browser controls', () => {
+  it('hides the Category control when the listing has a single root', () => {
+    render(<AtwPage />);
+
+    expect(screen.queryByRole('combobox', { name: /^Category$/ })).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Subcategory 1' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Subcategory 2' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Snippet' })).toBeTruthy();
+  });
+
+  it('shows the Category control when the listing has multiple roots', () => {
+    mockUseAtwCategories.mockReturnValue({
+      data: [
+        {
+          category_root: 'MySQL',
+          parent_category: 'PERFORMANCE_ISSUES',
+          parent_category_label: 'Performance Issues',
+          category: 'OVERALL_SLOWNESS',
+          category_label: 'Overall Slowness',
+          snippet_count: 1,
+          snippets: [
+            {
+              name: 'diag/slow-query.sh',
+              title: 'Slow Query Diagnostics',
+              description: 'Collects slow-query and processlist data.',
+            },
+          ],
+        },
+        {
+          category_root: 'PostgreSQL',
+          parent_category: 'PERFORMANCE_ISSUES',
+          parent_category_label: 'Performance Issues',
+          category: 'OVERALL_SLOWNESS',
+          category_label: 'Overall Slowness',
+          snippet_count: 1,
+          snippets: [
+            {
+              name: 'diag/other.sh',
+              title: 'Other',
+              description: 'Second root fixture.',
+            },
+          ],
+        },
+      ],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useAtwCategories>);
+
     render(<AtwPage />);
 
     expect(screen.getByRole('combobox', { name: /^Category$/ })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'Subcategory 1' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Subcategory 2' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Snippet' })).toBeTruthy();
   });
 });

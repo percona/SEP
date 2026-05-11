@@ -157,26 +157,28 @@ export function AtwPage() {
       </Typography>
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 3 }}>
-        <FormControl fullWidth>
-          <InputLabel id="atw-root-label">Category</InputLabel>
-          <Select
-            labelId="atw-root-label"
-            value={selectedRoot}
-            label="Category"
-            onChange={(event: SelectChangeEvent) => {
-              setSelectedRoot(event.target.value);
-              setSelectedParent('');
-              setSelectedCategory('');
-              setSelectedSnippet('');
-            }}
-          >
-            {rootOptions.map((option) => (
-              <MenuItem key={option} value={option}>
-                {option}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        {rootOptions.length > 1 ? (
+          <FormControl fullWidth>
+            <InputLabel id="atw-root-label">Category</InputLabel>
+            <Select
+              labelId="atw-root-label"
+              value={selectedRoot}
+              label="Category"
+              onChange={(event: SelectChangeEvent) => {
+                setSelectedRoot(event.target.value);
+                setSelectedParent('');
+                setSelectedCategory('');
+                setSelectedSnippet('');
+              }}
+            >
+              {rootOptions.map((option) => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        ) : null}
 
         <FormControl fullWidth>
           <InputLabel id="atw-parent-label">Subcategory 1</InputLabel>
