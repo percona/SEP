@@ -60,8 +60,8 @@ def snippets_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def api_client(test_client: TestClient, session: AsyncSession) -> TestClient:
     """Return a TestClient that uses the in-memory test session."""
     sep_app.dependency_overrides[get_session] = lambda: session
-    return test_client
     # test_client fixture already resets dependency_overrides
+    return test_client
 
 
 @pytest.fixture
