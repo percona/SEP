@@ -15,8 +15,8 @@
 
 """Define the JSON API router for the ATW plugin."""
 
+import logging
 from collections import defaultdict
-from urllib.parse import quote
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -27,6 +27,8 @@ from app.sep.plugins.atw.schema import atw_schema
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
+
+logger = logging.getLogger(__name__)
 
 # TODO(SEP-1127): Derive category_root from snippet/meta for multi-root ATW.
 # https://percona.atlassian.net/browse/SEP-1127
@@ -39,9 +41,6 @@ class ATWSnippetSummary(BaseModel):
     name: str
     title: str
     description: str
-    snippet_schema_url: str
-    snippet_execute_url: str
-    snippet_preview_url: str
 
 
 class ATWCategoryListing(BaseModel):
@@ -61,28 +60,36 @@ schema_endpoint(router=router, plugin_schema=atw_schema)
 
 
 def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
-    # TODO(SEP-1128): Replace path-segment filename URLs with a routing-safe contract.
-    # https://percona.atlassian.net/browse/SEP-1128
-    # (e.g., query param or opaque id); %2F in snippet filenames can misroute in ASGI stacks.
-    encoded_filename = quote(snippet.filename, safe="")
     return ATWSnippetSummary(
         name=snippet.filename,
         title=snippet.title,
         description=snippet.description,
-        snippet_schema_url=f"/plugins/snippets/{encoded_filename}/schema",
-        snippet_execute_url=f"/plugins/snippets/{encoded_filename}/execute",
-        snippet_preview_url=f"/plugins/snippets/{encoded_filename}/script-preview",
     )
 
 
 @router.get("/", response_model=list[ATWCategoryListing])
 async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
-    """List ATW-tagged snippets grouped by category."""
+    """List ATW-tagged snippets grouped by category.
+
+    Categories with no matching snippets are omitted to keep the payload small;
+    the ATW enum still defines the full taxonomy for validation (plugin schema).
+    """
     snippets = await SnippetManager.list(session)
     snippets_by_atw_tag: defaultdict[str, list[Snippet]] = defaultdict(list)
     for snippet in snippets:
-        raw_atw = snippet.meta.get("atw", [])
-        tags = raw_atw if isinstance(raw_atw, list) else []
+        if "atw" not in snippet.meta:
+            tags = []
+        else:
+            raw_atw = snippet.meta["atw"]
+            if isinstance(raw_atw, list):
+                tags = raw_atw
+            else:
+                logger.warning(
+                    "Ignoring meta['atw'] for snippet %s: expected list, got %s",
+                    snippet.filename,
+                    type(raw_atw).__name__,
+                )
+                tags = []
         for tag in dict.fromkeys(tags):
             snippets_by_atw_tag[tag].append(snippet)
 
@@ -92,6 +99,8 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
             _build_summary(snippet)
             for snippet in snippets_by_atw_tag.get(category.name, [])
         ]
+        if not category_snippets:
+            continue
         grouped.append(
             ATWCategoryListing(
                 category_root=ATW_CATEGORY_ROOT,

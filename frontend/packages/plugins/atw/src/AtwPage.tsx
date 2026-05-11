@@ -29,8 +29,15 @@ import {
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import { useNavigate } from 'react-router-dom';
-import { SchemaFormRenderer, buildSnippetExecutionFormPayload } from '@sep/framework';
-import { useAtwCategories, useSnippetExecution, useSnippetSchema } from './hooks';
+import {
+  SchemaFormRenderer,
+  buildSnippetExecutionFormPayload,
+  snippetPluginExecutePath,
+  snippetPluginSchemaPath,
+  useSnippetPluginExecution,
+  useSnippetPluginSchema,
+} from '@sep/framework';
+import { useAtwCategories } from './hooks';
 import type { AtwCategoryListing, AtwSnippetSummary } from './types';
 
 export function AtwPage() {
@@ -102,8 +109,13 @@ export function AtwPage() {
     [selectedCategoryRow, selectedSnippet],
   );
 
-  const schemaQuery = useSnippetSchema(selectedSnippetRow?.snippet_schema_url ?? null);
-  const executionMutation = useSnippetExecution(selectedSnippetRow?.snippet_execute_url ?? null);
+  const selectedSnippetFilename = selectedSnippetRow?.name ?? null;
+  const schemaQuery = useSnippetPluginSchema(
+    selectedSnippetFilename ? snippetPluginSchemaPath(selectedSnippetFilename) : undefined,
+  );
+  const executionMutation = useSnippetPluginExecution(
+    selectedSnippetFilename ? snippetPluginExecutePath(selectedSnippetFilename) : undefined,
+  );
 
   const submitError = executionMutation.isError
     ? (executionMutation.error?.message ?? 'Execution failed')

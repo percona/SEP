@@ -16,18 +16,16 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, ApiError, type PluginSchema } from '@sep/api';
-import type { PaginatedTaskHistory } from '@sep/framework';
+import { apiClient, ApiError } from '@sep/api';
+import { SNIPPETS_PLUGINS_API_BASE, type PaginatedTaskHistory } from '@sep/framework';
 import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,
   SnippetBatchApproveRequest,
-  SnippetExecutionRequest,
-  SnippetExecutionResponse,
   SnippetResponse,
 } from './types';
 
-const SNIPPETS_BASE = '/plugins/snippets';
+const SNIPPETS_BASE = SNIPPETS_PLUGINS_API_BASE;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -71,26 +69,6 @@ export function useSnippets() {
 }
 
 /**
- * Fetch the per-snippet form schema, including the script preview field.
- */
-export function useSnippetSchema(filename: string | undefined) {
-  return useQuery<PluginSchema>({
-    queryKey: ['snippets', filename, 'schema'],
-    queryFn: async () => {
-      if (!filename) {
-        throw new Error('Missing snippet filename');
-      }
-      const { data } = await apiClient.get<PluginSchema>(
-        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/schema`,
-      );
-      return data;
-    },
-    enabled: Boolean(filename),
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-/**
  * Fetch the execution history for a single snippet.
  *
  * Returns the upstream paginated tasks-history payload so the React detail
@@ -109,35 +87,6 @@ export function useSnippetHistory(filename: string | undefined) {
       return data;
     },
     enabled: Boolean(filename),
-  });
-}
-
-/**
- * Mutation: execute a snippet against the tasks API.
- *
- * On success, the per-snippet history list query is invalidated so the
- * detail page refetches and the new run row appears immediately.
- */
-export function useSnippetExecution(filename: string | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation<SnippetExecutionResponse, Error, SnippetExecutionRequest>({
-    mutationFn: async (body) => {
-      if (!filename) {
-        throw new Error('Missing snippet filename');
-      }
-      const { data } = await apiClient.post<SnippetExecutionResponse>(
-        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/execute`,
-        body,
-      );
-      return data;
-    },
-    onSuccess: () => {
-      if (filename) {
-        queryClient.invalidateQueries({
-          queryKey: ['snippets', filename, 'history'],
-        });
-      }
-    },
   });
 }
 

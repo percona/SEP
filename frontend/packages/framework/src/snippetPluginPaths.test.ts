@@ -15,19 +15,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export interface AtwSnippetSummary {
-  /** Snippet filename; use with snippets plugin API path helpers. */
-  name: string;
-  title: string;
-  description: string;
-}
+import { describe, expect, it } from 'vitest';
+import { snippetPluginExecutePath, snippetPluginSchemaPath } from './snippetPluginPaths';
 
-export interface AtwCategoryListing {
-  category_root: string;
-  parent_category: string;
-  parent_category_label: string;
-  category: string;
-  category_label: string;
-  snippet_count: number;
-  snippets: AtwSnippetSummary[];
-}
+describe('snippetPluginPaths', () => {
+  it('encodes path segments in filenames like backend quote(..., safe="")', () => {
+    const filename = 'diag/slow-query.sh';
+    expect(snippetPluginSchemaPath(filename)).toBe('/plugins/snippets/diag%2Fslow-query.sh/schema');
+    expect(snippetPluginExecutePath(filename)).toBe(
+      '/plugins/snippets/diag%2Fslow-query.sh/execute',
+    );
+  });
+});

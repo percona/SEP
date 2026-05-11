@@ -15,19 +15,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export interface AtwSnippetSummary {
-  /** Snippet filename; use with snippets plugin API path helpers. */
-  name: string;
-  title: string;
-  description: string;
+/** Body shape accepted by `POST /api/plugins/snippets/{filename}/execute`. */
+export interface SnippetExecutionRequest {
+  executor_host: string;
+  sudo?: boolean;
+  args?: Record<string, unknown>;
 }
 
-export interface AtwCategoryListing {
-  category_root: string;
-  parent_category: string;
-  parent_category_label: string;
-  category: string;
-  category_label: string;
-  snippet_count: number;
-  snippets: AtwSnippetSummary[];
+export interface SnippetExecutionResponse {
+  task_name: string;
+  task_id: number | null;
+  snippet_filename: string;
 }

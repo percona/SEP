@@ -35,9 +35,13 @@ import {
   TaskHistoryTable,
   TaskLogViewer,
   buildSnippetExecutionFormPayload,
+  snippetPluginExecutePath,
+  snippetPluginSchemaPath,
+  useSnippetPluginExecution,
+  useSnippetPluginSchema,
   type TaskHistoryEntry,
 } from '@sep/framework';
-import { useSnippetExecution, useSnippetHistory, useSnippetSchema } from './hooks';
+import { useSnippetHistory } from './hooks';
 
 /**
  * Snippet detail page rendered at `/snippets/:filename`.
@@ -53,9 +57,14 @@ export function SnippetDetailPage() {
   const { filename } = useParams<{ filename: string }>();
   const navigate = useNavigate();
 
-  const schemaQuery = useSnippetSchema(filename);
+  const schemaQuery = useSnippetPluginSchema(
+    filename ? snippetPluginSchemaPath(filename) : undefined,
+  );
   const historyQuery = useSnippetHistory(filename);
-  const executionMutation = useSnippetExecution(filename);
+  const executionMutation = useSnippetPluginExecution(
+    filename ? snippetPluginExecutePath(filename) : undefined,
+    filename ? { invalidateHistoryForFilename: filename } : undefined,
+  );
 
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
@@ -63,7 +72,7 @@ export function SnippetDetailPage() {
     if (!filename) {
       return;
     }
-    // Stay on the snippet detail page after execute — `useSnippetExecution`
+    // Stay on the snippet detail page after execute — `useSnippetPluginExecution`
     // invalidates the per-snippet history query on success so the new run
     // appears in the table without navigating away (mirrors legacy Jinja2
     // behaviour and avoids the placeholder /tasks/* React route).

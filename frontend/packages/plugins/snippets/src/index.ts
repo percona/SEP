@@ -20,9 +20,7 @@ export { SnippetsListPage } from './SnippetsListPage';
 export { SnippetDetailPage } from './SnippetDetailPage';
 export {
   useSnippets,
-  useSnippetSchema,
   useSnippetHistory,
-  useSnippetExecution,
   useApproveSnippet,
   useRemoveSnippetApproval,
   useBatchApproveSnippets,

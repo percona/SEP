@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from app.sep.plugins.atw import api_routes as atw_api_routes
 from app.sep.plugins.atw.models import ParentCategory
 from app.sep.snippets.models import Snippet
 
@@ -45,6 +46,7 @@ class TestAtwListEndpoint:
         assert "application/json" in response.headers["content-type"]
         payload = response.json()
         assert isinstance(payload, list)
+        assert len(payload) == 1
         overall = next(
             entry for entry in payload if entry["category"] == "OVERALL_SLOWNESS"
         )
@@ -52,10 +54,9 @@ class TestAtwListEndpoint:
         assert overall["snippet_count"] == 1
         assert overall["category_root"] == "MySQL"
         assert overall["parent_category"] == "PERFORMANCE_ISSUES"
-        assert overall["snippets"][0]["name"] == "diag/slow-query.sh"
-        assert overall["snippets"][0]["snippet_schema_url"].endswith(
-            "/plugins/snippets/diag%2Fslow-query.sh/schema"
-        )
+        summary = overall["snippets"][0]
+        assert summary["name"] == "diag/slow-query.sh"
+        assert set(summary.keys()) == {"name", "title", "description"}
 
     def test_atw_list_real_snippet_row_meta_shape(
         self, test_client: TestClient
@@ -80,6 +81,7 @@ class TestAtwListEndpoint:
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
+        assert len(payload) == 1
         overall = next(
             entry for entry in payload if entry["category"] == "OVERALL_SLOWNESS"
         )
@@ -100,19 +102,22 @@ class TestAtwListEndpoint:
         snippet.description = ""
         snippet.meta = {"atw": "noise OVERALL_SLOWNESS noise"}
 
-        with patch(
-            "app.sep.plugins.atw.api_routes.SnippetManager.list",
-            new=AsyncMock(return_value=[snippet]),
+        with (
+            patch.object(atw_api_routes.logger, "warning") as warn_mock,
+            patch(
+                "app.sep.plugins.atw.api_routes.SnippetManager.list",
+                new=AsyncMock(return_value=[snippet]),
+            ),
         ):
             response = test_client.get("/api/plugins/atw/")
 
         assert response.status_code == status.HTTP_200_OK
-        overall = next(
-            entry
-            for entry in response.json()
-            if entry["category"] == "OVERALL_SLOWNESS"
+        assert response.json() == []
+        warn_mock.assert_called_once_with(
+            "Ignoring meta['atw'] for snippet %s: expected list, got %s",
+            "bad-meta.sh",
+            "str",
         )
-        assert overall["snippet_count"] == 0
 
     def test_atw_list_requires_authentication(
         self, unauthenticated_client: TestClient

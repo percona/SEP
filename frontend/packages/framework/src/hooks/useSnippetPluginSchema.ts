@@ -16,20 +16,28 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
-import type { AtwCategoryListing } from './types';
+import { apiClient, type PluginSchema } from '@sep/api';
 
-const ATW_BASE = '/plugins/atw';
+const SNIPPET_PLUGIN_SCHEMA_STALE_MS = 5 * 60 * 1000;
 
-const ATW_STALE_TIME_MS = 5 * 60 * 1000;
-
-export function useAtwCategories() {
-  return useQuery<AtwCategoryListing[]>({
-    queryKey: ['atw', 'categories'],
+/**
+ * Load a snippets-plugin schema from an API path relative to `/api`
+ * (e.g. `/plugins/snippets/my-script.sh/schema`, including encoded slashes).
+ *
+ * Shared by the snippets detail page (path derived from filename) and flows
+ * like ATW that compose the same URLs client-side.
+ */
+export function useSnippetPluginSchema(apiPath: string | null | undefined) {
+  return useQuery<PluginSchema>({
+    queryKey: ['plugins', 'snippets', 'schema', apiPath ?? ''],
     queryFn: async () => {
-      const { data } = await apiClient.get<AtwCategoryListing[]>(`${ATW_BASE}/`);
+      if (!apiPath) {
+        throw new Error('Missing snippets plugin schema path');
+      }
+      const { data } = await apiClient.get<PluginSchema>(apiPath);
       return data;
     },
-    staleTime: ATW_STALE_TIME_MS,
+    enabled: Boolean(apiPath),
+    staleTime: SNIPPET_PLUGIN_SCHEMA_STALE_MS,
   });
 }

@@ -16,5 +16,5 @@
  */
 
 export { AtwPage, AtwPage as AtwPlugin } from './AtwPage';
-export { useAtwCategories, useSnippetExecution, useSnippetSchema } from './hooks';
+export { useAtwCategories } from './hooks';
 export type { AtwCategoryListing, AtwSnippetSummary } from './types';
