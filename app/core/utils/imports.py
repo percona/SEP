@@ -55,7 +55,11 @@ def validate_module_is_importable(module: str) -> str:
     :rtype: str
     :raises ValueError: If the module cannot be found.
     """
-    if importlib.util.find_spec(module) is None:
+    try:
+        found = importlib.util.find_spec(module)
+    except ModuleNotFoundError:
+        found = None
+    if found is None:
         raise ValueError(f"No module named {module}")
     return module
 
