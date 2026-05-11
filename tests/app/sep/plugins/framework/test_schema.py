@@ -27,6 +27,7 @@ from app.sep.plugins.framework.schema import (
     Column,
     ColumnFormat,
     DateTimeField,
+    DerivedTask,
     FileField,
     FloatField,
     FormSection,
@@ -1052,4 +1053,119 @@ class TestSchemaTier2ReferenceResolution:
                     ),
                 ],
                 list_view=_minimal_list_view(),
+            )
+
+
+# ── DerivedTask primitive and PluginSchema.derived (SEP-1074) ────────────
+
+
+class TestDerivedTask:
+    """Cover the ``DerivedTask`` declarative primitive."""
+
+    def test_derived_task_minimal(self) -> None:
+        """Construct a ``DerivedTask`` with only ``name_suffix`` and check defaults."""
+        spec = DerivedTask(name_suffix="-dry-run")
+
+        assert spec.name_suffix == "-dry-run"
+        assert spec.arg_substitutions is None
+        assert spec.parent_link is True
+
+    def test_derived_task_empty_suffix_rejected(self) -> None:
+        """Reject an empty ``name_suffix`` via the ``NonEmptyStr`` type."""
+        with pytest.raises(ValidationError):
+            DerivedTask(name_suffix="")
+
+    def test_derived_task_extra_forbidden(self) -> None:
+        """Reject an unknown field on ``DerivedTask`` (``extra="forbid"``)."""
+        with pytest.raises(ValidationError):
+            DerivedTask.model_validate(
+                {"name_suffix": "-x", "unknown": "v"},
+            )
+
+    def test_derived_task_round_trip(self) -> None:
+        """Round-trip a ``DerivedTask`` losslessly through JSON."""
+        spec = DerivedTask(
+            name_suffix="-dry-run",
+            arg_substitutions={"--execute": "--dry-run"},
+            parent_link=False,
+        )
+        dumped = spec.model_dump(mode="json")
+
+        assert dumped == {
+            "name_suffix": "-dry-run",
+            "arg_substitutions": {"--execute": "--dry-run"},
+            "parent_link": False,
+        }
+        reparsed = DerivedTask.model_validate(dumped)
+        assert reparsed == spec
+
+
+class TestPluginSchemaDerivedField:
+    """Cover the new ``derived`` field on ``PluginSchema``."""
+
+    def test_defaults_to_none(self) -> None:
+        """Confirm ``derived`` is ``None`` by default (BC regression guard)."""
+        schema = PluginSchema(
+            name="minimal",
+            display_name="Minimal",
+            forms=[],
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.derived is None
+
+    def test_with_derived_round_trips_through_json(self) -> None:
+        """Round-trip a schema carrying ``derived`` losslessly via JSON."""
+        schema = PluginSchema(
+            name="cascade-demo",
+            display_name="Cascade Demo",
+            forms=[],
+            list_view=_minimal_list_view(),
+            derived=[
+                DerivedTask(
+                    name_suffix="-dry-run",
+                    arg_substitutions={"--execute": "--dry-run"},
+                ),
+            ],
+        )
+        reparsed = PluginSchema.model_validate(schema.model_dump(mode="json"))
+
+        assert reparsed == schema
+
+    def test_existing_unique_field_check_ignores_derived(self) -> None:
+        """Verify ``_validate_unique_field_names`` still passes when ``derived`` mirrors a field name.
+
+        ``derived[*].name_suffix`` lives outside the form-field namespace, so
+        sharing a literal value with a form field name must not trigger the
+        duplicate-name check.
+        """
+        schema = PluginSchema(
+            name="cascade-demo",
+            display_name="Cascade Demo",
+            forms=[
+                FormSection(
+                    title="T",
+                    fields=[StringField(name="foo", label="Foo")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+            derived=[DerivedTask(name_suffix="-foo")],
+        )
+
+        assert schema.derived is not None
+
+    def test_duplicate_suffixes_rejected(self) -> None:
+        """Reject a schema with two ``DerivedTask`` specs sharing a ``name_suffix``."""
+        with pytest.raises(
+            ValidationError, match="Duplicate derived name_suffix values"
+        ):
+            PluginSchema(
+                name="cascade-demo",
+                display_name="Cascade Demo",
+                forms=[],
+                list_view=_minimal_list_view(),
+                derived=[
+                    DerivedTask(name_suffix="-x"),
+                    DerivedTask(name_suffix="-x"),
+                ],
             )
