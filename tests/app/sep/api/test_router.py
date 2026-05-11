@@ -15,10 +15,13 @@
 
 """Define tests for the shared SEP API router at ``/api/plugins/``."""
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
-from app.sep.api.router import api_router, plugins_router
+from app.sep.api.router import api_router, build_plugins_router, plugins_router
+from app.sep.config import Plugin, sep_settings
 from app.sep.deps import IsApiAuthenticated
 from app.sep.main import sep_app
 
@@ -133,3 +136,242 @@ class TestApiRouterUnauthenticated:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
+
+
+class TestApiRouterConfigDrivenLoop:
+    """Test the config-driven plugin mount loop (SEP-1109)."""
+
+    def test_plugin_with_api_router_path_is_mounted(self) -> None:
+        """Assert a plugin with ``api_router_path`` set produces mounted routes."""
+        plugin = Plugin(
+            name="Checksums",
+            module_name="checksums",
+            api_router_path="app.sep.plugins.checksums.api_routes.router",
+        )
+        router = build_plugins_router([plugin])
+        paths = {r.path for r in router.routes if hasattr(r, "path")}
+        assert any(p.startswith("/plugins/checksums/") for p in paths)
+
+    def test_plugin_without_api_router_path_is_not_mounted(self) -> None:
+        """Assert a plugin with ``api_router_path=None`` contributes no routes."""
+        plugin = Plugin(
+            name="Inventory",
+            module_name="inventory",
+            api_router_path=None,
+        )
+        router = build_plugins_router([plugin])
+        assert router.routes == []
+
+    def test_empty_plugins_iterable_produces_empty_router(self) -> None:
+        """Assert no plugins → no plugin routes (only the prefix)."""
+        router = build_plugins_router([])
+        assert router.prefix == "/plugins"
+        assert router.routes == []
+
+    def test_mounted_plugin_routes_carry_module_basename_tag(self) -> None:
+        """Assert each mounted plugin's routes carry ``tags=[module_basename]``."""
+        plugin = Plugin(
+            name="Dipper Data Collection",
+            module_name="dipper",
+            api_router_path="app.sep.plugins.dipper.api_routes.router",
+        )
+        router = build_plugins_router([plugin])
+        tagged = [
+            r.tags for r in router.routes if hasattr(r, "path") and "dipper" in r.path
+        ]
+        assert tagged
+        assert all("dipper" in tags for tags in tagged)
+
+    def test_invalid_api_router_path_module_raises(self) -> None:
+        """Assert a non-importable module path fails fast at Plugin construction.
+
+        With ``api_router_path`` typed as ``StrImportableAttribute | None``,
+        Pydantic validates the module component at model construction time so
+        the error surfaces before ``build_plugins_router`` is ever called.
+        """
+        with pytest.raises(ValidationError):
+            Plugin(
+                name="Ghost",
+                module_name="snippets",
+                api_router_path="app.does.not.exist.router",
+            )
+
+    def test_api_router_path_pointing_at_missing_attribute_raises(self) -> None:
+        """Assert pointing at a missing attribute fails fast at construction."""
+        plugin = Plugin(
+            name="Ghost",
+            module_name="snippets",
+            api_router_path="app.sep.plugins.snippets.api_routes.does_not_exist",
+        )
+        with pytest.raises(AttributeError):
+            build_plugins_router([plugin])
+
+    def test_colon_syntax_in_api_router_path_is_rejected(self) -> None:
+        """Assert colon-style ``module:attr`` paths are rejected.
+
+        ``import_var`` uses ``rsplit('.', 1)`` so colon syntax leaves the
+        module piece embedded in the attribute name and the import fails.
+        """
+        plugin = Plugin(
+            name="Bad",
+            module_name="checksums",
+            api_router_path="app.sep.plugins.checksums.api_routes:router",
+        )
+        with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
+            build_plugins_router([plugin])
+
+    def test_plugin_omitting_api_router_path_auto_derives_for_known_module(
+        self,
+    ) -> None:
+        """Assert convention auto-derive sets ``api_router_path`` for built-ins."""
+        for module, expected in (
+            ("checksums", "app.sep.plugins.checksums.api_routes.router"),
+            ("dipper", "app.sep.plugins.dipper.api_routes.router"),
+            ("snippets", "app.sep.plugins.snippets.api_routes.router"),
+        ):
+            plugin = Plugin(name=module.title(), module_name=module)
+            assert plugin.api_router_path == expected
+
+    def test_plugin_omitting_api_router_path_stays_none_when_no_api_routes(
+        self,
+    ) -> None:
+        """Assert convention is silent when the plugin ships no ``api_routes`` module."""
+        plugin = Plugin(name="Archive", module_name="archives")
+        assert plugin.api_router_path is None
+
+    def test_explicit_null_api_router_path_opts_out(self) -> None:
+        """Assert explicit ``null`` input wins over convention auto-derive."""
+        plugin = Plugin.model_validate(
+            {
+                "name": "Checksums",
+                "module_name": "checksums",
+                "api_router_path": None,
+            }
+        )
+        assert plugin.api_router_path is None
+
+    def test_explicit_string_api_router_path_wins_over_convention(self) -> None:
+        """Assert explicit string wins over the conventional path."""
+        custom = "app.sep.plugins.dipper.api_routes.router"
+        plugin = Plugin(
+            name="Checksums",
+            module_name="checksums",
+            api_router_path=custom,
+        )
+        assert plugin.api_router_path == custom
+
+    def test_legacy_yaml_override_without_api_router_path_still_mounts_builtin_apis(
+        self,
+    ) -> None:
+        """Assert legacy operator overrides keep their JSON endpoints.
+
+        Mimic a pre-SEP-1109 ``settings.yaml`` override that re-declares the
+        three built-in plugins with only ``name`` / ``module_name`` /
+        ``uri_path`` / ``css_class`` and no ``api_router_path``.
+        """
+        plugins = [
+            Plugin(
+                name="Snippet Manager",
+                module_name="snippets",
+                uri_path="/snippets",
+                css_class="snippets",
+            ),
+            Plugin(
+                name="Checksums",
+                module_name="checksums",
+                uri_path="/checksums",
+                css_class="checksums",
+            ),
+            Plugin(
+                name="Dipper Data Collection",
+                module_name="dipper",
+                uri_path="/dipper",
+                css_class="dipper",
+            ),
+        ]
+        router = build_plugins_router(plugins)
+        paths = {r.path for r in router.routes if hasattr(r, "path")}
+        assert any(p.startswith("/plugins/snippets/") for p in paths)
+        assert any(p.startswith("/plugins/checksums/") for p in paths)
+        assert any(p.startswith("/plugins/dipper/") for p in paths)
+
+    def test_build_plugins_router_skips_empty_string_path(self) -> None:
+        """Assert an empty-string ``api_router_path`` is treated as no-mount.
+
+        Defense-in-depth: even if a falsy non-None value reaches the loop
+        (e.g. programmatic construction bypassing Pydantic), no routes are
+        mounted and no confusing ``ValueError`` is raised by ``import_var``.
+        """
+        plugin = Plugin.model_construct(
+            name="Ghost",
+            module_name="app.sep.plugins.checksums",
+            api_router_path="",
+        )
+        router = build_plugins_router([plugin])
+        assert router.routes == []
+
+    def test_build_plugins_router_raises_type_error_for_non_router(self) -> None:
+        """Assert importing a non-``APIRouter`` attribute raises ``TypeError``.
+
+        The error must identify the offending plugin key and path so operators
+        can diagnose YAML misconfigurations without reading tracebacks from
+        ``include_router``.
+        """
+        plugin = Plugin(
+            name="Checksums",
+            module_name="checksums",
+            api_router_path="app.sep.config.Plugin",
+        )
+        with pytest.raises(TypeError, match="checksums"):
+            build_plugins_router([plugin])
+
+    def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
+        """Assert an explicit ``api_router_path`` with a non-importable module raises ``ValidationError``.
+
+        Errors should be caught at settings construction, not at application
+        startup when ``build_plugins_router`` is first called.
+        """
+        with pytest.raises(ValidationError):
+            Plugin(
+                name="Ghost",
+                module_name="checksums",
+                api_router_path="not.a.real.module.router",
+            )
+
+    def test_module_level_plugins_router_matches_settings(self) -> None:
+        """Assert module-level ``plugins_router`` mirrors ``sep_settings.PLUGINS``."""
+        expected_keys = {
+            plugin.module_name.split(".")[-1]
+            for plugin in sep_settings.PLUGINS
+            if plugin.api_router_path is not None
+        }
+        seen_prefixes = {
+            r.path.split("/")[2]
+            for r in plugins_router.routes
+            if hasattr(r, "path") and r.path.startswith("/plugins/")
+        }
+        assert expected_keys
+        assert seen_prefixes == expected_keys
+
+
+class TestApiRouterConfigDrivenLoopIntegration:
+    """Integration tests against ``sep_app`` for runtime mount/no-mount behavior."""
+
+    def test_sep_hosts_endpoint_unchanged(self) -> None:
+        """Assert ``/api/sep/hosts`` is still mounted on ``sep_app``."""
+        paths = {r.path for r in sep_app.routes if hasattr(r, "path")}
+        assert any(p.startswith("/api/sep/hosts") for p in paths)
+
+    def test_api_router_inherits_is_api_authenticated(
+        self, unauthenticated_client: TestClient
+    ) -> None:
+        """Assert plugin routes still 401 unauth — guard not bypassed by the loop."""
+        response = unauthenticated_client.get(
+            "/api/plugins/dipper/schema", follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_unmounted_plugin_returns_404(self, test_client: TestClient) -> None:
+        """Assert a plugin key with no settings entry returns 404."""
+        response = test_client.get("/api/plugins/not-a-real-plugin/schema")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
