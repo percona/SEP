@@ -39,6 +39,7 @@ vi.mock('@sep/api', () => ({
   // Needed by useTaskLogs / useExecutionEvents in the component tree
   getToken: () => null,
   refreshAccessToken: vi.fn(),
+  emitUnauthorized: vi.fn(),
   apiClient: { get: vi.fn(), defaults: {} },
   setTokenProvider: vi.fn(),
 }));

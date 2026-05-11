@@ -16,7 +16,7 @@
  */
 
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
-import { getToken, refreshAccessToken } from '@sep/api';
+import { emitUnauthorized, getToken, refreshAccessToken } from '@sep/api';
 import { useEffect, useRef, useState } from 'react';
 
 export type LogType = 'stdout' | 'stderr';
@@ -97,6 +97,9 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
     // Guards all state setters: set to true in cleanup so stale callbacks
     // from an aborted stream cannot write into a subsequent stream's state.
     let disposed = false;
+    // Set at every intentional terminal site so onclose can distinguish a clean
+    // shutdown from an unexpected connection drop.
+    let terminatedCleanly = false;
 
     const url = `/stream-logs/${encodeURIComponent(String(taskHistoryId))}`;
 
@@ -119,7 +122,8 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
       },
 
       onopen: async (response) => {
-        if (response.ok && response.headers.get('content-type')?.includes(EventStreamContentType)) {
+        const contentType = response.headers.get('content-type') ?? '';
+        if (response.ok && contentType.includes(EventStreamContentType)) {
           // Reset so that future reconnects (e.g. after a network blip that
           // expires the token) are still allowed to attempt a refresh.
           refreshAttempted = false;
@@ -129,29 +133,43 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
           }
           return;
         }
-        if (response.status === 401 && !refreshAttempted) {
+        // Auth-failure detection: HTML redirect (SPA fallback on expired session),
+        // or 401 after refresh fails. Mirror the apiClient behaviour by calling
+        // emitUnauthorized() so the shell can clear auth and redirect to login.
+        let isAuthFailure = false;
+        if (response.ok) {
+          // Status 200 but wrong content-type — backend redirected to the HTML
+          // login page (SPA fallback).
+          isAuthFailure = true;
+        } else if (response.status === 401 && !refreshAttempted) {
           refreshAttempted = true;
           const newToken = await refreshAccessToken();
           if (newToken) {
             currentToken = newToken;
-            // Throw retriable sentinel so onerror returns 0 (immediate retry)
-            // with the updated token.
             throw new StreamRetriableAfterRefresh();
           }
+          isAuthFailure = true;
+        } else if (response.status === 401) {
+          isAuthFailure = true;
         }
-        // Terminal open failure (auth exhausted or non-200 non-401).
-        // Set error state here, abort, then throw fatal sentinel so onerror
-        // re-throws it and permanently stops the retry loop.
+        if (isAuthFailure) {
+          emitUnauthorized();
+        }
+        // Build a content-type-aware message so "Stream open failed with status 200"
+        // never appears when the SPA fallback serves index.html.
+        const message = response.ok
+          ? `Stream endpoint returned non-SSE content: ${contentType || 'unknown'}`
+          : `Stream open failed with status ${response.status}`;
+        // Set error state, abort, then throw fatal sentinel so onerror re-throws
+        // it and permanently stops the retry loop.
         if (!disposed) {
-          const errPayload: StreamError = {
-            detail: { message: `Stream open failed with status ${response.status}` },
-          };
-          setError(errPayload);
+          setError({ detail: { message } });
           streamStatusRef.current = 'error';
           setStreamStatus('error');
         }
+        terminatedCleanly = true;
         ctrl.abort();
-        throw new StreamFatalError(`Stream open failed: ${response.status}`);
+        throw new StreamFatalError(message);
       },
 
       onmessage: (ev) => {
@@ -173,6 +191,7 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
           }
           streamStatusRef.current = 'finished';
           setStreamStatus('finished');
+          terminatedCleanly = true;
           ctrl.abort();
           return;
         }
@@ -188,6 +207,7 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
           setError(payload);
           streamStatusRef.current = 'error';
           setStreamStatus('error');
+          terminatedCleanly = true;
           ctrl.abort();
           return;
         }
@@ -239,18 +259,13 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
       },
 
       onclose: () => {
-        if (disposed) {
+        if (disposed || terminatedCleanly) {
           return;
         }
-        // Server closed the connection cleanly without a finish/sep-error frame.
-        // Surface as a terminal error only if we haven't already reached a
-        // finished/error state (abort() from onmessage arrives after onclose).
-        const s = streamStatusRef.current;
-        if (s !== 'finished' && s !== 'error') {
-          setError({ detail: { message: 'Task log stream connection closed.' } });
-          streamStatusRef.current = 'error';
-          setStreamStatus('error');
-        }
+        // Server closed the connection without a finish/sep-error frame.
+        setError({ detail: { message: 'Task log stream connection closed.' } });
+        streamStatusRef.current = 'error';
+        setStreamStatus('error');
       },
     }).catch(() => {
       // fetchEventSource rejects when AbortController fires — expected on

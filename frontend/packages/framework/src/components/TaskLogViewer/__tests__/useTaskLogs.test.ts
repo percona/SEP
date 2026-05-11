@@ -29,6 +29,7 @@ vi.mock('@sep/api', () => ({
   },
   getToken: () => _tokenProvider(),
   refreshAccessToken: vi.fn<() => Promise<string | null>>(),
+  emitUnauthorized: vi.fn(),
 }));
 
 const TEST_TOKEN = 'test-bearer-token';
@@ -57,6 +58,14 @@ describe('useTaskLogs', () => {
     expect(urlStr).toBe('/stream-logs/42');
     // Headers instance lowercases names; stub normalises via Object.fromEntries(headers.entries())
     expect(mock.pending[0].requestHeaders.authorization).toBe(`Bearer ${TEST_TOKEN}`);
+  });
+
+  it('omits Authorization header when no token is available', async () => {
+    _tokenProvider = () => null;
+    renderHook(() => useTaskLogs(42));
+    await flushPromises();
+
+    expect(mock.pending[0].requestHeaders.authorization).toBeUndefined();
   });
 
   it('accumulates log text grouped by step and type', async () => {

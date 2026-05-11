@@ -20,6 +20,7 @@
 // API client
 export {
   apiClient,
+  emitUnauthorized,
   getToken,
   refreshAccessToken,
   setTokenProvider,

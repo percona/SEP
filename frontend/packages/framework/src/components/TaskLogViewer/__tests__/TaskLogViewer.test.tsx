@@ -39,6 +39,7 @@ vi.mock('@sep/api', () => ({
   },
   getToken: () => _tokenProvider(),
   refreshAccessToken: vi.fn<() => Promise<string | null>>(),
+  emitUnauthorized: vi.fn(),
   apiClient: { get: vi.fn(), defaults: {} },
 }));
 

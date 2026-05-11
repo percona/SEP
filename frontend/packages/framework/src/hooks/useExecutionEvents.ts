@@ -16,7 +16,7 @@
  */
 
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
-import { apiClient, getToken, refreshAccessToken } from '@sep/api';
+import { apiClient, emitUnauthorized, getToken, refreshAccessToken } from '@sep/api';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -138,27 +138,40 @@ export function useExecutionEvents(
       },
 
       onopen: async (response) => {
-        if (response.ok && response.headers.get('content-type')?.includes(EventStreamContentType)) {
+        const contentType = response.headers.get('content-type') ?? '';
+        if (response.ok && contentType.includes(EventStreamContentType)) {
           refreshAttempted = false;
           return;
         }
-        if (response.status === 401 && !refreshAttempted) {
+        let isAuthFailure = false;
+        if (response.ok) {
+          isAuthFailure = true;
+        } else if (response.status === 401 && !refreshAttempted) {
           refreshAttempted = true;
           const newToken = await refreshAccessToken();
           if (newToken) {
             currentToken = newToken;
             throw new StreamRetriableAfterRefresh();
           }
+          isAuthFailure = true;
+        } else if (response.status === 401) {
+          isAuthFailure = true;
         }
+        if (isAuthFailure) {
+          emitUnauthorized();
+        }
+        const message = response.ok
+          ? `Stream endpoint returned non-SSE content: ${contentType || 'unknown'}`
+          : `Stream open failed with status ${response.status}`;
         // Terminal open failure — set error, abort, throw fatal sentinel so
         // onerror re-throws and permanently stops the retry loop.
         if (!disposed) {
-          setSseError({ message: `Stream open failed with status ${response.status}` });
+          setSseError({ message });
           setSseLoading(false);
         }
         terminatedCleanly = true;
         ctrl.abort();
-        throw new StreamFatalError(`Stream open failed: ${response.status}`);
+        throw new StreamFatalError(message);
       },
 
       onmessage: (ev) => {
