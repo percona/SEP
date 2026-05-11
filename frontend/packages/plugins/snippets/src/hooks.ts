@@ -26,7 +26,7 @@ import type {
   SnippetExecutionRequest,
   SnippetExecutionResponse,
   SnippetResponse,
-  SnippetsCapabilities,
+  SnippetsCapabilitiesResponse,
 } from './types';
 
 const SNIPPETS_BASE = '/plugins/snippets';
@@ -267,10 +267,12 @@ export function useBatchApproveSnippets() {
  * every tab focus would be wasteful.
  */
 export function useSnippetsCapabilities() {
-  return useQuery<SnippetsCapabilities>({
+  return useQuery<SnippetsCapabilitiesResponse>({
     queryKey: ['snippets', 'capabilities'],
     queryFn: async () => {
-      const { data } = await apiClient.get<SnippetsCapabilities>(`${SNIPPETS_BASE}/capabilities`);
+      const { data } = await apiClient.get<SnippetsCapabilitiesResponse>(
+        `${SNIPPETS_BASE}/capabilities`,
+      );
       return data;
     },
     staleTime: 5 * 60 * 1000,

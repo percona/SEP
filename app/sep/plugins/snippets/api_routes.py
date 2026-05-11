@@ -44,7 +44,6 @@ from fastapi import status as http_status
 from pydantic import ValidationError
 from sqlmodel import col
 
-from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.utils import utc_now
 from app.sep.celery import update_snippets
@@ -54,6 +53,7 @@ from app.sep.plugins.framework.schema import PluginSchema
 from app.sep.plugins.snippets.deps import (
     build_snippet_execution_meta,
     ExecutableSnippetForApi,
+    IsManualSyncEnabled,
     SnippetBatchExistenceDep,
     SnippetDep,
     SnippetSource,
@@ -65,7 +65,7 @@ from app.sep.plugins.snippets.models import (
     SnippetExecutionRequest,
     SnippetExecutionResponse,
     SnippetResponse,
-    SnippetsCapabilities,
+    SnippetsCapabilitiesResponse,
 )
 from app.sep.plugins.snippets.schema import (
     build_snippet_schema,
@@ -83,7 +83,7 @@ schema_endpoint(router=router, plugin_schema=SNIPPETS_PLUGIN_SCHEMA)
 
 
 @router.get("/capabilities", dependencies=[IsApiAuthenticated])
-async def snippets_api_capabilities() -> SnippetsCapabilities:
+async def snippets_api_capabilities() -> SnippetsCapabilitiesResponse:
     """Return per-deployment capability flags for the snippets plugin.
 
     The capabilities response carries no privileged data, so it is gated
@@ -92,35 +92,25 @@ async def snippets_api_capabilities() -> SnippetsCapabilities:
     refresh button) should render.
 
     :return: Capability flags reflecting the current deployment config.
-    :rtype: SnippetsCapabilities
+    :rtype: SnippetsCapabilitiesResponse
     """
-    return SnippetsCapabilities(
+    return SnippetsCapabilitiesResponse(
         manual_sync_enabled=snippets_settings.ENABLE_MANUAL_SYNC,
     )
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[IsApiAuthenticated, IsManualSyncEnabled])
 async def snippets_api_refresh(user: ApiAdminUser) -> RefreshResponse:
-    """Manually refresh the snippets cache from disk.
+    """Refresh the snippets cache from disk.
 
-    Admin-only and additionally gated by
-    ``snippets_settings.ENABLE_MANUAL_SYNC``. Mirrors the legacy
-    Jinja2 ``POST /snippets/refresh`` route. Auth runs before the
-    config-gate check (via the ``ApiAdminUser`` dependency), so an
-    unauthenticated probe always sees ``401`` and never learns the
-    deployment's gate state via a 403-vs-401 differential.
+    Admin-only and additionally gated by manual sync being enabled.
+    Mirrors the legacy Jinja2 ``POST /snippets/refresh`` route.
 
     :param user: The authenticated admin performing the refresh.
     :type user: User
     :return: A response carrying the UTC timestamp of the refresh.
     :rtype: RefreshResponse
-    :raises HTTPForbiddenException: If manual sync is disabled in the
-        deployment config (``ENABLE_MANUAL_SYNC=False``).
     """
-    if not snippets_settings.ENABLE_MANUAL_SYNC:
-        raise HTTPForbiddenException(
-            detail="Manual snippet sync is disabled in this deployment.",
-        )
     await update_snippets()
     logger.info("Snippets refreshed via JSON API by %s", user.username)
     return RefreshResponse(refreshed_at=utc_now())

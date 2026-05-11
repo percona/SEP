@@ -423,6 +423,20 @@ def get_executable_snippet_for_api(snippet: SnippetDep) -> Snippet:
 ExecutableSnippetForApi = Annotated[Snippet, Depends(get_executable_snippet_for_api)]
 
 
+def require_manual_sync_enabled() -> None:
+    """Raise HTTPForbiddenException if manual snippet sync is disabled.
+
+    :raises HTTPForbiddenException: If ``ENABLE_MANUAL_SYNC`` is False.
+    """
+    if not snippets_settings.ENABLE_MANUAL_SYNC:
+        raise HTTPForbiddenException(
+            detail="Manual snippet sync is disabled in this deployment.",
+        )
+
+
+IsManualSyncEnabled = Depends(require_manual_sync_enabled)
+
+
 class SnippetBatchApproveForm(SnippetBatchApproveRequest):
     """Form-bound twin used by the legacy Jinja2 batch-approve route."""
 

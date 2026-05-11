@@ -31,7 +31,7 @@ __all__ = [
     "SnippetExecutionRequest",
     "SnippetExecutionResponse",
     "SnippetResponse",
-    "SnippetsCapabilities",
+    "SnippetsCapabilitiesResponse",
 ]
 
 from datetime import datetime
@@ -231,7 +231,7 @@ class BatchApprovalErrorResponse(BaseModel):
 
 
 class RefreshResponse(BaseModel):
-    """Successful response for the manual snippets-refresh endpoint.
+    """Represent the successful result of a manual snippets-refresh operation.
 
     :param refreshed_at: UTC timestamp at which the refresh completed.
     :type refreshed_at: datetime
@@ -240,8 +240,8 @@ class RefreshResponse(BaseModel):
     refreshed_at: datetime
 
 
-class SnippetsCapabilities(BaseModel):
-    """Per-deployment capability flags for the Snippets plugin.
+class SnippetsCapabilitiesResponse(BaseModel):
+    """Represent per-deployment capability flags for the Snippets plugin.
 
     Exposes flags that gate the visibility of admin-only UI affordances
     (currently the manual refresh button) so the React shell can decide

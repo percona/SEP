@@ -73,7 +73,7 @@ export interface BatchApprovalErrorResponse {
   missing_on_disk: string[];
 }
 
-export interface SnippetsCapabilities {
+export interface SnippetsCapabilitiesResponse {
   manual_sync_enabled: boolean;
 }
 
