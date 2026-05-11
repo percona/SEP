@@ -29,34 +29,45 @@ nothing more specific claims either prefix. A future
 ``app/main.py`` would silently shadow this router.
 """
 
+from collections.abc import Iterable
+
 from fastapi import APIRouter
 
+from app.core.utils import import_var
 from app.sep.api.routes.hosts import router as hosts_router
+from app.sep.config import Plugin, sep_settings
 from app.sep.deps import IsApiAuthenticated
-from app.sep.plugins.alert_troubleshooting.api_routes import (
-    router as alert_troubleshooting_api_router,
-)
-from app.sep.plugins.checksums.api_routes import router as checksums_api_router
-from app.sep.plugins.dipper.api_routes import router as dipper_api_router
-from app.sep.plugins.inventory.api_routes import router as inventory_api_router
-from app.sep.plugins.snippets.api_routes import router as snippets_api_router
 
-plugins_router = APIRouter(prefix="/plugins")
-plugins_router.include_router(
-    checksums_api_router, prefix="/checksums", tags=["checksums"]
-)
-plugins_router.include_router(dipper_api_router, prefix="/dipper", tags=["dipper"])
-plugins_router.include_router(
-    inventory_api_router, prefix="/inventory", tags=["inventory"]
-)
-plugins_router.include_router(
-    snippets_api_router, prefix="/snippets", tags=["snippets"]
-)
-plugins_router.include_router(
-    alert_troubleshooting_api_router,
-    prefix="/alert_troubleshooting",
-    tags=["alert_troubleshooting"],
-)
+
+def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
+    """Build the ``/plugins`` sub-router by iterating ``plugins``.
+
+    Mirror the Jinja UI mount loop in ``app/sep/main.py`` so future
+    runtime enable/disable guards (SEP-982) can be applied symmetrically at
+    both mount points.
+
+    :param plugins: Iterable of ``Plugin`` settings entries.
+    :type plugins: Iterable[Plugin]
+    :return: An ``APIRouter`` mounted at ``/plugins`` with each plugin whose
+        ``api_router_path`` is set included at ``/{key}`` with ``tags=[key]``.
+    :rtype: APIRouter
+    """
+    plugins_router = APIRouter(prefix="/plugins")
+    for plugin in plugins:
+        if not plugin.api_router_path:
+            continue
+        key = plugin.module_name.split(".")[-1]
+        plugin_api_router = import_var(plugin.api_router_path)
+        if not isinstance(plugin_api_router, APIRouter):
+            raise TypeError(
+                f"Plugin '{key}': '{plugin.api_router_path}' must resolve to an"
+                f" APIRouter, got {type(plugin_api_router).__name__}"
+            )
+        plugins_router.include_router(plugin_api_router, prefix=f"/{key}", tags=[key])
+    return plugins_router
+
+
+plugins_router = build_plugins_router(sep_settings.PLUGINS)
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
 api_router.include_router(plugins_router)
