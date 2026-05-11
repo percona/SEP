@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
@@ -27,16 +27,23 @@ import {
   Divider,
   IconButton,
   Link as MuiLink,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import DownloadIcon from '@mui/icons-material/Download';
 import {
   SchemaFormRenderer,
   TaskHistoryTable,
   TaskLogViewer,
   type TaskHistoryEntry,
 } from '@sep/framework';
-import { useSnippetExecution, useSnippetHistory, useSnippetSchema } from './hooks';
+import {
+  useSnippetDownload,
+  useSnippetExecution,
+  useSnippetHistory,
+  useSnippetSchema,
+} from './hooks';
 
 const EXECUTION_RESERVED_NAMES = new Set(['executor_host', 'sudo', 'script_preview']);
 
@@ -57,6 +64,7 @@ export function SnippetDetailPage() {
   const schemaQuery = useSnippetSchema(filename);
   const historyQuery = useSnippetHistory(filename);
   const executionMutation = useSnippetExecution(filename);
+  const downloadMutation = useSnippetDownload(filename);
 
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
@@ -93,12 +101,20 @@ export function SnippetDetailPage() {
     setLogsEntry(null);
   }, []);
 
-  const submitError = useMemo(() => {
-    if (!executionMutation.isError) {
-      return null;
+  const submitError = executionMutation.isError
+    ? (executionMutation.error?.message ?? 'Execution failed')
+    : null;
+
+  const handleDownload = useCallback(() => {
+    if (!filename) {
+      return;
     }
-    return executionMutation.error?.message ?? 'Execution failed';
-  }, [executionMutation.isError, executionMutation.error]);
+    downloadMutation.mutate();
+  }, [filename, downloadMutation]);
+
+  const downloadError = downloadMutation.isError
+    ? (downloadMutation.error?.message ?? 'Download failed')
+    : null;
 
   if (!filename) {
     return <Alert severity="error">Missing snippet filename in the URL.</Alert>;
@@ -130,13 +146,38 @@ export function SnippetDetailPage() {
       >
         ← Back to snippets
       </MuiLink>
-      <Typography variant="h4" sx={{ mb: 1 }}>
-        {schemaQuery.data.display_name}
-      </Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 2,
+          mb: 1,
+        }}
+      >
+        <Typography variant="h4">{schemaQuery.data.display_name}</Typography>
+        <Tooltip title={`Download ${filename}`}>
+          <span>
+            <IconButton
+              aria-label={`Download ${filename}`}
+              onClick={handleDownload}
+              disabled={downloadMutation.isPending}
+              size="small"
+            >
+              {downloadMutation.isPending ? <CircularProgress size={20} /> : <DownloadIcon />}
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
       {schemaQuery.data.description && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           {schemaQuery.data.description}
         </Typography>
+      )}
+      {downloadError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => downloadMutation.reset()}>
+          Failed to download snippet: {downloadError}
+        </Alert>
       )}
 
       <SchemaFormRenderer

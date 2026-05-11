@@ -22,6 +22,7 @@ export {
   useSnippets,
   useSnippetSchema,
   useSnippetHistory,
+  useSnippetDownload,
   useSnippetExecution,
   useApproveSnippet,
   useRemoveSnippetApproval,
