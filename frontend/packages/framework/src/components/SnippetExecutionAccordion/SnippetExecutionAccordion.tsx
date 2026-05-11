@@ -42,8 +42,11 @@ import {
 } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 
-/** Fields always omitted from the rendered form — injected at submit time instead. */
-const RESERVED_FIELD_NAMES = new Set(['executor_host', 'sudo', 'script_preview']);
+/** Fields never rendered in the dynamic form. */
+const HIDDEN_FORM_FIELDS = new Set(['executor_host', 'script_preview']);
+
+/** Fields excluded from the snippet `args` payload (handled at top level instead). */
+const ARGS_EXCLUDED_FIELDS = new Set(['executor_host', 'sudo', 'script_preview']);
 
 export interface SnippetExecutionAccordionProps {
   snippetFilename: string;
@@ -147,14 +150,14 @@ export function SnippetExecutionAccordion({
     ...section,
     fields: section.fields.filter(
       (field) =>
-        !RESERVED_FIELD_NAMES.has(field.name) || (!hoistingHost && field.name === 'executor_host'),
+        !HIDDEN_FORM_FIELDS.has(field.name) || (!hoistingHost && field.name === 'executor_host'),
     ),
   }));
 
   const handleSubmit = (values: Record<string, unknown>) => {
     const args: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
-      if (RESERVED_FIELD_NAMES.has(key)) {
+      if (ARGS_EXCLUDED_FIELDS.has(key)) {
         continue;
       }
       if (value === '' || value === undefined) {

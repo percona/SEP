@@ -260,4 +260,59 @@ describe('SnippetExecutionAccordion', () => {
 
     expect(screen.queryByTestId('task-history-table')).not.toBeInTheDocument();
   });
+
+  it('renders sudo field when schema includes it', async () => {
+    mockedApi.get.mockResolvedValue({
+      data: makeSchema([{ type: 'bool', name: 'sudo', label: 'Run with sudo', required: false }]),
+    });
+
+    renderWithProviders(
+      <SnippetExecutionAccordion
+        snippetFilename="check.sh"
+        executorHost="db1"
+        title="Check Script"
+        defaultExpanded
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Run with sudo/i)).toBeInTheDocument();
+    });
+  });
+
+  it('excludes sudo from args but includes at top level on submit', async () => {
+    const user = userEvent.setup();
+    mockedApi.get.mockResolvedValue({
+      data: makeSchema([{ type: 'bool', name: 'sudo', label: 'Run with sudo', required: false }]),
+    });
+    mockedApi.post.mockResolvedValue({ data: { task_id: 7 } });
+
+    renderWithProviders(
+      <SnippetExecutionAccordion
+        snippetFilename="check.sh"
+        executorHost="db1"
+        title="Check Script"
+        defaultExpanded
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Run with sudo/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText(/Run with sudo/i));
+    await user.click(screen.getByRole('button', { name: /execute/i }));
+
+    await waitFor(() => {
+      expect(mockedApi.post).toHaveBeenCalledWith(expect.stringContaining('check.sh'), {
+        executor_host: 'db1',
+        sudo: true,
+        args: {},
+      });
+    });
+
+    // Verify sudo is NOT in args
+    const callArgs = mockedApi.post.mock.calls[0][1];
+    expect(callArgs.args).not.toHaveProperty('sudo');
+  });
 });

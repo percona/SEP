@@ -107,15 +107,21 @@ export function AlertTroubleshootingDetailPage() {
         <Alert severity="info">No diagnostic snippets available for this alert.</Alert>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {data.snippets.map((snippet) => (
-            <SnippetExecutionAccordion
-              key={snippet.filename}
-              snippetFilename={snippet.filename}
-              executorHost={selectedHost}
-              title={snippet.title ?? snippet.filename}
-              description={snippet.description ?? undefined}
-            />
-          ))}
+          {data.snippets.map((snippet) =>
+            snippet.is_approved ? (
+              <SnippetExecutionAccordion
+                key={snippet.filename}
+                snippetFilename={snippet.filename}
+                executorHost={selectedHost}
+                title={snippet.title ?? snippet.filename}
+                description={snippet.description ?? undefined}
+              />
+            ) : (
+              <Alert key={snippet.filename} severity="warning">
+                {snippet.title ?? snippet.filename} is not approved.
+              </Alert>
+            ),
+          )}
         </Box>
       )}
     </Box>

@@ -123,4 +123,62 @@ describe('AlertTroubleshootingDetailPage', () => {
       expect(screen.getByText('MySQL Slow Queries')).toBeInTheDocument();
     });
   });
+
+  it('renders warning alert for unapproved snippets instead of accordion', async () => {
+    mockedApi.get.mockResolvedValue({
+      data: {
+        alert: { name: 'MySQLSlowQueries', label: 'MySQL Slow Queries', service_type: 'mysql' },
+        snippets: [
+          {
+            filename: 'check_slow.sh',
+            title: 'Check Slow Queries',
+            description: null,
+            is_approved: false,
+          },
+        ],
+      },
+    });
+
+    renderAtRoute('/mysql/MySQLSlowQueries', <AlertTroubleshootingDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Check Slow Queries is not approved/i)).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('snippet-accordion')).not.toBeInTheDocument();
+  });
+
+  it('renders accordion for approved snippets but warning for unapproved ones', async () => {
+    mockedApi.get.mockResolvedValue({
+      data: {
+        alert: { name: 'MySQLSlowQueries', label: 'MySQL Slow Queries', service_type: 'mysql' },
+        snippets: [
+          {
+            filename: 'check_slow.sh',
+            title: 'Check Slow Queries',
+            description: null,
+            is_approved: true,
+          },
+          {
+            filename: 'debug_locks.sh',
+            title: 'Debug Locks',
+            description: null,
+            is_approved: false,
+          },
+        ],
+      },
+    });
+
+    renderAtRoute('/mysql/MySQLSlowQueries', <AlertTroubleshootingDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('snippet-accordion')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/Debug Locks is not approved/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('snippet-accordion')).toHaveAttribute(
+      'data-filename',
+      'check_slow.sh',
+    );
+  });
 });
