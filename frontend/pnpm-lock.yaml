@@ -95,7 +95,7 @@ importers:
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@percona/percona-ui':
         specifier: ^1.0.15
-        version: 1.0.16(b7c09e54f5a36eb141e62f9235e20ed2)
+        version: 1.0.16(65hxqia4a4tx2qwaskmu7dktqi)
       '@sep/api':
         specifier: workspace:*
         version: link:../api
@@ -406,7 +406,7 @@ importers:
         version: 7.29.4(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6))(@mui/material@7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@mui/system@7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(date-fns@4.1.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@percona/percona-ui':
         specifier: ^1.0.16
-        version: 1.0.16(b7c09e54f5a36eb141e62f9235e20ed2)
+        version: 1.0.16(65hxqia4a4tx2qwaskmu7dktqi)
       '@sep/api':
         specifier: workspace:*
         version: link:../api
@@ -3944,7 +3944,7 @@ snapshots:
   '@oxlint/binding-win32-x64-msvc@1.63.0':
     optional: true
 
-  '@percona/percona-ui@1.0.16(b7c09e54f5a36eb141e62f9235e20ed2)':
+  '@percona/percona-ui@1.0.16(65hxqia4a4tx2qwaskmu7dktqi)':
     dependencies:
       '@emotion/react': 11.14.0(@types/react@19.2.14)(react@19.2.6)
       '@emotion/styled': 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6)
