@@ -134,8 +134,11 @@ async def cascade_create_tasks(
     :type parent_payload: dict[str, Any]
     :param derived_specs: The list of derived-task specs to cascade.
     :type derived_specs: Sequence[DerivedTask]
-    :raises HTTPException: Re-raises the original POST exception after the
-        rollback DELETEs complete.
+    :raises Exception: Re-raises whatever exception ``tasks_api.post``
+        produced (commonly :class:`fastapi.HTTPException` for non-2xx
+        responses, but any transport-level error such as
+        :class:`aiohttp.ClientError` or :class:`asyncio.TimeoutError` can
+        propagate) after the rollback DELETEs complete.
     """
     created_names = []
     try:

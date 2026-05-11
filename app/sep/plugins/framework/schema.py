@@ -46,6 +46,7 @@ __all__ = [
     "YamlField",
 ]
 
+from collections import Counter
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
@@ -874,12 +875,10 @@ class PluginSchema(SchemaBaseModel):
         """
         if not value:
             return value
-        suffixes = [spec.name_suffix for spec in value]
-        if len(suffixes) != len(set(suffixes)):
-            duplicates = {s for s in suffixes if suffixes.count(s) > 1}
-            raise ValueError(
-                f"Duplicate derived name_suffix values: {sorted(duplicates)}"
-            )
+        counts = Counter(spec.name_suffix for spec in value)
+        duplicates = sorted(suffix for suffix, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(f"Duplicate derived name_suffix values: {duplicates}")
         return value
 
     @model_validator(mode="after")
