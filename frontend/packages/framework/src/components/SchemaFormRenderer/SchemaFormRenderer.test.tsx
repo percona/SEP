@@ -22,6 +22,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import { buildValidationRules, coerceFormValues } from './utils/validationMapper';
+import { evaluatePredicate, isPresent } from './utils/predicateEvaluator';
 import type { FormSection } from './types';
 
 vi.mock('@sep/api', () => ({
@@ -380,5 +381,652 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
     await waitFor(() => {
       expect((schemaCombo as HTMLInputElement).value).toBe('');
     });
+  });
+});
+
+// ── evaluatePredicate ──────────────────────────────────────────────────────
+
+describe('evaluatePredicate', () => {
+  const v = (overrides: Record<string, unknown>) => overrides;
+
+  it('truthy / falsy', () => {
+    expect(evaluatePredicate({ truthy: 'x' }, v({ x: 'yes' }))).toBe(true);
+    expect(evaluatePredicate({ truthy: 'x' }, v({ x: '' }))).toBe(false);
+    expect(evaluatePredicate({ falsy: 'x' }, v({ x: '' }))).toBe(true);
+    expect(evaluatePredicate({ falsy: 'x' }, v({ x: 1 }))).toBe(false);
+    expect(evaluatePredicate({ truthy: 'arr' }, v({ arr: ['a'] }))).toBe(true);
+    expect(evaluatePredicate({ truthy: 'arr' }, v({ arr: [] }))).toBe(false);
+    // empty plain objects are falsy — mirrors Python bool({}) = False
+    expect(evaluatePredicate({ truthy: 'obj' }, v({ obj: {} }))).toBe(false);
+    expect(evaluatePredicate({ truthy: 'obj' }, v({ obj: { k: 1 } }))).toBe(true);
+    expect(evaluatePredicate({ falsy: 'obj' }, v({ obj: {} }))).toBe(true);
+  });
+
+  it('equals / not_equals', () => {
+    expect(evaluatePredicate({ equals: { mode: 'advanced' } }, v({ mode: 'advanced' }))).toBe(true);
+    expect(evaluatePredicate({ equals: { mode: 'basic' } }, v({ mode: 'advanced' }))).toBe(false);
+    expect(evaluatePredicate({ not_equals: { mode: 'basic' } }, v({ mode: 'advanced' }))).toBe(
+      true,
+    );
+  });
+
+  it('equals with $field ref', () => {
+    expect(evaluatePredicate({ equals: { a: { $field: 'b' } } }, v({ a: 'x', b: 'x' }))).toBe(true);
+    expect(evaluatePredicate({ equals: { a: { $field: 'b' } } }, v({ a: 'x', b: 'y' }))).toBe(
+      false,
+    );
+  });
+
+  it('equals / not_equals coerce numeric literals (RHF stores int inputs as strings)', () => {
+    // BE emits integer literals as JSON numbers; RHF stores text inputs as strings
+    expect(evaluatePredicate({ equals: { swap_drop: 1 } }, v({ swap_drop: '1' }))).toBe(true);
+    expect(evaluatePredicate({ equals: { swap_drop: 1 } }, v({ swap_drop: '0' }))).toBe(false);
+    expect(evaluatePredicate({ not_equals: { swap_drop: 1 } }, v({ swap_drop: '0' }))).toBe(true);
+    expect(evaluatePredicate({ not_equals: { swap_drop: 1 } }, v({ swap_drop: '1' }))).toBe(false);
+    // string literals still use strict equality (no coercion)
+    expect(evaluatePredicate({ equals: { mode: 'dsn' } }, v({ mode: 'dsn' }))).toBe(true);
+    expect(evaluatePredicate({ equals: { mode: 'dsn' } }, v({ mode: 'none' }))).toBe(false);
+  });
+
+  it('gt / gte / lt / lte', () => {
+    expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: 6 }))).toBe(true);
+    expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: 5 }))).toBe(false);
+    expect(evaluatePredicate({ gte: { n: 5 } }, v({ n: 5 }))).toBe(true);
+    expect(evaluatePredicate({ lt: { n: 5 } }, v({ n: 4 }))).toBe(true);
+    expect(evaluatePredicate({ lte: { n: 5 } }, v({ n: 5 }))).toBe(true);
+    // RHF stores text-input values as strings — coerce before comparing
+    expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: '6' }))).toBe(true);
+    expect(evaluatePredicate({ gt: { n: 5 } }, v({ n: '10' }))).toBe(true); // would be false lexicographically
+    expect(evaluatePredicate({ lt: { n: 10 } }, v({ n: '9' }))).toBe(true); // "9" < "10" is false lexicographically
+  });
+
+  it('gt / gte / lt / lte with $field ref', () => {
+    expect(evaluatePredicate({ gt: { a: { $field: 'b' } } }, v({ a: 6, b: 5 }))).toBe(true);
+    expect(evaluatePredicate({ gt: { a: { $field: 'b' } } }, v({ a: 5, b: 5 }))).toBe(false);
+    expect(evaluatePredicate({ gte: { a: { $field: 'b' } } }, v({ a: 5, b: 5 }))).toBe(true);
+    expect(evaluatePredicate({ lt: { a: { $field: 'b' } } }, v({ a: 4, b: 5 }))).toBe(true);
+    expect(evaluatePredicate({ lte: { a: { $field: 'b' } } }, v({ a: 5, b: 5 }))).toBe(true);
+  });
+
+  it('any_present / all_present / none_present', () => {
+    expect(evaluatePredicate({ any_present: ['a', 'b'] }, v({ a: '', b: 'x' }))).toBe(true);
+    expect(evaluatePredicate({ any_present: ['a', 'b'] }, v({ a: '', b: '' }))).toBe(false);
+    expect(evaluatePredicate({ all_present: ['a', 'b'] }, v({ a: '1', b: '2' }))).toBe(true);
+    expect(evaluatePredicate({ all_present: ['a', 'b'] }, v({ a: '1', b: '' }))).toBe(false);
+    expect(evaluatePredicate({ none_present: ['a', 'b'] }, v({ a: '', b: '' }))).toBe(true);
+    expect(evaluatePredicate({ none_present: ['a', 'b'] }, v({ a: 'x', b: '' }))).toBe(false);
+    // empty arrays are absent (mirrors BE behaviour for multiselect/list fields)
+    expect(evaluatePredicate({ any_present: ['tags'] }, v({ tags: [] }))).toBe(false);
+    expect(evaluatePredicate({ all_present: ['tags'] }, v({ tags: [] }))).toBe(false);
+    expect(evaluatePredicate({ none_present: ['tags'] }, v({ tags: [] }))).toBe(true);
+    expect(evaluatePredicate({ any_present: ['tags'] }, v({ tags: ['x'] }))).toBe(true);
+    // empty plain objects are absent — mirrors BE _field_is_present({}) = False
+    expect(evaluatePredicate({ any_present: ['obj'] }, v({ obj: {} }))).toBe(false);
+    expect(evaluatePredicate({ any_present: ['obj'] }, v({ obj: { k: 1 } }))).toBe(true);
+    // empty operand list → false (no vacuous truth)
+    expect(evaluatePredicate({ all_present: [] }, v({}))).toBe(false);
+    expect(evaluatePredicate({ none_present: [] }, v({}))).toBe(false);
+  });
+
+  it('all_truthy / any_truthy / all_falsy / any_falsy', () => {
+    expect(evaluatePredicate({ all_truthy: ['a', 'b'] }, v({ a: 1, b: 2 }))).toBe(true);
+    expect(evaluatePredicate({ all_truthy: ['a', 'b'] }, v({ a: 1, b: 0 }))).toBe(false);
+    expect(evaluatePredicate({ any_truthy: ['a', 'b'] }, v({ a: 0, b: 1 }))).toBe(true);
+    expect(evaluatePredicate({ all_falsy: ['a', 'b'] }, v({ a: 0, b: '' }))).toBe(true);
+    expect(evaluatePredicate({ any_falsy: ['a', 'b'] }, v({ a: 1, b: 0 }))).toBe(true);
+    // empty operand list → false (no vacuous truth)
+    expect(evaluatePredicate({ all_truthy: [] }, v({}))).toBe(false);
+    expect(evaluatePredicate({ all_falsy: [] }, v({}))).toBe(false);
+  });
+
+  it('all_equal', () => {
+    expect(evaluatePredicate({ all_equal: ['a', 'b', 'c'] }, v({ a: 'x', b: 'x', c: 'x' }))).toBe(
+      true,
+    );
+    expect(evaluatePredicate({ all_equal: ['a', 'b'] }, v({ a: 'x', b: 'y' }))).toBe(false);
+    // requires at least 2 fields — fewer returns false
+    expect(evaluatePredicate({ all_equal: [] }, v({}))).toBe(false);
+    expect(evaluatePredicate({ all_equal: ['a'] }, v({ a: 'x' }))).toBe(false);
+  });
+
+  it('all / any (logical combinators)', () => {
+    expect(evaluatePredicate({ all: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 1 }))).toBe(
+      true,
+    );
+    expect(evaluatePredicate({ all: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 0 }))).toBe(
+      false,
+    );
+    expect(evaluatePredicate({ any: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 0, b: 1 }))).toBe(
+      true,
+    );
+    // empty all combinator → false (no vacuous truth)
+    expect(evaluatePredicate({ all: [] }, v({}))).toBe(false);
+  });
+
+  it('xor — binary and n-ary (exactly one truthy)', () => {
+    // binary cases
+    expect(evaluatePredicate({ xor: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 0 }))).toBe(
+      true,
+    );
+    expect(evaluatePredicate({ xor: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 1, b: 1 }))).toBe(
+      false,
+    );
+    expect(evaluatePredicate({ xor: [{ truthy: 'a' }, { truthy: 'b' }] }, v({ a: 0, b: 0 }))).toBe(
+      false,
+    );
+    // n-ary: exactly one of three
+    expect(
+      evaluatePredicate(
+        { xor: [{ truthy: 'a' }, { truthy: 'b' }, { truthy: 'c' }] },
+        v({ a: 1, b: 0, c: 0 }),
+      ),
+    ).toBe(true);
+    expect(
+      evaluatePredicate(
+        { xor: [{ truthy: 'a' }, { truthy: 'b' }, { truthy: 'c' }] },
+        v({ a: 1, b: 1, c: 0 }),
+      ),
+    ).toBe(false);
+    // empty → false
+    expect(evaluatePredicate({ xor: [] }, v({}))).toBe(false);
+  });
+
+  it('not', () => {
+    expect(evaluatePredicate({ not: { truthy: 'x' } }, v({ x: '' }))).toBe(true);
+    expect(evaluatePredicate({ not: { truthy: 'x' } }, v({ x: 'yes' }))).toBe(false);
+  });
+
+  it('returns false for unknown operator', () => {
+    expect(evaluatePredicate({ unknown_op: 'x' } as Record<string, unknown>, v({}))).toBe(false);
+  });
+});
+
+// ── Conditional visibility (forbidden gates) ───────────────────────────────
+
+describe('SchemaFormRenderer — conditional visibility', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Main',
+      fields: [
+        { type: 'bool', name: 'advanced', label: 'Advanced mode' },
+        {
+          type: 'string',
+          name: 'advancedOption',
+          label: 'Advanced option',
+          forbidden: [{ when: { falsy: 'advanced' } }],
+        },
+      ],
+    },
+  ];
+
+  it('hides a field when its forbidden gate fires', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    // advanced = false (default) → forbidden gate fires → advancedOption hidden
+    expect(screen.queryByLabelText('Advanced option')).toBeNull();
+  });
+
+  it('shows a field when its forbidden gate no longer fires', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    // Flip the bool — advanced becomes true → falsy('advanced') = false → gate doesn't fire
+    await user.click(screen.getByLabelText('Advanced mode'));
+    expect(await screen.findByLabelText('Advanced option')).toBeInTheDocument();
+  });
+
+  it('excludes hidden field from submission', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    // advanced=false → advancedOption hidden → submit without it
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.not.objectContaining({ advancedOption: expect.anything() }),
+    );
+  });
+
+  it('includes revealed field in submission', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByLabelText('Advanced mode'));
+    const input = await screen.findByLabelText('Advanced option');
+    await user.type(input, 'secret');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ advancedOption: 'secret' }));
+  });
+});
+
+// ── isPresent unit tests ───────────────────────────────────────────────────
+
+describe('isPresent', () => {
+  it('treats null / undefined / empty string as absent', () => {
+    expect(isPresent(null)).toBe(false);
+    expect(isPresent(undefined)).toBe(false);
+    expect(isPresent('')).toBe(false);
+  });
+
+  it('treats empty array as absent', () => {
+    expect(isPresent([])).toBe(false);
+    expect(isPresent(['x'])).toBe(true);
+  });
+
+  it('treats empty plain object as absent', () => {
+    expect(isPresent({})).toBe(false);
+    expect(isPresent({ k: 1 })).toBe(true);
+  });
+
+  it('treats non-empty scalars as present', () => {
+    expect(isPresent(0)).toBe(true);
+    expect(isPresent(false)).toBe(true);
+    expect(isPresent('x')).toBe(true);
+  });
+});
+
+// ── Cardinality rules ──────────────────────────────────────────────────────
+
+describe('SchemaFormRenderer — cardinality_rules', () => {
+  it('shows a violation banner when neither required field is filled', async () => {
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [
+              {
+                fields: ['source_db_id', 'source_table_id'],
+                min: 1,
+                max: 1,
+                message: 'Specify exactly one source: either DB or Table, not both.',
+              },
+            ],
+            fields: [
+              { type: 'string', name: 'source_db_id', label: 'Source DB' },
+              { type: 'string', name: 'source_table_id', label: 'Source Table' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    // Both fields empty at mount → violation fires immediately
+    expect(
+      await screen.findByText('Specify exactly one source: either DB or Table, not both.'),
+    ).toBeInTheDocument();
+  });
+
+  it('clears the violation when exactly one field is filled', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [
+              {
+                fields: ['source_db_id', 'source_table_id'],
+                min: 1,
+                max: 1,
+                message: 'Specify exactly one source.',
+              },
+            ],
+            fields: [
+              { type: 'string', name: 'source_db_id', label: 'Source DB' },
+              { type: 'string', name: 'source_table_id', label: 'Source Table' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Source DB'), 'mydb');
+    await waitFor(() =>
+      expect(screen.queryByText('Specify exactly one source.')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('re-shows the violation when both fields are filled (exceeds max)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [
+              {
+                fields: ['source_db_id', 'source_table_id'],
+                min: 1,
+                max: 1,
+                message: 'Specify exactly one source.',
+              },
+            ],
+            fields: [
+              { type: 'string', name: 'source_db_id', label: 'Source DB' },
+              { type: 'string', name: 'source_table_id', label: 'Source Table' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Source DB'), 'db');
+    await user.type(screen.getByLabelText('Source Table'), 'tbl');
+    expect(await screen.findByText('Specify exactly one source.')).toBeInTheDocument();
+  });
+
+  it('blocks submission when a cardinality violation is active', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1, max: 1, message: 'Exactly one.' }],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    // Both empty → violation active → submit blocked
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('allows submission when cardinality is satisfied', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1, max: 1, message: 'Exactly one.' }],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('A'), 'hello');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('respects the when predicate — skips rule when guard is inactive', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Conditional',
+            cardinality_rules: [
+              {
+                when: { truthy: 'enable' },
+                fields: ['a', 'b'],
+                min: 1,
+                max: 1,
+                message: 'Exactly one when enabled.',
+              },
+            ],
+            fields: [
+              { type: 'bool', name: 'enable', label: 'Enable' },
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    // enable=false → guard inactive → no violation → submit succeeds
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('uses a default message when none is provided', async () => {
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1 }],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    // Both empty → min=1 violation → default message rendered
+    expect(await screen.findByText(/At least 1 of these 2 fields/)).toBeInTheDocument();
+  });
+});
+
+// ── fail_when rules ───────────────────────────────────────────────────────
+
+describe('SchemaFormRenderer — fail_when', () => {
+  it('shows a violation banner when the fail_when predicate fires', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            fail_when: [
+              {
+                fail_when: { truthy: 'flag' },
+                error_fields: ['flag'],
+                message: 'Flag must not be set.',
+              },
+            ],
+            fields: [{ type: 'bool', name: 'flag', label: 'Flag' }],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    // flag=false at mount → predicate inactive → no banner
+    expect(screen.queryByText('Flag must not be set.')).toBeNull();
+
+    // flip flag → predicate fires → banner appears
+    await user.click(screen.getByLabelText('Flag'));
+    expect(await screen.findByText('Flag must not be set.')).toBeInTheDocument();
+  });
+
+  it('clears the banner when the predicate stops firing', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            fail_when: [
+              {
+                fail_when: { truthy: 'flag' },
+                error_fields: ['flag'],
+                message: 'Flag must not be set.',
+              },
+            ],
+            fields: [{ type: 'bool', name: 'flag', label: 'Flag' }],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Flag'));
+    expect(await screen.findByText('Flag must not be set.')).toBeInTheDocument();
+
+    // flip back → predicate inactive → banner gone
+    await user.click(screen.getByLabelText('Flag'));
+    await waitFor(() =>
+      expect(screen.queryByText('Flag must not be set.')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('blocks submission when a fail_when rule is active', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            fail_when: [
+              {
+                fail_when: { truthy: 'flag' },
+                error_fields: ['flag'],
+                message: 'Blocked.',
+              },
+            ],
+            fields: [{ type: 'bool', name: 'flag', label: 'Flag' }],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Flag'));
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('uses a default message when none is provided', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            fail_when: [{ fail_when: { truthy: 'x' }, error_fields: [] }],
+            fields: [{ type: 'bool', name: 'x', label: 'X' }],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('X'));
+    expect(
+      await screen.findByText('This combination of values is not allowed.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows both cardinality and fail_when violations together', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'S',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1, message: 'Need at least one.' }],
+            fail_when: [
+              {
+                fail_when: { all_present: ['a', 'b'] },
+                error_fields: ['a', 'b'],
+                message: 'Cannot have both.',
+              },
+            ],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+
+    // Both empty → cardinality fires, fail_when inactive
+    expect(await screen.findByText('Need at least one.')).toBeInTheDocument();
+    expect(screen.queryByText('Cannot have both.')).toBeNull();
+
+    // Fill both → cardinality satisfied, fail_when fires
+    await user.type(screen.getByLabelText('A'), 'x');
+    await user.type(screen.getByLabelText('B'), 'y');
+    await waitFor(() => expect(screen.queryByText('Need at least one.')).not.toBeInTheDocument());
+    expect(await screen.findByText('Cannot have both.')).toBeInTheDocument();
+  });
+});
+
+// ── Conditional required (requires gates) ─────────────────────────────────
+
+describe('SchemaFormRenderer — conditional required', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Main',
+      fields: [
+        { type: 'bool', name: 'needsReason', label: 'Needs reason' },
+        {
+          type: 'string',
+          name: 'reason',
+          label: 'Reason',
+          requires: [{ when: { truthy: 'needsReason' } }],
+        },
+      ],
+    },
+  ];
+
+  it('does not block submission when gate is inactive', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    // needsReason=false → requires gate inactive → reason not required
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('blocks submission and shows required error when gate fires and field is empty', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByLabelText('Needs reason'));
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Reason is required/)).toBeInTheDocument();
+  });
+
+  it('submits when gate fires and field is filled', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByLabelText('Needs reason'));
+    // Use data-testid (set by percona-ui's TextInput) to find the input directly,
+    // since the label-for association is briefly stale while isRequired flips.
+    await user.type(screen.getByTestId('text-input-reason'), 'because');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'because', needsReason: true }),
+    );
   });
 });
