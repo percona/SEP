@@ -182,7 +182,7 @@ class TestSnippetsApiDownload:
         assert response.content == on_disk
 
     async def test_returns_401_for_unauthenticated_caller(
-        self, session, create_snippet, snippets_dir
+        self, session, create_snippet
     ):
         """Anonymous callers are rejected with a structured 401, not a redirect."""
         snippet = await create_snippet("hello.sh", approved=True)

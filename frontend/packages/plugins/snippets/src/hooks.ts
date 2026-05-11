@@ -71,17 +71,27 @@ export function useSnippetHistory(filename: string | undefined) {
   });
 }
 
+/**
+ * Mutation: download the raw snippet file (full body + YAML frontmatter).
+ *
+ * Routes through ``apiClient`` so the Bearer interceptor attaches the
+ * in-memory access token, then turns the Blob response into a save
+ * dialog via a temporary anchor click (mirrors ``useLogDownload``).
+ */
 export function useSnippetDownload(filename: string | undefined) {
   return useMutation<Blob, Error, void>({
     mutationFn: async () => {
+      if (!filename) {
+        throw new Error('Snippet filename is required for download.');
+      }
       const { data } = await apiClient.get<Blob>(
-        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/download`,
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/download`,
         { responseType: 'blob' },
       );
       const url = URL.createObjectURL(data);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = filename ?? 'snippet';
+      anchor.download = filename;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

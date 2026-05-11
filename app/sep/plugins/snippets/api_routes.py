@@ -155,7 +155,6 @@ async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewRespo
 @router.get(
     "/{snippet_filename}/download",
     dependencies=[IsApiAuthenticated],
-    response_class=FileResponse,
 )
 async def snippets_api_download(snippet: SnippetDep) -> FileResponse:
     """Stream the raw snippet file as a download attachment.

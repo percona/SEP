@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
@@ -101,12 +101,9 @@ export function SnippetDetailPage() {
     setLogsEntry(null);
   }, []);
 
-  const submitError = useMemo(() => {
-    if (!executionMutation.isError) {
-      return null;
-    }
-    return executionMutation.error?.message ?? 'Execution failed';
-  }, [executionMutation.isError, executionMutation.error]);
+  const submitError = executionMutation.isError
+    ? (executionMutation.error?.message ?? 'Execution failed')
+    : null;
 
   const handleDownload = useCallback(() => {
     if (!filename) {
