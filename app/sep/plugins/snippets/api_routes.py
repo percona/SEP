@@ -26,31 +26,38 @@ level and redeclared per route for safety. Route layout is snippet-centric:
 * ``GET /{snippet_filename}/download``         — raw snippet file download
 * ``GET /{snippet_filename}/history``          — execution history
 * ``POST /{snippet_filename}/execute``         — execute the snippet
+* ``PUT /{snippet_filename}/approval``         — approve the snippet
+* ``DELETE /{snippet_filename}/approval``      — remove snippet approval
+* ``PATCH /approvals``                         — batch-approve snippets
 
 All dynamic segments live under two-segment ``/{snippet_filename}/...``
 paths; there is no single-segment dynamic catch-all, so the static
-``/schema`` and ``/`` routes are unambiguous.
+collection routes ``/schema``, ``/approvals``, and ``/`` are unambiguous.
 """
 
 import logging
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from fastapi import status as http_status
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
+from sqlmodel import col
 
 from app.core.exceptions import HTTPUnprocessableEntityException
-from app.sep.deps import IsApiAuthenticated, SessionDep, TaskAPI
+from app.core.utils import utc_now
+from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.framework.schema import PluginSchema
 from app.sep.plugins.snippets.deps import (
     build_snippet_execution_meta,
     ExecutableSnippetForApi,
+    SnippetBatchExistenceDep,
     SnippetDep,
     SnippetSource,
 )
 from app.sep.plugins.snippets.models import (
+    BatchApprovalResponse,
     ScriptPreviewResponse,
     SnippetExecutionRequest,
     SnippetExecutionResponse,
@@ -81,6 +88,7 @@ def _build_snippet_response(snippet: Snippet) -> SnippetResponse:
         md5_digest=snippet.md5_digest,
         is_approved=snippet.is_approved,
         approved_at=snippet.approved_at,
+        updated_by=snippet.updated_by,
         reason=snippet.reason,
         requires_sudo=(
             snippet.sudo == SnippetSudoOption.ALWAYS or snippet.sudo.is_optional
@@ -269,4 +277,127 @@ async def snippets_api_execute(
         task_name=snippet.execution_task_name,
         task_id=created.get("id") if isinstance(created, dict) else None,
         snippet_filename=snippet.filename,
+    )
+
+
+@router.put("/{snippet_filename}/approval", dependencies=[IsApiAuthenticated])
+async def snippets_api_approve(
+    snippet: SnippetDep, user: ApiAdminUser, session: SessionDep
+) -> SnippetResponse:
+    """Approve a single snippet (idempotent).
+
+    Re-approving an already-approved snippet returns ``200`` with the
+    current state — ``approved_at`` is *not* overwritten so the audit
+    trail is preserved.
+
+    :param snippet: The snippet whose approval is being set.
+    :type snippet: Snippet
+    :param user: The authenticated admin performing the action.
+    :type user: User
+    :param session: The active database session.
+    :type session: AsyncSession
+    :return: The snippet entity after the call, including approval state.
+    :rtype: SnippetResponse
+    """
+    if not snippet.is_approved:
+        snippet.approve(f"Approved by {user.username}", str(user.id))
+        await SnippetManager.save(session, snippet)
+        logger.info("Snippet %r approved by %s", snippet.filename, user.username)
+    return _build_snippet_response(snippet)
+
+
+@router.delete(
+    "/{snippet_filename}/approval",
+    status_code=http_status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    dependencies=[IsApiAuthenticated],
+)
+async def snippets_api_remove_approval(
+    snippet: SnippetDep, user: ApiAdminUser, session: SessionDep
+) -> None:
+    """Remove approval from a single snippet (idempotent).
+
+    Removing an approval that doesn't exist is a no-op ``204``. The
+    snippet missing → ``404`` (handled by ``SnippetDep``); approval
+    missing → ``204``.
+
+    :param snippet: The snippet whose approval is being cleared.
+    :type snippet: Snippet
+    :param user: The authenticated admin performing the action.
+    :type user: User
+    :param session: The active database session.
+    :type session: AsyncSession
+    :return: An empty 204 response.
+    :rtype: Response
+    """
+    if snippet.is_approved:
+        snippet.remove_approval(f"Approval removed by {user.username}", str(user.id))
+        await SnippetManager.save(session, snippet)
+        logger.info(
+            "Snippet %r approval removed by %s", snippet.filename, user.username
+        )
+
+
+@router.patch("/approvals", dependencies=[IsApiAuthenticated])
+async def snippets_api_batch_approve(
+    existence: SnippetBatchExistenceDep,
+    user: ApiAdminUser,
+    session: SessionDep,
+) -> BatchApprovalResponse:
+    """Approve a set of snippets atomically (idempotent partial-update).
+
+    Reject the whole batch with ``400`` and a
+    :class:`BatchApprovalErrorResponse` payload when any filename has no
+    DB row or its file is missing on disk. Filenames that are already
+    approved when the call starts are reported in
+    ``skipped_already_approved`` — not as errors. The atomic write uses
+    ``approved_at IS NULL`` as a CAS filter so two concurrent admins
+    cannot double-approve.
+
+    :param existence: Pre-validated batch existence result from the dependency.
+    :type existence: SnippetBatchExistenceResult
+    :param user: The authenticated admin performing the action.
+    :type user: User
+    :param session: The active database session.
+    :type session: AsyncSession
+    :return: The success payload listing approved + skipped filenames.
+    :rtype: BatchApprovalResponse
+    :raises HTTPBadRequestException: On hard-error precheck failures with
+        a :class:`BatchApprovalErrorResponse` body.
+    """
+    pre_already_approved = []
+    to_approve = []
+    for snippet in existence.snippets:
+        if snippet.is_approved:
+            pre_already_approved.append(snippet.filename)
+        else:
+            to_approve.append(snippet.filename)
+    pre_already_approved.sort()
+    to_approve.sort()
+    approved: list[str] = []
+    if to_approve:
+        approved_rows = await SnippetManager.update_where(
+            session,
+            {
+                "approved_at": utc_now(),
+                "updated_by": str(user.id),
+                "reason": f"Batch approved by {user.username}",
+            },
+            col(Snippet.filename).in_(to_approve),
+            col(Snippet.approved_at).is_(None),
+            returning=["filename"],
+        )
+        approved = sorted(approved_rows)
+
+    raced_out = sorted(set(to_approve) - set(approved))
+    skipped = sorted(pre_already_approved + raced_out)
+    logger.info(
+        "Batch-approve via JSON API by %s: approved=%s skipped=%s",
+        user.username,
+        approved,
+        skipped,
+    )
+    return BatchApprovalResponse(
+        approved=approved,
+        skipped_already_approved=skipped,
     )

@@ -22,11 +22,17 @@ export {
   useSnippets,
   useSnippetSchema,
   useSnippetHistory,
-  useSnippetExecution,
   useSnippetDownload,
+  useSnippetExecution,
+  useApproveSnippet,
+  useRemoveSnippetApproval,
+  useBatchApproveSnippets,
 } from './hooks';
 export type {
+  BatchApprovalErrorResponse,
+  BatchApprovalResponse,
   ScriptPreviewResponse,
+  SnippetBatchApproveRequest,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
   SnippetResponse,
