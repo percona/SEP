@@ -130,14 +130,7 @@ while [[ -n $* ]]; do
     esac
 done
 
-if ! mkdir -p "$DEST"; then
-    echo "Error: failed to create destination directory '$DEST'" >&2
-    exit 1
-fi
-if [ ! -d "$DEST" ] || [ ! -w "$DEST" ]; then
-    echo "Error: destination '$DEST' is not a writable directory" >&2
-    exit 1
-fi
+mkdir -p "$DEST"
 
 # Pick the MongoDB shell binary, preferring mongosh.
 MONGO_BIN=""
