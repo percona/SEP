@@ -118,15 +118,15 @@ async def cascade_create_tasks(
     tasks_api: RemoteAPI,
     parent_payload: dict[str, Any],
     derived_specs: Sequence[DerivedTask],
-    *,
-    path: str = "/",
 ) -> None:
     """POST the parent then each derived task; roll back on any failure.
 
-    On any POST failure, already-created tasks are deleted in reverse
-    creation order. A rollback DELETE that itself fails is logged at WARNING
-    and the rollback loop continues; the original POST exception is what
-    surfaces to the caller.
+    Every task is POSTed to the Tasks API root (``/``), matching the
+    project-wide TaskAPI convention. On any POST failure, already-created
+    tasks are deleted in reverse creation order via ``DELETE /{task_name}``.
+    A rollback DELETE that itself fails is logged at WARNING and the
+    rollback loop continues; the original POST exception is what surfaces
+    to the caller.
 
     :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
     :type tasks_api: RemoteAPI
@@ -134,18 +134,16 @@ async def cascade_create_tasks(
     :type parent_payload: dict[str, Any]
     :param derived_specs: The list of derived-task specs to cascade.
     :type derived_specs: Sequence[DerivedTask]
-    :param path: The POST path on the tasks sub-app. Defaults to ``"/"``.
-    :type path: str
     :raises HTTPException: Re-raises the original POST exception after the
         rollback DELETEs complete.
     """
     created_names = []
     try:
-        await tasks_api.post(path, json=parent_payload)
+        await tasks_api.post("/", json=parent_payload)
         created_names.append(parent_payload["name"])
         for spec in derived_specs:
             child_payload = build_derived_payload(parent_payload, spec)
-            await tasks_api.post(path, json=child_payload)
+            await tasks_api.post("/", json=child_payload)
             created_names.append(child_payload["name"])
     except Exception:
         for task_name in reversed(created_names):
@@ -169,11 +167,20 @@ async def cascade_update_tasks(
 ) -> CascadeResult:
     """PUT the parent and each derived task, best-effort.
 
-    Parent failure does not abort derived updates — each leg is attempted
-    independently and per-leg failures are collected into the returned
-    :class:`CascadeResult`. The PUT URL path uses the *existing* task name
-    (per the Tasks API contract); the updated payload, including any new
-    ``name``, goes in the body.
+    Each leg is attempted independently when the parent payload preserves
+    the parent's existing ``name`` — per-leg failures are collected into the
+    returned :class:`CascadeResult`. The PUT URL path uses the *existing*
+    task name (per the Tasks API contract); the updated payload, including
+    any new ``name``, goes in the body.
+
+    When ``parent_updated["name"]`` differs from ``parent_existing_name``
+    (a rename) **and** the parent PUT fails, the derived loop is **skipped**
+    rather than executed best-effort: each derived child payload built from
+    ``parent_updated`` would carry the new ``data["parent"]`` link, so
+    applying it would point a successfully-PUT child at a parent task that
+    was never renamed and does not exist under that name. The skipped legs
+    surface as :class:`CascadeFailure` entries so the caller can observe
+    them.
 
     The caller is responsible for ensuring ``derived_existing_names`` matches
     ``derived_specs`` in length and order — the function rejects a mismatch
@@ -202,11 +209,27 @@ async def cascade_update_tasks(
             f"does not match derived_specs length {len(derived_specs)}"
         )
     result = CascadeResult()
+    parent_failed = False
     try:
         await tasks_api.put(f"/{parent_existing_name}", json=parent_updated)
         result.successes.append(parent_updated["name"])
     except Exception as exc:  # noqa: BLE001
         result.failures.append(CascadeFailure(parent_existing_name, exc))
+        parent_failed = True
+    parent_renamed = parent_updated["name"] != parent_existing_name
+    if parent_failed and parent_renamed:
+        for existing_name in derived_existing_names:
+            result.failures.append(
+                CascadeFailure(
+                    existing_name,
+                    RuntimeError(
+                        "Skipped derived PUT because the parent rename failed; "
+                        "applying it would orphan the derived task under a "
+                        "non-existent parent name."
+                    ),
+                )
+            )
+        return result
     for existing_name, spec in zip(derived_existing_names, derived_specs, strict=True):
         child_payload = build_derived_payload(parent_updated, spec)
         try:
@@ -220,9 +243,18 @@ async def cascade_update_tasks(
 async def cascade_delete_tasks(
     tasks_api: RemoteAPI,
     parent_name: str,
-    derived_specs: Sequence[DerivedTask],
+    derived_names: Sequence[str],
 ) -> CascadeResult:
     """DELETE every derived task first, then the parent, best-effort.
+
+    The caller passes the *actual* derived task names rather than the
+    declarative :class:`DerivedTask` specs: the cascade does not recompute
+    names from ``parent_name`` + ``name_suffix`` because a previous partial
+    rename could leave the stored derived names out of sync with the
+    schema-suffix convention, and recomputing would silently 404 on
+    orphaned children. The caller is expected to fetch the current children
+    (for example via a ``parent`` foreign key lookup on the Tasks API)
+    before invoking this helper.
 
     HTTP 404 on any leg is tolerated as success — the desired end state
     (the task is absent) is already achieved. All other failures accumulate
@@ -232,16 +264,15 @@ async def cascade_delete_tasks(
     :type tasks_api: RemoteAPI
     :param parent_name: The name of the parent task.
     :type parent_name: str
-    :param derived_specs: The derived-task specs whose names are derived from
-        ``parent_name`` plus each spec's ``name_suffix``.
-    :type derived_specs: Sequence[DerivedTask]
+    :param derived_names: The actual stored names of the derived tasks to
+        delete, fetched by the caller.
+    :type derived_names: Sequence[str]
     :return: A :class:`CascadeResult` recording per-leg outcomes.
     :rtype: CascadeResult
     """
     result = CascadeResult()
-    for spec in derived_specs:
-        child_name = f"{parent_name}{spec.name_suffix}"
-        await _delete_one(tasks_api, child_name, result)
+    for derived_name in derived_names:
+        await _delete_one(tasks_api, derived_name, result)
     await _delete_one(tasks_api, parent_name, result)
     return result
 

@@ -285,8 +285,8 @@ class TestCascadeUpdateTasks:
             ),
         ]
 
-    async def test_parent_failure_collects_and_continues_with_derived(self) -> None:
-        """Continue with derived PUTs when the parent PUT fails."""
+    async def test_parent_failure_no_rename_continues_with_derived(self) -> None:
+        """Continue with derived PUTs when the parent PUT fails and no rename was attempted."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         parent_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         tasks_api.put.side_effect = [parent_exc, None, None]
@@ -304,6 +304,29 @@ class TestCascadeUpdateTasks:
         assert result.failures[0].task_name == "t1"
         assert result.failures[0].exception is parent_exc
         assert result.successes == ["t1-a", "t1-b"]
+
+    async def test_parent_rename_failure_skips_derived_loop(self) -> None:
+        """Skip derived PUTs when a parent rename fails (would orphan children)."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        parent_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        tasks_api.put.side_effect = [parent_exc]
+        parent_updated = _parent_payload(name="t2")
+
+        result = await cascade_update_tasks(
+            tasks_api,
+            "t1",
+            parent_updated,
+            ["t1-a", "t1-b"],
+            [DerivedTask(name_suffix="-a"), DerivedTask(name_suffix="-b")],
+        )
+
+        tasks_api.put.assert_awaited_once_with("/t1", json=parent_updated)
+        assert not result.success
+        assert result.successes == []
+        assert [f.task_name for f in result.failures] == ["t1", "t1-a", "t1-b"]
+        assert result.failures[0].exception is parent_exc
+        assert isinstance(result.failures[1].exception, RuntimeError)
+        assert "parent rename failed" in str(result.failures[1].exception)
 
     async def test_derived_failure_collects_and_continues_with_remaining(self) -> None:
         """Continue with remaining derived PUTs when one derived PUT fails."""
@@ -337,20 +360,31 @@ class TestCascadeDeleteTasks:
     async def test_deletes_children_first_then_parent(self, derived_count: int) -> None:
         """Issue DELETEs for derived tasks first, then the parent."""
         tasks_api = AsyncMock(spec=RemoteAPI)
-        derived_specs = [
-            DerivedTask(name_suffix=f"-d{idx}") for idx in range(derived_count)
-        ]
+        derived_names = [f"t1-d{idx}" for idx in range(derived_count)]
 
-        result = await cascade_delete_tasks(tasks_api, "t1", derived_specs)
+        result = await cascade_delete_tasks(tasks_api, "t1", derived_names)
 
         expected_calls = [call(f"/t1-d{idx}") for idx in range(derived_count)] + [
             call("/t1")
         ]
         assert tasks_api.delete.await_args_list == expected_calls
         assert result.success
-        assert result.successes == [f"t1-d{idx}" for idx in range(derived_count)] + [
-            "t1"
-        ]
+        assert result.successes == [*derived_names, "t1"]
+
+    async def test_deletes_orphan_renamed_derived_names_directly(self) -> None:
+        """Use the caller's actual derived names rather than recomputing from suffixes.
+
+        Regression guard for the rename-orphan scenario: after a partial rename
+        update (parent renamed but a derived rename failed), the stored derived
+        names no longer match the schema suffix convention. The caller fetches
+        the actual names and passes them in — the cascade must NOT recompute.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        result = await cascade_delete_tasks(tasks_api, "new", ["old-a"])
+
+        assert tasks_api.delete.await_args_list == [call("/old-a"), call("/new")]
+        assert result.success
+        assert result.successes == ["old-a", "new"]
 
     async def test_http_404_treated_as_success(self) -> None:
         """Treat HTTP 404 on any leg as success (idempotent intent)."""
@@ -360,9 +394,7 @@ class TestCascadeDeleteTasks:
             None,
         ]
 
-        result = await cascade_delete_tasks(
-            tasks_api, "t1", [DerivedTask(name_suffix="-a")]
-        )
+        result = await cascade_delete_tasks(tasks_api, "t1", ["t1-a"])
 
         assert result.success
         assert result.successes == ["t1-a", "t1"]
@@ -374,9 +406,7 @@ class TestCascadeDeleteTasks:
         derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         tasks_api.delete.side_effect = [derived_exc, None]
 
-        result = await cascade_delete_tasks(
-            tasks_api, "t1", [DerivedTask(name_suffix="-a")]
-        )
+        result = await cascade_delete_tasks(tasks_api, "t1", ["t1-a"])
 
         assert not result.success
         assert result.successes == ["t1"]
@@ -390,9 +420,7 @@ class TestCascadeDeleteTasks:
         connection_error = ConnectionError("upstream timeout")
         tasks_api.delete.side_effect = [connection_error, None]
 
-        result = await cascade_delete_tasks(
-            tasks_api, "t1", [DerivedTask(name_suffix="-a")]
-        )
+        result = await cascade_delete_tasks(tasks_api, "t1", ["t1-a"])
 
         assert not result.success
         assert result.failures[0].task_name == "t1-a"
