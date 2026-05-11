@@ -72,8 +72,7 @@
 # Stop early by creating the marker file in the destination directory:
 #   touch /tmp/mongodb-diagnostics/exit-percona-monitor
 
-set -u
-set -o pipefail
+set -euo pipefail
 
 DEST="/tmp/mongodb-diagnostics"
 PORT=27017
@@ -131,7 +130,14 @@ while [[ -n $* ]]; do
     esac
 done
 
-mkdir -p "$DEST"
+if ! mkdir -p "$DEST"; then
+    echo "Error: failed to create destination directory '$DEST'" >&2
+    exit 1
+fi
+if [ ! -d "$DEST" ] || [ ! -w "$DEST" ]; then
+    echo "Error: destination '$DEST' is not a writable directory" >&2
+    exit 1
+fi
 
 # Pick the MongoDB shell binary, preferring mongosh.
 MONGO_BIN=""
@@ -208,7 +214,11 @@ for ((i = 1; i <= ITERATIONS; i++)); do
     echo "[$d] iteration $i/$ITERATIONS"
 
     run_if_available netstat "$DEST/${d}-netstat_s" -s &
-    run_if_available ps "$DEST/${d}-ps" faux &
+    if [ -n "$PASSWORD" ]; then
+        run_if_available ps "$DEST/${d}-ps" axo pid,ppid,user,stat,pcpu,pmem,etime,comm &
+    else
+        run_if_available ps "$DEST/${d}-ps" faux &
+    fi
     run_if_available pidstat "$DEST/${d}-pidstat_d" -d 1 60 &
     run_if_available pidstat "$DEST/${d}-pidstat_u" -u 1 60 &
     run_if_available top "$DEST/${d}-top" -bn1 &
@@ -219,7 +229,7 @@ for ((i = 1; i <= ITERATIONS; i++)); do
     run_if_available sar "$DEST/${d}-sar_tcp" -n TCP,ETCP 1 10 &
 
     if command -v mongostat > /dev/null 2>&1; then
-        mongostat "${MONGO_AUTH[@]}" --rowcount=1 > "$DEST/${d}-mongostat" 2>&1 &
+        ( mongostat "${MONGO_AUTH[@]}" --rowcount=1 > "$DEST/${d}-mongostat" 2>&1 || true ) &
     else
         echo "mongostat not installed" > "$DEST/${d}-mongostat" &
     fi
@@ -235,10 +245,11 @@ for ((i = 1; i <= ITERATIONS; i++)); do
         done
     ) &
 
-    wait
+    wait || true
 
-    find "$DEST" -mtime "+${RETENTION_DAYS}" -type f -delete -print \
-        >> "$DEST/purge.log" 2>&1 || true
+    find "$DEST" -mtime "+${RETENTION_DAYS}" -type f \
+        ! -name 'purge.log' ! -name 'exit-percona-monitor' \
+        -delete -print >> "$DEST/purge.log" 2>&1 || true
 
     if [ "$i" -lt "$ITERATIONS" ]; then
         sleep "$SLEEP_SECS"
