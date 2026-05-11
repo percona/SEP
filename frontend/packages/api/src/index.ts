@@ -81,6 +81,10 @@ export type {
   TableField,
   HostField,
   ScriptPreviewField,
+  Predicate,
+  FieldGate,
+  CardinalityRule,
+  FailRule,
 } from './types/plugin-schema';
 
 // Hooks
