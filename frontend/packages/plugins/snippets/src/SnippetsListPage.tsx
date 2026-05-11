@@ -15,31 +15,202 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
+  Button,
+  Checkbox,
   CircularProgress,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Link,
+  Stack,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material';
-import { useSnippets } from './hooks';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import DownloadIcon from '@mui/icons-material/Download';
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
+import {
+  useSnippets,
+  useApproveSnippet,
+  useRemoveSnippetApproval,
+  useBatchApproveSnippets,
+  type BatchApproveError,
+} from './hooks';
+import type { BatchApprovalErrorResponse, BatchApprovalResponse, SnippetResponse } from './types';
+
+interface SnippetsListPageProps {
+  isAdmin?: boolean;
+}
+
+interface BatchResult {
+  success?: BatchApprovalResponse;
+  error?: BatchApprovalErrorResponse;
+  generic?: string;
+}
+
+function buildSnippetDownloadUrl(filename: string) {
+  return `/static/snippets/${filename.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+function ApproveButton({
+  snippet,
+  hasDownloaded,
+}: {
+  snippet: SnippetResponse;
+  hasDownloaded: boolean;
+}) {
+  const approve = useApproveSnippet(snippet.filename);
+  const removeApproval = useRemoveSnippetApproval(snippet.filename);
+  const isPending = approve.isPending || removeApproval.isPending;
+  const spinner = <CircularProgress size={16} color="inherit" />;
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  if (snippet.is_approved) {
+    return (
+      <Tooltip title="Remove approval">
+        <Button
+          size="small"
+          color="warning"
+          startIcon={isPending ? spinner : <RemoveCircleOutlineIcon />}
+          disabled={isPending}
+          onClick={(e) => {
+            e.stopPropagation();
+            removeApproval.mutate();
+          }}
+        >
+          Remove
+        </Button>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <>
+      <Tooltip title="Approve snippet">
+        <Button
+          size="small"
+          color="success"
+          startIcon={isPending ? spinner : <CheckCircleOutlineIcon />}
+          disabled={isPending || !hasDownloaded}
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirmOpen(true);
+          }}
+        >
+          Approve
+        </Button>
+      </Tooltip>
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+        <DialogTitle>Approve snippet?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            You are about to approve <strong>{snippet.filename}</strong> without downloading and
+            inspecting it. Only approve snippets you have reviewed.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+          <Button
+            color="success"
+            onClick={() => {
+              setConfirmOpen(false);
+              approve.mutate();
+            }}
+          >
+            Approve
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
 
 /**
  * Snippet-centric list page rendered at `/snippets/`.
  *
  * Renders the snippet entities discovered by the backend (one row per
- * snippet file). Approval/refresh actions remain on the legacy Jinja2
- * surface until SEP-1068 lands them on the JSON API.
+ * snippet file). When `isAdmin` is true, per-row approve / remove-approval
+ * buttons and a multi-select batch-approve action are shown.
  */
-export function SnippetsListPage() {
+export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const navigate = useNavigate();
   const { data: snippets = [], isLoading, error } = useSnippets();
+  const batchApprove = useBatchApproveSnippets();
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [downloaded, setDownloaded] = useState<Set<string>>(new Set());
+  const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+
+  const selectableSnippets = snippets.filter((snippet) => !snippet.is_approved);
+  const selectedFilenames = selectableSnippets
+    .filter((snippet) => selected.has(snippet.filename))
+    .map((snippet) => snippet.filename);
+
+  function markDownloaded(filename: string) {
+    setDownloaded((prev) => new Set(prev).add(filename));
+  }
+
+  function toggleSelect(snippet: SnippetResponse) {
+    if (snippet.is_approved) {
+      return;
+    }
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(snippet.filename)) {
+        next.delete(snippet.filename);
+      } else {
+        next.add(snippet.filename);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const selectableFilenames = selectableSnippets.map((s) => s.filename);
+    const allSelectableSelected =
+      selectableFilenames.length > 0 &&
+      selectableFilenames.every((filename) => selected.has(filename));
+    if (allSelectableSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(selectableFilenames));
+    }
+  }
+
+  function handleBatchApprove() {
+    setBatchResult(null);
+    setBatchConfirmOpen(false);
+    batchApprove.mutate(
+      { filenames: selectedFilenames },
+      {
+        onSuccess: (data) => {
+          setBatchResult({ success: data });
+          setSelected(new Set());
+        },
+        onError: (err: BatchApproveError) => {
+          if (err.structured) {
+            setBatchResult({ error: err.detail });
+          } else {
+            setBatchResult({ generic: 'Batch approval failed. Please try again.' });
+          }
+        },
+      },
+    );
+  }
 
   if (isLoading) {
     return (
@@ -57,6 +228,11 @@ export function SnippetsListPage() {
     );
   }
 
+  const selectableCount = selectableSnippets.length;
+  const selectedSelectableCount = selectedFilenames.length;
+  const allSelected = selectableCount > 0 && selectedSelectableCount === selectableCount;
+  const someSelected = selectedSelectableCount > 0 && selectedSelectableCount < selectableCount;
+
   return (
     <Box>
       <Typography variant="h4" sx={{ mb: 1 }}>
@@ -66,17 +242,103 @@ export function SnippetsListPage() {
         Pre-approved snippets discovered from disk. Click a row to view its execution form and
         history.
       </Typography>
+
+      {isAdmin && batchResult?.success && (
+        <Alert severity="success" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            <Chip label={`${batchResult.success.count} approved`} color="success" size="small" />
+            {batchResult.success.skipped_already_approved.length > 0 && (
+              <Chip
+                label={`${batchResult.success.skipped_already_approved.length} already approved`}
+                color="default"
+                size="small"
+              />
+            )}
+          </Stack>
+        </Alert>
+      )}
+
+      {isAdmin && batchResult?.generic && (
+        <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
+          {batchResult.generic}
+        </Alert>
+      )}
+
+      {isAdmin && batchResult?.error && (
+        <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
+          <Stack spacing={0.5}>
+            {batchResult.error.missing_in_db.length > 0 && (
+              <Box>
+                <strong>Missing in database:</strong>{' '}
+                {batchResult.error.missing_in_db.map((f) => (
+                  <Chip key={f} label={f} size="small" sx={{ mr: 0.5 }} />
+                ))}
+              </Box>
+            )}
+            {batchResult.error.missing_on_disk.length > 0 && (
+              <Box>
+                <strong>Missing on disk:</strong>{' '}
+                {batchResult.error.missing_on_disk.map((f) => (
+                  <Chip key={f} label={f} size="small" sx={{ mr: 0.5 }} />
+                ))}
+              </Box>
+            )}
+          </Stack>
+        </Alert>
+      )}
+
+      {isAdmin && selectedFilenames.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={() => setBatchConfirmOpen(true)}
+            disabled={batchApprove.isPending}
+          >
+            Batch approve ({selectedFilenames.length})
+          </Button>
+        </Box>
+      )}
+
+      <Dialog open={batchConfirmOpen} onClose={() => setBatchConfirmOpen(false)}>
+        <DialogTitle>Approve selected snippets?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Approve selected snippets? They will be approved WITHOUT being downloaded first — the
+            per-row download-before-approve guard is bypassed for batch approval.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBatchConfirmOpen(false)}>Cancel</Button>
+          <Button color="success" onClick={handleBatchApprove} disabled={batchApprove.isPending}>
+            Approve selected
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {snippets.length === 0 ? (
         <Typography color="text.secondary">No snippets available.</Typography>
       ) : (
         <Table size="small">
           <TableHead>
             <TableRow>
+              {isAdmin && (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={someSelected}
+                    checked={allSelected}
+                    disabled={selectableCount === 0}
+                    onChange={toggleSelectAll}
+                    inputProps={{ 'aria-label': 'select all snippets' }}
+                  />
+                </TableCell>
+              )}
               <TableCell>Filename</TableCell>
               <TableCell>Title</TableCell>
               <TableCell>Description</TableCell>
               <TableCell>Approved</TableCell>
               <TableCell>Reason</TableCell>
+              {isAdmin && <TableCell>Actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -87,6 +349,16 @@ export function SnippetsListPage() {
                 sx={{ cursor: 'pointer' }}
                 onClick={() => navigate(encodeURIComponent(snippet.filename))}
               >
+                {isAdmin && (
+                  <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selected.has(snippet.filename)}
+                      disabled={snippet.is_approved}
+                      onChange={() => toggleSelect(snippet)}
+                      inputProps={{ 'aria-label': `select ${snippet.filename}` }}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>
                   <Link
                     component="button"
@@ -104,6 +376,28 @@ export function SnippetsListPage() {
                 <TableCell>{snippet.description}</TableCell>
                 <TableCell>{snippet.is_approved ? 'Yes' : 'No'}</TableCell>
                 <TableCell>{snippet.reason}</TableCell>
+                {isAdmin && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Stack direction="row" spacing={1}>
+                      <Tooltip title="Download snippet">
+                        <Button
+                          component="a"
+                          href={buildSnippetDownloadUrl(snippet.filename)}
+                          download
+                          size="small"
+                          startIcon={<DownloadIcon />}
+                          onClick={() => markDownloaded(snippet.filename)}
+                        >
+                          Download
+                        </Button>
+                      </Tooltip>
+                      <ApproveButton
+                        snippet={snippet}
+                        hasDownloaded={downloaded.has(snippet.filename)}
+                      />
+                    </Stack>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

@@ -48,12 +48,12 @@ class HTTPConflictException(HTTPException):
 class HTTPBadRequestException(HTTPException):
     """Define exception raised for bad request (HTTP 400).
 
-    :param detail: A message providing additional details about the exception.
-        Defaults to "Bad Request".
-    :type detail: str
+    :param detail: A message, dict, or other JSON-serializable structure providing
+        additional details about the exception. Defaults to "Bad Request".
+    :type detail: Any
     """
 
-    def __init__(self, detail: str = "Bad Request") -> None:
+    def __init__(self, detail: Any = "Bad Request") -> None:
         super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 

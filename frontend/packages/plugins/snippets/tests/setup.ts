@@ -15,23 +15,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Minimal ImportMeta declaration so @sep/api can read `import.meta.env.DEV`
-// without depending on Vite directly. Consuming apps (e.g. @sep/shell) pull
-// in the full `vite/client` types via their own vite-env.d.ts.
-declare global {
-  interface ImportMetaEnv {
-    readonly DEV: boolean;
-    readonly PROD: boolean;
-    readonly MODE: string;
-    // Opt-in mock-fallback flag — set at build time (e.g. via
-    // `VITE_MOCK_API=true vite build`) to enable mock data fallbacks in
-    // production-mode bundles such as the Playwright preview target.
-    readonly VITE_MOCK_API?: string;
-  }
+import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
 
-  interface ImportMeta {
-    readonly env: ImportMetaEnv;
-  }
-}
-
-export {};
+afterEach(() => {
+  cleanup();
+});

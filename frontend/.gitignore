@@ -4,3 +4,8 @@
 
 # Storybook static build output
 packages/*/storybook-static/
+
+# Playwright E2E artifacts
+packages/e2e/playwright-report/
+packages/e2e/test-results/
+packages/e2e/blob-report/

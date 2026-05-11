@@ -29,7 +29,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
-from app.sep.deps import get_current_user, get_session, validate_csrf
+from app.sep.deps import (
+    get_api_authenticated_user,
+    get_current_user,
+    get_session,
+    validate_csrf,
+)
 from app.sep.main import sep_app
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
@@ -72,6 +77,51 @@ def non_admin_client(regular_user: CasdoorUser, session: AsyncSession) -> TestCl
     """Return a TestClient authenticated as a non-admin user."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def api_admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
+    """Return a TestClient authenticated as an admin via the JSON API auth path."""
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def api_non_admin_client(
+    regular_user: CasdoorUser, session: AsyncSession
+) -> TestClient:
+    """Return a TestClient authenticated as a non-admin via the JSON API auth path."""
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def api_unauthenticated_client(session: AsyncSession) -> TestClient:
+    """Return a TestClient with no auth overrides — every JSON call should 401."""
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def admin_client_no_csrf(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
+    """Return a TestClient authenticated as admin but with real CSRF validation.
+
+    Unlike :func:`admin_client`, ``validate_csrf`` is **not** overridden, so
+    requests that omit the CSRF token in their form body will receive a 400.
+    """
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
