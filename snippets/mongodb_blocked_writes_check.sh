@@ -140,23 +140,38 @@ elif command -v mongo > /dev/null 2>&1; then
     MONGO_BIN="mongo"
 fi
 
-# Build the MongoDB connection arguments as an array so empty values are skipped.
-MONGO_AUTH=(--port "$PORT")
+MONGO_ARGS=(--port "$PORT")
 if [ -n "$USER" ]; then
-    MONGO_AUTH+=(-u "$USER" --authenticationDatabase "$AUTH_DB")
+    MONGO_ARGS+=(-u "$USER" --authenticationDatabase "$AUTH_DB")
 fi
-if [ -n "$PASSWORD" ]; then
-    MONGO_AUTH+=(-p "$PASSWORD")
-fi
+
+js_escape() {
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\'/\\\'}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\t'/\\t}
+    printf '%s' "$value"
+}
 
 mongo_eval() {
     local script="$1"
     local outfile="$2"
+    local auth_prefix=""
     if [ -z "$MONGO_BIN" ]; then
         echo "Neither mongosh nor mongo is installed; skipping: $outfile" > "$outfile"
         return
     fi
-    "$MONGO_BIN" "${MONGO_AUTH[@]}" --quiet --eval "$script" > "$outfile" 2>&1 || true
+    if [ -n "$USER" ] && [ -n "$PASSWORD" ]; then
+        local escaped_auth_db escaped_user escaped_password
+        escaped_auth_db="$(js_escape "$AUTH_DB")"
+        escaped_user="$(js_escape "$USER")"
+        escaped_password="$(js_escape "$PASSWORD")"
+        auth_prefix="db = db.getSiblingDB('$escaped_auth_db'); if (!db.auth('$escaped_user', '$escaped_password')) { quit(1); }"
+    fi
+    printf '%s\n%s\n' "$auth_prefix" "$script" \
+        | "$MONGO_BIN" "${MONGO_ARGS[@]}" --quiet > "$outfile" 2>&1 || true
 }
 
 run_if_available() {
@@ -207,11 +222,21 @@ for ((i = 1; i <= ITERATIONS; i++)); do
     echo "[$d] iteration $i/$ITERATIONS"
 
     run_if_available netstat "$DEST/${d}-netstat_s" -s &
-    if [ -n "$PASSWORD" ]; then
-        run_if_available ps "$DEST/${d}-ps" axo pid,ppid,user,stat,pcpu,pmem,etime,comm &
-    else
-        run_if_available ps "$DEST/${d}-ps" faux &
-    fi
+    (
+        if command -v ps > /dev/null 2>&1; then
+            ps faux > "$DEST/${d}-ps" 2>&1 || true
+
+            if [ -n "$PASSWORD" ] && command -v sed > /dev/null 2>&1; then
+                sed -i -E \
+                    -e 's/(-p)[[:space:]]+[^[:space:]]+/\1 [REDACTED]/g' \
+                    -e 's/(--password)=[^[:space:]]+/\1=[REDACTED]/g' \
+                    -e 's/(--password)[[:space:]]+[^[:space:]]+/\1 [REDACTED]/g' \
+                    "$DEST/${d}-ps" || true
+            fi
+        else
+            echo "ps is not installed; skipping" > "$DEST/${d}-ps"
+        fi
+    ) &
     run_if_available pidstat "$DEST/${d}-pidstat_d" -d 1 60 &
     run_if_available pidstat "$DEST/${d}-pidstat_u" -u 1 60 &
     run_if_available top "$DEST/${d}-top" -bn1 &
@@ -222,7 +247,12 @@ for ((i = 1; i <= ITERATIONS; i++)); do
     run_if_available sar "$DEST/${d}-sar_tcp" -n TCP,ETCP 1 10 &
 
     if command -v mongostat > /dev/null 2>&1; then
-        ( mongostat "${MONGO_AUTH[@]}" --rowcount=1 > "$DEST/${d}-mongostat" 2>&1 || true ) &
+
+        MONGOSTAT_ARGS=("${MONGO_ARGS[@]}")
+        if [ -n "$PASSWORD" ]; then
+            MONGOSTAT_ARGS+=(-p "$PASSWORD")
+        fi
+        ( mongostat "${MONGOSTAT_ARGS[@]}" --rowcount=1 > "$DEST/${d}-mongostat" 2>&1 || true ) &
     else
         echo "mongostat not installed" > "$DEST/${d}-mongostat" &
     fi
