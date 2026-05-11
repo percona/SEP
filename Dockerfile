@@ -13,7 +13,7 @@ ENV FASTAPI_ENV=production_docker
 # FRONTEND BUILDER #
 ####################
 
-FROM node:22-alpine AS frontend-builder
+FROM node:22-slim AS frontend-builder
 
 WORKDIR /app
 
