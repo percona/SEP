@@ -44,7 +44,8 @@ jobs:
           exit 1
 
   # Detect changed file types to gate downstream jobs.
-  # Patterns are kept in sync with .github/labeler.yml.
+  # Python/frontend patterns mirror .github/labeler.yml; CI also tracks
+  # .pre-commit-config.yaml separately to trigger precommit-heavy.
   changes:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
