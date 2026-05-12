@@ -161,12 +161,12 @@ describe('TaskFilesDialog', () => {
       .mockResolvedValueOnce({ data: FILE_LIST })
       .mockResolvedValueOnce({ data: new Blob(['archive']) });
 
-    let capturedAnchor: HTMLAnchorElement | null = null;
+    const capture = { anchor: null as HTMLAnchorElement | null };
     const origCreate = document.createElement.bind(document);
     vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
       const el = origCreate(tag);
       if (tag === 'a') {
-        capturedAnchor = el as HTMLAnchorElement;
+        capture.anchor = el as HTMLAnchorElement;
       }
       return el;
     });
@@ -189,7 +189,7 @@ describe('TaskFilesDialog', () => {
         expect.objectContaining({ params: { path: 'output/logs/' }, responseType: 'blob' }),
       ),
     );
-    expect(capturedAnchor?.download).toBe('logs.tar.gz');
+    expect(capture.anchor?.download).toBe('logs.tar.gz');
   });
 
   it('uses full path in aria-label to disambiguate files with the same basename', async () => {
