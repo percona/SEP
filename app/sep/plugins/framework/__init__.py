@@ -15,6 +15,14 @@
 
 """Provide shared building blocks for schema-driven plugins."""
 
+from app.sep.plugins.framework.cascade import (
+    build_derived_payload,
+    cascade_create_tasks,
+    cascade_delete_tasks,
+    cascade_update_tasks,
+    CascadeFailure,
+    CascadeResult,
+)
 from app.sep.plugins.framework.connectivity import (
     ConnectivityWarning,
     maybe_record_connectivity_warning,
@@ -50,6 +58,8 @@ from app.sep.plugins.framework.rules import (
 
 __all__ = [
     "CardinalityRule",
+    "CascadeFailure",
+    "CascadeResult",
     "ConditionalRulesModel",
     "ConnectivityWarning",
     "F",
@@ -68,6 +78,10 @@ __all__ = [
     "any_present",
     "any_truthy",
     "apply_conditional_rules",
+    "build_derived_payload",
+    "cascade_create_tasks",
+    "cascade_delete_tasks",
+    "cascade_update_tasks",
     "evaluate_conditional_rules",
     "falsy",
     "maybe_record_connectivity_warning",

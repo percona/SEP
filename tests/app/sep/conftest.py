@@ -16,6 +16,7 @@
 """Define test fixtures for the SEP app."""
 
 from collections import OrderedDict
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -45,6 +46,17 @@ def test_client(regular_user: CasdoorUser) -> TestClient:
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def unauthenticated_client() -> Iterator[TestClient]:
+    """Yield a test client with authentication dependency overrides cleared."""
+    previous = sep_app.dependency_overrides
+    sep_app.dependency_overrides = {}
+    try:
+        yield TestClient(sep_app, raise_server_exceptions=False)
+    finally:
+        sep_app.dependency_overrides = previous
 
 
 @pytest_asyncio.fixture

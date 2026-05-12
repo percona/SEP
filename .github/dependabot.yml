@@ -65,3 +65,94 @@ updates:
       # rule's major in lockstep with engines.node when we upgrade Node.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "skip-test"
+    groups:
+      # FastAPI HTTP stack: fastapi pins starlette tightly (we hold
+      # >=0.49.3,<0.50.0 to stay inside fastapi 0.120.x's compatibility
+      # window) and python-multipart is FastAPI's form/multipart parser
+      # (we pin 0.0.27 exact-range for the same reason). uvicorn is the
+      # ASGI server fastapi is tested against. Bundle so an HTTP-stack
+      # bump lands in one PR with a coherent integration story.
+      fastapi-stack:
+        patterns:
+          - "fastapi"
+          - "starlette"
+          - "uvicorn"
+          - "python-multipart"
+      # Pydantic ecosystem: pydantic, pydantic-settings, and sqlmodel
+      # all build on the same BaseModel/validator internals; an
+      # unmatched bump surfaces schema mismatches at import time.
+      # email-validator is pulled by pydantic's EmailStr and ships
+      # coupled fixes.
+      pydantic-stack:
+        patterns:
+          - "pydantic"
+          - "pydantic-settings"
+          - "sqlmodel"
+          - "email-validator"
+      # SQLAlchemy ecosystem: sqlalchemy core, alembic (shares the
+      # metadata/dialect APIs), the async + sync drivers we run
+      # against, and the celery beat schedule store all sit on top of
+      # SQLAlchemy's session/dialect surface. Move them as a unit so
+      # dialect/driver churn lands together.
+      sqlalchemy-stack:
+        patterns:
+          - "sqlalchemy"
+          - "alembic"
+          - "aiosqlite"
+          - "asyncpg"
+          - "aiomysql"
+          - "psycopg2-binary"
+          - "pymysql"
+          - "sqlalchemy-celery-beat"
+      # Celery broker stack. sqlalchemy-celery-beat is also a celery
+      # extension but lives in sqlalchemy-stack above because its
+      # breakage mode is dialect/metadata churn, not broker protocol.
+      celery-stack:
+        patterns:
+          - "celery"
+          - "kombu"
+      # Presidio PII tooling: analyzer and anonymizer share a
+      # recognizer registry and ship coupled releases. A skew here
+      # silently misclassifies PII rather than failing loudly.
+      presidio:
+        patterns:
+          - "presidio-*"
+      # pytest core + plugins: pytest defines the hook contract every
+      # plugin in this group consumes. Bundle so a pytest-core bump
+      # always lands with compatible plugin versions.
+      pytest-stack:
+        patterns:
+          - "pytest"
+          - "pytest-*"
+      # Local lint/format toolchain (audit + dev groups): no runtime
+      # impact, high weekly PR volume if split. Bundling cuts noise
+      # without trading off correctness — a broken formatter surfaces
+      # immediately in pre-commit.
+      linting-stack:
+        patterns:
+          - "ruff"
+          - "bandit"
+          - "djlint"
+          - "jsbeautifier"
+          - "cssbeautifier"
+          - "pip-audit"
+          - "pre-commit"
+    ignore:
+      # Major bumps are gated behind manual review across the whole
+      # Python stack. Most direct deps already live inside tight
+      # pyproject.toml ceilings (fastapi 0.120.x, pydantic <2.10,
+      # sqlmodel 0.0.22, starlette 0.49.x, python-multipart 0.0.27,
+      # weasyprint 68.x), and every Python-ecosystem major this
+      # codebase has crossed (Pydantic v1→v2, SQLAlchemy 1.x→2.x)
+      # required coordinated migration work that does not fit a
+      # weekly auto-PR. Route majors through `poetry add` plus a
+      # dedicated ticket. Security advisories still surface via
+      # Dependabot alerts independently of this rule.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

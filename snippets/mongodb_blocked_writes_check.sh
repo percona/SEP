@@ -116,17 +116,47 @@ eval set -- "$OPTS"
 
 while [[ -n $* ]]; do
     case "$1" in
-        --dest) DEST="$2"; shift 2 ;;
-        --port) PORT="$2"; shift 2 ;;
-        --user) USER="$2"; shift 2 ;;
-        --password) PASSWORD="$2"; shift 2 ;;
-        --auth-database) AUTH_DB="$2"; shift 2 ;;
-        --iterations) ITERATIONS="$2"; shift 2 ;;
-        --sleep) SLEEP_SECS="$2"; shift 2 ;;
-        --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
+        --dest)
+            DEST="$2"
+            shift 2
+            ;;
+        --port)
+            PORT="$2"
+            shift 2
+            ;;
+        --user)
+            USER="$2"
+            shift 2
+            ;;
+        --password)
+            PASSWORD="$2"
+            shift 2
+            ;;
+        --auth-database)
+            AUTH_DB="$2"
+            shift 2
+            ;;
+        --iterations)
+            ITERATIONS="$2"
+            shift 2
+            ;;
+        --sleep)
+            SLEEP_SECS="$2"
+            shift 2
+            ;;
+        --retention-days)
+            RETENTION_DAYS="$2"
+            shift 2
+            ;;
         -h | --help) usage ;;
-        --) shift; break ;;
-        *) echo "Unrecognized option '$1'" >&2; usage 1 ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Unrecognized option '$1'" >&2
+            usage 1
+            ;;
     esac
 done
 
@@ -170,8 +200,8 @@ mongo_eval() {
         escaped_password="$(js_escape "$PASSWORD")"
         auth_prefix="db = db.getSiblingDB('$escaped_auth_db'); if (!db.auth('$escaped_user', '$escaped_password')) { quit(1); }"
     fi
-    printf '%s\n%s\n' "$auth_prefix" "$script" \
-        | "$MONGO_BIN" "${MONGO_ARGS[@]}" --quiet > "$outfile" 2>&1 || true
+    printf '%s\n%s\n' "$auth_prefix" "$script" |
+        "$MONGO_BIN" "${MONGO_ARGS[@]}" --quiet > "$outfile" 2>&1 || true
 }
 
 run_if_available() {
@@ -252,7 +282,7 @@ for ((i = 1; i <= ITERATIONS; i++)); do
         if [ -n "$PASSWORD" ]; then
             MONGOSTAT_ARGS+=(-p "$PASSWORD")
         fi
-        ( mongostat "${MONGOSTAT_ARGS[@]}" --rowcount=1 > "$DEST/${d}-mongostat" 2>&1 || true ) &
+        (mongostat "${MONGOSTAT_ARGS[@]}" --rowcount=1 > "$DEST/${d}-mongostat" 2>&1 || true) &
     else
         echo "mongostat not installed" > "$DEST/${d}-mongostat" &
     fi

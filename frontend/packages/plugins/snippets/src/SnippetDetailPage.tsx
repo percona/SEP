@@ -36,16 +36,12 @@ import {
   SchemaFormRenderer,
   TaskHistoryTable,
   TaskLogViewer,
+  buildSnippetExecutionFormPayload,
+  snippetPluginSchemaPath,
+  useSnippetPluginSchema,
   type TaskHistoryEntry,
 } from '@sep/framework';
-import {
-  useSnippetDownload,
-  useSnippetExecution,
-  useSnippetHistory,
-  useSnippetSchema,
-} from './hooks';
-
-const EXECUTION_RESERVED_NAMES = new Set(['executor_host', 'sudo', 'script_preview']);
+import { useSnippetDownload, useSnippetExecution, useSnippetHistory } from './hooks';
 
 /**
  * Snippet detail page rendered at `/snippets/:filename`.
@@ -61,7 +57,9 @@ export function SnippetDetailPage() {
   const { filename } = useParams<{ filename: string }>();
   const navigate = useNavigate();
 
-  const schemaQuery = useSnippetSchema(filename);
+  const schemaQuery = useSnippetPluginSchema(
+    filename ? snippetPluginSchemaPath(filename) : undefined,
+  );
   const historyQuery = useSnippetHistory(filename);
   const executionMutation = useSnippetExecution(filename);
   const downloadMutation = useSnippetDownload(filename);
@@ -72,25 +70,11 @@ export function SnippetDetailPage() {
     if (!filename) {
       return;
     }
-    const args: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(values)) {
-      if (EXECUTION_RESERVED_NAMES.has(key)) {
-        continue;
-      }
-      if (value === '' || value === undefined) {
-        continue;
-      }
-      args[key] = value;
-    }
-    // Stay on the snippet detail page after execute — `useSnippetExecution`
+    // Stay on the snippet detail page after execute — `useSnippetPluginExecution`
     // invalidates the per-snippet history query on success so the new run
     // appears in the table without navigating away (mirrors legacy Jinja2
     // behaviour and avoids the placeholder /tasks/* React route).
-    executionMutation.mutate({
-      executor_host: String(values.executor_host ?? ''),
-      sudo: Boolean(values.sudo ?? false),
-      args,
-    });
+    executionMutation.mutate(buildSnippetExecutionFormPayload(values));
   };
 
   const handleViewLogs = useCallback((entry: TaskHistoryEntry) => {
