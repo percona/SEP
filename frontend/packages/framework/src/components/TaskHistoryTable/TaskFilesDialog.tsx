@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import DownloadIcon from '@mui/icons-material/Download';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -56,7 +56,15 @@ export interface TaskFilesDialogProps {
 export function TaskFilesDialog({ open, taskHistoryId, onClose }: TaskFilesDialogProps) {
   const { data, isLoading, isError } = useTaskHistoryFiles(open ? taskHistoryId : null);
   const downloadMutation = useTaskFileDownload();
+  const resetMutation = downloadMutation.reset;
   const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setDownloadError(null);
+      resetMutation();
+    }
+  }, [open, resetMutation]);
 
   const entries = data ? Object.entries(data) : [];
 

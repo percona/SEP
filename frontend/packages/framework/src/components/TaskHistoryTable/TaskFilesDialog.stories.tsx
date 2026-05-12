@@ -35,9 +35,13 @@ const MIXED = {
   'output/data.csv': { size: 51200, is_dir: false },
 };
 
-/** Pre-populate a QueryClient so the dialog renders instantly without a real API call. */
+/** Pre-populate a QueryClient so the dialog renders instantly without a real API call.
+ * staleTime: Infinity prevents the pre-seeded data from being immediately refetched
+ * (which would flip the dialog into an error state since no real server is available). */
 function makePreloadedClient(taskHistoryId: number, data: object) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
   client.setQueryData(['task-history-files', taskHistoryId], data);
   return client;
 }

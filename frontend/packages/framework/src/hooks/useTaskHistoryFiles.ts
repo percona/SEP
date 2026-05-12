@@ -28,7 +28,7 @@ export function useTaskHistoryFiles(taskHistoryId: number | null | undefined) {
     staleTime: 0,
     queryFn: async ({ queryKey }) => {
       const id = queryKey[1] as number;
-      const { data } = await apiClient.get<TaskHistoryFilesMap>(`/files/${id}/`);
+      const { data } = await apiClient.get<TaskHistoryFilesMap>(`/files/${id}`);
       return data;
     },
   });

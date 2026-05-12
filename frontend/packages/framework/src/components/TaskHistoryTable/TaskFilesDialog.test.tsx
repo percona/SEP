@@ -50,6 +50,12 @@ const FILE_LIST = {
 describe('TaskFilesDialog', () => {
   beforeEach(() => {
     mockedApiClient.get.mockReset();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('does not render content when closed', () => {
@@ -128,9 +134,6 @@ describe('TaskFilesDialog', () => {
       .mockResolvedValueOnce({ data: FILE_LIST })
       .mockResolvedValueOnce({ data: new Blob(['content']) });
 
-    URL.createObjectURL = vi.fn(() => 'blob:mock');
-    URL.revokeObjectURL = vi.fn();
-
     const client = makeQueryClient();
     render(
       <Wrapper client={client}>
@@ -157,9 +160,6 @@ describe('TaskFilesDialog', () => {
     mockedApiClient.get
       .mockResolvedValueOnce({ data: FILE_LIST })
       .mockResolvedValueOnce({ data: new Blob(['archive']) });
-
-    URL.createObjectURL = vi.fn(() => 'blob:mock');
-    URL.revokeObjectURL = vi.fn();
 
     let capturedAnchor: HTMLAnchorElement | null = null;
     const origCreate = document.createElement.bind(document);
@@ -190,8 +190,6 @@ describe('TaskFilesDialog', () => {
       ),
     );
     expect(capturedAnchor?.download).toBe('logs.tar.gz');
-
-    vi.restoreAllMocks();
   });
 
   it('uses full path in aria-label to disambiguate files with the same basename', async () => {
@@ -219,9 +217,6 @@ describe('TaskFilesDialog', () => {
           resolveDownload = () => res({ data: new Blob(['x']) });
         }),
     );
-
-    URL.createObjectURL = vi.fn(() => 'blob:mock');
-    URL.revokeObjectURL = vi.fn();
 
     const client = makeQueryClient();
     render(
@@ -251,9 +246,6 @@ describe('TaskFilesDialog', () => {
     mockedApiClient.get
       .mockResolvedValueOnce({ data: FILE_LIST })
       .mockRejectedValueOnce(new Error('Server error'));
-
-    URL.createObjectURL = vi.fn(() => 'blob:mock');
-    URL.revokeObjectURL = vi.fn();
 
     const client = makeQueryClient();
     render(

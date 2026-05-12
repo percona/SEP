@@ -241,7 +241,7 @@ function TaskHistoryTableView({
                       onClick={() => {
                         if (onDownloadFiles) {
                           onDownloadFiles(entry);
-                        } else {
+                        } else if (entry.id !== null && entry.id !== undefined) {
                           setPendingFilesEntry(entry);
                         }
                       }}
