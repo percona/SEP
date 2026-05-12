@@ -53,3 +53,9 @@ export type {
   PaginatedTaskHistory,
   UseTaskHistoryOptions,
 } from './useTaskHistory';
+
+export { useTaskHistoryFiles } from './useTaskHistoryFiles';
+export type { FileMetadata, TaskHistoryFilesMap } from './useTaskHistoryFiles';
+
+export { useTaskFileDownload } from './useTaskFileDownload';
+export type { TaskFileDownloadParams } from './useTaskFileDownload';
