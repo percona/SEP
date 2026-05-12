@@ -144,11 +144,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         display: inline-block;
     }
 </style>
-{% from "backups/backup/partials/info-icon.html.j2" import info_icon %}
+{% from "mysql_backups/backup/partials/info-icon.html.j2" import info_icon %}
 <form id="edit-task-form"
       class="edit-task-form window"
       method="post"
-      action="{{ url_for('backups_update', task_name=task.name) }}"
+      action="{{ url_for('mysql_backups_update', task_name=task.name) }}"
       data-confirm-message='Are you sure you want to edit task "{{ task.name }}"?'>
     <dialog id="modalEditTask"
             aria-modal="true"

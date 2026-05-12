@@ -35,8 +35,8 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
-from app.sep.plugins.backup.models import BackupType
-from app.sep.plugins.backup.restore.deps import (
+from app.sep.plugins.mysql_backups.models import BackupType
+from app.sep.plugins.mysql_backups.restore.deps import (
     get_restores_index_context,
     parse_restore_task_data,
     RestoreGeneratedTask,

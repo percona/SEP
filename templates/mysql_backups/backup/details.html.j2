@@ -16,9 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 #}
 {% extends "base.html.j2" %}
 {% block title -%}
-    Restores - {{ task.name }}
+    Backups - {{ task.name }}
 {%- endblock title %}
 {% block style %}
+    <script src="{{ url_for('static', path='/js/info-tooltip.js') }}"
+            nonce="{{ request.state.csp_nonce }}"></script>
     <style>
         label+input[type=text] {
             display: block
@@ -52,8 +54,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     <div class="toggle-btn-group"
          role="group"
          aria-label="Backup and Restore navigation">
-        <a href="{{ url_for('backups_index') }}" class="toggle-btn">Backup</a>
-        <a href="{{ url_for('restores_index') }}" class="toggle-btn active">Restore</a>
+        <a href="{{ url_for('mysql_backups_index') }}" class="toggle-btn active">Backup</a>
+        <a href="{{ url_for('restores_index') }}" class="toggle-btn">Restore</a>
     </div>
 {% endblock sticky %}
 {% block main %}
@@ -73,8 +75,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         <tbody>
             <tr>
                 <td>{{ task.hostname }}</td>
-                <td>{{ task.host }} ({{ task.port }})</td>
-                <td>{{ task.restore_type }}</td>
+                <td>{{ task.host }}</td>
+                <td>{{ task.backup_type }}</td>
                 <td class="relativeTime">{{ task.created_at }}</td>
                 <td class="relativeTime">{{ task.updated_at }}</td>
                 <td>{{ user_id_to_username.get(task["created_by"], task["created_by"]) or '' }}</td>
@@ -126,6 +128,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     <br>
     <br>
     <section>
+        <h2>PII Anonymization</h2>
+        <p>The following sensitive data types are selected for anonymization:</p>
+        {% if task.entities %}
+            {% for entity, value in task.entities.items() %}<code>{{ entity }}, </code>{% endfor %}
+        {% else %}
+            <p>No entities selected.</p>
+        {% endif %}
+    </section>
+    <section>
         <h2>Stats</h2>
         {% if stats and stats.total %}
             <table data-table>
@@ -161,10 +172,19 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </section>
     <br>
     <br>
+    {% set pending_tasks = history|selectattr("status", "equalto", "pending")|list %}
+    {% if pending_tasks %}
+        <section id="pending-tasks">
+            <h2>Pending</h2>
+            {% include "tasks/partials/pending-tasks.html.j2" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
     <section>
         <h2>History</h2>
         {% set history_tasks = history %}
         {% include "tasks/partials/completed-tasks.html.j2" %}
     </section>
-    {% include "backups/restore/partials/edit-form.html.j2" %}
+    {% include "mysql_backups/backup/partials/edit-form.html.j2" %}
 {% endblock main %}

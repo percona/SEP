@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.plugins.backup.restore.routes module."""
+"""Define tests for the app.sep.plugins.mysql_backups.restore.routes module."""
 
 from unittest.mock import AsyncMock
 
@@ -21,8 +21,8 @@ import pytest
 from fastapi import status
 
 from app.sep.inventory import CreatedService
-from app.sep.plugins.backup.models import BackupType
-from app.sep.plugins.backup.restore.models import RestoreCreate
+from app.sep.plugins.mysql_backups.models import BackupType
+from app.sep.plugins.mysql_backups.restore.models import RestoreCreate
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_restores_create_full_form_dependency_chain_without_payload_override(
     mock_task_api_dep.post.return_value = AsyncMock()
 
     response = test_client.post(
-        "/backups/restores/",
+        "/mysql_backups/restores/",
         data=form.model_dump(exclude_none=True),
         follow_redirects=False,
     )
@@ -84,7 +84,7 @@ def test_restores_update_full_form_dependency_chain_without_payload_override(
     mock_task_api_dep.put.return_value = AsyncMock()
 
     response = test_client.post(
-        f"/backups/restores/{form.task_name}/update",
+        f"/mysql_backups/restores/{form.task_name}/update",
         data=form.model_dump(exclude_none=True),
         follow_redirects=False,
     )

@@ -76,9 +76,9 @@ default:
         URI_PATH: /archives
         CSS_CLASS: archive
       - NAME: MySQL Backups
-        MODULE_NAME: backup
-        URI_PATH: /backups
-        CSS_CLASS: backups
+        MODULE_NAME: mysql_backups
+        URI_PATH: /mysql_backups
+        CSS_CLASS: mysql_backups
       - NAME: Checksums
         MODULE_NAME: checksums
         URI_PATH: /checksums

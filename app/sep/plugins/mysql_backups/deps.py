@@ -40,7 +40,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.backup.models import (
+from app.sep.plugins.mysql_backups.models import (
     BackupConfig,
     BackupConfigAll,
     BackupConfigServer,
