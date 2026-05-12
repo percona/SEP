@@ -1,11 +1,13 @@
 version: 2
 multi-ecosystem-groups:
-  # Bundle pip lint tooling with its .pre-commit-config.yaml counterparts.
+  # Bundle pip + pre-commit + npm lint/format tooling.
   linting-stack:
     schedule:
       interval: "weekly"
     labels:
       - "skip-test"
+      # CI gate: skip python/frontend/build jobs.
+      - "lint-fmt-only"
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -24,6 +26,11 @@ updates:
       interval: "weekly"
     labels:
       - "skip-test"
+    # oxlint/oxfmt ride with the cross-ecosystem linting-stack.
+    patterns:
+      - "oxlint"
+      - "oxfmt"
+    multi-ecosystem-group: "linting-stack"
     groups:
       # Storybook core + addons share a release train.
       storybook:
@@ -34,11 +41,6 @@ updates:
       mui:
         patterns:
           - "@mui/*"
-      # Frontend lint/format toolchain.
-      linting-stack:
-        patterns:
-          - "oxlint"
-          - "oxfmt"
       # Vite core + plugins peer-pin vite version.
       vite-stack:
         patterns:
