@@ -463,7 +463,7 @@ class ScriptPreviewField(BaseField):
     :param endpoint_url: The fully-resolved URL the renderer fetches preview
         content from, relative to the FE ``apiClient`` base (``/api``). Schema
         synthesisers should bake any plugin-specific path segments (for
-        example, ``/plugins/snippets/{filename}/script-preview``) here at
+        example, ``/plugins/snippets/{filename}/preview``) here at
         schema build time rather than templating client-side.
     :type endpoint_url: NonEmptyStr
     :param depends_on: Names of sibling fields whose values trigger a
