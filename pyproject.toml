@@ -143,7 +143,7 @@ en-core-web-lg = {url = "https://github.com/explosion/spacy-models/releases/down
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.5.1"
 pytest = "^9.0.3"
-pytest-cov = "^6.0.0"
+pytest-cov = "^7.1.0"
 pytest-mock = "^3.14.0"
 faker = "^30.8.2"
 polyfactory = "^2.18.0"
