@@ -32,6 +32,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
@@ -356,12 +357,50 @@ async def check_service_connectivity(
             "missing node or port information",
         )
         return redirect
+    # Fetch executor hosts inline rather than via ``ExecutorHosts`` so we can
+    # early-abort with a ``service.name``-specific flash; the dep continues
+    # with an empty mapping and would emit a second, generic flash on failure.
+    try:
+        executor_hosts: dict[str, str] = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        logger.warning(
+            "Tasks API error fetching executor hosts for service %s: %s",
+            service.id,
+            exc.detail,
+        )
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: {exc.detail}",
+        )
+        return redirect
+    except Exception:
+        logger.exception(
+            "Failed to fetch executor hosts for connectivity check on service %s",
+            service.id,
+        )
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            "could not reach the Tasks API",
+        )
+        return redirect
+    executor_target = resolve_executor_name_by_address(
+        service.node.address, executor_hosts
+    )
+    if executor_target is None:
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            f"no executor host is registered for address "
+            f"{service.node.address!r} (inventory node {service.node.name!r}).",
+        )
+        return redirect
     try:
         result = ConnectivityCheckResponse.model_validate(
             await tasks_api.post(
                 "/connectivity-check/",
                 json={
-                    "target": service.node.name,
+                    "target": executor_target,
                     "host": service.node.address,
                     "port": service.port,
                     "service_type": service.type.value,
