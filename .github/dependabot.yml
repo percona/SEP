@@ -1,6 +1,7 @@
 version: 2
 multi-ecosystem-groups:
-  # Bundle pip ruff/djlint with their .pre-commit-config.yaml hook revs.
+  # Bundle pip lint tooling with its .pre-commit-config.yaml counterparts
+  # (ruff/djlint hook revs; jsbeautifier/cssbeautifier additional_dependencies).
   linting-stack:
     schedule:
       interval: "weekly"
@@ -13,6 +14,11 @@ updates:
       interval: "weekly"
     labels:
       - "skip-test"
+    groups:
+      # Bundle all weekly action bumps; pnpm/action-setup alone churns ~1/week.
+      actions:
+        patterns:
+          - "*"
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
@@ -29,6 +35,38 @@ updates:
       mui:
         patterns:
           - "@mui/*"
+      # Frontend lint/format toolchain.
+      linting-stack:
+        patterns:
+          - "oxlint"
+          - "oxfmt"
+      # Vite core + plugins peer-pin vite version.
+      vite-stack:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "vite-tsconfig-paths"
+          - "vitest"
+      # @testing-library/* share core APIs.
+      testing-library:
+        patterns:
+          - "@testing-library/*"
+      # @dnd-kit/* ship coupled releases.
+      dnd-kit:
+        patterns:
+          - "@dnd-kit/*"
+      # @fontsource/* — bundle weekly font bumps.
+      fontsource:
+        patterns:
+          - "@fontsource/*"
+      # Prism syntax-highlighting set + types.
+      prismjs-stack:
+        patterns:
+          - "prismjs"
+          - "prism-react-renderer"
+          - "react-syntax-highlighter"
+          - "@types/prismjs"
+          - "@types/react-syntax-highlighter"
     ignore:
       # Majors are gated behind manual review: @percona/percona-ui peer-deps
       # hold @mui/* on v7, react-hook-form on v7, and material-react-table
@@ -44,6 +82,8 @@ updates:
     patterns:
       - "ruff"
       - "djlint"
+      - "jsbeautifier"
+      - "cssbeautifier"
     multi-ecosystem-group: "linting-stack"
     groups:
       # fastapi pins starlette; python-multipart and uvicorn move with it.
@@ -89,8 +129,6 @@ updates:
       linting-stack:
         patterns:
           - "bandit"
-          - "jsbeautifier"
-          - "cssbeautifier"
           - "pip-audit"
           - "pre-commit"
     ignore:
@@ -119,15 +157,24 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Hook revs (astral-sh/ruff-pre-commit, djlint/djLint) plus Python
+    # additional_dependencies (jsbeautifier, cssbeautifier) — Dependabot
+    # tracks both for `language: python` hooks.
     patterns:
       - "astral-sh/ruff-pre-commit"
       - "djlint/djLint"
+      - "jsbeautifier"
+      - "cssbeautifier"
     multi-ecosystem-group: "linting-stack"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # Mirror pip-side ruff/djlint minor restriction.
+      # Mirror pip-side minor restrictions.
       - dependency-name: "astral-sh/ruff-pre-commit"
         update-types: ["version-update:semver-minor"]
       - dependency-name: "djlint/djLint"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "jsbeautifier"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "cssbeautifier"
         update-types: ["version-update:semver-minor"]
