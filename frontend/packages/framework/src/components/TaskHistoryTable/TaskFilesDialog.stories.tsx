@@ -17,7 +17,6 @@
 
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SnackbarProvider } from 'notistack';
 import { TaskFilesDialog } from './TaskFilesDialog';
 
 const FILES_ONLY = {
@@ -50,13 +49,6 @@ const meta: Meta<typeof TaskFilesDialog> = {
   title: 'Framework/TaskHistoryTable',
   component: TaskFilesDialog,
   parameters: { layout: 'centered' },
-  decorators: [
-    (Story) => (
-      <SnackbarProvider>
-        <Story />
-      </SnackbarProvider>
-    ),
-  ],
 };
 export default meta;
 

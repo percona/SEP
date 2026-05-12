@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import DownloadIcon from '@mui/icons-material/Download';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -40,7 +40,7 @@ function formatSize(size: number): string {
   }
   const units = ['B', 'KB', 'MB', 'GB'];
   const i = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
-  return `${(size / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+  return `${(size / 1024 ** i).toFixed(1)} ${units[i]}`;
 }
 
 function basename(path: string): string {
@@ -56,12 +56,10 @@ export interface TaskFilesDialogProps {
 export function TaskFilesDialog({ open, taskHistoryId, onClose }: TaskFilesDialogProps) {
   const { data, isLoading, isError } = useTaskHistoryFiles(open ? taskHistoryId : null);
   const downloadMutation = useTaskFileDownload();
-  const resetMutation = downloadMutation.reset;
-  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const { reset: resetMutation } = downloadMutation;
 
   useEffect(() => {
     if (!open) {
-      setDownloadError(null);
       resetMutation();
     }
   }, [open, resetMutation]);
@@ -72,15 +70,7 @@ export function TaskFilesDialog({ open, taskHistoryId, onClose }: TaskFilesDialo
     if (taskHistoryId === null || taskHistoryId === undefined) {
       return;
     }
-    setDownloadError(null);
-    downloadMutation.mutate(
-      { taskHistoryId, path, isDir },
-      {
-        onError: (err) => {
-          setDownloadError(err.message || 'Download failed');
-        },
-      },
-    );
+    downloadMutation.mutate({ taskHistoryId, path, isDir });
   }
 
   const anyPending = downloadMutation.isPending;
@@ -101,9 +91,9 @@ export function TaskFilesDialog({ open, taskHistoryId, onClose }: TaskFilesDialo
           </Box>
         )}
         {isError && <Alert severity="error">Failed to load file list.</Alert>}
-        {downloadError && (
-          <Alert severity="error" onClose={() => setDownloadError(null)} sx={{ mb: 1 }}>
-            {downloadError}
+        {downloadMutation.error && (
+          <Alert severity="error" onClose={() => resetMutation()} sx={{ mb: 1 }}>
+            {downloadMutation.error.message || 'Download failed'}
           </Alert>
         )}
         {!isLoading && !isError && entries.length === 0 && (
