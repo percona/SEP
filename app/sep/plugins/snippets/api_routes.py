@@ -24,7 +24,7 @@ level and redeclared per route for safety. Route layout is snippet-centric:
 * ``POST /refresh``                            — admin manual snippets cache refresh
 * ``GET /``                                    — list snippets
 * ``GET /{snippet_filename}/schema``           — per-snippet form schema
-* ``GET /{snippet_filename}/script-preview``   — script preview
+* ``GET /{snippet_filename}/preview``          — script preview
 * ``GET /{snippet_filename}/download``         — raw snippet file download
 * ``GET /{snippet_filename}/history``          — execution history
 * ``POST /{snippet_filename}/execute``         — execute the snippet
@@ -171,7 +171,7 @@ async def snippets_api_per_snippet_schema(snippet: SnippetDep) -> PluginSchema:
 
 
 @router.get(
-    "/{snippet_filename}/script-preview",
+    "/{snippet_filename}/preview",
     dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewResponse:
@@ -209,7 +209,7 @@ async def snippets_api_download(snippet: SnippetDep) -> FileResponse:
 
     Returns the on-disk source verbatim — full bash/Python body plus its
     YAML frontmatter — so end users can save the file locally without
-    being capped by the script-preview truncation limits. The
+    being capped by the preview truncation limits. The
     ``SnippetDep`` dependency already validates both the DB row and the
     on-disk file, so a missing snippet or missing file surfaces as 404.
 

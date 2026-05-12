@@ -149,7 +149,7 @@ class SnippetExecutionResponse(BaseModel):
 
 
 class ScriptPreviewResponse(BaseModel):
-    """Represent the backend response for the script-preview endpoint.
+    """Represent the backend response for the preview endpoint.
 
     :param content: The full text content of the snippet file (preamble,
         frontmatter, and body concatenated).

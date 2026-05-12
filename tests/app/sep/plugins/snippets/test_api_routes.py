@@ -188,13 +188,13 @@ class TestSnippetsApiPerSnippetSchema:
             if field["type"] == "script_preview"
         )
         assert preview_field["endpoint_url"] == (
-            f"/plugins/snippets/{snippet.filename}/script-preview"
+            f"/plugins/snippets/{snippet.filename}/preview"
         )
 
 
 @pytest.mark.asyncio
 class TestSnippetsApiScriptPreview:
-    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/script-preview``."""
+    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/preview``."""
 
     async def test_returns_preview_with_language_hint(
         self, test_client, create_snippet
@@ -202,7 +202,7 @@ class TestSnippetsApiScriptPreview:
         """The preview response carries content, truncation flag, and a language hint."""
         snippet = await create_snippet("hello.sh", approved=True)
 
-        response = test_client.get(f"{API_BASE}/{snippet.filename}/script-preview")
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/preview")
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -225,10 +225,20 @@ class TestSnippetsApiScriptPreview:
             side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "boom"),
         ):
             response = test_client.get(
-                f"{API_BASE}/{snippet.filename}/script-preview",
+                f"{API_BASE}/{snippet.filename}/preview",
             )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    async def test_old_script_preview_route_returns_404(
+        self, test_client, create_snippet
+    ):
+        """The removed script-preview path is not kept as a compatibility alias."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/script-preview")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 @pytest.mark.asyncio
