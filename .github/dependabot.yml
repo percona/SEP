@@ -1,7 +1,6 @@
 version: 2
 multi-ecosystem-groups:
-  # Bundle pip lint tooling with its .pre-commit-config.yaml counterparts
-  # (ruff/djlint hook revs; jsbeautifier/cssbeautifier additional_dependencies).
+  # Bundle pip lint tooling with its .pre-commit-config.yaml counterparts.
   linting-stack:
     schedule:
       interval: "weekly"
@@ -68,14 +67,10 @@ updates:
           - "@types/prismjs"
           - "@types/react-syntax-highlighter"
     ignore:
-      # Majors are gated behind manual review: @percona/percona-ui peer-deps
-      # hold @mui/* on v7, react-hook-form on v7, and material-react-table
-      # on v1; @types/node tracks our Node 20 runtime pin.
+      # Majors gated behind manual review (percona-ui peer-deps; Node 20 pin).
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # Linter/formatter/test minors ship behavior changes (new oxlint
-      # rules, oxfmt output drift, tightened typescript checks, vitest
-      # API shifts) — auto-bump patches only, gate minors via ticket.
+      # Linter/formatter/test minors ship behavior changes — gate behind a ticket.
       - dependency-name: "oxlint"
         update-types: ["version-update:semver-minor"]
       - dependency-name: "oxfmt"
@@ -143,13 +138,10 @@ updates:
           - "pip-audit"
           - "pre-commit"
     ignore:
-      # Majors require coordinated migration (Pydantic v1→v2, SQLAlchemy 1→2);
-      # gate behind manual `poetry add` + ticket. Security advisories still fire.
+      # Majors require coordinated migration — gate behind manual `poetry add` + ticket.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # Linter/formatter/test minors ship behavior changes (new lint rules,
-      # formatter output drift, deprecated test hooks, churned faker data) —
-      # auto-bump patches only, gate minors via ticket.
+      # Linter/formatter/test minors ship behavior changes — gate behind a ticket.
       - dependency-name: "ruff"
         update-types: ["version-update:semver-minor"]
       - dependency-name: "djlint"
@@ -168,9 +160,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    # Hook revs (astral-sh/ruff-pre-commit, djlint/djLint) plus Python
-    # additional_dependencies (jsbeautifier, cssbeautifier) — Dependabot
-    # tracks both for `language: python` hooks.
+    # Hook revs + Python additional_dependencies (Dependabot tracks both).
     patterns:
       - "astral-sh/ruff-pre-commit"
       - "djlint/djLint"
