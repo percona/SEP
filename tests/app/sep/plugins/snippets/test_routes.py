@@ -458,6 +458,24 @@ class TestSnippetsApprovalRouteDeprecationHeaders:
 
         assert response.headers.get("Deprecation") == "true"
 
+    @pytest.mark.asyncio
+    async def test_refresh_emits_deprecation_header(
+        self, admin_client: TestClient, mocker: MockerFixture
+    ):
+        """Assert legacy refresh route carries the RFC 8594 Deprecation header."""
+        mocker.patch(
+            "app.sep.plugins.snippets.routes.snippets_settings.ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+        mocker.patch(
+            "app.sep.plugins.snippets.routes.update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = admin_client.post("/snippets/refresh", follow_redirects=False)
+
+        assert response.headers.get("Deprecation") == "true"
+
 
 class TestSnippetsCsrfEnforcement:
     """Single-snippet approve/remove-approval require a valid CSRF token."""
