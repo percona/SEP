@@ -439,8 +439,8 @@ importers:
         specifier: ^5.1.0
         version: 5.2.10
       '@fontsource/roboto-mono':
-        specifier: ^5.1.0
-        version: 5.2.8
+        specifier: ^5.2.9
+        version: 5.2.9
       '@melloware/react-logviewer':
         specifier: ^6.5.0
         version: 6.5.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -917,8 +917,8 @@ packages:
   '@fontsource/poppins@5.2.7':
     resolution: {integrity: sha512-6uQyPmseo4FgI97WIhA4yWRlNaoLk4vSDK/PyRwdqqZb5zAEuc+Kunt8JTMcsHYUEGYBtN15SNkMajMdqUSUmg==}
 
-  '@fontsource/roboto-mono@5.2.8':
-    resolution: {integrity: sha512-M0XPRcvkOKiTPooXwX7yJSNpuad3CPcQwsADBfnopz3apBs+VKI47pc42mlvAxJjNTRauu5rndSxHc8F52bR7Q==}
+  '@fontsource/roboto-mono@5.2.9':
+    resolution: {integrity: sha512-iIeSyrRGoM15uIWqXslW1K9UFnUYfnCFNrNoWjXE0huO1L+hM0Jst0KNLuRc7P21xPpGL0bZouzYSX0Em9eyWg==}
 
   '@fontsource/roboto@5.2.10':
     resolution: {integrity: sha512-8HlA5FtSfz//oFSr2eL7GFXAiE7eIkcGOtx7tjsLKq+as702x9+GU7K95iDeWFapHC4M2hv9RrpXKRTGGBI8Zg==}
@@ -3673,7 +3673,7 @@ snapshots:
 
   '@fontsource/poppins@5.2.7': {}
 
-  '@fontsource/roboto-mono@5.2.8': {}
+  '@fontsource/roboto-mono@5.2.9': {}
 
   '@fontsource/roboto@5.2.10': {}
 
@@ -4037,7 +4037,7 @@ snapshots:
       '@emotion/styled': 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6)
       '@fontsource/poppins': 5.2.7
       '@fontsource/roboto': 5.2.10
-      '@fontsource/roboto-mono': 5.2.8
+      '@fontsource/roboto-mono': 5.2.9
       '@mui/icons-material': 7.3.11(@mui/material@7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.14)(react@19.2.6)
       '@mui/material': 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@mui/utils': 7.3.11(@types/react@19.2.14)(react@19.2.6)
