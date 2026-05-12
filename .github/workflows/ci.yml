@@ -65,6 +65,7 @@ jobs:
               - '**/**.py'
               - 'pyproject.toml'
               - 'poetry.lock'
+              - '.pre-commit-config.yaml'
             frontend:
               - 'frontend/**'
               - 'package.json'

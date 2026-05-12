@@ -1,4 +1,11 @@
 version: 2
+multi-ecosystem-groups:
+  # Bundle pip ruff/djlint with their .pre-commit-config.yaml hook revs.
+  linting-stack:
+    schedule:
+      interval: "weekly"
+    labels:
+      - "skip-test"
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -34,6 +41,10 @@ updates:
       interval: "weekly"
     labels:
       - "skip-test"
+    patterns:
+      - "ruff"
+      - "djlint"
+    multi-ecosystem-group: "linting-stack"
     groups:
       # fastapi pins starlette; python-multipart and uvicorn move with it.
       fastapi-stack:
@@ -77,9 +88,7 @@ updates:
       # Local lint/format toolchain — no runtime impact.
       linting-stack:
         patterns:
-          - "ruff"
           - "bandit"
-          - "djlint"
           - "jsbeautifier"
           - "cssbeautifier"
           - "pip-audit"
@@ -87,5 +96,16 @@ updates:
     ignore:
       # Majors require coordinated migration (Pydantic v1→v2, SQLAlchemy 1→2);
       # gate behind manual `poetry add` + ticket. Security advisories still fire.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    patterns:
+      - "astral-sh/ruff-pre-commit"
+      - "djlint/djLint"
+    multi-ecosystem-group: "linting-stack"
+    ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
