@@ -50,6 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.filter.outputs.python }}
+      precommit: ${{ steps.filter.outputs.precommit }}
       frontend: ${{ steps.filter.outputs.frontend }}
       docker: ${{ steps.filter.outputs.docker }}
     steps:
@@ -65,6 +66,7 @@ jobs:
               - '**/**.py'
               - 'pyproject.toml'
               - 'poetry.lock'
+            precommit:
               - '.pre-commit-config.yaml'
             frontend:
               - 'frontend/**'
@@ -132,6 +134,7 @@ jobs:
         github.event.pull_request.draft == false &&
         (
           needs.changes.outputs.python == 'true' ||
+          needs.changes.outputs.precommit == 'true' ||
           needs.changes.outputs.frontend == 'true' ||
           needs.changes.outputs.docker == 'true'
         )
