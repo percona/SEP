@@ -98,6 +98,9 @@ updates:
       # gate behind manual `poetry add` + ticket. Security advisories still fire.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # ruff minors ship new lint rules — gate behind a ticket.
+      - dependency-name: "ruff"
+        update-types: ["version-update:semver-minor"]
   - package-ecosystem: "pre-commit"
     directory: "/"
     schedule:
@@ -109,3 +112,6 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Mirror pip-side ruff minor restriction.
+      - dependency-name: "astral-sh/ruff-pre-commit"
+        update-types: ["version-update:semver-minor"]
