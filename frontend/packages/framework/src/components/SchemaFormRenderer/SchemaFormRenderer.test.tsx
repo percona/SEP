@@ -199,6 +199,68 @@ describe('SchemaFormRenderer — field rendering', () => {
   });
 });
 
+describe('SchemaFormRenderer — section layout controls', () => {
+  it('renders render_after_submit sections after the submit button', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Before submit',
+        fields: [{ type: 'string', name: 'before', label: 'Before' }],
+      },
+      {
+        title: 'After submit',
+        render_after_submit: true,
+        fields: [{ type: 'string', name: 'after', label: 'After' }],
+      },
+    ];
+
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    const beforeTitle = screen.getByText('Before submit');
+    const runButton = screen.getByRole('button', { name: 'Run' });
+    const afterTitle = screen.getByText('After submit');
+
+    expect(beforeTitle.compareDocumentPosition(runButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(runButton.compareDocumentPosition(afterTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('starts collapsed sections closed when collapsed_by_default is true', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Script preview',
+        collapsible: true,
+        collapsed_by_default: true,
+        fields: [{ type: 'string', name: 'probe', label: 'Probe' }],
+      },
+    ];
+
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    expect(screen.queryByLabelText('Probe')).toBeNull();
+    expect(screen.queryByTestId('text-input-probe')).toBeNull();
+  });
+
+  it('mounts collapsible section content when expanded', async () => {
+    const user = userEvent.setup();
+    const sections: FormSection[] = [
+      {
+        title: 'Script preview',
+        collapsible: true,
+        collapsed_by_default: true,
+        fields: [{ type: 'string', name: 'probe', label: 'Probe' }],
+      },
+    ];
+
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: 'Script preview' }));
+    expect(await screen.findByLabelText('Probe')).toBeInTheDocument();
+  });
+});
+
 describe('SchemaFormRenderer — validation + submission', () => {
   it('blocks submission when a required field is empty and surfaces global banner', async () => {
     const user = userEvent.setup();
