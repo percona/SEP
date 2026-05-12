@@ -73,6 +73,17 @@ updates:
       # on v1; @types/node tracks our Node 20 runtime pin.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Linter/formatter/test minors ship behavior changes (new oxlint
+      # rules, oxfmt output drift, tightened typescript checks, vitest
+      # API shifts) — auto-bump patches only, gate minors via ticket.
+      - dependency-name: "oxlint"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "oxfmt"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-minor"]
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
