@@ -98,8 +98,22 @@ updates:
       # gate behind manual `poetry add` + ticket. Security advisories still fire.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # ruff minors ship new lint rules — gate behind a ticket.
+      # Linter/formatter/test minors ship behavior changes (new lint rules,
+      # formatter output drift, deprecated test hooks, churned faker data) —
+      # auto-bump patches only, gate minors via ticket.
       - dependency-name: "ruff"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "djlint"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "bandit"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "jsbeautifier"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "cssbeautifier"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "pytest"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "faker"
         update-types: ["version-update:semver-minor"]
   - package-ecosystem: "pre-commit"
     directory: "/"
@@ -112,6 +126,8 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # Mirror pip-side ruff minor restriction.
+      # Mirror pip-side ruff/djlint minor restriction.
       - dependency-name: "astral-sh/ruff-pre-commit"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "djlint/djLint"
         update-types: ["version-update:semver-minor"]
