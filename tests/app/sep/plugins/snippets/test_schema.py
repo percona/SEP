@@ -56,9 +56,7 @@ async def test_per_snippet_schema_includes_host_and_preview(create_snippet):
     assert HostField in field_types
     assert ScriptPreviewField in field_types
     preview = next(f for f in section.fields if isinstance(f, ScriptPreviewField))
-    assert preview.endpoint_url == (
-        f"/plugins/snippets/{snippet.filename}/script-preview"
-    )
+    assert preview.endpoint_url == f"/plugins/snippets/{snippet.filename}/preview"
 
 
 @pytest.mark.asyncio
