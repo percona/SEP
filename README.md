@@ -155,10 +155,10 @@
 | app/sep/plugins/report/models.py                                                                            |      111 |        0 |    100% |           |
 | app/sep/plugins/report/routes.py                                                                            |       39 |        0 |    100% |           |
 | app/sep/plugins/report/service.py                                                                           |      378 |       16 |     96% |126, 130, 331, 345-346, 407, 444-445, 447, 451, 553, 558, 566, 575, 638, 645 |
-| app/sep/plugins/snippets/api\_routes.py                                                                     |       89 |        6 |     93% |112, 253, 256-257, 305, 336 |
-| app/sep/plugins/snippets/deps.py                                                                            |      136 |       32 |     76% |68, 133-135, 154-165, 174-177, 205, 236, 265-267, 317-333, 473, 505-512 |
-| app/sep/plugins/snippets/models.py                                                                          |       26 |        0 |    100% |           |
-| app/sep/plugins/snippets/routes.py                                                                          |       98 |       52 |     47% |75-77, 95-130, 155, 165, 173-178, 212-222, 226-262, 273-288 |
+| app/sep/plugins/snippets/api\_routes.py                                                                     |       98 |        6 |     94% |152, 293, 296-297, 345, 376 |
+| app/sep/plugins/snippets/deps.py                                                                            |      140 |       32 |     77% |68, 133-135, 154-165, 174-177, 205, 236, 265-267, 317-333, 487, 519-526 |
+| app/sep/plugins/snippets/models.py                                                                          |       28 |        0 |    100% |           |
+| app/sep/plugins/snippets/routes.py                                                                          |       98 |       47 |     52% |75-77, 95-130, 155, 165, 174, 212-222, 226-262, 273-288 |
 | app/sep/plugins/snippets/schema.py                                                                          |       54 |        4 |     93% |136-138, 232 |
 | app/sep/plugins/tasks/deps.py                                                                               |        5 |        0 |    100% |           |
 | app/sep/plugins/tasks/models.py                                                                             |        6 |        0 |    100% |           |
@@ -215,7 +215,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      219 |       39 |     82% |125-129, 186, 207-214, 246, 295-303, 353-354, 381-382, 410-411, 430, 563, 587, 600-614, 635-648, 664-665 |
-| **TOTAL**                                                                                                   | **15248** | **2164** | **86%** |           |
+| **TOTAL**                                                                                                   | **15263** | **2159** | **86%** |           |
 
 
 ## Setup coverage badge
