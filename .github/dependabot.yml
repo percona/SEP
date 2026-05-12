@@ -13,55 +13,79 @@ updates:
     labels:
       - "skip-test"
     groups:
-      # @storybook/* packages share a release train and must move
-      # together — bundle them into a single PR so we don't merge a
-      # version skew between storybook core and its addons.
+      # Storybook core + addons share a release train.
       storybook:
         patterns:
           - "storybook"
           - "@storybook/*"
-      # @mui/* non-major releases also ship together and are meant to
-      # be on matching versions. Major bumps are ignored below and
-      # remain excluded from this group via update-types.
-      mui-non-major:
+      # MUI packages release together on matching versions.
+      mui:
         patterns:
           - "@mui/*"
-        update-types:
-          - "minor"
-          - "patch"
     ignore:
-      # @percona/percona-ui@1.0.15 peer-deps require @mui/material@^7.3.7
-      # and is built against MUI v7's Autocomplete renderInput contract
-      # (params.InputProps). MUI v8/v9 moved this to params.slotProps.input,
-      # which breaks every component that wraps percona-ui's AutoCompleteInput
-      # (HostSelector, SchemaSelector, ServiceSelector, TableSelector).
-      # Re-enable major bumps once percona-ui ships v8/v9 support.
-      - dependency-name: "@mui/material"
+      # Majors are gated behind manual review: @percona/percona-ui peer-deps
+      # hold @mui/* on v7, react-hook-form on v7, and material-react-table
+      # on v1; @types/node tracks our Node 20 runtime pin.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/icons-material"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/utils"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/x-date-pickers"
-        update-types: ["version-update:semver-major"]
-      # @percona/percona-ui@1.0.15 peer-deps react-hook-form ^7.50.0 and
-      # uses the v7 Controller/register API in its form components
-      # (Input, Select, etc). A v8 bump would break every percona-ui
-      # form at runtime. Re-enable once percona-ui ships v8 support.
-      - dependency-name: "react-hook-form"
-        update-types: ["version-update:semver-major"]
-      # @percona/percona-ui@1.0.15 depends on material-react-table ^1.15.1,
-      # and shell pins the exact 1.15.1. v2 was a full rewrite (removed
-      # tableInstanceRef, changed column-def shape), so any major bump
-      # would break percona-ui's table components at runtime. Re-enable
-      # once percona-ui ships v2 support.
-      - dependency-name: "material-react-table"
-        update-types: ["version-update:semver-major"]
-      # @types/node tracks the underlying Node major. Our runtime is
-      # pinned to Node 20.20.2 (frontend/package.json engines.node and
-      # actions/setup-node in .github/workflows/frontend.yaml). Bumping
-      # @types/node beyond v20 surfaces APIs that don't exist in our
-      # runtime — type-check passes, code crashes in CI/prod. Bump this
-      # rule's major in lockstep with engines.node when we upgrade Node.
-      - dependency-name: "@types/node"
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "skip-test"
+    groups:
+      # fastapi pins starlette; python-multipart and uvicorn move with it.
+      fastapi-stack:
+        patterns:
+          - "fastapi"
+          - "starlette"
+          - "uvicorn"
+          - "python-multipart"
+      # Pydantic v2 internals shared by pydantic-settings and sqlmodel.
+      pydantic-stack:
+        patterns:
+          - "pydantic"
+          - "pydantic-settings"
+          - "sqlmodel"
+          - "email-validator"
+      # SQLAlchemy core + alembic + the async/sync drivers we ship.
+      sqlalchemy-stack:
+        patterns:
+          - "sqlalchemy"
+          - "alembic"
+          - "aiosqlite"
+          - "asyncpg"
+          - "aiomysql"
+          - "psycopg2-binary"
+          - "pymysql"
+          - "sqlalchemy-celery-beat"
+      # Celery + broker.
+      celery-stack:
+        patterns:
+          - "celery"
+          - "kombu"
+      # Presidio analyzer + anonymizer ship coupled.
+      presidio:
+        patterns:
+          - "presidio-*"
+      # pytest core + plugins share the hook contract.
+      pytest-stack:
+        patterns:
+          - "pytest"
+          - "pytest-*"
+      # Local lint/format toolchain — no runtime impact.
+      linting-stack:
+        patterns:
+          - "ruff"
+          - "bandit"
+          - "djlint"
+          - "jsbeautifier"
+          - "cssbeautifier"
+          - "pip-audit"
+          - "pre-commit"
+    ignore:
+      # Majors require coordinated migration (Pydantic v1→v2, SQLAlchemy 1→2);
+      # gate behind manual `poetry add` + ticket. Security advisories still fire.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]

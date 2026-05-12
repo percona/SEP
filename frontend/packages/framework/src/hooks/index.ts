@@ -53,3 +53,7 @@ export type {
   PaginatedTaskHistory,
   UseTaskHistoryOptions,
 } from './useTaskHistory';
+
+export { useSnippetPluginSchema } from './useSnippetPluginSchema';
+export { useSnippetPluginExecution } from './useSnippetPluginExecution';
+export type { UseSnippetPluginExecutionOptions } from './useSnippetPluginExecution';

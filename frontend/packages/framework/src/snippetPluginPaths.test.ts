@@ -15,24 +15,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { SnippetsPlugin } from './SnippetsPlugin';
-export { SnippetsListPage } from './SnippetsListPage';
-export { SnippetDetailPage } from './SnippetDetailPage';
-export {
-  useSnippets,
-  useSnippetHistory,
-  useSnippetDownload,
-  useSnippetExecution,
-  useApproveSnippet,
-  useRemoveSnippetApproval,
-  useBatchApproveSnippets,
-} from './hooks';
-export type {
-  BatchApprovalErrorResponse,
-  BatchApprovalResponse,
-  ScriptPreviewResponse,
-  SnippetBatchApproveRequest,
-  SnippetExecutionRequest,
-  SnippetExecutionResponse,
-  SnippetResponse,
-} from './types';
+import { describe, expect, it } from 'vitest';
+import { snippetPluginExecutePath, snippetPluginSchemaPath } from './snippetPluginPaths';
+
+describe('snippetPluginPaths', () => {
+  it('encodes path segments in filenames like backend quote(..., safe="")', () => {
+    const filename = 'diag/slow-query.sh';
+    expect(snippetPluginSchemaPath(filename)).toBe('/plugins/snippets/diag%2Fslow-query.sh/schema');
+    expect(snippetPluginExecutePath(filename)).toBe(
+      '/plugins/snippets/diag%2Fslow-query.sh/execute',
+    );
+  });
+});

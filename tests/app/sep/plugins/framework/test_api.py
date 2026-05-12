@@ -39,6 +39,7 @@ from app.sep.plugins.framework.schema import (
     Column,
     ColumnFormat,
     DateTimeField,
+    DerivedTask,
     FileField,
     FloatField,
     FormSection,
@@ -540,3 +541,60 @@ class TestSchemaResponseExcludeNone:
                     assert forbidden_key not in field, (
                         f"{forbidden_key!r} leaked into field {field['name']!r}"
                     )
+
+
+# ── DerivedTask cascade primitive wire-shape regression (SEP-1074) ──────
+
+
+_DERIVED_SCHEMA = PluginSchema(
+    name="test-derived",
+    display_name="Test Derived",
+    forms=[
+        FormSection(
+            title="Options",
+            fields=[BoolField(name="flag", label="Flag")],
+        ),
+    ],
+    list_view=ListView(columns=[Column(key="id", label="ID")]),
+    derived=[
+        DerivedTask(
+            name_suffix="-dry-run",
+            arg_substitutions={"--execute": "--dry-run"},
+            parent_link=True,
+        ),
+    ],
+)
+
+
+@pytest.fixture
+def authed_derived_client(regular_user: CasdoorUser) -> TestClient:
+    """Yield an authed client whose schema exercises the ``derived`` field."""
+    app = _build_composed_app(_DERIVED_SCHEMA, "/test-derived")
+    app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestDerivedFieldWireShape:
+    """Verify the ``derived`` key behaves correctly on the live response."""
+
+    def test_response_excludes_derived_when_none(
+        self, authed_client: TestClient
+    ) -> None:
+        """Verify ``derived`` is absent when the schema does not set it (BC guard)."""
+        body = authed_client.get("/api/plugins/test-schema-endpoint/schema").json()
+
+        assert "derived" not in body
+
+    def test_response_includes_derived_when_set(
+        self, authed_derived_client: TestClient
+    ) -> None:
+        """Verify ``derived`` serialises in snake_case when the schema sets it."""
+        body = authed_derived_client.get("/api/plugins/test-derived/schema").json()
+
+        assert "derived" in body
+        assert isinstance(body["derived"], list)
+        assert len(body["derived"]) == 1
+        entry = body["derived"][0]
+        assert entry["name_suffix"] == "-dry-run"
+        assert entry["arg_substitutions"] == {"--execute": "--dry-run"}
+        assert entry["parent_link"] is True
