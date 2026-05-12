@@ -133,8 +133,8 @@ importers:
         specifier: ^16.1.1
         version: 16.1.1(react@19.2.6)
       sql-formatter:
-        specifier: ^15.4.10
-        version: 15.7.3
+        specifier: ^15.7.4
+        version: 15.7.4
     devDependencies:
       '@storybook/addon-a11y':
         specifier: ^10.3.6
@@ -2952,8 +2952,8 @@ packages:
   space-separated-tokens@2.0.2:
     resolution: {integrity: sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q==}
 
-  sql-formatter@15.7.3:
-    resolution: {integrity: sha512-5+zl9Nqg5aNjss0tb1G+StpC4dJKbjv3+g8CL/+V+00PfZop+2RKGyi53ScFl0dr+Dkx1LjmUO54Q3N7K3EtMw==}
+  sql-formatter@15.7.4:
+    resolution: {integrity: sha512-87VsXfl9ng7oNZlV0p3c/DfraFneH4EPYZ1F7v+ZbGTdddtI0FHcqRRshJx6/Sy7saXOiCwstw0J2cP4Z6Xj5A==}
     hasBin: true
 
   stackback@0.0.2:
@@ -5585,7 +5585,7 @@ snapshots:
 
   space-separated-tokens@2.0.2: {}
 
-  sql-formatter@15.7.3:
+  sql-formatter@15.7.4:
     dependencies:
       argparse: 2.0.1
       nearley: 2.20.1
