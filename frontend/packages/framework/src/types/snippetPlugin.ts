@@ -15,24 +15,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { SnippetsPlugin } from './SnippetsPlugin';
-export { SnippetsListPage } from './SnippetsListPage';
-export { SnippetDetailPage } from './SnippetDetailPage';
-export {
-  useSnippets,
-  useSnippetHistory,
-  useSnippetDownload,
-  useSnippetExecution,
-  useApproveSnippet,
-  useRemoveSnippetApproval,
-  useBatchApproveSnippets,
-} from './hooks';
-export type {
-  BatchApprovalErrorResponse,
-  BatchApprovalResponse,
-  ScriptPreviewResponse,
-  SnippetBatchApproveRequest,
-  SnippetExecutionRequest,
-  SnippetExecutionResponse,
-  SnippetResponse,
-} from './types';
+/** Body shape accepted by `POST /api/plugins/snippets/{filename}/execute`. */
+export interface SnippetExecutionRequest {
+  executor_host: string;
+  sudo?: boolean;
+  args?: Record<string, unknown>;
+}
+
+export interface SnippetExecutionResponse {
+  task_name: string;
+  task_id: number | null;
+  snippet_filename: string;
+}

@@ -15,24 +15,19 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { SnippetsPlugin } from './SnippetsPlugin';
-export { SnippetsListPage } from './SnippetsListPage';
-export { SnippetDetailPage } from './SnippetDetailPage';
-export {
-  useSnippets,
-  useSnippetHistory,
-  useSnippetDownload,
-  useSnippetExecution,
-  useApproveSnippet,
-  useRemoveSnippetApproval,
-  useBatchApproveSnippets,
-} from './hooks';
-export type {
-  BatchApprovalErrorResponse,
-  BatchApprovalResponse,
-  ScriptPreviewResponse,
-  SnippetBatchApproveRequest,
-  SnippetExecutionRequest,
-  SnippetExecutionResponse,
-  SnippetResponse,
-} from './types';
+export interface AtwSnippetSummary {
+  /** Snippet filename; use with snippets plugin API path helpers. */
+  name: string;
+  title: string;
+  description: string;
+}
+
+export interface AtwCategoryListing {
+  category_root: string;
+  parent_category: string;
+  parent_category_label: string;
+  category: string;
+  category_label: string;
+  snippet_count: number;
+  snippets: AtwSnippetSummary[];
+}
