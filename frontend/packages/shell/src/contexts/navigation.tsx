@@ -61,11 +61,9 @@ const defaultNavItems: NavItem[] = [
   {
     title: 'Schema Change',
     icon: StorageIcon,
-    children: [
-      { title: 'Alters', icon: TableChartIcon, to: '/schema-change/alters' },
-      { title: 'Checksums', icon: CheckCircleIcon, to: '/plugins/checksums' },
-    ],
+    children: [{ title: 'Alters', icon: TableChartIcon, to: '/schema-change/alters' }],
   },
+  { title: 'Checksums', icon: CheckCircleIcon, to: '/plugins/checksums' },
   {
     title: 'Backups',
     icon: BackupIcon,

@@ -15,24 +15,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { SnippetsPlugin } from './SnippetsPlugin';
-export { SnippetsListPage } from './SnippetsListPage';
-export { SnippetDetailPage } from './SnippetDetailPage';
-export {
-  useSnippets,
-  useSnippetHistory,
-  useSnippetDownload,
-  useSnippetExecution,
-  useApproveSnippet,
-  useRemoveSnippetApproval,
-  useBatchApproveSnippets,
-} from './hooks';
-export type {
-  BatchApprovalErrorResponse,
-  BatchApprovalResponse,
-  ScriptPreviewResponse,
-  SnippetBatchApproveRequest,
-  SnippetExecutionRequest,
-  SnippetExecutionResponse,
-  SnippetResponse,
-} from './types';
+import react from '@vitejs/plugin-react';
+import path from 'node:path';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+    alias: {
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./tests/setup.ts'],
+    css: false,
+  },
+});
