@@ -17,67 +17,139 @@
 
 import { vi } from 'vitest';
 
-type Listener = (event: MessageEvent<string>) => void;
+const encoder = new TextEncoder();
 
-export class MockEventSource {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 2;
-  static instances: MockEventSource[] = [];
+/**
+ * Per-request handle that lets tests push SSE frames into the stream and
+ * inspect what headers the hook sent.
+ */
+export interface SseStreamHandle {
   readonly url: string;
-  readonly withCredentials: boolean;
-  readyState: number = MockEventSource.OPEN;
-  onmessage: Listener | null = null;
-  onerror: ((ev: Event) => void) | null = null;
-  onopen: ((ev: Event) => void) | null = null;
-  readonly listeners: Record<string, Listener[]> = {};
-  closed = false;
-
-  constructor(url: string, init?: EventSourceInit) {
-    this.url = url;
-    this.withCredentials = init?.withCredentials ?? false;
-    MockEventSource.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    const fn = listener as Listener;
-    (this.listeners[type] ??= []).push(fn);
-  }
-
-  removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    const fn = listener as Listener;
-    const list = this.listeners[type];
-    if (!list) {
-      return;
-    }
-    const idx = list.indexOf(fn);
-    if (idx >= 0) {
-      list.splice(idx, 1);
-    }
-  }
-
-  close(): void {
-    this.closed = true;
-    this.readyState = MockEventSource.CLOSED;
-  }
-
-  // Test helpers
-  emitMessage(data: unknown): void {
-    const event = new MessageEvent('message', { data: JSON.stringify(data) });
-    this.onmessage?.(event);
-  }
-
-  emitNamed(type: string, data: unknown): void {
-    const event = new MessageEvent(type, { data: JSON.stringify(data) });
-    (this.listeners[type] ?? []).forEach((fn) => fn(event));
-  }
-
-  static reset(): void {
-    MockEventSource.instances = [];
-  }
+  /** Raw request headers (including Authorization) */
+  readonly requestHeaders: Record<string, string>;
+  /** Signal from the internal AbortController that fetchEventSource created */
+  readonly signal: AbortSignal | undefined;
+  pushMessage(data: unknown): void;
+  pushNamed(event: string, data: unknown): void;
+  pushRaw(frame: string): void;
+  close(): void;
+  errorStream(reason?: unknown): void;
 }
 
-export function installMockEventSource(): void {
-  MockEventSource.reset();
-  vi.stubGlobal('EventSource', MockEventSource);
+interface QueuedResponse {
+  status: number;
+  contentType?: string;
+}
+
+/**
+ * Create a mock `fetch` that returns controllable SSE streams.
+ *
+ * Call `install()` to stub `globalThis.fetch`. For each network request the
+ * hook makes, a `SseStreamHandle` is pushed into `pending` so tests can drive
+ * the stream with `pushMessage` / `pushNamed` / `close`.
+ *
+ * Non-200 responses (e.g. 401) can be pre-queued via `queueResponse` — the
+ * next fetch call dequeues that config instead of creating a stream.
+ */
+export function mockStreamFetch() {
+  const pending: SseStreamHandle[] = [];
+  const responseQueue: QueuedResponse[] = [];
+
+  const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    const cfg = responseQueue.shift();
+
+    if (cfg && cfg.status !== 200) {
+      // Non-streaming response (e.g. 401 for auth tests)
+      return Promise.resolve(
+        new Response(null, {
+          status: cfg.status,
+          headers: { 'Content-Type': cfg.contentType ?? 'application/json' },
+        }),
+      );
+    }
+
+    // Normal SSE response with a controllable ReadableStream
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+      },
+    });
+
+    const rawHeaders = init?.headers;
+    let requestHeaders: Record<string, string> = {};
+    if (rawHeaders instanceof Headers) {
+      requestHeaders = Object.fromEntries(rawHeaders.entries());
+    } else if (Array.isArray(rawHeaders)) {
+      requestHeaders = Object.fromEntries(rawHeaders);
+    } else if (rawHeaders) {
+      requestHeaders = rawHeaders as Record<string, string>;
+    }
+
+    const handle: SseStreamHandle = {
+      url,
+      requestHeaders,
+      signal: init?.signal ?? undefined,
+      pushMessage(data) {
+        ctrl.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      },
+      pushNamed(event, data) {
+        ctrl.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      },
+      pushRaw(frame) {
+        ctrl.enqueue(encoder.encode(frame));
+      },
+      close() {
+        ctrl.close();
+      },
+      errorStream(reason) {
+        ctrl.error(reason);
+      },
+    };
+
+    pending.push(handle);
+
+    return Promise.resolve(
+      new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    );
+  });
+
+  return {
+    /** One entry per fetch call, in order. */
+    pending,
+    /** The raw vitest spy — use for call count assertions etc. */
+    fetchSpy,
+    /** Replace `globalThis.fetch` with this mock. */
+    install() {
+      vi.stubGlobal('fetch', fetchSpy);
+    },
+    /** Queue a non-200 response for the *next* fetch call. */
+    queueResponse(opts: QueuedResponse) {
+      responseQueue.push(opts);
+    },
+  };
+}
+
+/**
+ * Drain the microtask queue by chaining several `queueMicrotask` calls.
+ *
+ * Uses `queueMicrotask` (not `setTimeout`) so it works correctly even when
+ * `vi.useFakeTimers` is active (fake timers intercept `setTimeout` but not
+ * the microtask queue). Four levels cover the nested `await` chain inside
+ * `fetchEventSource` (fetch → onopen → async callbacks → onerror).
+ */
+export function flushPromises(): Promise<void> {
+  return new Promise((resolve) => {
+    queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => queueMicrotask(resolve))));
+  });
 }
