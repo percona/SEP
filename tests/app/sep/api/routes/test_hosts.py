@@ -94,6 +94,35 @@ class TestSepHostsEndpoint:
             {"id": "nomad-1", "name": "db-mysql-prod-01", "address": "10.0.0.1"},
         ]
 
+    def test_duplicate_inventory_addresses_keep_first_match(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Keep the first inventory name when two records share an address.
+
+        Pin the deduplication semantics inherited from
+        ``address_to_name_index`` (first wins). The previous dict-comprehension
+        implementation was "last wins"; switching to the shared helper aligns
+        this route with ``resolve_executor_name_by_address`` so both call
+        sites resolve a duplicated address to the same display name. Duplicate
+        addresses are not expected in practice, but locking the choice in a
+        test prevents an accidental revert.
+        """
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+        mock_inventory_api_dep.get.return_value = {
+            "items": [
+                {"address": "10.0.0.1", "name": "db-primary"},
+                {"address": "10.0.0.1", "name": "db-shadow"},
+            ]
+        }
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == [
+            {"id": "nomad-1", "name": "db-primary", "address": "10.0.0.1"},
+        ]
+
     def test_inventory_failure_returns_raw_node_names(
         self,
         test_client: TestClient,
