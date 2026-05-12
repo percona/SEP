@@ -21,6 +21,8 @@ export { SnippetDetailPage } from './SnippetDetailPage';
 export {
   useSnippets,
   useSnippetHistory,
+  useSnippetDownload,
+  useSnippetExecution,
   useApproveSnippet,
   useRemoveSnippetApproval,
   useBatchApproveSnippets,
