@@ -357,6 +357,9 @@ async def check_service_connectivity(
             "missing node or port information",
         )
         return redirect
+    # Fetch executor hosts inline rather than via ``ExecutorHosts`` so we can
+    # early-abort with a ``service.name``-specific flash; the dep continues
+    # with an empty mapping and would emit a second, generic flash on failure.
     try:
         executor_hosts: dict[str, str] = await tasks_api.get("/hosts/")
     except HTTPException as exc:

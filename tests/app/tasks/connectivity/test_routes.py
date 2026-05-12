@@ -120,8 +120,8 @@ class TestConnectivityCheckEndpoint:
     def test_invalid_target_returns_400(self, test_client, mock_executor):
         """Verify 400 when target is not in available Nomad hosts.
 
-        The error detail must disclose the looked-up target verbatim and a
-        sample of registered targets so a future inventory-vs-executor name
+        The error detail must disclose the looked-up target verbatim and the
+        registered-target count so a future inventory-vs-executor name
         mismatch is diagnosable from the error alone.
         """
         mock_task = MagicMock(spec=Task)
@@ -151,8 +151,8 @@ class TestConnectivityCheckEndpoint:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         detail = response.json()["detail"]
         assert "'unknown-node'" in detail
-        assert "node1" in detail
         assert "registered targets: 1" in detail
+        assert "executor node name" in detail
 
     def test_invalid_service_type_returns_422(self, test_client):
         """Verify 422 when an unsupported service_type is provided."""

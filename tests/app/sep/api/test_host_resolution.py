@@ -15,7 +15,39 @@
 
 """Tests for ``app.sep.api.host_resolution``."""
 
-from app.sep.api.host_resolution import resolve_executor_name_by_address
+from app.sep.api.host_resolution import (
+    address_to_name_index,
+    resolve_executor_name_by_address,
+)
+
+
+class TestAddressToNameIndex:
+    """Tests for ``address_to_name_index``."""
+
+    def test_inverts_pairs_into_address_keyed_dict(self) -> None:
+        """Invert ``(name, address)`` pairs into an ``{address: name}`` index."""
+        pairs = [("nomad-1", "10.0.0.1"), ("nomad-2", "10.0.0.2")]
+        assert address_to_name_index(pairs) == {
+            "10.0.0.1": "nomad-1",
+            "10.0.0.2": "nomad-2",
+        }
+
+    def test_first_wins_on_duplicate_address(self) -> None:
+        """Keep the first name encountered when two pairs share an address."""
+        pairs = [
+            ("nomad-primary", "10.0.0.1"),
+            ("nomad-shadow", "10.0.0.1"),
+        ]
+        assert address_to_name_index(pairs) == {"10.0.0.1": "nomad-primary"}
+
+    def test_returns_empty_for_empty_iterable(self) -> None:
+        """Return an empty dict when no pairs are passed."""
+        assert address_to_name_index([]) == {}
+
+    def test_consumes_generator(self) -> None:
+        """Accept a generator (single-pass iterable) without buffering it twice."""
+        pairs = ((name, addr) for name, addr in [("a", "1"), ("b", "2")])
+        assert address_to_name_index(pairs) == {"1": "a", "2": "b"}
 
 
 class TestResolveExecutorNameByAddress:

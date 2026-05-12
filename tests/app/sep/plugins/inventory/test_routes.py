@@ -788,6 +788,30 @@ class TestCheckServiceConnectivity:
         assert response.status_code == status.HTTP_303_SEE_OTHER
         mock_tasks_api_dep.post.assert_not_awaited()
 
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_executor_hosts_http_exception_surfaces_detail(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Surface the upstream ``detail`` when the executor-hosts GET raises HTTPException.
+
+        Pin the GET-path counterpart of
+        :meth:`test_connectivity_check_http_exception_surfaces_detail` so the
+        ``except HTTPException`` branch keeps forwarding ``exc.detail`` into
+        the flash message verbatim, instead of falling through to the generic
+        "could not reach the Tasks API" string from the bare ``except``.
+        """
+        mock_tasks_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Nomad unavailable",
+        )
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        mock_tasks_api_dep.post.assert_not_awaited()
+
     @pytest.mark.usefixtures("_mock_mysql_service_dep", "_mock_executor_hosts")
     def test_connectivity_check_failure(
         self, test_client, mysql_service, mock_tasks_api_dep

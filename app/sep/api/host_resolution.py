@@ -23,6 +23,31 @@ that lookup here so any other call site that starts from an inventory record
 can produce the same answer the dropdown does.
 """
 
+from collections.abc import Iterable
+
+
+def address_to_name_index(pairs: Iterable[tuple[str, str]]) -> dict[str, str]:
+    """Invert ``(name, address)`` pairs into an ``{address: name}`` index.
+
+    Both the executor-hosts mapping (``{node_name: address}`` returned by
+    ``GET /api/tasks/hosts/``) and the inventory display-name mapping
+    (built from ``GET /api/inventory/`` items) need to be consulted by
+    ``address``. Build the address-keyed index once via this helper so each
+    lookup is O(1) instead of degrading to O(n²) when looped per item.
+
+    :param pairs: Iterable of ``(name, address)`` pairs.
+    :type pairs: collections.abc.Iterable[tuple[str, str]]
+    :return: Mapping from network address to the first name that registered
+        it in iteration order. Callers requiring a deterministic choice on
+        duplicate addresses should pass an ordered iterable.
+    :rtype: dict[str, str]
+    """
+    result: dict[str, str] = {}
+    for name, address in pairs:
+        if address not in result:
+            result[address] = name
+    return result
+
 
 def resolve_executor_name_by_address(
     address: str, executor_hosts: dict[str, str]
@@ -41,7 +66,4 @@ def resolve_executor_name_by_address(
         choice should pass an ordered mapping.
     :rtype: str | None
     """
-    for node_name, host_address in executor_hosts.items():
-        if host_address == address:
-            return node_name
-    return None
+    return address_to_name_index(executor_hosts.items()).get(address)
