@@ -13,57 +13,20 @@ updates:
     labels:
       - "skip-test"
     groups:
-      # @storybook/* packages share a release train and must move
-      # together — bundle them into a single PR so we don't merge a
-      # version skew between storybook core and its addons.
+      # Storybook core + addons share a release train.
       storybook:
         patterns:
           - "storybook"
           - "@storybook/*"
-      # @mui/* non-major releases also ship together and are meant to
-      # be on matching versions. Major bumps are ignored below and
-      # remain excluded from this group via update-types.
-      mui-non-major:
+      # MUI packages release together on matching versions.
+      mui:
         patterns:
           - "@mui/*"
-        update-types:
-          - "minor"
-          - "patch"
     ignore:
-      # @percona/percona-ui@1.0.15 peer-deps require @mui/material@^7.3.7
-      # and is built against MUI v7's Autocomplete renderInput contract
-      # (params.InputProps). MUI v8/v9 moved this to params.slotProps.input,
-      # which breaks every component that wraps percona-ui's AutoCompleteInput
-      # (HostSelector, SchemaSelector, ServiceSelector, TableSelector).
-      # Re-enable major bumps once percona-ui ships v8/v9 support.
-      - dependency-name: "@mui/material"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/icons-material"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/utils"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/x-date-pickers"
-        update-types: ["version-update:semver-major"]
-      # @percona/percona-ui@1.0.15 peer-deps react-hook-form ^7.50.0 and
-      # uses the v7 Controller/register API in its form components
-      # (Input, Select, etc). A v8 bump would break every percona-ui
-      # form at runtime. Re-enable once percona-ui ships v8 support.
-      - dependency-name: "react-hook-form"
-        update-types: ["version-update:semver-major"]
-      # @percona/percona-ui@1.0.15 depends on material-react-table ^1.15.1,
-      # and shell pins the exact 1.15.1. v2 was a full rewrite (removed
-      # tableInstanceRef, changed column-def shape), so any major bump
-      # would break percona-ui's table components at runtime. Re-enable
-      # once percona-ui ships v2 support.
-      - dependency-name: "material-react-table"
-        update-types: ["version-update:semver-major"]
-      # @types/node tracks the underlying Node major. Our runtime is
-      # pinned to Node 20.20.2 (frontend/package.json engines.node and
-      # actions/setup-node in .github/workflows/frontend.yaml). Bumping
-      # @types/node beyond v20 surfaces APIs that don't exist in our
-      # runtime — type-check passes, code crashes in CI/prod. Bump this
-      # rule's major in lockstep with engines.node when we upgrade Node.
-      - dependency-name: "@types/node"
+      # Majors are gated behind manual review: @percona/percona-ui peer-deps
+      # hold @mui/* on v7, react-hook-form on v7, and material-react-table
+      # on v1; @types/node tracks our Node 20 runtime pin.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: "pip"
     directory: "/"
@@ -72,34 +35,21 @@ updates:
     labels:
       - "skip-test"
     groups:
-      # FastAPI HTTP stack: fastapi pins starlette tightly (we hold
-      # >=0.49.3,<0.50.0 to stay inside fastapi 0.120.x's compatibility
-      # window) and python-multipart is FastAPI's form/multipart parser
-      # (we pin 0.0.27 exact-range for the same reason). uvicorn is the
-      # ASGI server fastapi is tested against. Bundle so an HTTP-stack
-      # bump lands in one PR with a coherent integration story.
+      # fastapi pins starlette; python-multipart and uvicorn move with it.
       fastapi-stack:
         patterns:
           - "fastapi"
           - "starlette"
           - "uvicorn"
           - "python-multipart"
-      # Pydantic ecosystem: pydantic, pydantic-settings, and sqlmodel
-      # all build on the same BaseModel/validator internals; an
-      # unmatched bump surfaces schema mismatches at import time.
-      # email-validator is pulled by pydantic's EmailStr and ships
-      # coupled fixes.
+      # Pydantic v2 internals shared by pydantic-settings and sqlmodel.
       pydantic-stack:
         patterns:
           - "pydantic"
           - "pydantic-settings"
           - "sqlmodel"
           - "email-validator"
-      # SQLAlchemy ecosystem: sqlalchemy core, alembic (shares the
-      # metadata/dialect APIs), the async + sync drivers we run
-      # against, and the celery beat schedule store all sit on top of
-      # SQLAlchemy's session/dialect surface. Move them as a unit so
-      # dialect/driver churn lands together.
+      # SQLAlchemy core + alembic + the async/sync drivers we ship.
       sqlalchemy-stack:
         patterns:
           - "sqlalchemy"
@@ -110,30 +60,21 @@ updates:
           - "psycopg2-binary"
           - "pymysql"
           - "sqlalchemy-celery-beat"
-      # Celery broker stack. sqlalchemy-celery-beat is also a celery
-      # extension but lives in sqlalchemy-stack above because its
-      # breakage mode is dialect/metadata churn, not broker protocol.
+      # Celery + broker.
       celery-stack:
         patterns:
           - "celery"
           - "kombu"
-      # Presidio PII tooling: analyzer and anonymizer share a
-      # recognizer registry and ship coupled releases. A skew here
-      # silently misclassifies PII rather than failing loudly.
+      # Presidio analyzer + anonymizer ship coupled.
       presidio:
         patterns:
           - "presidio-*"
-      # pytest core + plugins: pytest defines the hook contract every
-      # plugin in this group consumes. Bundle so a pytest-core bump
-      # always lands with compatible plugin versions.
+      # pytest core + plugins share the hook contract.
       pytest-stack:
         patterns:
           - "pytest"
           - "pytest-*"
-      # Local lint/format toolchain (audit + dev groups): no runtime
-      # impact, high weekly PR volume if split. Bundling cuts noise
-      # without trading off correctness — a broken formatter surfaces
-      # immediately in pre-commit.
+      # Local lint/format toolchain — no runtime impact.
       linting-stack:
         patterns:
           - "ruff"
@@ -144,15 +85,7 @@ updates:
           - "pip-audit"
           - "pre-commit"
     ignore:
-      # Major bumps are gated behind manual review across the whole
-      # Python stack. Most direct deps already live inside tight
-      # pyproject.toml ceilings (fastapi 0.120.x, pydantic <2.10,
-      # sqlmodel 0.0.22, starlette 0.49.x, python-multipart 0.0.27,
-      # weasyprint 68.x), and every Python-ecosystem major this
-      # codebase has crossed (Pydantic v1→v2, SQLAlchemy 1.x→2.x)
-      # required coordinated migration work that does not fit a
-      # weekly auto-PR. Route majors through `poetry add` plus a
-      # dedicated ticket. Security advisories still surface via
-      # Dependabot alerts independently of this rule.
+      # Majors require coordinated migration (Pydantic v1→v2, SQLAlchemy 1→2);
+      # gate behind manual `poetry add` + ticket. Security advisories still fire.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
