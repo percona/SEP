@@ -518,6 +518,16 @@ class FormSection(SchemaBaseModel):
     :param fail_when: Optional predicate-only invariants scoped to this
         section. Defaults to ``None``.
     :type fail_when: list[FailRule] | None
+    :param collapsible: Whether the renderer may collapse this section behind
+        a toggle. Defaults to ``False``.
+    :type collapsible: bool
+    :param collapsed_by_default: Whether a collapsible section should start
+        collapsed. Ignored when ``collapsible`` is ``False``. Defaults to
+        ``False``.
+    :type collapsed_by_default: bool
+    :param render_after_submit: Whether this section should render after the
+        submit button instead of before it. Defaults to ``False``.
+    :type render_after_submit: bool
     """
 
     title: NonEmptyStr
@@ -525,6 +535,9 @@ class FormSection(SchemaBaseModel):
     fields: list[AnyField]
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
+    collapsible: bool = False
+    collapsed_by_default: bool = False
+    render_after_submit: bool = False
 
 
 class Column(SchemaBaseModel):

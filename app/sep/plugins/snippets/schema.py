@@ -187,9 +187,9 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
 
     The schema includes one form section per parameter group declared in
     the snippet metadata (or a single ``"Parameters"`` section if no
-    groups are declared), plus a trailing ``"Execution"`` section bundling
-    the host selector, optional sudo toggle, and the read-only script
-    preview pane.
+    groups are declared), plus a trailing ``"Execution"`` section for
+    dispatch controls and a separate collapsible ``"Script preview"``
+    section rendered after submit.
 
     :param snippet: The snippet whose schema to synthesise.
     :type snippet: Snippet
@@ -240,20 +240,26 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
                 ),
             ),
         )
-    execution_fields.append(
-        cast(
-            AnyField,
-            ScriptPreviewField(
-                name=_SCRIPT_PREVIEW_FIELD_NAME,
-                label="Script preview",
-                endpoint_url=(
-                    f"/plugins/snippets/{quote(snippet.filename, safe='')}"
-                    "/script-preview"
-                ),
+    preview_field = cast(
+        AnyField,
+        ScriptPreviewField(
+            name=_SCRIPT_PREVIEW_FIELD_NAME,
+            label="Script preview",
+            endpoint_url=(
+                f"/plugins/snippets/{quote(snippet.filename, safe='')}/script-preview"
             ),
         ),
     )
     forms.append(FormSection(title="Execution", fields=execution_fields))
+    forms.append(
+        FormSection(
+            title="Script preview",
+            fields=[preview_field],
+            collapsible=True,
+            collapsed_by_default=True,
+            render_after_submit=True,
+        )
+    )
 
     return PluginSchema(
         name="snippets",
