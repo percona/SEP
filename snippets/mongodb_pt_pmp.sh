@@ -75,7 +75,7 @@ Command line options:
                        or gdb. Default: pteu
    --iterations N      Number of stack samples to collect. Default: 10
    --interval S        Seconds between samples. Default: 1
-   -d, --dest          Destination for the samples and archive.
+   -d DIR, --dest DIR  Destination for the samples and archive.
                        Default: $(pwd)/$(hostname)-$(date +%Y-%m-%d-%H-%M-%S)
    -h, --help          Show this help message
 
@@ -92,7 +92,7 @@ compress_data() {
 }
 
 if ! OPTS=$(getopt --options -d:h --longoptions 'pid:,binary:,dumper:,iterations:,interval:,dest:,help' -- "$@"); then
-    echo "Error parsing options"
+    echo "Error parsing options" >&2
     usage 1
 fi
 
@@ -132,7 +132,7 @@ while [[ -n $* ]]; do
             break
             ;;
         *)
-            echo "Unrecognized option '$1'"
+            echo "Unrecognized option '$1'" >&2
             usage 1
             ;;
     esac
@@ -173,7 +173,7 @@ test -n "${PTDEST}" || {
 }
 
 if [ -d "${PTDEST}" ]; then
-    echo Rejecting use of "${PTDEST}"
+    echo "Rejecting use of existing destination directory ${PTDEST}" >&2
     exit 11
 fi
 
