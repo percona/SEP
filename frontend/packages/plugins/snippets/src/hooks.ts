@@ -25,7 +25,6 @@ import type {
   SnippetBatchApproveRequest,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
-  SnippetBatchApproveRequest,
   SnippetResponse,
   SnippetsCapabilitiesResponse,
 } from './types';
