@@ -38,6 +38,7 @@ import {
 } from '../../hooks/useTaskHistory';
 import { ChainDisplay } from './ChainDisplay';
 import { StatusBadge } from './StatusBadge';
+import { TaskFilesDialog } from './TaskFilesDialog';
 import type { TaskHistoryEntry, TaskHistoryTableProps } from './TaskHistoryTable.types';
 
 function formatDateTime(value?: string | null): string {
@@ -107,6 +108,7 @@ function TaskHistoryTableView({
   canStop,
 }: ViewProps) {
   const [pendingStopEntry, setPendingStopEntry] = useState<TaskHistoryEntry | null>(null);
+  const [pendingFilesEntry, setPendingFilesEntry] = useState<TaskHistoryEntry | null>(null);
 
   const requestStop = useCallback((entry: TaskHistoryEntry) => setPendingStopEntry(entry), []);
   const cancelStop = useCallback(() => setPendingStopEntry(null), []);
@@ -236,8 +238,13 @@ function TaskHistoryTableView({
                     <IconButton
                       size="small"
                       aria-label="Download files"
-                      disabled={!onDownloadFiles}
-                      onClick={() => onDownloadFiles?.(entry)}
+                      onClick={() => {
+                        if (onDownloadFiles) {
+                          onDownloadFiles(entry);
+                        } else if (entry.id !== null && entry.id !== undefined) {
+                          setPendingFilesEntry(entry);
+                        }
+                      }}
                     >
                       <DownloadIcon fontSize="small" />
                     </IconButton>
@@ -312,6 +319,11 @@ function TaskHistoryTableView({
           </Button>
         </DialogActions>
       </Dialog>
+      <TaskFilesDialog
+        open={pendingFilesEntry !== null}
+        taskHistoryId={pendingFilesEntry?.id ?? null}
+        onClose={() => setPendingFilesEntry(null)}
+      />
     </>
   );
 }
