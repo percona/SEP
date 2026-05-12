@@ -42,7 +42,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CascadeFailure:
     """Represent one per-leg failure surfaced by a best-effort cascade.
 
@@ -56,7 +56,7 @@ class CascadeFailure:
     exception: BaseException
 
 
-@dataclass
+@dataclass(slots=True)
 class CascadeResult:
     """Represent the outcome of a best-effort PUT or DELETE cascade.
 
@@ -101,16 +101,17 @@ def build_derived_payload(
     payload = copy.deepcopy(parent_payload)
     parent_name = payload["name"]
     payload["name"] = f"{parent_name}{derived_spec.name_suffix}"
-    if derived_spec.arg_substitutions:
+    if derived_spec.arg_substitutions or derived_spec.parent_link:
         data = payload.setdefault("data", {})
-        meta = data.get("meta")
-        if isinstance(meta, dict) and isinstance(meta.get("args"), str):
-            args = meta["args"]
-            for old, new in derived_spec.arg_substitutions.items():
-                args = args.replace(old, new)
-            meta["args"] = args
-    if derived_spec.parent_link:
-        payload.setdefault("data", {})["parent"] = parent_name
+        if derived_spec.arg_substitutions:
+            meta = data.get("meta")
+            if isinstance(meta, dict) and isinstance(meta.get("args"), str):
+                args = meta["args"]
+                for old, new in derived_spec.arg_substitutions.items():
+                    args = args.replace(old, new)
+                meta["args"] = args
+        if derived_spec.parent_link:
+            data["parent"] = parent_name
     return payload
 
 
@@ -165,7 +166,7 @@ async def cascade_update_tasks(
     tasks_api: RemoteAPI,
     parent_existing_name: str,
     parent_updated: dict[str, Any],
-    derived_existing_names: list[str],
+    derived_existing_names: Sequence[str],
     derived_specs: Sequence[DerivedTask],
 ) -> CascadeResult:
     """PUT the parent and each derived task, best-effort.
@@ -199,7 +200,7 @@ async def cascade_update_tasks(
     :type parent_updated: dict[str, Any]
     :param derived_existing_names: Current derived task names, aligned with
         ``derived_specs`` by index.
-    :type derived_existing_names: list[str]
+    :type derived_existing_names: Sequence[str]
     :param derived_specs: The derived-task specs to cascade.
     :type derived_specs: Sequence[DerivedTask]
     :return: A :class:`CascadeResult` recording per-leg outcomes.
