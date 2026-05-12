@@ -15,6 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
+import { apiClient, emitUnauthorized, getToken, refreshAccessToken } from '@sep/api';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -34,6 +36,10 @@ export interface ExecutionEventsState {
 }
 
 const STEPLESS_KEY = '';
+
+// See useTaskLogs.ts for the rationale behind these local sentinel classes.
+class StreamRetriableAfterRefresh extends Error {}
+class StreamFatalError extends Error {}
 
 function compositeKey(ev: ExecutionEvent): string {
   return `${ev.timestamp ?? ''}|${ev.type ?? ''}|${ev.description ?? ''}|${ev.step ?? ''}`;
@@ -58,12 +64,12 @@ function groupByStep(events: ExecutionEvent[]): {
 }
 
 async function fetchExecutionEvents(taskHistoryId: string): Promise<ExecutionEvent[]> {
-  const res = await fetch(`/execution-events/${taskHistoryId}`, { credentials: 'include' });
-  if (!res.ok) {
-    throw new Error(`Execution events request failed with status ${res.status}`);
-  }
-  const data = (await res.json()) as unknown;
-  return Array.isArray(data) ? (data as ExecutionEvent[]) : [];
+  // Use apiClient (Bearer interceptor + 401-refresh) with baseURL: '' to reach
+  // the legacy /execution-events/{id} route that is not under /api.
+  const res = await apiClient.get<ExecutionEvent[]>(`/execution-events/${taskHistoryId}`, {
+    baseURL: '',
+  });
+  return Array.isArray(res.data) ? res.data : [];
 }
 
 /**
@@ -73,8 +79,8 @@ async function fetchExecutionEvents(taskHistoryId: string): Promise<ExecutionEve
  * Completed tasks fetch REST /execution-events/{id} through react-query for
  * consistent error/loading/cache semantics with the rest of @sep/framework.
  *
- * Both endpoints are cookie-authenticated (same-origin). See useTaskLogs for
- * the auth rationale.
+ * Both paths attach the Bearer token from @sep/api's token provider so the
+ * SPA OAuth session is honoured without a session cookie.
  */
 export function useExecutionEvents(
   taskHistoryId: number | string | undefined,
@@ -109,57 +115,137 @@ export function useExecutionEvents(
     setSseError(undefined);
     setSseLoading(true);
 
-    const src = new EventSource(`/stream-logs/${idStr}/execution-events`, {
-      withCredentials: true,
-    });
+    const ctrl = new AbortController();
+    let currentToken = getToken() ?? '';
+    let refreshAttempted = false;
+    // Guards state setters so stale callbacks from an aborted stream cannot
+    // write into a subsequent stream's state (e.g. on rapid id changes).
+    let disposed = false;
+    // Tracks intentional terminal events (finish / sep-error) so onclose can
+    // distinguish a clean shutdown from an unexpected connection drop.
+    let terminatedCleanly = false;
 
-    src.onerror = () => {
-      if (src.readyState === EventSource.CLOSED) {
+    fetchEventSource(`/stream-logs/${idStr}/execution-events`, {
+      signal: ctrl.signal,
+      openWhenHidden: true,
+
+      fetch: (input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        if (currentToken) {
+          headers.set('Authorization', `Bearer ${currentToken}`);
+        }
+        return globalThis.fetch(input as RequestInfo, { ...init, headers });
+      },
+
+      onopen: async (response) => {
+        const contentType = response.headers.get('content-type') ?? '';
+        if (response.ok && contentType.includes(EventStreamContentType)) {
+          refreshAttempted = false;
+          return;
+        }
+        let isAuthFailure = false;
+        if (response.ok) {
+          isAuthFailure = true;
+        } else if (response.status === 401 && !refreshAttempted) {
+          refreshAttempted = true;
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            currentToken = newToken;
+            throw new StreamRetriableAfterRefresh();
+          }
+          isAuthFailure = true;
+        } else if (response.status === 401) {
+          isAuthFailure = true;
+        }
+        if (isAuthFailure) {
+          emitUnauthorized();
+        }
+        const message = response.ok
+          ? `Stream endpoint returned non-SSE content: ${contentType || 'unknown'}`
+          : `Stream open failed with status ${response.status}`;
+        // Terminal open failure — set error, abort, throw fatal sentinel so
+        // onerror re-throws and permanently stops the retry loop.
+        if (!disposed) {
+          setSseError({ message });
+          setSseLoading(false);
+        }
+        terminatedCleanly = true;
+        ctrl.abort();
+        throw new StreamFatalError(message);
+      },
+
+      onmessage: (ev) => {
+        if (disposed || ev.data === '') {
+          return;
+        }
+
+        if (ev.event === 'finish') {
+          terminatedCleanly = true;
+          setSseLoading(false);
+          ctrl.abort();
+          return;
+        }
+
+        if (ev.event === 'sep-error') {
+          terminatedCleanly = true;
+          let payload: unknown = ev.data;
+          try {
+            payload = JSON.parse(ev.data);
+          } catch {
+            // keep raw
+          }
+          setSseError(payload);
+          setSseLoading(false);
+          ctrl.abort();
+          return;
+        }
+
+        // Default message — execution event
+        let payload: ExecutionEvent;
+        try {
+          payload = JSON.parse(ev.data) as ExecutionEvent;
+        } catch {
+          return;
+        }
+        const key = compositeKey(payload);
+        if (seenKeysRef.current.has(key)) {
+          return;
+        }
+        seenKeysRef.current.add(key);
+        setSseEvents((prev) => [...prev, payload]);
+        setSseLoading(false);
+      },
+
+      onerror: (err): number | undefined => {
+        if (err instanceof StreamRetriableAfterRefresh) {
+          return 0;
+        }
+        if (err instanceof StreamFatalError) {
+          // State already set in onopen; re-throw to stop the retry loop.
+          throw err;
+        }
+        // Transient network error — let library retry with backoff silently.
+        // Do not set sseError: the previous events remain visible and loading
+        // stays false; the next successful open will resume streaming.
+        return undefined;
+      },
+
+      onclose: () => {
+        if (disposed || terminatedCleanly) {
+          return;
+        }
+        // Stream closed unexpectedly without a finish/sep-error frame.
         setSseError({ message: 'Execution events stream connection closed.' });
         setSseLoading(false);
-      }
-    };
-
-    src.onmessage = (event: MessageEvent<string>) => {
-      let payload: ExecutionEvent;
-      try {
-        payload = JSON.parse(event.data) as ExecutionEvent;
-      } catch {
-        return;
-      }
-      const key = compositeKey(payload);
-      if (seenKeysRef.current.has(key)) {
-        return;
-      }
-      seenKeysRef.current.add(key);
-      setSseEvents((prev) => [...prev, payload]);
-      setSseLoading(false);
-    };
-
-    const handleFinish = () => {
-      setSseLoading(false);
-      src.close();
-    };
-
-    const handleSepError = (event: MessageEvent<string>) => {
-      let payload: unknown = event.data;
-      try {
-        payload = JSON.parse(event.data);
-      } catch {
-        // keep raw
-      }
-      setSseError(payload);
-      setSseLoading(false);
-      src.close();
-    };
-
-    src.addEventListener('finish', handleFinish as EventListener);
-    src.addEventListener('sep-error', handleSepError as EventListener);
+      },
+    }).catch(() => {
+      // Expected abort on unmount / isRunning flip. StreamFatalError re-thrown
+      // from onerror also lands here; state is already set.
+    });
 
     return () => {
-      src.removeEventListener('finish', handleFinish as EventListener);
-      src.removeEventListener('sep-error', handleSepError as EventListener);
-      src.close();
+      disposed = true;
+      ctrl.abort();
     };
   }, [idStr, isRunning]);
 

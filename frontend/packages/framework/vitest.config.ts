@@ -27,10 +27,11 @@ export default defineConfig({
       react: path.resolve(__dirname, 'node_modules/react'),
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       'react-hook-form': path.resolve(__dirname, 'node_modules/react-hook-form'),
-      // `@sep/api` hooks resolve their own react-query copy (pnpm); without a
-      // single module instance `QueryClientProvider` from the test tree does
-      // not satisfy `useQuery` inside API hooks (different React context).
-      '@tanstack/react-query': path.resolve(__dirname, '../api/node_modules/@tanstack/react-query'),
+      // Pin all react-query imports to the framework's own copy so there is a
+      // single module instance across the test tree and the hooks under test.
+      // The previous alias pointed to packages/api/node_modules/@tanstack/react-query
+      // which is now a broken symlink after the pnpm upgrade to 5.100.9.
+      '@tanstack/react-query': path.resolve(__dirname, 'node_modules/@tanstack/react-query'),
     },
   },
   test: {

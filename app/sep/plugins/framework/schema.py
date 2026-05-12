@@ -25,6 +25,7 @@ __all__ = [
     "Column",
     "ColumnFormat",
     "DateTimeField",
+    "DerivedTask",
     "DetailHighlightLanguage",
     "FileField",
     "FloatField",
@@ -45,10 +46,11 @@ __all__ = [
     "YamlField",
 ]
 
+from collections import Counter
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
@@ -461,7 +463,7 @@ class ScriptPreviewField(BaseField):
     :param endpoint_url: The fully-resolved URL the renderer fetches preview
         content from, relative to the FE ``apiClient`` base (``/api``). Schema
         synthesisers should bake any plugin-specific path segments (for
-        example, ``/plugins/snippets/{filename}/script-preview``) here at
+        example, ``/plugins/snippets/{filename}/preview``) here at
         schema build time rather than templating client-side.
     :type endpoint_url: NonEmptyStr
     :param depends_on: Names of sibling fields whose values trigger a
@@ -589,6 +591,35 @@ class ListView(SchemaBaseModel):
                 f"valid keys: {sorted(valid_keys)}"
             )
         return self
+
+
+class DerivedTask(SchemaBaseModel):
+    """Represent a sibling task derived from a parent during cascade operations.
+
+    The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes this
+    spec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task
+    is created first, then for each ``DerivedTask`` the parent payload is
+    deep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``
+    are applied to ``data["meta"]["args"]`` as literal :meth:`str.replace`
+    calls in dict insertion order, and ``data["parent"]`` is set to the
+    parent's name when ``parent_link`` is true.
+
+    :param name_suffix: String appended to the parent's ``name`` to form the
+        derived task's name (for example ``"-dry-run"``).
+    :type name_suffix: NonEmptyStr
+    :param arg_substitutions: Optional ordered mapping of literal substring
+        replacements applied to ``data["meta"]["args"]``. Each ``(old, new)``
+        pair is applied once via :meth:`str.replace` in dict insertion order.
+        Defaults to ``None`` (no substitutions).
+    :type arg_substitutions: dict[str, str] | None
+    :param parent_link: When true, set ``data["parent"]`` on the derived
+        payload to the parent's ``name``. Defaults to ``True``.
+    :type parent_link: bool
+    """
+
+    name_suffix: NonEmptyStr
+    arg_substitutions: dict[str, str] | None = None
+    parent_link: bool = True
 
 
 class Capabilities(SchemaBaseModel):
@@ -804,6 +835,11 @@ class PluginSchema(SchemaBaseModel):
     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
         plugins only; ignored when ``entities`` is set). Defaults to ``None``.
     :type fail_when: list[FailRule] | None
+    :param derived: Optional declarative specs for sibling tasks derived from
+        the parent task on cascade. Consumed by
+        :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+        across the parent and N derived siblings. Defaults to ``None``.
+    :type derived: list[DerivedTask] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -816,6 +852,34 @@ class PluginSchema(SchemaBaseModel):
     entities: list[PluginEntitySchema] | None = None
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
+    derived: list[DerivedTask] | None = None
+
+    @field_validator("derived", mode="after")
+    @classmethod
+    def _validate_unique_derived_name_suffixes(
+        cls, value: list[DerivedTask] | None
+    ) -> list[DerivedTask] | None:
+        """Ensure no two ``DerivedTask`` specs share the same ``name_suffix``.
+
+        Duplicate ``name_suffix`` values would cause deterministic task-name
+        collisions during cascade (both derived specs would attempt to POST,
+        PUT, or DELETE a task with the same generated name). Reject them at
+        schema-construction time so the failure surfaces at plugin load
+        rather than on the first task creation.
+
+        :param value: The validated ``derived`` list, or ``None`` when unset.
+        :type value: list[DerivedTask] | None
+        :return: The input ``value`` unchanged when all suffixes are unique.
+        :rtype: list[DerivedTask] | None
+        :raises ValueError: When two or more entries share a ``name_suffix``.
+        """
+        if not value:
+            return value
+        counts = Counter(spec.name_suffix for spec in value)
+        duplicates = sorted(suffix for suffix, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(f"Duplicate derived name_suffix values: {duplicates}")
+        return value
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
@@ -869,7 +933,7 @@ class PluginSchema(SchemaBaseModel):
         :raises ValueError: If any rule references a field that does not
             exist in the schema, or whose name contains a hyphen.
         """
-        errors: list[str] = []
+        errors = []
         if self.entities:
             for entity_index, entity in enumerate(self.entities):
                 declared_field_names = {

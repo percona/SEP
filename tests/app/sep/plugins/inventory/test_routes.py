@@ -658,6 +658,19 @@ class TestCheckServiceConnectivity:
         yield
         sep_app.dependency_overrides = {}
 
+    @pytest.fixture
+    def _mock_executor_hosts(self, mysql_service, mock_tasks_api_dep):
+        """Pre-populate ``GET /hosts/`` so address lookup resolves to the node name.
+
+        The connectivity check resolves the executor target by address before
+        posting; tests that exercise the post path need a matching entry in
+        the executor hosts mapping or the route short-circuits with an
+        "address not registered" flash instead.
+        """
+        mock_tasks_api_dep.get.return_value = {
+            mysql_service.node.name: mysql_service.node.address,
+        }
+
     @pytest.mark.parametrize(
         "service_type",
         [
@@ -677,6 +690,9 @@ class TestCheckServiceConnectivity:
         service = CreatedServiceFactory.build(type=service_type, port=3306)
         service.node = created_node
         sep_app.dependency_overrides[get_created_service] = lambda: service
+        mock_tasks_api_dep.get.return_value = {
+            service.node.name: service.node.address,
+        }
         mock_tasks_api_dep.post.return_value = {
             "success": True,
             "error": None,
@@ -691,6 +707,7 @@ class TestCheckServiceConnectivity:
             sep_app.dependency_overrides.pop(get_created_service, None)
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{service.id}"
+        mock_tasks_api_dep.get.assert_awaited_once_with("/hosts/")
         mock_tasks_api_dep.post.assert_awaited_once_with(
             "/connectivity-check/",
             json={
@@ -701,7 +718,101 @@ class TestCheckServiceConnectivity:
             },
         )
 
+    def test_connectivity_check_resolves_executor_name_by_address(
+        self,
+        test_client,
+        created_node,
+        mock_tasks_api_dep,
+    ):
+        """Reproduce SEP-1108: inventory name and executor name differ.
+
+        When the inventory display name does not match the Nomad node name,
+        the connectivity check must look the executor target up by address
+        (the same reconciliation the host dropdown does) instead of passing
+        the inventory name straight through.
+        """
+        service = CreatedServiceFactory.build(type=ServiceTypeEnum.MYSQL, port=3306)
+        service.node = created_node
+        executor_node_name = f"{created_node.name}-nomad-mismatch"
+        sep_app.dependency_overrides[get_created_service] = lambda: service
+        mock_tasks_api_dep.get.return_value = {
+            executor_node_name: service.node.address,
+        }
+        mock_tasks_api_dep.post.return_value = {
+            "success": True,
+            "error": None,
+            "task_history_id": 42,
+        }
+        try:
+            response = test_client.post(
+                f"/inventory/services/{service.id}/check-connectivity/",
+                follow_redirects=False,
+            )
+        finally:
+            sep_app.dependency_overrides.pop(get_created_service, None)
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        mock_tasks_api_dep.post.assert_awaited_once_with(
+            "/connectivity-check/",
+            json={
+                "target": executor_node_name,
+                "host": service.node.address,
+                "port": service.port,
+                "service_type": ServiceTypeEnum.MYSQL.value,
+            },
+        )
+
     @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_address_not_registered(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Surface a flash and skip the API call when no executor matches the address."""
+        mock_tasks_api_dep.get.return_value = {"some-other-nomad": "10.0.0.99"}
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_executor_hosts_fetch_fails(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Surface a flash and skip the API call when fetching hosts fails."""
+        mock_tasks_api_dep.get.side_effect = ConnectionError("tasks unreachable")
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_connectivity_check_executor_hosts_http_exception_surfaces_detail(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Surface the upstream ``detail`` when the executor-hosts GET raises HTTPException.
+
+        Pin the GET-path counterpart of
+        :meth:`test_connectivity_check_http_exception_surfaces_detail` so the
+        ``except HTTPException`` branch keeps forwarding ``exc.detail`` into
+        the flash message verbatim, instead of falling through to the generic
+        "could not reach the Tasks API" string from the bare ``except``.
+        """
+        mock_tasks_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Nomad unavailable",
+        )
+        response = test_client.post(
+            f"/inventory/services/{mysql_service.id}/check-connectivity/",
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep", "_mock_executor_hosts")
     def test_connectivity_check_failure(
         self, test_client, mysql_service, mock_tasks_api_dep
     ):
@@ -718,7 +829,7 @@ class TestCheckServiceConnectivity:
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
 
-    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    @pytest.mark.usefixtures("_mock_mysql_service_dep", "_mock_executor_hosts")
     def test_connectivity_check_tasks_api_error(
         self, test_client, mysql_service, mock_tasks_api_dep
     ):
@@ -787,7 +898,7 @@ class TestCheckServiceConnectivity:
         assert response.headers["location"] == f"/inventory/services/{service.id}"
         mock_tasks_api_dep.post.assert_not_awaited()
 
-    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    @pytest.mark.usefixtures("_mock_mysql_service_dep", "_mock_executor_hosts")
     def test_connectivity_check_http_exception_surfaces_detail(
         self, test_client, mysql_service, mock_tasks_api_dep
     ):

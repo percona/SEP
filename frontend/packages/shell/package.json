@@ -15,7 +15,7 @@
     "@emotion/styled": "^11.14.0",
     "@fontsource/poppins": "^5.1.0",
     "@fontsource/roboto": "^5.1.0",
-    "@fontsource/roboto-mono": "^5.1.0",
+    "@fontsource/roboto-mono": "^5.2.9",
     "@melloware/react-logviewer": "^6.5.0",
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
@@ -26,6 +26,7 @@
     "@sep/framework": "workspace:*",
     "@sep/inventory": "workspace:*",
     "@sep/plugin-alert-troubleshooting": "workspace:*",
+    "@sep/plugin-atw": "workspace:*",
     "@sep/plugin-checksums": "workspace:*",
     "@sep/plugin-dipper": "workspace:*",
     "@sep/plugins-snippets": "workspace:*",
@@ -45,7 +46,7 @@
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react-swc": "^4.2.0",
     "typescript": "~6.0.3",
-    "vite": "^8.0.10",
+    "vite": "^8.0.12",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.0.0"
   }

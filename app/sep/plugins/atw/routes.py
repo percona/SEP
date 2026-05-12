@@ -29,11 +29,12 @@ from app.sep.deps import (
     SessionDep,
 )
 from app.sep.plugins.atw.models import ATWCategory
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.snippets.crud import SnippetManager
 from app.sep.utils.jinja import syntax_highlight
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 

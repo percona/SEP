@@ -33,13 +33,29 @@ from app.sep.deps import (
 from app.sep.main import sep_app
 from app.sep.plugins.snippets.models import (
     BatchApprovalErrorResponse,
+    RefreshResponse,
     SnippetResponse,
+    SnippetsCapabilitiesResponse,
 )
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 
 API_BASE = "/api/plugins/snippets"
+
+
+@pytest.fixture
+def enable_manual_sync(mocker):
+    """Fixture to patch ``ENABLE_MANUAL_SYNC`` setting."""
+
+    def _patch_enable(*, value: bool) -> None:
+        mocker.patch.object(
+            snippets_api_routes.snippets_settings,
+            "ENABLE_MANUAL_SYNC",
+            new=value,
+        )
+
+    return _patch_enable
 
 
 class TestSnippetsApprovalApiReviewContracts:
@@ -172,13 +188,13 @@ class TestSnippetsApiPerSnippetSchema:
             if field["type"] == "script_preview"
         )
         assert preview_field["endpoint_url"] == (
-            f"/plugins/snippets/{snippet.filename}/script-preview"
+            f"/plugins/snippets/{snippet.filename}/preview"
         )
 
 
 @pytest.mark.asyncio
 class TestSnippetsApiScriptPreview:
-    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/script-preview``."""
+    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/preview``."""
 
     async def test_returns_preview_with_language_hint(
         self, test_client, create_snippet
@@ -186,7 +202,7 @@ class TestSnippetsApiScriptPreview:
         """The preview response carries content, truncation flag, and a language hint."""
         snippet = await create_snippet("hello.sh", approved=True)
 
-        response = test_client.get(f"{API_BASE}/{snippet.filename}/script-preview")
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/preview")
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -209,10 +225,71 @@ class TestSnippetsApiScriptPreview:
             side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "boom"),
         ):
             response = test_client.get(
-                f"{API_BASE}/{snippet.filename}/script-preview",
+                f"{API_BASE}/{snippet.filename}/preview",
             )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    async def test_old_script_preview_route_returns_404(
+        self, test_client, create_snippet
+    ):
+        """The removed script-preview path is not kept as a compatibility alias."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/script-preview")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiDownload:
+    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/download``."""
+
+    async def test_returns_raw_file_with_attachment_headers(
+        self, test_client, create_snippet, snippets_dir
+    ):
+        """The endpoint streams the on-disk bytes verbatim with attachment headers."""
+        snippet = await create_snippet("hello.sh", approved=True)
+        on_disk = (snippets_dir / snippet.filename).read_bytes()
+
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/download")
+
+        assert response.status_code == status.HTTP_200_OK
+        # ``FileResponse`` sets the disposition with a quoted filename.
+        disposition = response.headers["content-disposition"]
+        assert "attachment" in disposition
+        assert f'filename="{snippet.filename}"' in disposition
+        assert response.content == on_disk
+
+    async def test_returns_401_for_unauthenticated_caller(
+        self, api_unauthenticated_client, create_snippet
+    ):
+        """Anonymous callers are rejected with a structured 401, not a redirect."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = api_unauthenticated_client.get(
+            f"{API_BASE}/{snippet.filename}/download",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_returns_404_for_unknown_snippet(self, test_client):
+        """A missing DB row surfaces as a 404."""
+        response = test_client.get(f"{API_BASE}/missing.sh/download")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_returns_404_when_file_missing_on_disk(
+        self, test_client, create_snippet, snippets_dir
+    ):
+        """A persisted row whose file was deleted on disk surfaces as 404."""
+        snippet = await create_snippet("hello.sh", approved=True)
+        (snippets_dir / snippet.filename).unlink()
+
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/download")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 @pytest.mark.asyncio
@@ -692,6 +769,161 @@ class TestSnippetsApiPatchApprovals:
         assert body["approved"] == ["a.sh"]
         assert body["skipped_already_approved"] == ["b.sh"]
         assert body["count"] == 1
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiCapabilities:
+    """Tests for ``GET /api/plugins/snippets/capabilities``."""
+
+    URL = f"{API_BASE}/capabilities"
+
+    @pytest.mark.parametrize("enable_value", [True, False])
+    async def test_returns_capability_flag(
+        self, api_admin_client, enable_manual_sync, enable_value
+    ):
+        """Capabilities surface the ENABLE_MANUAL_SYNC setting."""
+        enable_manual_sync(value=enable_value)
+
+        response = api_admin_client.get(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"manual_sync_enabled": enable_value}
+        # Validate the response body fits the declared model contract.
+        SnippetsCapabilitiesResponse.model_validate(response.json())
+
+    async def test_non_admin_can_read(self, api_non_admin_client, enable_manual_sync):
+        """Any authenticated user reads capabilities; no admin gate."""
+        enable_manual_sync(value=True)
+
+        response = api_non_admin_client.get(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"manual_sync_enabled": True}
+
+    async def test_unauthenticated_returns_401(
+        self, api_unauthenticated_client, enable_manual_sync
+    ):
+        """No auth → 401, regardless of the underlying flag."""
+        enable_manual_sync(value=True)
+
+        response = api_unauthenticated_client.get(self.URL)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiRefresh:
+    """Tests for ``POST /api/plugins/snippets/refresh``."""
+
+    URL = f"{API_BASE}/refresh"
+
+    async def test_admin_with_manual_sync_enabled_returns_200(
+        self, api_admin_client, enable_manual_sync, mocker
+    ):
+        """Admin happy path: 200 with ISO ``refreshed_at`` and one call."""
+        enable_manual_sync(value=True)
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert "refreshed_at" in body
+        # ISO 8601 round-trip: parsing must succeed.
+        parsed = datetime.fromisoformat(body["refreshed_at"])
+        assert parsed.tzinfo is not None
+        # Validate body fits the declared model contract.
+        RefreshResponse.model_validate(body)
+        update_mock.assert_awaited_once()
+
+    async def test_admin_with_manual_sync_disabled_returns_403(
+        self, api_admin_client, enable_manual_sync, mocker
+    ):
+        """Disabled deployment: 403 with structured detail; no work done."""
+        enable_manual_sync(value=False)
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json() == {
+            "detail": "Manual snippet sync is disabled in this deployment."
+        }
+        update_mock.assert_not_called()
+
+    async def test_non_admin_returns_403_even_when_enabled(
+        self, api_non_admin_client, enable_manual_sync, mocker
+    ):
+        """Non-admin caller: 403; no refresh work done."""
+        enable_manual_sync(value=True)
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_non_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        update_mock.assert_not_called()
+
+    async def test_unauthenticated_returns_401(
+        self, api_unauthenticated_client, enable_manual_sync, mocker
+    ):
+        """No auth: 401; no refresh work done."""
+        enable_manual_sync(value=True)
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_unauthenticated_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        update_mock.assert_not_called()
+
+    async def test_dependency_order_auth_runs_before_config_gate(
+        self, api_unauthenticated_client, enable_manual_sync
+    ):
+        """Unauth probe with flag True → 401, never the disabled-detail 403.
+
+        Prevents leaking deployment-flag state to anonymous callers via the
+        403-vs-401 differential.
+        """
+        enable_manual_sync(value=False)
+
+        response = api_unauthenticated_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        # Detail must NOT echo the gate-state message.
+        body = response.json()
+        assert body.get("detail") != (
+            "Manual snippet sync is disabled in this deployment."
+        )
+
+    async def test_update_snippets_failure_propagates(
+        self, api_admin_client, enable_manual_sync, mocker
+    ):
+        """Backend errors are not silently swallowed (500 to caller)."""
+        enable_manual_sync(value=True)
+        mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(side_effect=RuntimeError("disk walk failed")),
+        )
+
+        response = api_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 # Override the module-level test_client fixture so it uses the same in-memory

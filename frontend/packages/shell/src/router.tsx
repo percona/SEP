@@ -31,6 +31,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const ChecksumsPlugin = lazy(() =>
   import('@sep/plugin-checksums').then((m) => ({ default: m.ChecksumsPlugin })),
 );
+const AtwPlugin = lazy(() => import('@sep/plugin-atw').then((m) => ({ default: m.AtwPlugin })));
 const DipperPlugin = lazy(() =>
   import('@sep/plugin-dipper').then((m) => ({ default: m.DipperPlugin })),
 );
@@ -71,7 +72,7 @@ export const router = createBrowserRouter([
           { path: 'inventory/*', element: <InventoryPlugin /> },
           { path: 'tasks/*', element: <PlaceholderPage /> },
           { path: 'snippets/*', element: <SnippetsPlugin /> },
-          { path: 'atw', element: <PlaceholderPage /> },
+          { path: 'atw/*', element: <AtwPlugin /> },
           { path: 'dipper/*', element: <DipperPlugin /> },
           { path: 'alerts/templates', element: <PlaceholderPage /> },
           { path: 'alerts/troubleshooting/*', element: <AlertTroubleshootingPlugin /> },

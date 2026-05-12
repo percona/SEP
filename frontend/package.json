@@ -21,8 +21,8 @@
     "build-storybook": "pnpm --filter @sep/framework build-storybook"
   },
   "devDependencies": {
-    "oxfmt": "^0.48.0",
-    "oxlint": "^1.63.0"
+    "oxfmt": "^0.49.0",
+    "oxlint": "^1.64.0"
   },
   "engines": {
     "node": ">=20.20.2",

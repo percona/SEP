@@ -17,17 +17,19 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, ApiError, type PluginSchema } from '@sep/api';
-import type { PaginatedTaskHistory } from '@sep/framework';
+import { SNIPPETS_PLUGINS_API_BASE, type PaginatedTaskHistory } from '@sep/framework';
 import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,
+  RefreshResponse,
   SnippetBatchApproveRequest,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
   SnippetResponse,
+  SnippetsCapabilitiesResponse,
 } from './types';
 
-const SNIPPETS_BASE = '/plugins/snippets';
+const SNIPPETS_BASE = SNIPPETS_PLUGINS_API_BASE;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -97,12 +99,45 @@ export function useSnippetHistory(filename: string | undefined) {
   return useQuery<PaginatedTaskHistory>({
     queryKey: ['snippets', filename, 'history'],
     queryFn: async () => {
+      if (!filename) {
+        throw new Error('Missing snippet filename');
+      }
       const { data } = await apiClient.get<PaginatedTaskHistory>(
-        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/history`,
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/history`,
       );
       return data;
     },
     enabled: Boolean(filename),
+  });
+}
+
+/**
+ * Mutation: download the raw snippet file (full body + YAML frontmatter).
+ *
+ * Routes through ``apiClient`` so the Bearer interceptor attaches the
+ * in-memory access token, then turns the Blob response into a save
+ * dialog via a temporary anchor click (mirrors ``useLogDownload``).
+ */
+export function useSnippetDownload(filename: string | undefined) {
+  return useMutation<Blob, Error, void>({
+    mutationFn: async () => {
+      if (!filename) {
+        throw new Error('Snippet filename is required for download.');
+      }
+      const { data } = await apiClient.get<Blob>(
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename)}/download`,
+        { responseType: 'blob' },
+      );
+      const url = URL.createObjectURL(data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      return data;
+    },
   });
 }
 
@@ -131,7 +166,6 @@ export function useSnippetExecution(filename: string | undefined) {
     },
   });
 }
-
 /**
  * Mutation: approve a single snippet (idempotent PUT).
  *
@@ -252,6 +286,48 @@ export function useBatchApproveSnippets() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
+    },
+  });
+}
+
+/**
+ * Fetch per-deployment capability flags for the snippets plugin.
+ *
+ * The capabilities response carries no privileged data, so this hook is
+ * safe to call for any authenticated user. The 5-minute ``staleTime``
+ * reflects that deployment flags do not change at runtime — refetching on
+ * every tab focus would be wasteful.
+ */
+export function useSnippetsCapabilities() {
+  return useQuery<SnippetsCapabilitiesResponse>({
+    queryKey: ['snippets', 'capabilities'],
+    queryFn: async () => {
+      const { data } = await apiClient.get<SnippetsCapabilitiesResponse>(
+        `${SNIPPETS_BASE}/capabilities`,
+      );
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Mutation: trigger a manual refresh of the snippets cache from disk.
+ *
+ * Admin + deployment-gated by ``manual_sync_enabled``; callers should
+ * gate the affordance on both ``isAdmin`` and the capabilities flag
+ * before invoking. On success, every cached snippet query is invalidated
+ * (``['snippets']`` prefix) since refresh can add, update, or remove rows.
+ */
+export function useRefreshSnippets() {
+  const queryClient = useQueryClient();
+  return useMutation<RefreshResponse, ApiError, void>({
+    mutationFn: async () => {
+      const { data } = await apiClient.post<RefreshResponse>(`${SNIPPETS_BASE}/refresh`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['snippets'] });
     },
   });
 }
