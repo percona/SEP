@@ -30,13 +30,25 @@ from app.sep.snippets.models import Snippet
 
 logger = logging.getLogger(__name__)
 
-# TODO(SEP-1127): Derive category_root from snippet/meta for multi-root ATW.
-# https://percona.atlassian.net/browse/SEP-1127
+# TODO(peter): Derive category_root from snippet/meta for multi-root ATW.
+# SEP-1127
 ATW_CATEGORY_ROOT = "MySQL"
+ATW_META_KEY = "atw"
+ATW_META_WARNING = (
+    f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
+)
 
 
 class ATWSnippetSummary(BaseModel):
-    """Represent one snippet entry under an ATW category."""
+    """Represent one snippet entry under an ATW category.
+
+    :param name: The snippet filename, used as its API identifier.
+    :type name: str
+    :param title: The snippet display title.
+    :type title: str
+    :param description: The snippet free-text description.
+    :type description: str
+    """
 
     name: str
     title: str
@@ -44,7 +56,23 @@ class ATWSnippetSummary(BaseModel):
 
 
 class ATWCategoryListing(BaseModel):
-    """Represent one ATW category row and its snippet members."""
+    """Represent one ATW category row and its snippet members.
+
+    :param category_root: The top-level product/category root.
+    :type category_root: str
+    :param parent_category: The parent category enum name.
+    :type parent_category: str
+    :param parent_category_label: The parent category display label.
+    :type parent_category_label: str
+    :param category: The ATW leaf category enum name.
+    :type category: str
+    :param category_label: The ATW leaf category display label.
+    :type category_label: str
+    :param snippet_count: Number of snippets in this category.
+    :type snippet_count: int
+    :param snippets: Snippet summaries belonging to this category.
+    :type snippets: list[ATWSnippetSummary]
+    """
 
     category_root: str
     parent_category: str
@@ -77,19 +105,17 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     snippets = await SnippetManager.list(session)
     snippets_by_atw_tag: defaultdict[str, list[Snippet]] = defaultdict(list)
     for snippet in snippets:
-        if "atw" not in snippet.meta:
-            tags = []
-        else:
-            raw_atw = snippet.meta["atw"]
+        tags = []
+        if ATW_META_KEY in snippet.meta:
+            raw_atw = snippet.meta[ATW_META_KEY]
             if isinstance(raw_atw, list):
                 tags = raw_atw
             else:
                 logger.warning(
-                    "Ignoring meta['atw'] for snippet %s: expected list, got %s",
+                    ATW_META_WARNING,
                     snippet.filename,
                     type(raw_atw).__name__,
                 )
-                tags = []
         for tag in dict.fromkeys(tags):
             snippets_by_atw_tag[tag].append(snippet)
 
@@ -99,18 +125,17 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
             _build_summary(snippet)
             for snippet in snippets_by_atw_tag.get(category.name, [])
         ]
-        if not category_snippets:
-            continue
-        grouped.append(
-            ATWCategoryListing(
-                category_root=ATW_CATEGORY_ROOT,
-                parent_category=category.parent.name,
-                parent_category_label=category.parent.value,
-                category=category.name,
-                category_label=category.value,
-                snippet_count=len(category_snippets),
-                snippets=category_snippets,
+        if category_snippets:
+            grouped.append(
+                ATWCategoryListing(
+                    category_root=ATW_CATEGORY_ROOT,
+                    parent_category=category.parent.name,
+                    parent_category_label=category.parent.value,
+                    category=category.name,
+                    category_label=category.value,
+                    snippet_count=len(category_snippets),
+                    snippets=category_snippets,
+                )
             )
-        )
 
     return grouped

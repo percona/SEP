@@ -43,7 +43,7 @@ _CATEGORY_CHOICES = [
 
 
 def _atw_category_browser_fail_rules() -> list[FailRule]:
-    """Declare parent/category consistency for schema-driven and API consumers (SEP-1071)."""
+    """Declare parent/category consistency for schema-driven and API consumers."""
     rules: list[FailRule] = [
         FailRule(
             fail_when=all_(truthy("category"), falsy("parent_category")),
