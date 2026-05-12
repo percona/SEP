@@ -25,11 +25,13 @@ to the task-history view backed by ``app/sep/routes/stream_logs.py``.
 __all__ = [
     "BatchApprovalErrorResponse",
     "BatchApprovalResponse",
+    "RefreshResponse",
     "ScriptPreviewResponse",
     "SnippetBatchApproveRequest",
     "SnippetExecutionRequest",
     "SnippetExecutionResponse",
     "SnippetResponse",
+    "SnippetsCapabilitiesResponse",
 ]
 
 from datetime import datetime
@@ -147,7 +149,7 @@ class SnippetExecutionResponse(BaseModel):
 
 
 class ScriptPreviewResponse(BaseModel):
-    """Represent the backend response for the script-preview endpoint.
+    """Represent the backend response for the preview endpoint.
 
     :param content: The full text content of the snippet file (preamble,
         frontmatter, and body concatenated).
@@ -226,3 +228,28 @@ class BatchApprovalErrorResponse(BaseModel):
 
     missing_in_db: list[str] = Field(default_factory=list)
     missing_on_disk: list[str] = Field(default_factory=list)
+
+
+class RefreshResponse(BaseModel):
+    """Represent the successful result of a manual snippets-refresh operation.
+
+    :param refreshed_at: UTC timestamp at which the refresh completed.
+    :type refreshed_at: datetime
+    """
+
+    refreshed_at: datetime
+
+
+class SnippetsCapabilitiesResponse(BaseModel):
+    """Represent per-deployment capability flags for the Snippets plugin.
+
+    Exposes flags that gate the visibility of admin-only UI affordances
+    (currently the manual refresh button) so the React shell can decide
+    whether to render those controls without probing the gated endpoints.
+
+    :param manual_sync_enabled: Whether manual snippet refresh is enabled
+        in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).
+    :type manual_sync_enabled: bool
+    """
+
+    manual_sync_enabled: bool

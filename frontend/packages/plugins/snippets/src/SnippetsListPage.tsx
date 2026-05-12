@@ -39,17 +39,26 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
+import { ApiError } from '@sep/api';
 import {
   useSnippets,
   useApproveSnippet,
   useRemoveSnippetApproval,
   useBatchApproveSnippets,
+  useSnippetsCapabilities,
+  useRefreshSnippets,
   type BatchApproveError,
 } from './hooks';
-import type { BatchApprovalErrorResponse, BatchApprovalResponse, SnippetResponse } from './types';
+import type {
+  BatchApprovalErrorResponse,
+  BatchApprovalResponse,
+  RefreshResponse,
+  SnippetResponse,
+} from './types';
 
 interface SnippetsListPageProps {
   isAdmin?: boolean;
@@ -149,11 +158,18 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const navigate = useNavigate();
   const { data: snippets = [], isLoading, error } = useSnippets();
   const batchApprove = useBatchApproveSnippets();
+  const { data: capabilities } = useSnippetsCapabilities();
+  const refresh = useRefreshSnippets();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloaded, setDownloaded] = useState<Set<string>>(new Set());
   const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+  const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshSuccess, setRefreshSuccess] = useState<RefreshResponse | null>(null);
+
+  const showRefresh = isAdmin && capabilities?.manual_sync_enabled;
 
   const selectableSnippets = snippets.filter((snippet) => !snippet.is_approved);
   const selectedFilenames = selectableSnippets
@@ -312,6 +328,70 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
           <Button onClick={() => setBatchConfirmOpen(false)}>Cancel</Button>
           <Button color="success" onClick={handleBatchApprove} disabled={batchApprove.isPending}>
             Approve selected
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {showRefresh && (
+        <Box sx={{ mb: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={
+              refresh.isPending ? <CircularProgress size={16} color="inherit" /> : <AutorenewIcon />
+            }
+            disabled={refresh.isPending}
+            onClick={() => setRefreshConfirmOpen(true)}
+          >
+            Refresh snippets
+          </Button>
+        </Box>
+      )}
+
+      {refreshSuccess && (
+        <Alert severity="success" onClose={() => setRefreshSuccess(null)} sx={{ mb: 2 }}>
+          Snippets refreshed at {new Date(refreshSuccess.refreshed_at).toLocaleString()}.
+        </Alert>
+      )}
+
+      {refreshError && (
+        <Alert severity="error" onClose={() => setRefreshError(null)} sx={{ mb: 2 }}>
+          {refreshError}
+        </Alert>
+      )}
+
+      <Dialog open={refreshConfirmOpen} onClose={() => setRefreshConfirmOpen(false)}>
+        <DialogTitle>Refresh snippets?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to refresh the saved snippets now?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRefreshConfirmOpen(false)}>Cancel</Button>
+          <Button
+            color="primary"
+            disabled={refresh.isPending}
+            onClick={() => {
+              setRefreshConfirmOpen(false);
+              setRefreshError(null);
+              setRefreshSuccess(null);
+              refresh.mutate(undefined, {
+                onSuccess: (data) => {
+                  setRefreshSuccess(data);
+                  setDownloaded(new Set());
+                  setSelected(new Set());
+                },
+                onError: (err) => {
+                  const detail =
+                    err instanceof ApiError && err.kind === 'http' && err.message
+                      ? err.message
+                      : 'Snippet refresh failed. Please try again.';
+                  setRefreshError(detail);
+                },
+              });
+            }}
+          >
+            Refresh
           </Button>
         </DialogActions>
       </Dialog>

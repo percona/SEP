@@ -20,9 +20,11 @@ Mounted at ``/api/plugins/snippets/`` via ``plugins_router`` in
 level and redeclared per route for safety. Route layout is snippet-centric:
 
 * ``GET /schema``                              — static plugin schema
+* ``GET /capabilities``                        — per-deployment capability flags
+* ``POST /refresh``                            — admin manual snippets cache refresh
 * ``GET /``                                    — list snippets
 * ``GET /{snippet_filename}/schema``           — per-snippet form schema
-* ``GET /{snippet_filename}/script-preview``   — script preview
+* ``GET /{snippet_filename}/preview``          — script preview
 * ``GET /{snippet_filename}/download``         — raw snippet file download
 * ``GET /{snippet_filename}/history``          — execution history
 * ``POST /{snippet_filename}/execute``         — execute the snippet
@@ -46,28 +48,32 @@ from sqlmodel import col
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.utils import utc_now
+from app.sep.celery import update_snippets
 from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.framework.schema import PluginSchema
 from app.sep.plugins.snippets.deps import (
     build_snippet_execution_meta,
     ExecutableSnippetForApi,
+    IsManualSyncEnabled,
     SnippetBatchExistenceDep,
     SnippetDep,
     SnippetSource,
 )
 from app.sep.plugins.snippets.models import (
     BatchApprovalResponse,
+    RefreshResponse,
     ScriptPreviewResponse,
     SnippetExecutionRequest,
     SnippetExecutionResponse,
     SnippetResponse,
+    SnippetsCapabilitiesResponse,
 )
 from app.sep.plugins.snippets.schema import (
     build_snippet_schema,
     SNIPPETS_PLUGIN_SCHEMA,
 )
-from app.sep.snippets.config import SnippetSudoOption
+from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import EXECUTOR_HOSTS_INPUT_NAME, Snippet
 from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
@@ -76,6 +82,40 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=SNIPPETS_PLUGIN_SCHEMA)
+
+
+@router.get("/capabilities", dependencies=[IsApiAuthenticated])
+async def snippets_api_capabilities() -> SnippetsCapabilitiesResponse:
+    """Return per-deployment capability flags for the snippets plugin.
+
+    The capabilities response carries no privileged data, so it is gated
+    by authentication only — the React list page calls it for any signed-in
+    user to decide whether admin-only affordances (currently the manual
+    refresh button) should render.
+
+    :return: Capability flags reflecting the current deployment config.
+    :rtype: SnippetsCapabilitiesResponse
+    """
+    return SnippetsCapabilitiesResponse(
+        manual_sync_enabled=snippets_settings.ENABLE_MANUAL_SYNC,
+    )
+
+
+@router.post("/refresh", dependencies=[IsApiAuthenticated, IsManualSyncEnabled])
+async def snippets_api_refresh(user: ApiAdminUser) -> RefreshResponse:
+    """Refresh the snippets cache from disk.
+
+    Admin-only and additionally gated by manual sync being enabled.
+    Mirrors the legacy Jinja2 ``POST /snippets/refresh`` route.
+
+    :param user: The authenticated admin performing the refresh.
+    :type user: User
+    :return: A response carrying the UTC timestamp of the refresh.
+    :rtype: RefreshResponse
+    """
+    await update_snippets()
+    logger.info("Snippets refreshed via JSON API by %s", user.username)
+    return RefreshResponse(refreshed_at=utc_now())
 
 
 def _build_snippet_response(snippet: Snippet) -> SnippetResponse:
@@ -131,7 +171,7 @@ async def snippets_api_per_snippet_schema(snippet: SnippetDep) -> PluginSchema:
 
 
 @router.get(
-    "/{snippet_filename}/script-preview",
+    "/{snippet_filename}/preview",
     dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewResponse:
@@ -169,7 +209,7 @@ async def snippets_api_download(snippet: SnippetDep) -> FileResponse:
 
     Returns the on-disk source verbatim — full bash/Python body plus its
     YAML frontmatter — so end users can save the file locally without
-    being capped by the script-preview truncation limits. The
+    being capped by the preview truncation limits. The
     ``SnippetDep`` dependency already validates both the DB row and the
     on-disk file, so a missing snippet or missing file surfaces as 404.
 

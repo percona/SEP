@@ -22,6 +22,8 @@
  * `app/sep/plugins/snippets/models.py`.
  */
 
+export type { SnippetExecutionRequest, SnippetExecutionResponse } from '@sep/framework';
+
 export interface SnippetResponse {
   filename: string;
   title: string;
@@ -38,18 +40,6 @@ export interface SnippetResponse {
   interpreter: string | null;
   created_at: string;
   updated_at: string | null;
-}
-
-export interface SnippetExecutionRequest {
-  executor_host: string;
-  sudo?: boolean;
-  args?: Record<string, unknown>;
-}
-
-export interface SnippetExecutionResponse {
-  task_name: string;
-  task_id: number | null;
-  snippet_filename: string;
 }
 
 export interface ScriptPreviewResponse {
@@ -71,4 +61,12 @@ export interface BatchApprovalResponse {
 export interface BatchApprovalErrorResponse {
   missing_in_db: string[];
   missing_on_disk: string[];
+}
+
+export interface SnippetsCapabilitiesResponse {
+  manual_sync_enabled: boolean;
+}
+
+export interface RefreshResponse {
+  refreshed_at: string;
 }

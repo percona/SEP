@@ -83,6 +83,8 @@ export {
   useTaskHistory,
   useTaskHistoryByName,
   useStopTaskHistory,
+  useSnippetPluginExecution,
+  useSnippetPluginSchema,
   isRunningStatus,
   RUNNING_STATUSES,
   useTaskHistoryFiles,
@@ -101,4 +103,19 @@ export type {
   FileMetadata,
   TaskHistoryFilesMap,
   TaskFileDownloadParams,
+  UseSnippetPluginExecutionOptions,
 } from './hooks';
+
+export {
+  SNIPPET_FORM_RESERVED_FIELD_NAMES,
+  buildSnippetExecutionFormPayload,
+} from './utils/snippetFormSubmission';
+export type { SnippetExecutionFormPayload } from './utils/snippetFormSubmission';
+
+export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetPlugin';
+
+export {
+  SNIPPETS_PLUGINS_API_BASE,
+  snippetPluginExecutePath,
+  snippetPluginSchemaPath,
+} from './snippetPluginPaths';
