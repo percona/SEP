@@ -62,3 +62,11 @@ export interface BatchApprovalErrorResponse {
   missing_in_db: string[];
   missing_on_disk: string[];
 }
+
+export interface SnippetsCapabilitiesResponse {
+  manual_sync_enabled: boolean;
+}
+
+export interface RefreshResponse {
+  refreshed_at: string;
+}

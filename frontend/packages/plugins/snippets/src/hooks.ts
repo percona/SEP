@@ -21,10 +21,12 @@ import { SNIPPETS_PLUGINS_API_BASE, type PaginatedTaskHistory } from '@sep/frame
 import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,
+  RefreshResponse,
+  SnippetBatchApproveRequest,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
-  SnippetBatchApproveRequest,
   SnippetResponse,
+  SnippetsCapabilitiesResponse,
 } from './types';
 
 const SNIPPETS_BASE = SNIPPETS_PLUGINS_API_BASE;
@@ -267,6 +269,48 @@ export function useBatchApproveSnippets() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
+    },
+  });
+}
+
+/**
+ * Fetch per-deployment capability flags for the snippets plugin.
+ *
+ * The capabilities response carries no privileged data, so this hook is
+ * safe to call for any authenticated user. The 5-minute ``staleTime``
+ * reflects that deployment flags do not change at runtime — refetching on
+ * every tab focus would be wasteful.
+ */
+export function useSnippetsCapabilities() {
+  return useQuery<SnippetsCapabilitiesResponse>({
+    queryKey: ['snippets', 'capabilities'],
+    queryFn: async () => {
+      const { data } = await apiClient.get<SnippetsCapabilitiesResponse>(
+        `${SNIPPETS_BASE}/capabilities`,
+      );
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Mutation: trigger a manual refresh of the snippets cache from disk.
+ *
+ * Admin + deployment-gated by ``manual_sync_enabled``; callers should
+ * gate the affordance on both ``isAdmin`` and the capabilities flag
+ * before invoking. On success, every cached snippet query is invalidated
+ * (``['snippets']`` prefix) since refresh can add, update, or remove rows.
+ */
+export function useRefreshSnippets() {
+  const queryClient = useQueryClient();
+  return useMutation<RefreshResponse, ApiError, void>({
+    mutationFn: async () => {
+      const { data } = await apiClient.post<RefreshResponse>(`${SNIPPETS_BASE}/refresh`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['snippets'] });
     },
   });
 }
