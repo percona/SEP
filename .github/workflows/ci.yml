@@ -44,12 +44,14 @@ jobs:
           exit 1
 
   # Detect changed file types to gate downstream jobs.
-  # Patterns are kept in sync with .github/labeler.yml.
+  # Python/frontend patterns mirror .github/labeler.yml; CI also tracks
+  # .pre-commit-config.yaml separately to trigger precommit-heavy.
   changes:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.filter.outputs.python }}
+      precommit: ${{ steps.filter.outputs.precommit }}
       frontend: ${{ steps.filter.outputs.frontend }}
       docker: ${{ steps.filter.outputs.docker }}
     steps:
@@ -65,6 +67,8 @@ jobs:
               - '**/**.py'
               - 'pyproject.toml'
               - 'poetry.lock'
+            precommit:
+              - '.pre-commit-config.yaml'
             frontend:
               - 'frontend/**'
               - 'package.json'
@@ -131,6 +135,7 @@ jobs:
         github.event.pull_request.draft == false &&
         (
           needs.changes.outputs.python == 'true' ||
+          needs.changes.outputs.precommit == 'true' ||
           needs.changes.outputs.frontend == 'true' ||
           needs.changes.outputs.docker == 'true'
         )
@@ -177,14 +182,25 @@ jobs:
         run: make run-pre-commit
 
   python:
-    if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.python == 'true' }}
+    # `lint-fmt-only`: precommit-heavy already re-runs the bumped linters.
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.python == 'true' &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
     uses: ./.github/workflows/python.yaml
     needs:
       - label-gate
       - changes
 
   frontend:
-    if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.frontend == 'true' }}
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.frontend == 'true' &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
     uses: ./.github/workflows/frontend.yaml
     needs:
       - label-gate
@@ -193,7 +209,8 @@ jobs:
   build:
     # Run when Python or Docker-relevant paths change. Use always() so the job
     # still runs when `python` is skipped (no .py changes but Containerfile /
-    # bundle assets changed). Any `python` failures will stop the run
+    # bundle assets changed). Any `python` failures will stop the run.
+    # `lint-fmt-only`: audit-group deps not in the production image.
     if: >-
       ${{
         always() &&
@@ -201,7 +218,8 @@ jobs:
         needs.label-gate.result == 'success' &&
         needs.changes.result == 'success' &&
         (needs.python.result == 'success' || needs.python.result == 'skipped') &&
-        (needs.changes.outputs.python == 'true' || needs.changes.outputs.docker == 'true')
+        (needs.changes.outputs.python == 'true' || needs.changes.outputs.docker == 'true') &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
       }}
     runs-on: ubuntu-latest
     needs:
