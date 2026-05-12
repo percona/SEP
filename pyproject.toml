@@ -80,7 +80,7 @@ optional = true
 [tool.poetry.group.audit.dependencies]
 pip-audit = "^2.10.0"
 bandit = {extras = ["toml"], version = "^1.7.9"}
-ruff = "^0.9.4"
+ruff = "^0.15.12"
 djlint = "^1.36.4"
 jsbeautifier = "^1.15.1"
 cssbeautifier = "^1.15.1"
@@ -141,7 +141,7 @@ optional = true
 en-core-web-lg = {url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl"}
 
 [tool.poetry.group.dev.dependencies]
-pre-commit = "^4.5.1"
+pre-commit = "^4.6.0"
 pytest = "^9.0.3"
 pytest-cov = "^6.0.0"
 pytest-mock = "^3.14.0"
