@@ -366,9 +366,6 @@ ASALocalRun/
 # Visual Studio History (VSHistory) files
 .vshistory/
 
-# Ignore Visual Studio Code workspace settings
-.vscode/
-
 # BeatPulse healthcheck temp database
 healthchecksdb
 
@@ -409,3 +406,10 @@ data/casdoor_init_data.json
 frontend/**/dist/
 frontend/packages/e2e/playwright-report/data/*
 frontend/packages/e2e/test-results/*
+
+# IA agents config and cache
+.claude/
+.codex/
+
+# IA tools config and cache
+graphify-out/
