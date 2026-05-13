@@ -121,6 +121,22 @@ def _format_host_entry(service: dict[str, Any]) -> str | None:
     return f"{address}:{port}"
 
 
+async def _collect_mysql_host_entries(inventory_api: Any) -> list[str]:
+    """Return ``host:port`` entries for every MySQL service in inventory."""
+    response = await inventory_api.get(
+        "/services/", params={"service_type": "mysql", "limit": 0}
+    )
+    items = response.get("items", []) if isinstance(response, dict) else []
+    seen: set[str] = set()
+    hosts: list[str] = []
+    for service in items:
+        host_entry = _format_host_entry(service)
+        if host_entry and host_entry not in seen:
+            seen.add(host_entry)
+            hosts.append(host_entry)
+    return hosts
+
+
 
 @router.get("/{entity}/")
 async def inventory_list_entity(
