@@ -347,7 +347,7 @@ class TestTopologyResult:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    def test_missing_ids_yields_400(self, test_client, mock_task_api_dep):
+    def test_missing_ids_yields_422(self, test_client, mock_task_api_dep):
         """Ensure the ids query parameter is required."""
         response = test_client.get("/api/plugins/inventory/topology/result")
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
