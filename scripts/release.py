@@ -466,7 +466,9 @@ def _print_stable_next_steps(version: str) -> None:
     print("Next steps:")
     print("  1. Publish release notes")
     print(f"  2. Mark Jira version {version} as released")
-    print("  3. Merge the dev version bump PR")
+    print(
+        f"  3. Verify the back-merge: git merge-base --is-ancestor v{version} origin/main"
+    )
 
 
 def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
@@ -581,6 +583,12 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
     print(f"=== RC {rc_version} released successfully ===")
     print()
     _run(["make", "trigger-jenkins", f"TAG={rc_tag}"])
+
+    if rc == 1:
+        # Scope-lock + dev-bump are atomic. Main runs at the next .dev0 for
+        # the entire QA window — fixes during QA land on the release branch
+        # (no main-first cherry-picks under the back-merge model).
+        _create_dev_version_bump_pr(version, rc_tag)
 
     _print_rc_next_steps(
         version=version,
@@ -712,8 +720,6 @@ def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
         _run(["gh", "release", "upload", tag, str(wheel)])
     else:
         print("Note: gh CLI not found, skipping GitHub release creation.")
-
-    _create_dev_version_bump_pr(version, tag)
 
     print("==> Deleting release branch...")
     _run(["git", "checkout", "main"])

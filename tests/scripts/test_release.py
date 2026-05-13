@@ -429,6 +429,95 @@ def test_dev_pr_keeps_gh_token_when_pr_token_unset(monkeypatch):
     assert os.environ["GH_TOKEN"] == "pat-token"
 
 
+# --- cmd_rc dev-version-bump call-site -------------------------------------
+
+
+def test_cmd_rc_rc1_invokes_dev_version_bump(repo, monkeypatch):
+    """RC1 dev-bumps main as part of scope-lock (atomic with the RC cut)."""
+
+    def fake_run(cmd, **kwargs):
+        wheel = Path("dist") / "sep-0.13.0rc1-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "main\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    bump_calls = []
+
+    def fake_dev_bump(version, stable_tag):
+        bump_calls.append((version, stable_tag))
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+    monkeypatch.setattr(release, "_local_branch_exists", lambda _b: False)
+    monkeypatch.setattr(release, "_invoke_post_jira_webhook", lambda *_a, **_kw: True)
+    monkeypatch.setattr(release, "_create_dev_version_bump_pr", fake_dev_bump)
+
+    rc = release.cmd_rc("0.13.0", 1, sign_via_github_api=False)
+    assert rc == 0
+    assert bump_calls == [("0.13.0", "v0.13.0rc1")]
+
+
+def test_cmd_rc_rc2_does_not_invoke_dev_version_bump(repo, monkeypatch):
+    """RC2+ must NOT redo the dev-bump (it was done atomically with RC1)."""
+
+    def fake_run(cmd, **kwargs):
+        wheel = Path("dist") / "sep-0.13.0rc2-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "release/v0.13.0\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    bump_calls = []
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+    monkeypatch.setattr(
+        release,
+        "_create_dev_version_bump_pr",
+        lambda v, t: bump_calls.append((v, t)),
+    )
+
+    rc = release.cmd_rc("0.13.0", 2, sign_via_github_api=False)
+    assert rc == 0
+    assert bump_calls == []
+
+
 # --- argparse --------------------------------------------------------------
 
 
