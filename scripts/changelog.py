@@ -72,7 +72,6 @@ UNRELEASED_COMPARE_RE: re.Pattern[str] = re.compile(
 VERSION_HEADING_RE: re.Pattern[str] = re.compile(
     r"^## \[v(?P<version>[\w.\-]+)\](?: - (?P<date>\d{4}-\d{2}-\d{2}))?$",
 )
-TICKET_BULLET_RE: re.Pattern[str] = re.compile(r"^- (SEP-\d+):")
 VERSION_FOOTER_LINE_RE: re.Pattern[str] = re.compile(
     r"^\[v(?P<version>[\w.\-]+)\]: ",
 )
@@ -319,28 +318,64 @@ def _update_compare_links(changelog_text: str, version: str) -> str:
     return "\n".join(lines) + suffix
 
 
-def _git_show_index(stage: int, path: str) -> str:
-    """Return ``git show :<stage>:<path>`` as a string.
+def _git_show_ref(ref: str, path: str) -> str:
+    """Return ``git show <ref>:<path>`` as a string.
 
-    Used by :func:`cmd_resolve_backmerge` to read the ours/theirs sides of a
-    merge conflict directly from the git index, avoiding fragile parsing of
-    in-tree conflict markers. Monkeypatched in tests.
+    Used by :func:`cmd_resolve_backmerge` to read the ours/theirs sides of
+    a back-merge directly from refs (HEAD for ours, MERGE_HEAD for
+    theirs), so the script works whether or not the path was conflicted.
+    Monkeypatched in tests.
 
-    :param stage: The git index stage (2 = ours, 3 = theirs).
-    :type stage: int
+    :param ref: A git ref name (e.g. ``HEAD``, ``MERGE_HEAD``).
+    :type ref: str
     :param path: The repository-relative path.
     :type path: str
-    :return: The file contents on that stage.
+    :return: The file contents at that ref.
     :rtype: str
     """
     git_exe = shutil.which("git") or "git"
     result = subprocess.run(
-        [git_exe, "show", f":{stage}:{path}"],
+        [git_exe, "show", f"{ref}:{path}"],
         check=True,
         text=True,
         capture_output=True,
     )
     return result.stdout
+
+
+def _git_ls_tree(ref: str, path: str) -> set[str]:
+    """Return the set of file basenames under ``path`` at ``ref``.
+
+    Used to compute the set difference between main's and release branch's
+    ``changelog.d/`` contents during a back-merge — files present in main's
+    tree but absent in the release branch's tree are the ones the release
+    consumed via ``cmd_assemble``.
+
+    :param ref: A git ref name (e.g. ``HEAD``, ``MERGE_HEAD``).
+    :type ref: str
+    :param path: The repository-relative directory path (no trailing slash).
+    :type path: str
+    :return: The set of basenames; empty if the directory doesn't exist at
+        the ref.
+    :rtype: set[str]
+    """
+    git_exe = shutil.which("git") or "git"
+    result = subprocess.run(
+        [git_exe, "ls-tree", "--name-only", ref, f"{path}/"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return set()
+    names = set()
+    for line in result.stdout.splitlines():
+        name = line.strip()
+        if not name:
+            continue
+        # ls-tree returns full paths; strip the directory prefix.
+        names.add(name.rsplit("/", 1)[-1])
+    return names
 
 
 def _extract_version_section(
@@ -381,22 +416,6 @@ def _extract_version_section(
     while section and section[-1].strip() == "":
         section.pop()
     return section
-
-
-def _tickets_in_section(section_lines: list[str]) -> set[str]:
-    """Return the set of ``SEP-<n>`` ticket keys named in ``- SEP-NNN: ...`` bullets.
-
-    :param section_lines: Output of :func:`_extract_version_section`.
-    :type section_lines: list[str]
-    :return: The set of ticket keys.
-    :rtype: set[str]
-    """
-    tickets = set()
-    for line in section_lines:
-        match = TICKET_BULLET_RE.match(line)
-        if match is not None:
-            tickets.add(match.group(1))
-    return tickets
 
 
 def _split_body_and_footer(changelog_text: str) -> tuple[list[str], list[str]]:
@@ -492,41 +511,43 @@ def _build_rebuilt_footer(
     return rebuilt
 
 
-def _prune_consumed_fragments(consumed_tickets: set[str]) -> int:
-    """Delete changelog.d/ fragments whose ticket key appears in *consumed_tickets*.
+def _prune_consumed_fragments() -> int:
+    """Delete ``changelog.d/`` fragments that the release branch consumed.
 
-    :param consumed_tickets: The set of ticket keys to remove.
-    :type consumed_tickets: set[str]
+    Consumed = present in ours-side ``changelog.d/`` (at HEAD) but absent in
+    theirs-side ``changelog.d/`` (at MERGE_HEAD). RESERVED_FILENAMES are
+    excluded from consideration even if they happen to be missing on one
+    side. Files matching :data:`FRAGMENT_RE` are deleted from the working
+    tree; all other files are left alone.
+
     :return: The number of fragment files deleted.
     :rtype: int
     """
+    ours_fragments = _git_ls_tree("HEAD", str(CHANGELOG_D).rstrip("/"))
+    theirs_fragments = _git_ls_tree("MERGE_HEAD", str(CHANGELOG_D).rstrip("/"))
+    consumed_names = ours_fragments - theirs_fragments
     pruned = 0
-    if not CHANGELOG_D.exists():
-        return pruned
-    for path in sorted(CHANGELOG_D.iterdir()):
-        if path.name in RESERVED_FILENAMES or not path.is_file():
+    for name in sorted(consumed_names):
+        if name in RESERVED_FILENAMES:
             continue
-        match = FRAGMENT_RE.match(path.name)
-        if match is None:
+        if FRAGMENT_RE.match(name) is None:
             continue
-        if match.group(1) in consumed_tickets:
-            path.unlink()
+        fragment_path = CHANGELOG_D / name
+        if fragment_path.exists():
+            fragment_path.unlink()
             pruned += 1
     return pruned
-
-
-# Git index stage numbers used by cmd_resolve_backmerge.
-_GIT_STAGE_OURS: int = 2
-_GIT_STAGE_THEIRS: int = 3
 
 
 def cmd_resolve_backmerge(version: str) -> int:
     """Resolve the CHANGELOG.md + changelog.d/ conflict produced by a back-merge.
 
-    Reads the conflicted ``CHANGELOG.md`` from the git index (ours = main,
-    theirs = release branch) via :func:`_git_show_index`. Writes the merged
-    result to ``CHANGELOG.md`` in the working tree and deletes fragments
-    under ``changelog.d/`` whose ticket appears in the new release section.
+    Reads ``CHANGELOG.md`` from refs (ours = HEAD, theirs = MERGE_HEAD) via
+    :func:`_git_show_ref`. This works whether or not CHANGELOG.md was
+    conflicted, because MERGE_HEAD always exists during a mid-merge state.
+    Writes the merged result to ``CHANGELOG.md`` in the working tree and
+    deletes fragments under ``changelog.d/`` that the release branch consumed
+    (determined by directory diff between HEAD and MERGE_HEAD).
 
     :param version: The release version (no ``v`` prefix).
     :type version: str
@@ -534,11 +555,11 @@ def cmd_resolve_backmerge(version: str) -> int:
     :rtype: int
     """
     try:
-        ours = _git_show_index(_GIT_STAGE_OURS, "CHANGELOG.md")
-        theirs = _git_show_index(_GIT_STAGE_THEIRS, "CHANGELOG.md")
+        ours = _git_show_ref("HEAD", "CHANGELOG.md")
+        theirs = _git_show_ref("MERGE_HEAD", "CHANGELOG.md")
     except subprocess.CalledProcessError as exc:
         print(
-            f"error: failed to read CHANGELOG.md from git index: {exc}",
+            f"error: failed to read CHANGELOG.md from refs: {exc}",
             file=sys.stderr,
         )
         return 1
@@ -549,7 +570,6 @@ def cmd_resolve_backmerge(version: str) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    consumed_tickets = _tickets_in_section(section_lines)
     ours_body, ours_footer = _split_body_and_footer(ours)
     _, theirs_footer = _split_body_and_footer(theirs)
 
@@ -584,7 +604,7 @@ def cmd_resolve_backmerge(version: str) -> int:
         encoding="utf-8",
     )
 
-    pruned = _prune_consumed_fragments(consumed_tickets)
+    pruned = _prune_consumed_fragments()
     print(
         f"Resolved back-merge for v{version}: "
         f"merged CHANGELOG.md, pruned {pruned} consumed fragment(s).",

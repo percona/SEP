@@ -597,11 +597,6 @@ def test_update_compare_links_synthesizes_when_unreleased_footer_missing(
 
 # --- resolve-backmerge subcommand ------------------------------------------
 
-# Re-export the git index stage constants so test helpers can compare against
-# named values rather than bare integers (avoids PLR2004 magic-value warnings).
-_STAGE_OURS = changelog._GIT_STAGE_OURS
-_STAGE_THEIRS = changelog._GIT_STAGE_THEIRS
-
 MAIN_CHANGELOG_FIXTURE = """\
 # Changelog
 
@@ -678,16 +673,31 @@ def test_resolve_backmerge_merges_changelog_and_prunes_fragments(
         encoding="utf-8",
     )
 
-    def fake_index_show(stage: int, path: str) -> str:
+    def fake_show_ref(ref: str, path: str) -> str:
         if path != "CHANGELOG.md":
             raise AssertionError(f"unexpected path {path}")
-        if stage == _STAGE_OURS:
+        if ref == "HEAD":
             return MAIN_CHANGELOG_FIXTURE
-        if stage == _STAGE_THEIRS:
+        if ref == "MERGE_HEAD":
             return RELEASE_CHANGELOG_FIXTURE
-        raise AssertionError(f"unexpected stage {stage}")
+        raise AssertionError(f"unexpected ref {ref}")
 
-    monkeypatch.setattr(changelog, "_git_show_index", fake_index_show)
+    def fake_ls_tree(ref: str, path: str) -> set[str]:
+        if ref == "HEAD":
+            return {
+                "SEP-200.added.md",
+                "SEP-201.added.md",
+                "SEP-205.fixed.md",
+                "SEP-300.added.md",
+                "SEP-301.fixed.md",
+                "README.md",
+            }
+        if ref == "MERGE_HEAD":
+            return {"SEP-300.added.md", "SEP-301.fixed.md", "README.md"}
+        raise AssertionError(f"unexpected ref {ref}")
+
+    monkeypatch.setattr(changelog, "_git_show_ref", fake_show_ref)
+    monkeypatch.setattr(changelog, "_git_ls_tree", fake_ls_tree)
 
     exit_code = changelog.main(["resolve-backmerge", "--release", "0.13.0"])
     assert exit_code == 0
@@ -717,8 +727,9 @@ def test_resolve_backmerge_merges_changelog_and_prunes_fragments(
 def test_resolve_backmerge_when_no_fragments_consumed(repo, monkeypatch):
     """A release whose bullets all come from release-branch-only fixes.
 
-    No changelog.d/ fragments are pruned (none of the cited tickets match a
-    fragment on main). The CHANGELOG merge still completes successfully.
+    No changelog.d/ fragments are pruned (the release branch's changelog.d/
+    contains the same fragments as main's — nothing was consumed). The
+    CHANGELOG merge still completes successfully.
     """
     repo.joinpath("changelog.d", "SEP-300.added.md").write_text(
         "Unrelated\n",
@@ -729,14 +740,22 @@ def test_resolve_backmerge_when_no_fragments_consumed(repo, monkeypatch):
         encoding="utf-8",
     )
 
-    def fake_index_show(stage: int, path: str) -> str:
-        if stage == _STAGE_OURS:
+    def fake_show_ref(ref: str, path: str) -> str:
+        if ref == "HEAD":
             return MAIN_CHANGELOG_FIXTURE
-        if stage == _STAGE_THEIRS:
+        if ref == "MERGE_HEAD":
             return RELEASE_CHANGELOG_FIXTURE
-        raise AssertionError
+        raise AssertionError(ref)
 
-    monkeypatch.setattr(changelog, "_git_show_index", fake_index_show)
+    def fake_ls_tree(ref: str, path: str) -> set[str]:
+        if ref == "HEAD":
+            return {"SEP-300.added.md"}
+        if ref == "MERGE_HEAD":
+            return {"SEP-300.added.md"}
+        raise AssertionError(ref)
+
+    monkeypatch.setattr(changelog, "_git_show_ref", fake_show_ref)
+    monkeypatch.setattr(changelog, "_git_ls_tree", fake_ls_tree)
     exit_code = changelog.main(["resolve-backmerge", "--release", "0.13.0"])
     assert exit_code == 0
     assert repo.joinpath("changelog.d", "SEP-300.added.md").exists()
@@ -754,13 +773,99 @@ def test_resolve_backmerge_errors_when_release_section_missing(repo, monkeypatch
         encoding="utf-8",
     )
 
-    def fake_index_show(stage: int, path: str) -> str:
-        if stage == _STAGE_OURS:
+    def fake_show_ref(ref: str, path: str) -> str:
+        if ref == "HEAD":
             return MAIN_CHANGELOG_FIXTURE
-        if stage == _STAGE_THEIRS:
+        if ref == "MERGE_HEAD":
             return MAIN_CHANGELOG_FIXTURE
-        raise AssertionError
+        raise AssertionError(ref)
 
-    monkeypatch.setattr(changelog, "_git_show_index", fake_index_show)
+    monkeypatch.setattr(changelog, "_git_show_ref", fake_show_ref)
+    # _git_ls_tree is not reached because _extract_version_section errors first.
     exit_code = changelog.main(["resolve-backmerge", "--release", "0.13.0"])
     assert exit_code == 1
+
+
+def test_resolve_backmerge_handles_unconflicted_changelog(repo, monkeypatch):
+    """Works even when CHANGELOG.md was auto-merged without conflict.
+
+    The script reads ours from HEAD and theirs from MERGE_HEAD, so it
+    doesn't depend on index stages 2/3 being populated.
+    """
+    repo.joinpath("changelog.d", "SEP-200.added.md").write_text(
+        "New thing\n",
+        encoding="utf-8",
+    )
+    repo.joinpath("CHANGELOG.md").write_text(
+        MAIN_CHANGELOG_FIXTURE,
+        encoding="utf-8",
+    )
+
+    def fake_show_ref(ref: str, path: str) -> str:
+        if path != "CHANGELOG.md":
+            raise AssertionError(path)
+        if ref == "HEAD":
+            return MAIN_CHANGELOG_FIXTURE
+        if ref == "MERGE_HEAD":
+            return RELEASE_CHANGELOG_FIXTURE
+        raise AssertionError(ref)
+
+    def fake_ls_tree(ref: str, path: str) -> set[str]:
+        if ref == "HEAD":
+            return {"SEP-200.added.md"}
+        if ref == "MERGE_HEAD":
+            return set()
+        raise AssertionError(ref)
+
+    monkeypatch.setattr(changelog, "_git_show_ref", fake_show_ref)
+    monkeypatch.setattr(changelog, "_git_ls_tree", fake_ls_tree)
+
+    exit_code = changelog.main(["resolve-backmerge", "--release", "0.13.0"])
+    assert exit_code == 0
+    assert not repo.joinpath("changelog.d", "SEP-200.added.md").exists()
+
+
+def test_resolve_backmerge_prunes_multiple_fragments_for_one_ticket(
+    repo,
+    monkeypatch,
+):
+    """When one ticket has multiple fragments, all are pruned together.
+
+    Both ``SEP-200.added.md`` and ``SEP-200.fixed.md`` disappear from the
+    release branch's ``changelog.d/`` after ``cmd_assemble``, so the
+    directory diff catches both.
+    """
+    repo.joinpath("changelog.d", "SEP-200.added.md").write_text(
+        "Feature\n",
+        encoding="utf-8",
+    )
+    repo.joinpath("changelog.d", "SEP-200.fixed.md").write_text(
+        "Bug fix\n",
+        encoding="utf-8",
+    )
+    repo.joinpath("CHANGELOG.md").write_text(
+        MAIN_CHANGELOG_FIXTURE,
+        encoding="utf-8",
+    )
+
+    def fake_show_ref(ref: str, path: str) -> str:
+        if ref == "HEAD":
+            return MAIN_CHANGELOG_FIXTURE
+        if ref == "MERGE_HEAD":
+            return RELEASE_CHANGELOG_FIXTURE
+        raise AssertionError(ref)
+
+    def fake_ls_tree(ref: str, path: str) -> set[str]:
+        if ref == "HEAD":
+            return {"SEP-200.added.md", "SEP-200.fixed.md"}
+        if ref == "MERGE_HEAD":
+            return set()
+        raise AssertionError(ref)
+
+    monkeypatch.setattr(changelog, "_git_show_ref", fake_show_ref)
+    monkeypatch.setattr(changelog, "_git_ls_tree", fake_ls_tree)
+
+    exit_code = changelog.main(["resolve-backmerge", "--release", "0.13.0"])
+    assert exit_code == 0
+    assert not repo.joinpath("changelog.d", "SEP-200.added.md").exists()
+    assert not repo.joinpath("changelog.d", "SEP-200.fixed.md").exists()
