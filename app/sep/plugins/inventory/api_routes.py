@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, Field
 
 from app.sep.deps import InventoryAPI, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
@@ -60,9 +61,12 @@ from app.sep.plugins.inventory.deps import (
 )
 from app.sep.plugins.inventory.schema import inventory_schema
 from app.sep.plugins.inventory.topology import (
+    build_graph_from_stdouts,
     shard_hosts,
     TOPOLOGY_PAYLOAD_REQUIREMENTS,
 )
+from app.tasks.models import TaskHistoryStatusEnum
+
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +75,15 @@ schema_endpoint(router=router, plugin_schema=inventory_schema)
 
 _TOPOLOGY_PAYLOAD_PATH = Path(payloads.__file__).parent / "topology.py"
 _TOPOLOGY_TASK = "run-python"
+_TOPOLOGY_STDOUT_STEP = "run-script"
+_TOPOLOGY_FINISHED_STATUSES = frozenset(
+    {
+        TaskHistoryStatusEnum.SUCCESS,
+        TaskHistoryStatusEnum.FAILED,
+        TaskHistoryStatusEnum.STOPPED,
+        TaskHistoryStatusEnum.STALE,
+    }
+)
 _MAX_TOPOLOGY_SHARDS = 8
 class TopologyCollectBody(BaseModel):
     """Body for ``POST /topology/collect``.
@@ -262,6 +275,58 @@ def _parse_ids_param(ids: str) -> list[int]:
 
 async def _fetch_task_history(tasks_api: Any, task_history_id: int) -> dict[str, Any]:
     return await tasks_api.get(f"/history/{task_history_id}")
+
+
+async def _fetch_task_stdout(tasks_api: Any, task_history_id: int) -> str:
+    """Fetch and concatenate the stdout payload for a finished task history."""
+    output: list[str] = []
+    async for chunk in tasks_api.stream(
+        f"/history/{task_history_id}/logs/", params={"step": _TOPOLOGY_STDOUT_STEP}
+    ):
+        if not chunk:
+            continue
+        try:
+            log_entry = json.loads(chunk)
+        except json.JSONDecodeError:
+            logger.debug("Non-JSON log line from task %s", task_history_id)
+            continue
+        if log_entry.get("type") == "stdout":
+            output.append(log_entry.get("msg", ""))
+    return "".join(output)
+
+
+@router.get("/topology/result", response_model=TopologyResultResponse)
+async def topology_result(
+    tasks_api: TaskAPI,
+    ids: str = Query(..., description="Comma-separated task history ids"),
+) -> TopologyResultResponse:
+    """Return the merged graph for the supplied task history ids.
+
+    Status mirrors the underlying tasks: ``running`` while any are pending
+    or running, ``failed`` when any task failed and produced no usable
+    output, ``ok`` once every task is finished. The React client caches
+    the response via TanStack Query (long ``staleTime``) and stops
+    polling once status flips to ``ok``, so the server doesn't bother
+    with HTTP cache validation here.
+    """
+    task_ids = _parse_ids_param(ids)
+    histories = [await _fetch_task_history(tasks_api, tid) for tid in task_ids]
+    pending = [
+        int(h["id"])
+        for h in histories
+        if h.get("status") not in {s.value for s in _TOPOLOGY_FINISHED_STATUSES}
+    ]
+    if pending:
+        return TopologyResultResponse(status="running", pending_task_ids=pending)
+    stdouts = [await _fetch_task_stdout(tasks_api, tid) for tid in task_ids]
+    graph = build_graph_from_stdouts(stdouts)
+    has_failures = any(
+        h.get("status") == TaskHistoryStatusEnum.FAILED.value for h in histories
+    )
+    return TopologyResultResponse(
+        status="failed" if has_failures and not graph["nodes"] else "ok",
+        graph=graph,
+    )
 
 
 
