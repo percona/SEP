@@ -652,6 +652,116 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
                 os.environ["GH_TOKEN"] = saved_gh_token
 
 
+def _back_merge_release_into_main(
+    *, version: str, release_branch: str, tag: str
+) -> int:
+    """Back-merge ``release_branch`` into main and assert the ancestor invariant.
+
+    Sequence:
+
+    1. ``git fetch origin``
+    2. ``git checkout main`` (and pull to align with origin/main)
+    3. ``git merge --no-ff release_branch`` — expected to conflict on
+       ``CHANGELOG.md`` and the version files
+    4. Resolve CHANGELOG via ``scripts/changelog.py resolve-backmerge --release X.Y.Z``
+    5. Resolve version files by re-checking out main's side (the dev-bumped
+       value wins; the release branch's stable version must not overwrite it)
+    6. ``git commit`` to finalize the merge
+    7. ``git push origin main``
+    8. Assert ``git merge-base --is-ancestor vX.Y.Z origin/main`` exits 0
+
+    On step-8 failure, this function returns non-zero **without** deleting the
+    release branch, so the operator can inspect / re-attempt before losing
+    state.
+
+    :param version: The X.Y.Z release version (no ``v`` prefix).
+    :type version: str
+    :param release_branch: The release branch (``release/vX.Y.Z``).
+    :type release_branch: str
+    :param tag: The release tag (``vX.Y.Z``).
+    :type tag: str
+    :return: ``0`` on success, non-zero if any step or the invariant fails.
+    :rtype: int
+    """
+    print("==> Fetching origin for back-merge...")
+    _run(["git", "fetch", "origin"])
+    print("==> Checking out main...")
+    _run(["git", "checkout", "main"])
+    _run(["git", "pull", "origin", "main"])
+
+    print(f"==> Merging {release_branch} into main with --no-ff...")
+    # Expect a non-zero exit because of the CHANGELOG / version-file
+    # conflict — that's the whole point of this step.
+    _run(
+        ["git", "merge", "--no-ff", "--no-commit", release_branch],
+        check=False,
+    )
+
+    print("==> Resolving CHANGELOG.md and changelog.d/ via scripts/changelog.py...")
+    resolve_result = _run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "changelog.py"),
+            "resolve-backmerge",
+            "--release",
+            version,
+        ],
+        check=False,
+    )
+    if resolve_result.returncode != 0:
+        print(
+            "error: scripts/changelog.py resolve-backmerge failed; aborting back-merge.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("==> Resolving version files by keeping main's dev version...")
+    _run(["git", "checkout", "--ours", "pyproject.toml", "app/__init__.py"])
+
+    print("==> Staging resolved files...")
+    _run(
+        [
+            "git",
+            "add",
+            "CHANGELOG.md",
+            "changelog.d",
+            "pyproject.toml",
+            "app/__init__.py",
+        ]
+    )
+
+    print("==> Finalizing the merge commit...")
+    _run(
+        [
+            "git",
+            "commit",
+            "--no-edit",
+            "-m",
+            f"Merge release/v{version} into main (back-merge for {tag})",
+        ],
+    )
+
+    print("==> Pushing main...")
+    _run(["git", "push", "origin", "main"])
+
+    print(
+        f"==> Asserting ancestor invariant: {tag} must be an ancestor of origin/main..."
+    )
+    invariant = _run(
+        ["git", "merge-base", "--is-ancestor", tag, "origin/main"],
+        check=False,
+    )
+    if invariant.returncode != 0:
+        print(
+            f"error: post-back-merge invariant failed — {tag} is NOT an "
+            "ancestor of origin/main. Leaving release branch in place for "
+            "investigation.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
     """Promote ``release/vX.Y.Z`` to stable ``vX.Y.Z``.
 
@@ -721,10 +831,17 @@ def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
     else:
         print("Note: gh CLI not found, skipping GitHub release creation.")
 
-    print("==> Deleting release branch...")
-    _run(["git", "checkout", "main"])
+    back_merge_rc = _back_merge_release_into_main(
+        version=version,
+        release_branch=expected_branch,
+        tag=tag,
+    )
+    if back_merge_rc != 0:
+        return back_merge_rc
+
+    print("==> Deleting release branch (post back-merge)...")
     _run(["git", "push", "origin", "--delete", expected_branch], check=False)
-    _run(["git", "branch", "-d", expected_branch], check=False)
+    _run(["git", "branch", "-D", expected_branch], check=False)
 
     print()
     print(f"=== Stable {version} released successfully ===")
