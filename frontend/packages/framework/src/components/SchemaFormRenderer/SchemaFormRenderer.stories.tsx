@@ -409,34 +409,6 @@ export const ArchivesCombined: Story = {
  * source_table_id must be filled (XOR / exactly-one cardinality rule).
  * The error banner appears immediately when both are filled or both are empty.
  */
-/** Alert provider configured: checkbox is enabled and actionable. */
-export const WithAlertCapabilityEnabled: Story = {
-  decorators: [withAlertConfig(true)],
-  args: {
-    sections: SIMPLE_TASK_SECTIONS,
-    capabilities: { alert_on_fail: true },
-    submitLabel: 'Create task',
-    onSubmit: (v: Record<string, unknown>) => {
-      // eslint-disable-next-line no-console
-      console.log('submit', v);
-    },
-  },
-};
-
-/** No alert provider configured: checkbox is rendered but disabled with a tooltip. */
-export const WithAlertCapabilityUnavailable: Story = {
-  decorators: [withAlertConfig(false)],
-  args: {
-    sections: SIMPLE_TASK_SECTIONS,
-    capabilities: { alert_on_fail: true },
-    submitLabel: 'Create task',
-    onSubmit: (v: Record<string, unknown>) => {
-      // eslint-disable-next-line no-console
-      console.log('submit', v);
-    },
-  },
-};
-
 export const ArchivesSourceXor: Story = {
   args: {
     sections: [
@@ -468,6 +440,34 @@ export const ArchivesSourceXor: Story = {
       },
     ],
     submitLabel: 'Run archive',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/** Alert provider configured: checkbox is enabled and actionable. */
+export const WithAlertCapabilityEnabled: Story = {
+  decorators: [withAlertConfig(true)],
+  args: {
+    sections: SIMPLE_TASK_SECTIONS,
+    capabilities: { alert_on_fail: true },
+    submitLabel: 'Create task',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/** No alert provider configured: checkbox is rendered but disabled with a tooltip. */
+export const WithAlertCapabilityUnavailable: Story = {
+  decorators: [withAlertConfig(false)],
+  args: {
+    sections: SIMPLE_TASK_SECTIONS,
+    capabilities: { alert_on_fail: true },
+    submitLabel: 'Create task',
     onSubmit: (v: Record<string, unknown>) => {
       // eslint-disable-next-line no-console
       console.log('submit', v);

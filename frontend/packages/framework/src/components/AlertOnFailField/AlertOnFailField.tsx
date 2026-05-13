@@ -55,11 +55,7 @@ interface AlertOnFailFieldProps {
  * Must be rendered inside a react-hook-form `<FormProvider>`.
  */
 export function AlertOnFailField({ defaultValue = false }: AlertOnFailFieldProps) {
-  const ctx = useFormContext<FieldValues>();
-  if (!ctx) {
-    throw new Error('<AlertOnFailField> must be rendered inside a <FormProvider>');
-  }
-  const { control } = ctx;
+  const { control } = useFormContext<FieldValues>();
   const { data, isLoading, isError } = useAlertConfig();
   const available = data?.available ?? false;
   // Stay disabled while the availability query is in flight or has errored
