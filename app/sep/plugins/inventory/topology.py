@@ -31,6 +31,8 @@ import json
 import logging
 logger = logging.getLogger(__name__)
 
+TOPOLOGY_JOB_PREFIX = "inventory-topology"
+TOPOLOGY_PAYLOAD_REQUIREMENTS = "PyMySQL[rsa,ed25519]\nmyloginpath"
 
 
 def make_primary_hash(server_id: Any, server_uuid: Any, port: Any) -> str:
