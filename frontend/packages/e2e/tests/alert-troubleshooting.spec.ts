@@ -75,10 +75,10 @@ async function mockAlertTroubleshootingRoutes(page: Page) {
   await page.route('**/api/**', async (route) => {
     const url = route.request().url();
 
-    if (url.includes('/auth/') || url.includes('/casdoor/')) {
+    if (url.includes('/oauth/refresh')) {
       return route.fulfill({ json: MOCK_TOKEN });
     }
-    if (url.includes('/me') || url.includes('/userinfo')) {
+    if (url.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
     if (url.includes('/plugins/alert_troubleshooting/mysql/MySQLSlowQueries')) {
@@ -95,13 +95,6 @@ async function mockAlertTroubleshootingRoutes(page: Page) {
     }
     return route.fulfill({ json: {} });
   });
-
-  // Cookie auth stub
-  await page.addInitScript(() => {
-    Object.defineProperty(document, 'cookie', {
-      get: () => 'casdoorToken=smoke-test-token',
-    });
-  });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -111,7 +104,7 @@ test.describe('Alert Troubleshooting smoke', () => {
     await mockAlertTroubleshootingRoutes(page);
     await page.goto('/alerts/troubleshooting');
 
-    await expect(page.getByText('MySQL')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('MySQL (1)')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Alert Troubleshooting/i).first()).toBeVisible();
   });
 
@@ -120,7 +113,7 @@ test.describe('Alert Troubleshooting smoke', () => {
     await page.goto('/alerts/troubleshooting');
 
     // Expand MySQL accordion
-    await page.getByText('MySQL').click();
+    await page.getByText('MySQL (1)').click();
 
     // Click the first alert link
     await page.getByText('MySQL Slow Queries').click();

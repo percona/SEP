@@ -61,6 +61,7 @@ export function StandaloneHostSelector({
 
   return (
     <Autocomplete<HostIdOption>
+      data-testid="host-selector"
       options={options}
       value={selected}
       onChange={(_, opt) => onChange(opt?.id ?? '')}
