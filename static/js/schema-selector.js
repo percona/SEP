@@ -17,7 +17,7 @@
 
 /**
  * Shared utilities for AJAX-powered schema/table cascading dropdowns.
- * Used by: alters, archiver, backups/restore, checksums (create + edit forms).
+ * Used by: alters, archiver, mysql_backups/restore, checksums (create + edit forms).
  */
 
 async function fetchSchemas(serviceId, search) {
