@@ -41,7 +41,7 @@ from __future__ import annotations
 from typing import Any
 from typing import Any, TYPE_CHECKING
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from app.sep.deps import InventoryAPI
 from app.sep.plugins.framework.api import schema_endpoint
@@ -59,6 +59,7 @@ from app.sep.plugins.inventory.schema import inventory_schema
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
 
+_MAX_TOPOLOGY_SHARDS = 8
 class TopologyCollectBody(BaseModel):
     """Body for ``POST /topology/collect``.
 
@@ -135,6 +136,24 @@ async def _collect_mysql_host_entries(inventory_api: Any) -> list[str]:
             seen.add(host_entry)
             hosts.append(host_entry)
     return hosts
+
+
+def _select_topology_targets(
+    available_hosts: dict[str, str], requested_executor: str | None, shards: int
+) -> list[str]:
+    if not available_hosts:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No executor hosts available for topology collection.",
+        )
+    if requested_executor:
+        if requested_executor not in available_hosts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Executor host {requested_executor!r} is not available.",
+            )
+        return [requested_executor]
+    return list(available_hosts.keys())[: max(1, min(shards, _MAX_TOPOLOGY_SHARDS))]
 
 
 
