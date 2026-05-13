@@ -457,6 +457,28 @@ SEP:
       DEFAULT_EXECUTOR_HOST: "ip-10-0-1-5.region.compute.internal"  # Nomad node name from /api/tasks/hosts/ that can reach RDS
 ```
 
+#### Inventory MySQL Topology
+
+The Inventory plugin ships a **Topology** tab next to **Browse** that draws an
+interactive React Flow graph of every MySQL service the inventory knows about:
+replication chains (primary → replica with GTID/IO/SQL state), dual-primary
+pairs, and Percona XtraDB Cluster groups. Topology data is collected **live, on
+demand** - there is no persisted snapshot in the database - by dispatching
+sharded `run-python` tasks (capped at 8 shards) to executor hosts via the
+Tasks API. Each shard runs the
+[`topology.py`](app/sep/plugins/inventory/payloads/topology.py) payload, which
+fans out per-host queries with a `ThreadPoolExecutor` and streams NDJSON
+events back; the API merges them and pushes progressive updates to the UI over
+Server-Sent Events. Results are cached client-side with TanStack Query, so
+re-opening the tab is free until the user clicks
+**Refresh**.
+
+The payload reuses the same credential rules as `MySQLSyncer` -
+`~/.my.cnf` and `~/.mylogin.cnf` on the executor, with per-host login paths
+matched by `host:port` (or `host_port`) and a `client` fallback - so no
+additional configuration is required if you already have `MySQLSyncer` running
+against the same hosts.
+
 ### SSL Configuration
 
 SEP supports SSL/TLS configuration for secure communications. SSL settings can be configured at different levels:

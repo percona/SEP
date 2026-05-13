@@ -144,7 +144,7 @@ def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is na
 ) -> dict[str, Any]:
     """Build the React Flow ``{nodes, edges, summary}`` graph from per-host records.
 
-    :param host_records: Output of :func:`merge_host_records` — ``{host_entry:
+    :param host_records: Output of :func:`merge_host_records` - ``{host_entry:
         {"status": "ok"|"error", "data"|"error": ...}}``.
     :return: Graph dict with ``nodes`` (mysql + cluster + unknown_source) and
         ``edges`` (replication + dual_primary). The shape matches what the
