@@ -54,6 +54,12 @@ export type {
   UseTaskHistoryOptions,
 } from './useTaskHistory';
 
+export { useTaskHistoryFiles } from './useTaskHistoryFiles';
+export type { FileMetadata, TaskHistoryFilesMap } from './useTaskHistoryFiles';
+
+export { useTaskFileDownload } from './useTaskFileDownload';
+export type { TaskFileDownloadParams } from './useTaskFileDownload';
+
 export { useSnippetPluginSchema } from './useSnippetPluginSchema';
 export { useSnippetPluginExecution } from './useSnippetPluginExecution';
 export type { UseSnippetPluginExecutionOptions } from './useSnippetPluginExecution';
