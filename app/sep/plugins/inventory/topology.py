@@ -29,11 +29,19 @@ Pure functions only; the dispatch/SSE layer lives in ``api_routes.py``.
 import hashlib
 import json
 import logging
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
 logger = logging.getLogger(__name__)
 
 NODE_TYPE_MYSQL = "mysql"
 NODE_TYPE_CLUSTER = "cluster"
 NODE_TYPE_UNKNOWN = "unknown_source"
+
+EDGE_TYPE_REPLICATION = "replication"
+EDGE_TYPE_DUAL_PRIMARY = "dual_primary"
 
 TOPOLOGY_JOB_PREFIX = "inventory-topology"
 TOPOLOGY_PAYLOAD_REQUIREMENTS = "PyMySQL[rsa,ed25519]\nmyloginpath"
