@@ -467,7 +467,7 @@ def _print_stable_next_steps(version: str) -> None:
     print("  1. Publish release notes")
     print(f"  2. Mark Jira version {version} as released")
     print(
-        f"  3. Verify the back-merge: git merge-base --is-ancestor v{version} origin/main"
+        f"  3. (already verified by this script: v{version} is an ancestor of origin/main)"
     )
 
 
@@ -741,7 +741,9 @@ def _back_merge_release_into_main(
     )
     if resolve_result.returncode != 0:
         print(
-            "error: scripts/changelog.py resolve-backmerge failed; aborting back-merge.",
+            "error: scripts/changelog.py resolve-backmerge failed; aborting "
+            "back-merge. The working tree is left in a mid-merge state — run "
+            "'git merge --abort' to clean up before retrying.",
             file=sys.stderr,
         )
         return 1
