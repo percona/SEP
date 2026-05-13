@@ -19,10 +19,11 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SnippetDetailPage } from './SnippetDetailPage';
-import { useSnippetSchema } from './hooks';
+import { useSnippetDownload, useSnippetSchema } from './hooks';
 
 vi.mock('./hooks', () => ({
   useSnippetSchema: vi.fn(),
+  useSnippetDownload: vi.fn(),
 }));
 
 vi.mock('@sep/framework', () => ({
@@ -35,6 +36,7 @@ vi.mock('@sep/framework', () => ({
 }));
 
 const mockSchema = vi.mocked(useSnippetSchema);
+const mockDownload = vi.mocked(useSnippetDownload);
 
 function renderAt(filename: string) {
   return render(
@@ -54,6 +56,13 @@ describe('SnippetDetailPage', () => {
       isLoading: false,
       error: null,
     } as unknown as ReturnType<typeof useSnippetSchema>);
+    mockDownload.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
+    } as unknown as ReturnType<typeof useSnippetDownload>);
   });
 
   it('passes display_name from schema as accordion title', () => {
