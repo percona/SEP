@@ -31,6 +31,10 @@ import json
 import logging
 logger = logging.getLogger(__name__)
 
+NODE_TYPE_MYSQL = "mysql"
+NODE_TYPE_CLUSTER = "cluster"
+NODE_TYPE_UNKNOWN = "unknown_source"
+
 TOPOLOGY_JOB_PREFIX = "inventory-topology"
 TOPOLOGY_PAYLOAD_REQUIREMENTS = "PyMySQL[rsa,ed25519]\nmyloginpath"
 
