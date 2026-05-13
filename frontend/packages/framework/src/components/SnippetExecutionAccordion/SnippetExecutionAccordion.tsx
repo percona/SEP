@@ -70,7 +70,7 @@ interface SnippetExecutionRequest {
 
 function useSnippetAccordionSchema(filename: string, enabled: boolean) {
   return useQuery<PluginSchema>({
-    queryKey: ['snippets', filename, 'schema'],
+    queryKey: ['snippets', filename, 'schema', { execution_only: true }],
     queryFn: async () => {
       const { data } = await apiClient.get<PluginSchema>(
         `/plugins/snippets/${encodeURIComponent(filename)}/schema`,
@@ -145,7 +145,7 @@ export function SnippetExecutionAccordion({
 
   const displayTitle = title ?? snippetFilename;
 
-  const hoistingHost = executorHost !== undefined && executorHost !== '';
+  const hoistingHost = executorHost !== undefined;
   const filteredSections = (schemaQuery.data?.forms ?? []).map((section) => ({
     ...section,
     fields: section.fields.filter(
@@ -155,6 +155,9 @@ export function SnippetExecutionAccordion({
   }));
 
   const handleSubmit = (values: Record<string, unknown>) => {
+    if (hoistingHost && !executorHost) {
+      return;
+    }
     const args: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
       if (ARGS_EXCLUDED_FIELDS.has(key)) {

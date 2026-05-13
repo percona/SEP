@@ -280,6 +280,48 @@ describe('SnippetExecutionAccordion', () => {
     });
   });
 
+  it('omits executor_host field when executorHost is empty string', async () => {
+    mockedApi.get.mockResolvedValue({ data: makeSchema() });
+
+    renderWithProviders(
+      <SnippetExecutionAccordion snippetFilename="check.sh" executorHost="" defaultExpanded />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Table Name/i)).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText(/Executor Host/i)).not.toBeInTheDocument();
+  });
+
+  it('fetches schema with execution_only param', async () => {
+    mockedApi.get.mockResolvedValue({ data: makeSchema() });
+
+    renderWithProviders(<SnippetExecutionAccordion snippetFilename="check.sh" defaultExpanded />);
+
+    await waitFor(() =>
+      expect(mockedApi.get).toHaveBeenCalledWith('/plugins/snippets/check.sh/schema', {
+        params: { execution_only: true },
+      }),
+    );
+  });
+
+  it('does not submit when executorHost is empty string', async () => {
+    const user = userEvent.setup();
+    mockedApi.get.mockResolvedValue({ data: makeSchema() });
+
+    renderWithProviders(
+      <SnippetExecutionAccordion snippetFilename="check.sh" executorHost="" defaultExpanded />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Execute/i })).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('button', { name: /Execute/i }));
+
+    expect(mockedApi.post).not.toHaveBeenCalled();
+  });
+
   it('excludes sudo from args but includes at top level on submit', async () => {
     const user = userEvent.setup();
     mockedApi.get.mockResolvedValue({

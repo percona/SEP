@@ -41,35 +41,10 @@ from app.sep.plugins.alert_troubleshooting.schema import (
     ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA,
 )
 from app.sep.plugins.framework.api import schema_endpoint
-from app.sep.plugins.snippets.models import SnippetResponse
-from app.sep.snippets.config import SnippetSudoOption
-from app.sep.snippets.models.snippet import Snippet
+from app.sep.plugins.snippets.api_routes import build_snippet_response
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA)
-
-
-def _build_snippet_response(snippet: Snippet) -> SnippetResponse:
-    """Project a :class:`Snippet` into a :class:`SnippetResponse`."""
-    return SnippetResponse(
-        filename=snippet.filename,
-        title=snippet.title,
-        description=snippet.description,
-        size=snippet.size,
-        md5_digest=snippet.md5_digest,
-        is_approved=snippet.is_approved,
-        approved_at=snippet.approved_at,
-        updated_by=snippet.updated_by,
-        reason=snippet.reason,
-        requires_sudo=(
-            snippet.sudo == SnippetSudoOption.ALWAYS or snippet.sudo.is_optional
-        ),
-        sudo_optional=snippet.sudo.is_optional,
-        sudo_default=snippet.sudo.sudo_default,
-        interpreter=snippet.execution_interpreter,
-        created_at=snippet.created_at,
-        updated_at=snippet.updated_at,
-    )
 
 
 @router.get("/", dependencies=[IsApiAuthenticated])
@@ -128,5 +103,5 @@ async def alert_troubleshooting_api_detail(
     )
     return AlertDetailResponse(
         alert=alert_info,
-        snippets=[_build_snippet_response(snippet) for snippet in snippets],
+        snippets=[build_snippet_response(snippet) for snippet in snippets],
     )

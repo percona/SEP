@@ -16,6 +16,7 @@
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -38,7 +39,11 @@ vi.mock('@sep/framework', () => ({
       {title ?? snippetFilename}
     </div>
   ),
-  useHosts: () => ({ hosts: [] }),
+  useHosts: () => ({
+    data: { hosts: [{ id: 'db1', name: 'db1', address: '10.0.0.1' }] },
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 import { apiClient } from '@sep/api';
@@ -92,6 +97,25 @@ describe('AlertTroubleshootingDetailPage', () => {
     });
 
     expect(screen.getByTestId('host-selector')).toBeInTheDocument();
+  });
+
+  it('populates host selector with options from useHosts', async () => {
+    const user = userEvent.setup();
+    mockedApi.get.mockResolvedValue({
+      data: {
+        alert: { name: 'MySQLSlowQueries', label: 'MySQL Slow Queries', service_type: 'mysql' },
+        snippets: [{ filename: 'check.sh', title: 'Check', description: null, is_approved: true }],
+      },
+    });
+
+    renderAtRoute('/mysql/MySQLSlowQueries', <AlertTroubleshootingDetailPage />);
+
+    await waitFor(() => expect(screen.getByTestId('host-selector')).toBeInTheDocument());
+
+    const input = screen.getByRole('combobox');
+    await user.click(input);
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'db1' })).toBeInTheDocument());
   });
 
   it('renders empty state when no snippets', async () => {

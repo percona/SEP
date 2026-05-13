@@ -20,9 +20,6 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.sep.deps import get_session
-from app.sep.main import sep_app
-
 API_BASE = "/api/plugins/alert_troubleshooting"
 EXPECTED_GROUP_COUNT = 2
 
@@ -35,7 +32,6 @@ class TestAlertTroubleshootingApiList:
         self, api_client: TestClient, session: AsyncSession, snippets_dir
     ):
         """No snippets with alert meta → empty groups list."""
-        sep_app.dependency_overrides[get_session] = lambda: session
         response = api_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
@@ -49,7 +45,6 @@ class TestAlertTroubleshootingApiList:
         snippets_dir,
     ):
         """Snippets with alert meta are grouped by service type."""
-        sep_app.dependency_overrides[get_session] = lambda: session
         await create_snippet_with_alerts(
             "mysql_check.sh",
             alerts=["MySQLSlowQueries"],
@@ -81,7 +76,6 @@ class TestAlertTroubleshootingApiList:
         snippets_dir,
     ):
         """Each alert group contains alert summaries with name and label."""
-        sep_app.dependency_overrides[get_session] = lambda: session
         await create_snippet_with_alerts(
             "mysql_check.sh",
             alerts=["MySQLSlowQueries"],
@@ -115,7 +109,6 @@ class TestAlertTroubleshootingApiDetail:
         snippets_dir,
     ):
         """Detail endpoint returns alert info and associated snippets."""
-        sep_app.dependency_overrides[get_session] = lambda: session
         await create_snippet_with_alerts(
             "mysql_check.sh",
             alerts=["MySQLSlowQueries"],
@@ -139,8 +132,6 @@ class TestAlertTroubleshootingApiDetail:
         snippets_dir,
     ):
         """Unknown alert name returns 404."""
-        sep_app.dependency_overrides[get_session] = lambda: session
-
         response = api_client.get(f"{API_BASE}/mysql/NonExistentAlert")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -153,7 +144,6 @@ class TestAlertTroubleshootingApiDetail:
         snippets_dir,
     ):
         """Alert under wrong service type returns 404."""
-        sep_app.dependency_overrides[get_session] = lambda: session
         await create_snippet_with_alerts(
             "mysql_check.sh",
             alerts=["MySQLSlowQueries"],

@@ -32,6 +32,7 @@ export interface AlertInfo {
   service_type: string | null;
 }
 
+/** Intentional subset of SnippetResponse — alert troubleshooting only needs these four fields. */
 export interface SnippetSummary {
   filename: string;
   title: string;

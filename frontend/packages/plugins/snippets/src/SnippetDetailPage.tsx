@@ -24,10 +24,8 @@ import { useSnippetSchema } from './hooks';
  * Snippet detail page rendered at `/snippets/:filename`.
  *
  * Delegates form rendering, execution, log streaming, and history display
- * to ``SnippetExecutionAccordion``. The executor_host is taken from the
- * accordion's embedded host selector field (accordion renders it when no
- * external executorHost prop is supplied — here we pass an empty string and
- * let the schema-driven host field drive selection).
+ * to ``SnippetExecutionAccordion``. No ``executorHost`` prop is passed, so
+ * the accordion renders the schema-driven host selector field.
  *
  * The legacy Jinja2 detail page remains mounted for capabilities not yet
  * ported (chaining, scheduling, alerting).
