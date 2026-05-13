@@ -712,3 +712,54 @@ def test_cmd_stable_aborts_if_ancestor_invariant_fails(repo, monkeypatch):
     rc = release.cmd_stable("0.13.0", sign_via_github_api=False)
     assert rc != 0
     assert not any(c[:4] == ("git", "push", "origin", "--delete") for c in calls)
+
+
+def test_cmd_stable_aborts_if_unexpected_merge_failure(repo, monkeypatch):
+    """If git merge fails AND no unmerged paths exist, cmd_stable aborts."""
+
+    def fake_run(cmd, **kwargs):
+        wheel = Path("dist") / "sep-0.13.0-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        # Simulate git merge failing unexpectedly (e.g., lockfile)
+        if cmd[:3] == ["git", "merge", "--no-ff"]:
+
+            class R:
+                stdout = ""
+                returncode = 1
+
+            return R()
+        # Simulate "no unmerged paths" — git ls-files -u returns empty
+        if cmd[:3] == ["git", "ls-files", "-u"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "release/v0.13.0\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+
+    rc = release.cmd_stable("0.13.0", sign_via_github_api=False)
+    assert rc != 0

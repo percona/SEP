@@ -652,6 +652,27 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
                 os.environ["GH_TOKEN"] = saved_gh_token
 
 
+def _has_unmerged_paths() -> bool:
+    """Return ``True`` if any path in the working tree has unresolved merge conflicts.
+
+    :return: ``True`` if ``git ls-files -u`` reports any entries.
+    :rtype: bool
+    """
+    result = _run(["git", "ls-files", "-u"], check=False, capture=True)
+    return bool(result.stdout.strip())
+
+
+def _checkout_ours_if_unmerged(path: str) -> None:
+    """Run ``git checkout --ours <path>`` only if ``path`` is unmerged.
+
+    :param path: The repository-relative path to potentially resolve.
+    :type path: str
+    """
+    result = _run(["git", "ls-files", "-u", path], check=False, capture=True)
+    if result.stdout.strip():
+        _run(["git", "checkout", "--ours", path])
+
+
 def _back_merge_release_into_main(
     *, version: str, release_branch: str, tag: str
 ) -> int:
@@ -692,10 +713,20 @@ def _back_merge_release_into_main(
     print(f"==> Merging {release_branch} into main with --no-ff...")
     # Expect a non-zero exit because of the CHANGELOG / version-file
     # conflict — that's the whole point of this step.
-    _run(
+    # Do not use `-s ours`: it records ancestry but drops the release-side
+    # commits, which does not fix the SHA-split compare-link problem the
+    # back-merge model is solving.
+    merge_result = _run(
         ["git", "merge", "--no-ff", "--no-commit", release_branch],
         check=False,
     )
+    if merge_result.returncode != 0 and not _has_unmerged_paths():
+        print(
+            "error: git merge --no-ff exited non-zero but did not leave a "
+            "conflict to resolve; aborting back-merge.",
+            file=sys.stderr,
+        )
+        return 1
 
     print("==> Resolving CHANGELOG.md and changelog.d/ via scripts/changelog.py...")
     resolve_result = _run(
@@ -715,8 +746,11 @@ def _back_merge_release_into_main(
         )
         return 1
 
-    print("==> Resolving version files by keeping main's dev version...")
-    _run(["git", "checkout", "--ours", "pyproject.toml", "app/__init__.py"])
+    print(
+        "==> Resolving version files by keeping main's dev version (if conflicted)..."
+    )
+    for path in ("pyproject.toml", "app/__init__.py"):
+        _checkout_ours_if_unmerged(path)
 
     print("==> Staging resolved files...")
     _run(
@@ -744,17 +778,31 @@ def _back_merge_release_into_main(
     print("==> Pushing main...")
     _run(["git", "push", "origin", "main"])
 
-    print(
-        f"==> Asserting ancestor invariant: {tag} must be an ancestor of origin/main..."
+    print(f"==> Asserting ancestor invariant on local main: {tag} ...")
+    local_invariant = _run(
+        ["git", "merge-base", "--is-ancestor", tag, "main"],
+        check=False,
     )
-    invariant = _run(
+    if local_invariant.returncode != 0:
+        print(
+            f"error: post-back-merge invariant failed locally — {tag} is NOT an "
+            "ancestor of main. Leaving release branch in place for "
+            "investigation.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"==> Refreshing origin/main and asserting invariant remotely: {tag} ...")
+    _run(["git", "fetch", "origin", "main"])
+    remote_invariant = _run(
         ["git", "merge-base", "--is-ancestor", tag, "origin/main"],
         check=False,
     )
-    if invariant.returncode != 0:
+    if remote_invariant.returncode != 0:
         print(
-            f"error: post-back-merge invariant failed — {tag} is NOT an "
-            "ancestor of origin/main. Leaving release branch in place for "
+            f"error: post-back-merge invariant failed against origin/main — "
+            f"{tag} is NOT an ancestor of origin/main. The push may have been "
+            "rejected or rewound. Leaving release branch in place for "
             "investigation.",
             file=sys.stderr,
         )
