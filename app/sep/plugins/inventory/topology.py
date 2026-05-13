@@ -26,9 +26,12 @@ MySQL host. This module:
 Pure functions only; the dispatch/SSE layer lives in ``api_routes.py``.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
+from collections import defaultdict
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -133,6 +136,184 @@ def _coerce_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is naturally branchy
+    host_records: Mapping[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Build the React Flow ``{nodes, edges, summary}`` graph from per-host records.
+
+    :param host_records: Output of :func:`merge_host_records` — ``{host_entry:
+        {"status": "ok"|"error", "data"|"error": ...}}``.
+    :return: Graph dict with ``nodes`` (mysql + cluster + unknown_source) and
+        ``edges`` (replication + dual_primary). The shape matches what the
+        ``InventoryTopology`` React component expects.
+    """
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    cluster_members: dict[str, list[str]] = defaultdict(list)
+
+    hash_to_node: dict[str, str] = {}
+    addr_to_node: dict[tuple[str, int], str] = {}
+
+    for host_entry, record in host_records.items():
+        node_id = _server_node_id(host_entry)
+        if record.get("status") != "ok":
+            nodes.append(
+                {
+                    "id": node_id,
+                    "type": NODE_TYPE_MYSQL,
+                    "data": {
+                        "host_entry": host_entry,
+                        "error": record.get("error", "unknown error"),
+                        "status": "error",
+                    },
+                }
+            )
+            continue
+        data = record.get("data") or {}
+        server = data.get("server") or {}
+        repl = data.get("replication") or {}
+        cluster = data.get("cluster") or {}
+        gtid_mode = data.get("gtid_mode") or ""
+
+        nodes.append(
+            {
+                "id": node_id,
+                "type": NODE_TYPE_MYSQL,
+                "data": {
+                    "host_entry": host_entry,
+                    "address": data.get("address"),
+                    "port": data.get("port"),
+                    "status": "ok",
+                    "server": server,
+                    "replication": {
+                        k: v for k, v in repl.items() if k != "source_uuid"
+                    },
+                    "cluster": cluster or None,
+                    "gtid_mode": gtid_mode,
+                },
+            }
+        )
+        if server_hash := server.get("server_hash"):
+            hash_to_node[server_hash] = node_id
+        port = _coerce_int(data.get("port"))
+        if port is not None and (addr := data.get("address")):
+            addr_to_node[(addr, port)] = node_id
+        if cluster and cluster.get("cluster_name"):
+            cluster_members[cluster["cluster_name"]].append(node_id)
+
+    for cluster_name, members in cluster_members.items():
+        cluster_id = _cluster_node_id(cluster_name)
+        first_data = next(
+            (
+                node["data"]["cluster"]
+                for node in nodes
+                if node["id"] in members and (node.get("data") or {}).get("cluster")
+            ),
+            {},
+        )
+        nodes.append(
+            {
+                "id": cluster_id,
+                "type": NODE_TYPE_CLUSTER,
+                "data": {
+                    "cluster_name": cluster_name,
+                    "size": first_data.get("cluster_size"),
+                    "status": first_data.get("cluster_status"),
+                    "members": members,
+                },
+            }
+        )
+
+    primary_hashes_seen: dict[str, str] = {}
+    for host_entry, record in host_records.items():
+        if record.get("status") != "ok":
+            continue
+        data = record["data"] or {}
+        repl = data.get("replication") or {}
+        source_host = repl.get("source_host")
+        if not source_host:
+            continue
+        source_node_id = _resolve_replication_source(
+            repl, hash_to_node, addr_to_node, nodes
+        )
+        target_node_id = _server_node_id(host_entry)
+        edges.append(
+            {
+                "id": _build_repl_edge_id(source_node_id, target_node_id),
+                "source": source_node_id,
+                "target": target_node_id,
+                "type": EDGE_TYPE_REPLICATION,
+                "data": {
+                    "status": repl.get("repl_status"),
+                    "io_running": repl.get("io_running"),
+                    "sql_running": repl.get("sql_running"),
+                    "seconds_behind": repl.get("seconds_behind"),
+                    "auto_position": repl.get("auto_position"),
+                    "filter": repl.get("repl_filter"),
+                    "gtid_mode": data.get("gtid_mode"),
+                },
+            }
+        )
+        primary_hash = make_primary_hash(
+            repl.get("source_server_id"),
+            repl.get("source_uuid"),
+            repl.get("source_port"),
+        )
+        primary_hashes_seen[target_node_id] = primary_hash
+
+    server_hashes = {
+        node["id"]: (node.get("data") or {}).get("server", {}).get("server_hash")
+        for node in nodes
+        if node["type"] == NODE_TYPE_MYSQL
+        and node.get("data", {}).get("status") == "ok"
+    }
+    pair_seen: set[str] = set()
+    for replica_id, primary_hash in primary_hashes_seen.items():
+        primary_id = next(
+            (nid for nid, h in server_hashes.items() if h == primary_hash and h),
+            None,
+        )
+        if not primary_id or primary_id == replica_id:
+            continue
+        reverse_primary_hash = primary_hashes_seen.get(primary_id)
+        if reverse_primary_hash is None:
+            continue
+        if reverse_primary_hash != server_hashes.get(replica_id):
+            continue
+        edge_id = _build_dual_edge_id(replica_id, primary_id)
+        if edge_id in pair_seen:
+            continue
+        pair_seen.add(edge_id)
+        edges.append(
+            {
+                "id": edge_id,
+                "source": replica_id,
+                "target": primary_id,
+                "type": EDGE_TYPE_DUAL_PRIMARY,
+                "data": {},
+            }
+        )
+
+    summary = {
+        "host_count": sum(1 for n in nodes if n["type"] == NODE_TYPE_MYSQL),
+        "ok_count": sum(
+            1
+            for n in nodes
+            if n["type"] == NODE_TYPE_MYSQL
+            and (n.get("data") or {}).get("status") == "ok"
+        ),
+        "error_count": sum(
+            1
+            for n in nodes
+            if n["type"] == NODE_TYPE_MYSQL
+            and (n.get("data") or {}).get("status") == "error"
+        ),
+        "cluster_count": len(cluster_members),
+        "edge_count": len(edges),
+    }
+    return {"nodes": nodes, "edges": edges, "summary": summary}
 
 
 def _resolve_replication_source(
