@@ -17,16 +17,8 @@
 
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  CircularProgress,
-  Link as MuiLink,
-  TextField,
-  Typography,
-} from '@mui/material';
-import { SnippetExecutionAccordion, useHosts } from '@sep/framework';
+import { Alert, Box, CircularProgress, Link as MuiLink, Typography } from '@mui/material';
+import { SnippetExecutionAccordion, StandaloneHostSelector } from '@sep/framework';
 import { useAlertDetail } from './hooks';
 
 /**
@@ -43,8 +35,6 @@ export function AlertTroubleshootingDetailPage() {
   const navigate = useNavigate();
 
   const [selectedHost, setSelectedHost] = useState<string>('');
-  const hostsQuery = useHosts();
-  const hosts = hostsQuery.data?.hosts ?? [];
   const { data, isLoading, error } = useAlertDetail(serviceType, alertName);
 
   if (isLoading) {
@@ -67,12 +57,6 @@ export function AlertTroubleshootingDetailPage() {
     return null;
   }
 
-  const hostOptions = hosts.map((h: { name: string; id: string }) => ({
-    label: h.name,
-    id: h.id,
-  }));
-  const selectedHostOption = hostOptions.find((h) => h.id === selectedHost) ?? null;
-
   return (
     <Box>
       <MuiLink
@@ -91,16 +75,10 @@ export function AlertTroubleshootingDetailPage() {
         Service type: {serviceType}
       </Typography>
 
-      <Autocomplete
-        options={hostOptions}
-        value={selectedHostOption}
-        onChange={(_, value) => setSelectedHost(value?.id ?? '')}
-        getOptionLabel={(opt) => opt.label}
-        renderInput={(params) => (
-          <TextField {...params} label="Executor Host" placeholder="Select a host…" />
-        )}
+      <StandaloneHostSelector
+        value={selectedHost}
+        onChange={setSelectedHost}
         sx={{ maxWidth: 480, mb: 4 }}
-        data-testid="host-selector"
       />
 
       {data.snippets.length === 0 ? (
