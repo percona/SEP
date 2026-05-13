@@ -38,7 +38,8 @@ React plugin.
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -227,6 +228,40 @@ async def topology_collect(
         host_count=len(hosts),
         shard_count=len(targets),
     )
+
+
+def _parse_ids_param(ids: str) -> list[int]:
+    if not ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required ?ids= query parameter.",
+        )
+    parsed: list[int] = []
+    seen: set[int] = set()
+    for raw_chunk in ids.split(","):
+        chunk = raw_chunk.strip()
+        if not chunk:
+            continue
+        try:
+            value = int(chunk)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid task history id: {chunk!r}.",
+            ) from exc
+        if value not in seen:
+            seen.add(value)
+            parsed.append(value)
+    if not parsed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No task history ids provided.",
+        )
+    return parsed
+
+
+async def _fetch_task_history(tasks_api: Any, task_history_id: int) -> dict[str, Any]:
+    return await tasks_api.get(f"/history/{task_history_id}")
 
 
 
