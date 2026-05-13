@@ -204,9 +204,10 @@ export function SchemaFormRenderer(props: SchemaFormRendererProps) {
       return acc;
     }, {});
     if (capabilities?.alert_on_fail) {
-      // Capability-injected fields bypass coerceFormValues (they are not in allFields).
-      // The value must therefore be a ready-to-submit type here — boolean is correct for
-      // alert_on_fail. If more capability fields are added, ensure they follow the same rule.
+      // Capability-injected fields are not in allFields, so coerceFormValues leaves them
+      // unchanged (extra keys pass through as-is via the initial spread). The value seeded
+      // here must therefore already be the correct submit type — boolean for alert_on_fail.
+      // If more capability fields are added, ensure they are pre-coerced at this point.
       defaults[ALERT_ON_FAIL_FIELD_NAME] = defaultValues?.[ALERT_ON_FAIL_FIELD_NAME] ?? false;
     }
     return defaults;

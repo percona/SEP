@@ -15,9 +15,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import type { ComponentType, ReactNode } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { ComponentType } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
 import type { FormSection } from './types';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
@@ -139,16 +139,18 @@ const withQueryClient = (Story: ComponentType) => {
   );
 };
 
+function AlertConfigSeeder({ available, children }: { available: boolean; children: ReactNode }) {
+  const queryClient = useQueryClient();
+  queryClient.setQueryData(ALERT_CONFIG_QUERY_KEY, { available });
+  return <>{children}</>;
+}
+
 function withAlertConfig(available: boolean) {
-  return (Story: ComponentType) => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    client.setQueryData(ALERT_CONFIG_QUERY_KEY, { available });
-    return (
-      <QueryClientProvider client={client}>
-        <Story />
-      </QueryClientProvider>
-    );
-  };
+  return (Story: ComponentType) => (
+    <AlertConfigSeeder available={available}>
+      <Story />
+    </AlertConfigSeeder>
+  );
 }
 
 const SIMPLE_TASK_SECTIONS: FormSection[] = [
