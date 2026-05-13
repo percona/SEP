@@ -32,6 +32,7 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
+from functools import lru_cache
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
