@@ -112,6 +112,15 @@ class TopologyResultResponse(BaseModel):
     pending_task_ids: list[int] = Field(default_factory=list)
 
 
+def _format_host_entry(service: dict[str, Any]) -> str | None:
+    node = service.get("node") or {}
+    address = node.get("address") or service.get("name")
+    port = service.get("port") or 3306
+    if not address:
+        return None
+    return f"{address}:{port}"
+
+
 
 @router.get("/{entity}/")
 async def inventory_list_entity(
