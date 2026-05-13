@@ -17,7 +17,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Autocomplete, TextField } from '@mui/material';
-import type { SxProps } from '@mui/system';
+import type { SxProps } from '@mui/material/styles';
 import { useSnackbar } from 'notistack';
 import { useHosts, type HostOption } from '../../hooks/useHosts';
 
