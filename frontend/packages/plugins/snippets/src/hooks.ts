@@ -73,14 +73,21 @@ export function useSnippets() {
 }
 
 /**
- * Fetch the per-snippet form schema, including the script preview field.
+ * Fetch the per-snippet form schema.
+ *
+ * Pass ``executionOnly=true`` on pages that mount ``SnippetExecutionAccordion``
+ * so both share ``['snippets', filename, 'schema', { execution_only: true }]``
+ * and React Query deduplicates the fetch.
  */
-export function useSnippetSchema(filename: string | undefined) {
+export function useSnippetSchema(filename: string | undefined, executionOnly = false) {
   return useQuery<PluginSchema>({
-    queryKey: ['snippets', filename, 'schema'],
+    queryKey: executionOnly
+      ? ['snippets', filename, 'schema', { execution_only: true }]
+      : ['snippets', filename, 'schema'],
     queryFn: async () => {
       const { data } = await apiClient.get<PluginSchema>(
         `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/schema`,
+        executionOnly ? { params: { execution_only: true } } : undefined,
       );
       return data;
     },

@@ -33,7 +33,7 @@ import { useSnippetSchema } from './hooks';
 export function SnippetDetailPage() {
   const { filename } = useParams<{ filename: string }>();
   const navigate = useNavigate();
-  const schemaQuery = useSnippetSchema(filename);
+  const schemaQuery = useSnippetSchema(filename, true);
 
   if (!filename) {
     return <Alert severity="error">Missing snippet filename in the URL.</Alert>;

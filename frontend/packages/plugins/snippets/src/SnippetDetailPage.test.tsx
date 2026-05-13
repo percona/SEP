@@ -103,4 +103,10 @@ describe('SnippetDetailPage', () => {
 
     expect(screen.getByTestId('snippet-execution-accordion')).toBeInTheDocument();
   });
+
+  it('calls useSnippetSchema with executionOnly=true to avoid a duplicate schema fetch', () => {
+    renderAt('check.sh');
+
+    expect(mockSchema).toHaveBeenCalledWith('check.sh', true);
+  });
 });
