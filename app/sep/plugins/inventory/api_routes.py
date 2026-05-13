@@ -39,12 +39,14 @@ React plugin.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.sep.deps import InventoryAPI, TaskAPI
@@ -62,11 +64,15 @@ from app.sep.plugins.inventory.deps import (
 from app.sep.plugins.inventory.schema import inventory_schema
 from app.sep.plugins.inventory.topology import (
     build_graph_from_stdouts,
+    build_topology_meta,
+    parse_ndjson,
     shard_hosts,
     TOPOLOGY_PAYLOAD_REQUIREMENTS,
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +91,9 @@ _TOPOLOGY_FINISHED_STATUSES = frozenset(
     }
 )
 _MAX_TOPOLOGY_SHARDS = 8
+_TOPOLOGY_HEARTBEAT_SECONDS = 15.0
+
+
 class TopologyCollectBody(BaseModel):
     """Body for ``POST /topology/collect``.
 
@@ -328,6 +337,130 @@ async def topology_result(
         graph=graph,
     )
 
+
+def _build_sse_event(event: str, data: Any) -> str:
+    payload = json.dumps(data, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+async def _stream_one_task(
+    tasks_api: Any, task_history_id: int, queue: asyncio.Queue
+) -> None:
+    """Tail one task's stdout NDJSON; push parsed events to ``queue``."""
+    last_status: str | None = None
+    try:
+        while True:
+            history = await _fetch_task_history(tasks_api, task_history_id)
+            current = history.get("status")
+            if current != last_status:
+                last_status = current
+                await queue.put(
+                    {
+                        "event": "task_status",
+                        "data": {"task_history_id": task_history_id, "status": current},
+                    }
+                )
+            if current in {TaskHistoryStatusEnum.RUNNING.value} or (
+                current in {s.value for s in _TOPOLOGY_FINISHED_STATUSES}
+            ):
+                break
+            await asyncio.sleep(0.5)
+
+        try:
+            async for raw_line in tasks_api.stream(
+                f"/history/{task_history_id}/logs/",
+                params={"step": _TOPOLOGY_STDOUT_STEP},
+            ):
+                if not raw_line:
+                    continue
+                try:
+                    log_entry = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                if log_entry.get("type") != "stdout":
+                    continue
+                msg = log_entry.get("msg", "")
+                for ev in parse_ndjson(msg):
+                    await queue.put(
+                        {
+                            "event": ev.get("event", "host_done"),
+                            "data": {
+                                "task_history_id": task_history_id,
+                                **ev,
+                            },
+                        }
+                    )
+        except HTTPException as exc:
+            await queue.put(
+                {
+                    "event": "task_error",
+                    "data": {
+                        "task_history_id": task_history_id,
+                        "status_code": exc.status_code,
+                        "detail": exc.detail,
+                    },
+                }
+            )
+    finally:
+        await queue.put(
+            {
+                "event": "task_done",
+                "data": {"task_history_id": task_history_id},
+            }
+        )
+
+
+async def _topology_event_stream(
+    tasks_api: Any, task_ids: list[int]
+) -> AsyncGenerator[str, None]:
+    queue: asyncio.Queue = asyncio.Queue()
+    workers = [
+        asyncio.create_task(_stream_one_task(tasks_api, tid, queue)) for tid in task_ids
+    ]
+    finished: set[int] = set()
+    try:
+        yield _build_sse_event(
+            "ready", {"task_history_ids": task_ids, "shard_count": len(task_ids)}
+        )
+        while finished != set(task_ids):
+            try:
+                event = await asyncio.wait_for(
+                    queue.get(), timeout=_TOPOLOGY_HEARTBEAT_SECONDS
+                )
+            except TimeoutError:
+                yield ": keepalive\n\n"
+                continue
+            yield _build_sse_event(event["event"], event["data"])
+            if event["event"] == "task_done":
+                finished.add(event["data"]["task_history_id"])
+        yield _build_sse_event("complete", {"task_history_ids": task_ids})
+    finally:
+        for worker in workers:
+            worker.cancel()
+        for worker in workers:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await worker
+
+
+@router.get("/topology/stream")
+async def topology_stream(
+    tasks_api: TaskAPI,
+    ids: str = Query(..., description="Comma-separated task history ids"),
+) -> StreamingResponse:
+    """SSE stream of per-host topology events from the supplied tasks.
+
+    Frontend hooks (``useTopologyStream``) consume this to render the
+    React Flow graph progressively as each MySQL host finishes.
+    """
+    task_ids = _parse_ids_param(ids)
+    return StreamingResponse(
+        _topology_event_stream(tasks_api, task_ids),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/{entity}/")
