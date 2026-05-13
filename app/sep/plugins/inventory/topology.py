@@ -135,6 +135,49 @@ def _coerce_int(value: Any) -> int | None:
         return None
 
 
+def _resolve_replication_source(
+    repl: Mapping[str, Any],
+    hash_to_node: Mapping[str, str],
+    addr_to_node: Mapping[tuple[str, int], str],
+    nodes: list[dict[str, Any]],
+) -> str:
+    """Find or synthesize the node id for a replica's replication source.
+
+    Prefer hash-based matching (same identity even when the source IP
+    differs), fall back to address+port, and synthesize an
+    ``unknown_source`` node when neither matches so the graph still shows
+    the dependency.
+    """
+    if (
+        repl.get("source_server_id")
+        and repl.get("source_uuid")
+        and repl.get("source_port")
+    ):
+        candidate = make_primary_hash(
+            repl["source_server_id"], repl["source_uuid"], repl["source_port"]
+        )
+        if node_id := hash_to_node.get(candidate):
+            return node_id
+    source_host = repl.get("source_host")
+    source_port = _coerce_int(repl.get("source_port")) or 3306
+    if source_host and (node_id := addr_to_node.get((source_host, source_port))):
+        return node_id
+    unknown_id = _unknown_node_id(source_host, source_port)
+    if not any(n["id"] == unknown_id for n in nodes):
+        nodes.append(
+            {
+                "id": unknown_id,
+                "type": NODE_TYPE_UNKNOWN,
+                "data": {
+                    "address": source_host,
+                    "port": source_port,
+                    "reason": "Replication source not in inventory",
+                },
+            }
+        )
+    return unknown_id
+
+
 def build_topology_meta(
     *, target: str, hosts: list[str], extra: Mapping[str, Any] | None = None
 ) -> dict[str, Any]:
