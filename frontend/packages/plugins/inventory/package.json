@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
+    "@microsoft/fetch-event-source": "2.0.1",
     "@mui/material": "^7.3.7",
     "@sep/api": "workspace:*",
     "@sep/framework": "workspace:*",

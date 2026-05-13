@@ -8,8 +8,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient, emitUnauthorized, getToken, refreshAccessToken } from '@sep/api';
 import type { TopologyCollectResponse, TopologyResultResponse, TopologyStreamEvent } from './types';
 
 const TOPOLOGY_BASE = '/plugins/inventory/topology';
@@ -98,23 +99,15 @@ const INITIAL_STREAM_STATE: TopologyStreamState = {
   dismissError: NOOP,
 };
 
+class TopologyStreamRetriableAfterRefresh extends Error {}
+
+class TopologyStreamFatalError extends Error {}
+
 /**
  * Open an SSE connection to /topology/stream and accumulate events.
  *
- * The browser's `EventSource` does not support custom headers, so the
- * backend must serve the stream off the same origin via cookie auth or
- * a Bearer token forwarded another way. The stream is read-only and
- * disconnects automatically when the component unmounts or the task ids
- * change.
- *
- * On `event: complete` we close the EventSource ourselves and remember
- * that completion happened so the inevitable post-close `onerror`
- * (which fires because the server-side response ends) does not surface
- * a misleading "connection lost" alert. Real `onerror` events still
- * record an error message that includes the task history ids and how
- * many events / how much wall time we got before the drop, so the
- * user has enough context to either inspect the task history directly
- * or re-run the collection.
+ * Uses fetch-based SSE so the SPA Bearer token can ride as an
+ * Authorization header; native EventSource cannot send custom headers.
  */
 export function useTopologyStream(
   taskHistoryIds: number[] | null,
@@ -146,18 +139,38 @@ export function useTopologyStream(
     hostsCompletedRef.current = 0;
 
     const url = `/api${TOPOLOGY_BASE}/stream?ids=${encodeURIComponent(idsParam)}`;
-    const source = new EventSource(url, { withCredentials: true });
-
+    const ctrl = new AbortController();
     const taskIds = idsParam.split(',').map((s) => Number(s));
     const openedAt = Date.now();
     let eventsReceived = 0;
     let completed = false;
+    let terminalFailure = false;
+    let disposed = false;
+    let currentToken = getToken() ?? '';
+    let refreshAttempted = false;
+
+    const connectionLostError = () => {
+      const elapsedSec = ((Date.now() - openedAt) / 1000).toFixed(1);
+      const ids = taskIds.join(',');
+      return new Error(
+        `Topology stream connection lost for task(s) ${ids} ` +
+          `after ${eventsReceived} event(s), ${elapsedSec}s elapsed.`,
+      );
+    };
+
+    const setStreamError = (error: Error) => {
+      setState((prev) => ({
+        ...prev,
+        isStreaming: false,
+        error: prev.error ?? error,
+      }));
+    };
 
     const recordEvent = (event: TopologyStreamEvent) => {
       eventsReceived += 1;
       if (event.event === 'complete') {
         completed = true;
-        source.close();
+        ctrl.abort();
       }
       setState((prev) => {
         const events = [...prev.events, event];
@@ -171,11 +184,59 @@ export function useTopologyStream(
       });
     };
 
-    const wireEvent = <K extends TopologyStreamEvent['event']>(name: K) => {
-      const handler = (raw: MessageEvent) => {
+    fetchEventSource(url, {
+      signal: ctrl.signal,
+      openWhenHidden: true,
+      fetch: (input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        if (currentToken) {
+          headers.set('Authorization', `Bearer ${currentToken}`);
+        }
+        return globalThis.fetch(input as RequestInfo, { ...init, headers });
+      },
+      onopen: async (response) => {
+        const contentType = response.headers.get('content-type') ?? '';
+        if (response.ok && contentType.includes(EventStreamContentType)) {
+          refreshAttempted = false;
+          return;
+        }
+        let isAuthFailure = false;
+        if (response.ok) {
+          isAuthFailure = true;
+        } else if (response.status === 401 && !refreshAttempted) {
+          refreshAttempted = true;
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            currentToken = newToken;
+            throw new TopologyStreamRetriableAfterRefresh();
+          }
+          isAuthFailure = true;
+        } else if (response.status === 401) {
+          isAuthFailure = true;
+        }
+        if (isAuthFailure) {
+          emitUnauthorized();
+        }
+        const message = response.ok
+          ? `Topology stream endpoint returned non-SSE content: ${contentType || 'unknown'}`
+          : `Topology stream open failed with status ${response.status}`;
+        if (!disposed) {
+          setStreamError(new Error(message));
+        }
+        terminalFailure = true;
+        ctrl.abort();
+        throw new TopologyStreamFatalError(message);
+      },
+      onmessage: (raw) => {
+        if (disposed || !raw.data) {
+          return;
+        }
         try {
           const data = JSON.parse(raw.data);
-          recordEvent({ event: name, data } as TopologyStreamEvent);
+          recordEvent({
+            event: raw.event as TopologyStreamEvent['event'],
+            data,
+          } as TopologyStreamEvent);
         } catch (err) {
           // Malformed line — record as error but keep listening.
           setState((prev) => ({
@@ -183,45 +244,34 @@ export function useTopologyStream(
             error: err instanceof Error ? err : new Error('Malformed SSE payload'),
           }));
         }
-      };
-      source.addEventListener(name, handler);
-      return () => source.removeEventListener(name, handler);
-    };
-
-    const removers: Array<() => void> = [
-      wireEvent('ready'),
-      wireEvent('task_status'),
-      wireEvent('host_done'),
-      wireEvent('host_error'),
-      wireEvent('task_error'),
-      wireEvent('task_done'),
-      wireEvent('complete'),
-    ];
-
-    source.onerror = () => {
-      if (completed) {
-        return;
-      }
-      const elapsedSec = ((Date.now() - openedAt) / 1000).toFixed(1);
-      const ids = taskIds.join(',');
-      setState((prev) => ({
-        ...prev,
-        isStreaming: false,
-        error:
-          prev.error ??
-          new Error(
-            `Topology stream connection lost for task(s) ${ids} ` +
-              `after ${eventsReceived} event(s), ${elapsedSec}s elapsed.`,
-          ),
-      }));
-      source.close();
-    };
+      },
+      onerror: (err): number | undefined => {
+        if (err instanceof TopologyStreamRetriableAfterRefresh) {
+          return 0;
+        }
+        if (err instanceof TopologyStreamFatalError) {
+          throw err;
+        }
+        if (!disposed && !completed) {
+          setStreamError(connectionLostError());
+        }
+        terminalFailure = true;
+        ctrl.abort();
+        throw new TopologyStreamFatalError('Topology stream connection lost');
+      },
+      onclose: () => {
+        if (disposed || completed || terminalFailure) {
+          return;
+        }
+        setStreamError(connectionLostError());
+      },
+    }).catch(() => {
+      // Abort/fatal paths already updated state.
+    });
 
     return () => {
-      for (const remove of removers) {
-        remove();
-      }
-      source.close();
+      disposed = true;
+      ctrl.abort();
     };
   }, [idsParam, enabled, dismissError]);
 

@@ -10,51 +10,74 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient, setOnUnauthorized, setTokenProvider } from '@sep/api';
 import { InventoryTopology } from './InventoryTopology';
 import type { TopologyGraph } from './types';
 
-class FakeEventSource {
+const encoder = new TextEncoder();
+
+interface MockStreamHandle {
   url: string;
-  withCredentials: boolean;
-  onerror: ((this: EventSource, ev: Event) => unknown) | null = null;
-  private listeners = new Map<string, Set<(ev: MessageEvent) => unknown>>();
-  static last: FakeEventSource | undefined;
-  closed = false;
+  requestHeaders: Record<string, string>;
+  signal: AbortSignal | undefined;
+  pushNamed: (event: string, data: unknown) => void;
+  errorStream: (reason?: unknown) => void;
+}
 
-  constructor(url: string, init?: { withCredentials?: boolean }) {
-    this.url = url;
-    this.withCredentials = !!init?.withCredentials;
-    FakeEventSource.last = this;
-  }
+function flushPromises(): Promise<void> {
+  return new Promise((resolve) => {
+    queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => queueMicrotask(resolve))));
+  });
+}
 
-  addEventListener(name: string, handler: (ev: MessageEvent) => unknown) {
-    let bucket = this.listeners.get(name);
-    if (!bucket) {
-      bucket = new Set();
-      this.listeners.set(name, bucket);
+function createMockStreamFetch() {
+  const pending: MockStreamHandle[] = [];
+  const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+      },
+    });
+
+    const rawHeaders = init?.headers;
+    let requestHeaders: Record<string, string> = {};
+    if (rawHeaders instanceof Headers) {
+      requestHeaders = Object.fromEntries(rawHeaders.entries());
+    } else if (Array.isArray(rawHeaders)) {
+      requestHeaders = Object.fromEntries(rawHeaders);
+    } else if (rawHeaders) {
+      requestHeaders = rawHeaders as Record<string, string>;
     }
-    bucket.add(handler);
-  }
 
-  removeEventListener(name: string, handler: (ev: MessageEvent) => unknown) {
-    this.listeners.get(name)?.delete(handler);
-  }
+    pending.push({
+      url,
+      requestHeaders,
+      signal: init?.signal ?? undefined,
+      pushNamed(event, data) {
+        ctrl.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      },
+      errorStream(reason) {
+        ctrl.error(reason);
+      },
+    });
 
-  emit(name: string, data: unknown) {
-    const ev = { data: JSON.stringify(data) } as MessageEvent;
-    for (const handler of this.listeners.get(name) ?? []) {
-      handler(ev);
-    }
-  }
+    return Promise.resolve(
+      new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    );
+  });
 
-  fireError() {
-    this.onerror?.call(this as unknown as EventSource, new Event('error'));
-  }
-
-  close() {
-    this.closed = true;
-  }
+  return { pending, fetchSpy };
 }
 
 const SAMPLE_GRAPH: TopologyGraph = {
@@ -118,16 +141,22 @@ function renderTopology() {
 const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.inventory.topology.taskIds';
 
 describe('InventoryTopology', () => {
+  let streamFetch: ReturnType<typeof createMockStreamFetch>;
+
   beforeEach(() => {
-    vi.stubGlobal('EventSource', FakeEventSource as unknown as typeof EventSource);
+    streamFetch = createMockStreamFetch();
+    vi.stubGlobal('fetch', streamFetch.fetchSpy);
+    setTokenProvider(() => 'test-access-token');
+    setOnUnauthorized(() => {});
     sessionStorage.clear();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    setTokenProvider(() => null);
+    setOnUnauthorized(() => {});
     sessionStorage.clear();
-    FakeEventSource.last = undefined;
   });
 
   it('auto-collects on first mount when nothing is persisted', async () => {
@@ -209,8 +238,11 @@ describe('InventoryTopology', () => {
     renderTopology();
 
     await waitFor(() => {
-      expect(FakeEventSource.last?.url).toContain('/api/plugins/inventory/topology/stream');
-      expect(FakeEventSource.last?.url).toContain('ids=42%2C43');
+      expect(streamFetch.pending[0]?.url).toContain('/api/plugins/inventory/topology/stream');
+      expect(streamFetch.pending[0]?.url).toContain('ids=42%2C43');
+      expect(streamFetch.pending[0]?.requestHeaders.authorization).toBe(
+        'Bearer test-access-token',
+      );
     });
   });
 
@@ -228,16 +260,14 @@ describe('InventoryTopology', () => {
     } as Awaited<ReturnType<typeof apiClient.get>>);
 
     renderTopology();
-    await waitFor(() => expect(FakeEventSource.last).toBeDefined());
+    await waitFor(() => expect(streamFetch.pending[0]).toBeDefined());
 
-    const source = FakeEventSource.last!;
-    source.emit('complete', { task_history_ids: [55] });
-    source.fireError();
-
-    await new Promise((r) => setTimeout(r, 5));
+    const source = streamFetch.pending[0]!;
+    source.pushNamed('complete', { task_history_ids: [55] });
+    await flushPromises();
 
     expect(screen.queryByTestId('topology-stream-error')).not.toBeInTheDocument();
-    expect(source.closed).toBe(true);
+    expect(source.signal?.aborted).toBe(true);
   });
 
   it('surfaces an error message that includes task ids and elapsed time on a real drop', async () => {
@@ -254,15 +284,15 @@ describe('InventoryTopology', () => {
     } as Awaited<ReturnType<typeof apiClient.get>>);
 
     renderTopology();
-    await waitFor(() => expect(FakeEventSource.last).toBeDefined());
+    await waitFor(() => expect(streamFetch.pending[0]).toBeDefined());
 
-    FakeEventSource.last!.emit('host_done', {
+    streamFetch.pending[0]!.pushNamed('host_done', {
       task_history_id: 77,
       event: 'host_done',
       host: 'host-a:3306',
       data: {},
     });
-    FakeEventSource.last!.fireError();
+    streamFetch.pending[0]!.errorStream(new Error('boom'));
 
     const alert = await screen.findByTestId('topology-stream-error');
     expect(alert).toHaveTextContent(/Topology stream connection lost for task\(s\)\s*77,78/);
@@ -284,16 +314,16 @@ describe('InventoryTopology', () => {
     } as Awaited<ReturnType<typeof apiClient.get>>);
 
     renderTopology();
-    await waitFor(() => expect(FakeEventSource.last).toBeDefined());
+    await waitFor(() => expect(streamFetch.pending[0]).toBeDefined());
 
     // SSE drops immediately, before any event arrives — exactly the
     // "0 events, 0.0s elapsed" symptom from a dev-server proxy quirk
     // or an SSE-incompatible auth path. Polling has the data, so no
     // stream alert should ever appear.
-    FakeEventSource.last!.fireError();
+    streamFetch.pending[0]!.errorStream(new Error('boom'));
 
     await screen.findByTestId('mysql-node-host-a:3306');
-    await new Promise((r) => setTimeout(r, 30));
+    await flushPromises();
     expect(screen.queryByTestId('topology-stream-error')).not.toBeInTheDocument();
   });
 
@@ -311,8 +341,8 @@ describe('InventoryTopology', () => {
     } as Awaited<ReturnType<typeof apiClient.get>>);
 
     renderTopology();
-    await waitFor(() => expect(FakeEventSource.last).toBeDefined());
-    FakeEventSource.last!.fireError();
+    await waitFor(() => expect(streamFetch.pending[0]).toBeDefined());
+    streamFetch.pending[0]!.errorStream(new Error('boom'));
 
     await screen.findByTestId('topology-stream-error');
     fireEvent.click(screen.getByTestId('topology-stream-error-dismiss'));
