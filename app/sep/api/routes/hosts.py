@@ -23,6 +23,7 @@ the Tasks and Inventory APIs directly.
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
+from app.sep.api.host_resolution import address_to_name_index
 from app.sep.deps import InventoryAPI, TaskAPI
 
 router = APIRouter()
@@ -87,9 +88,9 @@ async def list_hosts(
 
     try:
         inventory_response = await inventory_api.get("/", params={"limit": 0})
-        display_names = {
-            node["address"]: node["name"] for node in inventory_response["items"]
-        }
+        display_names = address_to_name_index(
+            (node["name"], node["address"]) for node in inventory_response["items"]
+        )
     except (HTTPException, TypeError, KeyError, OSError):
         display_names = {}
 

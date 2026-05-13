@@ -87,6 +87,8 @@ export {
   useSnippetPluginSchema,
   isRunningStatus,
   RUNNING_STATUSES,
+  useTaskHistoryFiles,
+  useTaskFileDownload,
 } from './hooks';
 export type {
   TaskLogsState,
@@ -98,6 +100,9 @@ export type {
   ExecutionEvent,
   ExecutionEventsState,
   DownloadLog,
+  FileMetadata,
+  TaskHistoryFilesMap,
+  TaskFileDownloadParams,
   UseSnippetPluginExecutionOptions,
 } from './hooks';
 
