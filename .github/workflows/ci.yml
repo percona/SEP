@@ -43,6 +43,34 @@ jobs:
           echo "::error::PR requires 'qa passed' or 'skip-test' label to merge."
           exit 1
 
+  reject-merge-commits:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Reject merge commits on non-release PRs
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          # Release back-merges and urgent forward-merges land on main via
+          # the release automation (cmd_stable / release-process.md P1),
+          # NOT via PR. So PRs that target main MUST be linear (squash-only).
+          # This check fails the PR if it introduces any merge commit.
+          git fetch origin "${BASE_REF}"
+          merges=$(git rev-list --merges "origin/${BASE_REF}..HEAD" || true)
+          if [ -n "$merges" ]; then
+            echo "::error::This PR introduces merge commits. Non-release PRs must be linear (squash-only). Offending commits:"
+            echo "$merges"
+            exit 1
+          fi
+          echo "OK: no merge commits introduced by this PR."
+
   # Detect changed file types to gate downstream jobs.
   # Python/frontend patterns mirror .github/labeler.yml; CI also tracks
   # .pre-commit-config.yaml separately to trigger precommit-heavy.
@@ -259,6 +287,7 @@ jobs:
     if: always()
     needs:
       - label-gate
+      - reject-merge-commits
       - changes
       - precommit-light
       - precommit-heavy
