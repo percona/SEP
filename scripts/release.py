@@ -588,7 +588,7 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
         # Scope-lock + dev-bump are atomic. Main runs at the next .dev0 for
         # the entire QA window — fixes during QA land on the release branch
         # (no main-first cherry-picks under the back-merge model).
-        _create_dev_version_bump_pr(version, rc_tag)
+        _create_dev_version_bump_pr(version, f"v{version}")
 
     _print_rc_next_steps(
         version=version,

@@ -473,7 +473,7 @@ def test_cmd_rc_rc1_invokes_dev_version_bump(repo, monkeypatch):
 
     rc = release.cmd_rc("0.13.0", 1, sign_via_github_api=False)
     assert rc == 0
-    assert bump_calls == [("0.13.0", "v0.13.0rc1")]
+    assert bump_calls == [("0.13.0", "v0.13.0")]
 
 
 def test_cmd_rc_rc2_does_not_invoke_dev_version_bump(repo, monkeypatch):
