@@ -58,7 +58,7 @@ def make_primary_hash(server_id: Any, server_uuid: Any, port: Any) -> str:
     operator intuition transfers (replica's source_server_id+uuid+port hash
     must equal its primary's @@server_hash).
     """
-    raw = f"{server_id or ''}{server_uuid or ''}{port or ''}"
+    raw = f"{server_id or ''}|{server_uuid or ''}|{port or ''}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
