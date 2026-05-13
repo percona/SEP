@@ -342,21 +342,22 @@ def _resolve_replication_source(
             return node_id
     source_host = repl.get("source_host")
     source_port = _coerce_int(repl.get("source_port")) or 3306
-    if source_host and (node_id := addr_to_node.get((source_host, source_port))):
+    source_key = (source_host, source_port)
+    if node_id := addr_to_node.get(source_key):
         return node_id
     unknown_id = _unknown_node_id(source_host, source_port)
-    if not any(n["id"] == unknown_id for n in nodes):
-        nodes.append(
-            {
-                "id": unknown_id,
-                "type": NODE_TYPE_UNKNOWN,
-                "data": {
-                    "address": source_host,
-                    "port": source_port,
-                    "reason": "Replication source not in inventory",
-                },
-            }
-        )
+    nodes.append(
+        {
+            "id": unknown_id,
+            "type": NODE_TYPE_UNKNOWN,
+            "data": {
+                "address": source_host,
+                "port": source_port,
+                "reason": "Replication source not in inventory",
+            },
+        }
+    )
+    addr_to_node[source_key] = unknown_id
     return unknown_id
 
 
