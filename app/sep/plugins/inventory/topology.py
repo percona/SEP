@@ -73,3 +73,12 @@ def _unknown_node_id(host: str | None, port: int | None) -> str:
     return f"unknown:{host or '?'}:{port or 0}"
 
 
+def _coerce_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
