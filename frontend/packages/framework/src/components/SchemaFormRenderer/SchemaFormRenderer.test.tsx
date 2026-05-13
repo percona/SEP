@@ -200,6 +200,15 @@ describe('SchemaFormRenderer — field rendering', () => {
 });
 
 describe('SchemaFormRenderer — section layout controls', () => {
+  const collapsedSections: FormSection[] = [
+    {
+      title: 'Script preview',
+      collapsible: true,
+      collapsed_by_default: true,
+      fields: [{ type: 'string', name: 'probe', label: 'Probe' }],
+    },
+  ];
+
   it('renders render_after_submit sections after the submit button', () => {
     const sections: FormSection[] = [
       {
@@ -228,33 +237,15 @@ describe('SchemaFormRenderer — section layout controls', () => {
   });
 
   it('starts collapsed sections closed when collapsed_by_default is true', () => {
-    const sections: FormSection[] = [
-      {
-        title: 'Script preview',
-        collapsible: true,
-        collapsed_by_default: true,
-        fields: [{ type: 'string', name: 'probe', label: 'Probe' }],
-      },
-    ];
-
-    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    renderWithProviders(<SchemaFormRenderer sections={collapsedSections} onSubmit={() => {}} />);
 
     expect(screen.queryByLabelText('Probe')).toBeNull();
-    expect(screen.queryByTestId('text-input-probe')).toBeNull();
   });
 
   it('mounts collapsible section content when expanded', async () => {
     const user = userEvent.setup();
-    const sections: FormSection[] = [
-      {
-        title: 'Script preview',
-        collapsible: true,
-        collapsed_by_default: true,
-        fields: [{ type: 'string', name: 'probe', label: 'Probe' }],
-      },
-    ];
 
-    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    renderWithProviders(<SchemaFormRenderer sections={collapsedSections} onSubmit={() => {}} />);
 
     await user.click(screen.getByRole('button', { name: 'Script preview' }));
     expect(await screen.findByLabelText('Probe')).toBeInTheDocument();

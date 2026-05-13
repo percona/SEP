@@ -115,7 +115,7 @@ const SectionRenderer = memo(function SectionRenderer({
         <Accordion
           defaultExpanded={!section.collapsed_by_default}
           disableGutters
-          TransitionProps={{ unmountOnExit: true }}
+          slotProps={{ transition: { unmountOnExit: true } }}
         >
           <AccordionSummary
             expandIcon={<ExpandMoreIcon />}
@@ -130,7 +130,7 @@ const SectionRenderer = memo(function SectionRenderer({
               {section.title}
             </Typography>
           </AccordionSummary>
-          <AccordionDetails sx={{ px: 0, pl: 2, pr: 0 }}>{sectionContent}</AccordionDetails>
+          <AccordionDetails sx={{ px: 0, pl: 2 }}>{sectionContent}</AccordionDetails>
         </Accordion>
       ) : (
         <>
@@ -176,20 +176,18 @@ function SchemaFormBody({
   const failViolations = useFailRules(sections);
 
   // Merge cardinality and fail violations per section into a flat list for SectionRenderer.
-  const violationsPerSection = useMemo(
-    () =>
-      sections.map((_, i) => [...(cardinalityViolations[i] ?? []), ...(failViolations[i] ?? [])]),
-    [sections, cardinalityViolations, failViolations],
-  );
   const violationsBySection = useMemo(() => {
     const map = new Map<FormSection, Array<{ message: string }>>();
-    sections.forEach((section, idx) => {
-      map.set(section, violationsPerSection[idx] ?? []);
+    sections.forEach((section, i) => {
+      map.set(section, [...(cardinalityViolations[i] ?? []), ...(failViolations[i] ?? [])]);
     });
     return map;
-  }, [sections, violationsPerSection]);
+  }, [sections, cardinalityViolations, failViolations]);
 
-  const hasSectionViolations = violationsPerSection.some((vs) => vs.length > 0);
+  const hasSectionViolations = useMemo(
+    () => [...violationsBySection.values()].some((vs) => vs.length > 0),
+    [violationsBySection],
+  );
   const hasInlineErrors = Object.keys(formState.errors).length > 0;
 
   const handleFormSubmit: SubmitHandler<Record<string, unknown>> = (values) => {
