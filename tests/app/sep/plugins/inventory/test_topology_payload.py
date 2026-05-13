@@ -76,11 +76,7 @@ def _load_payload_module(monkeypatch):
 
     fake_myloginpath = ModuleType("myloginpath")
     fake_myloginpath.read = lambda: (
-        "[db]\n"
-        'host = "db.example"\n'
-        "port = 3307\n"
-        'user = "root"\n'
-        'password = "secret"\n'
+        '[db]\nhost = "db.example"\nport = 3307\nuser = "root"\npassword = "secret"\n'
     )
 
     fake_pymysql = ModuleType("pymysql")
@@ -100,7 +96,9 @@ def _load_payload_module(monkeypatch):
 
     repo_root = Path(__file__).resolve().parents[5]
     payload_path = repo_root / "app/sep/plugins/inventory/payloads/topology.py"
-    spec = importlib.util.spec_from_file_location("inventory_topology_payload_test", payload_path)
+    spec = importlib.util.spec_from_file_location(
+        "inventory_topology_payload_test", payload_path
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -240,9 +240,7 @@ describe('InventoryTopology', () => {
     await waitFor(() => {
       expect(streamFetch.pending[0]?.url).toContain('/api/plugins/inventory/topology/stream');
       expect(streamFetch.pending[0]?.url).toContain('ids=42%2C43');
-      expect(streamFetch.pending[0]?.requestHeaders.authorization).toBe(
-        'Bearer test-access-token',
-      );
+      expect(streamFetch.pending[0]?.requestHeaders.authorization).toBe('Bearer test-access-token');
     });
   });
 
