@@ -18,28 +18,26 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useSnippetPluginSchema } from '@sep/framework';
 import { SnippetDetailPage } from './SnippetDetailPage';
-import {
-  useSnippetDownload,
-  useSnippetExecution,
-  useSnippetHistory,
-  useSnippetSchema,
-} from './hooks';
+import { useSnippetDownload, useSnippetExecution, useSnippetHistory } from './hooks';
 
 vi.mock('./hooks', () => ({
-  useSnippetSchema: vi.fn(),
   useSnippetHistory: vi.fn(),
   useSnippetExecution: vi.fn(),
   useSnippetDownload: vi.fn(),
 }));
 
 vi.mock('@sep/framework', () => ({
+  useSnippetPluginSchema: vi.fn(),
+  snippetPluginSchemaPath: (filename: string) =>
+    `/plugins/snippets/${encodeURIComponent(filename)}/schema`,
   SchemaFormRenderer: () => <div>Execution form</div>,
   TaskHistoryTable: () => <div>History table</div>,
   TaskLogViewer: () => <div>Logs viewer</div>,
 }));
 
-const mockSchema = vi.mocked(useSnippetSchema);
+const mockSchema = vi.mocked(useSnippetPluginSchema);
 const mockHistory = vi.mocked(useSnippetHistory);
 const mockExecution = vi.mocked(useSnippetExecution);
 const mockDownload = vi.mocked(useSnippetDownload);
@@ -70,7 +68,7 @@ describe('SnippetDetailPage — Download button', () => {
       },
       isLoading: false,
       error: null,
-    } as unknown as ReturnType<typeof useSnippetSchema>);
+    } as unknown as ReturnType<typeof useSnippetPluginSchema>);
     mockHistory.mockReturnValue({
       data: { items: [], total: 0, offset: 0, limit: 50 },
       isLoading: false,

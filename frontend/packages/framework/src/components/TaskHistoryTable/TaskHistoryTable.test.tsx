@@ -19,6 +19,7 @@ import { render, renderHook, screen, waitFor, within } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SnackbarProvider } from 'notistack';
 import type { PropsWithChildren } from 'react';
 import { TaskHistoryTable } from './TaskHistoryTable';
 import { StatusBadge } from './StatusBadge';
@@ -73,7 +74,11 @@ function makeQueryClient() {
 }
 
 function Wrapper({ children, client }: PropsWithChildren<{ client: QueryClient }>) {
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      <SnackbarProvider>{children}</SnackbarProvider>
+    </QueryClientProvider>
+  );
 }
 
 describe('StatusBadge', () => {
@@ -213,6 +218,36 @@ describe('TaskHistoryTable actions', () => {
       </Wrapper>,
     );
     expect(screen.getAllByRole('button', { name: 'Download files' })).toHaveLength(1);
+  });
+
+  it('opens built-in files dialog when no onDownloadFiles callback provided', async () => {
+    mockedApiClient.get.mockResolvedValue({
+      data: { 'output/result.txt': { size: 512, is_dir: false } },
+    });
+    const data = [makeEntry(5, 'success', { has_logs: true })];
+    render(
+      <Wrapper client={client}>
+        <TaskHistoryTable data={data} disablePolling />
+      </Wrapper>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Download files' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/Download files/i)).toBeInTheDocument();
+  });
+
+  it('calls onDownloadFiles callback instead of opening built-in dialog when provided', async () => {
+    const onDownloadFiles = vi.fn();
+    const data = [makeEntry(5, 'success', { has_logs: true })];
+    render(
+      <Wrapper client={client}>
+        <TaskHistoryTable data={data} disablePolling onDownloadFiles={onDownloadFiles} />
+      </Wrapper>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Download files' }));
+    expect(onDownloadFiles).toHaveBeenCalledOnce();
+    expect(onDownloadFiles.mock.calls[0][0].id).toBe(5);
+    // Built-in dialog should NOT open
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
 

@@ -1,4 +1,13 @@
 version: 2
+multi-ecosystem-groups:
+  # Bundle pip + pre-commit + npm lint/format tooling.
+  linting-stack:
+    schedule:
+      interval: "weekly"
+    labels:
+      - "skip-test"
+      # CI gate: skip python/frontend/build jobs.
+      - "lint-fmt-only"
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -6,62 +15,169 @@ updates:
       interval: "weekly"
     labels:
       - "skip-test"
+    groups:
+      # Bundle all weekly action bumps; pnpm/action-setup alone churns ~1/week.
+      actions:
+        patterns:
+          - "*"
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
     labels:
       - "skip-test"
+    # oxlint/oxfmt ride with the cross-ecosystem linting-stack.
+    patterns:
+      - "oxlint"
+      - "oxfmt"
+    multi-ecosystem-group: "linting-stack"
     groups:
-      # @storybook/* packages share a release train and must move
-      # together — bundle them into a single PR so we don't merge a
-      # version skew between storybook core and its addons.
+      # Storybook core + addons share a release train.
       storybook:
         patterns:
           - "storybook"
           - "@storybook/*"
-      # @mui/* non-major releases also ship together and are meant to
-      # be on matching versions. Major bumps are ignored below and
-      # remain excluded from this group via update-types.
-      mui-non-major:
+      # MUI packages release together on matching versions.
+      mui:
         patterns:
           - "@mui/*"
-        update-types:
-          - "minor"
-          - "patch"
+      # Vite core + plugins peer-pin vite version.
+      vite-stack:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "vite-tsconfig-paths"
+          - "vitest"
+      # @testing-library/* share core APIs.
+      testing-library:
+        patterns:
+          - "@testing-library/*"
+      # @dnd-kit/* ship coupled releases.
+      dnd-kit:
+        patterns:
+          - "@dnd-kit/*"
+      # @fontsource/* — bundle weekly font bumps.
+      fontsource:
+        patterns:
+          - "@fontsource/*"
+      # Prism syntax-highlighting set + types.
+      prismjs-stack:
+        patterns:
+          - "prismjs"
+          - "prism-react-renderer"
+          - "react-syntax-highlighter"
+          - "@types/prismjs"
+          - "@types/react-syntax-highlighter"
     ignore:
-      # @percona/percona-ui@1.0.15 peer-deps require @mui/material@^7.3.7
-      # and is built against MUI v7's Autocomplete renderInput contract
-      # (params.InputProps). MUI v8/v9 moved this to params.slotProps.input,
-      # which breaks every component that wraps percona-ui's AutoCompleteInput
-      # (HostSelector, SchemaSelector, ServiceSelector, TableSelector).
-      # Re-enable major bumps once percona-ui ships v8/v9 support.
-      - dependency-name: "@mui/material"
+      # Majors gated behind manual review (percona-ui peer-deps; Node 20 pin).
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/icons-material"
+      # Linter/formatter/test minors ship behavior changes — gate behind a ticket.
+      - dependency-name: "oxlint"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "oxfmt"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-minor"]
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "skip-test"
+    patterns:
+      - "ruff"
+      - "djlint"
+      - "jsbeautifier"
+      - "cssbeautifier"
+    multi-ecosystem-group: "linting-stack"
+    groups:
+      # fastapi pins starlette; python-multipart and uvicorn move with it.
+      fastapi-stack:
+        patterns:
+          - "fastapi"
+          - "starlette"
+          - "uvicorn"
+          - "python-multipart"
+      # Pydantic v2 internals shared by pydantic-settings and sqlmodel.
+      pydantic-stack:
+        patterns:
+          - "pydantic"
+          - "pydantic-settings"
+          - "sqlmodel"
+          - "email-validator"
+      # SQLAlchemy core + alembic + the async/sync drivers we ship.
+      sqlalchemy-stack:
+        patterns:
+          - "sqlalchemy"
+          - "alembic"
+          - "aiosqlite"
+          - "asyncpg"
+          - "aiomysql"
+          - "psycopg2-binary"
+          - "pymysql"
+          - "sqlalchemy-celery-beat"
+      # Celery + broker.
+      celery-stack:
+        patterns:
+          - "celery"
+          - "kombu"
+      # Presidio analyzer + anonymizer ship coupled.
+      presidio:
+        patterns:
+          - "presidio-*"
+      # pytest core + plugins share the hook contract.
+      pytest-stack:
+        patterns:
+          - "pytest"
+          - "pytest-*"
+      # Local lint/format toolchain — no runtime impact.
+      linting-stack:
+        patterns:
+          - "bandit"
+          - "pip-audit"
+          - "pre-commit"
+    ignore:
+      # Majors require coordinated migration — gate behind manual `poetry add` + ticket.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/utils"
+      # Linter/formatter/test minors ship behavior changes — gate behind a ticket.
+      - dependency-name: "ruff"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "djlint"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "bandit"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "jsbeautifier"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "cssbeautifier"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "pytest"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "faker"
+        update-types: ["version-update:semver-minor"]
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Hook revs + Python additional_dependencies (Dependabot tracks both).
+    patterns:
+      - "astral-sh/ruff-pre-commit"
+      - "djlint/djLint"
+      - "jsbeautifier"
+      - "cssbeautifier"
+    multi-ecosystem-group: "linting-stack"
+    ignore:
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "@mui/x-date-pickers"
-        update-types: ["version-update:semver-major"]
-      # @percona/percona-ui@1.0.15 peer-deps react-hook-form ^7.50.0 and
-      # uses the v7 Controller/register API in its form components
-      # (Input, Select, etc). A v8 bump would break every percona-ui
-      # form at runtime. Re-enable once percona-ui ships v8 support.
-      - dependency-name: "react-hook-form"
-        update-types: ["version-update:semver-major"]
-      # @percona/percona-ui@1.0.15 depends on material-react-table ^1.15.1,
-      # and shell pins the exact 1.15.1. v2 was a full rewrite (removed
-      # tableInstanceRef, changed column-def shape), so any major bump
-      # would break percona-ui's table components at runtime. Re-enable
-      # once percona-ui ships v2 support.
-      - dependency-name: "material-react-table"
-        update-types: ["version-update:semver-major"]
-      # @types/node tracks the underlying Node major. Our runtime is
-      # pinned to Node 20.20.2 (frontend/package.json engines.node and
-      # actions/setup-node in .github/workflows/frontend.yaml). Bumping
-      # @types/node beyond v20 surfaces APIs that don't exist in our
-      # runtime — type-check passes, code crashes in CI/prod. Bump this
-      # rule's major in lockstep with engines.node when we upgrade Node.
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
+      # Mirror pip-side minor restrictions.
+      - dependency-name: "astral-sh/ruff-pre-commit"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "djlint/djLint"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "jsbeautifier"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "cssbeautifier"
+        update-types: ["version-update:semver-minor"]
