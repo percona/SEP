@@ -87,6 +87,15 @@ def _unknown_node_id(host: str | None, port: int | None) -> str:
     return f"unknown:{host or '?'}:{port or 0}"
 
 
+def _build_repl_edge_id(source_id: str, target_id: str) -> str:
+    return f"repl:{source_id}->{target_id}"
+
+
+def _build_dual_edge_id(a: str, b: str) -> str:
+    lo, hi = sorted((a, b))
+    return f"dual:{lo}<->{hi}"
+
+
 def _coerce_int(value: Any) -> int | None:
     if value is None or value == "":
         return None
