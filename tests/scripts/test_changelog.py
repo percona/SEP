@@ -593,3 +593,174 @@ def test_update_compare_links_synthesizes_when_unreleased_footer_missing(
     text = repo.joinpath("CHANGELOG.md").read_text(encoding="utf-8")
     assert "[Unreleased]: https://github.com/percona/SEP/compare/v0.13.0...HEAD" in text
     assert "[v0.13.0]: https://github.com/percona/SEP/compare/v0.12.1...v0.13.0" in text
+
+
+# --- resolve-backmerge subcommand ------------------------------------------
+
+# Re-export the git index stage constants so test helpers can compare against
+# named values rather than bare integers (avoids PLR2004 magic-value warnings).
+_STAGE_OURS = changelog._GIT_STAGE_OURS
+_STAGE_THEIRS = changelog._GIT_STAGE_THEIRS
+
+MAIN_CHANGELOG_FIXTURE = """\
+# Changelog
+
+Intro text.
+
+## [Unreleased]
+
+<!-- comment -->
+
+## [v0.12.1] - 2026-05-05
+
+### Fixed
+
+- SEP-1093: Old fix
+
+[v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1
+"""
+
+RELEASE_CHANGELOG_FIXTURE = """\
+# Changelog
+
+Intro text.
+
+## [Unreleased]
+
+## [v0.13.0] - 2026-06-01
+
+### Added
+
+- SEP-200: New thing
+- SEP-201: Another new thing
+
+### Fixed
+
+- SEP-205: A fix
+
+## [v0.12.1] - 2026-05-05
+
+### Fixed
+
+- SEP-1093: Old fix
+
+[v0.13.0]: https://github.com/percona/SEP/compare/v0.12.1...v0.13.0
+[v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1
+"""
+
+
+def test_resolve_backmerge_merges_changelog_and_prunes_fragments(
+    repo,
+    monkeypatch,
+):
+    """Resolve a back-merge conflict mechanically.
+
+    Simulates ``git merge --no-ff release/v0.13.0`` having produced a
+    conflict on CHANGELOG.md and accumulated fragments under changelog.d/.
+    """
+    for ticket, section, body in [
+        ("SEP-200", "added", "New thing\n"),
+        ("SEP-201", "added", "Another new thing\n"),
+        ("SEP-205", "fixed", "A fix\n"),
+        ("SEP-300", "added", "Post-scope-lock work\n"),
+        ("SEP-301", "fixed", "Another post-scope-lock\n"),
+    ]:
+        repo.joinpath("changelog.d", f"{ticket}.{section}.md").write_text(
+            body,
+            encoding="utf-8",
+        )
+    repo.joinpath("changelog.d", "README.md").write_text(
+        "guide\n",
+        encoding="utf-8",
+    )
+    repo.joinpath("CHANGELOG.md").write_text(
+        MAIN_CHANGELOG_FIXTURE,
+        encoding="utf-8",
+    )
+
+    def fake_index_show(stage: int, path: str) -> str:
+        if path != "CHANGELOG.md":
+            raise AssertionError(f"unexpected path {path}")
+        if stage == _STAGE_OURS:
+            return MAIN_CHANGELOG_FIXTURE
+        if stage == _STAGE_THEIRS:
+            return RELEASE_CHANGELOG_FIXTURE
+        raise AssertionError(f"unexpected stage {stage}")
+
+    monkeypatch.setattr(changelog, "_git_show_index", fake_index_show)
+
+    exit_code = changelog.main(["resolve-backmerge", "--release", "0.13.0"])
+    assert exit_code == 0
+
+    merged = repo.joinpath("CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## [v0.13.0] - 2026-06-01" in merged
+    assert "## [Unreleased]" in merged
+    assert "<!-- comment -->" in merged
+    assert (
+        "[Unreleased]: https://github.com/percona/SEP/compare/v0.13.0...HEAD" in merged
+    )
+    assert (
+        "[v0.13.0]: https://github.com/percona/SEP/compare/v0.12.1...v0.13.0" in merged
+    )
+    assert (
+        "[v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1" in merged
+    )
+
+    assert not repo.joinpath("changelog.d", "SEP-200.added.md").exists()
+    assert not repo.joinpath("changelog.d", "SEP-201.added.md").exists()
+    assert not repo.joinpath("changelog.d", "SEP-205.fixed.md").exists()
+    assert repo.joinpath("changelog.d", "SEP-300.added.md").exists()
+    assert repo.joinpath("changelog.d", "SEP-301.fixed.md").exists()
+    assert repo.joinpath("changelog.d", "README.md").exists()
+
+
+def test_resolve_backmerge_when_no_fragments_consumed(repo, monkeypatch):
+    """A release whose bullets all come from release-branch-only fixes.
+
+    No changelog.d/ fragments are pruned (none of the cited tickets match a
+    fragment on main). The CHANGELOG merge still completes successfully.
+    """
+    repo.joinpath("changelog.d", "SEP-300.added.md").write_text(
+        "Unrelated\n",
+        encoding="utf-8",
+    )
+    repo.joinpath("CHANGELOG.md").write_text(
+        MAIN_CHANGELOG_FIXTURE,
+        encoding="utf-8",
+    )
+
+    def fake_index_show(stage: int, path: str) -> str:
+        if stage == _STAGE_OURS:
+            return MAIN_CHANGELOG_FIXTURE
+        if stage == _STAGE_THEIRS:
+            return RELEASE_CHANGELOG_FIXTURE
+        raise AssertionError
+
+    monkeypatch.setattr(changelog, "_git_show_index", fake_index_show)
+    exit_code = changelog.main(["resolve-backmerge", "--release", "0.13.0"])
+    assert exit_code == 0
+    assert repo.joinpath("changelog.d", "SEP-300.added.md").exists()
+
+
+def test_resolve_backmerge_errors_when_release_section_missing(repo, monkeypatch):
+    """When theirs (release) doesn't have a ``## [vX.Y.Z]`` heading, error.
+
+    Surfaces a release-branch state mismatch (the assembler didn't run, or
+    the wrong --release version was passed) rather than silently writing a
+    half-merged file.
+    """
+    repo.joinpath("CHANGELOG.md").write_text(
+        MAIN_CHANGELOG_FIXTURE,
+        encoding="utf-8",
+    )
+
+    def fake_index_show(stage: int, path: str) -> str:
+        if stage == _STAGE_OURS:
+            return MAIN_CHANGELOG_FIXTURE
+        if stage == _STAGE_THEIRS:
+            return MAIN_CHANGELOG_FIXTURE
+        raise AssertionError
+
+    monkeypatch.setattr(changelog, "_git_show_index", fake_index_show)
+    exit_code = changelog.main(["resolve-backmerge", "--release", "0.13.0"])
+    assert exit_code == 1
