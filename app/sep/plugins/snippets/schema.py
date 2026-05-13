@@ -246,7 +246,7 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
             name=_SCRIPT_PREVIEW_FIELD_NAME,
             label="Script preview",
             endpoint_url=(
-                f"/plugins/snippets/{quote(snippet.filename, safe='')}/script-preview"
+                f"/plugins/snippets/{quote(snippet.filename, safe='')}/preview"
             ),
         ),
     )
