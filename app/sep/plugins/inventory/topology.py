@@ -120,3 +120,12 @@ def build_topology_meta(
     }
 
 
+def shard_hosts(hosts: list[str], shards: int) -> list[list[str]]:
+    """Split ``hosts`` into ``shards`` round-robin chunks (ordering preserved per shard)."""
+    if shards <= 1 or len(hosts) <= 1:
+        return [list(hosts)]
+    shards = min(shards, len(hosts))
+    out: list[list[str]] = [[] for _ in range(shards)]
+    for index, host in enumerate(hosts):
+        out[index % shards].append(host)
+    return [chunk for chunk in out if chunk]
