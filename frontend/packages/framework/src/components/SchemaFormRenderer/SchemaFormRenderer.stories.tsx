@@ -18,6 +18,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ComponentType } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
 import type { FormSection } from './types';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 
@@ -137,6 +138,25 @@ const withQueryClient = (Story: ComponentType) => {
     </QueryClientProvider>
   );
 };
+
+function withAlertConfig(available: boolean) {
+  return (Story: ComponentType) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(ALERT_CONFIG_QUERY_KEY, { available });
+    return (
+      <QueryClientProvider client={client}>
+        <Story />
+      </QueryClientProvider>
+    );
+  };
+}
+
+const SIMPLE_TASK_SECTIONS: FormSection[] = [
+  {
+    title: 'Task',
+    fields: [{ type: 'string', name: 'task_name', label: 'Task Name', required: true }],
+  },
+];
 
 const meta: Meta<typeof SchemaFormRenderer> = {
   title: 'Framework/SchemaFormRenderer',
@@ -387,6 +407,34 @@ export const ArchivesCombined: Story = {
  * source_table_id must be filled (XOR / exactly-one cardinality rule).
  * The error banner appears immediately when both are filled or both are empty.
  */
+/** Alert provider configured: checkbox is enabled and actionable. */
+export const WithAlertCapabilityEnabled: Story = {
+  decorators: [withAlertConfig(true)],
+  args: {
+    sections: SIMPLE_TASK_SECTIONS,
+    capabilities: { alert_on_fail: true },
+    submitLabel: 'Create task',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/** No alert provider configured: checkbox is rendered but disabled with a tooltip. */
+export const WithAlertCapabilityUnavailable: Story = {
+  decorators: [withAlertConfig(false)],
+  args: {
+    sections: SIMPLE_TASK_SECTIONS,
+    capabilities: { alert_on_fail: true },
+    submitLabel: 'Create task',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
 export const ArchivesSourceXor: Story = {
   args: {
     sections: [
