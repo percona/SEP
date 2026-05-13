@@ -88,3 +88,18 @@ def _coerce_int(value: Any) -> int | None:
         return None
 
 
+def build_topology_meta(
+    *, target: str, hosts: list[str], extra: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    """Assemble the ``meta`` dict for a topology ``run-python`` task dispatch."""
+    config: dict[str, Any] = {"hosts": hosts}
+    if extra:
+        config.update(extra)
+    return {
+        "config": json.dumps(config, separators=(",", ":")),
+        "target": target,
+        "requirements": TOPOLOGY_PAYLOAD_REQUIREMENTS,
+        "_job_id_prefix": TOPOLOGY_JOB_PREFIX,
+    }
+
+
