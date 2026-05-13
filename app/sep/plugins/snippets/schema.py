@@ -240,21 +240,22 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
                 ),
             ),
         )
-    preview_field = cast(
-        AnyField,
-        ScriptPreviewField(
-            name=_SCRIPT_PREVIEW_FIELD_NAME,
-            label="Snippet file",
-            endpoint_url=(
-                f"/plugins/snippets/{quote(snippet.filename, safe='')}/preview"
-            ),
-        ),
-    )
     forms.append(FormSection(title="Execution", fields=execution_fields))
     forms.append(
         FormSection(
             title="Script preview",
-            fields=[preview_field],
+            fields=[
+                cast(
+                    AnyField,
+                    ScriptPreviewField(
+                        name=_SCRIPT_PREVIEW_FIELD_NAME,
+                        label="Snippet file",
+                        endpoint_url=(
+                            f"/plugins/snippets/{quote(snippet.filename, safe='')}/preview"
+                        ),
+                    ),
+                )
+            ],
             collapsible=True,
             collapsed_by_default=True,
             render_after_submit=True,
