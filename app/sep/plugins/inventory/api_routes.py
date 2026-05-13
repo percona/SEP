@@ -39,6 +39,7 @@ React plugin.
 from __future__ import annotations
 
 from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from fastapi import APIRouter, Request, Response, status
 
@@ -57,6 +58,59 @@ from app.sep.plugins.inventory.schema import inventory_schema
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
+
+class TopologyCollectBody(BaseModel):
+    """Body for ``POST /topology/collect``.
+
+    :param shards: Number of executor hosts to dispatch in parallel. Hosts
+        are split round-robin across the chosen executors. Capped at
+        :data:`_MAX_TOPOLOGY_SHARDS`.
+    :type shards: int
+    :param executor_host: Optional explicit executor; when set, overrides
+        ``shards`` to a single-shard run on that host.
+    :type executor_host: str | None
+    :param connect_timeout: Per-host MySQL TCP connect timeout (seconds).
+    :type connect_timeout: int
+    :param read_timeout: Per-host MySQL read/write timeout (seconds).
+    :type read_timeout: int
+    """
+
+    shards: int = Field(default=1, ge=1, le=_MAX_TOPOLOGY_SHARDS)
+    executor_host: str | None = None
+    connect_timeout: int = Field(default=5, ge=1, le=60)
+    read_timeout: int = Field(default=10, ge=1, le=120)
+
+
+class TopologyCollectResponse(BaseModel):
+    """Response body for ``POST /topology/collect``.
+
+    ``task_history_ids`` lists the dispatched ``run-python`` tasks the
+    frontend then polls (``/result``) and tails (``/stream``) to
+    assemble the topology graph. ``targets`` echoes the executor hosts
+    the work was sharded across so the UI can surface where the
+    collection ran.
+    """
+
+    task_history_ids: list[int]
+    targets: list[str]
+    host_count: int
+    shard_count: int
+
+
+class TopologyResultResponse(BaseModel):
+    """Response body for ``GET /topology/result``.
+
+    ``status`` is ``running`` while any of the underlying tasks is
+    still pending, ``ok`` once every task has finished, and ``failed``
+    when at least one task failed and produced no usable output.
+    ``graph`` is the merged React-Flow graph; ``pending_task_ids``
+    lists the still-running tasks for the UI's progress chip.
+    """
+
+    status: str
+    graph: dict[str, Any] | None = None
+    pending_task_ids: list[int] = Field(default_factory=list)
+
 
 
 @router.get("/{entity}/")
