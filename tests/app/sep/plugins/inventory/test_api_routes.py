@@ -20,6 +20,9 @@ implemented in ``app.sep.plugins.inventory.deps``; see
 ``tests/app/sep/plugins/inventory/test_deps.py`` for direct unit coverage.
 """
 
+import json
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import status
 
@@ -218,3 +221,133 @@ class TestInventoryGateway:
         response = test_client.get("/api/plugins/inventory/unknown/1")
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_inventory_api_dep.get.assert_not_called()
+
+
+def _mysql_service(service_id: int, address: str, port: int = 3306) -> dict:
+    return {
+        "id": service_id,
+        "name": f"svc-{service_id}",
+        "type": "mysql",
+        "port": port,
+        "node": {"id": service_id, "name": address, "address": address},
+    }
+
+
+class TestTopologyCollect:
+    """Tests for ``POST /api/plugins/inventory/topology/collect``."""
+
+    def test_dispatches_one_task_per_shard(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Ensure topology collect splits hosts across shards and dispatches run-python tasks."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value={
+                "items": [
+                    _mysql_service(1, "10.0.0.1"),
+                    _mysql_service(2, "10.0.0.2"),
+                    _mysql_service(3, "10.0.0.3"),
+                ]
+            }
+        )
+        mock_task_api_dep.get = AsyncMock(
+            return_value={"executor-a": "1.1.1.1", "executor-b": "2.2.2.2"}
+        )
+        mock_task_api_dep.post = AsyncMock(side_effect=[{"id": 101}, {"id": 102}])
+
+        response = test_client.post(
+            "/api/plugins/inventory/topology/collect", json={"shards": 2}
+        )
+
+        expected_shard_count = 2
+        expected_host_count = 3
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        body = response.json()
+        assert body["task_history_ids"] == [101, 102]
+        assert body["shard_count"] == expected_shard_count
+        assert body["host_count"] == expected_host_count
+        assert mock_task_api_dep.post.await_count == expected_shard_count
+
+    def test_returns_404_when_no_mysql_services_exist(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Ensure topology collect 404s when the inventory has no MySQL services."""
+        mock_inventory_api_dep.get = AsyncMock(return_value={"items": []})
+        mock_task_api_dep.get = AsyncMock(return_value={"executor-a": "1.1.1.1"})
+        response = test_client.post("/api/plugins/inventory/topology/collect", json={})
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_rejects_unknown_executor_host(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Ensure an explicit, unknown executor_host yields 400."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value={"items": [_mysql_service(1, "10.0.0.1")]}
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={"executor-a": "1.1.1.1"})
+        response = test_client.post(
+            "/api/plugins/inventory/topology/collect",
+            json={"executor_host": "missing"},
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+def _stdout_stream(stdout: str):
+    """Return an async-iterator factory producing the framed log stream."""
+
+    async def _stream(_path, params=None):
+        yield json.dumps({"type": "stdout", "msg": stdout}).encode("utf-8")
+
+    return _stream
+
+
+class TestTopologyResult:
+    """Tests for ``GET /api/plugins/inventory/topology/result``."""
+
+    def test_running_status_when_any_task_pending(self, test_client, mock_task_api_dep):
+        """Ensure result endpoint reports ``running`` while any task is unfinished."""
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                {"id": 1, "status": "success"},
+                {"id": 2, "status": "running"},
+            ]
+        )
+        response = test_client.get(
+            "/api/plugins/inventory/topology/result", params={"ids": "1,2"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["status"] == "running"
+        assert body["pending_task_ids"] == [2]
+        assert body["graph"] is None
+
+    @pytest.mark.parametrize("terminal_status", ["failed", "lost", "stopped", "stale"])
+    def test_terminal_failure_with_no_stdout_returns_failed(
+        self, test_client, mock_task_api_dep, terminal_status: str
+    ):
+        """Ensure unsuccessful terminal tasks with no graph data do not report ``ok``."""
+        mock_task_api_dep.get = AsyncMock(
+            return_value={"id": 9, "status": terminal_status}
+        )
+        mock_task_api_dep.stream = _stdout_stream("")
+
+        response = test_client.get(
+            "/api/plugins/inventory/topology/result", params={"ids": "9"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["pending_task_ids"] == []
+        assert body["graph"]["nodes"] == []
+
+    def test_invalid_ids_yields_400(self, test_client, mock_task_api_dep):
+        """Ensure non-integer ids in the query string return HTTP 400."""
+        response = test_client.get(
+            "/api/plugins/inventory/topology/result", params={"ids": "abc"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_missing_ids_yields_400(self, test_client, mock_task_api_dep):
+        """Ensure the ids query parameter is required."""
+        response = test_client.get("/api/plugins/inventory/topology/result")
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
