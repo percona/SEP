@@ -193,6 +193,7 @@ class TestSnippetsApiPerSnippetSchema:
             for field in preview_section["fields"]
             if field["type"] == "script_preview"
         )
+        assert preview_field["label"] == "Snippet file"
         assert preview_field["endpoint_url"] == (
             f"/plugins/snippets/{snippet.filename}/preview"
         )

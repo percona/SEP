@@ -117,12 +117,20 @@ const SectionRenderer = memo(function SectionRenderer({
           disableGutters
           TransitionProps={{ unmountOnExit: true }}
         >
-          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 0 }}>
-            <Typography component="legend" variant="h6" sx={{ px: 0 }}>
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon />}
+            sx={{
+              pl: 2,
+              pr: 1,
+              minHeight: 48,
+              '& .MuiAccordionSummary-content': { my: 1 },
+            }}
+          >
+            <Typography component="legend" variant="subtitle1" sx={{ fontWeight: 600 }}>
               {section.title}
             </Typography>
           </AccordionSummary>
-          <AccordionDetails sx={{ px: 0 }}>{sectionContent}</AccordionDetails>
+          <AccordionDetails sx={{ px: 0, pl: 2, pr: 0 }}>{sectionContent}</AccordionDetails>
         </Accordion>
       ) : (
         <>
@@ -222,14 +230,18 @@ function SchemaFormBody({
         {submitLabel}
       </Button>
 
-      {afterSubmitSections.map((section, idx) => (
-        <SectionRenderer
-          key={`${section.title}-after-${idx}`}
-          section={section}
-          idx={idx}
-          violations={violationsBySection.get(section) ?? []}
-        />
-      ))}
+      {afterSubmitSections.length > 0 ? (
+        <Box sx={{ mt: 3 }}>
+          {afterSubmitSections.map((section, idx) => (
+            <SectionRenderer
+              key={`${section.title}-after-${idx}`}
+              section={section}
+              idx={idx}
+              violations={violationsBySection.get(section) ?? []}
+            />
+          ))}
+        </Box>
+      ) : null}
     </Box>
   );
 }

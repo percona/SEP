@@ -68,6 +68,7 @@ async def test_per_snippet_schema_includes_host_and_preview(create_snippet):
     preview = next(
         f for f in preview_section.fields if isinstance(f, ScriptPreviewField)
     )
+    assert preview.label == "Snippet file"
     assert preview.endpoint_url == (f"/plugins/snippets/{snippet.filename}/preview")
 
 
