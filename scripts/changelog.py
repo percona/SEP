@@ -378,6 +378,34 @@ def _git_ls_tree(ref: str, path: str) -> set[str]:
     return names
 
 
+def _git_merge_base(ref_a: str, ref_b: str) -> str:
+    """Return the merge-base commit SHA of two refs.
+
+    Used by :func:`_prune_consumed_fragments` to find the scope-lock commit
+    — the common ancestor of main (``HEAD``) and the release branch
+    (``MERGE_HEAD``). The merge-base's ``changelog.d/`` listing is the
+    correct baseline for "what existed when the release branch was cut".
+    Monkeypatched in tests.
+
+    :param ref_a: First ref name.
+    :type ref_a: str
+    :param ref_b: Second ref name.
+    :type ref_b: str
+    :return: The merge-base commit SHA.
+    :rtype: str
+    :raises subprocess.CalledProcessError: If ``git merge-base`` fails (no
+        common ancestor, etc.).
+    """
+    git_exe = shutil.which("git") or "git"
+    result = subprocess.run(
+        [git_exe, "merge-base", ref_a, ref_b],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return result.stdout.strip()
+
+
 def _extract_version_section(
     changelog_text: str,
     version: str,
@@ -514,18 +542,33 @@ def _build_rebuilt_footer(
 def _prune_consumed_fragments() -> int:
     """Delete ``changelog.d/`` fragments that the release branch consumed.
 
-    Consumed = present in ours-side ``changelog.d/`` (at HEAD) but absent in
-    theirs-side ``changelog.d/`` (at MERGE_HEAD). RESERVED_FILENAMES are
-    excluded from consideration even if they happen to be missing on one
-    side. Files matching :data:`FRAGMENT_RE` are deleted from the working
-    tree; all other files are left alone.
+    Consumed = present in the merge-base's ``changelog.d/`` but absent in
+    the release branch's ``changelog.d/`` (the release branch's
+    ``cmd_assemble`` step deleted them). Fragments newly added to main
+    after scope-lock did not exist at the merge-base, so they are not in
+    the consumed set and are preserved.
 
-    :return: The number of fragment files deleted.
+    ``RESERVED_FILENAMES`` are excluded from consideration even if they
+    happen to be missing on one side. Files matching :data:`FRAGMENT_RE`
+    are deleted from the working tree; all other files are left alone.
+
+    :return: The number of fragment files attempted to be deleted (count
+        includes files that were already removed by git's auto-merge
+        before this function ran).
     :rtype: int
     """
-    ours_fragments = _git_ls_tree("HEAD", str(CHANGELOG_D).rstrip("/"))
-    theirs_fragments = _git_ls_tree("MERGE_HEAD", str(CHANGELOG_D).rstrip("/"))
-    consumed_names = ours_fragments - theirs_fragments
+    try:
+        merge_base = _git_merge_base("HEAD", "MERGE_HEAD")
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"error: failed to compute merge-base of HEAD and MERGE_HEAD: {exc}",
+            file=sys.stderr,
+        )
+        return 0
+    changelog_d_path = str(CHANGELOG_D).rstrip("/")
+    baseline_fragments = _git_ls_tree(merge_base, changelog_d_path)
+    theirs_fragments = _git_ls_tree("MERGE_HEAD", changelog_d_path)
+    consumed_names = baseline_fragments - theirs_fragments
     pruned = 0
     for name in sorted(consumed_names):
         if name in RESERVED_FILENAMES:
@@ -535,7 +578,7 @@ def _prune_consumed_fragments() -> int:
         fragment_path = CHANGELOG_D / name
         if fragment_path.exists():
             fragment_path.unlink()
-            pruned += 1
+        pruned += 1
     return pruned
 
 
@@ -546,8 +589,9 @@ def cmd_resolve_backmerge(version: str) -> int:
     :func:`_git_show_ref`. This works whether or not CHANGELOG.md was
     conflicted, because MERGE_HEAD always exists during a mid-merge state.
     Writes the merged result to ``CHANGELOG.md`` in the working tree and
-    deletes fragments under ``changelog.d/`` that the release branch consumed
-    (determined by directory diff between HEAD and MERGE_HEAD).
+    deletes ``changelog.d/`` fragments that the release branch consumed
+    (determined by directory diff between the scope-lock merge-base and
+    MERGE_HEAD, so post-scope-lock additions to main are preserved).
 
     :param version: The release version (no ``v`` prefix).
     :type version: str
