@@ -540,3 +540,56 @@ def test_assemble_preserves_section_order(repo):
     fixed_idx = content.index("### Fixed")
     security_idx = content.index("### Security")
     assert added_idx < breaking_idx < fixed_idx < security_idx
+
+
+SAMPLE_CHANGELOG_NO_UNRELEASED_FOOTER = """\
+# Changelog
+
+Intro text.
+
+## [Unreleased]
+
+## [v0.12.1] - 2026-05-05
+
+### Fixed
+
+- SEP-1093: Restore chained task dispatch
+
+[v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1
+"""
+
+
+def test_update_compare_links_synthesizes_when_unreleased_footer_missing(
+    repo,
+    monkeypatch,
+):
+    """`_update_compare_links` writes both links when [Unreleased]: is absent.
+
+    This is the post-transition state: the broken `[Unreleased]: v0.12.1...HEAD`
+    line was removed by hand for v0.12.x; the next release (v0.13.0) must still
+    produce a complete footer.
+    """
+    repo.joinpath("CHANGELOG.md").write_text(
+        SAMPLE_CHANGELOG_NO_UNRELEASED_FOOTER,
+        encoding="utf-8",
+    )
+    # Set up one consumed fragment so assemble has something to do.
+    repo.joinpath("changelog.d", "SEP-200.added.md").write_text(
+        "New thing\n",
+        encoding="utf-8",
+    )
+    exit_code = changelog.main(
+        [
+            "assemble",
+            "--version",
+            "0.13.0",
+            "--date",
+            "2026-06-01",
+            "--tickets",
+            "SEP-200",
+        ],
+    )
+    assert exit_code == 0
+    text = repo.joinpath("CHANGELOG.md").read_text(encoding="utf-8")
+    assert "[Unreleased]: https://github.com/percona/SEP/compare/v0.13.0...HEAD" in text
+    assert "[v0.13.0]: https://github.com/percona/SEP/compare/v0.12.1...v0.13.0" in text

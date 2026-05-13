@@ -252,15 +252,22 @@ def _splice_version_section(
 def _update_compare_links(changelog_text: str, version: str) -> str:
     """Rewrite the ``[Unreleased]`` compare link and insert a new ``[vX.Y.Z]`` link.
 
+    When the ``[Unreleased]:`` footer is absent (the state immediately after
+    the v0.12.x transition cleanup that removed the broken compare link),
+    synthesize both lines from scratch by inferring the previous-version tag
+    from the most recent ``## [vA.B.C]`` heading.
+
     :param changelog_text: The current ``CHANGELOG.md`` contents.
     :type changelog_text: str
     :param version: The new version (without the ``v`` prefix).
     :type version: str
     :return: The updated ``CHANGELOG.md`` contents.
     :rtype: str
-    :raises FragmentError: If the ``[Unreleased]`` compare link is missing.
+    :raises FragmentError: If neither an ``[Unreleased]:`` footer nor any
+        ``## [v...]`` section heading can be found.
     """
     lines = changelog_text.splitlines()
+    suffix = "\n" if changelog_text.endswith("\n") else ""
     for idx, line in enumerate(lines):
         match = UNRELEASED_COMPARE_RE.match(line)
         if match is None:
@@ -269,9 +276,38 @@ def _update_compare_links(changelog_text: str, version: str) -> str:
         lines[idx] = f"[Unreleased]: {REPO_COMPARE_URL}/v{version}...HEAD"
         new_link = f"[v{version}]: {REPO_COMPARE_URL}/v{previous}...v{version}"
         lines.insert(idx + 1, new_link)
-        suffix = "\n" if changelog_text.endswith("\n") else ""
         return "\n".join(lines) + suffix
-    raise FragmentError("CHANGELOG.md: missing ``[Unreleased]`` compare link")
+
+    # Footer absent — synthesize. Find the previous version from the most
+    # recent ``## [vA.B.C]`` heading (excluding the version we're about to add,
+    # which by this point in cmd_assemble already lives near the top of the file).
+    previous_version = None
+    new_section_heading = f"## [v{version}]"
+    for line in lines:
+        if not line.startswith("## [v"):
+            continue
+        if line.startswith(new_section_heading):
+            continue
+        # Strip ``## [`` prefix and everything from ``]`` onwards.
+        _prefix = "## ["
+        bracket_end = line.find("]")
+        if bracket_end <= len(_prefix):
+            continue
+        candidate = line[len(_prefix) : bracket_end]  # e.g. ``v0.12.1``
+        if not candidate.startswith("v"):
+            continue
+        previous_version = candidate[1:]
+        break
+    if previous_version is None:
+        raise FragmentError(
+            "CHANGELOG.md: missing ``[Unreleased]`` compare link and no "
+            "``## [vA.B.C]`` section heading to infer previous version from",
+        )
+    while lines and lines[-1].strip() == "":
+        lines.pop()
+    lines.append(f"[Unreleased]: {REPO_COMPARE_URL}/v{version}...HEAD")
+    lines.append(f"[v{version}]: {REPO_COMPARE_URL}/v{previous_version}...v{version}")
+    return "\n".join(lines) + suffix
 
 
 def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
