@@ -75,6 +75,36 @@ def parse_ndjson(stdout: str) -> list[dict[str, Any]]:
     return events
 
 
+def merge_host_records(
+    *event_streams: Iterable[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Merge ``host_done`` and ``host_error`` events from N shards into one map.
+
+    Last-write-wins on duplicate ``host`` keys; ``host_error`` always replaces
+    a prior ``host_done`` so a later shard's failure is visible.
+    """
+    by_host: dict[str, dict[str, Any]] = {}
+    errors: dict[str, str] = {}
+    for stream in event_streams:
+        for ev in stream:
+            kind = ev.get("event")
+            host = ev.get("host")
+            if not host:
+                continue
+            if kind == "host_done":
+                by_host[host] = ev.get("data") or {}
+                errors.pop(host, None)
+            elif kind == "host_error":
+                errors[host] = str(ev.get("error", "unknown error"))
+                by_host.pop(host, None)
+    out: dict[str, dict[str, Any]] = {}
+    for host, data in by_host.items():
+        out[host] = {"status": "ok", "data": data}
+    for host, err in errors.items():
+        out[host] = {"status": "error", "error": err}
+    return out
+
+
 def _server_node_id(host_entry: str) -> str:
     return f"mysql:{host_entry}"
 
