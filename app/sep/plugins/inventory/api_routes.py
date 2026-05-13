@@ -39,12 +39,15 @@ React plugin.
 from __future__ import annotations
 
 from typing import Any
+import logging
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
-from app.sep.deps import InventoryAPI
+from app.sep.deps import InventoryAPI, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.inventory import payloads
 from app.sep.plugins.inventory.deps import (
     inventory_plugin_query_params,
     inventory_service_create_path,
@@ -55,10 +58,18 @@ from app.sep.plugins.inventory.deps import (
     unwrap_inventory_plugin_list_payload,
 )
 from app.sep.plugins.inventory.schema import inventory_schema
+from app.sep.plugins.inventory.topology import (
+    shard_hosts,
+    TOPOLOGY_PAYLOAD_REQUIREMENTS,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
 
+_TOPOLOGY_PAYLOAD_PATH = Path(payloads.__file__).parent / "topology.py"
+_TOPOLOGY_TASK = "run-python"
 _MAX_TOPOLOGY_SHARDS = 8
 class TopologyCollectBody(BaseModel):
     """Body for ``POST /topology/collect``.
@@ -154,6 +165,68 @@ def _select_topology_targets(
             )
         return [requested_executor]
     return list(available_hosts.keys())[: max(1, min(shards, _MAX_TOPOLOGY_SHARDS))]
+
+
+@router.post(
+    "/topology/collect",
+    response_model=TopologyCollectResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def topology_collect(
+    body: TopologyCollectBody,
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+) -> TopologyCollectResponse:
+    """Dispatch one or more topology collector tasks. Returns the task ids.
+
+    Hosts are pulled from the inventory MySQL service list; no inventory
+    persistence side effects occur. With ``shards > 1`` the host list is
+    split round-robin across the first N executor hosts so geographically
+    split inventories run in parallel.
+    """
+    hosts = await _collect_mysql_host_entries(inventory_api)
+    if not hosts:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No MySQL services found in inventory.",
+        )
+    available_hosts = await tasks_api.get("/hosts/")
+    targets = _select_topology_targets(available_hosts, body.executor_host, body.shards)
+    chunks = shard_hosts(hosts, len(targets))
+    targets = targets[: len(chunks)]
+
+    task_history_ids: list[int] = []
+    payload_uri = f"file://{_TOPOLOGY_PAYLOAD_PATH}"
+    extras = {
+        "connect_timeout": body.connect_timeout,
+        "read_timeout": body.read_timeout,
+    }
+    for target, chunk in zip(targets, chunks, strict=True):
+        meta = build_topology_meta(target=target, hosts=chunk, extra=extras)
+        meta.setdefault("requirements", TOPOLOGY_PAYLOAD_REQUIREMENTS)
+        created = await tasks_api.post(
+            f"/execute/{_TOPOLOGY_TASK}",
+            json={"meta": meta, "payload": payload_uri, "anonymize_mask": 0},
+        )
+        if not isinstance(created, dict) or "id" not in created:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Tasks API did not return a task history id.",
+            )
+        task_history_ids.append(int(created["id"]))
+    logger.info(
+        "Dispatched topology collection: hosts=%d shards=%d targets=%s tasks=%s",
+        len(hosts),
+        len(targets),
+        targets,
+        task_history_ids,
+    )
+    return TopologyCollectResponse(
+        task_history_ids=task_history_ids,
+        targets=targets,
+        host_count=len(hosts),
+        shard_count=len(targets),
+    )
 
 
 
