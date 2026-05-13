@@ -86,6 +86,7 @@ _TOPOLOGY_FINISHED_STATUSES = frozenset(
     {
         TaskHistoryStatusEnum.SUCCESS,
         TaskHistoryStatusEnum.FAILED,
+        TaskHistoryStatusEnum.LOST,
         TaskHistoryStatusEnum.STOPPED,
         TaskHistoryStatusEnum.STALE,
     }
@@ -304,6 +305,12 @@ async def _fetch_task_stdout(tasks_api: Any, task_history_id: int) -> str:
     return "".join(output)
 
 
+def _has_unsuccessful_terminal_status(histories: list[dict[str, Any]]) -> bool:
+    return any(
+        h.get("status") != TaskHistoryStatusEnum.SUCCESS.value for h in histories
+    )
+
+
 @router.get("/topology/result", response_model=TopologyResultResponse)
 async def topology_result(
     tasks_api: TaskAPI,
@@ -329,9 +336,7 @@ async def topology_result(
         return TopologyResultResponse(status="running", pending_task_ids=pending)
     stdouts = [await _fetch_task_stdout(tasks_api, tid) for tid in task_ids]
     graph = build_graph_from_stdouts(stdouts)
-    has_failures = any(
-        h.get("status") == TaskHistoryStatusEnum.FAILED.value for h in histories
-    )
+    has_failures = _has_unsuccessful_terminal_status(histories)
     return TopologyResultResponse(
         status="failed" if has_failures and not graph["nodes"] else "ok",
         graph=graph,
