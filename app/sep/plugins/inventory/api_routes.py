@@ -42,7 +42,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, Self, TYPE_CHECKING
+from typing import Any, Literal, Self, TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -148,7 +148,7 @@ class TopologyResultResponse(BaseModel):
     lists the still-running tasks for the UI's progress chip.
     """
 
-    status: str
+    status: Literal["running", "ok", "failed"]
     graph: dict[str, Any] | None = None
     pending_task_ids: list[int] = Field(default_factory=list)
 
