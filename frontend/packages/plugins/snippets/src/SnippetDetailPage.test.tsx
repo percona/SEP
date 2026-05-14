@@ -31,7 +31,7 @@ vi.mock('./hooks', () => ({
 vi.mock('@sep/framework', () => ({
   useSnippetPluginSchema: vi.fn(),
   snippetPluginSchemaPath: (filename: string) =>
-    `/plugins/snippets/${encodeURIComponent(filename)}/schema`,
+    `/plugins/snippets/snippet/schema?snippet_filename=${encodeURIComponent(filename)}`,
   SchemaFormRenderer: () => <div>Execution form</div>,
   TaskHistoryTable: () => <div>History table</div>,
   TaskLogViewer: () => <div>Logs viewer</div>,
