@@ -87,15 +87,6 @@ schema_endpoint(router=router, plugin_schema=inventory_schema)
 _TOPOLOGY_PAYLOAD_PATH = Path(payloads.__file__).parent / "topology.py"
 _TOPOLOGY_TASK = "run-python"
 _TOPOLOGY_STDOUT_STEP = "run-script"
-_TOPOLOGY_FINISHED_STATUSES = frozenset(
-    {
-        TaskHistoryStatusEnum.SUCCESS,
-        TaskHistoryStatusEnum.FAILED,
-        TaskHistoryStatusEnum.LOST,
-        TaskHistoryStatusEnum.STOPPED,
-        TaskHistoryStatusEnum.STALE,
-    }
-)
 _MAX_TOPOLOGY_SHARDS = 8
 _TOPOLOGY_HEARTBEAT_SECONDS = 15.0
 
@@ -308,6 +299,13 @@ def _has_unsuccessful_terminal_status(histories: list[dict[str, Any]]) -> bool:
     )
 
 
+def _is_terminal_task_status(status_value: Any) -> bool:
+    try:
+        return TaskHistoryStatusEnum(status_value).is_terminal()
+    except ValueError:
+        return False
+
+
 @router.get("/topology/result", response_model=TopologyResultResponse)
 async def topology_result(
     tasks_api: TaskAPI,
@@ -325,9 +323,7 @@ async def topology_result(
     task_ids = _parse_ids_param(ids)
     histories = [await _fetch_task_history(tasks_api, tid) for tid in task_ids]
     pending = [
-        int(h["id"])
-        for h in histories
-        if h.get("status") not in _TOPOLOGY_FINISHED_STATUSES
+        int(h["id"]) for h in histories if not _is_terminal_task_status(h.get("status"))
     ]
     if pending:
         return TopologyResultResponse(status="running", pending_task_ids=pending)
