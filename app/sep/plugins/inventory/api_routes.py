@@ -55,6 +55,7 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.requests import RemoteAPI
+from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.sep.deps import InventoryAPI, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory import payloads
@@ -147,7 +148,7 @@ class TopologyResultResponse(BaseModel):
 def _format_host_entry(service: dict[str, Any]) -> str | None:
     node = service.get("node") or {}
     address = node.get("address") or service.get("name")
-    port = service.get("port") or 3306
+    port = service.get("port") or DEFAULT_MYSQL_PORT
     if not address:
         return None
     return f"{address}:{port}"
