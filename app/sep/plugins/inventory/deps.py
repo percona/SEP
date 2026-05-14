@@ -38,8 +38,8 @@ from app.tasks.config import tasks_settings
 INVENTORY_PLUGIN_ENTITY_NAMES = frozenset({"nodes", "services", "schemas", "tables"})
 
 
-class InventorySyncTriggerBody(BaseModel):
-    """Optional JSON body for the ad-hoc inventory sync trigger.
+class InventorySyncTriggerWrite(BaseModel):
+    """Carry the optional JSON body for the ad-hoc inventory sync trigger.
 
     A ``None`` or empty ``syncer`` selects the sync-all path; a non-empty
     string targets a single configured syncer by its fully qualified
@@ -56,7 +56,7 @@ class InventorySyncTriggerBody(BaseModel):
 
 
 class InventorySyncStatusResponse(BaseModel):
-    """Response body for the ad-hoc inventory sync status endpoint.
+    """Represent the inventory sync status response.
 
     :param is_running: ``True`` when an inventory-wide sync is currently
         in progress; ``False`` otherwise.

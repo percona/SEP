@@ -34,44 +34,52 @@ from app.sep.main import sep_app
 from app.sep.plugins.inventory.deps import get_syncers
 
 
-class _StubPMMSyncer:
+class StubPMMSyncer:
     """Stand in for a PMM syncer; capability checks default to ``True``."""
 
     def can_sync_inventory(self) -> bool:
+        """Return ``True``."""
         return True
 
     def can_sync_node(self, node: CreatedNode) -> bool:
+        """Return ``True``."""
         return True
 
     def can_sync_service(self, service: CreatedService) -> bool:
+        """Return ``True``."""
         return True
 
     def can_sync_schema(self, schema: CreatedSchema) -> bool:
+        """Return ``True``."""
         return True
 
 
-class _StubMySQLSyncer:
+class StubMySQLSyncer:
     """Stand in for a MySQL syncer; capability checks default to ``True``."""
 
     def can_sync_inventory(self) -> bool:
+        """Return ``True``."""
         return True
 
     def can_sync_node(self, node: CreatedNode) -> bool:
+        """Return ``True``."""
         return True
 
     def can_sync_service(self, service: CreatedService) -> bool:
+        """Return ``True``."""
         return True
 
     def can_sync_schema(self, schema: CreatedSchema) -> bool:
+        """Return ``True``."""
         return True
 
 
-_PMM_STUB_NAME = f"{_StubPMMSyncer.__module__}.{_StubPMMSyncer.__name__}"
-_MYSQL_STUB_NAME = f"{_StubMySQLSyncer.__module__}.{_StubMySQLSyncer.__name__}"
-_EXPECTED_STUB_COUNT = 2
+PMM_STUB_NAME = f"{StubPMMSyncer.__module__}.{StubPMMSyncer.__name__}"
+MYSQL_STUB_NAME = f"{StubMySQLSyncer.__module__}.{StubMySQLSyncer.__name__}"
+EXPECTED_STUB_COUNT = 2
 
 
-def _no_syncers() -> list:
+def no_syncers() -> list:
     """Resolve ``SyncersDep`` to an empty list for the no-syncers test path."""
     return []
 
@@ -87,7 +95,7 @@ def mock_sync_item_manager(mocker: MockerFixture) -> AsyncMock:
 @pytest.fixture
 def mock_syncers() -> Iterator[list]:
     """Override the SyncersDep with two stub syncers."""
-    stubs = [_StubPMMSyncer(), _StubMySQLSyncer()]
+    stubs = [StubPMMSyncer(), StubMySQLSyncer()]
     sep_app.dependency_overrides[get_syncers] = lambda: stubs
     yield stubs
     sep_app.dependency_overrides = {}
@@ -133,14 +141,9 @@ def mock_run_sync_funcs(mocker: MockerFixture) -> dict[str, AsyncMock]:
         "app.sep.plugins.inventory.routes.run_schema_sync",
         new=schema_mock,
     )
-    # The JSON API trigger imports ``run_inventory_sync`` into the
-    # ``api_routes`` module namespace; patch that alias too so API-route
-    # tests can reuse the same fixture. ``create=True`` keeps this safe
-    # during early TDD iterations when the import has not yet landed.
     mocker.patch(
         "app.sep.plugins.inventory.api_routes.run_inventory_sync",
         new=inventory_mock,
-        create=True,
     )
     return {
         "inventory": inventory_mock,

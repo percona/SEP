@@ -32,7 +32,7 @@ from app.sep.plugins.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
 )
-from tests.app.sep.plugins.inventory.conftest import _no_syncers, _PMM_STUB_NAME
+from tests.app.sep.plugins.inventory.conftest import no_syncers, PMM_STUB_NAME
 
 _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
 _CREATE_SERVICE_TEST_NODE_ID = 7
@@ -293,7 +293,7 @@ class TestInventorySyncTrigger:
         """POST ``{"syncer": "<name>"}`` schedules only the matching syncer."""
         response = test_client.post(
             "/api/plugins/inventory/sync/",
-            json={"syncer": _PMM_STUB_NAME},
+            json={"syncer": PMM_STUB_NAME},
         )
         assert response.status_code == status.HTTP_202_ACCEPTED
         mock_run_sync_funcs["inventory"].assert_awaited_once()
@@ -320,7 +320,7 @@ class TestInventorySyncTrigger:
         )
         response = test_client.post(
             "/api/plugins/inventory/sync/",
-            json={"syncer": _PMM_STUB_NAME},
+            json={"syncer": PMM_STUB_NAME},
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         mock_run_sync_funcs["inventory"].assert_not_awaited()
@@ -329,11 +329,11 @@ class TestInventorySyncTrigger:
         self, test_client, mock_run_sync_funcs
     ):
         """With zero configured syncers, a named target still 400s."""
-        sep_app.dependency_overrides[get_syncers] = _no_syncers
+        sep_app.dependency_overrides[get_syncers] = no_syncers
         try:
             response = test_client.post(
                 "/api/plugins/inventory/sync/",
-                json={"syncer": _PMM_STUB_NAME},
+                json={"syncer": PMM_STUB_NAME},
             )
         finally:
             sep_app.dependency_overrides.pop(get_syncers, None)
@@ -344,7 +344,7 @@ class TestInventorySyncTrigger:
         self, test_client, mock_run_sync_funcs
     ):
         """With zero configured syncers, sync-all returns 202 (matches Jinja2)."""
-        sep_app.dependency_overrides[get_syncers] = _no_syncers
+        sep_app.dependency_overrides[get_syncers] = no_syncers
         try:
             response = test_client.post("/api/plugins/inventory/sync/")
         finally:
@@ -432,12 +432,16 @@ class TestInventorySyncStatus:
         component. The React client's generated hooks depend on a stable schema
         name, so this assertion guards against regression to the untyped form.
         """
-        sep_app.openapi_schema = None  # force schema rebuild to pick up any changes
-        openapi = sep_app.openapi()
-        response_schema = openapi["paths"]["/api/plugins/inventory/sync/status/"][
-            "get"
-        ]["responses"]["200"]["content"]["application/json"]["schema"]
-        assert "$ref" in response_schema, (
-            "Expected a $ref to InventorySyncStatusResponse; got inline schema. "
-            "Change the return type annotation back to InventorySyncStatusResponse."
-        )
+        prior_schema = sep_app.openapi_schema
+        sep_app.openapi_schema = None
+        try:
+            openapi = sep_app.openapi()
+            response_schema = openapi["paths"]["/api/plugins/inventory/sync/status/"][
+                "get"
+            ]["responses"]["200"]["content"]["application/json"]["schema"]
+            assert "$ref" in response_schema, (
+                "Expected a $ref to InventorySyncStatusResponse; got inline schema. "
+                "Change the return type annotation back to InventorySyncStatusResponse."
+            )
+        finally:
+            sep_app.openapi_schema = prior_schema

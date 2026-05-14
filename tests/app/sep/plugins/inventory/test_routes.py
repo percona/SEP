@@ -45,12 +45,12 @@ from tests.app.factories import (
     MOCK_CREATED_TABLE_ID,
 )
 from tests.app.sep.plugins.inventory.conftest import (
-    _EXPECTED_STUB_COUNT,
-    _MYSQL_STUB_NAME,
-    _no_syncers,
-    _PMM_STUB_NAME,
-    _StubMySQLSyncer,
-    _StubPMMSyncer,
+    EXPECTED_STUB_COUNT,
+    MYSQL_STUB_NAME,
+    no_syncers,
+    PMM_STUB_NAME,
+    StubMySQLSyncer,
+    StubPMMSyncer,
 )
 
 
@@ -150,7 +150,7 @@ async def test_sync_inventory_with_valid_syncer_param(
     """Sync only the named syncer when a valid ``syncer`` form field is present."""
     response = await async_test_client.post(
         "/inventory/sync/",
-        data={"syncer": _PMM_STUB_NAME},
+        data={"syncer": PMM_STUB_NAME},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -201,13 +201,13 @@ async def test_sync_inventory_with_incapable_syncer_skips_run(
     async_test_client, mocker, mock_run_sync_funcs
 ):
     """Reject a POST whose syncer matches by name but cannot sync inventory."""
-    incapable = _StubPMMSyncer()
+    incapable = StubPMMSyncer()
     mocker.patch.object(incapable, "can_sync_inventory", return_value=False)
     sep_app.dependency_overrides[get_syncers] = lambda: [incapable]
     try:
         response = await async_test_client.post(
             "/inventory/sync/",
-            data={"syncer": _PMM_STUB_NAME},
+            data={"syncer": PMM_STUB_NAME},
             follow_redirects=False,
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -254,7 +254,7 @@ async def test_sync_node_with_valid_syncer_param(
     """Sync only the named syncer for a node when ``syncer`` is supplied."""
     response = await async_test_client.post(
         f"/inventory/{created_node.id}/sync/",
-        data={"syncer": _MYSQL_STUB_NAME},
+        data={"syncer": MYSQL_STUB_NAME},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -293,8 +293,8 @@ async def test_sync_node_without_syncer_param_passes_all_configured_syncers_even
     whose capability check is currently ``False`` may still become capable
     once an earlier syncer mutates the node.
     """
-    pmm_stub = _StubPMMSyncer()
-    mysql_stub = _StubMySQLSyncer()
+    pmm_stub = StubPMMSyncer()
+    mysql_stub = StubMySQLSyncer()
     mocker.patch.object(mysql_stub, "can_sync_node", return_value=False)
     sep_app.dependency_overrides[get_syncers] = lambda: [pmm_stub, mysql_stub]
     try:
@@ -371,7 +371,7 @@ async def test_sync_service_with_valid_syncer_param(
     """Sync only the named syncer for a service when ``syncer`` is supplied."""
     response = await async_test_client.post(
         f"/inventory/services/{created_service.id}/sync/",
-        data={"syncer": _PMM_STUB_NAME},
+        data={"syncer": PMM_STUB_NAME},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -463,7 +463,7 @@ async def test_sync_schema_with_valid_syncer_param(
     """Sync only the named syncer for a schema when ``syncer`` is supplied."""
     response = await async_test_client.post(
         f"/inventory/schemas/{created_schema.id}/sync/",
-        data={"syncer": _MYSQL_STUB_NAME},
+        data={"syncer": MYSQL_STUB_NAME},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -883,10 +883,10 @@ def _assert_available_syncers_context(template_spy):
     template_spy.assert_called_once()
     _, kwargs = template_spy.call_args
     available = kwargs["context"]["available_syncers"]
-    assert len(available) == _EXPECTED_STUB_COUNT
+    assert len(available) == EXPECTED_STUB_COUNT
     assert all(isinstance(entry, AvailableSyncer) for entry in available)
-    assert {entry.name for entry in available} == {_PMM_STUB_NAME, _MYSQL_STUB_NAME}
-    assert {entry.display_name for entry in available} == {"_StubPMM", "_StubMySQL"}
+    assert {entry.name for entry in available} == {PMM_STUB_NAME, MYSQL_STUB_NAME}
+    assert {entry.display_name for entry in available} == {"StubPMM", "StubMySQL"}
     assert kwargs["context"]["can_sync"] is True
 
 
@@ -947,7 +947,7 @@ def test_node_list_context_is_empty_when_no_syncers_configured(
 ):
     """Render the node list with zero configured syncers — sync UI is hidden."""
     mock_task_api_dep.get.return_value = []
-    sep_app.dependency_overrides[get_syncers] = _no_syncers
+    sep_app.dependency_overrides[get_syncers] = no_syncers
     template_spy = mocker.spy(templates, "TemplateResponse")
     try:
         response = test_client.get("/inventory/")
@@ -1243,11 +1243,11 @@ def test_node_list_renders_per_syncer_schedule_with_display_name(
     test_client, mock_inventory_api_dep, mock_task_api_dep
 ):
     """A schedule with a known syncer renders the syncer's display name."""
-    mock_task_api_dep.get.return_value = [_interval_periodic(syncer=_PMM_STUB_NAME)]
+    mock_task_api_dep.get.return_value = [_interval_periodic(syncer=PMM_STUB_NAME)]
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
     body = _compact(response.text)
-    assert "<strong>_StubPMM</strong>" in body
+    assert "<strong>StubPMM</strong>" in body
     assert "All syncers" not in body.split("Attach a schedule")[0]
 
 
@@ -1260,7 +1260,7 @@ def test_node_list_renders_two_schedules_with_distinct_actions(
     """Two schedules render as two rows whose update/delete URLs differ."""
     mock_task_api_dep.get.return_value = [
         _interval_periodic(task_id=11),
-        _interval_periodic(task_id=22, syncer=_PMM_STUB_NAME),
+        _interval_periodic(task_id=22, syncer=PMM_STUB_NAME),
     ]
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
@@ -1298,7 +1298,7 @@ def test_node_list_renders_per_row_disabled_marker(
     """The ``(disabled)`` marker appears only on the disabled row."""
     mock_task_api_dep.get.return_value = [
         _interval_periodic(task_id=11, enabled=True),
-        _interval_periodic(task_id=22, enabled=False, syncer=_PMM_STUB_NAME),
+        _interval_periodic(task_id=22, enabled=False, syncer=PMM_STUB_NAME),
     ]
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
@@ -1318,8 +1318,8 @@ def test_node_list_attach_form_includes_syncer_radio_options(
     assert response.status_code == status.HTTP_200_OK
     body = _compact(response.text)
     assert 'type="radio" name="syncer" value=""' in body
-    assert f'value="{_PMM_STUB_NAME}"' in body
-    assert f'value="{_MYSQL_STUB_NAME}"' in body
+    assert f'value="{PMM_STUB_NAME}"' in body
+    assert f'value="{MYSQL_STUB_NAME}"' in body
 
 
 @pytest.mark.asyncio
@@ -1330,7 +1330,7 @@ async def test_schedule_create_attach_with_syncer_succeeds(
     response = await async_test_client.post(
         "/inventory/schedule/",
         data={
-            "syncer": _PMM_STUB_NAME,
+            "syncer": PMM_STUB_NAME,
             "schedule_mode": "interval",
             "interval_every": "5",
             "interval_period": "minutes",
@@ -1343,7 +1343,7 @@ async def test_schedule_create_attach_with_syncer_succeeds(
         json={
             "task": "inventory-sync",
             "interval": {"every": 5, "period": "minutes"},
-            "execute_request": {"meta": {"syncer": _PMM_STUB_NAME}},
+            "execute_request": {"meta": {"syncer": PMM_STUB_NAME}},
         },
     )
 
@@ -1381,7 +1381,7 @@ async def test_schedule_create_attach_with_crontab_succeeds(
     response = await async_test_client.post(
         "/inventory/schedule/",
         data={
-            "syncer": _PMM_STUB_NAME,
+            "syncer": PMM_STUB_NAME,
             "schedule_mode": "crontab",
             "cron_expression": "0 0 * * *",
             "cron_timezone": "UTC",
@@ -1401,7 +1401,7 @@ async def test_schedule_create_attach_with_crontab_succeeds(
                 "month_of_year": "*",
                 "day_of_week": "*",
             },
-            "execute_request": {"meta": {"syncer": _PMM_STUB_NAME}},
+            "execute_request": {"meta": {"syncer": PMM_STUB_NAME}},
         },
     )
 

@@ -58,7 +58,7 @@ from app.sep.plugins.inventory.deps import (
     inventory_service_list_path,
     InventoryPluginJsonObjectBody,
     InventorySyncStatusResponse,
-    InventorySyncTriggerBody,
+    InventorySyncTriggerWrite,
     require_inventory_plugin_entity,
     SyncersDep,
     unwrap_inventory_plugin_list_payload,
@@ -75,11 +75,11 @@ _OPTIONAL_TRIGGER_BODY: Any = Body(default=None)
 
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
-async def trigger_inventory_sync(
+async def inventory_sync_trigger(
     user: ApiCurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
-    body: InventorySyncTriggerBody | None = _OPTIONAL_TRIGGER_BODY,
+    body: InventorySyncTriggerWrite | None = _OPTIONAL_TRIGGER_BODY,
 ) -> Response:
     """Schedule an ad-hoc inventory sync as a background task.
 
@@ -97,7 +97,7 @@ async def trigger_inventory_sync(
     :param background_tasks: FastAPI's background task scheduler.
     :type background_tasks: BackgroundTasks
     :param body: Optional trigger body.
-    :type body: InventorySyncTriggerBody | None
+    :type body: InventorySyncTriggerWrite | None
     :return: Empty 202 Accepted response.
     :rtype: Response
     :raises HTTPBadRequestException: When ``body.syncer`` is set but does
