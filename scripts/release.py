@@ -750,7 +750,7 @@ def _back_merge_release_into_main(
     print(
         "==> Resolving version files by keeping main's dev version (if conflicted)..."
     )
-    for path in ("pyproject.toml", "app/__init__.py"):
+    for path in (str(PYPROJECT), str(APP_INIT)):
         _checkout_ours_if_unmerged(path)
 
     print("==> Staging resolved files...")
@@ -760,8 +760,8 @@ def _back_merge_release_into_main(
             "add",
             "CHANGELOG.md",
             "changelog.d",
-            "pyproject.toml",
-            "app/__init__.py",
+            str(PYPROJECT),
+            str(APP_INIT),
         ]
     )
 

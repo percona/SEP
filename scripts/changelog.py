@@ -69,9 +69,6 @@ UNRELEASED_COMPARE_RE: re.Pattern[str] = re.compile(
     r"^\[Unreleased\]: (?P<url>https://github\.com/percona/SEP/compare/"
     r"v(?P<previous>[\w.\-]+)\.\.\.HEAD)$",
 )
-VERSION_HEADING_RE: re.Pattern[str] = re.compile(
-    r"^## \[v(?P<version>[\w.\-]+)\](?: - (?P<date>\d{4}-\d{2}-\d{2}))?$",
-)
 VERSION_FOOTER_LINE_RE: re.Pattern[str] = re.compile(
     r"^\[v(?P<version>[\w.\-]+)\]: ",
 )
@@ -482,7 +479,10 @@ def _extract_version_section(
         )
     end = len(lines)
     for idx in range(start + 1, len(lines)):
-        if lines[idx].startswith("## [") or lines[idx].startswith("["):
+        line = lines[idx]
+        if line.startswith(("## [", "[Unreleased]:")) or VERSION_FOOTER_LINE_RE.match(
+            line,
+        ):
             end = idx
             break
     section = lines[start:end]
