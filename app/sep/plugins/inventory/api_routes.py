@@ -42,11 +42,11 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, Self, TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.exceptions import (
     HTTPBadGatewayException,
@@ -94,15 +94,15 @@ _TOPOLOGY_HEARTBEAT_SECONDS = 15.0
 _TOPOLOGY_POLL_INTERVAL_SECONDS = 0.5
 
 
-class TopologyCollectBody(BaseModel):
+class TopologyCollectWrite(BaseModel):
     """Describe the request body for ``POST /topology/collect``.
 
     :param shards: Number of executor hosts to dispatch in parallel. Hosts
         are split round-robin across the chosen executors. Capped at
         :data:`_MAX_TOPOLOGY_SHARDS`.
     :type shards: int
-    :param executor_host: Optional explicit executor; when set, overrides
-        ``shards`` to a single-shard run on that host.
+    :param executor_host: Optional explicit executor. Must be used with
+        ``shards=1`` because it selects a single-shard run.
     :type executor_host: str | None
     :param connect_timeout: Per-host MySQL TCP connect timeout (seconds).
     :type connect_timeout: int
@@ -114,6 +114,12 @@ class TopologyCollectBody(BaseModel):
     executor_host: str | None = None
     connect_timeout: int = Field(default=5, ge=1, le=60)
     read_timeout: int = Field(default=10, ge=1, le=120)
+
+    @model_validator(mode="after")
+    def _reject_executor_with_multiple_shards(self) -> Self:
+        if self.executor_host and self.shards != 1:
+            raise ValueError("executor_host requires shards=1")
+        return self
 
 
 class TopologyCollectResponse(BaseModel):
@@ -194,7 +200,7 @@ def _select_topology_targets(
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def topology_collect(
-    body: TopologyCollectBody,
+    body: TopologyCollectWrite,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
 ) -> TopologyCollectResponse:

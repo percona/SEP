@@ -293,6 +293,19 @@ class TestTopologyCollect:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_rejects_executor_host_with_multiple_shards(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Ensure explicit executor mode cannot silently ignore shards."""
+        response = test_client.post(
+            "/api/plugins/inventory/topology/collect",
+            json={"executor_host": "executor-a", "shards": 4},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert "executor_host requires shards=1" in response.text
+        mock_inventory_api_dep.get.assert_not_called()
+        mock_task_api_dep.post.assert_not_called()
+
     @pytest.mark.parametrize("hosts_payload", [None, []])
     def test_rejects_invalid_executor_hosts_payload(
         self, test_client, mock_inventory_api_dep, mock_task_api_dep, hosts_payload
