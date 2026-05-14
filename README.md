@@ -473,6 +473,12 @@ Server-Sent Events. Results are cached client-side with TanStack Query, so
 re-opening the tab is free until the user clicks
 **Refresh**.
 
+Topology runtime limits live in
+[`api_routes.py`](app/sep/plugins/inventory/api_routes.py) as module constants:
+maximum shards is 8, SSE heartbeat is 15 seconds, and task-status polling is
+every 0.5 seconds. Changing those values currently requires a code deploy; move
+them into `inventory_settings` first if they need per-deployment tuning.
+
 The payload reuses the same credential rules as `MySQLSyncer` -
 `~/.my.cnf` and `~/.mylogin.cnf` on the executor, with per-host login paths
 matched by `host:port` (or `host_port`) and a `client` fallback - so no
