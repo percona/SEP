@@ -49,6 +49,12 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPBadRequestException,
+    HTTPNotFoundException,
+    HTTPServiceUnavailableException,
+)
 from app.sep.deps import InventoryAPI, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory import payloads
@@ -176,15 +182,13 @@ def _select_topology_targets(
     available_hosts: dict[str, str], requested_executor: str | None, shards: int
 ) -> list[str]:
     if not available_hosts:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="No executor hosts available for topology collection.",
+        raise HTTPServiceUnavailableException(
+            "No executor hosts available for topology collection.",
         )
     if requested_executor:
         if requested_executor not in available_hosts:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Executor host {requested_executor!r} is not available.",
+            raise HTTPBadRequestException(
+                f"Executor host {requested_executor!r} is not available.",
             )
         return [requested_executor]
     return list(available_hosts.keys())[: max(1, min(shards, _MAX_TOPOLOGY_SHARDS))]
@@ -209,15 +213,13 @@ async def topology_collect(
     """
     hosts = await _collect_mysql_host_entries(inventory_api)
     if not hosts:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No MySQL services found in inventory.",
+        raise HTTPNotFoundException(
+            "No MySQL services found in inventory.",
         )
     available_hosts = await tasks_api.get("/hosts/")
     if not isinstance(available_hosts, dict):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Tasks API returned an invalid executor hosts payload.",
+        raise HTTPBadGatewayException(
+            "Tasks API returned an invalid executor hosts payload.",
         )
     targets = _select_topology_targets(available_hosts, body.executor_host, body.shards)
     chunks = shard_hosts(hosts, len(targets))
@@ -236,9 +238,8 @@ async def topology_collect(
             json={"meta": meta, "payload": payload_uri, "anonymize_mask": 0},
         )
         if not isinstance(created, dict) or "id" not in created:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Tasks API did not return a task history id.",
+            raise HTTPBadGatewayException(
+                "Tasks API did not return a task history id.",
             )
         task_history_ids.append(int(created["id"]))
     logger.info(
@@ -258,10 +259,7 @@ async def topology_collect(
 
 def _parse_ids_param(ids: str) -> list[int]:
     if not ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required ?ids= query parameter.",
-        )
+        raise HTTPBadRequestException("Missing required ?ids= query parameter.")
     parsed: list[int] = []
     seen: set[int] = set()
     for raw_chunk in ids.split(","):
@@ -271,18 +269,14 @@ def _parse_ids_param(ids: str) -> list[int]:
         try:
             value = int(chunk)
         except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid task history id: {chunk!r}.",
+            raise HTTPBadRequestException(
+                f"Invalid task history id: {chunk!r}."
             ) from exc
         if value not in seen:
             seen.add(value)
             parsed.append(value)
     if not parsed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No task history ids provided.",
-        )
+        raise HTTPBadRequestException("No task history ids provided.")
     return parsed
 
 
