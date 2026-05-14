@@ -219,18 +219,24 @@ async def topology_collect(
     chunks = shard_hosts(hosts, len(targets))
     targets = targets[: len(chunks)]
 
-    task_history_ids: list[int] = []
     payload_uri = f"file://{_TOPOLOGY_PAYLOAD_PATH}"
     extras = {
         "connect_timeout": body.connect_timeout,
         "read_timeout": body.read_timeout,
     }
+    dispatches = []
     for target, chunk in zip(targets, chunks, strict=True):
         meta = build_topology_meta(target=target, hosts=chunk, extra=extras)
-        created = await tasks_api.post(
-            f"/execute/{_TOPOLOGY_TASK}",
-            json={"meta": meta, "payload": payload_uri, "anonymize_mask": 0},
+        dispatches.append(
+            tasks_api.post(
+                f"/execute/{_TOPOLOGY_TASK}",
+                json={"meta": meta, "payload": payload_uri, "anonymize_mask": 0},
+            )
         )
+
+    created_tasks = await asyncio.gather(*dispatches)
+    task_history_ids: list[int] = []
+    for created in created_tasks:
         if not isinstance(created, dict) or "id" not in created:
             raise HTTPBadGatewayException(
                 "Tasks API did not return a task history id.",
