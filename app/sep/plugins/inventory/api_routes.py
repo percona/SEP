@@ -63,7 +63,6 @@ from app.sep.plugins.inventory.deps import (
     InventorySyncStatusResponse,
     InventorySyncTriggerWrite,
     require_inventory_plugin_entity,
-    SyncersDep,
     unwrap_inventory_plugin_list_payload,
 )
 from app.sep.plugins.inventory.models import (

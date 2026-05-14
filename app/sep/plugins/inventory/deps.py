@@ -225,6 +225,22 @@ def get_syncers(
 SyncersDep = Annotated[list[BaseSyncer], Depends(get_syncers)]
 
 
+def get_inventory_available_syncers(syncers: SyncersDep) -> list[AvailableSyncer]:
+    """Return syncers capable of syncing inventory.
+
+    :param syncers: Resolved syncer instances from ``SyncersDep``.
+    :type syncers: list[BaseSyncer]
+    :return: Filtered list of syncers that pass ``can_sync_inventory``.
+    :rtype: list[AvailableSyncer]
+    """
+    return build_available_syncers(syncers, lambda s: s.can_sync_inventory())
+
+
+InventoryAvailableSyncersDep = Annotated[
+    list[AvailableSyncer], Depends(get_inventory_available_syncers)
+]
+
+
 async def get_syncers_standalone() -> list[BaseSyncer]:
     """Initialize syncer instances with API clients constructed from settings.
 
