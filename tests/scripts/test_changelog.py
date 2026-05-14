@@ -591,8 +591,23 @@ def test_update_compare_links_synthesizes_when_unreleased_footer_missing(
     )
     assert exit_code == 0
     text = repo.joinpath("CHANGELOG.md").read_text(encoding="utf-8")
-    assert "[Unreleased]: https://github.com/percona/SEP/compare/v0.13.0...HEAD" in text
-    assert "[v0.13.0]: https://github.com/percona/SEP/compare/v0.12.1...v0.13.0" in text
+    unreleased_line = (
+        "[Unreleased]: https://github.com/percona/SEP/compare/v0.13.0...HEAD"
+    )
+    new_link_line = (
+        "[v0.13.0]: https://github.com/percona/SEP/compare/v0.12.1...v0.13.0"
+    )
+    old_link_line = (
+        "[v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1"
+    )
+    assert unreleased_line in text
+    assert new_link_line in text
+    # Newest-first ordering: synthesized lines slot in at the start of the
+    # footer block, above the pre-existing ``[v0.12.1]:`` line.
+    unreleased_idx = text.index(unreleased_line)
+    new_link_idx = text.index(new_link_line)
+    old_link_idx = text.index(old_link_line)
+    assert unreleased_idx < new_link_idx < old_link_idx
 
 
 # --- resolve-backmerge subcommand ------------------------------------------

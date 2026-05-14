@@ -257,6 +257,66 @@ def _splice_version_section(
     return "\n".join(new_lines) + suffix
 
 
+def _infer_previous_version(lines: list[str], version: str) -> str | None:
+    """Return the most recent prior version from ``## [vA.B.C]`` headings.
+
+    :param lines: The ``CHANGELOG.md`` contents split into lines.
+    :type lines: list[str]
+    :param version: The version being added (excluded from the search).
+    :type version: str
+    :return: The previous version string (no ``v`` prefix), or ``None`` if
+        no usable section heading exists.
+    :rtype: str | None
+    """
+    new_section_heading = f"## [v{version}]"
+    _prefix = "## ["
+    for line in lines:
+        if not line.startswith("## [v") or line.startswith(new_section_heading):
+            continue
+        # Strip ``## [`` prefix and everything from ``]`` onwards.
+        bracket_end = line.find("]")
+        if bracket_end <= len(_prefix):
+            continue
+        candidate = line[len(_prefix) : bracket_end]  # e.g. ``v0.12.1``
+        if candidate.startswith("v"):
+            return candidate[1:]
+    return None
+
+
+def _insert_synthesized_footer(
+    lines: list[str],
+    new_unreleased: str,
+    new_version_link: str,
+) -> None:
+    """Insert synthesized footer compare links in-place, newest-first.
+
+    Inserts before the first existing ``[vA.B.C]:`` compare-link line so the
+    synthesized lines stay in descending-version order, matching the rest of
+    the file. Falls back to appending at the end of ``lines`` (after trimming
+    trailing blanks) when no existing footer line is found.
+
+    :param lines: The ``CHANGELOG.md`` contents split into lines; mutated.
+    :type lines: list[str]
+    :param new_unreleased: The new ``[Unreleased]:`` line to insert.
+    :type new_unreleased: str
+    :param new_version_link: The new ``[vX.Y.Z]:`` line to insert below it.
+    :type new_version_link: str
+    """
+    insert_idx = None
+    for footer_idx, footer_line in enumerate(lines):
+        if footer_line.startswith("[v") and "]: " in footer_line:
+            insert_idx = footer_idx
+            break
+    if insert_idx is None:
+        while lines and lines[-1].strip() == "":
+            lines.pop()
+        lines.append(new_unreleased)
+        lines.append(new_version_link)
+    else:
+        lines.insert(insert_idx, new_unreleased)
+        lines.insert(insert_idx + 1, new_version_link)
+
+
 def _update_compare_links(changelog_text: str, version: str) -> str:
     """Rewrite the ``[Unreleased]`` compare link and insert a new ``[vX.Y.Z]`` link.
 
@@ -289,32 +349,17 @@ def _update_compare_links(changelog_text: str, version: str) -> str:
     # Footer absent — synthesize. Find the previous version from the most
     # recent ``## [vA.B.C]`` heading (excluding the version we're about to add,
     # which by this point in cmd_assemble already lives near the top of the file).
-    previous_version = None
-    new_section_heading = f"## [v{version}]"
-    for line in lines:
-        if not line.startswith("## [v"):
-            continue
-        if line.startswith(new_section_heading):
-            continue
-        # Strip ``## [`` prefix and everything from ``]`` onwards.
-        _prefix = "## ["
-        bracket_end = line.find("]")
-        if bracket_end <= len(_prefix):
-            continue
-        candidate = line[len(_prefix) : bracket_end]  # e.g. ``v0.12.1``
-        if not candidate.startswith("v"):
-            continue
-        previous_version = candidate[1:]
-        break
+    previous_version = _infer_previous_version(lines, version)
     if previous_version is None:
         raise FragmentError(
             "CHANGELOG.md: missing ``[Unreleased]`` compare link and no "
             "``## [vA.B.C]`` section heading to infer previous version from",
         )
-    while lines and lines[-1].strip() == "":
-        lines.pop()
-    lines.append(f"[Unreleased]: {REPO_COMPARE_URL}/v{version}...HEAD")
-    lines.append(f"[v{version}]: {REPO_COMPARE_URL}/v{previous_version}...v{version}")
+    new_unreleased = f"[Unreleased]: {REPO_COMPARE_URL}/v{version}...HEAD"
+    new_version_link = (
+        f"[v{version}]: {REPO_COMPARE_URL}/v{previous_version}...v{version}"
+    )
+    _insert_synthesized_footer(lines, new_unreleased, new_version_link)
     return "\n".join(lines) + suffix
 
 

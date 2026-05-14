@@ -463,12 +463,11 @@ def _print_stable_next_steps(version: str) -> None:
     :type version: str
     """
     print()
+    print(f"Verified: v{version} is an ancestor of origin/main.")
+    print()
     print("Next steps:")
     print("  1. Publish release notes")
     print(f"  2. Mark Jira version {version} as released")
-    print(
-        f"  3. (already verified by this script: v{version} is an ancestor of origin/main)"
-    )
 
 
 def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
@@ -641,7 +640,7 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
                 "--title",
                 f"Bump dev version to v{dev_version}",
                 "--body",
-                f"Automated dev version bump after {stable_tag} stable release.",
+                f"Automated dev version bump after scope-locking {stable_tag} into release/{stable_tag}.",
             ],
         )
     finally:
