@@ -15,7 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { HostSelector } from './HostSelector';
-export type { HostSelectorProps } from './HostSelector';
-export { StandaloneHostSelector } from './StandaloneHostSelector';
-export type { StandaloneHostSelectorProps } from './StandaloneHostSelector';
+export { AlertTroubleshootingPlugin } from './AlertTroubleshootingPlugin';
+export { AlertTroubleshootingIndexPage } from './AlertTroubleshootingIndexPage';
+export { AlertTroubleshootingDetailPage } from './AlertTroubleshootingDetailPage';
+export { useAlertGroups, useAlertDetail } from './hooks';
+export type { AlertGroup, AlertSummary, AlertInfo, AlertDetailResponse } from './types';

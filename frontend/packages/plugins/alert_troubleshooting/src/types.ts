@@ -15,7 +15,32 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { HostSelector } from './HostSelector';
-export type { HostSelectorProps } from './HostSelector';
-export { StandaloneHostSelector } from './StandaloneHostSelector';
-export type { StandaloneHostSelectorProps } from './StandaloneHostSelector';
+export interface AlertSummary {
+  name: string;
+  label: string;
+}
+
+export interface AlertGroup {
+  service_type: string;
+  label: string;
+  alerts: AlertSummary[];
+}
+
+export interface AlertInfo {
+  name: string;
+  label: string;
+  service_type: string | null;
+}
+
+/** Intentional subset of SnippetResponse — alert troubleshooting only needs these four fields. */
+export interface SnippetSummary {
+  filename: string;
+  title: string;
+  description: string;
+  is_approved: boolean;
+}
+
+export interface AlertDetailResponse {
+  alert: AlertInfo;
+  snippets: SnippetSummary[];
+}
