@@ -91,8 +91,11 @@
 | app/sep/migrations/versions/2025\_08\_08\_1005-9307f0f5ee54\_create\_snippet\_table.py                      |       16 |        3 |     81% |     59-61 |
 | app/sep/migrations/versions/2026\_03\_02\_1612-810c31754b54\_add\_index\_for\_syncinstance\_syncer.py       |       12 |        1 |     92% |        45 |
 | app/sep/models.py                                                                                           |       48 |        1 |     98% |       247 |
-| app/sep/plugins/alert\_troubleshooting/deps.py                                                              |      135 |       20 |     85% |122, 236-237, 259-261, 280, 363-364, 388-394, 418-420, 444-447, 474 |
-| app/sep/plugins/alert\_troubleshooting/routes.py                                                            |       66 |        5 |     92% |141-146, 197-198 |
+| app/sep/plugins/alert\_troubleshooting/api\_routes.py                                                       |       23 |        4 |     83% |64-65, 73-80 |
+| app/sep/plugins/alert\_troubleshooting/deps.py                                                              |      135 |       18 |     87% |122, 237, 259-261, 280, 364, 388-394, 418-420, 444-447, 474 |
+| app/sep/plugins/alert\_troubleshooting/models.py                                                            |        7 |        0 |    100% |           |
+| app/sep/plugins/alert\_troubleshooting/routes.py                                                            |       67 |        5 |     93% |142-147, 198-199 |
+| app/sep/plugins/alert\_troubleshooting/schema.py                                                            |        2 |        0 |    100% |           |
 | app/sep/plugins/alerts/config.py                                                                            |       19 |        0 |    100% |           |
 | app/sep/plugins/alerts/crud.py                                                                              |       12 |        0 |    100% |           |
 | app/sep/plugins/alerts/deps.py                                                                              |       87 |        0 |    100% |           |
@@ -181,7 +184,7 @@
 | app/sep/sync/models.py                                                                                      |      348 |       60 |     83% |75-84, 98-100, 119, 267-269, 330, 390-391, 424, 478-480, 537, 567, 583, 603-607, 708, 722, 742-743, 823, 837, 859-860, 941, 954, 978-980, 1052, 1065, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py                                                                       |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                        |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       21 |     77% |83-87, 107-110, 121, 176-184, 234, 236-252, 291-294, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       19 |     80% |83-87, 107-110, 121, 176-184, 234, 236-252, 344 |
 | app/sep/tasks.py                                                                                            |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                 |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                      |       20 |        0 |    100% |           |
@@ -216,7 +219,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      219 |       39 |     82% |125-129, 186, 207-214, 246, 295-303, 353-354, 381-382, 410-411, 430, 563, 587, 600-614, 635-648, 664-665 |
-| **TOTAL**                                                                                                   | **15292** | **2158** | **86%** |           |
+| **TOTAL**                                                                                                   | **15325** | **2158** | **86%** |           |
 
 
 ## Setup coverage badge
