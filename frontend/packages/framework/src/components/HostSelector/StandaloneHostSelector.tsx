@@ -68,6 +68,8 @@ export function StandaloneHostSelector({
       getOptionLabel={(o) => o.label}
       isOptionEqualToValue={(a, b) => a.id === b.id}
       loading={isLoading}
+      loadingText="Loading hosts…"
+      noOptionsText="No hosts available"
       disabled={disabled || isError}
       renderInput={(params) => (
         <TextField

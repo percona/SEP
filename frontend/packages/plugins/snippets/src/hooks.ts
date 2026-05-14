@@ -92,7 +92,7 @@ export function useSnippetSchema(filename: string | undefined, executionOnly = f
       return data;
     },
     enabled: Boolean(filename),
-    staleTime: 5 * 60 * 1000,
+    staleTime: executionOnly ? Infinity : 5 * 60 * 1000,
   });
 }
 

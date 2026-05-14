@@ -25,12 +25,14 @@ ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA = PluginSchema(
         "against registered executor hosts."
     ),
     forms=[],
+    # list_view reflects the AlertGroup response shape (service_type, label).
+    # This plugin uses a custom grouped page — the generic list renderer is
+    # not wired up for this plugin.
     list_view=ListView(
         columns=[
-            Column(key="serviceType", label="Service Type", sortable=True),
-            Column(key="alertName", label="Alert", sortable=True),
-            Column(key="snippetCount", label="Snippets"),
+            Column(key="service_type", label="Service Type", sortable=True),
+            Column(key="label", label="Label", sortable=True),
         ],
-        default_sort="serviceType",
+        default_sort="service_type",
     ),
 )

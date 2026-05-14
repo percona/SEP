@@ -280,18 +280,22 @@ describe('SnippetExecutionAccordion', () => {
     });
   });
 
-  it('omits executor_host field when executorHost is empty string', async () => {
-    mockedApi.get.mockResolvedValue({ data: makeSchema() });
+  it('shows executor_host field when executorHost is empty string (treated as not hoisting)', async () => {
+    mockedApi.get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data:
+          url === '/sep/hosts/' ? [{ id: 'db2', name: 'db2', address: '10.0.0.2' }] : makeSchema(),
+        headers: {},
+      }),
+    );
 
     renderWithProviders(
       <SnippetExecutionAccordion snippetFilename="check.sh" executorHost="" defaultExpanded />,
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Table Name/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Executor Host/i)).toBeInTheDocument();
     });
-
-    expect(screen.queryByLabelText(/Executor Host/i)).not.toBeInTheDocument();
   });
 
   it('fetches schema with execution_only param', async () => {
@@ -306,20 +310,36 @@ describe('SnippetExecutionAccordion', () => {
     );
   });
 
-  it('does not submit when executorHost is empty string', async () => {
+  it('passes executor_host from form (not hoisted) when executorHost is empty string', async () => {
     const user = userEvent.setup();
-    mockedApi.get.mockResolvedValue({ data: makeSchema() });
+    mockedApi.get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data:
+          url === '/sep/hosts/' ? [{ id: 'db2', name: 'db2', address: '10.0.0.2' }] : makeSchema(),
+        headers: {},
+      }),
+    );
+    mockedApi.post.mockResolvedValue({ data: { task_id: 9 } });
 
     renderWithProviders(
       <SnippetExecutionAccordion snippetFilename="check.sh" executorHost="" defaultExpanded />,
     );
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Execute/i })).toBeInTheDocument(),
-    );
-    await user.click(screen.getByRole('button', { name: /Execute/i }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+    });
 
-    expect(mockedApi.post).not.toHaveBeenCalled();
+    await user.click(screen.getByLabelText(/Executor Host/i));
+    await user.click(await screen.findByRole('option', { name: 'db2' }));
+    await user.click(screen.getByRole('button', { name: /execute/i }));
+
+    await waitFor(() => {
+      expect(mockedApi.post).toHaveBeenCalledWith(expect.stringContaining('check.sh'), {
+        executor_host: 'db2',
+        sudo: false,
+        args: {},
+      });
+    });
   });
 
   it('excludes sudo from args but includes at top level on submit', async () => {

@@ -92,7 +92,7 @@ export function AlertTroubleshootingDetailPage() {
                 snippetFilename={snippet.filename}
                 executorHost={selectedHost}
                 title={snippet.title ?? snippet.filename}
-                description={snippet.description ?? undefined}
+                description={snippet.description || undefined}
               />
             ) : (
               <Alert key={snippet.filename} severity="warning">

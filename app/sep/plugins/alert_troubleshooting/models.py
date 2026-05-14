@@ -23,7 +23,7 @@ from app.sep.plugins.snippets.models import SnippetResponse
 
 
 class AlertSummary(BaseModel):
-    """Minimal alert representation for the listing endpoint.
+    """Represent a minimal alert for the listing endpoint.
 
     :param name: The alert identifier.
     :type name: str
@@ -36,7 +36,7 @@ class AlertSummary(BaseModel):
 
 
 class AlertGroup(BaseModel):
-    """A group of alerts sharing a service type.
+    """Group alerts sharing a service type.
 
     :param service_type: The service type enum value.
     :type service_type: AlertServiceType
@@ -52,7 +52,7 @@ class AlertGroup(BaseModel):
 
 
 class AlertDetailResponse(BaseModel):
-    """Response envelope for the alert detail endpoint.
+    """Wrap the response for the alert detail endpoint.
 
     :param alert: The alert metadata.
     :type alert: AlertInfo

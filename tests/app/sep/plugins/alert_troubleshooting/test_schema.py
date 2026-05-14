@@ -22,30 +22,35 @@ from app.sep.plugins.alert_troubleshooting.schema import (
 )
 
 
-def test_static_schema_has_correct_name():
-    """Plugin schema identifies as alert_troubleshooting."""
-    assert ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.name == "alert_troubleshooting"
-    assert ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.display_name == "Alert Troubleshooting"
+class TestStaticSchema:
+    """Tests against the in-memory ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA constant."""
+
+    def test_has_correct_name(self):
+        """Plugin schema identifies as alert_troubleshooting."""
+        assert ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.name == "alert_troubleshooting"
+        assert (
+            ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.display_name == "Alert Troubleshooting"
+        )
+
+    def test_has_no_forms(self):
+        """Plugin schema declares no editable forms (browse-only plugin)."""
+        assert ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.forms == []
+
+    def test_listview_columns(self):
+        """ListView columns match the AlertGroup response shape."""
+        columns = ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.list_view.columns
+        column_keys = [col.key for col in columns]
+        assert "service_type" in column_keys
+        assert "label" in column_keys
 
 
-def test_static_schema_has_no_forms():
-    """Plugin schema declares no editable forms (browse-only plugin)."""
-    assert ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.forms == []
+class TestSchemaEndpoint:
+    """Tests for the /api/plugins/alert_troubleshooting/schema HTTP endpoint."""
 
-
-def test_listview_columns():
-    """ListView includes service_type, alertName, and snippetCount columns."""
-    columns = ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.list_view.columns
-    column_keys = [col.key for col in columns]
-    assert "serviceType" in column_keys
-    assert "alertName" in column_keys
-    assert "snippetCount" in column_keys
-
-
-def test_schema_endpoint_returns_plugin_schema(test_client):
-    """GET /api/plugins/alert_troubleshooting/schema returns the plugin metadata."""
-    response = test_client.get("/api/plugins/alert_troubleshooting/schema")
-    assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert data["name"] == "alert_troubleshooting"
-    assert data["display_name"] == "Alert Troubleshooting"
+    def test_returns_plugin_schema(self, test_client):
+        """GET /api/plugins/alert_troubleshooting/schema returns the plugin metadata."""
+        response = test_client.get("/api/plugins/alert_troubleshooting/schema")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "alert_troubleshooting"
+        assert data["display_name"] == "Alert Troubleshooting"

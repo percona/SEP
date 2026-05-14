@@ -36,7 +36,7 @@ export interface AlertInfo {
 export interface SnippetSummary {
   filename: string;
   title: string;
-  description: string | null;
+  description: string;
   is_approved: boolean;
 }
 

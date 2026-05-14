@@ -42,15 +42,15 @@ import {
 } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 
-/** Fields never rendered in the dynamic form. */
-const HIDDEN_FORM_FIELDS = new Set(['executor_host', 'script_preview']);
+/** Fields always hidden from the dynamic form. */
+const HIDDEN_FORM_FIELDS = new Set(['script_preview']);
 
 /** Fields excluded from the snippet `args` payload (handled at top level instead). */
 const ARGS_EXCLUDED_FIELDS = new Set(['executor_host', 'sudo', 'script_preview']);
 
 export interface SnippetExecutionAccordionProps {
   snippetFilename: string;
-  /** When provided, strips ``executor_host`` from the rendered form and injects this value at submit. */
+  /** When non-empty, strips ``executor_host`` from the rendered form and injects this value at submit. */
   executorHost?: string;
   title?: string;
   description?: string;
@@ -119,10 +119,11 @@ function useSnippetAccordionHistory(filename: string, enabled: boolean) {
  * and shows the live log output. Intended for multi-snippet pages (alert
  * troubleshooting) where one card per snippet is mounted on the same page.
  *
- * Schema fetch is deferred until the accordion is expanded. The
- * ``executor_host`` field is always stripped from the rendered form and
- * injected at submit time from the ``executorHost`` prop, so a single
- * shared host selector can drive all cards on the page.
+ * Schema fetch is deferred until the accordion is expanded. When a non-empty
+ * ``executorHost`` is provided, ``executor_host`` is stripped from the rendered
+ * form and injected at submit time — a single shared host selector drives all
+ * cards on the page. When omitted or empty, the field renders normally from
+ * the schema so the user selects a host per-card.
  *
  * When ``showHistory`` is ``true`` (used by the snippets detail page), a
  * per-task execution history table is rendered below the form.
@@ -145,19 +146,16 @@ export function SnippetExecutionAccordion({
 
   const displayTitle = title ?? snippetFilename;
 
-  const hoistingHost = executorHost !== undefined;
+  const hoistingHost = Boolean(executorHost);
   const filteredSections = (schemaQuery.data?.forms ?? []).map((section) => ({
     ...section,
     fields: section.fields.filter(
       (field) =>
-        !HIDDEN_FORM_FIELDS.has(field.name) || (!hoistingHost && field.name === 'executor_host'),
+        !HIDDEN_FORM_FIELDS.has(field.name) && (field.name !== 'executor_host' || !hoistingHost),
     ),
   }));
 
   const handleSubmit = (values: Record<string, unknown>) => {
-    if (hoistingHost && !executorHost) {
-      return;
-    }
     const args: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
       if (ARGS_EXCLUDED_FIELDS.has(key)) {

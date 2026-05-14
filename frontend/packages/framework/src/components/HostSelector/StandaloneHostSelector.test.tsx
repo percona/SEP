@@ -142,4 +142,32 @@ describe('StandaloneHostSelector', () => {
 
     expect(screen.getByLabelText('Target Host')).toBeInTheDocument();
   });
+
+  it('shows "No hosts available" when the host list is empty', async () => {
+    mocked.get.mockResolvedValueOnce(makeResponse([]));
+    const client = makeClient();
+    const user = userEvent.setup();
+    render(
+      <Wrapper client={client}>
+        <StandaloneHostSelector value="" onChange={vi.fn()} />
+      </Wrapper>,
+    );
+
+    await user.click(screen.getByLabelText('Executor Host'));
+    expect(await screen.findByText('No hosts available')).toBeInTheDocument();
+  });
+
+  it('shows "Loading hosts…" while the host list is loading', async () => {
+    mocked.get.mockReturnValueOnce(new Promise(() => {}));
+    const client = makeClient();
+    const user = userEvent.setup();
+    render(
+      <Wrapper client={client}>
+        <StandaloneHostSelector value="" onChange={vi.fn()} />
+      </Wrapper>,
+    );
+
+    await user.click(screen.getByLabelText('Executor Host'));
+    expect(await screen.findByText('Loading hosts…')).toBeInTheDocument();
+  });
 });

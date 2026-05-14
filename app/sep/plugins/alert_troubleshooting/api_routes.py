@@ -24,7 +24,9 @@ level and redeclared per route for safety. Route layout:
 * ``GET /{service_type}/{alert_name}``     — snippets for a specific alert
 """
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Path
 
 from app.sep.deps import IsApiAuthenticated, SessionDep
 from app.sep.models import AlertServiceType
@@ -81,7 +83,7 @@ async def alert_troubleshooting_api_list(
 @router.get("/{service_type}/{alert_name}", dependencies=[IsApiAuthenticated])
 async def alert_troubleshooting_api_detail(
     service_type: AlertServiceType,
-    alert_name: str,
+    alert_name: Annotated[str, Path(min_length=1, max_length=200)],
     session: SessionDep,
 ) -> AlertDetailResponse:
     """Return alert info and associated snippets for a specific alert.
