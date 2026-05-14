@@ -197,9 +197,13 @@ def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is na
         if port is not None and (addr := data.get("address")):
             addr_to_node[(addr, port)] = node_id
         if cluster and cluster.get("cluster_name"):
-            cluster_members[cluster["cluster_name"]].append(node_id)
+            cluster_key = (
+                cluster["cluster_name"],
+                cluster.get("cluster_status"),
+            )
+            cluster_members[cluster_key].append(node_id)
 
-    for cluster_name, members in cluster_members.items():
+    for (cluster_name, _cluster_status), members in cluster_members.items():
         cluster_id = _cluster_node_id(cluster_name)
         first_data = next(
             (
