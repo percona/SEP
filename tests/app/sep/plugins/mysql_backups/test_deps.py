@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.plugins.backup.deps module."""
+"""Define tests for the app.sep.plugins.mysql_backups.deps module."""
 
 from unittest.mock import AsyncMock
 
@@ -21,12 +21,12 @@ import pytest
 import yaml
 
 from app.sep.inventory import CreatedNode, CreatedService
-from app.sep.plugins.backup.deps import (
+from app.sep.plugins.mysql_backups.deps import (
     build_backup_task_payload,
     get_backups_task,
     get_backups_task_info,
 )
-from app.sep.plugins.backup.models import BackupCreate, BackupType
+from app.sep.plugins.mysql_backups.models import BackupCreate, BackupType
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 
 
@@ -69,7 +69,7 @@ async def test_build_backup_task_payload(
     depending on the backup_type, encryption, and other fields.
     """
     mocker.patch(
-        "app.sep.plugins.backup.deps.get_created_entity",
+        "app.sep.plugins.mysql_backups.deps.get_created_entity",
         return_value=created_service,
     )
     created_service.node = CreatedNode(
@@ -128,7 +128,7 @@ async def test_build_backup_task_payload_raises_for_invalid_backup_type(
 ):
     """Test that passing an invalid BackupType raises ValueError."""
     mocker.patch(
-        "app.sep.plugins.backup.deps.get_created_entity",
+        "app.sep.plugins.mysql_backups.deps.get_created_entity",
         return_value=created_service,
     )
 
@@ -152,7 +152,7 @@ async def test_get_backups_task(mocker):
         data={"task": "fake-task"},
     )
     get_task_by_name = mocker.patch(
-        "app.sep.plugins.backup.deps.get_task_by_name",
+        "app.sep.plugins.mysql_backups.deps.get_task_by_name",
         return_value=fake_task,
     )
 

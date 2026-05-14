@@ -21,7 +21,7 @@ from pydantic import Field, field_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
-from app.sep.plugins.backup.models import BackupType
+from app.sep.plugins.mysql_backups.models import BackupType
 
 BACKUP_SOURCE_SHELLBACKTICK = "`"
 BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)

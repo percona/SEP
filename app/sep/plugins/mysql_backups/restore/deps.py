@@ -34,8 +34,8 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.backup.models import BackupType
-from app.sep.plugins.backup.restore.models import (
+from app.sep.plugins.mysql_backups.models import BackupType
+from app.sep.plugins.mysql_backups.restore.models import (
     BaseRestoreConfigServer,
     RestoreConfig,
     RestoreConfigAll,

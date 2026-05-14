@@ -37,13 +37,13 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
-from app.sep.plugins.backup.deps import (
+from app.sep.plugins.mysql_backups.deps import (
     BackupGeneratedTask,
     BackupsTask,
     get_backups_index_context,
     parse_backup_task_data,
 )
-from app.sep.plugins.backup.models import BackupType
+from app.sep.plugins.mysql_backups.models import BackupType
 from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
@@ -56,24 +56,24 @@ router.include_router(restore_router, prefix="/restores", tags=["restores"])
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def backups_index(
+async def mysql_backups_index(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
 ) -> HTMLResponse:
     """Homepage of backups plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/index.html.j2",
+        name="mysql_backups/backup/index.html.j2",
         context=context,
     )
 
 
 @router.get("/docs", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def backups_docs(request: Request, context: DefaultContext) -> HTMLResponse:
+async def mysql_backups_docs(request: Request, context: DefaultContext) -> HTMLResponse:
     """Standalone documentation page for backup configuration."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/docs.html.j2",
+        name="mysql_backups/backup/docs.html.j2",
         context=context,
     )
 
@@ -81,7 +81,7 @@ async def backups_docs(request: Request, context: DefaultContext) -> HTMLRespons
 @router.post(
     "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
 )
-async def backups_create(
+async def mysql_backups_create(
     request: Request,
     task: BackupGeneratedTask,
     task_api: TaskAPI,
@@ -100,7 +100,7 @@ async def backups_create(
         task.data.get("meta", {}),
         check_connectivity=check_connectivity,
     )
-    task_path = request.url_for("backups_detail", task_name=task.name)
+    task_path = request.url_for("mysql_backups_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
@@ -108,7 +108,7 @@ async def backups_create(
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
-async def backups_detail(
+async def mysql_backups_detail(
     task: BackupsTask,
     request: Request,
     context: DefaultContext,
@@ -147,7 +147,7 @@ async def backups_detail(
         "port": server_config.get("PORT") or 3306,
         "backup_type": backup_type,
         "entities": {entity.name: entity.value for entity in decoded_entities},
-        "delete_url": request.url_for("backups_delete", task_name=task.name),
+        "delete_url": request.url_for("mysql_backups_delete", task_name=task.name),
         "config": task_config.get("ALL_SERVERS", {}),
         "is_edit_enabled": not task.protected,
         "alert_on_fail": task.alert_on_fail,
@@ -186,7 +186,7 @@ async def backups_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="backups/backup/details.html.j2",
+        name="mysql_backups/backup/details.html.j2",
         context=context,
     )
 
@@ -196,7 +196,7 @@ async def backups_detail(
     dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
 )
-async def backups_execute(
+async def mysql_backups_execute(
     request: Request,
     task: BackupsTask,
     tasks_api: TaskAPI,
@@ -213,7 +213,7 @@ async def backups_execute(
             "chain_on_failure": chain_on_failure,
         },
     )
-    task_path = request.url_for("backups_detail", task_name=task.name)
+    task_path = request.url_for("mysql_backups_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -222,7 +222,7 @@ async def backups_execute(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def backups_update(
+async def mysql_backups_update(
     request: Request,
     task_name: str,
     updated_task: BackupGeneratedTask,
@@ -235,7 +235,7 @@ async def backups_update(
         json=updated_task.model_dump(),
     )
     return RedirectResponse(
-        request.url_for("backups_detail", task_name=updated_task.name),
+        request.url_for("mysql_backups_detail", task_name=updated_task.name),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -245,10 +245,10 @@ async def backups_update(
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
 )
-async def backups_delete(
+async def mysql_backups_delete(
     task: BackupsTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete backups task."""
     await tasks_api.delete(f"/{task.name}")
-    return RedirectResponse("/backups", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse("/mysql_backups", status_code=status.HTTP_303_SEE_OTHER)

@@ -52,7 +52,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     <div class="toggle-btn-group"
          role="group"
          aria-label="Backup and Restore navigation">
-        <a href="{{ url_for('backups_index') }}" class="toggle-btn active">Backup</a>
+        <a href="{{ url_for('mysql_backups_index') }}" class="toggle-btn active">Backup</a>
         <a href="{{ url_for('restores_index') }}" class="toggle-btn">Restore</a>
     </div>
 {% endblock sticky %}
@@ -180,5 +180,5 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         {% set history_tasks = history %}
         {% include "tasks/partials/completed-tasks.html.j2" %}
     </section>
-    {% include "backups/backup/partials/edit-form.html.j2" %}
+    {% include "mysql_backups/backup/partials/edit-form.html.j2" %}
 {% endblock main %}
