@@ -1,11 +1,56 @@
-* @percona/gas-team
+# Order matters: GitHub uses LAST-MATCH-WINS, so broad rules first,
+# specific overrides last. Within a row, owners are alphabetized.
 
-app/ max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
-app/__init__.py @percona/gas-team
+# Default
+*                                  @percona/gas-team
 
-frontend/ max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
-static/ max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
-templates/ max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
-settings.yaml max.bubenick@percona.com yan.orestes@percona.com peter.addo@percona.com
+# ── App tree ────────────────────────────────────────────────────────
+/app/                              @peter-o-addo @yyyyyyyan
+/app/__init__.py                   @percona/gas-team
 
-.pre-commit-config.yaml max.bubenick@percona.com yan.orestes@percona.com
+# Plugins (uniform); any payload file/dir relaxes to gas-team.
+/app/sep/plugins/                  @marcuscruz-percona @maxbube @peter-o-addo @yyyyyyyan
+/app/sep/plugins/**/*payload*      @percona/gas-team
+/app/sep/plugins/**/payloads/**    @percona/gas-team
+
+# ── Tests ───────────────────────────────────────────────────────────
+/tests/                            @marcuscruz-percona @peter-o-addo @yyyyyyyan
+
+# ── UI assets ───────────────────────────────────────────────────────
+/static/                           @nachodd @peter-o-addo @yyyyyyyan
+/templates/                        @nachodd @peter-o-addo @yyyyyyyan
+/frontend/                         @nachodd @peter-o-addo @yyyyyyyan
+
+# ── Operational content ─────────────────────────────────────────────
+/snippets/                         @cortiz-percona @percona/gas-admin
+
+# ── App config ──────────────────────────────────────────────────────
+/settings.yaml                     @maxbube @peter-o-addo @yyyyyyyan
+
+# ── Sensitive: Python deps ──────────────────────────────────────────
+/poetry.lock                       @maxbube @yyyyyyyan
+/pyproject.toml                    @maxbube @yyyyyyyan
+
+# ── Sensitive: Frontend deps ────────────────────────────────────────
+/frontend/package.json             @maxbube @yyyyyyyan
+/frontend/pnpm-lock.yaml           @maxbube @yyyyyyyan
+/frontend/pnpm-workspace.yaml      @maxbube @yyyyyyyan
+
+# ── Sensitive: build / release / runtime entrypoints ────────────────
+/Makefile                          @maxbube @yyyyyyyan
+/.pre-commit-config.yaml           @maxbube @yyyyyyyan
+/Dockerfile                        @percona/gas-admin
+/Containerfile                     @percona/gas-admin
+/Containerfile.base                @percona/gas-admin
+/docker-compose.yml                @percona/gas-admin
+/entrypoint.sh                     @percona/gas-admin
+/entrypoint_celery.sh              @percona/gas-admin
+/sep_installer.sh                  @maxbube @yyyyyyyan
+/sep_installer.sha256              @maxbube @yyyyyyyan
+/CHANGELOG.md                      @maxbube @yyyyyyyan
+/scripts/release.py                @maxbube @yyyyyyyan
+/scripts/changelog.py              @maxbube @yyyyyyyan
+
+# ── CI / repo automation ────────────────────────────────────────────
+/.github/                          @percona/gas-admin
+/build/                            @percona/gas-admin
