@@ -21,6 +21,7 @@ from functools import cached_property
 from pathlib import Path
 from string import Template
 from typing import Any, ClassVar, Literal, Self
+from urllib.parse import urlparse
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
@@ -38,7 +39,7 @@ from pydantic import (
 )
 
 from app import __summary__, __version__
-from app.core.celery.models import IntervalSchedule, Period
+from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
     settings,
@@ -87,6 +88,18 @@ class Plugin(BaseCaseInsensitiveModel):
     :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
     :type sidebar: bool
+    :param api_router_path: Optional dot-separated import path to the plugin's
+        JSON ``APIRouter`` instance (e.g. ``"app.sep.plugins.checksums.api_routes.router"``).
+        When set, the router is mounted under ``/api/plugins/{key}`` by the
+        shared API router loop. Three input states:
+
+        * **Field omitted** — auto-derive from ``module_name`` when the
+          plugin ships ``api_routes.router`` (convention).
+        * **Explicit string** — use as-is; fail-fast if the path cannot be
+          imported.
+        * **Explicit ``null``** — opt the plugin out of the JSON API mount,
+          even if a conventional module exists.
+    :type api_router_path: StrImportableAttribute | None
     """
 
     name: str
@@ -94,6 +107,7 @@ class Plugin(BaseCaseInsensitiveModel):
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
+    api_router_path: StrImportableAttribute | None = None
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Plugin):
@@ -124,6 +138,31 @@ class Plugin(BaseCaseInsensitiveModel):
             data["css_class"] = data.get("css_class") or slug
         return data
 
+    @model_validator(mode="after")
+    def _default_api_router_from_convention(self) -> Self:
+        """Auto-derive ``api_router_path`` from ``module_name`` when not set.
+
+        Run only when the field was not present in the input data.
+        ``None`` in the input is a deliberate opt-out and is preserved.
+
+        Probe by filesystem, not by import, so that this validator can run
+        during settings construction without triggering circular imports
+        through plugin ``__init__`` modules. Fail-fast on a missing
+        ``router`` attribute is still enforced later in
+        ``build_plugins_router`` via ``import_var``.
+
+        :return: ``self`` with ``api_router_path`` populated when the
+            plugin module ships an ``api_routes.py`` file.
+        :rtype: Self
+        """
+        if "api_router_path" in self.model_fields_set:
+            return self
+        basename = self.module_name.rsplit(".", 1)[-1]
+        candidate_file = Path(__file__).parent / "plugins" / basename / "api_routes.py"
+        if candidate_file.is_file():
+            self.api_router_path = f"{self.module_name}.api_routes.router"
+        return self
+
     @computed_field
     @property
     def router_path(self) -> str:
@@ -147,6 +186,10 @@ class SessionOptions(BaseModel):
     :param SECURE: Whether the session cookie should be accessible only via HTTPS.
         Defaults to True.
     :type SECURE: bool
+    :param PATH: Cookie ``Path`` attribute. When ``None`` (the default), the
+        cookie is not scoped to a specific path and the browser applies its
+        default. When set, the value must start with ``/``.
+    :type PATH: URIPath | None
     """
 
     model_config = ConfigDict(
@@ -158,6 +201,7 @@ class SessionOptions(BaseModel):
     MAX_AGE: TimedeltaSeconds = timedelta(days=7)
     SAMESITE: Literal["lax", "strict", "none"] = "lax"
     SECURE: bool = True
+    PATH: URIPath | None = None
 
 
 class _DeprecatedPMMConfig(BaseLowercaseModel):
@@ -236,6 +280,110 @@ class SyncOptions(BaseLowercaseModel):
         return v
 
 
+class ReportScheduleEntry(BaseLowercaseModel):
+    """A single scheduled report generation with its own cadence and parameters.
+
+    :param schedule: When to run (interval or crontab).
+    :type schedule: IntervalSchedule | CrontabSchedule
+    :param since: Prometheus-style start offset for the report window.
+    :type since: str
+    :param until: Prometheus-style end offset for the report window.
+    :type until: str
+    :param full: Whether to generate a full report.
+    :type full: bool
+    :param refresh: Re-run advisor checks before collecting results.
+    :type refresh: bool
+    :param sections: Optional list of report sections to include.
+    :type sections: list[str] | None
+    :param upload: Upload the generated report to ServiceNow after generation.
+        Requires global upload credentials to be configured.
+    :type upload: bool
+    """
+
+    schedule: IntervalSchedule | CrontabSchedule
+    since: str = "now-7d"
+    until: str = "now"
+    full: bool = True
+    refresh: bool = False
+    sections: list[str] | None = None
+    upload: bool = False
+
+
+class HealthReportSettings(BaseLowercaseModel):
+    """Configuration for the Health & Security Report plugin.
+
+    :param schedules: List of report generation schedules, each with its own
+        cadence and parameters.  Empty by default (no periodic generation).
+    :type schedules: list[ReportScheduleEntry]
+    :param upload: Master toggle for ServiceNow upload.  When ``False``
+        (the default) uploading is disabled regardless of other fields.
+    :type upload: bool
+    :param endpoint: The ServiceNow upload API URL.
+    :type endpoint: str | None
+    :param api_key: API key for authenticating with the upload endpoint.
+    :type api_key: SecretStr | None
+    :param client_id: Customer identifier sent with each upload.
+    :type client_id: str | None
+    """
+
+    schedules: list[ReportScheduleEntry] = []
+    upload: bool = False
+    endpoint: str | None = None
+    api_key: SecretStr | None = None
+    client_id: str | None = None
+
+    @field_validator("endpoint", "client_id", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("endpoint", mode="after")
+    @classmethod
+    def _normalize_endpoint(cls, v: str | None) -> str | None:
+        if v is not None:
+            return v.rstrip("/")
+        return v
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _empty_secret_to_none(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        raw = v.get_secret_value() if isinstance(v, SecretStr) else v
+        if isinstance(raw, str) and not raw.strip():
+            return None
+        return v
+
+    @property
+    def upload_disabled_reasons(self) -> list[str]:
+        """Return a list of reasons why uploading is not possible.
+
+        An empty list means upload is fully configured and ready.
+        """
+        if not self.upload:
+            return ["Upload is disabled"]
+
+        reasons: list[str] = []
+        if self.endpoint is None:
+            reasons.append("Endpoint is not configured")
+        else:
+            parsed = urlparse(self.endpoint)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                reasons.append("Endpoint is not a valid HTTP/HTTPS address")
+        if self.api_key is None:
+            reasons.append("API key is not configured")
+        if self.client_id is None:
+            reasons.append("Client ID is not configured")
+        return reasons
+
+    @property
+    def is_upload_configured(self) -> bool:
+        """Return ``True`` when upload is enabled and all credentials are set."""
+        return not self.upload_disabled_reasons
+
+
 class SEPSettings(BaseYamlAppSettings):
     """Settings for SEP.
 
@@ -244,8 +392,14 @@ class SEPSettings(BaseYamlAppSettings):
     :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
     :type UVICORN_PORT: int
-    :param SESSION: Session configuration options.
+    :param SESSION: Session configuration options for the legacy ``authToken``
+        cookie used by the Jinja UI.
     :type SESSION: SessionOptions
+    :param SESSION_REFRESH: Session configuration options for the SPA
+        ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
+        ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
+        vars, the value must start with ``/``.
+    :type SESSION_REFRESH: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
         `Path("templates")`.
     :type TEMPLATES_DIR: RelativeDirectoryPathField
@@ -282,17 +436,31 @@ class SEPSettings(BaseYamlAppSettings):
         fields are forwarded to the top-level ``settings.PMM``; alerts fields are read
         by ``AlertsPMMConfig``.
     :type PMM: _DeprecatedPMMConfig
+    :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
+        Upload is disabled by default.
+    :type HEALTH_REPORT: HealthReportSettings
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
     :type FOOTER_TEMPLATE: Template
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
     :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
+    :param CONNECTIVITY_CHECK_DEFAULT: Initial state of the "Check connectivity"
+        checkbox on task creation forms. When ``True``, the checkbox is pre-checked;
+        when ``False`` (default), it is unchecked. Because unchecked HTML
+        checkboxes submit no field, the route parameter defaults to ``False`` —
+        automated clients that omit ``check_connectivity`` will skip the check
+        regardless of this setting.
+    :type CONNECTIVITY_CHECK_DEFAULT: bool
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
     SESSION: SessionOptions = SessionOptions()
+    SESSION_REFRESH: SessionOptions = SessionOptions(
+        COOKIE_NAME="refreshToken",
+        PATH="/api/oauth",
+    )
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
@@ -305,7 +473,9 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
     SYNC_REFRESH_TIME: int = 5
     PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
+    HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
+    CONNECTIVITY_CHECK_DEFAULT: bool = True
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @model_validator(mode="before")

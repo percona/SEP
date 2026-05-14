@@ -1,0 +1,52 @@
+{
+  "name": "@sep/shell",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@fontsource/poppins": "^5.1.0",
+    "@fontsource/roboto": "^5.1.0",
+    "@fontsource/roboto-mono": "^5.2.9",
+    "@melloware/react-logviewer": "^6.5.0",
+    "@mui/icons-material": "^7.3.7",
+    "@mui/material": "^7.3.7",
+    "@mui/utils": "^7.3.7",
+    "@mui/x-date-pickers": "^7.6.2",
+    "@percona/percona-ui": "^1.0.16",
+    "@sep/api": "workspace:*",
+    "@sep/framework": "workspace:*",
+    "@sep/inventory": "workspace:*",
+    "@sep/plugin-atw": "workspace:*",
+    "@sep/plugin-checksums": "workspace:*",
+    "@sep/plugin-dipper": "workspace:*",
+    "@sep/plugins-snippets": "workspace:*",
+    "@sep/shared": "workspace:*",
+    "@tanstack/react-query": "^5.100.7",
+    "axios": "^1.15.2",
+    "date-fns": "^4.1.0",
+    "material-react-table": "1.15.1",
+    "notistack": "^3.0.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-hook-form": "^7.74.0",
+    "react-router-dom": "^7.14.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react-swc": "^4.2.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.12",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.0.0"
+  }
+}

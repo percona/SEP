@@ -20,20 +20,30 @@ import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
-from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
+from app.tasks.crud import (
+    DispatchLockManager,
+    TaskHistoryLogManager,
+    TaskHistoryManager,
+    TaskManager,
+)
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
     Task,
     TaskBackendEnum,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLogType,
     TaskOwner,
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
 
 HISTORY_FIXTURE_COUNT = 3
+PAGINATED_TASK_COUNT = 2
+PAGINATED_CUSTOM_TASK_COUNT = 3
 
 
 async def _create_task(
@@ -490,6 +500,188 @@ class TestTaskHistoryManagerListByTaskName:
 
 
 # ---------------------------------------------------------------------------
+# TaskManager.list_active_paginated
+# ---------------------------------------------------------------------------
+
+
+class TestTaskManagerListActivePaginated:
+    """Test TaskManager.list_active_paginated."""
+
+    @pytest.mark.asyncio
+    async def test_returns_paginated_response(self, session: AsyncSession) -> None:
+        """Assert paginated response contains items, total, offset, and limit."""
+        await _create_task(session, name="pag-task-1")
+        await _create_task(session, name="pag-task-2")
+
+        result = await TaskManager.list_active_paginated(session)
+
+        assert result.total == PAGINATED_TASK_COUNT
+        assert result.offset == DEFAULT_PAGINATION_OFFSET
+        assert result.limit == DEFAULT_PAGINATION_LIMIT
+        assert len(result.items) == PAGINATED_TASK_COUNT
+
+    @pytest.mark.asyncio
+    async def test_with_custom_offset_and_limit(self, session: AsyncSession) -> None:
+        """Assert custom offset and limit restrict returned items."""
+        for i in range(3):
+            await _create_task(session, name=f"pag-custom-{i}")
+
+        result = await TaskManager.list_active_paginated(session, offset=0, limit=1)
+
+        assert result.total == PAGINATED_CUSTOM_TASK_COUNT
+        assert len(result.items) == 1
+        assert result.limit == 1
+
+    @pytest.mark.asyncio
+    async def test_with_owner_filter(self, session: AsyncSession) -> None:
+        """Assert owner filter works with pagination."""
+        await _create_task(session, name="pag-backup", owner=TaskOwner.BACKUPS)
+        await _create_task(session, name="pag-alter", owner=TaskOwner.ALTERS)
+
+        result = await TaskManager.list_active_paginated(
+            session, owner=TaskOwner.BACKUPS
+        )
+
+        assert result.total == 1
+        assert result.items[0].name == "pag-backup"
+
+    @pytest.mark.asyncio
+    async def test_excludes_deleted_tasks(self, session: AsyncSession) -> None:
+        """Assert deleted tasks are excluded from paginated results."""
+        await _create_task(session, name="pag-active")
+        await _create_task(session, name="pag-deleted")
+        await TaskManager.delete_by_name(session, "pag-deleted")
+
+        result = await TaskManager.list_active_paginated(session)
+
+        assert result.total == 1
+        assert result.items[0].name == "pag-active"
+
+    @pytest.mark.asyncio
+    async def test_empty_db_returns_zero_total(self, session: AsyncSession) -> None:
+        """Assert empty database returns total of zero."""
+        result = await TaskManager.list_active_paginated(session)
+
+        assert result.total == 0
+        assert result.items == []
+
+    @pytest.mark.asyncio
+    async def test_offset_beyond_total(self, session: AsyncSession) -> None:
+        """Assert offset beyond total returns empty items with correct total."""
+        await _create_task(session, name="pag-beyond")
+
+        result = await TaskManager.list_active_paginated(session, offset=999)
+
+        assert result.total == 1
+        assert result.items == []
+
+
+# ---------------------------------------------------------------------------
+# TaskHistoryManager.list_by_task_name_paginated
+# ---------------------------------------------------------------------------
+
+
+class TestTaskHistoryManagerListByTaskNamePaginated:
+    """Test TaskHistoryManager.list_by_task_name_paginated."""
+
+    @pytest_asyncio.fixture
+    async def task_with_histories(self, session: AsyncSession) -> Task:
+        """Create a task with multiple history records.
+
+        :param session: The async database session.
+        :type session: AsyncSession
+        :return: The created task.
+        :rtype: Task
+        """
+        task = await _create_task(session, name="pag-history-task")
+        await _create_task_history(session, task, status=TaskHistoryStatusEnum.SUCCESS)
+        await _create_task_history(session, task, status=TaskHistoryStatusEnum.FAILED)
+        await _create_task_history(session, task, status=TaskHistoryStatusEnum.RUNNING)
+        return task
+
+    @pytest.mark.asyncio
+    async def test_returns_paginated_response(
+        self, session: AsyncSession, task_with_histories: Task
+    ) -> None:
+        """Assert paginated response has correct envelope fields."""
+        result = await TaskHistoryManager.list_by_task_name_paginated(
+            session=session, task_name="pag-history-task"
+        )
+
+        assert result.total == HISTORY_FIXTURE_COUNT
+        assert result.offset == DEFAULT_PAGINATION_OFFSET
+        assert result.limit == DEFAULT_PAGINATION_LIMIT
+        assert len(result.items) == HISTORY_FIXTURE_COUNT
+
+    @pytest.mark.asyncio
+    async def test_with_custom_limit(
+        self, session: AsyncSession, task_with_histories: Task
+    ) -> None:
+        """Assert custom limit restricts returned items."""
+        result = await TaskHistoryManager.list_by_task_name_paginated(
+            session=session, task_name="pag-history-task", limit=1
+        )
+
+        assert result.total == HISTORY_FIXTURE_COUNT
+        assert len(result.items) == 1
+
+    @pytest.mark.asyncio
+    async def test_with_status_filter(
+        self, session: AsyncSession, task_with_histories: Task
+    ) -> None:
+        """Assert status filter restricts paginated results."""
+        result = await TaskHistoryManager.list_by_task_name_paginated(
+            session=session,
+            task_name="pag-history-task",
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+
+        assert result.total == 1
+        assert len(result.items) == 1
+        assert result.items[0].status == TaskHistoryStatusEnum.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_empty_result(self, session: AsyncSession) -> None:
+        """Assert empty paginated response for task with no history."""
+        await _create_task(session, name="pag-empty-task")
+
+        result = await TaskHistoryManager.list_by_task_name_paginated(
+            session=session, task_name="pag-empty-task"
+        )
+
+        assert result.total == 0
+        assert result.items == []
+
+    @pytest.mark.asyncio
+    async def test_offset_beyond_total(
+        self, session: AsyncSession, task_with_histories: Task
+    ) -> None:
+        """Assert offset beyond total returns empty items with correct total."""
+        result = await TaskHistoryManager.list_by_task_name_paginated(
+            session=session, task_name="pag-history-task", offset=999
+        )
+
+        assert result.total == HISTORY_FIXTURE_COUNT
+        assert result.items == []
+
+    @pytest.mark.asyncio
+    async def test_with_snippet_filename(self, session: AsyncSession) -> None:
+        """Assert snippet_filename filter works with pagination."""
+        task = await _create_task(session, name="pag-snippet-task")
+        await _create_task_history(session, task, snippet_filename="config.yaml")
+        await _create_task_history(session, task, snippet_filename="other.yaml")
+
+        result = await TaskHistoryManager.list_by_task_name_paginated(
+            session=session,
+            task_name="pag-snippet-task",
+            snippet_filename="config.yaml",
+        )
+
+        assert result.total == 1
+        assert len(result.items) == 1
+
+
+# ---------------------------------------------------------------------------
 # DispatchLockManager
 # ---------------------------------------------------------------------------
 
@@ -526,3 +718,104 @@ class TestDispatchLockManager:
 
         remaining = await DispatchLockManager.list(session)
         assert len(remaining) == 0
+
+
+# ---------------------------------------------------------------------------
+# TaskHistoryLogManager.ids_with_chunks
+# ---------------------------------------------------------------------------
+
+
+async def _seed_task_history(
+    session: AsyncSession, task: Task, name: str
+) -> TaskHistory:
+    """Persist and return a SUCCESS task history for ``task``.
+
+    Helper for ``ids_with_chunks`` tests: each chunk-store row requires a
+    real ``TaskHistory`` FK.
+    """
+    history = TaskHistory(
+        task_id=task.id,
+        status=TaskHistoryStatusEnum.SUCCESS,
+        execution_request={
+            "task": task.name,
+            "target": name,
+            "meta": {},
+            "tracking": {"allocation_id": None, "evaluation_id": None},
+        },
+    )
+    return await TaskHistoryManager.save(session, history)
+
+
+async def _seed_chunk(
+    session: AsyncSession, task_history_id: int, payload: bytes = b"hello"
+) -> None:
+    """Write a single chunk-store row for ``task_history_id`` via the writer."""
+    await TaskHistoryLogWriter.append(
+        session,
+        task_history_id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        force_flush=True,
+        producer_offset_after=len(payload),
+    )
+
+
+class TestTaskHistoryLogManagerIdsWithChunks:
+    """Test ``TaskHistoryLogManager.ids_with_chunks``."""
+
+    @pytest.mark.asyncio
+    async def test_empty_input_returns_empty_set(self, session: AsyncSession) -> None:
+        """Assert an empty input returns ``set()`` without querying the DB."""
+        result = await TaskHistoryLogManager.ids_with_chunks(session, [])
+
+        assert result == set()
+
+    @pytest.mark.asyncio
+    async def test_no_matches_returns_empty_set(self, session: AsyncSession) -> None:
+        """Assert IDs with no chunks in the store come back as an empty set."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+
+        result = await TaskHistoryLogManager.ids_with_chunks(session, [history.id])
+
+        assert result == set()
+
+    @pytest.mark.asyncio
+    async def test_returns_only_ids_with_chunks(self, session: AsyncSession) -> None:
+        """Assert the subset with chunks is returned for a mixed input."""
+        task = await _create_task(session)
+        with_chunks_a = await _seed_task_history(session, task, "node-a")
+        with_chunks_b = await _seed_task_history(session, task, "node-b")
+        without_chunks = await _seed_task_history(session, task, "node-c")
+        await _seed_chunk(session, with_chunks_a.id)
+        await _seed_chunk(session, with_chunks_b.id)
+
+        result = await TaskHistoryLogManager.ids_with_chunks(
+            session,
+            [with_chunks_a.id, with_chunks_b.id, without_chunks.id],
+        )
+
+        assert result == {with_chunks_a.id, with_chunks_b.id}
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_multiple_chunk_rows_per_history(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a history with multiple chunks is reported once (DISTINCT)."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_chunk(session, history.id, payload=b"first")
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDERR,
+            new_bytes=b"second",
+            force_flush=True,
+            producer_offset_after=6,
+        )
+
+        result = await TaskHistoryLogManager.ids_with_chunks(session, [history.id])
+
+        assert result == {history.id}

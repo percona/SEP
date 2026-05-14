@@ -284,6 +284,10 @@
     /* Lost */
     --lostContrast: var(--sunset700);
     --lostSurface: var(--sunset100);
+
+    /* Stale */
+    --staleContrast: var(--warningContrast);
+    --staleSurface: var(--warningSurface);
 }
 
 /* Dark theme is set up to switch using <x> element and JS to swap the theme name on [data-theme] attribute */
@@ -356,6 +360,10 @@
     /* Lost */
     --lostContrast: var(--white);
     --lostSurface: var(--sunset500);
+
+    /* Stale */
+    --staleContrast: var(--warningContrast);
+    --staleSurface: var(--warningSurface);
 }
 
 body[data-theme="dark"] .theme-change.dark,
@@ -1278,6 +1286,10 @@ button.list-item:focus-visible {
     content: "troubleshoot";
 }
 
+.list-item.report .icon::before {
+    content: "assignment";
+}
+
 /*=============================================*/
 /* Foundations for the sidebar type of layout */
 /*=============================================*/
@@ -1388,6 +1400,10 @@ footer .link svg {
     color: var(--lostContrast);
 }
 
+.status .stale {
+    color: var(--staleContrast);
+}
+
 .success .badge {
     background: var(--successSurface);
 }
@@ -1403,6 +1419,10 @@ footer .link svg {
 
 .lost .badge {
     background: var(--lostSurface);
+}
+
+.stale .badge {
+    background: var(--staleSurface);
 }
 
 /*=============================================*/

@@ -1,0 +1,25 @@
+name: Auto-assign PR author
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  assign-author:
+    # Skip if already assigned, fork PRs, and bot authors (e.g. Dependabot cannot be assigned with GITHUB_TOKEN).
+    if: >-
+      !github.event.pull_request.assignees[0] &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign PR to author
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr edit "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --add-assignee "${{ github.event.pull_request.user.login }}"

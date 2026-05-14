@@ -23,12 +23,12 @@
 # parameters:
 #   - name: pmmserver
 #     label: PMM server URL
-#     description: Base URL of PMM server. Leave empty to use configured default (SEP.PMM.ENDPOINT).
+#     description: Base URL of PMM server. Leave empty to use configured default (PMM.ENDPOINT).
 #     positional: true
 #     required: false
 #   - name: apikey
 #     label: API key
-#     description: API key for PMM server. Leave empty to use configured default (SEP.PMM.API_KEY).
+#     description: API key for PMM server. Leave empty to use configured default (PMM.API_KEY).
 #   - name: node
 #     label: Node name
 #     description: Node name of audit target (required unless using --list).
@@ -50,6 +50,10 @@
 #   - name: notar
 #     label: Skip tar
 #     description: Do not compress the exported graphs.
+#     type: bool
+#   - name: insecure
+#     label: Insecure (skip TLS verification)
+#     description: "Disable SSL certificate verification for the PMM server. Use only when PMM is deployed with a self-signed certificate."
 #     type: bool
 #   - name: start
 #     label: Start time (UTC)
@@ -151,6 +155,12 @@ parser.add_argument(
     action="store_true",
 )
 parser.add_argument(
+    "--insecure",
+    default=False,
+    help="Skip TLS certificate verification for the PMM server (use only for self-signed certs).",
+    action="store_true",
+)
+parser.add_argument(
     "pmmserver", help="Base URL of PMM server (ie: https://localhost/) (Required)"
 )
 parser.add_argument("--apikey", help="API Key from PMM server")
@@ -231,6 +241,8 @@ dbaasex.add_argument("--rds", help="Amazon RDS MySQL", action="store_true")
 dbaasex.add_argument("--aurora", help="Amazon RDS Aurora", action="store_true")
 
 args = parser.parse_args()
+
+VERIFY_SSL = not args.insecure  # noqa: S501
 
 PMMSERVER = args.pmmserver
 APIKEY = args.apikey
@@ -412,7 +424,7 @@ def render_graphs(
 
                 # Send HTTP GET request to server and attempt to receive a response
                 response = requests.get(
-                    url, params=params, headers=headers, timeout=30, verify=False
+                    url, params=params, headers=headers, timeout=30, verify=VERIFY_SSL
                 )
 
                 # Good response for render
@@ -443,7 +455,7 @@ def get_dashboard(uid: str) -> dict:
         f"{PMMSERVER}/graph/api/dashboards/uid/{uid}",
         headers=headers,
         timeout=30,
-        verify=False,
+        verify=VERIFY_SSL,
     )
     dashboard = response.json()
 
@@ -461,7 +473,7 @@ def get_pmm_version() -> str:
 
         # Get health
         response = requests.get(
-            f"{PMMSERVER}/graph/api/health", headers=headers, timeout=30, verify=False
+            f"{PMMSERVER}/graph/api/health", headers=headers, timeout=30, verify=VERIFY_SSL
         )
         resp = response.json()
 
@@ -475,7 +487,7 @@ def get_pmm_version() -> str:
 
         # Get version, PMMv2 and v3 both respond to /v1/version
         response = requests.get(
-            f"{PMMSERVER}/v1/version", headers=headers, timeout=30, verify=False
+            f"{PMMSERVER}/v1/version", headers=headers, timeout=30, verify=VERIFY_SSL
         )
         resp = response.json()
 
@@ -502,9 +514,9 @@ def list_services(pmm_version: str) -> None:
         # This returns an array of dictionaries based on what 'type' (generic, container, rds, etc) of node is being monitored
         url = f"{PMMSERVER}/{API_ENDPOINTS[pmm_version]['LIST_NODES']}"
         if pmm_version == "2":
-            response = requests.post(url, headers=headers, timeout=30, verify=False)  # noqa: S501
+            response = requests.post(url, headers=headers, timeout=30, verify=VERIFY_SSL)
         else:
-            response = requests.get(url, headers=headers, timeout=30, verify=False)  # noqa: S501
+            response = requests.get(url, headers=headers, timeout=30, verify=VERIFY_SSL)
 
         nodes = response.json()
         if "message" in nodes:
@@ -513,9 +525,9 @@ def list_services(pmm_version: str) -> None:
         # Get list of services
         url = f"{PMMSERVER}/{API_ENDPOINTS[pmm_version]['LIST_SERVICES']}"
         if pmm_version == "2":
-            response = requests.post(url, headers=headers, timeout=30, verify=False)  # noqa: S501
+            response = requests.post(url, headers=headers, timeout=30, verify=VERIFY_SSL)
         else:
-            response = requests.get(url, headers=headers, timeout=30, verify=False)  # noqa: S501
+            response = requests.get(url, headers=headers, timeout=30, verify=VERIFY_SSL)
 
         services = response.json()
         if "message" in services:
@@ -553,7 +565,7 @@ def get_security_checks(path_to_graphs: str) -> None:
 
     # Fetch list of security checks
     response = requests.post(
-        f"{PMMSERVER}/v1/management/SecurityChecks/List", timeout=30, verify=False
+        f"{PMMSERVER}/v1/management/SecurityChecks/List", timeout=30, verify=VERIFY_SSL
     )
     security_checks_list = response.json()
 
@@ -582,7 +594,7 @@ def get_security_checks(path_to_graphs: str) -> None:
     response = requests.post(
         f"{PMMSERVER}/v1/management/SecurityChecks/FailedChecks",
         timeout=30,
-        verify=False,
+        verify=VERIFY_SSL,
     )
     failed_checks = response.json()
 

@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.plugins.archives.routes module."""
 
+import re
 from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock
 
@@ -24,6 +25,10 @@ from fastapi import status
 
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
+from app.sep.connectivity import (
+    clear_connectivity_caches,
+    get_latest_connectivity_result,
+)
 from app.sep.deps import get_inventory_api
 from app.sep.main import sep_app
 from app.sep.plugins.archives.deps import (
@@ -33,8 +38,10 @@ from app.sep.plugins.archives.deps import (
 )
 from app.sep.plugins.archives.models import ArchivesCreate, SwapDropEnum
 from app.tasks.models import (
+    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
+    TaskWrite,
 )
 from tests.app.factories import TaskFactory
 
@@ -87,7 +94,8 @@ def _mock_get_archives_task_dep(created_task):
 def _mock_get_archives_index_context_dep():
     """Mock the get_archives_index_context dependency with default user context."""
     sep_app.dependency_overrides[get_archives_index_context] = lambda: {
-        "user": "default_user"
+        "user": "default_user",
+        "connectivity_check_default": True,
     }
     yield
     sep_app.dependency_overrides = {}
@@ -125,6 +133,91 @@ def test_archives_create(
     )
 
 
+def test_archives_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+    created_schema,
+    created_table,
+):
+    """Test POST /archives/ route without overriding build_archives_task_payload."""
+    created_archives = ArchivesCreate(
+        alias="arch_full_chain",
+        hostname="source_db",
+        service_id=created_service.id,
+        source_db_id=created_schema.id,
+        source_table_id=created_table.id,
+        swap_drop=SwapDropEnum.SWAP_DROP,
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    # Omit explicit null optional fields so multipart form values stay valid.
+    response = test_client.post(
+        "/archives/",
+        data=created_archives.model_dump(exclude_none=True),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    mock_task_api_dep.post.assert_awaited_once()
+    assert mock_task_api_dep.post.await_args.args[0] == "/"
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["name"] == created_archives.alias
+    assert posted["owner"] == TaskOwner.ARCHIVER.value
+    assert posted["data"]["meta"]["_service_name"] == created_service.name
+
+
+def test_archives_create_skips_connectivity_check_when_opted_out(
+    test_client, mock_task_api_dep, created_archives
+):
+    """POST /archives/ skips the connectivity check when the checkbox is unchecked."""
+    clear_connectivity_caches()
+
+    fake_task_write = TaskWrite(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.ARCHIVER,
+        data={
+            "task": "fake-task",
+            "meta": {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+            "payload": "",
+        },
+    )
+
+    sep_app.dependency_overrides[build_archives_task_payload] = lambda: fake_task_write
+
+    response = test_client.post(
+        "/archives/", data=created_archives.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/archives/{fake_task_write.name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == 1
+    call = mock_task_api_dep.post.call_args_list[0]
+    assert call.args[0] == "/"
+    assert call.kwargs["json"] == fake_task_write.model_dump()
+    assert get_latest_connectivity_result("node1", "mysql") is None
+
+    clear_connectivity_caches()
+    sep_app.dependency_overrides = {}
+
+
 @pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
 def test_archives_detail(
     test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
@@ -158,14 +251,25 @@ def test_archives_detail(
     mock_inventory_api_dep.get.return_value = AsyncMock()
     mock_task_api_dep.get.side_effect = [
         {"127.0.0.1": "localhost"},  # for /hosts/ (dependency)
-        [],  # for /{task.name}/history/
-        [],  # for running tasks at /{task.name}/history/
+        {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        },  # for /{task.name}/history/
+        {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        },  # for running tasks at /{task.name}/history/
         [],  # for /stats/{task.name}
-        [],  # chainable_tasks
+        {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
     ]
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
+    assert 'name="disable_bulk_insert"' in response.text
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
@@ -174,8 +278,106 @@ def test_archives_detail(
     mock_task_api_dep.get.assert_any_await(f"/stats/{created_task.name}")
     mock_task_api_dep.get.assert_any_await("/hosts/")
     mock_inventory_api_dep.get.assert_any_await(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0}
     )
+
+
+@pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
+def test_archives_detail_bulk_insert_checked(
+    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
+):
+    """Test that the disable_bulk_insert checkbox is checked when DISABLE_BULK_INSERT=1."""
+    mock_meta_config = yaml.dump(
+        {
+            "ALL": {
+                "SOURCE_HOST": "127.0.0.1",
+                "SOURCE_PORT": 3306,
+            },
+            "PURGE_LIST": [
+                {
+                    "ALIAS": "test_archiver_task",
+                    "SOURCE_DB": "mock_source_db",
+                    "SOURCE_TABLE": "mock_source_table",
+                    "SWAP_DROP": 1,
+                    "DISABLE_BULK_INSERT": 1,
+                }
+            ],
+        }
+    )
+
+    mock_data = {
+        "meta": {
+            "config": mock_meta_config,
+            "target": "mock_target",
+        },
+        "hostname": "mock_nomad_host_name",
+    }
+    created_task.data = mock_data
+    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_task_api_dep.get.side_effect = [
+        {"127.0.0.1": "localhost"},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        [],
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+    ]
+    response = test_client.get(f"/archives/{created_task.name}")
+    assert response.status_code == status.HTTP_200_OK
+    assert re.search(r'name="disable_bulk_insert"[^>]*checked', response.text)
+
+
+@pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
+def test_archives_detail_with_remote_destination(
+    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
+):
+    """Test archives detail page renders DEST_HOST, DEST_PORT, DEST_DB correctly."""
+    mock_meta_config = yaml.dump(
+        {
+            "ALL": {
+                "SOURCE_HOST": "127.0.0.1",
+                "SOURCE_PORT": 3306,
+            },
+            "PURGE_LIST": [
+                {
+                    "ALIAS": "test_remote_archiver",
+                    "SOURCE_DB": "source_db",
+                    "SOURCE_TABLE": "source_table",
+                    "DEST_TABLE": "dest_table",
+                    "DEST_HOST": "remote.host",
+                    "DEST_PORT": 3307,
+                    "DEST_DB": "remote_db",
+                    "SWAP_DROP": 1,
+                }
+            ],
+        }
+    )
+
+    mock_data = {
+        "meta": {
+            "config": mock_meta_config,
+            "target": "mock_target",
+        },
+        "hostname": "mock_nomad_host_name",
+    }
+    created_task.data = mock_data
+    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_task_api_dep.get.side_effect = [
+        {"127.0.0.1": "localhost"},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        [],
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+    ]
+    response = test_client.get(f"/archives/{created_task.name}")
+    assert response.status_code == status.HTTP_200_OK
+    # Destination table should be qualified with DEST_DB not SOURCE_DB
+    assert "dest_table" in response.text
+    # Destination host should be displayed
+    assert "remote.host" in response.text
+    # Destination port should be displayed
+    assert "3307" in response.text
+    # Remote database should be displayed
+    assert "remote_db" in response.text
 
 
 @pytest.mark.usefixtures(

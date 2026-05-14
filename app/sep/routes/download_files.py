@@ -34,7 +34,7 @@ from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import FileMetadata, TaskHistoryResponse
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["sep", "tasks", "files"])
 
 
 @router.get(
@@ -89,18 +89,21 @@ async def download_task_history_file(
 async def task_history_file_stream(
     tasks_api: TaskAPI, task_history_id: int, request: Request
 ) -> AsyncGenerator[bytes, None]:
-    """Stream a task history's logs as server-sent events.
+    """Stream a task history's archived file content as raw bytes.
 
-    :param tasks_api: The Tasks API client to use for streaming logs.
+    Yields the file payload chunk-by-chunk from ``/history/{id}/file/`` without
+    any line buffering, so binary, gzip, and tar payloads pass through intact.
+
+    :param tasks_api: The Tasks API client to use for streaming the file.
     :type tasks_api: TaskAPI
-    :param task_history_id: The ID of the task history whose logs are to be streamed
+    :param task_history_id: The ID of the task history whose file is to be streamed.
     :type task_history_id: int
     :param request: The incoming HTTP request.
     :type request: Request
-    :yield: Chunks of log data as bytes.
+    :yield: Raw byte chunks of the file payload (binary-safe).
     :rtype: AsyncGenerator[bytes, None]
     """
-    async for chunk in tasks_api.stream(
+    async for chunk in tasks_api.stream_chunks(
         f"/history/{task_history_id}/file/",
         params=request.query_params,
     ):

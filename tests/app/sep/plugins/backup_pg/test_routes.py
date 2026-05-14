@@ -21,7 +21,19 @@ import pytest
 from fastapi import HTTPException, status
 
 from app.inventory.models import ServiceTypeEnum
-from app.tasks.models import TaskHistoryStatusEnum
+from app.sep.connectivity import (
+    clear_connectivity_caches,
+    get_latest_connectivity_result,
+)
+from app.sep.main import sep_app
+from app.sep.plugins.backup_pg.deps import build_backup_task_payload
+from app.tasks.models import (
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
+from tests.app.factories import CreatedServiceFactory
 
 
 @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
@@ -57,13 +69,99 @@ def test_backups_create(
     assert called_kwargs["json"] == mock_build_backup_task_payload_dep.model_dump()
 
 
+@pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
+def test_pg_backups_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    backup_create,
+    created_node,
+):
+    """Test POST /backup-pg/ route without overriding build_backup_task_payload."""
+    pg_service = CreatedServiceFactory.build(
+        node=created_node, type=ServiceTypeEnum.POSTGRESQL
+    )
+    backup_create.service_id = pg_service.id
+    mock_inventory_api_dep.get = AsyncMock(return_value=pg_service.model_dump())
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/backup-pg/",
+        data=backup_create.model_dump(),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(
+        f"/backup-pg/{backup_create.task_name}"
+    )
+    mock_task_api_dep.post.assert_awaited_once()
+    assert mock_task_api_dep.post.await_args.args[0] == "/"
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["name"] == backup_create.task_name
+    assert posted["owner"] == TaskOwner.BACKUP_PG.value
+    assert posted["data"]["meta"]["_service_name"] == pg_service.name
+
+
+def test_pg_backups_create_skips_connectivity_check_when_opted_out(
+    test_client, mock_task_api_dep, backup_create
+):
+    """POST /backup-pg/ skips the connectivity check when the checkbox is unchecked."""
+    clear_connectivity_caches()
+
+    fake_task_write = TaskWrite(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.BACKUP_PG,
+        data={
+            "task": "fake-task",
+            "meta": {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 5432,
+                "_connectivity_service_type": "postgresql",
+            },
+            "payload": "",
+        },
+    )
+
+    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+
+    response = test_client.post(
+        "/backup-pg/", data=backup_create.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backup-pg/{backup_create.task_name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == 1
+    call = mock_task_api_dep.post.call_args_list[0]
+    assert call.args[0] == "/"
+    assert call.kwargs["json"] == fake_task_write.model_dump()
+    assert get_latest_connectivity_result("node1", "postgresql") is None
+
+    clear_connectivity_caches()
+    sep_app.dependency_overrides = {}
+
+
 @pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
 def test_backups_detail(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):
     """Test GET /backup-pg/{task_name} route."""
-    mock_task_api_dep.get = AsyncMock(side_effect=[{}, {}, {}, [], []])
-    mock_inventory_api_dep.get = AsyncMock(return_value=[])
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            [],
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+    )
 
     response = test_client.get(f"/backup-pg/{created_task.name}")
 
@@ -86,15 +184,25 @@ def test_backups_detail_handles_inventory_error(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):
     """Test detail route continues when inventory service lookup fails."""
-    mock_task_api_dep.get = AsyncMock(side_effect=[{}, {}, {}, [], []])
-    mock_inventory_api_dep.get = AsyncMock(side_effect=HTTPException(status_code=404))
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            [],
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    )
 
     response = test_client.get(f"/backup-pg/{created_task.name}")
 
     assert response.status_code == status.HTTP_200_OK
     mock_inventory_api_dep.get.assert_any_call(
         "/services/",
-        params={"service_type": ServiceTypeEnum.POSTGRESQL},
+        params={"service_type": ServiceTypeEnum.POSTGRESQL, "limit": 0},
     )
 
 

@@ -97,6 +97,7 @@ def main() -> None:
 
     pt_archiver_bin = config.get("PT_ARCHIVER_BIN") or "pt-archiver"
 
+    failed_aliases: list[str] = []
     try:
         purge_data_list = []
         default_purge = {}
@@ -139,6 +140,7 @@ def main() -> None:
                 "prg_purge": purge.get("DELETE_DATA", 0),
                 "prg_extra_args": purge.get("EXTRA_ARGS"),
                 "prg_disable_binlog": purge.get("DISABLE_BINLOG", 0),
+                "prg_disable_bulk_insert": purge.get("DISABLE_BULK_INSERT", 0),
                 "prg_use_index": purge.get("USE_INDEX", None),
                 "prg_send_notifications": purge.get("SLACK_NOTIFICATIONS", 0),
                 "swp_drp": purge.get("SWAP_DROP", 0),
@@ -188,12 +190,10 @@ def main() -> None:
                 elif conf["swp_drp"] == 2:
                     # SWAP-ARCHIVE-DROP
                     # SWAP
-                    src_tbl_swapped = src_tbl + "_" + conf["swp_table_suffix"]
+                    src_tbl_swapped = f"{src_tbl}_{conf['swp_table_suffix']}"
                     ret = swap_create_table(src_db, src_tbl, src_tbl_swapped, conf)
                     if ret == 0:
                         # ARCHIVE
-                        # we need to re-set dst_table
-                        conf["dst_tbl"] = src_tbl_swapped
                         ret = pt_archive_runner(
                             pt_archiver_bin, src_db, src_tbl_swapped, conf
                         )
@@ -204,6 +204,8 @@ def main() -> None:
                 if ret != 0:
                     logger.error("<%s> ERROR: Purge Failed", conf["prg_alias"])
                     error_on_alias.append(conf["prg_alias"])
+                    if conf["prg_alias"] not in failed_aliases:
+                        failed_aliases.append(conf["prg_alias"])
                     logger.info(">>>>>>>>>>>>>>>>>> Purge failed.")
                     if config.get("STOP_ON_ERROR"):
                         sys.exit(1)
@@ -225,6 +227,13 @@ def main() -> None:
     finally:
         lock.release()
 
+    if failed_aliases:
+        logger.error(
+            "One or more purges failed: %s. Exiting with non-zero status.",
+            ", ".join(str(alias) for alias in failed_aliases),
+        )
+        sys.exit(1)
+
 
 def run_cmd(cmd: str, *args: str) -> int:
     """Run command and log the output."""
@@ -239,7 +248,7 @@ def run_cmd(cmd: str, *args: str) -> int:
 
 def drop_table(src_db: str, src_tbl: str, conf: dict[str, Any]) -> int:
     """Drop table."""
-    sql_cmd = f"DROP TABLE {src_db}.{src_tbl};"
+    sql_cmd = f"DROP TABLE `{src_db}`.`{src_tbl}`;"
     drp_cmd = [
         src_db,
         "-h{}".format(conf["src_host"]),
@@ -254,8 +263,9 @@ def swap_create_table(
 ) -> int:
     """Swap table."""
     sql_cmd = (
-        f"CREATE TABLE {src_db}.{src_tbl}_tmp LIKE {src_db}.{src_tbl};"
-        f"RENAME TABLE {src_db}.{src_tbl} TO {src_db}.{src_tbl_swapped}, {src_db}.{src_tbl}_tmp TO {src_db}.{src_tbl};"
+        f"CREATE TABLE `{src_db}`.`{src_tbl}_tmp` LIKE `{src_db}`.`{src_tbl}`;"
+        f"RENAME TABLE `{src_db}`.`{src_tbl}` TO `{src_db}`.`{src_tbl_swapped}`,"
+        f" `{src_db}`.`{src_tbl}_tmp` TO `{src_db}`.`{src_tbl}`;"
     )
     drp_swp_cmd = [
         src_db,
@@ -343,18 +353,20 @@ def pt_archive_runner(cmd: str, src_db: str, src_tbl: str, conf: dict[str, Any])
             ["--buffer", "--bulk-delete", "--file={}".format(conf['dst_file'])]
         )
     else:
-        pt_archiver_cmd.extend(
-            [
-                "--bulk-insert",
-                "--dest=h={},P={},D={},t={},b={},L=yes".format(
-                    conf["dst_host"],
-                    conf["dst_port"],
-                    conf["dst_db"],
-                    conf["dst_tbl"],
-                    conf["prg_disable_binlog"],
-                ),
-            ]
-        )
+        dest_args = []
+        if not conf["prg_disable_bulk_insert"]:
+            dest_args.append("--bulk-insert")
+        dest_args.extend([
+            "--bulk-delete",
+            "--dest=h={},P={},D={},t={},b={},L=yes".format(
+                conf["dst_host"],
+                conf["dst_port"],
+                conf["dst_db"],
+                conf["dst_tbl"],
+                conf["prg_disable_binlog"],
+            ),
+        ])
+        pt_archiver_cmd.extend(dest_args)
 
     if conf["prg_extra_args"]:
         pt_archiver_cmd.extend(conf["prg_extra_args"].split(" "))

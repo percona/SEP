@@ -16,6 +16,7 @@
 """Define test fixtures for the SEP app."""
 
 from collections import OrderedDict
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -28,6 +29,7 @@ from pytest_mock import MockerFixture
 from app.core.requests import RemoteAPI
 from app.models import CasdoorUser
 from app.sep.deps import (
+    get_api_authenticated_user,
     get_current_user,
     get_inventory_api,
     get_tasks_api,
@@ -41,8 +43,20 @@ def test_client(regular_user: CasdoorUser) -> TestClient:
     """Create an authenticated test client for the app."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def unauthenticated_client() -> Iterator[TestClient]:
+    """Yield a test client with authentication dependency overrides cleared."""
+    previous = sep_app.dependency_overrides
+    sep_app.dependency_overrides = {}
+    try:
+        yield TestClient(sep_app, raise_server_exceptions=False)
+    finally:
+        sep_app.dependency_overrides = previous
 
 
 @pytest_asyncio.fixture
@@ -50,6 +64,7 @@ async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
     """Create an authenticated async test client for the app."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
 
     transport = ASGITransport(app=sep_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

@@ -15,9 +15,6 @@
 
 """Define test cases for the tasks data models and validation."""
 
-import base64
-import gzip
-import json
 from collections import defaultdict
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
@@ -42,7 +39,6 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
-    TaskResponse,
     TaskStats,
     TransformPayloadRequest,
 )
@@ -55,9 +51,6 @@ STATS_EXPECTED_TOTAL = 2
 STATS_AVERAGE_SECONDS = 15.0
 STATS_LAST_SECONDS = 20.0
 STATS_TOTAL_SECONDS = 10.0
-CHUNK_SIZE = 3
-EXPECTED_CHUNKS = 4
-LAST_CHUNK_OFFSET = 12
 
 
 class TestTaskBackendEnum:
@@ -71,6 +64,10 @@ class TestTaskBackendEnum:
         """Assert PROXY has the expected auto-generated value."""
         assert TaskBackendEnum.PROXY == "proxy"
 
+    def test_celery_value(self) -> None:
+        """Assert CELERY has the expected auto-generated value."""
+        assert TaskBackendEnum.CELERY == "celery"
+
     def test_is_str_enum(self) -> None:
         """Assert values are strings."""
         assert isinstance(TaskBackendEnum.NOMAD, str)
@@ -80,8 +77,16 @@ class TestTaskHistoryStatusEnum:
     """Test TaskHistoryStatusEnum values and is_finished method."""
 
     def test_all_values_exist(self) -> None:
-        """Assert all six status values exist."""
-        expected = {"FAILED", "PENDING", "RUNNING", "SUCCESS", "STOPPED", "LOST"}
+        """Assert all seven status values exist."""
+        expected = {
+            "FAILED",
+            "PENDING",
+            "RUNNING",
+            "SUCCESS",
+            "STOPPED",
+            "LOST",
+            "STALE",
+        }
         assert {s.name for s in TaskHistoryStatusEnum} == expected
 
     @pytest.mark.parametrize(
@@ -90,6 +95,7 @@ class TestTaskHistoryStatusEnum:
             TaskHistoryStatusEnum.FAILED,
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
+            TaskHistoryStatusEnum.STALE,
         ],
     )
     def test_is_finished_true(self, status: TaskHistoryStatusEnum) -> None:
@@ -207,6 +213,26 @@ class TestTaskBaseValidation:
             backend=TaskBackendEnum.NOMAD,
         )
         assert task.backend == TaskBackendEnum.NOMAD
+
+    def test_celery_backend_protected_passes(self) -> None:
+        """Assert CELERY backend passes validation when protected."""
+        task = TaskBase(
+            name="test",
+            data={"callable": "some.module.func", "target": "local"},
+            backend=TaskBackendEnum.CELERY,
+            protected=True,
+        )
+        assert task.backend == TaskBackendEnum.CELERY
+
+    def test_celery_backend_unprotected_raises(self) -> None:
+        """Assert CELERY backend raises when not protected."""
+        with pytest.raises(ValidationError, match="protected"):
+            TaskBase(
+                name="test",
+                data={"callable": "some.module.func", "target": "local"},
+                backend=TaskBackendEnum.CELERY,
+                protected=False,
+            )
 
 
 class TestTask:
@@ -440,118 +466,11 @@ class TestTaskHistory:
         )
         assert history.anonymized_entities == {PIIEntity.CREDIT_CARD, PIIEntity.PERSON}
 
-    def test_task_logs_dict(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert task_logs returns dict logs as-is."""
-        logs_data = {"step1": {"stdout": "output", "stderr": ""}}
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        assert history.task_logs == logs_data
-
-    def test_task_logs_compressed(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert task_logs decompresses gzip+base64 string logs."""
-        logs_data = {"step1": {"stdout": "compressed output"}}
-        compressed = base64.b64encode(
-            gzip.compress(json.dumps(logs_data).encode())
-        ).decode()
-        execution_request.tracking["task_logs"] = compressed
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        assert history.task_logs == logs_data
-
-    def test_iter_logs_yields_chunks(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert iter_logs yields TaskLog chunks from task_logs data."""
-        logs_data = {"step1": {"stdout": "hello", "stderr": "err"}}
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        logs = list(history.iter_logs())
-        stdout_logs = [lg for lg in logs if lg.type == TaskLogType.STDOUT]
-        stderr_logs = [lg for lg in logs if lg.type == TaskLogType.STDERR]
-        assert len(stdout_logs) == 1
-        assert stdout_logs[0].msg == "hello"
-        assert stdout_logs[0].step == "step1"
-        assert len(stderr_logs) == 1
-        assert stderr_logs[0].msg == "err"
-
-    def test_iter_logs_respects_start_offsets(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert iter_logs respects start_offsets to skip content."""
-        logs_data = {"step1": {"stdout": "0123456789"}}
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        logs = list(history.iter_logs(start_offsets={"step1": {"stdout": 5}}))
-        stdout_logs = [lg for lg in logs if lg.type == TaskLogType.STDOUT]
-        assert stdout_logs[0].msg == "56789"
-
-    def test_iter_logs_respects_step_filter(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert iter_logs only yields logs for the specified step."""
-        logs_data = {
-            "step1": {"stdout": "s1 out"},
-            "step2": {"stdout": "s2 out"},
-        }
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        logs = list(history.iter_logs(step="step1"))
-        steps = {lg.step for lg in logs}
-        assert steps == {"step1"}
-
-    def test_iter_logs_chunk_size_splitting(
-        self, task_instance: Task, execution_request: TaskExecutionRequest
-    ) -> None:
-        """Assert iter_logs splits messages into chunks of given size."""
-        logs_data = {"step1": {"stdout": "A" * 10}}
-        execution_request.tracking["task_logs"] = logs_data
-        history = TaskHistory(
-            id=1,
-            task_id=task_instance.id,
-            task=task_instance,
-            execution_request=execution_request,
-        )
-        logs = list(history.iter_logs(chunk_size=CHUNK_SIZE))
-        stdout_logs = [lg for lg in logs if lg.type == TaskLogType.STDOUT]
-        assert len(stdout_logs) == EXPECTED_CHUNKS
-        assert stdout_logs[0].msg == "AAA"
-        assert stdout_logs[0].offset == CHUNK_SIZE
-        assert stdout_logs[3].msg == "A"
-        assert stdout_logs[3].offset == LAST_CHUNK_OFFSET
-
     @pytest.mark.asyncio
     async def test_alert_for_status_failed(
         self, task_instance: Task, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert alert_for_status triggers ERROR alert for FAILED status."""
+        """Assert alert_for_status triggers ERROR alert with dedup key for FAILED."""
         history = TaskHistory(
             id=1,
             task_id=task_instance.id,
@@ -567,12 +486,13 @@ class TestTaskHistory:
             assert alert_data["severity"] == AlertSeverity.ERROR
             assert alert_data["class"] == "task_failure"
             assert "failed" in alert_data["summary"]
+            assert alert_data["dedup_key"] == "task:test-task:node-1"
 
     @pytest.mark.asyncio
     async def test_alert_for_status_lost(
         self, task_instance: Task, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert alert_for_status triggers WARNING alert for LOST status."""
+        """Assert alert_for_status triggers WARNING alert with dedup key for LOST."""
         history = TaskHistory(
             id=1,
             task_id=task_instance.id,
@@ -587,12 +507,13 @@ class TestTaskHistory:
             alert_data = mock_trigger.call_args[0][0]
             assert alert_data["severity"] == AlertSeverity.WARNING
             assert alert_data["class"] == "task_lost"
+            assert alert_data["dedup_key"] == "task:test-task:node-1"
 
     @pytest.mark.asyncio
-    async def test_alert_for_status_success_no_alert(
+    async def test_alert_for_status_success_resolves(
         self, task_instance: Task, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert alert_for_status returns early for SUCCESS status."""
+        """Assert alert_for_status resolves both the base and stale alerts on SUCCESS."""
         history = TaskHistory(
             id=1,
             task_id=task_instance.id,
@@ -601,59 +522,151 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.SUCCESS,
         )
         mock_trigger = AsyncMock()
-        with patch.object(AlertService, "trigger", mock_trigger):
+        mock_resolve = AsyncMock()
+        with (
+            patch.object(AlertService, "trigger", mock_trigger),
+            patch.object(AlertService, "resolve", mock_resolve),
+        ):
             await history.alert_for_status()
             mock_trigger.assert_not_called()
+            resolved_keys = [call.args[0] for call in mock_resolve.call_args_list]
+            assert resolved_keys == [
+                "task:test-task:node-1",
+                "task:test-task:node-1:stale",
+            ]
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_stale(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert alert_for_status triggers WARNING task_stale alert with :stale suffix."""
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.STALE,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            mock_trigger.assert_called_once()
+            alert_data = mock_trigger.call_args[0][0]
+            assert alert_data["severity"] == AlertSeverity.WARNING
+            assert alert_data["class"] == "task_stale"
+            assert alert_data["dedup_key"] == "task:test-task:node-1:stale"
+            assert "stale" in alert_data["summary"].lower()
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_stopped_no_action(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert alert_for_status takes no action for STOPPED status."""
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.STOPPED,
+        )
+        mock_trigger = AsyncMock()
+        mock_resolve = AsyncMock()
+        with (
+            patch.object(AlertService, "trigger", mock_trigger),
+            patch.object(AlertService, "resolve", mock_resolve),
+        ):
+            await history.alert_for_status()
+            mock_trigger.assert_not_called()
+            mock_resolve.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_dedup_key_consistent(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert dedup key is identical for FAILED and SUCCESS of same task."""
+        failed_history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        success_history = TaskHistory(
+            id=2,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        mock_trigger = AsyncMock()
+        mock_resolve = AsyncMock()
+        with (
+            patch.object(AlertService, "trigger", mock_trigger),
+            patch.object(AlertService, "resolve", mock_resolve),
+        ):
+            await failed_history.alert_for_status()
+            await success_history.alert_for_status()
+            trigger_dedup = mock_trigger.call_args[0][0]["dedup_key"]
+            resolved_keys = [call.args[0] for call in mock_resolve.call_args_list]
+            assert trigger_dedup in resolved_keys
 
 
 class TestTaskHistoryResponse:
-    """Test TaskHistoryResponse._remove_logs validator."""
+    """Test ``TaskHistoryResponse`` serialization of the ``has_logs`` attribute."""
 
-    def test_remove_logs_replaces_with_boolean(self) -> None:
-        """Assert _remove_logs replaces task_logs in tracking with a boolean."""
-        task_resp = TaskResponse(
-            id=1,
-            name="t",
-            data={"key": "val"},
-            backend=TaskBackendEnum.NOMAD,
-            deleted_at=None,
-            created_by=None,
-            last_updated_by=None,
-        )
-        req = TaskExecutionRequest(
-            task="t",
-            target="n",
-            tracking={"allocation_id": None, "task_logs": {"step1": {"stdout": "x"}}},
-        )
-        resp = TaskHistoryResponse(
-            id=1,
-            execution_request=req,
-            task=task_resp,
-        )
-        assert resp.execution_request.tracking["task_logs"] is True
+    @pytest.fixture
+    def task_instance(self) -> Task:
+        """Return a Task instance for TaskHistory construction."""
+        return TaskFactory.build(id=1, name="test-task", data={"key": "val"})
 
-    def test_remove_logs_empty_logs(self) -> None:
-        """Assert _remove_logs sets False when task_logs is empty or missing."""
-        task_resp = TaskResponse(
+    @pytest.fixture
+    def execution_request(self) -> TaskExecutionRequest:
+        """Return a TaskExecutionRequest for TaskHistory construction."""
+        return TaskExecutionRequest(
+            task="test-task",
+            target="node-1",
+            tracking={"allocation_id": None, "evaluation_id": None},
+        )
+
+    def test_has_logs_defaults_to_false(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``has_logs`` defaults to ``False`` when never populated."""
+        history = TaskHistory(
             id=1,
-            name="t",
-            data={"key": "val"},
-            backend=TaskBackendEnum.NOMAD,
-            deleted_at=None,
-            created_by=None,
-            last_updated_by=None,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
         )
-        req = TaskExecutionRequest(
-            task="t",
-            target="n",
-            tracking={"allocation_id": None},
-        )
-        resp = TaskHistoryResponse(
+
+        response = TaskHistoryResponse.model_validate(history)
+
+        assert response.has_logs is False
+
+    def test_has_logs_true_propagates_via_object_setattr(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``object.__setattr__`` on the ORM instance propagates via ``model_validate``.
+
+        ``TaskHistory`` is a strict Pydantic model so ``history.has_logs = True``
+        raises ``ValueError``; routes use ``object.__setattr__`` to write the
+        value directly into ``__dict__``. ``TaskHistoryResponse`` then reads it
+        through the ``from_attributes=True`` path that SQLModel enables by
+        default.
+        """
+        history = TaskHistory(
             id=1,
-            execution_request=req,
-            task=task_resp,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
         )
-        assert resp.execution_request.tracking["task_logs"] is False
+        object.__setattr__(history, "has_logs", True)
+
+        response = TaskHistoryResponse.model_validate(history)
+
+        assert response.has_logs is True
 
 
 class TestTaskStats:

@@ -15,15 +15,10 @@
 
 """Define models for the Task API."""
 
-import base64
-import gzip
 import json
-from collections import defaultdict
-from collections.abc import Generator
 from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
-from itertools import product
 from pathlib import Path
 from statistics import mean
 from typing import Annotated, Any, Literal, Self
@@ -38,9 +33,19 @@ from pydantic import (
     model_validator,
     ValidationError,
 )
-from sqlalchemy import Column, Index, JSON
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    func,
+    Index,
+    JSON,
+    LargeBinary,
+    String,
+    text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as EnumField
-from sqlalchemy.types import TypeDecorator
+from sqlalchemy.orm import column_property
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
@@ -48,6 +53,7 @@ from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.db.sql_types import AutoJSON, MaybeCompressedText
 from app.core.utils.fields import (
     EmptyStrToNone,
     EnumFieldMixin,
@@ -121,10 +127,13 @@ class TaskBackendEnum(StrEnum):
     :vartype NOMAD: str
     :cvar PROXY: Enum value for Proxy backend.
     :vartype PROXY: str
+    :cvar CELERY: Enum value for Celery backend.
+    :vartype CELERY: str
     """
 
     NOMAD = auto()
     PROXY = auto()
+    CELERY = auto()
 
 
 class TaskHistoryStatusEnum(StrEnum):
@@ -142,6 +151,9 @@ class TaskHistoryStatusEnum(StrEnum):
     :vartype STOPPED: str
     :cvar LOST: Enum value for tasks that are lost.
     :vartype LOST: str
+    :cvar STALE: Enum value for tasks skipped because Nomad placement
+        exceeded the configured staleness threshold.
+    :vartype STALE: str
     """
 
     FAILED = auto()
@@ -150,18 +162,20 @@ class TaskHistoryStatusEnum(StrEnum):
     SUCCESS = auto()
     STOPPED = auto()
     LOST = auto()
+    STALE = auto()
 
     def is_finished(self) -> bool:
         """Check if the task status indicates that it is finished.
 
-        :return: True if the task status is one of FAILED, SUCCESS, or STOPPED;
-            False otherwise.
+        :return: True if the task status is one of FAILED, SUCCESS, STOPPED,
+            or STALE; False otherwise.
         :rtype: bool
         """
         return self in [
             TaskHistoryStatusEnum.FAILED,
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
+            TaskHistoryStatusEnum.STALE,
         ]
 
 
@@ -269,29 +283,28 @@ class TaskExecutionRequest(BaseModel):
         return self.payload
 
 
-class TaskExecutionRequestJSON(TypeDecorator):
-    """Define JSON column type that deserializes values into `TaskExecutionRequest`.
+class TaskExecutionRequestJSON(AutoJSON):
+    """Define JSON column type that deserializes values into ``TaskExecutionRequest``.
 
-    Use this on columns that should store and return `TaskExecutionRequest` objects
-    instead of plain dicts. Other JSON columns are unaffected.
+    Resolve to ``JSONB`` on PostgreSQL and ``JSON`` on other dialects via the
+    inherited ``AutoJSON.load_dialect_impl``, and additionally wrap deserialised
+    values in a ``TaskExecutionRequest`` instance when possible so ORM consumers
+    see the typed object instead of a plain dict.
 
-    :cvar impl: The underlying SQLAlchemy column type.
-    :vartype impl: type[JSON]
-    :cvar cache_ok: Whether this type is safe to cache.
+    :cvar cache_ok: Allow SQLAlchemy to cache compiled statements using this type.
     :vartype cache_ok: bool
     """
 
-    impl = JSON
     cache_ok = True
 
     def process_result_value(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
-        """Deserialize a JSON value into a `TaskExecutionRequest`.
+        """Deserialize a JSON value into a ``TaskExecutionRequest``.
 
         :param value: The raw value from the database.
         :type value: Any
         :param dialect: The SQLAlchemy dialect in use.
         :type dialect: Any
-        :return: A `TaskExecutionRequest` if valid, otherwise the raw value.
+        :return: A ``TaskExecutionRequest`` if valid, otherwise the raw value.
         :rtype: Any
         """
         if value is None:
@@ -302,7 +315,7 @@ class TaskExecutionRequestJSON(TypeDecorator):
             return value
 
     def process_bind_param(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
-        """Serialize a `TaskExecutionRequest` into a dict for storage.
+        """Serialize a ``TaskExecutionRequest`` into a dict for storage.
 
         :param value: The value to store in the database.
         :type value: Any
@@ -339,8 +352,8 @@ class TaskBase(SQLModel):
         :attr:`app.tasks.anonymizer.config.AnonymizerSettings.DEFAULT_ENTITIES` will be
         used.
     :type anonymize_mask: int | None
-    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
-        False.
+    :param alert_on_fail: Whether to trigger an alert on task failure and
+        auto-resolve it on subsequent success. Defaults to False.
     :type alert_on_fail: bool
     """
 
@@ -361,17 +374,20 @@ class TaskBase(SQLModel):
 
     @model_validator(mode="after")
     def validate_data_for_backend(self) -> Self:
-        """Validate the data for the Proxy backend.
+        """Validate the data dictionary against the selected backend.
 
-        If the backend is set to `TaskBackendEnum.PROXY`, "task" is a required key in
-        the `data` dictionary.
+        Enforce that Proxy tasks include a ``task`` key and that Celery tasks
+        are marked as protected to prevent arbitrary code execution.
 
-        :return: The validated instance
-        :rtype: TaskBase
-        :raises ValueError: If the backend is Proxy and "task" is not set in data.
+        :return: The validated instance.
+        :rtype: Self
+        :raises ValueError: If the backend is Proxy and ``task`` is not set in data,
+            or if the backend is Celery and the task is not protected.
         """
         if self.backend == TaskBackendEnum.PROXY and not self.data.get("task"):
             raise ValueError("data must contain 'task' for Proxy backend")
+        if self.backend == TaskBackendEnum.CELERY and not self.protected:
+            raise ValueError("Celery tasks must be protected (system tasks only)")
         return self
 
 
@@ -390,8 +406,8 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
-    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
-        False.
+    :param alert_on_fail: Whether to trigger an alert on task failure and
+        auto-resolve it on subsequent success. Defaults to False.
     :type alert_on_fail: bool
     :param history: The history of task executions.
     :type history: list[TaskHistory]
@@ -459,8 +475,8 @@ class TaskResponse(TaskBase, BaseSQLModel):
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
-    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
-        False.
+    :param alert_on_fail: Whether to trigger an alert on task failure and
+        auto-resolve it on subsequent success. Defaults to False.
     :type alert_on_fail: bool
     :param deleted_at: The deletion timestamp, if applicable.
     :type deleted_at: UTCDatetime | None
@@ -493,8 +509,8 @@ class TaskWrite(TaskBase):
     :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :type protected: bool
-    :param alert_on_fail: Whether to trigger an alert on task failure. Defaults to
-        False.
+    :param alert_on_fail: Whether to trigger an alert on task failure and
+        auto-resolve it on subsequent success. Defaults to False.
     :type alert_on_fail: bool
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the task. Defaults to 0 (no anonymization).
@@ -708,71 +724,189 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         return PIIEntity.decode_selection(self.anonymize_mask)
 
     async def alert_for_status(self) -> None:
-        """Trigger an alert for failing statuses."""
+        """Trigger or resolve an alert based on the task execution status.
+
+        Generate a deterministic dedup key from the task name and target so
+        that PagerDuty deduplicates successive failures into a single incident
+        and can resolve it when the task succeeds. The stale-skip alert uses
+        a ``:stale`` suffix on the same base key so it is a distinct
+        incident from a plain failure while still being scoped to the same
+        task/target pair.
+        """
+        base_dedup_key = (
+            f"task:{self.execution_request.task}:{self.execution_request.target}"
+        )
+
+        if self.status == TaskHistoryStatusEnum.SUCCESS:
+            await alert_service.resolve(base_dedup_key)
+            await alert_service.resolve(f"{base_dedup_key}:stale")
+            return
+
         if self.status == TaskHistoryStatusEnum.FAILED:
+            dedup_key = base_dedup_key
             summary_action = "failed"
             severity = AlertSeverity.ERROR
             alert_class = "task_failure"
         elif self.status == TaskHistoryStatusEnum.LOST:
+            dedup_key = base_dedup_key
             summary_action = "execution tracking lost"
             severity = AlertSeverity.WARNING
             alert_class = "task_lost"
+        elif self.status == TaskHistoryStatusEnum.STALE:
+            dedup_key = f"{base_dedup_key}:stale"
+            summary_action = "skipped as stale (Nomad placement delayed past threshold)"
+            severity = AlertSeverity.WARNING
+            alert_class = "task_stale"
         else:
             return
 
         alert_data = {
-            "summary": f"Task {self.execution_request.task!r} ({self.id}) {summary_action} on node {self.execution_request.target!r}.",
+            "summary": (
+                f"Task {self.execution_request.task!r} ({self.id}) "
+                f"{summary_action} on node {self.execution_request.target!r}."
+            ),
             "source": f"{self.execution_request.task}:{self.id}:{self.execution_request.target}",
             "severity": severity,
             "class": alert_class,
+            "dedup_key": dedup_key,
         }
         await alert_service.trigger(alert_data)
 
-    @cached_property
-    def task_logs(self) -> dict:
-        """Return task logs."""
-        # TODO(yan): Refactor logs
-        # SEP-564
-        logs = self.execution_request.tracking.get("task_logs", {})
-        if isinstance(logs, str):
-            return json.loads(gzip.decompress(base64.b64decode(logs)))
-        return logs
 
-    def iter_logs(
-        self,
-        start_offsets: dict[str, dict[str, int]] | None = None,
-        chunk_size: int = 65536,
-        step: str | None = None,
-    ) -> Generator[TaskLog]:
-        """Yield task logs in chunks based on provided start offsets.
+TaskHistory.execution_request = column_property(
+    TaskHistory.__table__.c.execution_request, deferred=True
+)
 
-        :param start_offsets: A dictionary containing the starting offsets for each
-            step and log type. If None, defaults to starting from the beginning.
-        :type start_offsets: dict[str, dict[str, int]] | None
-        :param chunk_size: The size of each log chunk to yield. Defaults to 65536 bytes.
-        :type chunk_size: int
-        :param step: If provided, only logs for this specific step will be yielded.
-            Defaults to None.
-        :type step: str | None
-        :yield: TaskLog objects containing log chunks.
-        :rtype: Generator[TaskLog]
-        """
-        task_logs = self.task_logs
-        if step is not None:
-            task_logs = {step: task_logs.get(step, {})}
-        start_offsets = defaultdict(dict, start_offsets or {})
-        for (cur_step, log), log_type in product(task_logs.items(), TaskLogType):
-            msg = log.get(log_type) or ""
-            for chunk_start in range(
-                start_offsets[cur_step].get(log_type, 0), len(msg), chunk_size
-            ):
-                chunk_end = chunk_start + chunk_size
-                yield TaskLog(
-                    step=cur_step,
-                    type=log_type,
-                    msg=msg[chunk_start:chunk_end],
-                    offset=chunk_end,
-                )
+
+class TaskHistoryLog(BaseSQLModel, table=True):
+    """Store an append-only log chunk for a task history.
+
+    :param task_history_id: The ID of the ``TaskHistory`` this chunk belongs to.
+    :type task_history_id: int
+    :param source: The execution step (Nomad task name) that produced the chunk.
+    :type source: str
+    :param stream: The log stream (stdout or stderr) the chunk belongs to.
+    :type stream: TaskLogType
+    :param start_offset: The user-facing byte offset at which this chunk starts.
+    :type start_offset: int
+    :param end_offset: The user-facing byte offset at which this chunk ends.
+    :type end_offset: int
+    :param content: The decoded chunk content.
+    :type content: str
+    """
+
+    __tablename__ = "taskhistory_log"
+    __table_args__ = (
+        UniqueConstraint(
+            "task_history_id",
+            "source",
+            "stream",
+            "start_offset",
+            name="uq_taskhistory_log_chunk",
+        ),
+    )
+
+    task_history_id: int = SQLField(
+        foreign_key="taskhistory.id",
+        ondelete="CASCADE",
+        nullable=False,
+        index=True,
+    )
+    source: str = SQLField(sa_column=Column(String(64), nullable=False))
+    stream: TaskLogType = SQLField(
+        sa_column=Column(
+            EnumField(TaskLogType, native_enum=False),
+            nullable=False,
+        ),
+    )
+    start_offset: int = SQLField(sa_column=Column(BigInteger, nullable=False))
+    end_offset: int = SQLField(sa_column=Column(BigInteger, nullable=False))
+    content: str = SQLField(sa_column=Column(MaybeCompressedText, nullable=False))
+
+
+class TaskHistoryLogState(BaseSQLModel, table=True):
+    """Per-stream staging buffer and persisted offsets for the log writer.
+
+    Inherits from ``BaseSQLModel`` (surrogate integer PK) and declares a
+    unique constraint on ``(task_history_id, source, stream)`` — callers
+    always look rows up by that natural tuple rather than by the surrogate id.
+
+    :param task_history_id: The ID of the ``TaskHistory`` this state row tracks.
+    :type task_history_id: int
+    :param source: The execution step (Nomad task name) this state row tracks.
+    :type source: str
+    :param stream: The log stream (stdout or stderr) this state row tracks.
+    :type stream: TaskLogType
+    :param persisted_offset: The absolute user-facing byte offset already
+        flushed into the chunk store.
+    :type persisted_offset: int
+    :param producer_offset: The producer-relative byte offset already consumed
+        from the current allocation (Nomad-relative; resets on allocation
+        switch). May diverge from ``persisted_offset`` after a Nomad
+        followup-allocation switch.
+    :type producer_offset: int
+    :param staging: Bytes pending flush to the chunk store.
+    :type staging: bytes
+    :param staging_updated_at: When ``staging`` was last modified; used to age
+        out small buffers after ``MAX_AGE_SEC``.
+    :type staging_updated_at: datetime
+    :param version: Optimistic-locking version counter; incremented on every
+        successful state update.
+    :type version: int
+    """
+
+    __tablename__ = "taskhistory_log_state"
+    __table_args__ = (
+        UniqueConstraint(
+            "task_history_id",
+            "source",
+            "stream",
+            name="uq_taskhistory_log_state_stream",
+        ),
+    )
+
+    task_history_id: int = SQLField(
+        foreign_key="taskhistory.id",
+        ondelete="CASCADE",
+        nullable=False,
+        index=True,
+    )
+    source: str = SQLField(sa_column=Column(String(64), nullable=False))
+    stream: TaskLogType = SQLField(
+        sa_column=Column(
+            EnumField(TaskLogType, native_enum=False),
+            nullable=False,
+        ),
+    )
+    persisted_offset: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    producer_offset: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    staging: bytes = SQLField(
+        sa_column=Column(
+            LargeBinary,
+            nullable=False,
+            server_default=text("''"),
+        ),
+    )
+    staging_updated_at: UTCDatetime = SQLField(
+        sa_column=Column(
+            DateTimeWithTimezone,
+            nullable=False,
+            server_default=func.now(),
+        ),
+    )
+    version: int = SQLField(default=0, nullable=False)
 
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
@@ -794,27 +928,14 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     :type task: TaskResponse
     :param executed_by: The user ID of the user who executed the task.
     :type executed_by: str | None
+    :param has_logs: Whether this task history has any readable log content --
+        either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
+        Populated by list/retrieve routes; defaults to ``False``.
+    :type has_logs: bool
     """
 
     task: TaskResponse
-
-    @field_validator("execution_request", mode="after")
-    @classmethod
-    def _remove_logs(cls, v: TaskExecutionRequest) -> TaskExecutionRequest:
-        """Remove logs from the execution request tracking data.
-
-        This validator ensures that any log data present in the tracking information
-        of the execution request is removed before returning the response.
-
-        :param v: The TaskExecutionRequest instance to validate.
-        :type v: TaskExecutionRequest
-        :return: The validated TaskExecutionRequest with logs removed.
-        :rtype: TaskExecutionRequest
-        """
-        # TODO(yan): Refactor logs
-        # SEP-564
-        v.tracking["task_logs"] = bool(v.tracking.get("task_logs"))
-        return v
+    has_logs: bool = False
 
 
 class TaskStats(BaseModel):
@@ -938,6 +1059,16 @@ class TransformPayloadRequest(BaseModel):
 
     payload: str | bytes
     fmt: Literal["hcl", "json", "yaml"]
+
+
+class TransformPayloadResponse(BaseModel):
+    """Define the parsed job specification returned from ``POST /transform/``.
+
+    The concrete keys depend on the executor backend; clients should treat values as
+    untyped JSON except where they validate domain-specific job fields themselves.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
 
 class DispatchLock(BaseSQLModel, table=True):

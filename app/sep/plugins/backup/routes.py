@@ -26,6 +26,7 @@ from pydantic import FutureDatetime
 from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -84,12 +85,20 @@ async def backups_create(
     request: Request,
     task: BackupGeneratedTask,
     task_api: TaskAPI,
+    *,
+    check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
 ) -> RedirectResponse:
     """Create new backups task."""
     logger.debug("Create backups task: %s", task)
     await task_api.post(
         "/",
         json=task.model_dump(),
+    )
+    await maybe_check_connectivity(
+        request,
+        task_api,
+        task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
     )
     task_path = request.url_for("backups_detail", task_name=task.name)
     return RedirectResponse(
@@ -147,10 +156,12 @@ async def backups_detail(
     task_data.update(parsed_task_data)
 
     context["task"] = task_data
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
+    context["running_tasks"] = response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     context["executor_hosts"] = executor_hosts_ctx.with_host(
@@ -159,10 +170,11 @@ async def backups_detail(
     context["executor_hosts_dict"] = executor_hosts_ctx.hosts
 
     try:
-        services = await inventory_api.get(
-            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        response = await inventory_api.get(
+            "/services/",
+            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
         )
-        context["services"] = services
+        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

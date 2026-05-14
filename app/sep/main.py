@@ -27,6 +27,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
+from app import __summary__, __version__
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, settings
@@ -36,15 +37,17 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
+from app.sep.api.router import api_router
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings
-from app.sep.db.seed import create_plugin_tables, init_sep_db
+from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
     get_current_user,
     get_default_context,
     get_tasks_index_context,
+    is_bearer_authenticated,
     IsAuthenticated,
     IsCsrfValidated,
     IsNotAuthenticated,
@@ -59,15 +62,16 @@ from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
+JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/", "/api/sep/")
+
 
 async def sep_startup() -> None:
     """Define actions to perform on SEP startup.
 
-    Initialize the SEP periodic task database, create plugin-scoped tables, and trigger
-    the initial synchronization of snippets if configured to do so.
+    Initialize the SEP periodic task database and trigger the initial
+    synchronization of snippets if configured to do so.
     """
     await init_sep_db()
-    await create_plugin_tables()
     if snippets_settings.SYNC_ON_STARTUP:
         sync_snippets.delay()
 
@@ -107,6 +111,13 @@ sep_app = create_app(
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
+    title="SEP Web Application API",
+    version=__version__,
+    description=(
+        f"{__summary__}\n\n"
+        "Browser-oriented SEP routes (HTML, redirects, proxies, streams). "
+        "JSON REST APIs for inventory and tasks live on the mounted sub-apps."
+    ),
 )
 sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
@@ -118,33 +129,34 @@ for plugin in sep_settings.PLUGINS:
     sep_app.include_router(router, prefix=plugin.uri_path)
     imported_plugins.add(plugin.module_name.split(".")[-1])
 
-if {
-    "alters",
-    "archives",
-    "tasks",
-    "backup",
-    "backup_mongo",
-    "checksums",
-    "mum"
-} & imported_plugins:
-    from app.sep.api.routes import router as inventory_api_router
+_TASK_INFRA_PLUGINS = frozenset(
+    {"alters", "archives", "tasks", "backup", "backup_mongo", "backup_pg", "checksums", "mum"}
+)
+
+if _TASK_INFRA_PLUGINS & imported_plugins:
     from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.execution_events import router as execution_events_router
-    from app.sep.routes.periodic_tasks import router as periodic_tasks_router
+    from app.sep.routes.inventory_ajax import router as inventory_ajax_router
     from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
-    sep_app.include_router(inventory_api_router, prefix="/inventory-api")
+    sep_app.include_router(inventory_ajax_router, prefix="/inventory-api")
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
     sep_app.include_router(download_files_router, prefix="/files")
     sep_app.include_router(execution_events_router, prefix="/execution-events")
-    sep_app.include_router(periodic_tasks_router, prefix="/periodic")
     sep_app.include_router(stop_task_router, prefix="/stop-task")
+
+if (_TASK_INFRA_PLUGINS | {"inventory"}) & imported_plugins:
+    from app.sep.routes.periodic_tasks import router as periodic_tasks_router
+
+    sep_app.include_router(periodic_tasks_router, prefix="/periodic")
 
 if {"snippets", "dipper"} & imported_plugins:
     from app.sep.routes.artifacts import router as artifacts_router
 
     sep_app.include_router(artifacts_router, prefix="/artifacts")
+
+sep_app.include_router(api_router)
 
 if "snippets" in imported_plugins:
     sep_app.mount(
@@ -195,6 +207,15 @@ async def custom_404_handler(
     exc: BaseException,
 ) -> Response:
     """Load custom 404 page."""
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES):
+        detail = getattr(exc, "detail", "Not Found")
+        headers = getattr(exc, "headers", None)
+        return JSONResponse(
+            {"detail": detail},
+            status_code=status.HTTP_404_NOT_FOUND,
+            headers=headers,
+        )
+
     base_url = get_base_url(request)
     try:
         user = await get_current_user(request)
@@ -246,14 +267,25 @@ async def json_exception_handler(
     :return: A JSON response with the error detail and status code.
     :rtype: JSONResponse
     """
-    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    return JSONResponse(
+        {"detail": exc.detail},
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
 
 @sep_app.exception_handler(HTTPException)
-async def default_exception_handler(
-    request: Request, exc: HTTPException
-) -> RedirectResponse:
+async def default_exception_handler(request: Request, exc: HTTPException) -> Response:
     """Define default exception handler."""
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES) or is_bearer_authenticated(
+        request
+    ):
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+            headers=exc.headers,
+        )
+
     error_detail = exc.detail
     messages.error(request, str(error_detail))
     return RedirectResponse(

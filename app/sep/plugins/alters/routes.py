@@ -25,6 +25,7 @@ from pydantic import FutureDatetime
 from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -103,6 +104,8 @@ async def alters_create(
     task: AltersGeneratedTask,
     task_api: TaskAPI,
     pre_checks_task: AltersPreChecksTask,
+    *,
+    check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
 ) -> RedirectResponse:
     """Create alter tasks - one for execution and one for dry run."""
     logger.debug("Create alters tasks: %s", task)
@@ -131,6 +134,13 @@ async def alters_create(
     await task_api.post(
         "/",
         json=pre_checks_task.model_dump(),
+    )
+
+    await maybe_check_connectivity(
+        request,
+        task_api,
+        task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
     )
 
     # Redirect to the execute task detail page
@@ -187,30 +197,36 @@ async def alters_detail(
 
     context["task"] = task_data
     # TODO(yan): Refactor/reuse like with get_tasks_context  # noqa: TD003
-    context["history"] = await tasks_api.get(f"/{task.name}/history/")
-    context["history_dry_run"] = await tasks_api.get(f"/{task.name}-dry-run/history/")
-    context["history_pre_checks"] = await tasks_api.get(
-        f"/{task.name}-pre-checks/history/"
-    )
-    context["running_tasks"] = await tasks_api.get(
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(f"/{task.name}-dry-run/history/")
+    context["history_dry_run"] = response["items"]
+    response = await tasks_api.get(f"/{task.name}-pre-checks/history/")
+    context["history_pre_checks"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    context["running_tasks"] += await tasks_api.get(
+    context["running_tasks"] = response["items"]
+    response = await tasks_api.get(
         f"/{task.name}-dry-run/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
-    context["running_tasks"] += await tasks_api.get(
+    context["running_tasks"] += response["items"]
+    response = await tasks_api.get(
         f"/{task.name}-pre-checks/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
+    context["running_tasks"] += response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     task_data.update(parse_alters_task_args(meta))
 
     try:
-        services = await inventory_api.get(
-            "/services/", params={"service_type": ServiceTypeEnum.MYSQL}
+        response = await inventory_api.get(
+            "/services/",
+            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
         )
+        services = response["items"]
     except HTTPException as exc:
         services = []
         logger.warning("Failed to get services: %s", exc)

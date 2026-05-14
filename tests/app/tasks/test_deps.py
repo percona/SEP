@@ -34,6 +34,7 @@ from app.tasks.deps import (
     get_task_history_with_task,
     prepare_task_history,
 )
+from app.tasks.execution.executors.celery.models import CeleryExecutor
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -78,6 +79,11 @@ class TestGetExecutor:
         """Assert NOMAD backend returns the configured NomadExecutor."""
         result = get_executor(TaskBackendEnum.NOMAD)
         assert result is tasks_settings.NOMAD
+
+    def test_celery_backend_returns_executor(self) -> None:
+        """Assert CELERY backend returns a CeleryExecutor instance."""
+        result = get_executor(TaskBackendEnum.CELERY)
+        assert isinstance(result, CeleryExecutor)
 
     def test_non_nomad_backend_raises_value_error(self) -> None:
         """Assert non-NOMAD backend raises ValueError."""
@@ -293,6 +299,34 @@ class TestPrepareTaskHistory:
         assert result.anonymize_mask == EXECUTION_ANONYMIZE_MASK
 
     @pytest.mark.asyncio
+    async def test_celery_backend_uses_target_from_data(self) -> None:
+        """Assert CELERY backend gets target from task.data."""
+        task = Task(
+            id=7,
+            name="celery-task",
+            backend=TaskBackendEnum.CELERY,
+            data={
+                "callable": "some.module.func",
+                "target": "local",
+            },
+        )
+        result = await prepare_task_history(task, "user-1", AsyncMock())
+        assert result.execution_request.target == "local"
+        assert result.task_id == task.id
+
+    @pytest.mark.asyncio
+    async def test_celery_backend_missing_target_raises(self) -> None:
+        """Assert CELERY backend without target in data raises."""
+        task = Task(
+            id=8,
+            name="celery-no-target",
+            backend=TaskBackendEnum.CELERY,
+            data={"callable": "some.module.func"},
+        )
+        with pytest.raises(HTTPBadRequestException, match="target is required"):
+            await prepare_task_history(task, "user-1", AsyncMock())
+
+    @pytest.mark.asyncio
     @patch("app.tasks.deps.anonymizer_settings")
     async def test_anonymize_mask_falls_back_to_settings(
         self, mock_anonymizer_settings
@@ -313,6 +347,33 @@ class TestPrepareTaskHistory:
         result = await prepare_task_history(task, "user-1", AsyncMock(), execution_data)
         assert result.anonymize_mask == DEFAULT_ANONYMIZE_MASK
         mock_anonymizer_settings.get_anonymize_mask.assert_called_once_with("BACKUPS")
+
+    @pytest.mark.asyncio
+    async def test_scheduled_at_not_injected_into_meta(self, nomad_task) -> None:
+        """Assert ``scheduled_at`` is never added to ``execution_request.meta``.
+
+        The dispatch lock hash and identical-task conflict query both iterate
+        every meta key, so adding a per-call timestamp to meta would silently
+        break duplicate-dispatch detection. The staleness value is instead
+        derived at dispatch time from ``eta``/``created_at`` and injected into
+        Nomad meta only for jobs that declare the key.
+        """
+        execution_data = TaskExecuteRequest(meta={"target": "node-1"})
+        result = await prepare_task_history(
+            nomad_task, "user-1", AsyncMock(), execution_data
+        )
+        assert "scheduled_at" not in result.execution_request.meta
+
+    @pytest.mark.asyncio
+    async def test_prepare_preserves_user_meta(self, nomad_task) -> None:
+        """Assert user-supplied meta keys survive ``prepare_task_history``."""
+        execution_data = TaskExecuteRequest(
+            meta={"target": "node-1", "custom_key": "custom_value"}
+        )
+        result = await prepare_task_history(
+            nomad_task, "user-1", AsyncMock(), execution_data
+        )
+        assert result.execution_request.meta["custom_key"] == "custom_value"
 
     @pytest.mark.asyncio
     async def test_chain_task_names_injected_in_meta(self) -> None:

@@ -18,12 +18,25 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    status,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.config import settings
+from app.core.exceptions import HTTPBadRequestException
+from app.inventory.models import ServiceTypeEnum
+from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
+    AVAILABLE_TIMEZONES,
     CreatedNodeDep,
     CreatedSchemaDep,
     CreatedServiceDep,
@@ -34,20 +47,51 @@ from app.sep.deps import (
     IsAuthenticated,
     IsCsrfValidated,
     SessionDep,
+    TaskAPI,
 )
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
+from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.inventory.deps import SyncersDep
+from app.sep.plugins.inventory.deps import (
+    build_available_syncers,
+    filter_syncers_by_name,
+    SyncersDep,
+)
+from app.sep.plugins.inventory.models import InventorySyncScheduleCreateForm
 from app.sep.plugins.inventory.sync import (
     run_inventory_sync,
     run_node_sync,
     run_schema_sync,
     run_service_sync,
 )
+from app.tasks.connectivity.models import ConnectivityCheckResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
+
+CONNECTABLE_SERVICE_TYPES = frozenset(
+    {
+        ServiceTypeEnum.MYSQL,
+        ServiceTypeEnum.POSTGRESQL,
+        ServiceTypeEnum.MONGODB,
+    }
+)
+
+
+def _is_scheduled_sync_enabled() -> bool:
+    """Return whether scheduled inventory sync is enabled.
+
+    The feature requires ``settings.SEP_INTERNAL_TOKEN`` to be set to a
+    non-empty value; ``SecretStr("")`` is truthy regardless of contents, so
+    the inner ``get_secret_value()`` check is required to reject empty
+    deployments.
+
+    :return: True if scheduled sync is enabled.
+    :rtype: bool
+    """
+    token = settings.SEP_INTERNAL_TOKEN
+    return token is not None and bool(token.get_secret_value())
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -57,15 +101,24 @@ async def node_list(
     request: Request,
     context: DefaultContext,
     inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """List Nodes."""
-    context["inventory"] = await inventory_api.get("/")
+    response = await inventory_api.get("/", params={"limit": 0})
+    context["inventory"] = response["items"]
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
-    context["can_sync"] = any(syncer.can_sync_inventory() for syncer in syncers)
+    context["available_syncers"] = build_available_syncers(
+        syncers,
+        lambda syncer: syncer.can_sync_inventory(),
+    )
+    context["can_sync"] = bool(context["available_syncers"])
+    context["scheduled_sync_enabled"] = _is_scheduled_sync_enabled()
+    context["sync_schedules"] = await tasks_api.get("/inventory-sync/periodic/")
+    context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-list.html.j2",
@@ -78,10 +131,76 @@ async def sync_inventory(
     user: CurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start inventory sync as a background task."""
-    background_tasks.add_task(run_inventory_sync, user.access_token, *syncers)
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_inventory(),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
+    background_tasks.add_task(run_inventory_sync, user.access_token, *selected)
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/schedule/", dependencies=[IsAuthenticated, IsCsrfValidated])
+async def schedule_create(
+    syncers: SyncersDep,
+    tasks_api: TaskAPI,
+    schedule: Annotated[InventorySyncScheduleCreateForm, Form()],
+    referer: Annotated[str, Header()] = "/inventory/",
+) -> RedirectResponse:
+    """Attach a periodic schedule to the inventory-sync task.
+
+    Validate the optional ``syncer`` field and the interval/crontab shape at
+    form-submit time using ``filter_syncers_by_name`` and explicit checks so
+    invalid input fails fast with a friendly redirect rather than silently
+    misfiring inside the worker. When ``syncer`` is unset the schedule runs
+    every configured syncer; when set it targets only that syncer.
+
+    :param syncers: The configured syncers from ``SyncersDep``.
+    :type syncers: SyncersDep
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :param schedule: The submitted attach form.
+    :type schedule: InventorySyncScheduleCreateForm
+    :param referer: The originating page used for the redirect on success.
+    :type referer: str
+    :return: A 303 redirect back to the originating page.
+    :rtype: RedirectResponse
+    :raises HTTPBadRequestException: If ``SEP_INTERNAL_TOKEN`` is not
+        configured, the syncer name is unknown, or both / neither schedule
+        mode is supplied.
+    """
+    if not _is_scheduled_sync_enabled():
+        raise HTTPBadRequestException(
+            "SEP_INTERNAL_TOKEN must be configured before attaching an "
+            "inventory-sync schedule.",
+        )
+    if schedule.syncer:
+        try:
+            filter_syncers_by_name(
+                syncers,
+                schedule.syncer,
+                lambda candidate: candidate.can_sync_inventory(),
+            )
+        except ValueError as exc:
+            raise HTTPBadRequestException(str(exc)) from exc
+    if schedule.interval and schedule.crontab:
+        raise HTTPBadRequestException(
+            "Cannot specify both interval and crontab; choose one schedule mode.",
+        )
+    if not schedule.interval and not schedule.crontab:
+        raise HTTPBadRequestException(
+            "Either interval or crontab must be specified.",
+        )
+    payload = schedule.to_periodic_task_payload()
+    logger.debug("Attaching inventory-sync schedule, %s", payload)
+    await tasks_api.post("/inventory-sync/periodic/", json=payload)
+    return RedirectResponse(referer, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/{node_id}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -98,7 +217,11 @@ async def node_detail(
         session,
         SyncInventoryEntityTypeEnum.NODE,
     )
-    context["can_sync"] = any(syncer.can_sync_node(node) for syncer in syncers)
+    context["available_syncers"] = build_available_syncers(
+        syncers,
+        lambda syncer: syncer.can_sync_node(node),
+    )
+    context["can_sync"] = bool(context["available_syncers"])
     return templates.TemplateResponse(
         request=request,
         name="inventory/node-detail.html.j2",
@@ -112,9 +235,18 @@ async def sync_node(
     node: CreatedNodeDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start node sync as a background task."""
-    background_tasks.add_task(run_node_sync, node, user.access_token, *syncers)
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_node(node),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
+    background_tasks.add_task(run_node_sync, node, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/{node.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -159,7 +291,12 @@ async def service_detail(
         session,
         SyncInventoryEntityTypeEnum.SERVICE,
     )
-    context["can_sync"] = any(syncer.can_sync_service(service) for syncer in syncers)
+    context["available_syncers"] = build_available_syncers(
+        syncers,
+        lambda syncer: syncer.can_sync_service(service),
+    )
+    context["can_sync"] = bool(context["available_syncers"])
+    context["can_check_connectivity"] = service.type in CONNECTABLE_SERVICE_TYPES
     return templates.TemplateResponse(
         request=request,
         name="inventory/service-detail.html.j2",
@@ -175,13 +312,130 @@ async def sync_service(
     service: CreatedServiceDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start service sync as a background task."""
-    background_tasks.add_task(run_service_sync, service, user.access_token, *syncers)
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_service(service),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
+    background_tasks.add_task(run_service_sync, service, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
+
+
+@router.post(
+    "/services/{service_id}/check-connectivity/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+)
+async def check_service_connectivity(
+    request: Request,
+    service: CreatedServiceDep,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Check database connectivity for a service via Nomad."""
+    redirect = RedirectResponse(
+        f"/inventory/services/{service.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    if service.type not in CONNECTABLE_SERVICE_TYPES:
+        messages.error(
+            request,
+            f"Connectivity check is not supported for {service.type.name} services",
+        )
+        return redirect
+    if service.node is None or service.port is None:
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            "missing node or port information",
+        )
+        return redirect
+    # Fetch executor hosts inline rather than via ``ExecutorHosts`` so we can
+    # early-abort with a ``service.name``-specific flash; the dep continues
+    # with an empty mapping and would emit a second, generic flash on failure.
+    try:
+        executor_hosts: dict[str, str] = await tasks_api.get("/hosts/")
+    except HTTPException as exc:
+        logger.warning(
+            "Tasks API error fetching executor hosts for service %s: %s",
+            service.id,
+            exc.detail,
+        )
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: {exc.detail}",
+        )
+        return redirect
+    except Exception:
+        logger.exception(
+            "Failed to fetch executor hosts for connectivity check on service %s",
+            service.id,
+        )
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            "could not reach the Tasks API",
+        )
+        return redirect
+    executor_target = resolve_executor_name_by_address(
+        service.node.address, executor_hosts
+    )
+    if executor_target is None:
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            f"no executor host is registered for address "
+            f"{service.node.address!r} (inventory node {service.node.name!r}).",
+        )
+        return redirect
+    try:
+        result = ConnectivityCheckResponse.model_validate(
+            await tasks_api.post(
+                "/connectivity-check/",
+                json={
+                    "target": executor_target,
+                    "host": service.node.address,
+                    "port": service.port,
+                    "service_type": service.type.value,
+                },
+            )
+        )
+        if result.success:
+            messages.success(
+                request,
+                f"Connectivity check passed for {service.name}",
+            )
+        else:
+            messages.error(
+                request,
+                f"Connectivity check failed for {service.name}: "
+                f"{result.error or 'Unknown error'}",
+            )
+    except HTTPException as exc:
+        logger.warning(
+            "Connectivity check API error for service %s: %s",
+            service.id,
+            exc.detail,
+        )
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: {exc.detail}",
+        )
+    except Exception:
+        logger.exception("Connectivity check failed for service %s", service.id)
+        messages.error(
+            request,
+            f"Connectivity check failed for {service.name}: "
+            "could not reach the Tasks API",
+        )
+    return redirect
 
 
 @router.post("/{node_id}/services/", dependencies=[IsAuthenticated, IsCsrfValidated])
@@ -234,7 +488,11 @@ async def schema_detail(
         session,
         SyncInventoryEntityTypeEnum.SCHEMA,
     )
-    context["can_sync"] = any(syncer.can_sync_schema(schema) for syncer in syncers)
+    context["available_syncers"] = build_available_syncers(
+        syncers,
+        lambda syncer: syncer.can_sync_schema(schema),
+    )
+    context["can_sync"] = bool(context["available_syncers"])
     return templates.TemplateResponse(
         request=request,
         name="inventory/schema-detail.html.j2",
@@ -250,9 +508,18 @@ async def sync_schema(
     schema: CreatedSchemaDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start schema sync as a background task."""
-    background_tasks.add_task(run_schema_sync, schema, user.access_token, *syncers)
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_schema(schema),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
+    background_tasks.add_task(run_schema_sync, schema, user.access_token, *selected)
     return RedirectResponse(
         f"/inventory/schemas/{schema.id}",
         status_code=status.HTTP_303_SEE_OTHER,

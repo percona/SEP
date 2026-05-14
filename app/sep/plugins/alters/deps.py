@@ -23,7 +23,13 @@ from typing import Annotated, Any
 
 from fastapi import Depends, Form
 
+from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
+from app.sep.connectivity import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+)
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -195,11 +201,15 @@ async def build_alters_task_payload(
                 "target": form.hostname,
                 "_schema_name": schema_name,
                 "_table_name": table_name,
+                "_service_name": service.name,
                 "_service_host": service.node.address,
                 "_service_port": service.port,
                 "_pre_checks_mysql_config_file": (
                     (form.pre_checks_mysql_config_file or "").strip() or "~/.my.cnf"
                 ),
+                CONNECTIVITY_META_HOST_KEY: service.node.address,
+                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
+                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
             },
         },
         name=form.task_name,

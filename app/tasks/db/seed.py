@@ -16,7 +16,10 @@
 """Define the database initial data for the Tasks app."""
 
 import logging
+from copy import deepcopy
 
+from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel import col
 
@@ -27,11 +30,53 @@ from app.core.celery.utils import (
     SystemPeriodicTaskSchedule,
 )
 from app.core.utils.date_time import utc_now
+from app.core.utils.fields import DatabaseDialect
+from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
-from app.tasks.models import SYSTEM_USER, Task
+from app.tasks.db.engine import engine
+from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
 
 logger = logging.getLogger(__name__)
+
+# POSIX sh preamble that aborts a Nomad allocation when
+# ``now - scheduled_at`` exceeds the configured staleness threshold. Missing
+# or empty meta values short-circuit to a no-op for rollback safety.
+#
+# NOTE: shell variables are referenced with the bareword form (``$name``) and
+# never the brace form (``${name}``). Nomad interpolates ``${...}`` in
+# ``raw_exec`` args through its own variable table before spawning the shell,
+# and fails config validation for references it does not know (e.g. the shell
+# local ``${elapsed}``). The ``""s`` after each variable name disambiguates the
+# variable name from the trailing literal ``s`` so ``$elapseds`` is not parsed
+# as a single (unset) variable name.
+STALENESS_PREAMBLE_SHELL = (
+    'if [ -n "$NOMAD_META_scheduled_at" ] && '
+    '[ -n "$NOMAD_META_staleness_threshold_seconds" ]; then '
+    "now=$(date +%s); "
+    "elapsed=$((now - NOMAD_META_scheduled_at)); "
+    'if [ "$elapsed" -gt "$NOMAD_META_staleness_threshold_seconds" ]; then '
+    'echo "SEP_STALE_SKIP: elapsed=$elapsed""s '
+    'threshold=$NOMAD_META_staleness_threshold_seconds""s"; '
+    "exit 75; "
+    "fi; "
+    "fi"
+)
+
+_CHECK_STALENESS_TASK = {
+    "Name": "check-staleness",
+    "Lifecycle": {"hook": "prestart", "sidecar": False},
+    "Driver": "raw_exec",
+    "User": "",
+    "Config": {
+        "command": "sh",
+        "args": ["-c", STALENESS_PREAMBLE_SHELL],
+    },
+    "Meta": {},
+    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+}
+
+_STALENESS_META_OPTIONAL = ["scheduled_at", "staleness_threshold_seconds"]
 
 NOMAD_RUN_COMMAND = {
     "ID": "run-command",
@@ -48,7 +93,7 @@ NOMAD_RUN_COMMAND = {
     "ParameterizedJob": {
         "Payload": "forbidden",
         "MetaRequired": ["target", "command"],
-        "MetaOptional": ["args"],
+        "MetaOptional": ["args", *_STALENESS_META_OPTIONAL],
     },
     "TaskGroups": [
         {
@@ -56,6 +101,7 @@ NOMAD_RUN_COMMAND = {
             "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
                 {
                     "Name": "run-script",
                     "Driver": "raw_exec",
@@ -97,7 +143,7 @@ NOMAD_RUN_PYTHON = {
     "ParameterizedJob": {
         "Payload": "required",
         "MetaRequired": ["target"],
-        "MetaOptional": ["config", "config_nomad_variable", "requirements"],
+        "MetaOptional": ["config", "config_nomad_variable", "requirements", *_STALENESS_META_OPTIONAL],
     },
     "TaskGroups": [
         {
@@ -106,6 +152,7 @@ NOMAD_RUN_PYTHON = {
             "PreventRescheduleOnLost": True,
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
                 {
                     "Name": "prepare-env",
                     "Lifecycle": {"hook": "prestart", "sidecar": False},
@@ -115,6 +162,7 @@ NOMAD_RUN_PYTHON = {
                         "command": "sh",
                         "args": [
                             "-c",
+                            f"{STALENESS_PREAMBLE_SHELL}; "
                             "python3 -m venv --copies ${NOMAD_ALLOC_DIR}/venv;"
                             "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
                         ],
@@ -198,12 +246,13 @@ NOMAD_EXEC_ARTIFACT = {
             "interpreter",
             "md5_checksum",
         ],
-        "MetaOptional": ["args"],
+        "MetaOptional": ["args", *_STALENESS_META_OPTIONAL],
     },
     "TaskGroups": [
         {
             "Name": "execution",
             "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
                 {
                     "Name": "run-script",
                     "Driver": "raw_exec",
@@ -269,7 +318,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "interpreter",
             "md5_checksum",
         ],
-        "MetaOptional": ["args", "requirements"],
+        "MetaOptional": ["args", "requirements", *_STALENESS_META_OPTIONAL],
     },
     "TaskGroups": [
         {
@@ -278,6 +327,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "PreventRescheduleOnLost": True,
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
                 {
                     "Name": "prepare-env",
                     "Lifecycle": {"hook": "prestart", "sidecar": False},
@@ -287,6 +337,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                         "command": "sh",
                         "args": [
                             "-c",
+                            f"{STALENESS_PREAMBLE_SHELL}; "
                             "python3 -m venv --copies ${NOMAD_ALLOC_DIR}/venv;"
                             "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
                         ],
@@ -393,6 +444,16 @@ SYSTEM_TASKS = [
         output_files_path="run-script/local/output_files",
         created_by=SYSTEM_USER,
     ),
+    Task(
+        name="inventory-sync",
+        data={
+            "callable": "app.sep.plugins.inventory.sync.run_scheduled_inventory_sync",
+            "target": "local",
+        },
+        backend=TaskBackendEnum.CELERY,
+        protected=True,
+        created_by=SYSTEM_USER,
+    ),
 ]
 
 # Import plugin tasks
@@ -428,6 +489,20 @@ SYSTEM_PERIODIC_TASKS = [
         ],
     )
 ]
+
+_nomad_cert_schedule = tasks_settings.NOMAD.check_cert_expiry_interval
+if _nomad_cert_schedule is not None:
+    SYSTEM_PERIODIC_TASKS.append(
+        SystemPeriodicTaskSchedule(
+            schedule=_nomad_cert_schedule,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="tasks__check_nomad_cert_expiry",
+                    task_name="app.tasks.celery.check_nomad_cert_expiry",
+                ),
+            ],
+        ),
+    )
 
 
 async def init_tasks_db() -> None:
@@ -491,3 +566,43 @@ async def init_tasks_db() -> None:
                 update_delete_result.rowcount,
             )
     await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "tasks__")
+
+
+async def verify_taskhistory_execution_request_is_jsonb() -> None:
+    """Fail fast if ``taskhistory.execution_request`` is not ``jsonb`` on PostgreSQL.
+
+    Defend against a deploy that ships SEP-988's ``@>`` dispatch dedup code
+    without running the corresponding Alembic migration. ``compare_type``
+    intentionally suppresses the ``json``/``jsonb`` diff during autogeneration,
+    so ``make checkmigrations`` cannot detect this skew. Without this guard,
+    the first dispatch hits ``operator does not exist: json @> jsonb`` at
+    runtime; with it, the Tasks app refuses to start until the column is
+    converted. The check is a no-op on SQLite and MySQL, where SEP-988's
+    migration is also a no-op.
+
+    Use SQLAlchemy's reflection inspector rather than a raw
+    ``information_schema`` query so the dialect-specific type mapping is what
+    decides whether the column is ``JSONB`` or plain ``JSON``.
+
+    :raises RuntimeError: If the PostgreSQL column type is not ``jsonb``.
+    """
+    if not engine.dialect.name.startswith(DatabaseDialect.POSTGRESQL):
+        return
+    async with engine.connect() as conn:
+        columns = await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).get_columns("taskhistory")
+        )
+    for column in columns:
+        if column["name"] != "execution_request":
+            continue
+        if isinstance(column["type"], JSONB):
+            return
+        raise RuntimeError(
+            f"taskhistory.execution_request is {type(column['type']).__name__!r}, "
+            "expected 'JSONB'. Run the Tasks API Alembic migrations (SEP-988) "
+            "before starting the app."
+        )
+    raise RuntimeError(
+        "taskhistory.execution_request column not found. Run the Tasks API "
+        "Alembic migrations (SEP-988) before starting the app."
+    )

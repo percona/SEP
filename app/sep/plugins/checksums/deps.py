@@ -17,11 +17,18 @@
 
 import logging
 import shlex
+from collections.abc import Iterable
 from typing import Annotated, Any
 
 from fastapi import Depends, Form
 
+from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
+from app.sep.connectivity import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+)
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -31,9 +38,21 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
+from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.checksums.models import ChecksumsCreate
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.plugins.checksums.models import (
+    ChecksumsCreate,
+    ChecksumTaskResponse,
+    ChecksumTaskWrite,
+)
+from app.sep.plugins.framework import ConnectivityWarning
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +63,9 @@ def extract_databases_and_tables_from_extra_args(form: ChecksumsCreate) -> list[
     """Extract --databases and --tables from extra_args and add to form fields.
 
     :param form: The form data for the Checksums creation.
+    :type form: ChecksumsCreate
     :return: List of remaining arguments (excluding --databases and --tables).
+    :rtype: list[str]
     """
     if not form.extra_args:
         return []
@@ -69,7 +90,9 @@ async def process_schema_and_table_ids(
     """Process schema_id and table_id to set databases and tables form fields.
 
     :param form: The form data for the Checksums creation.
+    :type form: ChecksumsCreate
     :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
     """
     if not form.schema_id or len(form.schema_id) == 0:
         return
@@ -115,6 +138,154 @@ async def process_schema_and_table_ids(
         form.tables = ",".join(table_entries)
 
 
+def _assemble_checksum_payload(
+    service: CreatedService,
+    *,
+    task_name: str,
+    hostname: str,
+    recursion_method: str,
+    dsn_table: str,
+    databases: str,
+    tables: str,
+    pause_file: str,
+    binary_index: bool,
+    explain_arg: bool,
+    fail_on_stopped_replication: bool,
+    truncate_replicate_table: bool,
+    progress: str,
+    set_vars: str,
+    max_load: str,
+    chunk_time: str,
+    max_lag: str,
+    alert_on_fail: bool,
+    extra_remaining_args: Iterable[str] = (),
+) -> TaskWrite:
+    """Assemble a TaskWrite for pt-table-checksum from pre-resolved inputs.
+
+    Owns DSN construction, ``--recursion-method=dsn=…`` expansion (on a local
+    copy — never mutates caller arguments), optional/flag arg mapping, and
+    ``TaskWrite`` meta assembly. Both the form-based and JSON paths delegate
+    here so Nomad payloads are byte-identical regardless of the call origin.
+
+    :param service: The validated inventory service instance.
+    :type service: CreatedService
+    :param task_name: The task name.
+    :type task_name: str
+    :param hostname: The executor host.
+    :type hostname: str
+    :param recursion_method: The replica-discovery method (e.g. ``"processlist"``).
+    :type recursion_method: str
+    :param dsn_table: DSN table used when ``recursion_method == "dsn"``.
+    :type dsn_table: str
+    :param databases: Comma-separated database names (pre-resolved).
+    :type databases: str
+    :param tables: Comma-separated ``schema.table`` strings (pre-resolved).
+    :type tables: str
+    :param pause_file: Pause-file path.
+    :type pause_file: str
+    :param binary_index: Enable ``--binary-index`` flag.
+    :type binary_index: bool
+    :param explain_arg: Enable ``--explain`` flag.
+    :type explain_arg: bool
+    :param fail_on_stopped_replication: Enable ``--fail-on-stopped-replication``.
+    :type fail_on_stopped_replication: bool
+    :param truncate_replicate_table: Enable ``--truncate-replicate-table``.
+    :type truncate_replicate_table: bool
+    :param progress: ``--progress`` value.
+    :type progress: str
+    :param set_vars: ``--set-vars`` value.
+    :type set_vars: str
+    :param max_load: ``--max-load`` value.
+    :type max_load: str
+    :param chunk_time: ``--chunk-time`` value.
+    :type chunk_time: str
+    :param max_lag: ``--max-lag`` value.
+    :type max_lag: str
+    :param alert_on_fail: Whether to alert on task failure.
+    :type alert_on_fail: bool
+    :param extra_remaining_args: Additional pre-parsed CLI args (form path only).
+    :type extra_remaining_args: Iterable[str]
+    :return: A fully constructed ``TaskWrite`` object.
+    :rtype: TaskWrite
+    """
+    dsn = ""
+    if service.port is not None:
+        dsn = f"P={service.port},{dsn}"
+    if service.node.address != "localhost":
+        dsn = f"h={service.node.address},{dsn}"
+
+    effective_recursion_method = recursion_method
+    if recursion_method == "dsn":
+        stripped_dsn = dsn.rstrip(",")
+        dsn_table_part = (dsn_table or "").strip() or DEFAULT_RECURSION_DSN_TABLE
+        effective_recursion_method = f"dsn={stripped_dsn},{dsn_table_part}"
+
+    args = [dsn]
+
+    if effective_recursion_method:
+        args.append(f"--recursion-method={effective_recursion_method}")
+
+    args.extend(extra_remaining_args)
+
+    optional_args = {
+        "databases": f"--databases={databases}",
+        "tables": f"--tables={tables}",
+        "pause_file": f"--pause-file={pause_file}",
+        "set_vars": f"--set-vars={set_vars}",
+        "max_load": f"--max-load={max_load}",
+        "chunk_time": f"--chunk-time={chunk_time}",
+        "max_lag": f"--max-lag={max_lag}",
+        "progress": f"--progress={progress}",
+    }
+    local_values = {
+        "databases": databases,
+        "tables": tables,
+        "pause_file": pause_file,
+        "set_vars": set_vars,
+        "max_load": max_load,
+        "chunk_time": chunk_time,
+        "max_lag": max_lag,
+        "progress": progress,
+    }
+    args.extend(arg for key, arg in optional_args.items() if local_values[key])
+
+    flag_args = {
+        "binary_index": "--binary-index",
+        "explain_arg": "--explain",
+        "fail_on_stopped_replication": "--fail-on-stopped-replication",
+        "truncate_replicate_table": "--truncate-replicate-table",
+    }
+    flag_values = {
+        "binary_index": binary_index,
+        "explain_arg": explain_arg,
+        "fail_on_stopped_replication": fail_on_stopped_replication,
+        "truncate_replicate_table": truncate_replicate_table,
+    }
+    args.extend(arg for key, arg in flag_args.items() if flag_values[key])
+
+    return TaskWrite(
+        owner=TaskOwner.CHECKSUMS,
+        backend=TaskBackendEnum.PROXY,
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-table-checksum",
+                "args": shlex.join(args),
+                "target": hostname,
+                "_service_name": service.name,
+                "_service_host": service.node.address,
+                "_service_port": service.port,
+                CONNECTIVITY_META_HOST_KEY: service.node.address,
+                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
+                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
+            },
+        },
+        name=task_name,
+        target=hostname,
+        alert_on_fail=alert_on_fail,
+    )
+
+
 async def build_checksums_task_payload(
     form: Annotated[ChecksumsCreate, Form()],
     inventory_api: InventoryAPI,
@@ -128,7 +299,7 @@ async def build_checksums_task_payload(
     :type form: ChecksumsCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `TaskWrite` object containing all the necessary
+    :return: A fully constructed ``TaskWrite`` object containing all the necessary
         commands and parameters for the Checksums task execution.
     :rtype: TaskWrite
     """
@@ -138,74 +309,78 @@ async def build_checksums_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    dsn = ""
-    if service.port is not None:
-        dsn = f"P={service.port},{dsn}"
-    if service.node.address != "localhost":
-        dsn = f"h={service.node.address},{dsn}"
-
-    if form.recursion_method == "dsn":
-        stripped_dsn = dsn.rstrip(",")
-        dsn_table_part = (form.dsn_table or "").strip() or DEFAULT_RECURSION_DSN_TABLE
-        form.recursion_method = f"dsn={stripped_dsn},{dsn_table_part}"
-
-    args = [dsn]
-
-    if form.recursion_method is not None and len(form.recursion_method) > 0:
-        args.append(f"--recursion-method={form.recursion_method}")
-
     await process_schema_and_table_ids(form, inventory_api)
-
     remaining_args = extract_databases_and_tables_from_extra_args(form)
-    args.extend(remaining_args)
 
-    # Mapping form fields to their respective arguments
-    optional_args = {
-        "databases": f"--databases={form.databases}",
-        "tables": f"--tables={form.tables}",
-        "pause_file": f"--pause-file={form.pause_file}",
-        "set_vars": f"--set-vars={form.set_vars}",
-        "max_load": f"--max-load={form.max_load}",
-        "chunk_time": f"--chunk-time={form.chunk_time}",
-        "max_lag": f"--max-lag={form.max_lag}",
-        "progress": f"--progress={form.progress}",
-    }
-
-    # Adding optional arguments if their values exist
-    args.extend(arg for key, arg in optional_args.items() if getattr(form, key))
-
-    # Adding flag arguments (no value needed, just presence)
-    flag_args = {
-        "binary_index": "--binary-index",
-        "explain_arg": "--explain",
-        "fail_on_stopped_replication": "--fail-on-stopped-replication",
-        "truncate_replicate_table": "--truncate-replicate-table",
-    }
-
-    # Adding flag arguments if set to True
-    args.extend(arg for key, arg in flag_args.items() if getattr(form, key))
-
-    return TaskWrite(
-        owner=TaskOwner.CHECKSUMS,
-        backend=TaskBackendEnum.PROXY,
-        data={
-            "task": "run-command",
-            "meta": {
-                "command": "pt-table-checksum",
-                "args": shlex.join(args),
-                "target": form.hostname,
-                "_service_name": service.name,
-                "_service_host": service.node.address,
-                "_service_port": service.port,
-            },
-        },
-        name=form.task_name,
-        target=form.hostname,
+    return _assemble_checksum_payload(
+        service,
+        task_name=form.task_name,
+        hostname=form.hostname,
+        recursion_method=form.recursion_method,
+        dsn_table=form.dsn_table,
+        databases=form.databases,
+        tables=form.tables,
+        pause_file=form.pause_file,
+        binary_index=form.binary_index,
+        explain_arg=form.explain_arg,
+        fail_on_stopped_replication=form.fail_on_stopped_replication,
+        truncate_replicate_table=form.truncate_replicate_table,
+        progress=form.progress,
+        set_vars=form.set_vars,
+        max_load=form.max_load,
+        chunk_time=form.chunk_time,
+        max_lag=form.max_lag,
         alert_on_fail=form.alert_on_fail,
+        extra_remaining_args=remaining_args,
     )
 
 
 ChecksumsGeneratedTask = Annotated[TaskWrite, Depends(build_checksums_task_payload)]
+
+
+async def build_checksum_task(
+    body: ChecksumTaskWrite,
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the checksums task payload from a JSON request body.
+
+    JSON-path counterpart to :func:`build_checksums_task_payload`. Accepts
+    pre-resolved ``databases`` and ``tables`` strings — no schema/table ID
+    resolution or ``extra_args`` parsing.
+
+    :param body: The validated JSON request body.
+    :type body: ChecksumTaskWrite
+    :param inventory_api: The Inventory API client.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed ``TaskWrite`` object.
+    :rtype: TaskWrite
+    """
+    service = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        body.service_id,
+        type=ServiceTypeEnum.MYSQL,
+    )
+    return _assemble_checksum_payload(
+        service,
+        task_name=body.task_name,
+        hostname=body.hostname,
+        recursion_method=body.recursion_method,
+        dsn_table=body.dsn_table,
+        databases=body.databases,
+        tables=body.tables,
+        pause_file=body.pause_file,
+        binary_index=body.binary_index,
+        explain_arg=body.explain_arg,
+        fail_on_stopped_replication=body.fail_on_stopped_replication,
+        truncate_replicate_table=body.truncate_replicate_table,
+        progress=body.progress,
+        set_vars=body.set_vars,
+        max_load=body.max_load,
+        chunk_time=body.chunk_time,
+        max_lag=body.max_lag,
+        alert_on_fail=body.alert_on_fail,
+    )
 
 
 async def get_checksums_task(
@@ -230,6 +405,114 @@ async def get_checksums_task(
 
 
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
+
+
+async def get_checksums_task_names_by_status(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum,
+) -> set[str]:
+    """Retrieve checksum task names that have histories with the requested status.
+
+    :param tasks_api: The TaskAPI instance used to query task histories.
+    :type tasks_api: TaskAPI
+    :param status: The status used to filter checksum task histories.
+    :type status: TaskHistoryStatusEnum
+    :return: The set of checksum task names that have at least one matching history.
+    :rtype: set[str]
+    """
+    response = await tasks_api.get("/history/", params={"status": status})
+    histories = response["items"]
+    return {
+        history["task"]["name"]
+        for history in histories
+        if history.get("task", {}).get("owner") == TaskOwner.CHECKSUMS.value
+    }
+
+
+def _extract_latest_task_status(
+    histories: Iterable[dict[str, Any]],
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload."""
+    for history in histories:
+        if (status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(status)
+    return None
+
+
+async def get_checksums_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for a checksum task.
+
+    :param task_name: The name of the checksum task.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to query task history.
+    :type tasks_api: TaskAPI
+    :return: The latest known task status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    response = await tasks_api.get(f"/{task_name}/history/")
+    return _extract_latest_task_status(response["items"])
+
+
+def build_checksums_api_task_response(
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+    *,
+    connectivity_warning: ConnectivityWarning | None = None,
+) -> ChecksumTaskResponse:
+    """Build a checksum task response object for the JSON API.
+
+    :param task: The checksum task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :param connectivity_warning: A warning to surface when a connectivity
+        check failed during the task creation flow.
+    :type connectivity_warning: ConnectivityWarning | None
+    :return: A validated checksum task API response object.
+    :rtype: ChecksumTaskResponse
+    """
+    return ChecksumTaskResponse(
+        **task.model_dump(),
+        service_type=ServiceTypeEnum.MYSQL,
+        status=status,
+        connectivity_warning=connectivity_warning,
+    )
+
+
+async def get_checksums_api_task_responses(
+    tasks_api: TaskAPI,
+    service_type: ServiceTypeEnum | None = None,
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[ChecksumTaskResponse]:
+    """Retrieve checksum task responses for the JSON API.
+
+    :param tasks_api: The TaskAPI instance used to query checksum tasks.
+    :type tasks_api: TaskAPI
+    :param service_type: Optional service type filter for the checksum task list.
+    :type service_type: ServiceTypeEnum | None
+    :param status: Optional latest-history status filter for the checksum task list.
+    :type status: TaskHistoryStatusEnum | None
+    :return: The checksum task responses matching the requested filters.
+    :rtype: list[ChecksumTaskResponse]
+    """
+    if service_type is not None and service_type != ServiceTypeEnum.MYSQL:
+        return []
+
+    params = {"owner": TaskOwner.CHECKSUMS.value}
+    response = await tasks_api.get("/", params=params)
+    tasks = [Task.model_validate(task) for task in response["items"]]
+    task_status_pairs = [
+        (task, await get_checksums_task_status(task.name, tasks_api)) for task in tasks
+    ]
+
+    return [
+        build_checksums_api_task_response(task, status=task_status)
+        for task, task_status in task_status_pairs
+        if status is None or task_status == status
+    ]
 
 
 def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:

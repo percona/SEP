@@ -18,19 +18,25 @@
 from starlette import status
 from starlette.testclient import TestClient
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import Schema, Table
 
 EXPECTED_TABLE_COUNT = 2
+OFFSET_BEYOND_TOTAL = 999
 
 
 class TestListTables:
     """Test the GET /tables/ endpoint."""
 
     def test_list_tables_empty(self, test_client: TestClient) -> None:
-        """Return an empty list when no tables exist."""
+        """Return an empty paginated response when no tables exist."""
         response = test_client.get("/tables/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["offset"] == 0
+        assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
     def test_list_tables_multiple(
         self, test_client: TestClient, table: Table, second_table: Table
@@ -39,9 +45,32 @@ class TestListTables:
         response = test_client.get("/tables/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == EXPECTED_TABLE_COUNT
-        returned_ids = {t["id"] for t in data}
+        assert len(data["items"]) == EXPECTED_TABLE_COUNT
+        assert data["total"] == EXPECTED_TABLE_COUNT
+        returned_ids = {t["id"] for t in data["items"]}
         assert returned_ids == {table.id, second_table.id}
+
+    def test_list_tables_custom_offset(
+        self, test_client: TestClient, table: Table
+    ) -> None:
+        """Return empty items when offset is beyond total."""
+        response = test_client.get("/tables/", params={"offset": OFFSET_BEYOND_TOTAL})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 1
+        assert data["offset"] == OFFSET_BEYOND_TOTAL
+
+    def test_list_tables_custom_limit(
+        self, test_client: TestClient, table: Table, second_table: Table
+    ) -> None:
+        """Return limited items while total remains unchanged."""
+        response = test_client.get("/tables/", params={"limit": 1})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == EXPECTED_TABLE_COUNT
+        assert data["limit"] == 1
 
 
 class TestRetrieveTable:

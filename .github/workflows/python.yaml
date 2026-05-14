@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:
@@ -30,7 +30,7 @@ jobs:
       - name: Run bandit
         run: make bandit
 
-  pip-audit:
+  lock_check:
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -38,16 +38,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
-      - name: Run pip-audit
-        run: make pip-audit
+      - name: Check pyproject.toml/poetry.lock consistency
+        run: poetry check --lock --strict
 
   check_migrations:
-    needs: [bandit]
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -55,7 +54,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:
@@ -64,7 +63,6 @@ jobs:
         run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
 
   test:
-    needs: [bandit, check_migrations]
     name: test (${{ matrix.python }})
     strategy:
       matrix:
@@ -73,19 +71,30 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
-          cache: ${{ matrix.python == '3.11.9' && 'poetry' || '' }}
+          cache: poetry
       - name: Install test dependencies
-        run: poetry install --with syncmysql
+        run: poetry sync --no-root --with syncmysql
       - name: Run tests
         run: make test
+      - name: Generate coverage comment data
+        id: coverage_comment
+        if: matrix.python == '3.11.9' && github.event_name == 'pull_request'
+        uses: py-cov-action/python-coverage-comment-action@63f52f4fbbffada6e8dee8ec432de7e01df9ba79 # v3.41
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload coverage comment artifact
+        if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-coverage-comment-action
+          path: python-coverage-comment-action.txt
 
   build:
-    needs: [bandit, test, check_migrations]
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -93,7 +102,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
         with:

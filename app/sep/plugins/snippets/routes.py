@@ -13,15 +13,26 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the Support Snippets plugin."""
+"""Define routes for the Support Snippets plugin.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/plugins/snippets/`` and the React UI consumes them via
+``frontend/packages/plugins/snippets``. Every response from this router
+carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
+hit; the routes remain mounted so users can fall back to the legacy UI
+for capabilities (chaining, scheduling, alerting) the React UI does not
+yet expose.
+"""
 
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlmodel import col
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.utils import utc_now
 from app.sep.celery import update_snippets
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -29,25 +40,28 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     IsAuthenticated,
+    IsCsrfValidated,
     SessionDep,
     TaskAPI,
 )
 from app.sep.middleware import messages
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.snippets.deps import (
     ApprovedSnippet,
+    check_snippet_batch_existence,
     ExecutableSnippet,
-    get_snippet_execution_request_meta,
+    SnippetBatchApproveForm,
+    SnippetExecutionRequestMeta,
     UnapprovedSnippet,
     ValidatedSnippet,
 )
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
-from app.sep.snippets.models.snippet import SnippetExecutionMeta
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 
@@ -78,10 +92,11 @@ async def snippets_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve and display information about a snippet."""
-    history_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         f"/{snippet.execution_task_name}/history/",
         params={"snippet_filename": snippet.filename},
     )
+    history_tasks = response["items"]
     for history in history_tasks:
         try:
             history["available_files"] = await tasks_api.get(
@@ -94,17 +109,18 @@ async def snippets_detail(
                 exc_info=True,
             )
             history["available_files"] = []
+    response = await tasks_api.get(
+        f"/{snippet.execution_task_name}/history/",
+        params={
+            "snippet_filename": snippet.filename,
+            "status": TaskHistoryStatusEnum.RUNNING,
+        },
+    )
     context |= {
         "snippet": snippet,
         "executor_hosts": executor_hosts_ctx.as_form_hosts(),
         "history_tasks": history_tasks,
-        "running_tasks": await tasks_api.get(
-            f"/{snippet.execution_task_name}/history/",
-            params={
-                "snippet_filename": snippet.filename,
-                "status": TaskHistoryStatusEnum.RUNNING,
-            },
-        ),
+        "running_tasks": response["items"],
     }
     context["snippet"] = snippet
     try:
@@ -129,7 +145,7 @@ def _get_snippet_success_redirect(
     )
 
 
-@router.post("/{snippet_filename}/approve")
+@router.post("/{snippet_filename}/approve", dependencies=[IsCsrfValidated])
 async def snippets_approve(
     request: Request, user: AdminUser, snippet: UnapprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
@@ -139,7 +155,7 @@ async def snippets_approve(
     return _get_snippet_success_redirect(request, user, snippet, "Snippet approved")
 
 
-@router.post("/{snippet_filename}/remove-approval")
+@router.post("/{snippet_filename}/remove-approval", dependencies=[IsCsrfValidated])
 async def snippets_remove_approval(
     request: Request, user: AdminUser, snippet: ApprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
@@ -164,14 +180,94 @@ async def snippets_refresh(request: Request, user: AdminUser) -> RedirectRespons
     )
 
 
+@router.post("/approve-batch", dependencies=[IsCsrfValidated])
+async def snippets_approve_batch(
+    request: Request,
+    user: AdminUser,
+    session: SessionDep,
+    body: Annotated[SnippetBatchApproveForm, Form()],
+) -> RedirectResponse:
+    """Approve multiple snippets in a single atomic bulk operation.
+
+    Reject the whole batch if any requested filename is unknown, its file is
+    missing on disk, or it is already approved. On success, flash a summary and
+    redirect back to the snippets index.
+
+    :param request: The HTTP request object.
+    :type request: Request
+    :param user: The admin performing the action.
+    :type user: User
+    :param session: The active database session.
+    :type session: AsyncSession
+    :param body: The validated request body containing the filenames to approve.
+    :type body: SnippetBatchApproveForm
+    :return: A 303 redirect back to the snippets index.
+    :rtype: RedirectResponse
+    """
+    index_redirect = RedirectResponse(
+        request.url_for("snippets_index"), status_code=status.HTTP_303_SEE_OTHER
+    )
+    filenames = body.filenames
+    existence = await check_snippet_batch_existence(session, filenames)
+    if existence.missing_in_db:
+        messages.error(
+            request, f"Unknown snippet(s): {', '.join(existence.missing_in_db)}"
+        )
+        return index_redirect
+    if existence.missing_on_disk:
+        messages.error(
+            request,
+            f"Snippet file(s) missing on disk: {', '.join(existence.missing_on_disk)}",
+        )
+        return index_redirect
+    already_approved = sorted(
+        snippet.filename for snippet in existence.snippets if snippet.is_approved
+    )
+    if already_approved:
+        messages.error(request, f"Already approved: {', '.join(already_approved)}")
+        return index_redirect
+    result = await SnippetManager.update_where(
+        session,
+        {
+            "approved_at": utc_now(),
+            "updated_by": str(user.id),
+            "reason": f"Batch approved by {user.username}",
+        },
+        col(Snippet.filename).in_(filenames),
+        col(Snippet.approved_at).is_(None),
+    )
+    updated_count = result.rowcount
+    logger.info(
+        "Batch-approved %d snippet(s) by %s: %s",
+        updated_count,
+        user.username,
+        filenames,
+    )
+    if updated_count == 0:
+        messages.error(
+            request,
+            "No snippets were approved — their state changed before the batch "
+            "was processed. Please reload and retry.",
+        )
+        return index_redirect
+    skipped = len(filenames) - updated_count
+    if skipped:
+        messages.success(
+            request,
+            f"{updated_count} snippet(s) approved "
+            f"({skipped} skipped — already approved by another admin)",
+        )
+        return index_redirect
+    messages.success(request, f"{updated_count} snippet(s) approved")
+    return index_redirect
+
+
 @router.post("/{snippet_filename}", dependencies=[IsAuthenticated])
 async def snippets_execute(
     request: Request,
     tasks_api: TaskAPI,
     snippet: ExecutableSnippet,
-    execution_request_meta: Annotated[
-        SnippetExecutionMeta, Depends(get_snippet_execution_request_meta)
-    ],
+    execution_request_meta: SnippetExecutionRequestMeta,
 ) -> RedirectResponse:
     """Execute a snippet."""
     logger.info(

@@ -7,6 +7,14 @@
 # parameters: []
 # atw:
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+# service_type: mysql
+# alerts:
+#   - MySQLPrimaryReadOnly
+#   - MySQLReplicaReadOnlyDisabled
+#   - MySQLTooManyConnections
+#   - MySQLPXCWsrepDesync
+#   - MySQLPXCClusterStatus
+#   - MySQLPXCFlowControl
 # ---
 
 set -e

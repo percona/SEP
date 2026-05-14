@@ -19,13 +19,46 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             align-items: center">
     <h2>{{ inventory_table_title }}</h2>
     {% if can_sync %}
-        <form action="{{ inventory_sync_route }}"
-              method="post"
-              style="display: inline">
-            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-            <button {% if sync_is_running %}disabled{% endif %} class="icons">
-                <span class="material-symbols-outlined">autorenew</span>
-            </button>
-        </form>
+        <div class="menu">
+            <form action="{{ inventory_sync_route }}"
+                  method="post"
+                  style="display: inline">
+                <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                <button {% if sync_is_running %}disabled{% endif %}
+                        class="icon sync-button-main"
+                        aria-label="Sync all configured syncers">
+                    <span class="material-symbols-outlined">autorenew</span>
+                </button>
+            </form>
+            {% if available_syncers | length > 1 %}
+                <button class="icon trigger"
+                        aria-controls="sync-button-menu-content"
+                        aria-haspopup="true"
+                        aria-expanded="false"
+                        aria-label="Select a syncer"
+                        {% if sync_is_running %}disabled{% endif %}>
+                    <span class="material-symbols-outlined">expand_more</span>
+                </button>
+                <div id="sync-button-menu-content" class="content" aria-hidden="true">
+                    <ul role="menu">
+                        {% for entry in available_syncers %}
+                            <li role="none">
+                                <form action="{{ inventory_sync_route }}" method="post">
+                                    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+                                    <input type="hidden" name="syncer" value="{{ entry.name }}" />
+                                    <button type="submit"
+                                            role="menuitem"
+                                            class="list-item"
+                                            {% if sync_is_running %}disabled{% endif %}>
+                                        <span class="material-symbols-outlined">autorenew</span>
+                                        <span class="label">Sync {{ entry.display_name }}</span>
+                                    </button>
+                                </form>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        </div>
     {% endif %}
 </div>

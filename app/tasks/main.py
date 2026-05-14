@@ -25,9 +25,14 @@ from celery.utils.log import get_task_logger
 from fastapi import FastAPI, HTTPException, Request, status
 from nomad.api.exceptions import BaseNomadException
 
+from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
 from app.tasks.config import tasks_settings
-from app.tasks.db.seed import init_tasks_db
+from app.tasks.connectivity.routes import router as connectivity_router
+from app.tasks.db.seed import (
+    init_tasks_db,
+    verify_taskhistory_execution_request_is_jsonb,
+)
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.periodic.routes import router as periodic_router
 from app.tasks.routes import router as tasks_router
@@ -50,6 +55,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :rtype: AsyncGenerator[None, None]
     """
     await init_tasks_db()
+    await verify_taskhistory_execution_request_is_jsonb()
     async with default_lifespan(app), tasks_settings.NOMAD:
         yield
 
@@ -58,10 +64,14 @@ lifespan = tasks_lifespan
 tasks_app = create_app(
     tasks_router,
     periodic_router,
+    connectivity_router,
     lifespan=lifespan,
     backend_cors_origins=tasks_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,
     security_headers=tasks_settings.SECURITY_HEADERS,
+    title="SEP Tasks API",
+    version=__version__,
+    description=f"{__summary__} — task execution, history, periodic jobs, connectivity.",
 )
 
 

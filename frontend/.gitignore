@@ -1,0 +1,11 @@
+# The repo-level .gitignore excludes `[Ss]cripts` for Python venv dirs.
+# Re-allow our package scripts directories.
+!packages/*/scripts/
+
+# Storybook static build output
+packages/*/storybook-static/
+
+# Playwright E2E artifacts
+packages/e2e/playwright-report/
+packages/e2e/test-results/
+packages/e2e/blob-report/

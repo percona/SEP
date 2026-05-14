@@ -20,16 +20,19 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, HTTPException, status
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
+    get_created_entity,
     get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import (
     BackupConfig,
     BackupConfigBackup,
@@ -154,6 +157,7 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
 
 async def build_backup_task_payload(
     form: Annotated[BackupCreate, Form()],
+    inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build the backup task payload from form.
 
@@ -161,10 +165,30 @@ async def build_backup_task_payload(
 
     :param form: The form data for the Backups creation.
     :type form: BackupCreate
-    :return: A fully constructed `TaskWrite` object containing all the necessary
-        configuration to create the Backup task.
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed ``TaskWrite`` object containing all the
+        necessary configuration to create the Backup task.
     :rtype: TaskWrite
     """
+    try:
+        service = await get_created_entity(
+            inventory_api,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            form.service_id,
+            type=ServiceTypeEnum.MONGODB,
+        )
+    except HTTPException as exc:
+        # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not
+        # the project's ``HTTPNotFoundException``. PBM tasks run off
+        # ``form.hostname`` and the generated config; the service is only
+        # fetched to populate ``_service_name`` for PMM. Fall back to a
+        # node-only annotation if the service was deleted between form load
+        # and form submit, but re-raise any other error.
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        service = None
+
     pitr = _build_pitr_config(form)
     storage = _build_storage_config(form)
     backup_config_dict = _build_backup_config_dict(form)
@@ -182,23 +206,25 @@ async def build_backup_task_payload(
 
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
+    meta = {
+        "config": yaml.dump(
+            backup_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
+            default_flow_style=False,
+            allow_unicode=True,
+        ),
+        "target": form.hostname,
+        "requirements": requirements,
+    }
+    if service is not None:
+        meta["_service_name"] = service.name
+
     return TaskWrite(
         name=form.task_name,
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUP_MONGO,
         data={
             "task": "run-python",
-            "meta": {
-                "config": yaml.dump(
-                    backup_config.model_dump(
-                        by_alias=True, exclude_none=True, mode="json"
-                    ),
-                    default_flow_style=False,
-                    allow_unicode=True,
-                ),
-                "target": form.hostname,
-                "requirements": requirements,
-            },
+            "meta": meta,
             "payload": f"file://{payload_path}",
             "backup_type": form.backup_type,
         },
@@ -287,3 +313,9 @@ async def get_backups_index_context(
         TaskOwner.BACKUP_MONGO,
         alert_on_fail_default=True,
     )
+
+
+BackupsIndexContextDep = Annotated[
+    dict[str, Any],
+    Depends(get_backups_index_context),
+]

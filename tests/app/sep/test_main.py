@@ -22,7 +22,11 @@ from fastapi import HTTPException, status
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
-from app.core.auth.exceptions import BaseAuthProviderException
+from app.core.auth.exceptions import (
+    BaseAuthProviderException,
+    HTTPForbiddenException,
+    HTTPUnauthorizedException,
+)
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.config import sep_settings
 from app.sep.deps import get_access_token_from_cookie
@@ -256,6 +260,72 @@ def test_read_root_renders_homepage(mocker, dummy_context, test_client):
     assert kwargs.get("context") == dummy_context
 
 
+def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
+    """Regression: task-infrastructure routers must be mounted for backup_pg-only installs.
+
+    When backup_pg is the only task-related plugin enabled, the shared routers
+    (periodic_tasks, stop_task, stream_logs, download_files, execution_events,
+    inventory_ajax) must still be mounted so that Jinja url_for() calls like
+    url_for('periodic_task_create') and url_for('stop_task_execution') resolve
+    without raising NoMatchFound.
+    """
+    import importlib
+
+    import app.sep.main as main_module
+
+    mock_plugin = mocker.MagicMock()
+    mock_plugin.router_path = "app.sep.plugins.backup_pg.router"
+    mock_plugin.uri_path = "/backup_pg"
+    mock_plugin.module_name = "app.sep.plugins.backup_pg"
+
+    original_plugins = sep_settings.PLUGINS
+    mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
+    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
+
+    try:
+        importlib.reload(main_module)
+
+        route_names = {r.name for r in main_module.sep_app.routes}
+        assert "periodic_task_create" in route_names
+        assert "stop_task_execution" in route_names
+    finally:
+        sep_settings.PLUGINS = original_plugins
+        importlib.reload(main_module)
+
+
+def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
+    """Regression: ``/periodic`` routes must be mounted for inventory-only installs.
+
+    The inventory plugin's node-list page renders ``url_for('periodic_task_create')``
+    unconditionally as part of the inline schedule UI, so the periodic-tasks router
+    must be mounted whenever the inventory plugin is enabled even if no task-oriented
+    plugin (tasks, backup, checksums, …) is configured.
+    """
+    import importlib
+
+    import app.sep.main as main_module
+
+    mock_plugin = mocker.MagicMock()
+    mock_plugin.router_path = "app.sep.plugins.inventory.router"
+    mock_plugin.uri_path = "/inventory"
+    mock_plugin.module_name = "app.sep.plugins.inventory"
+
+    original_plugins = sep_settings.PLUGINS
+    mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
+    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
+
+    try:
+        importlib.reload(main_module)
+
+        route_names = {r.name for r in main_module.sep_app.routes}
+        assert "periodic_task_create" in route_names
+        assert "periodic_task_update" in route_names
+        assert "periodic_task_delete" in route_names
+    finally:
+        sep_settings.PLUGINS = original_plugins
+        importlib.reload(main_module)
+
+
 class TestExceptionHandlers:
     """Define test suite for exception handlers."""
 
@@ -278,6 +348,60 @@ class TestExceptionHandlers:
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == fake_referer
         messages_error_mock.assert_called_once_with(mocker.ANY, error_detail)
+
+    @pytest.mark.parametrize(
+        ("exc", "expected_status"),
+        [
+            pytest.param(
+                HTTPUnauthorizedException(),
+                status.HTTP_401_UNAUTHORIZED,
+                id="bearer_unauthorized",
+            ),
+            pytest.param(
+                HTTPForbiddenException("User is not active"),
+                status.HTTP_403_FORBIDDEN,
+                id="bearer_forbidden",
+            ),
+        ],
+    )
+    def test_default_error_handler_bearer_returns_json(
+        self, mocker, dummy_context, test_client, exc, expected_status
+    ):
+        """Test returning JSON for Bearer-authenticated HTTP exceptions."""
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=exc,
+        )
+
+        response = test_client.get(
+            "/",
+            headers={"Authorization": "Bearer any-token"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == expected_status
+        assert response.json()["detail"] == exc.detail
+
+    def test_default_error_handler_unauthorized_without_bearer_redirects(
+        self, mocker, dummy_context, test_client
+    ):
+        """Test using referer redirect when Authorization Bearer is absent."""
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=HTTPUnauthorizedException(),
+        )
+        messages_error_mock = mocker.patch("app.sep.main.messages.error")
+        fake_referer = "/some-page"
+
+        response = test_client.get(
+            "/",
+            headers={"Referer": fake_referer},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == fake_referer
+        messages_error_mock.assert_called_once()
 
     def test_auth_provider_exception_handler(
         self, mocker, dummy_access_token, dummy_context, test_client_with_session_cookie

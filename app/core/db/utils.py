@@ -18,13 +18,27 @@
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import cast, Column, ColumnClause, func, Function, JSON, Text
+from sqlalchemy import (
+    cast,
+    Column,
+    ColumnClause,
+    ColumnElement,
+    func,
+    JSON,
+    literal,
+    Text,
+    TypeDecorator,
+)
+from sqlalchemy.dialects import mysql, postgresql, sqlite
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
+from sqlalchemy.sql.dml import Insert as GenericInsert
 from sqlalchemy.sql.type_api import TypeEngine
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.sql_types import AutoJSON
 from app.core.utils.fields import DatabaseDialect
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
@@ -65,31 +79,106 @@ def json_join_path_elems(*path_elems: str) -> str:
     return json_path
 
 
+def _column_resolves_to_json(column: ColumnElement) -> bool:
+    """Return True when the column's declared SQLAlchemy type is JSON-semantic.
+
+    Unwrap ``TypeDecorator`` chains so columns typed with ``AutoJSON`` (or
+    subclasses like ``TaskExecutionRequestJSON``) are recognised as JSON via
+    their ``impl`` type and do not receive a redundant ``CAST(... AS JSON)``
+    wrapper that would break expression-index matches on ``jsonb`` columns.
+
+    :param column: The SQLAlchemy column element to inspect.
+    :type column: ColumnElement
+    :return: ``True`` if the column resolves to ``JSON`` or ``JSONB`` (directly
+        or through a ``TypeDecorator`` chain), ``False`` otherwise.
+    :rtype: bool
+    """
+    type_obj = column.type
+    while isinstance(type_obj, TypeDecorator):
+        type_obj = type_obj.impl_instance
+    return isinstance(type_obj, JSON)
+
+
 def func_json_extract(
     db_engine: str, json_column: SQLAlchemyColumn, *path_elems: str
-) -> Function:
-    """Extract a value from a JSON column using the specified path.
+) -> ColumnElement:
+    """Render a dialect-specific JSON scalar extraction expression.
 
-    :param db_engine: The database engine type (e.g., "postgresql").
+    Emit SQL whose shape matches the expression indexes created for
+    ``taskhistory.execution_request`` so the planner can use them:
+
+    - PostgreSQL: ``col->'a'->>'b'``. The final ``->>`` returns the value as
+      text. The expression is valid on both ``json`` and ``jsonb`` columns.
+      Path elements are inlined as SQL literals (via SQLAlchemy's
+      ``literal_execute``) instead of bound parameters so the planner can
+      syntactically match the expression against the functional indexes.
+      Columns whose declared type is not JSON-semantic (e.g.
+      ``celery_periodictask.kwargs`` which the third-party
+      ``sqlalchemy-celery-beat`` library defines as ``sa.Text()``) are wrapped
+      in ``CAST(... AS JSON)`` first, because PostgreSQL does not define
+      ``->>`` on ``text``. JSON, JSONB, and ``TypeDecorator`` chains whose
+      underlying impl is JSON (e.g. ``AutoJSON``) are left unwrapped so their
+      expression indexes keep matching.
+    - SQLite: ``json_extract(col, '$.a.b')``. SQLite auto-unquotes scalars, so
+      the result is directly comparable to a string.
+    - MySQL: ``json_extract(col, '$.a.b')``. No functional index is created on
+      MySQL because a width-limited ``CAST`` would introduce comparison
+      truncation; MySQL dev environments fall back to non-indexed filtering.
+
+    :param db_engine: The database engine type (e.g., ``"postgresql"``).
     :type db_engine: str
     :param json_column: The JSON column to extract the value from.
     :type json_column: SQLAlchemyColumn
     :param path_elems: The JSON path elements to extract.
     :type path_elems: str
-    :return: The SQL function for extracting the value from the JSON column.
-    :rtype: Function
+    :return: A SQL expression whose value is comparable to a string.
+    :rtype: ColumnElement
     """
+    column = col(json_column)
     if db_engine.startswith(DatabaseDialect.POSTGRESQL):
-        return func.json_extract_path_text(cast(col(json_column), JSON), *path_elems)
-    return func.json_extract(col(json_column), json_join_path_elems(*path_elems))
+        expression = column if _column_resolves_to_json(column) else cast(column, JSON)
+        for elem in path_elems[:-1]:
+            expression = expression.op("->")(literal(elem, Text, literal_execute=True))
+        return expression.op("->>", return_type=Text)(
+            literal(path_elems[-1], Text, literal_execute=True)
+        )
+    return func.json_extract(
+        column,
+        literal(json_join_path_elems(*path_elems), Text, literal_execute=True),
+    )
+
+
+def idempotent_insert(engine_name: str, table: Any) -> GenericInsert:
+    """Return a dialect-specific INSERT that ignores duplicate-key conflicts.
+
+    PostgreSQL and SQLite use ``INSERT ... ON CONFLICT DO NOTHING``; MySQL uses
+    ``INSERT IGNORE ...``. The caller chains ``.values(...)`` and passes the
+    result to ``session.execute``.
+
+    :param engine_name: SQLAlchemy engine ``name`` (``"postgresql"``, ``"sqlite"``,
+        or ``"mysql"``).
+    :type engine_name: str
+    :param table: The target table or ORM model class.
+    :type table: Any
+    :return: A dialect-specific insert construct.
+    :rtype: GenericInsert
+    :raises NotImplementedError: If the dialect is not supported.
+    """
+    if engine_name == DatabaseDialect.POSTGRESQL:
+        return postgresql.insert(table).on_conflict_do_nothing()
+    if engine_name == DatabaseDialect.SQLITE:
+        return sqlite.insert(table).on_conflict_do_nothing()
+    if engine_name == DatabaseDialect.MYSQL:
+        return mysql.insert(table).prefix_with("IGNORE")
+    raise NotImplementedError(f"idempotent_insert: unsupported dialect {engine_name!r}")
 
 
 def prepare_unsafe_value_for_json_comparison(db_engine: str, value: Any) -> Any:
     """Prepare a value for JSON comparison based on the database engine.
 
-    Postgres `json_extract_path_text` treats all JSON values as strings, so we convert
-    the value to a string for comparison. For other databases, we return the value as
-    is.
+    On PostgreSQL the text operator ``->>`` returns JSON scalars as text, so we
+    convert the value to a string for comparison. For other databases, we return
+    the value as is.
 
     :param db_engine: The database engine type (e.g., "postgresql").
     :type db_engine: str
@@ -110,7 +199,7 @@ def compare_type(
     inspected_type: TypeEngine,
     metadata_type: TypeEngine,
 ) -> bool | None:
-    """Define custom comparison to ensure Text type is not converted to AutoString.
+    """Suppress spurious Alembic type diffs for known equivalent type pairs.
 
     :param context: The Alembic migration context.
     :type context: MigrationContext
@@ -123,10 +212,12 @@ def compare_type(
     :type inspected_type: TypeEngine
     :param metadata_type: The type of the column as defined in the model's metadata.
     :type metadata_type: TypeEngine
-    :return: False if the inspected type is Text and the metadata type is AutoString,
-        indicating no change is required; otherwise, None.
+    :return: False if the types are equivalent and no migration is needed;
+        None to fall through to default comparison.
     :rtype: bool | None
     """
     if isinstance(inspected_type, Text) and isinstance(metadata_type, AutoString):
+        return False
+    if isinstance(metadata_type, AutoJSON) and isinstance(inspected_type, JSONB | JSON):
         return False
     return None

@@ -24,6 +24,8 @@ default:
     VERIFY_SSL: true
     FRONTEND: null  # Optional: PMM frontend URL for links
     EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
+    ANNOTATIONS_ENABLED: false
+    ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
   SEP:
     SNIPPETS:
       FILTER_EXTENSIONS:
@@ -34,6 +36,7 @@ default:
     SSL_CERTFILE: null
     PROXY_HEADERS: False
     ARTIFACT_DOWNLOAD_TTL: 600
+    CONNECTIVITY_CHECK_DEFAULT: False
     TEMPLATES_DIR: templates
     STATIC_DIR: static
     ALERT_DEFINITIONS_DIR: null
@@ -45,6 +48,12 @@ default:
       HTTP_ONLY: True
       SAME_SITE: lax
       MAX_AGE: 3600
+    SESSION_REFRESH:
+      COOKIE_NAME: refreshToken
+      PATH: /api/oauth
+      SECURE: False
+      SAMESITE: lax
+      MAX_AGE: 604800
     PLUGINS:
       - NAME: Inventory
         MODULE_NAME: inventory
@@ -94,6 +103,43 @@ default:
         MODULE_NAME: alert_troubleshooting
         URI_PATH: /alert-troubleshooting
         CSS_CLASS: alert-troubleshooting
+      - NAME: Health & Security Report
+        MODULE_NAME: report
+        URI_PATH: /report
+        CSS_CLASS: report
+    HEALTH_REPORT:
+      # Periodic report generation - empty by default (no automatic generation).
+      # Each entry pairs a SCHEDULE (interval or crontab) with optional params:
+      #   SINCE    - start of report window (default: "now-7d")
+      #   UNTIL    - end of report window   (default: "now")
+      #   FULL     - generate a full report (default: true)
+      #   REFRESH  - re-run advisor checks before collecting results (default: false)
+      #   SECTIONS - list of sections to include (default: all)
+      #   UPLOAD   - upload to ServiceNow after generation (default: false)
+      #              requires global UPLOAD, ENDPOINT, API_KEY, and CLIENT_ID below
+      #
+      # Interval examples:
+      #   SCHEDULES:
+      #     - SCHEDULE: {EVERY: 7, PERIOD: days}         # weekly full report (default)
+      #       SINCE: "now-10d"                           # covering last 10 days
+      #     - SCHEDULE: {EVERY: 3, PERIOD: days}         # quick report every 3 days
+      #       FULL: false
+      #
+      # Crontab examples:
+      #   SCHEDULES:
+      #     - SCHEDULE: {MINUTE: "0", HOUR: "6", DAY_OF_WEEK: "5"}
+      #       SINCE: "now-7d"                            # every Friday at 6AM
+      #       FULL: false                                # quick weekly report
+      #     - SCHEDULE: {MINUTE: "0", HOUR: "2", DAY_OF_WEEK: "6"}
+      #       SINCE: "now-14d"                           # every Saturday at 2AM, 14-day window
+      #       UPLOAD: true                               # upload this report to ServiceNow
+      #     - SCHEDULE: {MINUTE: "0", HOUR: "3", DAY_OF_MONTH: "1"}
+      #       SINCE: "now-30d"                           # 1st of each month at 3AM
+      SCHEDULES: []
+      UPLOAD: false    # Enable ServiceNow upload (true/false)
+      ENDPOINT:        # ServiceNow upload API URL
+      API_KEY:         # API key for authenticating with the upload endpoint
+      CLIENT_ID:       # Customer identifier sent with each upload
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
@@ -132,6 +178,7 @@ default:
       PORT: null
       NAME: tasks.db
     SYNC_LOCK_TTL: 300  # TaskHistory sync lock timeout (seconds)
+    PRE_EXECUTION_CONNECTIVITY_CHECK: warn  # disabled | warn | block
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
       SECURE: False
@@ -139,6 +186,8 @@ default:
       SSL_KEYFILE: null
       SSL_CERTFILE: null
       SSL_CAFILE: null
+      CERT_EXPIRY_WARN_DAYS: 7  # Alert when CA/client PEM not_valid_after is within this many days
+      CHECK_CERT_EXPIRY_INTERVAL: "1 days"  # Celery beat interval for check_nomad_cert_expiry; null to disable
       TIMEOUT: 10  # Request timeout in seconds
       MINIFY_PAYLOAD: True  # Minify payloads before dispatch
       LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
@@ -257,6 +306,12 @@ production_docker:
     SESSION:
       COOKIE_NAME: casdoorToken
       SECURE: True
+    SESSION_REFRESH:
+      COOKIE_NAME: refreshToken
+      PATH: /api/oauth
+      SECURE: True
+      SAMESITE: lax
+      MAX_AGE: 604800
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
@@ -282,5 +337,7 @@ production_docker:
       SSL_CAFILE: /data/certs/nomad/nomad-agent-ca.pem
       SSL_CERTFILE: /data/certs/nomad/global-client-nomad.pem
       SSL_KEYFILE: /data/certs/nomad/global-client-nomad-key.pem
+      CERT_EXPIRY_WARN_DAYS: 7  # Alert when CA/client PEM not_valid_after is within this many days
+      CHECK_CERT_EXPIRY_INTERVAL: "1 days"  # Celery beat interval for check_nomad_cert_expiry; null to disable
     SSL_KEYFILE: /data/certs/sep/tasks_api-cert-key.pem
     SSL_CERTFILE: /data/certs/sep/tasks_api-cert.pem

@@ -18,7 +18,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.models import BaseLowercaseModel
+from app.core.models import BaseLowercaseModel, PaginatedResponse
 
 TEST_INT_VALUE = 42
 TEST_STRING_VALUE = "value1"
@@ -56,3 +56,52 @@ def test_non_dict_input_returns_data_as_is():
     non_dict_input = ["list", "of", "values"]
     transformed = ExampleModel.transform_fields(non_dict_input)
     assert transformed == non_dict_input
+
+
+def test_paginated_response_serializes_generic_items():
+    """Test `PaginatedResponse` validates and serializes generic payloads."""
+    response = PaginatedResponse[int](
+        items=[1, 2, 3],
+        total=10,
+        offset=5,
+        limit=3,
+    )
+
+    assert response.model_dump() == {
+        "items": [1, 2, 3],
+        "total": 10,
+        "offset": 5,
+        "limit": 3,
+    }
+
+
+def test_paginated_response_rejects_invalid_item_type():
+    """Test `PaginatedResponse` rejects items that do not match the generic type."""
+    with pytest.raises(ValidationError):
+        PaginatedResponse[int](
+            items=["one", "two"],
+            total=2,
+            offset=0,
+            limit=2,
+        )
+
+
+def test_paginated_response_rejects_missing_required_fields():
+    """Test `PaginatedResponse` requires pagination metadata fields."""
+    with pytest.raises(ValidationError):
+        PaginatedResponse[int](
+            items=[1, 2, 3],
+            total=3,
+            offset=0,
+        )
+
+
+def test_paginated_response_rejects_invalid_metadata_types():
+    """Test `PaginatedResponse` rejects invalid metadata value types."""
+    with pytest.raises(ValidationError):
+        PaginatedResponse[int](
+            items=[1, 2, 3],
+            total="three",
+            offset="zero",
+            limit="ten",
+        )

@@ -19,8 +19,8 @@ repos:
     hooks:
       - id: addlicense
         args: ["-f", ".license_header", "-v"]
-        types_or: [python, javascript, css, jinja]
-        exclude: ^static/(js|css)/vendor/
+        types_or: [python, javascript, ts, tsx, css, jinja]
+        exclude: ^(static/(js|css)/vendor/|frontend/(node_modules|.*/dist|packages/api/src/generated)/)
   - repo: local
     hooks:
       - id: js-beautify
@@ -30,6 +30,7 @@ repos:
         language: python
         additional_dependencies: ["jsbeautifier==1.15.1"]
         files: ^(?!.*\.min\.js$)(?!static/(js|css)/vendor/).*\.js$
+        exclude: ^frontend/
       - id: css-beautify
         name: CSS Beautify
         description: "Run css-beautify (from cssbeautifier) on .css files"
@@ -37,12 +38,44 @@ repos:
         language: python
         additional_dependencies: ["cssbeautifier==1.15.1"]
         files: ^(?!.*\.min\.css$)(?!static/(js|css)/vendor/).*\.css$
+        exclude: ^frontend/
       - id: update-installer-checksum
         name: Update sep_installer.sh checksum
         description: "Update sep_installer.sha256 when sep_installer.sh changes"
         entry: sh -c "sha256sum sep_installer.sh > sep_installer.sha256"
         language: system
         files: ^sep_installer\.sh$
+        pass_filenames: false
+      - id: changelog-fragments
+        name: Validate changelog.d/ fragments
+        description: "Validate per-PR changelog fragments under changelog.d/"
+        entry: python3 scripts/changelog.py check
+        language: system
+        files: ^changelog\.d/
+        pass_filenames: false
+      - id: check-nomad-payload-size
+        name: Check Nomad payload size
+        description: "Ensure dispatch payloads stay under Nomad 16 KiB limit after minify+gzip"
+        entry: python3 scripts/check_nomad_payload_size.py
+        language: python
+        additional_dependencies: ["python-minifier==2.11.3"]
+        files: ^app/sep/plugins/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
+        pass_filenames: true
+      - id: oxfmt
+        name: oxfmt (frontend formatter)
+        description: "Format frontend code with oxfmt (Prettier-compatible)"
+        entry: sh -c 'cd frontend && pnpm exec oxfmt --write .'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs|json|yaml|yml|md|css|scss)$
+        exclude: ^frontend/(node_modules|.*/dist)/
+        pass_filenames: false
+      - id: oxlint
+        name: oxlint (frontend linter)
+        description: "Lint frontend code with oxlint"
+        entry: sh -c 'cd frontend && pnpm exec oxlint --config oxlintrc.json --fix .'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs)$
+        exclude: ^frontend/(node_modules|.*/dist)/
         pass_filenames: false
 
   - repo: https://github.com/shellcheck-py/shellcheck-py

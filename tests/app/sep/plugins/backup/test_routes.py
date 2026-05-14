@@ -21,6 +21,11 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.sep.connectivity import (
+    CHECK_TIMEOUT,
+    clear_connectivity_caches,
+    get_latest_connectivity_result,
+)
 from app.sep.main import sep_app
 from app.sep.plugins.backup.deps import (
     build_backup_task_payload,
@@ -127,6 +132,136 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
     sep_app.dependency_overrides = {}
 
 
+def test_backups_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    backup_create,
+    created_service,
+):
+    """Test POST /backups/ route without overriding build_backup_task_payload."""
+    backup_create.service_id = created_service.id
+    mock_inventory_api_dep.get = AsyncMock(return_value=created_service.model_dump())
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/backups/",
+        data=backup_create.model_dump(),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/backups/{backup_create.task_name}")
+    mock_task_api_dep.post.assert_awaited_once()
+    assert mock_task_api_dep.post.await_args.args[0] == "/"
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["name"] == backup_create.task_name
+    assert posted["owner"] == TaskOwner.BACKUPS.value
+    assert posted["data"]["meta"]["_service_name"] == created_service.name
+
+
+EXPECTED_CONNECTIVITY_POST_CALLS = 2
+
+
+def test_backups_create_triggers_connectivity_check(
+    test_client, mock_task_api_dep, backup_create
+):
+    """POST /backups/ runs a connectivity check when meta carries connectivity data."""
+    clear_connectivity_caches()
+
+    fake_task_write = TaskWrite(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.BACKUPS,
+        data={
+            "task": "fake-task",
+            "meta": {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+            "payload": "",
+        },
+    )
+
+    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+
+    mock_task_api_dep.post.side_effect = [
+        None,
+        {"success": True, "error": None},
+    ]
+
+    response = test_client.post(
+        "/backups/",
+        data={**backup_create.model_dump(), "check_connectivity": "true"},
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backups/{backup_create.task_name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == EXPECTED_CONNECTIVITY_POST_CALLS
+    first_call, second_call = mock_task_api_dep.post.call_args_list
+    assert first_call.args[0] == "/"
+    assert first_call.kwargs["json"] == fake_task_write.model_dump()
+    assert second_call.args[0] == "/connectivity-check/"
+    assert second_call.kwargs["json"] == {
+        "target": "node1",
+        "host": "10.0.0.1",
+        "port": 3306,
+        "service_type": "mysql",
+        "timeout": CHECK_TIMEOUT,
+    }
+
+    clear_connectivity_caches()
+    sep_app.dependency_overrides = {}
+
+
+def test_backups_create_skips_connectivity_check_when_opted_out(
+    test_client, mock_task_api_dep, backup_create
+):
+    """POST /backups/ skips the connectivity check when the checkbox is unchecked."""
+    clear_connectivity_caches()
+
+    fake_task_write = TaskWrite(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.BACKUPS,
+        data={
+            "task": "fake-task",
+            "meta": {
+                "target": "node1",
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+            "payload": "",
+        },
+    )
+
+    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+
+    response = test_client.post(
+        "/backups/", data=backup_create.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/backups/{backup_create.task_name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == 1
+    call = mock_task_api_dep.post.call_args_list[0]
+    assert call.args[0] == "/"
+    assert call.kwargs["json"] == fake_task_write.model_dump()
+    assert get_latest_connectivity_result("node1", "mysql") is None
+
+    clear_connectivity_caches()
+    sep_app.dependency_overrides = {}
+
+
 @pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
 def test_backups_detail(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
@@ -135,10 +270,10 @@ def test_backups_detail(
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
             {},  # /hosts/
-            {},  # history
-            {},  # running_tasks
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # history
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # running_tasks
             [],  # stats
-            [],  # chainable_tasks
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
         ]
     )
     mock_inventory_api_dep.get.return_value = AsyncMock()

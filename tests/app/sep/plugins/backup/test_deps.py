@@ -42,7 +42,7 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
         (
             BackupType.MYDUMPER,
             "mydumper_payload",
-            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
+            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
             "fake-address",
         ),
         (
@@ -89,9 +89,7 @@ async def test_build_backup_task_payload(
     }
     backup_create = BackupCreate(**form_data)
 
-    task_payload: TaskWrite = await build_backup_task_payload(
-        backup_create, mock_remote_api
-    )
+    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
 
     assert isinstance(task_payload, TaskWrite)
     assert task_payload.name == form_data["task_name"]
@@ -104,6 +102,7 @@ async def test_build_backup_task_payload(
     meta = data["meta"]
     assert meta["target"] == form_data["hostname"]
     assert meta["requirements"] == expected_requirements
+    assert meta["_service_name"] == created_service.name
 
     cfg = yaml.safe_load(meta["config"])
     server_list = cfg["SERVER_LIST"]

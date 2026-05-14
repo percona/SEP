@@ -343,6 +343,23 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             </div>
                             <span class="label">Disable Binlog</span>
                         </label>
+                        <br>
+                        <br>
+                        {% set disable_bulk_insert_title = "Disable bulk insert for the operation. Use this when local_infile is set to OFF on the target host." %}
+                        <label for="disable_bulk_insert"
+                               class="checkbox"
+                               title="{{ disable_bulk_insert_title }}">
+                            <input type="checkbox"
+                                   id="disable_bulk_insert"
+                                   name="disable_bulk_insert"
+                                   class="validate"
+                                   value="1">
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Disable Bulk Insert</span>
+                        </label>
                     </div>
                     {% set delete_data_title = "Enable to delete the rows after they are archived." %}
                     <label id="delete_data_container"
@@ -364,6 +381,82 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 <br>
                 <fieldset id="destination_fieldset">
                     <legend>Destination details</legend>
+                    <div class="field">
+                        <label for="dest_service_id"
+                               title="Select the destination MySQL service or leave empty to target the same host as the source.">
+                            <span class="material-symbols-outlined">arrow_drop_down</span>
+                            <span class="label">Database Host (Destination)</span>
+                            <select id="dest_service_id" name="dest_service_id" class="validate">
+                                <option value="">Same as source / no remote destination</option>
+                                {% for service in services %}
+                                    <option value="{{ service.id }}">{{ service.name }} ({{ service.node_id }})</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <div id="dest_service_fields_container" style="display: none;">
+                        <div class="field">
+                            <label for="dest_db_id" title="Select the destination database schema.">
+                                <span class="material-symbols-outlined">arrow_drop_down</span>
+                                <span class="label">Destination Schema</span>
+                                <select id="dest_db_id" name="dest_db_id" class="validate" disabled>
+                                    <option value="">Select a schema</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="field" id="dest_manual_host_container" style="display: none;">
+                        <label for="use_manual_input_dest_host"
+                               title="Toggle to manually enter destination host details instead of selecting from inventory.">
+                            Manual input (Destination Host)
+                        </label>
+                        <label class="checkbox" style="width: auto;">
+                            <input type="checkbox"
+                                   id="use_manual_input_dest_host"
+                                   name="use_manual_input_dest_host" />
+                            <div class="checkmark">
+                                <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                                <span class="material-symbols-outlined checked">check_box</span>
+                            </div>
+                            <span class="label">Enter manually</span>
+                        </label>
+                    </div>
+                    <div id="dest_manual_input_fields" style="display: none;">
+                        <div class="field">
+                            <label for="dest_host"
+                                   title="Destination host address (e.g., 192.168.1.100 or archive.example.com).">
+                                Destination Host
+                                <input type="text"
+                                       id="dest_host"
+                                       name="dest_host"
+                                       class="validate"
+                                       placeholder="host or IP" />
+                            </label>
+                        </div>
+                        <div class="field">
+                            <label for="dest_port"
+                                   title="Destination MySQL port (optional, defaults to 3306).">
+                                Destination Port
+                                <input type="number"
+                                       id="dest_port"
+                                       name="dest_port"
+                                       class="validate"
+                                       placeholder="3306"
+                                       min="1"
+                                       max="65535" />
+                            </label>
+                        </div>
+                        <div class="field">
+                            <label for="dest_db_name" title="Destination database schema name.">
+                                Destination Schema
+                                <input type="text"
+                                       id="dest_db_name"
+                                       name="dest_db_name"
+                                       class="validate"
+                                       placeholder="schema_name" />
+                            </label>
+                        </div>
+                    </div>
                     <div class="field" id="dest_manual_input_container">
                         <label for="use_manual_input_dest"
                                title="Toggle to manually type destination table even if inventory exists.">
@@ -422,6 +515,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 <br>
             </div>
             {% include "tasks/partials/create-form-alert-on-failure-input.html.j2" %}
+            {% include "tasks/partials/create-form-connectivity-check-input.html.j2" %}
         </section>
         <footer>
             <button type="button" class="text large" data-modal-close>
@@ -461,6 +555,24 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const srcQueryContainer = document.getElementById('source_query_container');
     const destinationContainer = document.getElementById('destination_container');
     const destManualInputContainer = document.getElementById('dest_manual_input_container');
+    const destServiceSelect = document.getElementById('dest_service_id');
+    const destServiceFieldsContainer = document.getElementById('dest_service_fields_container');
+    const destDbSelect = document.getElementById('dest_db_id');
+    const destManualHostContainer = document.getElementById('dest_manual_host_container');
+    const destManualInputToggle = document.getElementById('use_manual_input_dest_host');
+    const destManualInputFields = document.getElementById('dest_manual_input_fields');
+    const destHostInput = document.getElementById('dest_host');
+    const destPortInput = document.getElementById('dest_port');
+    const destDbNameInput = document.getElementById('dest_db_name');
+    const destEls = {
+        toggle: destManualInputToggle,
+        serviceFieldsContainer: destServiceFieldsContainer,
+        serviceSelect: destServiceSelect,
+        manualInputFields: destManualInputFields,
+        hostInput: destHostInput,
+        portInput: destPortInput,
+        dbNameInput: destDbNameInput
+    };
     const deleteDataContainer = document.getElementById('delete_data_container');
     const prgPurgeCheckbox = document.getElementById('delete_data');
     const swpTableSuffixContainer = document.getElementById('swp_table_suffix_container');
@@ -607,6 +719,22 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             }
         }
         updateDestinationFieldset();
+    }
+
+    destServiceSelect.addEventListener('change', function() {
+        populateDestSchemas(destServiceSelect, destDbSelect);
+        if (!this.value) {
+            destManualHostContainer.style.display = 'none';
+            setManualInputDestHost(false, true, destEls);
+        } else {
+            destManualHostContainer.style.display = 'block';
+        }
+    });
+
+    if (destManualInputToggle) {
+        destManualInputToggle.addEventListener('change', function() {
+            setManualInputDestHost(this.checked, false, destEls);
+        });
     }
 
     manualInputToggleSource.addEventListener('change', function() {

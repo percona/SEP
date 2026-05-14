@@ -26,8 +26,10 @@ from itsdangerous import BadSignature
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import get_current_user as get_current_user_api
+from app.api.deps import oauth2_scheme
 from app.core.alerts.config import alert_settings
-from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -43,6 +45,11 @@ from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
+from app.sep.connectivity import (
+    annotate_tasks_with_connectivity,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+    CONNECTIVITY_TARGET_KEY,
+)
 from app.sep.db import get_async_session_maker
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import (
@@ -54,7 +61,11 @@ from app.sep.inventory import (
     ENTITY_MAPPING,
 )
 from app.sep.middleware import messages
-from app.sep.middleware.csrf import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
+from app.sep.middleware.csrf import (
+    CSRF_COOKIE_NAME,
+    CSRF_FORM_FIELD,
+    request_has_bearer_authorization,
+)
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
@@ -118,17 +129,18 @@ def get_access_token_from_cookie(
 AccessTokenCookie = Annotated[str, Depends(get_access_token_from_cookie)]
 
 
-async def get_current_user(
-    request: Request,
-) -> User:
-    """Return the authenticated user from a cookie token.
+async def get_current_user_from_cookie(request: Request) -> User:
+    """Return the authenticated user from the signed session cookie.
 
-    :param request: The HTTP request object from which the base URL is derived.
+    Loads and verifies the session cookie, decodes the JWT into a user, and
+    rejects inactive accounts with a login redirect (legacy Jinja2 behavior).
+
+    :param request: The incoming HTTP request.
     :type request: Request
     :return: The authenticated user.
     :rtype: User
-    :raises LoginRedirectException: If the token is invalid or the user is
-        inactive.
+    :raises LoginRedirectException: If the cookie or JWT is invalid or the user
+        is inactive.
     """
     token = get_access_token_from_cookie(request)
     try:
@@ -144,8 +156,86 @@ async def get_current_user(
     return user
 
 
+def is_bearer_authenticated(request: Request) -> bool:
+    """Return whether the request carries an ``Authorization: Bearer`` header.
+
+    Inspects only the ``Authorization`` header prefix — the token itself is not
+    validated. Intended as a routing signal to pick between Bearer and cookie
+    authentication, and to render API-style error responses for SPA clients.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :return: ``True`` when the header starts with ``Bearer ``, ``False`` otherwise.
+    :rtype: bool
+    """
+    return request.headers.get("authorization", "").lower().startswith("bearer ")
+
+
+async def get_current_user(
+    request: Request,
+) -> User:
+    """Return the authenticated user from a Bearer token or session cookie.
+
+    The ``Authorization: Bearer`` header is tried first (React SPA) and, when
+    present, failures from :func:`app.api.deps.get_current_user` are raised as
+    HTTP API errors (401/403) rather than converted into a login redirect —
+    including the case of a malformed/empty Bearer token. When the header is
+    absent, authentication falls back to the signed session cookie (legacy
+    Jinja2).
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :return: The authenticated user.
+    :rtype: User
+    :raises HTTPUnauthorizedException: If a Bearer token is present but invalid.
+    :raises HTTPForbiddenException: If the user resolved from Bearer is inactive.
+    :raises LoginRedirectException: If cookie-based auth fails or the cookie user
+        is inactive.
+    """
+    if is_bearer_authenticated(request):
+        bearer_token = await oauth2_scheme(request)
+        return await get_current_user_api(bearer_token)
+
+    return await get_current_user_from_cookie(request)
+
+
 IsAuthenticated = Depends(get_current_user)
 CurrentUser = Annotated[User, IsAuthenticated]
+
+
+async def get_api_authenticated_user(request: Request) -> User:
+    """Return the authenticated user for API surfaces.
+
+    Wrap :func:`get_current_user` so cookie-based API callers receive an
+    ``HTTPUnauthorizedException`` (401) instead of the
+    ``LoginRedirectException`` (303) used by Jinja pages. The
+    ``set-cookie`` header that ``LoginRedirectException`` uses to clear a
+    stale session cookie is preserved on the 401 response so the invalid
+    cookie does not linger on the client. Bearer-token failures from
+    :func:`get_current_user` (``HTTPUnauthorizedException`` /
+    ``HTTPForbiddenException``) propagate unchanged.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :return: The authenticated user.
+    :rtype: User
+    :raises HTTPUnauthorizedException: If cookie-based authentication fails
+        (converted from :class:`LoginRedirectException`), or if a Bearer
+        token is missing or invalid.
+    :raises HTTPForbiddenException: If the user resolved from the Bearer
+        token is inactive.
+    """
+    try:
+        return await get_current_user(request)
+    except HTTPRedirectException as exc:
+        unauthorized = HTTPUnauthorizedException()
+        if "set-cookie" in exc.headers:
+            unauthorized.headers = {"set-cookie": exc.headers["set-cookie"]}
+        raise unauthorized from None
+
+
+IsApiAuthenticated = Depends(get_api_authenticated_user)
+ApiCurrentUser = Annotated[User, IsApiAuthenticated]
 
 
 async def get_current_admin(current_user: CurrentUser) -> User:
@@ -164,6 +254,29 @@ async def get_current_admin(current_user: CurrentUser) -> User:
 
 IsAdminDep = Depends(get_current_admin)
 AdminUser = Annotated[User, IsAdminDep]
+
+
+async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> User:
+    """Return the authenticated API admin user.
+
+    Mirror :func:`get_current_admin` but ride on the API auth path
+    (:func:`get_api_authenticated_user`) so failures surface as 401 / 403
+    JSON responses rather than the cookie-based 303 redirect to the login
+    page.
+
+    :param api_user: The current API-authenticated user.
+    :type api_user: ApiCurrentUser
+    :return: The authenticated admin user.
+    :rtype: User
+    :raises HTTPForbiddenException: If the user is not an admin.
+    """
+    if not api_user.is_admin:
+        raise HTTPForbiddenException
+    return api_user
+
+
+IsApiAdmin = Depends(get_api_authenticated_admin)
+ApiAdminUser = Annotated[User, IsApiAdmin]
 
 
 async def redirect_if_user_is_authenticated(request: Request) -> None:
@@ -186,6 +299,13 @@ IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 async def validate_csrf(request: Request) -> None:
     """Validate the CSRF token submitted in the request form data.
 
+    Requests with ``Authorization: Bearer ...`` that do *not* also carry a
+    session cookie skip CSRF validation; Bearer tokens are not sent
+    automatically by browsers, so CSRF protection is not required for that
+    path (authentication is enforced separately).  When a session cookie is
+    also present the request is treated as cookie-authenticated and CSRF
+    validation is enforced normally, regardless of any Bearer header.
+
     For authenticated requests (session cookie present), verify the HMAC
     signature using the session cookie as salt.  For unauthenticated requests
     (login page), verify using a double-submit cookie comparison plus
@@ -197,12 +317,14 @@ async def validate_csrf(request: Request) -> None:
         form data.
     :raises HTTPForbiddenException: If the CSRF token fails validation.
     """
+    session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
+    if request_has_bearer_authorization(request) and not session_cookie:
+        return
+
     form_data = await request.form()
     form_token = str(form_data.get(CSRF_FORM_FIELD, ""))
     if not form_token:
         raise HTTPBadRequestException(detail="Missing CSRF token.")
-
-    session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
 
     max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
 
@@ -606,8 +728,8 @@ async def get_executor_hosts_context(
     :rtype: ExecutorHostsContext
     """
     try:
-        nodes = await inventory_api.get("/")
-        display_names = {node["address"]: node["name"] for node in nodes}
+        response = await inventory_api.get("/", params={"limit": 0})
+        display_names = {node["address"]: node["name"] for node in response["items"]}
     except (HTTPException, TypeError, KeyError, OSError):
         logger.warning(
             "Failed to fetch inventory nodes for display names", exc_info=True
@@ -671,7 +793,9 @@ async def get_tasks_context(
     :type owner: TaskOwner | None
     :param alert_on_fail_default: Default value for the alert on failure setting.
     :type alert_on_fail_default: bool
-    :return: The assembled context dictionary containing tasks and services information.
+    :return: The assembled context dictionary containing tasks and services
+        information, including ``connectivity_check_default`` sourced from
+        ``sep_settings.CONNECTIVITY_CHECK_DEFAULT``.
     :rtype: dict[str, Any]
     """
     service_type = (
@@ -681,15 +805,17 @@ async def get_tasks_context(
         if owner in {TaskOwner.BACKUP_PG}
         else ServiceTypeEnum.MYSQL
     )
-    services = await inventory_api.get(
-        "/services/", params={"service_type": service_type}
+    response = await inventory_api.get(
+        "/services/", params={"service_type": service_type, "limit": 0}
     )
+    services = response["items"]
 
     tasks = []
     history_tasks = []
     scheduled_tasks = []
     running_tasks = []
-    for task in await tasks_api.get("/", params={"owner": owner}):
+    tasks_response = await tasks_api.get("/", params={"owner": owner})
+    for task in tasks_response["items"]:
         task_info = {
             "name": task["name"],
             "id": task["id"],
@@ -697,9 +823,15 @@ async def get_tasks_context(
             "last_updated_by": task.get("last_updated_by"),
         }
         task_info |= get_task_info_func(task)
+        meta = task.get("data", {}).get("meta", {})
+        if CONNECTIVITY_META_SERVICE_TYPE_KEY in meta:
+            task_info[CONNECTIVITY_TARGET_KEY] = meta.get("target", "")
+            task_info[CONNECTIVITY_META_SERVICE_TYPE_KEY] = meta[
+                CONNECTIVITY_META_SERVICE_TYPE_KEY
+            ]
         tasks.append(task_info)
-        history = await tasks_api.get(f"/{task['name']}/history/")
-        for hist in history:
+        response = await tasks_api.get(f"/{task['name']}/history/")
+        for hist in response["items"]:
             match TaskHistoryStatusEnum(hist["status"]):
                 case TaskHistoryStatusEnum.PENDING:
                     scheduled_tasks.append(hist)
@@ -707,6 +839,7 @@ async def get_tasks_context(
                     running_tasks.append(hist)
                 case _:
                     history_tasks.append(hist)
+    annotate_tasks_with_connectivity(tasks)
     periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
 
     alert_on_fail_available = bool(alert_settings.PROVIDERS)
@@ -724,6 +857,7 @@ async def get_tasks_context(
             "AVAILABLE_TIMEZONES": AVAILABLE_TIMEZONES,
             "alert_on_fail_default": alert_on_fail_available and alert_on_fail_default,
             "alert_on_fail_available": alert_on_fail_available,
+            "connectivity_check_default": sep_settings.CONNECTIVITY_CHECK_DEFAULT,
         }
     )
     return context
@@ -750,8 +884,8 @@ async def get_chainable_tasks(
     :return: A list of chainable task dicts.
     :rtype: list[dict[str, Any]]
     """
-    all_tasks = await tasks_api.get("/", params={"owner": owner, "target": target})
-    return [t for t in all_tasks if t["name"] != exclude_task_name]
+    response = await tasks_api.get("/", params={"owner": owner, "target": target})
+    return [t for t in response["items"] if t["name"] != exclude_task_name]
 
 
 async def get_tasks_index_context(
@@ -777,15 +911,17 @@ async def get_tasks_index_context(
     :return: An updated context dictionary containing tasks' data.
     :rtype: dict[str, Any]
     """
-    running_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    scheduled_tasks = await tasks_api.get(
+    running_tasks = response["items"]
+    response = await tasks_api.get(
         "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
+    scheduled_tasks = response["items"]
     periodic_tasks = await tasks_api.get("/periodic/", params={"enabled": "True"})
-    tasks = await tasks_api.get("/")
-    task_owner_mapping = {task["name"]: task["owner"] for task in tasks}
+    response = await tasks_api.get("/")
+    task_owner_mapping = {task["name"]: task["owner"] for task in response["items"]}
     for periodic_task in periodic_tasks:
         task_name = periodic_task.get("task")
         periodic_task["owner"] = task_owner_mapping.get(task_name)
@@ -892,12 +1028,14 @@ async def check_for_conflicted_running_tasks(
     :raises HTTPConflictException: If there are running or pending tasks with the same
         name.
     """
-    running_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
-    pending_tasks = await tasks_api.get(
+    running_tasks = response["items"]
+    response = await tasks_api.get(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
+    pending_tasks = response["items"]
     if running_tasks or pending_tasks:
         raise HTTPConflictException("Task is already running or pending.")
 

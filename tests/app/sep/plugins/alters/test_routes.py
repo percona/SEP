@@ -21,6 +21,10 @@ from unittest.mock import AsyncMock, call
 import pytest
 from fastapi import HTTPException, status
 
+from app.sep.connectivity import (
+    clear_connectivity_caches,
+    get_latest_connectivity_result,
+)
 from app.sep.main import sep_app
 from app.sep.plugins.alters.deps import (
     build_alters_task_payload,
@@ -32,6 +36,7 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
+    TaskWrite,
 )
 from tests.app.factories import (
     AltersCreateFactory,
@@ -72,7 +77,8 @@ def _mock_get_alters_task_dep(created_task):
 def _mock_get_alters_index_context_dep():
     """Mock the get_alters_index_context dependency with default user context."""
     sep_app.dependency_overrides[get_alters_index_context] = lambda: {
-        "user": "default_user"
+        "user": "default_user",
+        "connectivity_check_default": True,
     }
     yield
     sep_app.dependency_overrides = {}
@@ -104,6 +110,94 @@ def test_alters_create(
         response.headers["location"]
         == f"{test_client.base_url}/alters/{generated_task.name}"
     )
+
+
+EXPECTED_ALTERS_POST_CALLS = 3
+
+
+def test_alters_create_full_form_dependency_chain_without_payload_override(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+    created_schema,
+    created_table,
+):
+    """Test POST /alters/ route without overriding build_alters_task_payload."""
+    created_alters = AltersCreateFactory.build()
+    created_alters.service_id = created_service.id
+    created_alters.schema_id = created_schema.id
+    created_alters.table_id = created_table.id
+    created_alters.alter = "ADD COLUMN new_column INT"
+    created_alters.recursion_method = "dsn"
+
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    mock_task_api_dep.get = AsyncMock(return_value={})
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/alters/",
+        data=created_alters.model_dump(),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/alters/{created_alters.task_name}")
+    assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
+
+
+def test_alters_create_skips_connectivity_check_when_opted_out(
+    test_client, mock_task_api_dep, created_alters
+):
+    """POST /alters/ skips the connectivity check when the checkbox is unchecked."""
+    clear_connectivity_caches()
+
+    fake_task_write = TaskWrite(
+        name="fake_alter",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.ALTERS,
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--alter=ADD COLUMN c INT --execute",
+                "target": "node1",
+                "_schema_name": "db",
+                "_table_name": "t",
+                "_service_host": "10.0.0.1",
+                "_service_port": 3306,
+                "_connectivity_host": "10.0.0.1",
+                "_connectivity_port": 3306,
+                "_connectivity_service_type": "mysql",
+            },
+        },
+    )
+
+    sep_app.dependency_overrides[build_alters_task_payload] = lambda: fake_task_write
+    mock_task_api_dep.get = AsyncMock(return_value={})
+
+    response = test_client.post(
+        "/alters/", data=created_alters.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert (
+        response.headers["location"]
+        == f"{test_client.base_url}/alters/{fake_task_write.name}"
+    )
+
+    assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
+    first_call = mock_task_api_dep.post.call_args_list[0]
+    assert first_call.args[0] == "/"
+    assert first_call.kwargs["json"] == fake_task_write.model_dump()
+    assert get_latest_connectivity_result("node1", "mysql") is None
+
+    clear_connectivity_caches()
+    sep_app.dependency_overrides = {}
 
 
 @pytest.mark.parametrize(
@@ -178,14 +272,14 @@ def test_alters_detail(
     created_task.data = mock_data
     mock_task_api_dep.get.side_effect = [
         {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
         {},
-        {},
-        [],
-        [],
-        {},
-        {},
-        {},
-        [],  # chainable_tasks
+        {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
     ]
     expected_awaits = [
         call("/hosts/"),
@@ -381,10 +475,14 @@ def test_alters_detail_when_hosts_api_fails(
             raise HTTPException(status_code=503)
         if path.startswith("/stats/"):
             return {}
+        if "/history/" in path or path == "/":
+            return {"items": [], "total": 0, "offset": 0, "limit": 50}
         return []
 
     mock_task_api_dep.get = AsyncMock(side_effect=tasks_api_get)
-    mock_inventory_api_dep.get = AsyncMock(return_value=[])
+    mock_inventory_api_dep.get = AsyncMock(
+        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+    )
     response = test_client.get(f"/alters/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
@@ -415,6 +513,8 @@ def test_alters_detail_when_services_api_fails(
             return {}
         if path.startswith("/stats/"):
             return {}
+        if "/history/" in path or path == "/":
+            return {"items": [], "total": 0, "offset": 0, "limit": 50}
         return []
 
     async def inventory_api_get(path: str, *args, **kwargs) -> object:

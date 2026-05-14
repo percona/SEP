@@ -23,12 +23,22 @@ from fastapi import HTTPException, Request
 from itsdangerous import BadSignature
 from pydantic import ValidationError
 
-from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.auth.exceptions import (
+    HTTPForbiddenException,
+    HTTPUnauthorizedException,
+)
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPNotFoundException,
+    HTTPRedirectException,
+)
 from app.models import CasdoorUser
+from app.sep.config import sep_settings
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
+    get_api_authenticated_admin,
+    get_api_authenticated_user,
     get_base_url,
     get_created_entity,
     get_created_node,
@@ -67,11 +77,18 @@ SUCCESS_HISTORY_ID = 12
 EXPECTED_NODE_COUNT = 5
 
 
-def _make_request() -> Request:
-    """Build a minimal Request with messages state for testing."""
+def _make_request(authorization: str | None = None) -> Request:
+    """Build a minimal Request with messages state for testing.
+
+    :param authorization: Value for the ``Authorization`` header, if any.
+    :type authorization: str | None
+    """
+    headers = []
+    if authorization is not None:
+        headers.append((b"authorization", authorization.encode()))
     scope = {
         "type": "http",
-        "headers": [],
+        "headers": headers,
         "client": ("127.0.0.1", "80"),
         "path": "/",
         "app": MagicMock(),
@@ -96,6 +113,134 @@ class TestGetBaseUrl:
 
 class TestGetCurrentUser:
     """Test get_current_user dependency."""
+
+    @pytest.mark.asyncio
+    async def test_valid_bearer_returns_user(self) -> None:
+        """Assert a valid Bearer path returns the user from the API dependency."""
+        request = _make_request(authorization="Bearer bearer-token")
+        active_user = CasdoorUserFactory.build(is_forbidden=False)
+        mock_oauth2 = AsyncMock(return_value="bearer-token")
+        mock_api_user = AsyncMock(return_value=active_user)
+        with (
+            patch("app.sep.deps.oauth2_scheme", mock_oauth2),
+            patch("app.sep.deps.get_current_user_api", mock_api_user),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie",
+                side_effect=AssertionError(
+                    "cookie must not be read when Bearer succeeds"
+                ),
+            ),
+        ):
+            result = await get_current_user(request)
+        assert result is active_user
+        mock_oauth2.assert_awaited_once_with(request)
+        mock_api_user.assert_awaited_once_with("bearer-token")
+
+    @pytest.mark.asyncio
+    async def test_valid_cookie_returns_user(self) -> None:
+        """Assert cookie-only auth still returns an active user."""
+        request = _make_request()
+        active_user = CasdoorUserFactory.build(is_forbidden=False)
+        with (
+            patch(
+                "app.sep.deps.oauth2_scheme",
+                AsyncMock(
+                    side_effect=AssertionError(
+                        "oauth2_scheme must not be called without a Bearer header"
+                    )
+                ),
+            ),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie", return_value="cookie-token"
+            ),
+            patch.object(CasdoorUser, "from_jwt", return_value=active_user),
+        ):
+            result = await get_current_user(request)
+        assert result is active_user
+
+    @pytest.mark.asyncio
+    async def test_bearer_and_cookie_present_bearer_wins(self) -> None:
+        """Assert Authorization Bearer is preferred over session cookie."""
+        request = _make_request(authorization="Bearer bearer-token")
+        bearer_user = CasdoorUserFactory.build(username="bearer-user")
+        cookie_user = CasdoorUserFactory.build(username="cookie-user")
+        with (
+            patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bearer-token")),
+            patch(
+                "app.sep.deps.get_current_user_api", AsyncMock(return_value=bearer_user)
+            ),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie",
+                return_value="cookie-token",
+            ),
+            patch.object(
+                CasdoorUser,
+                "from_jwt",
+                return_value=cookie_user,
+            ),
+        ):
+            result = await get_current_user(request)
+        assert result.username == "bearer-user"
+
+    @pytest.mark.asyncio
+    async def test_neither_bearer_nor_cookie_raises_redirect(self) -> None:
+        """Assert missing Bearer and missing cookie raises LoginRedirectException."""
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_access_token_from_cookie",
+                side_effect=LoginRedirectException(request),
+            ),
+            pytest.raises(LoginRedirectException),
+        ):
+            await get_current_user(request)
+
+    @pytest.mark.asyncio
+    async def test_invalid_bearer_raises_unauthorized(self) -> None:
+        """Assert invalid JWT via Bearer raises HTTPUnauthorizedException."""
+        request = _make_request(authorization="Bearer bad-token")
+        with (
+            patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bad-token")),
+            patch(
+                "app.sep.deps.get_current_user_api",
+                AsyncMock(side_effect=HTTPUnauthorizedException),
+            ),
+            pytest.raises(HTTPUnauthorizedException),
+        ):
+            await get_current_user(request)
+
+    @pytest.mark.asyncio
+    async def test_inactive_user_via_bearer_raises_forbidden(self) -> None:
+        """Assert inactive user resolved via Bearer raises HTTPForbiddenException."""
+        request = _make_request(authorization="Bearer token")
+        with (
+            patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="token")),
+            patch(
+                "app.sep.deps.get_current_user_api",
+                AsyncMock(side_effect=HTTPForbiddenException("User is not active")),
+            ),
+            pytest.raises(HTTPForbiddenException),
+        ):
+            await get_current_user(request)
+
+    @pytest.mark.asyncio
+    async def test_malformed_bearer_header_does_not_fall_back_to_cookie(self) -> None:
+        """Assert a malformed Bearer header surfaces the 401 without cookie fallback."""
+        request = _make_request(authorization="Bearer ")
+        with (
+            patch(
+                "app.sep.deps.oauth2_scheme",
+                AsyncMock(side_effect=HTTPException(status_code=401)),
+            ),
+            patch(
+                "app.sep.deps.get_access_token_from_cookie",
+                side_effect=AssertionError(
+                    "cookie must not be read for a Bearer-authenticated request"
+                ),
+            ),
+            pytest.raises(HTTPException),
+        ):
+            await get_current_user(request)
 
     @pytest.mark.asyncio
     async def test_bad_signature_raises_redirect(self) -> None:
@@ -142,6 +287,84 @@ class TestGetCurrentUser:
             await get_current_user(request)
 
 
+class TestGetApiAuthenticatedUser:
+    """Test get_api_authenticated_user dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_user_when_authenticated(self) -> None:
+        """Assert the authenticated user is returned unchanged."""
+        request = _make_request()
+        active_user = CasdoorUserFactory.build(is_forbidden=False)
+        with patch(
+            "app.sep.deps.get_current_user", AsyncMock(return_value=active_user)
+        ):
+            result = await get_api_authenticated_user(request)
+        assert result is active_user
+
+    @pytest.mark.asyncio
+    async def test_login_redirect_raises_unauthorized(self) -> None:
+        """Assert LoginRedirectException is converted to HTTPUnauthorizedException."""
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_current_user",
+                AsyncMock(side_effect=LoginRedirectException(request)),
+            ),
+            pytest.raises(HTTPUnauthorizedException),
+        ):
+            await get_api_authenticated_user(request)
+
+    @pytest.mark.asyncio
+    async def test_login_redirect_preserves_cookie_clearing_header(self) -> None:
+        """Assert the ``set-cookie`` header from ``LoginRedirectException`` is preserved.
+
+        ``LoginRedirectException`` emits a ``set-cookie`` header that clears the
+        stale session cookie. When the exception is converted to 401 for API
+        callers, that header must ride along so the invalid cookie does not
+        linger on the client.
+        """
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_current_user",
+                AsyncMock(side_effect=LoginRedirectException(request)),
+            ),
+            pytest.raises(HTTPUnauthorizedException) as exc_info,
+        ):
+            await get_api_authenticated_user(request)
+        assert exc_info.value.headers is not None
+        set_cookie = exc_info.value.headers.get("set-cookie")
+        assert set_cookie is not None
+        assert sep_settings.SESSION.COOKIE_NAME in set_cookie
+        assert f"{sep_settings.SESSION.COOKIE_NAME}=" in set_cookie
+
+    @pytest.mark.asyncio
+    async def test_http_redirect_raises_unauthorized(self) -> None:
+        """Assert a plain HTTPRedirectException is also converted to 401."""
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_current_user",
+                AsyncMock(side_effect=HTTPRedirectException("/login")),
+            ),
+            pytest.raises(HTTPUnauthorizedException),
+        ):
+            await get_api_authenticated_user(request)
+
+    @pytest.mark.asyncio
+    async def test_non_redirect_exception_propagates(self) -> None:
+        """Assert non-redirect auth exceptions propagate unchanged."""
+        request = _make_request()
+        with (
+            patch(
+                "app.sep.deps.get_current_user",
+                AsyncMock(side_effect=HTTPForbiddenException("User is not active")),
+            ),
+            pytest.raises(HTTPForbiddenException),
+        ):
+            await get_api_authenticated_user(request)
+
+
 class TestGetCurrentAdmin:
     """Test get_current_admin dependency."""
 
@@ -158,6 +381,24 @@ class TestGetCurrentAdmin:
         admin_user = CasdoorUserFactory.build(is_admin=True)
         result = await get_current_admin(admin_user)
         assert result is admin_user
+
+
+class TestGetApiAuthenticatedAdmin:
+    """Test get_api_authenticated_admin dependency."""
+
+    @pytest.mark.asyncio
+    async def test_admin_returns_user(self) -> None:
+        """Assert an admin user is returned unchanged."""
+        admin_user = CasdoorUserFactory.build(is_admin=True)
+        result = await get_api_authenticated_admin(admin_user)
+        assert result is admin_user
+
+    @pytest.mark.asyncio
+    async def test_non_admin_raises_forbidden(self) -> None:
+        """Assert an authenticated non-admin gets 403 (not 401)."""
+        regular_user = CasdoorUserFactory.build(is_admin=False)
+        with pytest.raises(HTTPForbiddenException):
+            await get_api_authenticated_admin(regular_user)
 
 
 class TestGetUsernameMapping:
@@ -391,9 +632,14 @@ class TestGetTasksContext:
         extra_data = {"success": True, "extra": "extra_data"}
         mock_remote_api.get = AsyncMock(
             side_effect=[
-                [created_service.model_dump()],
-                [task_data],
-                [],
+                {
+                    "items": [created_service.model_dump()],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
+                {"items": [task_data], "total": 1, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
                 [],
             ]
         )
@@ -421,6 +667,32 @@ class TestGetTasksContext:
         assert task == task_data | extra_data
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("default_value", [True, False])
+    async def test_exposes_connectivity_check_default(
+        self, monkeypatch, default_value
+    ) -> None:
+        """Expose ``sep_settings.CONNECTIVITY_CHECK_DEFAULT`` in the template context."""
+        monkeypatch.setattr(sep_settings, "CONNECTIVITY_CHECK_DEFAULT", default_value)
+        mock_api = AsyncMock()
+        mock_api.get = AsyncMock(
+            side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                [],
+            ]
+        )
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
+
+        context = await get_tasks_context(
+            mock_api,
+            mock_api,
+            lambda _: {},
+            executor_hosts_ctx,
+        )
+
+        assert context["connectivity_check_default"] is default_value
+
+    @pytest.mark.asyncio
     async def test_status_branches(self) -> None:
         """Assert PENDING, RUNNING, and completed histories are categorized correctly."""
         mock_api = AsyncMock()
@@ -445,9 +717,14 @@ class TestGetTasksContext:
 
         mock_api.get = AsyncMock(
             side_effect=[
-                [],
-                [task_data],
-                [pending_hist, running_hist, success_hist],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [task_data], "total": 1, "offset": 0, "limit": 50},
+                {
+                    "items": [pending_hist, running_hist, success_hist],
+                    "total": 3,
+                    "offset": 0,
+                    "limit": 50,
+                },
                 [],
             ]
         )
@@ -477,10 +754,25 @@ class TestGetTasksIndexContext:
         mock_tasks_api = AsyncMock()
         mock_tasks_api.get = AsyncMock(
             side_effect=[
-                [{"id": 1, "status": "running"}],
-                [{"id": 2, "status": "pending"}],
+                {
+                    "items": [{"id": 1, "status": "running"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
+                {
+                    "items": [{"id": 2, "status": "pending"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
                 [{"task": "backup-task", "enabled": True}],
-                [{"name": "backup-task", "owner": TaskOwner.BACKUPS}],
+                {
+                    "items": [{"name": "backup-task", "owner": TaskOwner.BACKUPS}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
             ]
         )
         mock_inv_api.get = AsyncMock(
@@ -513,10 +805,10 @@ class TestGetTasksIndexContext:
         mock_tasks_api = AsyncMock()
         mock_tasks_api.get = AsyncMock(
             side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
                 [],
-                [],
-                [],
-                [],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
             ]
         )
         mock_inv_api.get = AsyncMock(return_value={})
@@ -544,8 +836,13 @@ class TestCheckForConflictedRunningTasks:
         mock_api = AsyncMock()
         mock_api.get = AsyncMock(
             side_effect=[
-                [{"id": 1, "status": "running"}],
-                [],
+                {
+                    "items": [{"id": 1, "status": "running"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
             ]
         )
         with pytest.raises(HTTPConflictException):
@@ -557,8 +854,13 @@ class TestCheckForConflictedRunningTasks:
         mock_api = AsyncMock()
         mock_api.get = AsyncMock(
             side_effect=[
-                [],
-                [{"id": 2, "status": "pending"}],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {
+                    "items": [{"id": 2, "status": "pending"}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
             ]
         )
         with pytest.raises(HTTPConflictException):
@@ -570,8 +872,8 @@ class TestCheckForConflictedRunningTasks:
         mock_api = AsyncMock()
         mock_api.get = AsyncMock(
             side_effect=[
-                [],
-                [],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
             ]
         )
         await check_for_conflicted_running_tasks("test-task", mock_api)
@@ -673,17 +975,22 @@ class TestGetExecutorHostsContext:
     async def test_returns_enriched_context_when_inventory_succeeds(self) -> None:
         """Assert inventory node names are used as display names."""
         executor_hosts = {"nomad-1": "10.0.0.1", "nomad-2": "10.0.0.2"}
-        inventory_nodes = [
-            {"name": "db-primary", "address": "10.0.0.1"},
-            {"name": "db-replica", "address": "10.0.0.2"},
-        ]
+        inventory_nodes = {
+            "items": [
+                {"name": "db-primary", "address": "10.0.0.1"},
+                {"name": "db-replica", "address": "10.0.0.2"},
+            ],
+            "total": 2,
+            "offset": 0,
+            "limit": 50,
+        }
         mock_inventory_api = AsyncMock()
         mock_inventory_api.get = AsyncMock(return_value=inventory_nodes)
 
         ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "db-replica"
-        mock_inventory_api.get.assert_called_once_with("/")
+        mock_inventory_api.get.assert_called_once_with("/", params={"limit": 0})
 
     @pytest.mark.asyncio
     async def test_returns_fallback_when_inventory_raises(self) -> None:
@@ -702,9 +1009,12 @@ class TestGetExecutorHostsContext:
     async def test_matches_by_address(self) -> None:
         """Assert matching is done by address, not by node name."""
         executor_hosts = {"nomad-1": "10.0.0.1", "nomad-2": "10.0.0.2"}
-        inventory_nodes = [
-            {"name": "db-primary", "address": "10.0.0.1"},
-        ]
+        inventory_nodes = {
+            "items": [{"name": "db-primary", "address": "10.0.0.1"}],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
         mock_inventory_api = AsyncMock()
         mock_inventory_api.get = AsyncMock(return_value=inventory_nodes)
 

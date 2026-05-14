@@ -18,6 +18,10 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   label-gate:
     runs-on: ubuntu-latest
@@ -40,73 +44,230 @@ jobs:
           exit 1
 
   # Detect changed file types to gate downstream jobs.
-  # Patterns are kept in sync with .github/labeler.yml.
+  # Python/frontend patterns mirror .github/labeler.yml; CI also tracks
+  # .pre-commit-config.yaml separately to trigger precommit-heavy.
   changes:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.filter.outputs.python }}
+      precommit: ${{ steps.filter.outputs.precommit }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Detect changed files
         id: filter
-        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
           filters: |
             python:
               - '**/**.py'
               - 'pyproject.toml'
               - 'poetry.lock'
+              - 'poetry.toml'
+            precommit:
+              - '.pre-commit-config.yaml'
+            frontend:
+              - 'frontend/**'
+              - 'package.json'
+            docker:
+              - 'Containerfile'
+              - 'Containerfile.base'
+              - 'app/**'
+              - 'frontend/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+              - 'Makefile'
+              - 'scripts/**'
+              - 'sep_installer.sh'
+              - 'sep_installer.sha256'
 
-  precommit:
+  precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
     needs:
       - label-gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Python
         uses: ./.github/actions/setup-python-job
 
+      - name: Install pre-commit
+        run: python -m pip install pre-commit==4.5.1
+
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Write lightweight pre-commit config
+        run: |
+          cat > .pre-commit-light-config.yaml <<'EOF'
+          repos:
+            - repo: https://github.com/pre-commit/pre-commit-hooks
+              rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b
+              hooks:
+                - id: check-yaml
+                - id: check-json
+                - id: check-toml
+                - id: check-merge-conflict
+                - id: check-case-conflict
+                - id: check-added-large-files
+                - id: end-of-file-fixer
+                - id: trailing-whitespace
+                - id: fix-byte-order-marker
+          EOF
+
+      - name: Perform lightweight pre-commit checks
+        run: |
+          pre-commit run --config .pre-commit-light-config.yaml --all-files
+
+  precommit-heavy:
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        (
+          needs.changes.outputs.python == 'true' ||
+          needs.changes.outputs.precommit == 'true' ||
+          needs.changes.outputs.frontend == 'true' ||
+          needs.changes.outputs.docker == 'true'
+        )
+      }}
+    needs:
+      - label-gate
+      - changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10.33.0
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Cache Poetry virtualenv and wheel cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cache/pypoetry/virtualenvs
+            ~/.cache/pypoetry/cache
+          key: poetry-precommit-${{ runner.os }}-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
+          restore-keys: |
+            poetry-precommit-${{ runner.os }}-
+
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
       - name: Perform pre-commit checks
         env:
           POETRY: poetry
-        run: |
-          sudo apt install -qy shellcheck
-          make run-pre-commit
+        run: make run-pre-commit
 
   python:
-    if: ${{ github.event.pull_request.draft == false && needs.changes.outputs.python == 'true' }}
+    # `lint-fmt-only`: precommit-heavy already re-runs the bumped linters.
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.python == 'true' &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
     uses: ./.github/workflows/python.yaml
     needs:
-      - precommit
+      - label-gate
+      - changes
+
+  frontend:
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.frontend == 'true' &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
+    uses: ./.github/workflows/frontend.yaml
+    needs:
+      - label-gate
       - changes
 
   build:
-    if: ${{ github.event.pull_request.draft == false }}
+    # Run when Python or Docker-relevant paths change. Use always() so the job
+    # still runs when `python` is skipped (no .py changes but Containerfile /
+    # bundle assets changed). Any `python` failures will stop the run.
+    # `lint-fmt-only`: audit-group deps not in the production image.
+    if: >-
+      ${{
+        always() &&
+        github.event.pull_request.draft == false &&
+        needs.label-gate.result == 'success' &&
+        needs.changes.result == 'success' &&
+        (needs.python.result == 'success' || needs.python.result == 'skipped') &&
+        (needs.changes.outputs.python == 'true' || needs.changes.outputs.docker == 'true') &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
     runs-on: ubuntu-latest
     needs:
+      - label-gate
+      - changes
       - python
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Prepare environment
-        run: |
-          sudo apt update -qqy
-          sudo apt install -qqy podman buildah
-          systemctl --user start podman
-          echo "DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock" >> "$GITHUB_ENV"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@a0c73a10bb6782f082cd6714666c87911e4fc7d3 # v4.0.0
 
-      - name: Build container image
-        env:
-          RELEASE_VER: HEAD
-        run: |
-          buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
-          make pack
-          buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
-          podman run --rm --entrypoint /bin/sh --timeout 10 "sep:${RELEASE_VER}" -c 'sleep 3'
+      - name: Build base image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: Containerfile.base
+          tags: sep:builder
+          load: true
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
+
+      - name: Prepare app bundle
+        run: make pack
+
+      - name: Build app image
+        run: >-
+          docker build
+          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          -f Containerfile -t "sep:HEAD" .
+
+      - name: Smoke test
+        run: docker run --rm --entrypoint /bin/sh "sep:HEAD" -c 'sleep 1'
+
+  ci-success:
+    if: always()
+    needs:
+      - label-gate
+      - changes
+      - precommit-light
+      - precommit-heavy
+      - python
+      - frontend
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any dependency failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

@@ -18,7 +18,7 @@
 import logging.config
 import re
 import secrets
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import cached_property
@@ -29,12 +29,14 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, FastAPI
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 from pydantic import (
     computed_field,
     DirectoryPath,
     Field,
     field_validator,
     model_validator,
+    PositiveInt,
     SecretStr,
     validate_call,
 )
@@ -67,6 +69,7 @@ from app.core.utils.fields import (
     URL,
 )
 from app.core.utils.lazy import LazyProxy
+from app.core.utils.openapi import generate_tag_prefixed_unique_id
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -271,6 +274,11 @@ class PMMSettings(BaseLowercaseModel):
     :type verify_ssl: bool
     :param execution_target: Explicit execution target name or address for PMM tasks.
     :type execution_target: str | None
+    :param annotations_enabled: Whether to create PMM annotations for task lifecycle
+        events.
+    :type annotations_enabled: bool
+    :param annotations_timeout: Timeout in seconds for PMM annotation API calls.
+    :type annotations_timeout: PositiveInt
     """
 
     endpoint: StrHttpUrl | None = None
@@ -278,6 +286,8 @@ class PMMSettings(BaseLowercaseModel):
     api_key: SecretStr | None = None
     verify_ssl: bool = True
     execution_target: str | None = None
+    annotations_enabled: bool = False
+    annotations_timeout: PositiveInt = 5
 
     @model_validator(mode="after")
     def _default_frontend_to_endpoint(self) -> Self:
@@ -317,8 +327,13 @@ class Settings(BaseYamlSettings):
         a new one is created.
     :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
-        `secrets.token_urlsafe(32)`.
+        ``secrets.token_urlsafe(32)``.
     :type SECRET_KEY: str
+    :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
+        service-to-service authentication (e.g. scheduled inventory sync). When
+        unset, features that depend on it are disabled. Generate with
+        ``openssl rand -hex 32``.
+    :type SEP_INTERNAL_TOKEN: SecretStr | None
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel
     :param LOGGING_CONFIG: dictConfig logging configuration.
@@ -345,6 +360,7 @@ class Settings(BaseYamlSettings):
     AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
+    SEP_INTERNAL_TOKEN: SecretStr | None = None
     LOGGING: LogLevel = LogLevel.WARNING
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePathField | None = None
@@ -535,6 +551,10 @@ def create_app(
     backend_cors_origins: list[StrHttpUrl] | None = None,
     allowed_hosts: list[str] | None = None,
     security_headers: SecurityHeadersOptions | None = None,
+    title: str | None = None,
+    version: str | None = None,
+    description: str | None = None,
+    generate_unique_id_function: Callable[[APIRoute], str] | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI app.
 
@@ -551,10 +571,30 @@ def create_app(
     :type allowed_hosts: list[str]
     :param security_headers: Options for the SecurityHeadersMiddleware. Defaults to
         None, meaning the middleware won't be added to the app.
+    :param title: Optional OpenAPI title for the generated spec.
+    :type title: str | None
+    :param version: Optional OpenAPI version string.
+    :type version: str | None
+    :param description: Optional OpenAPI description text.
+    :type description: str | None
+    :param generate_unique_id_function: Optional callback for stable ``operationId``
+        values. When omitted, :func:`app.core.utils.openapi.generate_tag_prefixed_unique_id`
+        is used so similarly named handlers across routers do not collide.
+    :type generate_unique_id_function: Callable[[APIRoute], str] | None
     :return: An instance of the FastAPI application with an attached Celery app.
     :rtype: FastAPI
     """
-    app = FastAPI(lifespan=lifespan)
+    openapi_kwargs = {}
+    if title is not None:
+        openapi_kwargs["title"] = title
+    if version is not None:
+        openapi_kwargs["version"] = version
+    if description is not None:
+        openapi_kwargs["description"] = description
+    openapi_kwargs["generate_unique_id_function"] = (
+        generate_unique_id_function or generate_tag_prefixed_unique_id
+    )
+    app = FastAPI(lifespan=lifespan, **openapi_kwargs)
     if backend_cors_origins is not None:
         app.add_middleware(
             CORSMiddleware,

@@ -58,6 +58,17 @@ class TestValidateAttributeIsImportable:
         with pytest.raises(ValueError, match="No module named"):
             validate_attribute_is_importable("nonexistent_module.SomeClass")
 
+    def test_dotted_nonexistent_submodule_raises_value_error(self):
+        """Assert a dotted path whose parent exists but child doesn't raises ``ValueError``.
+
+        ``find_spec("app.does.not.exist")`` raises ``ModuleNotFoundError`` (not
+        returns ``None``) because ``app`` is importable but ``app.does`` is not.
+        The validator must catch that and re-raise as ``ValueError`` so Pydantic
+        wraps it as a ``ValidationError``.
+        """
+        with pytest.raises(ValueError, match="No module named"):
+            validate_attribute_is_importable("app.does.not.exist.router")
+
     def test_invalid_format_raises(self):
         """Assert a path without a dot raises `ValueError`."""
         with pytest.raises(ValueError, match="Must follow the format"):

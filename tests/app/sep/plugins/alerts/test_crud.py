@@ -17,8 +17,8 @@
 
 import pytest
 
-from app.sep.plugins.alerts.backup import AlertBackup
 from app.sep.plugins.alerts.crud import AlertBackupManager
+from app.sep.plugins.alerts.models import AlertBackup
 
 _EXPECTED_BACKUP_COUNT = 2
 

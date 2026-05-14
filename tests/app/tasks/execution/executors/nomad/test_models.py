@@ -24,17 +24,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import ClientError, ClientTimeout
-from fastapi import HTTPException
+from fastapi import status
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.utils import slugify
 from app.tasks.anonymizer.entities import PIIEntity
+from app.tasks.config import tasks_settings
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
 )
 from app.tasks.execution.executors.nomad.models import (
+    _detect_stale_skip,
     _NOMAD_LOG_STREAM_CLIENT_ERROR,
     _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
     NOMAD_DEAD_JOB_STATUS,
@@ -59,6 +61,7 @@ INITIAL_LOG_OFFSET = 50
 # One started step times (stdout + stderr) when another step has StartedAt None.
 EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
+STALENESS_THRESHOLD_OVERRIDE = 300
 
 
 def _build_task(
@@ -66,6 +69,7 @@ def _build_task(
     *,
     parameterized: bool = False,
     constraints: list | None = None,
+    declares_staleness_meta: bool = True,
 ) -> Task:
     """Build a minimal Task instance for testing.
 
@@ -75,12 +79,23 @@ def _build_task(
     :type parameterized: bool
     :param constraints: Optional constraints list.
     :type constraints: list | None
+    :param declares_staleness_meta: Whether the ParameterizedJob declares the
+        ``scheduled_at``/``staleness_threshold_seconds`` meta keys (matches the
+        shape of the centralized templates). Only effective when
+        ``parameterized=True``.
+    :type declares_staleness_meta: bool
     :return: A Task instance with minimal fields.
     :rtype: Task
     """
     data = {"ID": task_id, "Constraints": constraints or []}
     if parameterized:
-        data["ParameterizedJob"] = {"Payload": "required"}
+        parameterized_spec: dict = {"Payload": "required"}
+        if declares_staleness_meta:
+            parameterized_spec["MetaOptional"] = [
+                "scheduled_at",
+                "staleness_threshold_seconds",
+            ]
+        data["ParameterizedJob"] = parameterized_spec
     return Task(
         id=1,
         name="test-task",
@@ -382,8 +397,9 @@ class TestDispatchJob:
         call_kwargs = mock_backend.job.dispatch_job.call_args
         assert call_kwargs[0][0] == "dispatch-job"
         assert call_kwargs[1]["payload"] is not None
-        assert call_kwargs[1]["meta"] == {"target": "node-1"}
+        assert call_kwargs[1]["meta"]["target"] == "node-1"
         assert "_job_id_prefix" not in call_kwargs[1]["meta"]
+        assert "staleness_threshold_seconds" in call_kwargs[1]["meta"]
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_dispatch_job_no_payload(self, mock_nomad_cls):
@@ -463,6 +479,167 @@ class TestDispatchJob:
         call_kwargs = mock_backend.job.dispatch_job.call_args
         expected_prefix = f"{slugify(task.name)}-{task.id}-{slugify('prefix')}"
         assert call_kwargs[1]["id_prefix_template"] == expected_prefix
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_dispatch_job_injects_threshold_from_settings(self, mock_nomad_cls):
+        """Assert dispatch_job injects the configured staleness threshold."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.job.dispatch_job.return_value = {
+            "DispatchedJobID": "d-1",
+            "EvalID": "e-1",
+        }
+        executor = _build_executor()
+        task = _build_task(parameterized=True)
+        queue_item = _build_queue_item(task=task, meta={"target": "n"})
+
+        original = tasks_settings.STALENESS_THRESHOLD_SECONDS
+        tasks_settings.STALENESS_THRESHOLD_SECONDS = STALENESS_THRESHOLD_OVERRIDE
+        try:
+            executor.dispatch_job(queue_item, task)
+        finally:
+            tasks_settings.STALENESS_THRESHOLD_SECONDS = original
+
+        meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
+        assert meta["staleness_threshold_seconds"] == str(STALENESS_THRESHOLD_OVERRIDE)
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_dispatch_job_strips_underscore_meta_but_preserves_staleness(
+        self, mock_nomad_cls
+    ):
+        """Assert underscore keys are stripped while staleness meta is injected."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.job.dispatch_job.return_value = {
+            "DispatchedJobID": "d-1",
+            "EvalID": "e-1",
+        }
+        executor = _build_executor()
+        task = _build_task(parameterized=True)
+        queue_item = _build_queue_item(
+            task=task,
+            meta={
+                "target": "n",
+                "_chain_task_names": ["next"],
+            },
+        )
+
+        executor.dispatch_job(queue_item, task)
+
+        meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
+        assert "_chain_task_names" not in meta
+        assert "scheduled_at" in meta
+        assert isinstance(meta["scheduled_at"], str)
+        assert "staleness_threshold_seconds" in meta
+        assert isinstance(meta["staleness_threshold_seconds"], str)
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_dispatch_job_skips_staleness_meta_when_job_does_not_declare_it(
+        self, mock_nomad_cls
+    ):
+        """Assert staleness meta is NOT injected into jobs that don't declare it.
+
+        Custom user-defined parameterized jobs that haven't been updated to
+        include the staleness meta keys would otherwise be rejected by Nomad,
+        so ``dispatch_job`` must preserve backward compatibility by only
+        injecting the staleness meta when the job spec declares it.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.job.dispatch_job.return_value = {
+            "DispatchedJobID": "d-1",
+            "EvalID": "e-1",
+        }
+        executor = _build_executor()
+        task = _build_task(parameterized=True, declares_staleness_meta=False)
+        queue_item = _build_queue_item(task=task, meta={"target": "n"})
+
+        executor.dispatch_job(queue_item, task)
+
+        meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
+        assert "scheduled_at" not in meta
+        assert "staleness_threshold_seconds" not in meta
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_dispatch_job_scheduled_at_uses_eta_when_set(self, mock_nomad_cls):
+        """Assert ``scheduled_at`` derives from ``eta`` when the ETA is set."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.job.dispatch_job.return_value = {
+            "DispatchedJobID": "d-1",
+            "EvalID": "e-1",
+        }
+        executor = _build_executor()
+        task = _build_task(parameterized=True)
+        queue_item = _build_queue_item(task=task, meta={"target": "n"})
+        eta = datetime(2030, 1, 1, tzinfo=UTC)
+        queue_item.execution_request.eta = eta
+
+        executor.dispatch_job(queue_item, task)
+
+        meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
+        assert meta["scheduled_at"] == str(int(eta.timestamp()))
+
+
+class TestDetectStaleSkip:
+    """Test the module-level ``_detect_stale_skip`` helper."""
+
+    def test_returns_false_when_task_states_none(self):
+        """Assert ``_detect_stale_skip`` returns ``False`` when input is ``None``."""
+        assert _detect_stale_skip(None) is False
+
+    def test_returns_false_when_task_states_not_dict(self):
+        """Assert ``_detect_stale_skip`` tolerates a non-dict input."""
+        assert _detect_stale_skip("not a dict") is False
+
+    def test_returns_false_when_task_absent(self):
+        """Assert ``_detect_stale_skip`` returns ``False`` when the task key is absent."""
+        assert _detect_stale_skip({"other-task": {"Events": []}}) is False
+
+    def test_returns_false_when_events_missing(self):
+        """Assert ``_detect_stale_skip`` returns ``False`` when ``Events`` is missing."""
+        assert _detect_stale_skip({"check-staleness": {"State": "dead"}}) is False
+
+    def test_returns_true_on_terminated_exit_75(self):
+        """Assert exit-75 ``Terminated`` event classifies as stale."""
+        task_states = {
+            "check-staleness": {
+                "Events": [
+                    {"Type": "Started"},
+                    {"Type": "Terminated", "ExitCode": 75},
+                ],
+            }
+        }
+        assert _detect_stale_skip(task_states) is True
+
+    def test_returns_false_on_terminated_exit_1(self):
+        """Assert non-75 ``Terminated`` exit does NOT classify as stale."""
+        task_states = {
+            "check-staleness": {
+                "Events": [{"Type": "Terminated", "ExitCode": 1}],
+            }
+        }
+        assert _detect_stale_skip(task_states) is False
+
+    def test_returns_false_when_exit_code_missing(self):
+        """Assert a ``Terminated`` event with no exit code short-circuits to ``False``."""
+        task_states = {
+            "check-staleness": {
+                "Events": [{"Type": "Terminated"}],
+            }
+        }
+        assert _detect_stale_skip(task_states) is False
+
+    def test_reads_exit_code_from_details_nested_shape(self):
+        """Assert exit-code falls back to ``Details.exit_code`` shape."""
+        task_states = {
+            "check-staleness": {
+                "Events": [
+                    {"Type": "Terminated", "Details": {"exit_code": 75}},
+                ],
+            }
+        }
+        assert _detect_stale_skip(task_states) is True
 
 
 class TestGetJob:
@@ -850,6 +1027,89 @@ class TestSyncTaskHistory:
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_sync_task_history_stale_override(self, mock_nomad_cls):
+        """Assert _sync_task_history maps to STALE when check-staleness exited 75."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.FAILED,
+            "TaskStates": {
+                "check-staleness": {
+                    "Events": [{"Type": "Terminated", "ExitCode": 75}],
+                },
+            },
+            "ModifyTime": 1_700_000_000_000_000_000,
+        }
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+            "Stop": False,
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            },
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+
+        result = await executor._sync_task_history(queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.STALE
+        assert result.finished_at is not None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_sync_task_history_non_stale_exit_code_preserves_failed(
+        self, mock_nomad_cls
+    ):
+        """Assert _sync_task_history keeps FAILED mapping for non-75 prestart exits."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.FAILED,
+            "TaskStates": {
+                "check-staleness": {
+                    "Events": [{"Type": "Terminated", "ExitCode": 1}],
+                },
+            },
+            "ModifyTime": 1_700_000_000_000_000_000,
+        }
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+            "Stop": False,
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            },
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+
+        result = await executor._sync_task_history(queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_sync_task_history_failed(self, mock_nomad_cls):
         """Assert _sync_task_history updates to FAILED when alloc is failed."""
         mock_backend = MagicMock()
@@ -1181,9 +1441,9 @@ class TestValidateJob:
     async def test_validate_job_success(self, mock_nomad_cls, mock_async_run):
         """Assert validate_job returns job when validation passes."""
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = status.HTTP_200_OK
         mock_response.text = json.dumps({"ValidationErrors": []})
-        mock_async_run.return_value = (mock_response,)
+        mock_async_run.return_value = mock_response
 
         executor = _build_executor()
         job = {"ID": "test-job", "Type": "batch"}
@@ -1196,11 +1456,11 @@ class TestValidateJob:
     async def test_validate_job_validation_errors(self, mock_nomad_cls, mock_async_run):
         """Assert validate_job raises HTTPBadRequestException on validation errors."""
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = status.HTTP_200_OK
         mock_response.text = json.dumps(
             {"ValidationErrors": ["missing required field"]}
         )
-        mock_async_run.return_value = (mock_response,)
+        mock_async_run.return_value = mock_response
 
         executor = _build_executor()
         with pytest.raises(HTTPBadRequestException):
@@ -1210,13 +1470,13 @@ class TestValidateJob:
     @patch("app.tasks.execution.executors.nomad.models.async_run")
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_validate_job_non_200_raises(self, mock_nomad_cls, mock_async_run):
-        """Assert validate_job raises HTTPException on non-200 status."""
+        """Assert validate_job raises HTTPBadRequestException on non-200 status."""
         mock_response = MagicMock()
-        mock_response.status_code = 500
-        mock_async_run.return_value = (mock_response,)
+        mock_response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        mock_async_run.return_value = mock_response
 
         executor = _build_executor()
-        with pytest.raises(HTTPException):
+        with pytest.raises(HTTPBadRequestException):
             await executor.validate_job({"ID": "error-job"})
 
 
@@ -1302,8 +1562,13 @@ class TestGetLogsForAllocation:
         mock_anonymize.assert_called()
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_get_logs_for_allocation_with_initial_logs(self, mock_nomad_cls):
-        """Assert get_logs_for_allocation merges initial_logs."""
+    def test_get_logs_for_allocation_with_initial_offsets(self, mock_nomad_cls):
+        """Assert get_logs_for_allocation starts Nomad reads at the given offsets.
+
+        The fetcher returns only the delta for this cycle — content keys in
+        ``initial_logs`` are ignored; only ``f"{log_type}_last_offset"`` keys
+        are read.
+        """
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.client.stream_logs.stream.return_value = ""
@@ -1314,16 +1579,25 @@ class TestGetLogsForAllocation:
         }
         initial_logs = {
             "step1": {
-                "stdout": "previous output",
                 "stdout_last_offset": INITIAL_LOG_OFFSET,
+                "stderr_last_offset": INITIAL_LOG_OFFSET,
             }
         }
 
         executor = _build_executor()
         result = executor.get_logs_for_allocation(alloc, initial_logs=initial_logs)
 
-        assert result["step1"]["stdout"] == "previous output"
+        assert result["step1"]["stdout"] == ""
+        assert result["step1"]["stderr"] == ""
         assert result["step1"]["stdout_last_offset"] == INITIAL_LOG_OFFSET
+        assert result["step1"]["stderr_last_offset"] == INITIAL_LOG_OFFSET
+        stream_call_kwargs = [
+            call.kwargs
+            for call in mock_backend.client.stream_logs.stream.call_args_list
+        ]
+        assert all(
+            kwargs["offset"] == INITIAL_LOG_OFFSET for kwargs in stream_call_kwargs
+        )
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_logs_for_allocation_skips_step_when_not_started(self, mock_nomad_cls):
@@ -1349,6 +1623,95 @@ class TestGetLogsForAllocation:
         types = {c.kwargs["type_"] for c in stream.call_args_list}
         assert tasks == {"ready-step"}
         assert types == {TaskLogType.STDOUT, TaskLogType.STDERR}
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_anonymized_offsets_track_producer_space(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert producer offset tracks anonymized bytes, not Nomad bytes.
+
+        Regression test for SEP-817: when anonymization replaces raw bytes
+        with a shorter or longer string, the producer-space offset returned
+        alongside the delta must track the post-anonymization byte length
+        so the writer dedup window does not mix Nomad-space and
+        anonymized-space counts on retry.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.return_value = "[REDACTED]"
+        raw_bytes = b"4111-1111-1111-1111"
+        raw_msg = b64encode(raw_bytes).decode()
+        log_data = json.dumps({"Data": raw_msg, "Offset": len(raw_bytes)})
+        mock_backend.client.stream_logs.stream.return_value = log_data
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        result = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+
+        assert result["run-script"]["stdout"] == "[REDACTED]"
+        assert result["run-script"]["stdout_last_offset"] == len(raw_bytes)
+        assert result["run-script"]["stdout_producer_offset"] == len("[REDACTED]")
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_anonymized_retry_dedups_correctly(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert a second fetch at the advanced offsets yields no new bytes.
+
+        Simulates a retry after a successful first fetch: the second cycle
+        starts at the advanced Nomad offset (so Nomad returns nothing new)
+        and passes the advanced producer offset through; the writer caller
+        therefore sees a zero-length delta and never re-writes already
+        persisted anonymized bytes.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.return_value = "[REDACTED]"
+        raw_bytes = b"4111-1111-1111-1111"
+        raw_msg = b64encode(raw_bytes).decode()
+        first_log_data = json.dumps({"Data": raw_msg, "Offset": len(raw_bytes)})
+        mock_backend.client.stream_logs.stream.side_effect = [
+            first_log_data,
+            "",
+            "",
+            "",
+        ]
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        first = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+        second = executor.get_logs_for_allocation(
+            alloc,
+            initial_logs={
+                "run-script": {
+                    "stdout_last_offset": first["run-script"]["stdout_last_offset"],
+                    "stdout_producer_offset": first["run-script"][
+                        "stdout_producer_offset"
+                    ],
+                    "stderr_last_offset": first["run-script"]["stderr_last_offset"],
+                    "stderr_producer_offset": first["run-script"][
+                        "stderr_producer_offset"
+                    ],
+                }
+            },
+            anonymize_entities={PIIEntity.CREDIT_CARD},
+        )
+
+        assert second["run-script"]["stdout"] == ""
+        assert second["run-script"]["stdout_last_offset"] == len(raw_bytes)
+        assert second["run-script"]["stdout_producer_offset"] == len("[REDACTED]")
 
 
 class TestNomadLogStreaming:

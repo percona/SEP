@@ -23,15 +23,19 @@ import json
 import logging
 from datetime import timedelta
 from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
 from celery import Task as CeleryTask
 from celery.app.task import Context
 from celery.signals import task_revoked
+from cryptography import x509
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
-from sqlalchemy import cast, func, Text
+from sqlalchemy import cast, func, literal, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import undefer
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -46,7 +50,9 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
+from app.core.pmm import schedule_annotation
 from app.core.utils import utc_now
+from app.core.utils.fields import DatabaseDialect
 from app.tasks.config import tasks_settings
 from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
@@ -56,13 +62,16 @@ from app.tasks.deps import (
     prepare_task_history,
 )
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
     SYSTEM_USER,
     Task,
+    TaskBackendEnum,
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLogType,
 )
 from app.tasks.periodic.models import PeriodicTaskExecuteRequest
 
@@ -136,21 +145,150 @@ def execute_task_by_name(
         prepare_periodic_task_history(task_name, execution_data)
     )
     try:
+        skipped = celery.loop.run_until_complete(
+            _pre_dispatch_health_check(task_history, task_name, periodic_task_name)
+        )
+        if skipped is not None:
+            return jsonable_encoder(skipped)
         task_history = celery.loop.run_until_complete(dispatch_queue_item(task_history))
     except BaseNomadException:
-        alert_msg = f"Failed to dispatch periodic task {periodic_task_name or task_name}: error getting a response from Nomad"
+        alert_msg = (
+            f"Failed to dispatch periodic task "
+            f"{periodic_task_name or task_name}: "
+            f"error getting a response from Nomad"
+        )
         logger.exception(alert_msg)
         if task_history.task.alert_on_fail:
+            dedup_key = f"task:{task_name}:{task_history.execution_request.target}"
             alert_data = {
                 "summary": alert_msg,
                 "source": f"{task_name}:{task_history.execution_request.target}",
                 "severity": AlertSeverity.ERROR,
                 "class": "task_dispatch_failure",
+                "dedup_key": dedup_key,
             }
             if periodic_task_name:
                 alert_data["source"] = f"{periodic_task_name}:{alert_data['source']}"
             celery.loop.run_until_complete(alert_service.trigger(alert_data))
     return jsonable_encoder(task_history)
+
+
+async def _pre_dispatch_health_check(
+    task_history: TaskHistory,
+    task_name: str,
+    periodic_task_name: str | None,
+) -> TaskHistory | None:
+    """Gate periodic Nomad dispatches on target-host readiness.
+
+    Resolve the proxy wrapper via :meth:`TaskManager.get_root_task` so the gate
+    checks the backend that will actually run. When the resolved backend is
+    Nomad and the target is not present in ``executor.get_hosts()``, delegate
+    to :func:`_skip_dispatch_unhealthy_target` and return the saved FAILED
+    row. Return ``None`` to proceed to normal dispatch (non-Nomad resolved
+    backend, or target healthy).
+
+    :param task_history: The unsaved TaskHistory from
+        :func:`prepare_periodic_task_history`.
+    :type task_history: TaskHistory
+    :param task_name: The SEP task name (used for dedup key and alert source).
+    :type task_name: str
+    :param periodic_task_name: The periodic-task name, if any (used to enrich
+        the alert source).
+    :type periodic_task_name: str | None
+    :return: The saved FAILED TaskHistory when the gate fires; ``None`` to
+        proceed with normal dispatch.
+    :rtype: TaskHistory | None
+    """
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        root_task = await TaskManager.get_root_task(session, task_history.task)
+    if root_task.backend != TaskBackendEnum.NOMAD:
+        return None
+    executor = get_executor_for_task(root_task)
+    if task_history.execution_request.target in executor.get_hosts():
+        return None
+    return await _skip_dispatch_unhealthy_target(
+        task_history, task_name, periodic_task_name
+    )
+
+
+async def _skip_dispatch_unhealthy_target(
+    task_history: TaskHistory,
+    task_name: str,
+    periodic_task_name: str | None,
+) -> TaskHistory:
+    """Persist FAILED TaskHistory and fire a deduped alert when the target is unhealthy.
+
+    Mark the history as FAILED with ``finished_at`` set, commit it via
+    :meth:`TaskHistoryManager.save`, append a best-effort stderr log chunk,
+    re-load the deferred ``execution_request`` column so the returned instance
+    can be serialized after the session closes, and — if
+    ``task.alert_on_fail`` is truthy — trigger the same dispatch-failure alert
+    shape the existing ``BaseNomadException`` handler uses.
+
+    Return without raising so Celery's ``autoretry_for=(Exception,)`` does not
+    fire; the next Beat tick will retry once the host is healthy.
+
+    :param task_history: The unsaved TaskHistory built by
+        :func:`prepare_periodic_task_history`.
+    :type task_history: TaskHistory
+    :param task_name: The SEP task name (used for dedup key and alert source).
+    :type task_name: str
+    :param periodic_task_name: The periodic-task name, if any (used to enrich
+        the alert source).
+    :type periodic_task_name: str | None
+    :return: The saved, FAILED TaskHistory.
+    :rtype: TaskHistory
+    """
+    target = task_history.execution_request.target
+    alert_on_fail = task_history.task.alert_on_fail
+    reason = (
+        f"Target host {target!r} is not ready on Nomad; "
+        f"skipping dispatch of periodic task "
+        f"{periodic_task_name or task_name!r}"
+    )
+    logger.warning(reason)
+    task_history.status = TaskHistoryStatusEnum.FAILED
+    task_history.finished_at = utc_now()
+
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        saved = await TaskHistoryManager.save(session, task_history)
+        await session.refresh(saved, attribute_names=["execution_request"])
+
+    async with async_session() as log_session:
+        try:
+            await TaskHistoryLogWriter.append(
+                log_session,
+                saved.id,
+                source="execution",
+                stream=TaskLogType.STDERR,
+                new_bytes=reason.encode("utf-8"),
+                force_flush=True,
+            )
+        except Exception:
+            await log_session.rollback()
+            logger.exception(
+                "Failed to write stderr log chunk for skipped dispatch of %r on %r",
+                task_name,
+                target,
+            )
+
+    if alert_on_fail:
+        dedup_key = f"task:{task_name}:{target}"
+        alert_source = f"{task_name}:{target}"
+        if periodic_task_name:
+            alert_source = f"{periodic_task_name}:{alert_source}"
+        await alert_service.trigger(
+            {
+                "summary": reason,
+                "source": alert_source,
+                "severity": AlertSeverity.ERROR,
+                "class": "task_dispatch_failure",
+                "dedup_key": dedup_key,
+            }
+        )
+    return saved
 
 
 @celery.task
@@ -193,7 +331,10 @@ async def get_task_history(queue_id: int) -> TaskHistory:
     async_session = get_async_session_maker()
     async with async_session() as session:
         return await TaskHistoryManager.get_or_404(
-            session, select_related=[TaskHistory.task], id=queue_id
+            session,
+            select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=queue_id,
         )
 
 
@@ -285,10 +426,14 @@ async def _dispatch_queue_item(
         await _raise_if_identical_task_conflict(queue_item, session)
         task = await TaskManager.get_root_task(session, queue_item.task)
         executor = get_executor_for_task(task)
-        return await executor.dispatch_task(session, queue_item, task)
+        result = await executor.dispatch_task(session, queue_item, task)
     except Exception:
         logger.exception("Failed to dispatch queue item")
         raise
+    else:
+        await session.refresh(result, attribute_names=["execution_request"])
+        schedule_annotation(result, "STARTED")
+        return result
     finally:
         async with lock_session_maker() as async_session:
             await DispatchLockManager.delete(async_session, dispatch_lock)
@@ -298,20 +443,44 @@ async def _raise_if_identical_task_conflict(
     queue_item: TaskHistory, session: AsyncSession
 ) -> None:
     engine_name = session.get_bind().name
+    is_postgresql = engine_name.startswith(DatabaseDialect.POSTGRESQL)
     meta_where_clauses = []
     if queue_item.execution_request.meta:
-        for field, raw_value in queue_item.execution_request.meta.items():
-            extracted = func_json_extract(
-                engine_name, TaskHistory.execution_request, "meta", field
+        if is_postgresql:
+            scalar_subset = {}
+            container_items = []
+            for field, raw_value in queue_item.execution_request.meta.items():
+                if isinstance(raw_value, list | dict):
+                    container_items.append((field, raw_value))
+                else:
+                    scalar_subset[field] = raw_value
+            meta_jsonb = col(TaskHistory.execution_request).op("->")(
+                literal("meta", Text, literal_execute=True)
             )
-            if isinstance(raw_value, list | dict):
-                comparable = json.dumps(raw_value, separators=(",", ":"))
-                extracted = cast(extracted, Text)
-            else:
-                comparable = prepare_unsafe_value_for_json_comparison(
-                    engine_name, raw_value
+            if scalar_subset:
+                meta_where_clauses.append(
+                    meta_jsonb.op("@>")(
+                        cast(literal(json.dumps(scalar_subset), Text), JSONB)
+                    )
                 )
-            meta_where_clauses.append(extracted == comparable)
+            for field, raw_value in container_items:
+                meta_where_clauses.append(
+                    meta_jsonb.op("->")(literal(field, Text, literal_execute=True))
+                    == cast(literal(json.dumps(raw_value), Text), JSONB)
+                )
+        else:
+            for field, raw_value in queue_item.execution_request.meta.items():
+                extracted = func_json_extract(
+                    engine_name, TaskHistory.execution_request, "meta", field
+                )
+                if isinstance(raw_value, list | dict):
+                    comparable = json.dumps(raw_value, separators=(",", ":"))
+                    extracted = cast(extracted, Text)
+                else:
+                    comparable = prepare_unsafe_value_for_json_comparison(
+                        engine_name, raw_value
+                    )
+                meta_where_clauses.append(extracted == comparable)
     if identical_task := (
         await TaskHistoryManager.first(
             session,
@@ -337,7 +506,7 @@ async def _raise_if_identical_task_conflict(
 async def sync_running_items() -> None:
     """Sync running tasks in the task history.
 
-    This function updates the `sync_in_progress_started_at` field for tasks that are
+    This function updates the ``sync_in_progress_started_at`` field for tasks that are
     either not currently in progress or have been in progress for longer than the
     configured SYNC_LOCK_TTL. It then dispatches the sync task for those tasks.
     """
@@ -376,32 +545,80 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         queue_item = await TaskHistoryManager.get_or_404(
             session,
             select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
             id=queue_id,
         )
         task = await TaskManager.get_root_task(session, queue_item.task)
     was_running = queue_item.is_running
-    if was_running:
-        executor = get_executor_for_task(task)
-        queue_item = await executor.sync_task_history(queue_item)
+    if not was_running:
+        async with async_session() as session:
+            result = await TaskHistoryManager.update_where(
+                session,
+                {"sync_in_progress_started_at": None},
+                TaskHistory.status != TaskHistoryStatusEnum.RUNNING,
+                id=queue_id,
+            )
+            if result.rowcount == 0:
+                queue_item = await TaskHistoryManager.get_or_404(
+                    session,
+                    select_related=[TaskHistory.task],
+                    query_options=[undefer(TaskHistory.execution_request)],
+                    id=queue_id,
+                )
+                task = await TaskManager.get_root_task(session, queue_item.task)
+                was_running = True
+            else:
+                return queue_item
+    executor = get_executor_for_task(task)
+    async with async_session() as writer_session:
+        queue_item = await executor.sync_task_history(
+            queue_item, writer_session=writer_session
+        )
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
         saved = await TaskHistoryManager.save(
-            session, queue_item, flag_modified_fields=["execution_request"]
+            session,
+            queue_item,
+            flag_modified_fields=[
+                "execution_request",
+                "status",
+                "started_at",
+                "finished_at",
+                "sync_in_progress_started_at",
+            ],
         )
-    chain_on_failure = saved.execution_request.meta.get("_chain_on_failure", False)
+        await session.refresh(saved, attribute_names=["execution_request"])
+    await maybe_dispatch_chain(saved, was_running=was_running)
+    return saved
+
+
+async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None:
+    """Dispatch the next chained task when ``saved`` is in a chain-eligible state.
+
+    Eligibility requires ``was_running`` (the parent was RUNNING when this sync
+    started, before the executor call) AND a chain-eligible terminal status:
+    SUCCESS, or any finished/LOST status when ``_chain_on_failure`` is set on
+    the parent's ``execution_request.meta``. The helper short-circuits when no
+    ``_chain_task_names`` pointer is set.
+
+    :param saved: The post-save TaskHistory to inspect.
+    :type saved: TaskHistory
+    :param was_running: Whether the parent was RUNNING when this sync started.
+    :type was_running: bool
+    """
+    if not was_running:
+        return
+    meta = saved.execution_request.meta or {}
+    chain_on_failure = meta.get("_chain_on_failure", False)
     is_terminal = (
         saved.status.is_finished() or saved.status == TaskHistoryStatusEnum.LOST
     )
     should_chain = saved.status == TaskHistoryStatusEnum.SUCCESS or (
         chain_on_failure and is_terminal
     )
-    if (
-        was_running
-        and should_chain
-        and (chain_task_names := saved.execution_request.meta.get("_chain_task_names"))
-    ):
+    chain_task_names = meta.get("_chain_task_names")
+    if should_chain and chain_task_names:
         await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
-    return saved
 
 
 async def _dispatch_chained_task(
@@ -412,9 +629,9 @@ async def _dispatch_chained_task(
     """Dispatch the next chained task after the parent completes successfully.
 
     Load the task by name, build a new TaskHistory inheriting the parent's executor
-    target, and call `dispatch_queue_item`. Any `chain_task_names` in the chained
-    task's static `data["meta"]` is stripped to prevent unintended multi-level
-    chaining; the `remaining_chain` is set as the next chain steps.
+    target, and call ``dispatch_queue_item``. Any ``chain_task_names`` in the chained
+    task's static ``data["meta"]`` is stripped to prevent unintended multi-level
+    chaining; the ``remaining_chain`` is set as the next chain steps.
 
     :param chain_task_name: The name of the next task to dispatch.
     :type chain_task_name: str
@@ -496,3 +713,107 @@ def get_executor_for_task(task: Task) -> BaseExecutor:
         raise HTTPBadRequestException(
             f"Unsupported task backend: {task.backend}"
         ) from None
+
+
+@celery.task
+def check_nomad_cert_expiry() -> None:
+    """Run the Nomad TLS certificate expiry check (CA and client PEM on disk).
+
+    Reads :data:`TASKS.NOMAD.SSL_CAFILE` and :data:`TASKS.NOMAD.SSL_CERTFILE`,
+    compares each certificate's ``not_valid_after_utc`` to
+    :data:`TASKS.NOMAD.CERT_EXPIRY_WARN_DAYS`, and triggers or resolves alerts
+    through :class:`app.core.alerts.models.AlertService`.
+
+    When ``ALERTING.PROVIDERS`` is empty (typical in local development),
+    :meth:`~app.core.alerts.models.AlertService.trigger` and ``resolve`` log
+    a warning and return without sending anything; this task also writes the
+    same certificate summary to this module's logger at warning or error level
+    so operators still see the issue in logs.
+
+    The deduplication key for PagerDuty is ``nomad-cert-expiry:<basename>`` so
+    incidents are stable across restarts. Renaming a cert file on disk may
+    leave a stale open incident under the old basename.
+
+    Celery beat registration uses ``TASKS.NOMAD.CHECK_CERT_EXPIRY_INTERVAL``; when
+    it is ``None`` the periodic task is not seeded (see :mod:`app.tasks.db.seed`).
+    """
+    celery.loop.run_until_complete(_check_nomad_cert_expiry())
+
+
+async def _check_nomad_cert_expiry() -> None:
+    """Evaluate Nomad CA and client PEM files and fire or clear expiry alerts."""
+    from app.core.alerts.config import alert_service, alert_settings
+    from app.core.alerts.models import AlertSeverity
+    from app.core.utils import utc_now
+
+    nomad = tasks_settings.NOMAD
+    warn_days = nomad.cert_expiry_warn_days
+    now = utc_now()
+    for label, raw_path in (
+        ("CA", nomad.ssl_cafile),
+        ("client", nomad.ssl_certfile),
+    ):
+        if raw_path is None:
+            continue
+        path = Path(raw_path)
+
+        dedup_key = f"nomad-cert-expiry:{path.name}"
+        try:
+            pem = path.read_bytes()
+            cert = x509.load_pem_x509_certificate(pem)
+        except OSError as exc:
+            logger.warning(
+                "Could not read Nomad %s certificate at %s: %s",
+                label,
+                path,
+                exc,
+            )
+            continue
+        except ValueError:
+            logger.warning(
+                "Could not parse Nomad %s certificate PEM at %s", label, path
+            )
+            continue
+
+        not_after = cert.not_valid_after_utc
+        days_left = (not_after - now).days
+        if days_left > warn_days:
+            await alert_service.resolve(dedup_key)
+            continue
+        if days_left <= 0:
+            severity = AlertSeverity.CRITICAL
+            summary = (
+                f"Nomad {label} certificate {path.name!r} has expired or expires "
+                f"today (not_valid_after_utc={not_after.isoformat()}). "
+                "Renew the certificate and restart SEP so task dispatch continues."
+            )
+        else:
+            severity = AlertSeverity.WARNING
+            summary = (
+                f"Nomad {label} certificate {path.name!r} expires in {days_left} day(s) "
+                f"on {not_after.date().isoformat()} (warning window: {warn_days} day(s))."
+            )
+        if not alert_settings.PROVIDERS:
+            if severity is AlertSeverity.CRITICAL:
+                logger.error(
+                    "ALERTING.PROVIDERS is empty; Nomad TLS cert alert would fire "
+                    "(dedup_key=%s): %s",
+                    dedup_key,
+                    summary,
+                )
+            else:
+                logger.warning(
+                    "ALERTING.PROVIDERS is empty; Nomad TLS cert alert would fire "
+                    "(dedup_key=%s): %s",
+                    dedup_key,
+                    summary,
+                )
+        await alert_service.trigger(
+            {
+                "summary": summary,
+                "source": f"nomad_cert_expiry:{label}",
+                "severity": severity,
+                "class": "nomad_cert_expiry",
+                "dedup_key": dedup_key,
+            }
+        )

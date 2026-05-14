@@ -23,6 +23,7 @@ from typing import Any
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
+from app.core.pmm import schedule_annotation
 from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.utils import parse_payload
@@ -37,6 +38,13 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 _ONE_MEBIBYTE = 1024 * 1024
+_TERMINAL_STATUS_EVENT_MAP = {
+    TaskHistoryStatusEnum.SUCCESS: "COMPLETED",
+    TaskHistoryStatusEnum.FAILED: "FAILED",
+    TaskHistoryStatusEnum.STOPPED: "STOPPED",
+    TaskHistoryStatusEnum.LOST: "LOST",
+    TaskHistoryStatusEnum.STALE: "STALE",
+}
 
 
 class BaseExecutor(BaseCaseInsensitiveModel, ABC):
@@ -126,12 +134,20 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :rtype: TaskHistory
         """
         await self._stop_task(queue_item)
+        was_running = queue_item.status == TaskHistoryStatusEnum.RUNNING
         # TODO(yan): Remove sync_task_history from here as it can keep the db session open for too long
         # SEP-554
         queue_item = await self.sync_task_history(queue_item)
+        sync_emitted_stopped = (
+            was_running and queue_item.status == TaskHistoryStatusEnum.STOPPED
+        )
         queue_item.status = TaskHistoryStatusEnum.STOPPED
         queue_item.finished_at = utc_now()
-        return await TaskHistoryManager.save(session, queue_item)
+        saved = await TaskHistoryManager.save(session, queue_item)
+        if not sync_emitted_stopped:
+            await session.refresh(saved, attribute_names=["execution_request"])
+            schedule_annotation(saved, "STOPPED")
+        return saved
 
     @abstractmethod
     async def _stop_task(self, queue_item: TaskHistory) -> None:
@@ -170,15 +186,16 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         """Stream logs from a task history record.
 
         Retrieves the allocation details and concurrently streams stdout and stderr logs
-        for each task step. Yields `TaskLog` instances as log lines are received.
+        for each task step. Yields ``TaskLog`` instances as log lines are received.
 
         :param queue_item: The task history record for tracking the logs.
         :type queue_item: TaskHistory
         :param start_offsets: A dictionary containing the starting offsets for each
             step and log type. If None, defaults to starting from the beginning.
         :type start_offsets: dict[str, dict[str, int]] | None
-        :yield: `TaskLog` instances containing log messages.
-        :rtype: TaskLog
+        :return: An async generator yielding ``TaskLog`` instances containing
+            log messages.
+        :rtype: AsyncGenerator[TaskLog, None]
         """
 
     def preflight_stream_logs(self, queue_item: TaskHistory) -> None:
@@ -224,7 +241,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :param chunk_size: The size of each chunk to be read from the file, in bytes.
             Defaults to 1 MiB.
         :type chunk_size: int
-        :yield: Chunks of the file as bytes.
+        :return: An async generator yielding chunks of the file as bytes.
         :rtype: AsyncGenerator[bytes, None]
         """
 
@@ -246,28 +263,45 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     async def sync_task_history(
         self,
         queue_item: TaskHistory,
+        writer_session: AsyncSession | None = None,
     ) -> TaskHistory:
         """Sync the task history with the backend and trigger the configured alerts.
 
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
+        :param writer_session: Optional dedicated session the executor may use
+            for side-effect writes such as append-only log persistence. When
+            ``None``, the executor falls back to whatever session management it
+            has available.
+        :type writer_session: AsyncSession | None
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """
-        queue_item = await self._sync_task_history(queue_item)
+        was_running = queue_item.status == TaskHistoryStatusEnum.RUNNING
+        queue_item = await self._sync_task_history(
+            queue_item, writer_session=writer_session
+        )
         if queue_item.task.alert_on_fail:
             await queue_item.alert_for_status()
+        if was_running:
+            event = _TERMINAL_STATUS_EVENT_MAP.get(queue_item.status)
+            if event:
+                schedule_annotation(queue_item, event)
         return queue_item
 
     @abstractmethod
     async def _sync_task_history(
         self,
         queue_item: TaskHistory,
+        writer_session: AsyncSession | None = None,
     ) -> TaskHistory:
         """Sync the task history with the backend.
 
         :param queue_item: The task history record for tracking this execution.
         :type queue_item: TaskHistory
+        :param writer_session: Optional dedicated session the executor may use
+            for side-effect writes such as log persistence.
+        :type writer_session: AsyncSession | None
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """

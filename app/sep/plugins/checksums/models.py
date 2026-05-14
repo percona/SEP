@@ -15,9 +15,15 @@
 
 """Define models for the Checksums plugin."""
 
+from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
+from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework import ConnectivityWarning
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class ChecksumsCreate(BaseModel):
@@ -89,3 +95,126 @@ class ChecksumsCreate(BaseModel):
     max_lag: str = ""
     extra_args: str = ""
     alert_on_fail: bool = False
+
+
+class ChecksumTaskWrite(BaseModel):
+    """Represent a JSON request body for creating a checksum task.
+
+    Mirrors :class:`ChecksumsCreate` minus the form-only resolution fields
+    (``schema_id``, ``table_id``, ``extra_args``). The caller is responsible
+    for pre-resolving database and table names before submitting.
+
+    :param task_name: The name of the task to be created.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for the task execution.
+    :type hostname: NonEmptyStr
+    :param service_id: The Inventory ID of the MySQL service to connect to.
+    :type service_id: int
+    :param databases: Comma-separated database names.
+    :type databases: str
+    :param tables: Comma-separated table names (``schema.table`` format).
+    :type tables: str
+    :param recursion_method: The method for handling replica discovery.
+    :type recursion_method: str
+    :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``.
+    :type dsn_table: str
+    :param pause_file: Execution pauses while this file exists.
+    :type pause_file: str
+    :param binary_index: Use BLOB type for replicate-table boundary columns.
+    :type binary_index: bool
+    :param explain_arg: Show but do not execute checksum queries.
+    :type explain_arg: bool
+    :param fail_on_stopped_replication: Fail if replication is stopped.
+    :type fail_on_stopped_replication: bool
+    :param truncate_replicate_table: Truncate the replicate table before starting.
+    :type truncate_replicate_table: bool
+    :param progress: Print progress reports to STDERR.
+    :type progress: str
+    :param set_vars: MySQL variables to set (comma-separated key=value pairs).
+    :type set_vars: str
+    :param max_load: Pause when any GLOBAL STATUS variable exceeds this threshold.
+    :type max_load: str
+    :param chunk_time: Target execution time per chunk.
+    :type chunk_time: str
+    :param max_lag: Pause until replica lag falls below this value.
+    :type max_lag: str
+    :param alert_on_fail: Send an alert if the task fails.
+    :type alert_on_fail: bool
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    service_id: int
+    databases: str = ""
+    tables: str = ""
+    recursion_method: str = "processlist"
+    dsn_table: str = ""
+    pause_file: str = ""
+    binary_index: bool = False
+    explain_arg: bool = False
+    fail_on_stopped_replication: bool = False
+    truncate_replicate_table: bool = False
+    progress: str = ""
+    set_vars: str = ""
+    max_load: str = ""
+    chunk_time: str = ""
+    max_lag: str = ""
+    alert_on_fail: bool = False
+
+
+class ChecksumTaskBase(BaseModel):
+    """Define the common fields shared across checksum task API responses.
+
+    :param name: The name of the checksum task.
+    :type name: str
+    :param owner: The entity or user that owns the task.
+    :type owner: TaskOwner
+    :param service_type: The type of database service (e.g., MySQL, PostgreSQL).
+    :type service_type: ServiceTypeEnum | None
+    :param status: The current execution status of the task.
+    :type status: TaskHistoryStatusEnum | None
+    """
+
+    name: str
+    owner: TaskOwner
+    service_type: ServiceTypeEnum | None = None
+    status: TaskHistoryStatusEnum | None = None
+
+
+class ChecksumTaskResponse(ChecksumTaskBase):
+    """Represent a checksum task API response.
+
+    :param id: The unique identifier for the checksum task.
+    :type id: int | None
+    :param backend: The backend worker/engine executing the task.
+    :type backend: TaskBackendEnum
+    :param data: The raw configuration and parameters used for the checksum execution.
+    :type data: dict[str, Any]
+    :param protected: Whether the task is protected from deletion or modification.
+    :type protected: bool
+    :param alert_on_fail: If True, notifications are sent upon task failure.
+    :type alert_on_fail: bool
+    :param created_at: The timestamp when the task was first created.
+    :type created_at: datetime | None
+    :param updated_at: The timestamp of the last modification to the task.
+    :type updated_at: datetime | None
+    :param created_by: The user who initiated the task.
+    :type created_by: str | None
+    :param last_updated_by: The user who last modified the task record.
+    :type last_updated_by: str | None
+    :param connectivity_warning: A warning surfaced when the post-creation
+        database connectivity check fails. ``None`` when the check passes,
+        is opted out, or the task meta lacks the connectivity keys.
+    :type connectivity_warning: ConnectivityWarning | None
+    """
+
+    id: int | None = None
+    backend: TaskBackendEnum
+    data: dict[str, Any]
+    protected: bool
+    alert_on_fail: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None
+    connectivity_warning: ConnectivityWarning | None = None

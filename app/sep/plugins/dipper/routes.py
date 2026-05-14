@@ -13,7 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Routes for the Dipper plugin."""
+"""Define routes for the Dipper plugin.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/plugins/dipper/`` and the React UI consumes them via
+``frontend/packages/plugins/dipper``. Every response from this router
+carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
+hit; the routes remain mounted so users can fall back to the legacy UI
+while the React UI reaches full feature parity.
+"""
 
 import logging
 from typing import Annotated
@@ -47,12 +55,13 @@ from app.sep.plugins.dipper.deps import (
     SupportedDipperServices,
 )
 from app.sep.plugins.dipper.models import DipperScript
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.snippets.models.snippet import SnippetExecutionMeta
 from app.sep.utils.jinja import syntax_highlight
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 ExecutionMetaDep = Annotated[SnippetExecutionMeta, Depends(get_dipper_execution_meta)]
@@ -140,10 +149,11 @@ async def dipper_index(
     )
 
     snippet_filename = f"dipper/{selected_service.id}/{script.filename}"
-    history_tasks = await tasks_api.get(
+    response = await tasks_api.get(
         f"/{script.execution_task_name}/history/",
         params={"snippet_filename": snippet_filename},
     )
+    history_tasks = response["items"]
     for history in history_tasks:
         try:
             history["available_files"] = await tasks_api.get(
@@ -152,6 +162,13 @@ async def dipper_index(
         except HTTPException:
             history["available_files"] = []
 
+    response = await tasks_api.get(
+        f"/{script.execution_task_name}/history/",
+        params={
+            "snippet_filename": snippet_filename,
+            "status": TaskHistoryStatusEnum.RUNNING,
+        },
+    )
     context |= {
         "is_pmm_script_available": has_pmm_script(selected_service.type),
         "selected_service": selected_service,
@@ -175,13 +192,7 @@ async def dipper_index(
         "default_executor_host": default_executor_host,
         "form_defaults": form_defaults,
         "history_tasks": history_tasks,
-        "running_tasks": await tasks_api.get(
-            f"/{script.execution_task_name}/history/",
-            params={
-                "snippet_filename": snippet_filename,
-                "status": TaskHistoryStatusEnum.RUNNING,
-            },
-        ),
+        "running_tasks": response["items"],
     }
     logger.debug("Context for Dipper index page: %s", context)
 

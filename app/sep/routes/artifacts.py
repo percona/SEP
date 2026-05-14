@@ -21,15 +21,16 @@ from itsdangerous import BadSignature, SignatureExpired
 
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.security import crypto_timestamp_serializer
+from app.sep.artifact_constants import (
+    ARTIFACT_DOWNLOAD_SALT,
+    ARTIFACT_TYPE_DIPPER,
+    ARTIFACT_TYPE_SNIPPET,
+)
 from app.sep.config import sep_settings
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.snippets.config import snippets_settings
 
-router = APIRouter()
-
-ARTIFACT_DOWNLOAD_SALT = "artifact-download"
-ARTIFACT_TYPE_SNIPPET = "snippet"
-ARTIFACT_TYPE_DIPPER = "dipper"
+router = APIRouter(tags=["sep", "artifacts"])
 
 _BASE_DIRS = {
     ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR,

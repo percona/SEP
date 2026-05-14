@@ -16,13 +16,32 @@
 """Define settings for the Tasks app."""
 
 from datetime import timedelta
+from enum import StrEnum
 from typing import ClassVar
+
+from pydantic import PositiveInt
 
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.utils.lazy import LazyProxy
 from app.tasks.execution.executors.nomad import NomadExecutor
+
+
+class PreExecutionCheckMode(StrEnum):
+    """Define modes for the pre-execution connectivity check.
+
+    :cvar DISABLED: No connectivity check is performed before task dispatch.
+    :vartype DISABLED: str
+    :cvar WARN: Check runs before dispatch; logs a warning on failure but proceeds.
+    :vartype WARN: str
+    :cvar BLOCK: Check runs before dispatch; blocks dispatch on failure with an error.
+    :vartype BLOCK: str
+    """
+
+    DISABLED = "disabled"
+    WARN = "warn"
+    BLOCK = "block"
 
 
 class TasksSettings(BaseYamlAppSettings):
@@ -40,11 +59,18 @@ class TasksSettings(BaseYamlAppSettings):
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
     :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
-        Use `False` to disable the middleware completely.
+        Use ``False`` to disable the middleware completely.
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
     :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Defaults to 5
         minutes.
     :type SYNC_LOCK_TTL: timedelta
+    :param PRE_EXECUTION_CONNECTIVITY_CHECK: The mode for pre-execution connectivity
+        checks. Defaults to ``PreExecutionCheckMode.WARN``.
+    :type PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode
+    :param STALENESS_THRESHOLD_SECONDS: The maximum seconds allowed between a
+        dispatch's scheduled time and its Nomad-side execution start before
+        the allocation self-aborts as stale. Must be positive. Defaults to 3600.
+    :type STALENESS_THRESHOLD_SECONDS: PositiveInt
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -55,6 +81,8 @@ class TasksSettings(BaseYamlAppSettings):
         content_security_policy_strict=False
     )
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
+    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = PreExecutionCheckMode.WARN
+    STALENESS_THRESHOLD_SECONDS: PositiveInt = 3600
 
 
 tasks_settings: TasksSettings = LazyProxy(TasksSettings)

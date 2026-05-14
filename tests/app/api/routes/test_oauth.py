@@ -19,12 +19,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 from faker import Faker
-from fastapi import status
+from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.api.deps import RefreshTokenCookie
+from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
 from app.main import app
+from app.sep.config import sep_settings
 
 User = get_user_model()
 
@@ -35,29 +38,39 @@ def test_client():
     return TestClient(app)
 
 
+def _build_user(faker: Faker, valid_username: str, *, active: bool = True) -> "User":
+    """Build a ``User`` instance with a configurable active/forbidden state."""
+    return User(
+        id=faker.uuid4(),
+        owner="organization",
+        username=valid_username,
+        is_forbidden=not active,
+    )
+
+
+def _set_cookies_matching(set_cookie_headers: list[str], name: str) -> list[str]:
+    """Return every ``Set-Cookie`` header whose cookie name is ``name``."""
+    return [h for h in set_cookie_headers if h.split("=", 1)[0].strip() == name]
+
+
 def test_create_oauth_token_success(
     test_client, valid_username, oauth_token, mocker, faker: Faker
 ):
-    """Test successful OAuth token creation with valid credentials."""
-    # Mock the User.get_oauth_token method
+    """Assert /token returns the full OAuthToken on valid credentials."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
     mocker.patch.object(
         User,
         "from_jwt",
         new=AsyncMock(
-            return_value=User(
-                id=faker.uuid4(),
-                owner="organization",
-                username=valid_username,
-                is_active=True,
-            )
+            spec=User.from_jwt, return_value=_build_user(faker, valid_username)
         ),
     )
 
     data = {
-        "id": faker.uuid4(),
         "username": valid_username,
         "password": "valid_password",
     }
@@ -69,22 +82,18 @@ def test_create_oauth_token_success(
 def test_create_oauth_token_inactive_user(
     test_client, valid_username, oauth_token, mocker, faker: Faker
 ):
-    """Test OAuth token creation failure when the user is inactive."""
-    # Mock the User.get_oauth_token method
+    """Assert /token returns 403 when the user is inactive."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
-    # Mock User.from_jwt to return an inactive user
     mocker.patch.object(
         User,
         "from_jwt",
         new=AsyncMock(
-            return_value=User(
-                id=faker.uuid4(),
-                owner="organization",
-                username=valid_username,
-                is_forbidden=True,
-            )
+            spec=User.from_jwt,
+            return_value=_build_user(faker, valid_username, active=False),
         ),
     )
 
@@ -97,82 +106,349 @@ def test_create_oauth_token_inactive_user(
     assert response.json()["detail"] == "User is not active"
 
 
-def test_refresh_token_success(test_client, oauth_token, mocker, faker: Faker):
-    """Test successful token refresh with a valid refresh token."""
-    # Mock the User.get_oauth_token method
+def test_spa_login_success(
+    test_client, valid_username, oauth_token, mocker, faker: Faker
+):
+    """Assert /login returns the slim response and sets the refresh cookie."""
     mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
     )
     mocker.patch.object(
         User,
         "from_jwt",
         new=AsyncMock(
-            return_value=User(
-                id=faker.uuid4(),
-                owner="organization",
-                username="valid_username",
-                is_active=True,
-            )
+            spec=User.from_jwt, return_value=_build_user(faker, valid_username)
         ),
     )
 
-    data = {"token": "valid_refresh_token"}
     response = test_client.post(
-        "/api/oauth/refresh",
-        data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        "/api/oauth/login",
+        json={"username": valid_username, "password": "valid_password"},
     )
+
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == oauth_token.model_dump()
+    assert response.json() == {
+        "access_token": oauth_token.access_token,
+        "expires_in": int(oauth_token.expires_in.total_seconds()),
+    }
+    assert "refresh_token" not in response.json()
+    assert "id_token" not in response.json()
+    assert "scope" not in response.json()
+    assert "token_type" not in response.json()
+
+    set_cookie_headers = response.headers.get_list("set-cookie")
+    refresh_headers = _set_cookies_matching(set_cookie_headers, "refreshToken")
+    assert len(refresh_headers) == 1
+    refresh_header = refresh_headers[0]
+    assert f"refreshToken={oauth_token.refresh_token}" in refresh_header
+    assert "HttpOnly" in refresh_header
+    assert "Path=/api/oauth" in refresh_header
+    assert "SameSite=lax" in refresh_header
 
 
-def test_refresh_token_invalid_token(test_client, mocker):
-    """Test token refresh failure with an invalid refresh token."""
-    # Mock the User.get_oauth_token method to raise ValidationError
+def test_spa_login_inactive_user(
+    test_client, valid_username, oauth_token, mocker, faker: Faker
+):
+    """Assert /login returns 403 and does not set the refresh cookie."""
+    mocker.patch.object(
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
+    )
+    mocker.patch.object(
+        User,
+        "from_jwt",
+        new=AsyncMock(
+            spec=User.from_jwt,
+            return_value=_build_user(faker, valid_username, active=False),
+        ),
+    )
+
+    response = test_client.post(
+        "/api/oauth/login",
+        json={"username": valid_username, "password": "valid_password"},
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json()["detail"] == "User is not active"
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_spa_login_invalid_credentials(test_client, valid_username, mocker):
+    """Assert /login returns 401 when Casdoor rejects credentials."""
     mocker.patch.object(
         User,
         "get_oauth_token",
         new=AsyncMock(
-            side_effect=ValidationError.from_exception_data(
-                title="Validation Error", line_errors=[]
-            )
+            spec=User.get_oauth_token,
+            side_effect=HTTPUnauthorizedException("Invalid username or password."),
         ),
     )
-    data = {"token": "invalid_refresh_token"}
+
     response = test_client.post(
-        "/api/oauth/refresh",
-        json=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        "/api/oauth/login",
+        json={"username": valid_username, "password": "wrong"},
     )
+
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
-    assert response.json()["detail"] == "Refresh token is invalid, expired, or revoked"
-
-
-def test_refresh_token_inactive_user(test_client, oauth_token, mocker, faker: Faker):
-    """Test token refresh failure when the user is inactive."""
-    # Mock the User.get_oauth_token method
-    mocker.patch.object(
-        User, "get_oauth_token", new=AsyncMock(return_value=oauth_token)
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
     )
-    # Mock User.from_jwt to return an inactive user
+
+
+def test_spa_login_missing_body(test_client):
+    """Assert /login returns 422 on a missing JSON body."""
+    response = test_client.post("/api/oauth/login")
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_refresh_from_cookie_success(
+    test_client, valid_username, oauth_token, mocker, faker: Faker
+):
+    """Assert /refresh returns the slim response and rotates the cookie."""
+    mocker.patch.object(
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
+    )
     mocker.patch.object(
         User,
         "from_jwt",
         new=AsyncMock(
-            return_value=User(
-                id=faker.uuid4(),
-                owner="organization",
-                username="valid_username",
-                is_forbidden=True,
-            )
+            spec=User.from_jwt, return_value=_build_user(faker, valid_username)
         ),
     )
 
-    data = {"token": "valid_refresh_token"}
+    test_client.cookies.set("refreshToken", "prior-valid-refresh")
+    response = test_client.post("/api/oauth/refresh")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {
+        "access_token": oauth_token.access_token,
+        "expires_in": int(oauth_token.expires_in.total_seconds()),
+    }
+    refresh_headers = _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(refresh_headers) == 1
+    assert f"refreshToken={oauth_token.refresh_token}" in refresh_headers[0]
+    assert "Path=/api/oauth" in refresh_headers[0]
+    assert "HttpOnly" in refresh_headers[0]
+
+
+def test_refresh_missing_cookie(test_client):
+    """Assert /refresh returns 401 when the refresh cookie is absent."""
+    response = test_client.post("/api/oauth/refresh")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert (
+        response.json()["detail"]
+        == "Refresh token is missing, invalid, expired, or revoked"
+    )
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_refresh_invalid_cookie_validation_error(test_client, mocker):
+    """Assert /refresh returns 401 on Casdoor malformed 2xx responses."""
+    mocker.patch.object(
+        User,
+        "get_oauth_token",
+        new=AsyncMock(
+            spec=User.get_oauth_token,
+            side_effect=ValidationError.from_exception_data(
+                title="Validation Error", line_errors=[]
+            ),
+        ),
+    )
+
+    test_client.cookies.set("refreshToken", "bogus")
+    response = test_client.post("/api/oauth/refresh")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert (
+        response.json()["detail"]
+        == "Refresh token is missing, invalid, expired, or revoked"
+    )
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_refresh_cookie_rejected_by_casdoor(test_client, mocker):
+    """Assert /refresh collapses upstream Casdoor 4xx to 401."""
+    mocker.patch.object(
+        User,
+        "get_oauth_token",
+        new=AsyncMock(
+            spec=User.get_oauth_token,
+            side_effect=HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_grant",
+                headers={"X-Error-Code": "invalid_grant"},
+            ),
+        ),
+    )
+
+    test_client.cookies.set("refreshToken", "expired")
+    response = test_client.post("/api/oauth/refresh")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert (
+        response.json()["detail"]
+        == "Refresh token is missing, invalid, expired, or revoked"
+    )
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_refresh_upstream_failure_propagates(test_client, mocker):
+    """Assert /refresh surfaces auth-provider 5xx instead of masking as 401."""
+    mocker.patch.object(
+        User,
+        "get_oauth_token",
+        new=AsyncMock(
+            spec=User.get_oauth_token,
+            side_effect=HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Casdoor unavailable",
+            ),
+        ),
+    )
+
+    test_client.cookies.set("refreshToken", "valid-but-upstream-down")
+    response = test_client.post("/api/oauth/refresh")
+
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_refresh_cookie_alias_matches_settings():
+    """Assert the /refresh Cookie alias tracks SESSION_REFRESH.COOKIE_NAME."""
+    cookie_marker = RefreshTokenCookie.__metadata__[0]
+    assert cookie_marker.alias == sep_settings.SESSION_REFRESH.COOKIE_NAME
+
+
+def test_refresh_body_ignored(test_client):
+    """Assert /refresh no longer reads the refresh token from the JSON body."""
     response = test_client.post(
         "/api/oauth/refresh",
-        json=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        json={"token": "legacy-body-token"},
     )
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_refresh_inactive_user(
+    test_client, valid_username, oauth_token, mocker, faker: Faker
+):
+    """Assert /refresh returns 403 for inactive users and does not rotate the cookie."""
+    mocker.patch.object(
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
+    )
+    mocker.patch.object(
+        User,
+        "from_jwt",
+        new=AsyncMock(
+            spec=User.from_jwt,
+            return_value=_build_user(faker, valid_username, active=False),
+        ),
+    )
+
+    test_client.cookies.set("refreshToken", "valid")
+    response = test_client.post("/api/oauth/refresh")
+
     assert response.status_code == status.HTTP_403_FORBIDDEN
     assert response.json()["detail"] == "User is not active"
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_logout_success(test_client, valid_username, mocker, faker: Faker):
+    """Assert /logout clears the refresh cookie and revokes the access token."""
+    access_token = "bearer-access-token"
+    logged_in_user = _build_user(faker, valid_username)
+    logged_in_user.access_token = access_token
+    mocker.patch.object(
+        User,
+        "from_jwt",
+        new=AsyncMock(spec=User.from_jwt, return_value=logged_in_user),
+    )
+    invalidate_mock = mocker.patch.object(
+        User,
+        "invalidate_oauth_token",
+        new=AsyncMock(spec=User.invalidate_oauth_token, return_value=None),
+    )
+
+    response = test_client.post(
+        "/api/oauth/logout",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert response.content == b""
+    refresh_headers = _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(refresh_headers) == 1
+    delete_header = refresh_headers[0]
+    assert "Max-Age=0" in delete_header
+    assert "Path=/api/oauth" in delete_header
+    invalidate_mock.assert_awaited_once_with(access_token)
+
+
+def test_logout_invalidate_fails_still_clears_cookie(
+    test_client, valid_username, mocker, faker: Faker
+):
+    """Assert /logout clears the cookie even if upstream revocation fails."""
+    access_token = "bearer-access-token"
+    logged_in_user = _build_user(faker, valid_username)
+    logged_in_user.access_token = access_token
+    mocker.patch.object(
+        User,
+        "from_jwt",
+        new=AsyncMock(spec=User.from_jwt, return_value=logged_in_user),
+    )
+    mocker.patch.object(
+        User,
+        "invalidate_oauth_token",
+        new=AsyncMock(spec=User.invalidate_oauth_token, side_effect=KeyError("jti")),
+    )
+
+    response = test_client.post(
+        "/api/oauth/logout",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    refresh_headers = _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(refresh_headers) == 1
+    assert "Max-Age=0" in refresh_headers[0]
+    assert "Path=/api/oauth" in refresh_headers[0]
+
+
+def test_logout_no_bearer(test_client):
+    """Assert /logout returns 401 without a Bearer token and does not clear cookies."""
+    test_client.cookies.set("refreshToken", "present-but-unauthenticated")
+    response = test_client.post("/api/oauth/logout")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_session_refresh_defaults_match_plan():
+    """Assert SESSION_REFRESH defaults produce the expected cookie attributes."""
+    assert sep_settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
+    assert sep_settings.SESSION_REFRESH.PATH == "/api/oauth"
