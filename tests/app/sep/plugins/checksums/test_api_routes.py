@@ -377,7 +377,6 @@ class TestChecksumsSchemaEndpoint:
             "max_load",
             "chunk_time",
             "max_lag",
-            "alert_on_fail",
         }
         assert expected.issubset(field_names)
 

@@ -19,7 +19,7 @@ import { useEffect } from 'react';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Tooltip from '@mui/material/Tooltip';
-import { useController, type Control, type FieldValues } from 'react-hook-form';
+import { useController, useFormContext, type FieldValues } from 'react-hook-form';
 import { useAlertConfig } from '@sep/api';
 
 /**
@@ -34,8 +34,6 @@ const TOOLTIP_UNAVAILABLE = 'Configure an alert provider to use this feature';
 const TOOLTIP_ERROR = 'Could not load alert configuration';
 
 interface AlertOnFailFieldProps {
-  /** react-hook-form `control` from the parent form's `useForm()`. */
-  control: Control<FieldValues>;
   /**
    * Initial value for the field. Mirrors the Jinja2 partial's
    * `alert_on_fail_default`. The value is reset to `false` if the
@@ -53,8 +51,11 @@ interface AlertOnFailFieldProps {
  * partial: when the backend reports no configured alert providers the
  * checkbox is disabled (not hidden) and a tooltip prompts the operator to
  * configure a provider.
+ *
+ * Must be rendered inside a react-hook-form `<FormProvider>`.
  */
-export function AlertOnFailField({ control, defaultValue = false }: AlertOnFailFieldProps) {
+export function AlertOnFailField({ defaultValue = false }: AlertOnFailFieldProps) {
+  const { control } = useFormContext<FieldValues>();
   const { data, isLoading, isError } = useAlertConfig();
   const available = data?.available ?? false;
   // Stay disabled while the availability query is in flight or has errored
