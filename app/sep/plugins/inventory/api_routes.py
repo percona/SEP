@@ -67,7 +67,6 @@ from app.sep.plugins.inventory.topology import (
     build_topology_meta,
     parse_ndjson,
     shard_hosts,
-    TOPOLOGY_PAYLOAD_REQUIREMENTS,
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -84,11 +83,11 @@ _TOPOLOGY_TASK = "run-python"
 _TOPOLOGY_STDOUT_STEP = "run-script"
 _TOPOLOGY_FINISHED_STATUSES = frozenset(
     {
-        TaskHistoryStatusEnum.SUCCESS.value,
-        TaskHistoryStatusEnum.FAILED.value,
-        TaskHistoryStatusEnum.LOST.value,
-        TaskHistoryStatusEnum.STOPPED.value,
-        TaskHistoryStatusEnum.STALE.value,
+        TaskHistoryStatusEnum.SUCCESS,
+        TaskHistoryStatusEnum.FAILED,
+        TaskHistoryStatusEnum.LOST,
+        TaskHistoryStatusEnum.STOPPED,
+        TaskHistoryStatusEnum.STALE,
     }
 )
 _MAX_TOPOLOGY_SHARDS = 8
@@ -227,7 +226,6 @@ async def topology_collect(
     }
     for target, chunk in zip(targets, chunks, strict=True):
         meta = build_topology_meta(target=target, hosts=chunk, extra=extras)
-        meta.setdefault("requirements", TOPOLOGY_PAYLOAD_REQUIREMENTS)
         created = await tasks_api.post(
             f"/execute/{_TOPOLOGY_TASK}",
             json={"meta": meta, "payload": payload_uri, "anonymize_mask": 0},
@@ -330,7 +328,7 @@ async def topology_result(
     pending = [
         int(h["id"])
         for h in histories
-        if h.get("status") not in {s.value for s in _TOPOLOGY_FINISHED_STATUSES}
+        if h.get("status") not in _TOPOLOGY_FINISHED_STATUSES
     ]
     if pending:
         return TopologyResultResponse(status="running", pending_task_ids=pending)
@@ -354,38 +352,22 @@ async def _stream_one_task(
     """Tail one task's stdout NDJSON; push parsed events to ``queue``."""
     last_status: str | None = None
     try:
-        try:
-            while True:
-                history = await _fetch_task_history(tasks_api, task_history_id)
-                current = history.get("status")
-                if current != last_status:
-                    last_status = current
-                    await queue.put(
-                        {
-                            "event": "task_status",
-                            "data": {
-                                "task_history_id": task_history_id,
-                                "status": current,
-                            },
-                        }
-                    )
-                if current in {TaskHistoryStatusEnum.RUNNING.value} or (
-                    current in {s.value for s in _TOPOLOGY_FINISHED_STATUSES}
-                ):
-                    break
-                await asyncio.sleep(0.5)
-        except HTTPException as exc:
-            await queue.put(
-                {
-                    "event": "task_error",
-                    "data": {
-                        "task_history_id": task_history_id,
-                        "status_code": exc.status_code,
-                        "detail": exc.detail,
-                    },
-                }
-            )
-            return
+        while True:
+            history = await _fetch_task_history(tasks_api, task_history_id)
+            current = history.get("status")
+            if current != last_status:
+                last_status = current
+                await queue.put(
+                    {
+                        "event": "task_status",
+                        "data": {"task_history_id": task_history_id, "status": current},
+                    }
+                )
+            if current == TaskHistoryStatusEnum.RUNNING.value or (
+                current in _TOPOLOGY_FINISHED_STATUSES
+            ):
+                break
+            await asyncio.sleep(0.5)
 
         try:
             async for raw_line in tasks_api.stream(

@@ -32,7 +32,6 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
-from functools import lru_cache
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -357,17 +356,11 @@ def _resolve_replication_source(
     return unknown_id
 
 
-@lru_cache(maxsize=64)
-def _cached_graph(stdout_blobs: tuple[str, ...]) -> str:
-    """Memoised graph build. Cache key is the raw stdout per shard."""
+def build_graph_from_stdouts(stdout_blobs: list[str]) -> dict[str, Any]:
+    """Build a graph from raw shard stdout without retaining collector output."""
     streams = [parse_ndjson(blob) for blob in stdout_blobs]
     merged = merge_host_records(*streams)
-    return json.dumps(build_topology_graph(merged), separators=(",", ":"))
-
-
-def build_graph_from_stdouts(stdout_blobs: list[str]) -> dict[str, Any]:
-    """Public entry point with stable cache semantics on the raw stdout tuple."""
-    return json.loads(_cached_graph(tuple(stdout_blobs)))
+    return build_topology_graph(merged)
 
 
 def build_topology_meta(
