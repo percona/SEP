@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, ApiError } from '@sep/api';
+import { apiClient, ApiError, type PluginSchema } from '@sep/api';
 import { SNIPPETS_PLUGINS_API_BASE, type PaginatedTaskHistory } from '@sep/framework';
 import type {
   BatchApprovalErrorResponse,
@@ -69,6 +69,30 @@ export function useSnippets() {
       const { data } = await apiClient.get<SnippetResponse[]>(`${SNIPPETS_BASE}/`);
       return data;
     },
+  });
+}
+
+/**
+ * Fetch the per-snippet form schema.
+ *
+ * Pass ``executionOnly=true`` on pages that mount ``SnippetExecutionAccordion``
+ * so both share ``['snippets', filename, 'schema', { execution_only: true }]``
+ * and React Query deduplicates the fetch.
+ */
+export function useSnippetSchema(filename: string | undefined, executionOnly = false) {
+  return useQuery<PluginSchema>({
+    queryKey: executionOnly
+      ? ['snippets', filename, 'schema', { execution_only: true }]
+      : ['snippets', filename, 'schema'],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PluginSchema>(
+        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/schema`,
+        executionOnly ? { params: { execution_only: true } } : undefined,
+      );
+      return data;
+    },
+    enabled: Boolean(filename),
+    staleTime: executionOnly ? Infinity : 5 * 60 * 1000,
   });
 }
 

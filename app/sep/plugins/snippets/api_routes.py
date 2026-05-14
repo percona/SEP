@@ -118,7 +118,7 @@ async def snippets_api_refresh(user: ApiAdminUser) -> RefreshResponse:
     return RefreshResponse(refreshed_at=utc_now())
 
 
-def _build_snippet_response(snippet: Snippet) -> SnippetResponse:
+def build_snippet_response(snippet: Snippet) -> SnippetResponse:
     """Project a :class:`Snippet` into its API response shape."""
     return SnippetResponse(
         filename=snippet.filename,
@@ -149,7 +149,7 @@ async def snippets_api_list(session: SessionDep) -> list[SnippetResponse]:
     :rtype: list[SnippetResponse]
     """
     snippets = await SnippetManager.list(session)
-    return [_build_snippet_response(snippet) for snippet in snippets]
+    return [build_snippet_response(snippet) for snippet in snippets]
 
 
 @router.get(
@@ -343,7 +343,7 @@ async def snippets_api_approve(
         snippet.approve(f"Approved by {user.username}", str(user.id))
         await SnippetManager.save(session, snippet)
         logger.info("Snippet %r approved by %s", snippet.filename, user.username)
-    return _build_snippet_response(snippet)
+    return build_snippet_response(snippet)
 
 
 @router.delete(
