@@ -17,6 +17,13 @@ const TOPOLOGY_BASE = '/plugins/inventory/topology';
 
 export const TOPOLOGY_RESULT_QUERY_KEY = 'inventory-topology-result';
 
+function topologyStreamUrl(idsParam: string): string {
+  return apiClient.getUri({
+    url: `${TOPOLOGY_BASE}/stream`,
+    params: { ids: idsParam },
+  });
+}
+
 export interface CollectArgs {
   shards?: number;
   executor_host?: string;
@@ -113,19 +120,14 @@ export function useTopologyStream(
   taskHistoryIds: number[] | null,
   options?: { enabled?: boolean },
 ): TopologyStreamState {
-  const [state, setState] = useState<TopologyStreamState>(() => ({
-    ...INITIAL_STREAM_STATE,
-    dismissError: () => undefined,
-  }));
-
   const dismissError = useCallback(() => {
     setState((prev) => (prev.error ? { ...prev, error: null } : prev));
   }, []);
 
-  useEffect(() => {
-    setState((prev) => (prev.dismissError === dismissError ? prev : { ...prev, dismissError }));
-  }, [dismissError]);
-
+  const [state, setState] = useState<TopologyStreamState>(() => ({
+    ...INITIAL_STREAM_STATE,
+    dismissError,
+  }));
   const hostsCompletedRef = useRef(0);
   const enabled = options?.enabled ?? true;
 
@@ -143,7 +145,7 @@ export function useTopologyStream(
     setState({ ...INITIAL_STREAM_STATE, dismissError, isStreaming: true });
     hostsCompletedRef.current = 0;
 
-    const url = `/api${TOPOLOGY_BASE}/stream?ids=${encodeURIComponent(idsParam)}`;
+    const url = topologyStreamUrl(idsParam);
     const ctrl = new AbortController();
     const taskIds = idsParam.split(',').map((s) => Number(s));
     const openedAt = Date.now();

@@ -139,6 +139,7 @@ function renderTopology() {
 }
 
 const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.inventory.topology.taskIds';
+const TOPOLOGY_AUTO_COLLECT_STORAGE_KEY = 'sep.inventory.topology.autoCollectFired';
 
 describe('InventoryTopology', () => {
   let streamFetch: ReturnType<typeof createMockStreamFetch>;
@@ -180,7 +181,18 @@ describe('InventoryTopology', () => {
     });
     await waitFor(() => {
       expect(sessionStorage.getItem(TOPOLOGY_TASK_IDS_STORAGE_KEY)).toBe('[301]');
+      expect(sessionStorage.getItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY)).toBe('true');
     });
+  });
+
+  it('clears the auto-collect flag when collection fails before task ids exist', async () => {
+    vi.spyOn(apiClient, 'post').mockRejectedValue(new Error('collect failed'));
+
+    renderTopology();
+
+    await screen.findByText('collect failed');
+    expect(sessionStorage.getItem(TOPOLOGY_TASK_IDS_STORAGE_KEY)).toBeNull();
+    expect(sessionStorage.getItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY)).toBeNull();
   });
 
   it('skips auto-collect and rehydrates instantly from persisted task ids', async () => {
@@ -239,7 +251,9 @@ describe('InventoryTopology', () => {
 
     await waitFor(() => {
       expect(streamFetch.pending[0]?.url).toContain('/api/plugins/inventory/topology/stream');
-      expect(streamFetch.pending[0]?.url).toContain('ids=42%2C43');
+      expect(new URL(streamFetch.pending[0]!.url, 'http://localhost').searchParams.get('ids')).toBe(
+        '42,43',
+      );
       expect(streamFetch.pending[0]?.requestHeaders.authorization).toBe('Bearer test-access-token');
     });
   });

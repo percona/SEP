@@ -60,7 +60,33 @@ const NODE_TYPES = {
  * browser tabs each get their own collection without interfering.
  */
 const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.inventory.topology.taskIds';
-const TOPOLOGY_AUTO_COLLECT_STORAGE_KEY = 'inventory-topology-auto-collect-fired';
+const TOPOLOGY_AUTO_COLLECT_STORAGE_KEY = 'sep.inventory.topology.autoCollectFired';
+
+function readPersistedAutoCollectHandled(): boolean {
+  if (typeof sessionStorage === 'undefined') {
+    return false;
+  }
+  try {
+    return sessionStorage.getItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistAutoCollectHandled(handled: boolean): void {
+  if (typeof sessionStorage === 'undefined') {
+    return;
+  }
+  try {
+    if (handled) {
+      sessionStorage.setItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY, 'true');
+    } else {
+      sessionStorage.removeItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY);
+    }
+  } catch {
+    // sessionStorage can throw under quota or privacy-mode limits.
+  }
+}
 
 function readPersistedTaskIds(): number[] | null {
   if (typeof sessionStorage === 'undefined') {
@@ -89,12 +115,28 @@ function persistTaskIds(ids: number[] | null): void {
   try {
     if (ids === null || ids.length === 0) {
       sessionStorage.removeItem(TOPOLOGY_TASK_IDS_STORAGE_KEY);
+      sessionStorage.removeItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY);
     } else {
       sessionStorage.setItem(TOPOLOGY_TASK_IDS_STORAGE_KEY, JSON.stringify(ids));
     }
   } catch {
     // sessionStorage can throw under quota or privacy-mode limits;
     // failing silently keeps the in-memory state authoritative.
+  }
+}
+
+function unsupportedEdge(edge: never): never {
+  throw new Error(`Unsupported topology edge type: ${JSON.stringify(edge)}`);
+}
+
+function edgeStrokeColor(edge: TopologyEdge): string {
+  switch (edge.type) {
+    case 'dual_primary':
+      return '#d32f2f';
+    case 'replication':
+      return edge.data?.status === 'err' ? '#ed6c02' : '#1976d2';
+    default:
+      return unsupportedEdge(edge);
   }
 }
 
@@ -126,12 +168,7 @@ function toFlowEdges(graph: TopologyGraph | null): Edge[] {
       animated: isReplication,
       label: edge.type === 'dual_primary' ? 'dual primary' : undefined,
       style: {
-        stroke:
-          edge.type === 'dual_primary'
-            ? '#d32f2f'
-            : (edge.data as Record<string, unknown> | undefined)?.['status'] === 'err'
-              ? '#ed6c02'
-              : '#1976d2',
+        stroke: edgeStrokeColor(edge),
         strokeWidth: edge.type === 'dual_primary' ? 2 : 1.5,
       },
       markerEnd:
@@ -207,31 +244,26 @@ function TopologyCanvas({ graph }: { graph: TopologyGraph | null }) {
  */
 export function InventoryTopology() {
   const [taskIds, setTaskIdsState] = useState<number[] | null>(readPersistedTaskIds);
-  const setTaskIds = useCallback((ids: number[] | null) => {
-    setTaskIdsState(ids);
-    persistTaskIds(ids);
+  const [autoCollectHandled, setAutoCollectHandledState] = useState<boolean>(
+    readPersistedAutoCollectHandled,
+  );
+  const setAutoCollectHandled = useCallback((handled: boolean) => {
+    setAutoCollectHandledState(handled);
+    persistAutoCollectHandled(handled);
   }, []);
+  const setTaskIds = useCallback(
+    (ids: number[] | null) => {
+      setTaskIdsState(ids);
+      persistTaskIds(ids);
+      if (ids === null || ids.length === 0) {
+        setAutoCollectHandled(false);
+      }
+    },
+    [setAutoCollectHandled],
+  );
   const collect = useCollectTopology();
   const result = useTopologyResult(taskIds);
   const stream = useTopologyStream(taskIds, { enabled: !!taskIds });
-  const [autoCollectHandled, setAutoCollectHandled] = useState<boolean>(() => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-
-    return window.sessionStorage.getItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY) === 'true';
-  });
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      TOPOLOGY_AUTO_COLLECT_STORAGE_KEY,
-      autoCollectHandled ? 'true' : 'false',
-    );
-  }, [autoCollectHandled]);
 
   const markAutoCollectHandled = useCallback(() => {
     setAutoCollectHandled(true);
@@ -239,9 +271,13 @@ export function InventoryTopology() {
 
   const handleRefresh = useCallback(async () => {
     markAutoCollectHandled();
-    const response = await collect.mutateAsync(undefined);
-    setTaskIds(response.task_history_ids);
-  }, [collect, markAutoCollectHandled, setTaskIds]);
+    try {
+      const response = await collect.mutateAsync(undefined);
+      setTaskIds(response.task_history_ids);
+    } catch {
+      setAutoCollectHandled(false);
+    }
+  }, [collect, markAutoCollectHandled, setAutoCollectHandled, setTaskIds]);
 
   useEffect(() => {
     if (taskIds !== null) {
