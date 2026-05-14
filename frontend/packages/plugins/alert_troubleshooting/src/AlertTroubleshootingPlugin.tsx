@@ -15,7 +15,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { HostSelector } from './HostSelector';
-export type { HostSelectorProps } from './HostSelector';
-export { StandaloneHostSelector } from './StandaloneHostSelector';
-export type { StandaloneHostSelectorProps } from './StandaloneHostSelector';
+import { Route, Routes } from 'react-router-dom';
+import { AlertTroubleshootingIndexPage } from './AlertTroubleshootingIndexPage';
+import { AlertTroubleshootingDetailPage } from './AlertTroubleshootingDetailPage';
+
+/**
+ * Alert Troubleshooting plugin entry point.
+ *
+ * Routes:
+ *   /alerts/troubleshooting/           → grouped alert browser
+ *   /alerts/troubleshooting/:serviceType/:alertName → snippet execution cards
+ */
+export function AlertTroubleshootingPlugin() {
+  return (
+    <Routes>
+      <Route index element={<AlertTroubleshootingIndexPage />} />
+      <Route path=":serviceType/:alertName" element={<AlertTroubleshootingDetailPage />} />
+    </Routes>
+  );
+}
