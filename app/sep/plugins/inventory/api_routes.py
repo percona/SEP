@@ -56,6 +56,7 @@ from app.core.exceptions import (
 )
 from app.core.requests import RemoteAPI
 from app.inventory.constants import DEFAULT_MYSQL_PORT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import InventoryAPI, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory import payloads
@@ -157,7 +158,7 @@ def _format_host_entry(service: dict[str, Any]) -> str | None:
 async def _collect_mysql_host_entries(inventory_api: RemoteAPI) -> list[str]:
     """Return ``host:port`` entries for every MySQL service in inventory."""
     response = await inventory_api.get(
-        "/services/", params={"service_type": "mysql", "limit": 0}
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0}
     )
     items = response.get("items", []) if isinstance(response, dict) else []
     seen: set[str] = set()
