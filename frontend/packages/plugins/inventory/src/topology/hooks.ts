@@ -113,14 +113,19 @@ export function useTopologyStream(
   taskHistoryIds: number[] | null,
   options?: { enabled?: boolean },
 ): TopologyStreamState {
+  const [state, setState] = useState<TopologyStreamState>(() => ({
+    ...INITIAL_STREAM_STATE,
+    dismissError: () => undefined,
+  }));
+
   const dismissError = useCallback(() => {
     setState((prev) => (prev.error ? { ...prev, error: null } : prev));
   }, []);
 
-  const [state, setState] = useState<TopologyStreamState>(() => ({
-    ...INITIAL_STREAM_STATE,
-    dismissError,
-  }));
+  useEffect(() => {
+    setState((prev) => (prev.dismissError === dismissError ? prev : { ...prev, dismissError }));
+  }, [dismissError]);
+
   const hostsCompletedRef = useRef(0);
   const enabled = options?.enabled ?? true;
 
