@@ -26,6 +26,9 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import status
 
+from app.core.exceptions import HTTPServiceUnavailableException
+from app.sep.plugins.inventory import api_routes as inventory_api_routes
+from app.sep.plugins.inventory.api_routes import _topology_event_stream
 from app.sep.plugins.inventory.deps import INVENTORY_PLUGIN_ENTITY_NAMES
 
 _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
@@ -368,3 +371,56 @@ class TestTopologyResult:
         """Ensure the ids query parameter is required."""
         response = test_client.get("/api/plugins/inventory/topology/result")
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+class TestTopologyStream:
+    """Tests for ``GET /api/plugins/inventory/topology/stream`` internals."""
+
+    @pytest.mark.asyncio
+    async def test_polling_error_emits_task_error_before_done(self):
+        """Ensure task-history polling failures surface as SSE task_error events."""
+
+        class BrokenTasksAPI:
+            async def get(self, _path):
+                raise HTTPServiceUnavailableException("Tasks API unavailable")
+
+        events = []
+        async for event in _topology_event_stream(BrokenTasksAPI(), [77]):
+            events.append(event)
+            if event.startswith("event: complete"):
+                break
+
+        assert any("event: task_error" in event for event in events)
+        assert any('"status_code":503' in event for event in events)
+        assert any('"detail":"Tasks API unavailable"' in event for event in events)
+        assert any("event: task_done" in event for event in events)
+
+    @pytest.mark.asyncio
+    async def test_worker_crash_is_logged(self, monkeypatch):
+        """Ensure unexpected worker exceptions are not silently swallowed."""
+
+        class BrokenStreamTasksAPI:
+            async def get(self, _path):
+                return {"id": 77, "status": "running"}
+
+            async def stream(self, _path, params=None):
+                raise RuntimeError("stream broke")
+                yield b""
+
+        logged_messages: list[str] = []
+
+        def _capture_exception(message: str) -> None:
+            logged_messages.append(message)
+
+        monkeypatch.setattr(
+            inventory_api_routes.logger, "exception", _capture_exception
+        )
+
+        events = [
+            event
+            async for event in _topology_event_stream(BrokenStreamTasksAPI(), [77])
+        ]
+
+        assert any("event: task_done" in event for event in events)
+        assert any("event: complete" in event for event in events)
+        assert logged_messages == ["Topology stream worker failed."]

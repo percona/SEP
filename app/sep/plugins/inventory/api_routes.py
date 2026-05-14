@@ -39,7 +39,6 @@ React plugin.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 from pathlib import Path
@@ -436,8 +435,12 @@ async def _topology_event_stream(
         for worker in workers:
             worker.cancel()
         for worker in workers:
-            with contextlib.suppress(asyncio.CancelledError, Exception):
+            try:
                 await worker
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Topology stream worker failed.")
 
 
 @router.get("/topology/stream")
