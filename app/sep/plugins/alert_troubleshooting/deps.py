@@ -219,7 +219,7 @@ def collect_grouped_alerts(
             grouped.setdefault(service_type, {})[info.name] = info
     return {
         svc: sorted(alerts.values(), key=lambda a: a.label)
-        for svc, alerts in grouped.items()
+        for svc, alerts in sorted(grouped.items(), key=lambda item: item[0].label)
     }
 
 
