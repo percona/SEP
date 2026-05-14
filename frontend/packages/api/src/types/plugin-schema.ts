@@ -212,6 +212,12 @@ export interface FormSection {
   title: string;
   description?: string;
   fields: PluginField[];
+  /** Whether the section is wrapped in an expandable/collapsible shell. */
+  collapsible?: boolean;
+  /** Initial expansion state when collapsible is enabled. */
+  collapsed_by_default?: boolean;
+  /** Whether to render the section after the submit button. */
+  render_after_submit?: boolean;
   /** Cross-field cardinality constraints scoped to this section. */
   cardinality_rules?: CardinalityRule[];
   /** Predicate-only invariants scoped to this section. */

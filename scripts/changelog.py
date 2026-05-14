@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -66,6 +68,9 @@ TICKET_RE: re.Pattern[str] = re.compile(r"^SEP-(\d+)$")
 UNRELEASED_COMPARE_RE: re.Pattern[str] = re.compile(
     r"^\[Unreleased\]: (?P<url>https://github\.com/percona/SEP/compare/"
     r"v(?P<previous>[\w.\-]+)\.\.\.HEAD)$",
+)
+VERSION_FOOTER_LINE_RE: re.Pattern[str] = re.compile(
+    r"^\[v(?P<version>[\w.\-]+)\]: ",
 )
 RESERVED_FILENAMES: frozenset[str] = frozenset({"README.md", ".gitkeep"})
 CHANGELOG_D: Path = Path("changelog.d")
@@ -249,8 +254,73 @@ def _splice_version_section(
     return "\n".join(new_lines) + suffix
 
 
+def _infer_previous_version(lines: list[str], version: str) -> str | None:
+    """Return the most recent prior version from ``## [vA.B.C]`` headings.
+
+    :param lines: The ``CHANGELOG.md`` contents split into lines.
+    :type lines: list[str]
+    :param version: The version being added (excluded from the search).
+    :type version: str
+    :return: The previous version string (no ``v`` prefix), or ``None`` if
+        no usable section heading exists.
+    :rtype: str | None
+    """
+    new_section_heading = f"## [v{version}]"
+    _prefix = "## ["
+    for line in lines:
+        if not line.startswith("## [v") or line.startswith(new_section_heading):
+            continue
+        # Strip ``## [`` prefix and everything from ``]`` onwards.
+        bracket_end = line.find("]")
+        if bracket_end <= len(_prefix):
+            continue
+        candidate = line[len(_prefix) : bracket_end]  # e.g. ``v0.12.1``
+        if candidate.startswith("v"):
+            return candidate[1:]
+    return None
+
+
+def _insert_synthesized_footer(
+    lines: list[str],
+    new_unreleased: str,
+    new_version_link: str,
+) -> None:
+    """Insert synthesized footer compare links in-place, newest-first.
+
+    Inserts before the first existing ``[vA.B.C]:`` compare-link line so the
+    synthesized lines stay in descending-version order, matching the rest of
+    the file. Falls back to appending at the end of ``lines`` (after trimming
+    trailing blanks) when no existing footer line is found.
+
+    :param lines: The ``CHANGELOG.md`` contents split into lines; mutated.
+    :type lines: list[str]
+    :param new_unreleased: The new ``[Unreleased]:`` line to insert.
+    :type new_unreleased: str
+    :param new_version_link: The new ``[vX.Y.Z]:`` line to insert below it.
+    :type new_version_link: str
+    """
+    insert_idx = None
+    for footer_idx, footer_line in enumerate(lines):
+        if footer_line.startswith("[v") and "]: " in footer_line:
+            insert_idx = footer_idx
+            break
+    if insert_idx is None:
+        while lines and lines[-1].strip() == "":
+            lines.pop()
+        lines.append(new_unreleased)
+        lines.append(new_version_link)
+    else:
+        lines.insert(insert_idx, new_unreleased)
+        lines.insert(insert_idx + 1, new_version_link)
+
+
 def _update_compare_links(changelog_text: str, version: str) -> str:
     """Rewrite the ``[Unreleased]`` compare link and insert a new ``[vX.Y.Z]`` link.
+
+    When the ``[Unreleased]:`` footer is absent (the state immediately after
+    the v0.12.x transition cleanup that removed the broken compare link),
+    synthesize both lines from scratch by inferring the previous-version tag
+    from the most recent ``## [vA.B.C]`` heading.
 
     :param changelog_text: The current ``CHANGELOG.md`` contents.
     :type changelog_text: str
@@ -258,9 +328,11 @@ def _update_compare_links(changelog_text: str, version: str) -> str:
     :type version: str
     :return: The updated ``CHANGELOG.md`` contents.
     :rtype: str
-    :raises FragmentError: If the ``[Unreleased]`` compare link is missing.
+    :raises FragmentError: If neither an ``[Unreleased]:`` footer nor any
+        ``## [v...]`` section heading can be found.
     """
     lines = changelog_text.splitlines()
+    suffix = "\n" if changelog_text.endswith("\n") else ""
     for idx, line in enumerate(lines):
         match = UNRELEASED_COMPARE_RE.match(line)
         if match is None:
@@ -269,9 +341,364 @@ def _update_compare_links(changelog_text: str, version: str) -> str:
         lines[idx] = f"[Unreleased]: {REPO_COMPARE_URL}/v{version}...HEAD"
         new_link = f"[v{version}]: {REPO_COMPARE_URL}/v{previous}...v{version}"
         lines.insert(idx + 1, new_link)
-        suffix = "\n" if changelog_text.endswith("\n") else ""
         return "\n".join(lines) + suffix
-    raise FragmentError("CHANGELOG.md: missing ``[Unreleased]`` compare link")
+
+    # Footer absent — synthesize. Find the previous version from the most
+    # recent ``## [vA.B.C]`` heading (excluding the version we're about to add,
+    # which by this point in cmd_assemble already lives near the top of the file).
+    previous_version = _infer_previous_version(lines, version)
+    if previous_version is None:
+        raise FragmentError(
+            "CHANGELOG.md: missing ``[Unreleased]`` compare link and no "
+            "``## [vA.B.C]`` section heading to infer previous version from",
+        )
+    new_unreleased = f"[Unreleased]: {REPO_COMPARE_URL}/v{version}...HEAD"
+    new_version_link = (
+        f"[v{version}]: {REPO_COMPARE_URL}/v{previous_version}...v{version}"
+    )
+    _insert_synthesized_footer(lines, new_unreleased, new_version_link)
+    return "\n".join(lines) + suffix
+
+
+def _git_show_ref(ref: str, path: str) -> str:
+    """Return ``git show <ref>:<path>`` as a string.
+
+    Used by :func:`cmd_resolve_backmerge` to read the ours/theirs sides of
+    a back-merge directly from refs (HEAD for ours, MERGE_HEAD for
+    theirs), so the script works whether or not the path was conflicted.
+    Monkeypatched in tests.
+
+    :param ref: A git ref name (e.g. ``HEAD``, ``MERGE_HEAD``).
+    :type ref: str
+    :param path: The repository-relative path.
+    :type path: str
+    :return: The file contents at that ref.
+    :rtype: str
+    """
+    git_exe = shutil.which("git") or "git"
+    result = subprocess.run(
+        [git_exe, "show", f"{ref}:{path}"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return result.stdout
+
+
+def _git_ls_tree(ref: str, path: str) -> set[str]:
+    """Return the set of file basenames under ``path`` at ``ref``.
+
+    Used to compute the set difference between main's and release branch's
+    ``changelog.d/`` contents during a back-merge — files present in main's
+    tree but absent in the release branch's tree are the ones the release
+    consumed via ``cmd_assemble``.
+
+    :param ref: A git ref name (e.g. ``HEAD``, ``MERGE_HEAD``).
+    :type ref: str
+    :param path: The repository-relative directory path (no trailing slash).
+    :type path: str
+    :return: The set of basenames; empty if the directory doesn't exist at
+        the ref.
+    :rtype: set[str]
+    """
+    git_exe = shutil.which("git") or "git"
+    result = subprocess.run(
+        [git_exe, "ls-tree", "--name-only", ref, f"{path}/"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return set()
+    names = set()
+    for line in result.stdout.splitlines():
+        name = line.strip()
+        if not name:
+            continue
+        # ls-tree returns full paths; strip the directory prefix.
+        names.add(name.rsplit("/", 1)[-1])
+    return names
+
+
+def _git_merge_base(ref_a: str, ref_b: str) -> str:
+    """Return the merge-base commit SHA of two refs.
+
+    Used by :func:`_prune_consumed_fragments` to find the scope-lock commit
+    — the common ancestor of main (``HEAD``) and the release branch
+    (``MERGE_HEAD``). The merge-base's ``changelog.d/`` listing is the
+    correct baseline for "what existed when the release branch was cut".
+    Monkeypatched in tests.
+
+    :param ref_a: First ref name.
+    :type ref_a: str
+    :param ref_b: Second ref name.
+    :type ref_b: str
+    :return: The merge-base commit SHA.
+    :rtype: str
+    :raises subprocess.CalledProcessError: If ``git merge-base`` fails (no
+        common ancestor, etc.).
+    """
+    git_exe = shutil.which("git") or "git"
+    result = subprocess.run(
+        [git_exe, "merge-base", ref_a, ref_b],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return result.stdout.strip()
+
+
+def _extract_version_section(
+    changelog_text: str,
+    version: str,
+) -> list[str]:
+    """Return the lines of the ``## [vX.Y.Z]`` section, heading inclusive.
+
+    Trailing blank lines are trimmed. The caller is responsible for
+    re-inserting one blank line as a separator when splicing into another
+    document.
+
+    :param changelog_text: Source CHANGELOG body.
+    :type changelog_text: str
+    :param version: Version to extract (no ``v`` prefix).
+    :type version: str
+    :return: The section's lines.
+    :rtype: list[str]
+    :raises FragmentError: If the section heading is not found.
+    """
+    lines = changelog_text.splitlines()
+    target_heading_prefix = f"## [v{version}]"
+    start = None
+    for idx, line in enumerate(lines):
+        if line.startswith(target_heading_prefix):
+            start = idx
+            break
+    if start is None:
+        raise FragmentError(
+            f"release-side CHANGELOG.md: missing ``## [v{version}]`` section",
+        )
+    end = len(lines)
+    for idx in range(start + 1, len(lines)):
+        line = lines[idx]
+        if line.startswith(("## [", "[Unreleased]:")) or VERSION_FOOTER_LINE_RE.match(
+            line,
+        ):
+            end = idx
+            break
+    section = lines[start:end]
+    while section and section[-1].strip() == "":
+        section.pop()
+    return section
+
+
+def _split_body_and_footer(changelog_text: str) -> tuple[list[str], list[str]]:
+    """Split a CHANGELOG into the body lines and the footer-link lines.
+
+    Footer = the contiguous trailing block of ``[Unreleased]: ...`` /
+    ``[vA.B.C]: ...`` lines (possibly preceded by blank lines that are
+    treated as part of the body).
+
+    :param changelog_text: The CHANGELOG body.
+    :type changelog_text: str
+    :return: ``(body_lines, footer_lines)``.
+    :rtype: tuple[list[str], list[str]]
+    """
+    lines = changelog_text.splitlines()
+    footer_start = len(lines)
+    for idx in range(len(lines) - 1, -1, -1):
+        line = lines[idx]
+        if line == "":
+            continue
+        if line.startswith("[Unreleased]:") or VERSION_FOOTER_LINE_RE.match(line):
+            footer_start = idx
+            continue
+        break
+    return lines[:footer_start], lines[footer_start:]
+
+
+def _splice_release_into_body(
+    ours_body: list[str],
+    section_lines: list[str],
+) -> list[str] | None:
+    """Splice the release section into the ours-side body lines.
+
+    Locates ``## [Unreleased]`` then the first ``## [v...]`` after it and
+    inserts ``section_lines`` (plus a trailing blank line separator) between
+    them.
+
+    :param ours_body: Body lines from the ours-side CHANGELOG (no footer).
+    :type ours_body: list[str]
+    :param section_lines: The release ``## [vX.Y.Z]`` section lines to splice in.
+    :type section_lines: list[str]
+    :return: The merged body, or ``None`` if the required headings are absent.
+    :rtype: list[str] | None
+    """
+    try:
+        unreleased_idx = ours_body.index("## [Unreleased]")
+    except ValueError:
+        return None
+    next_section_idx = None
+    for idx in range(unreleased_idx + 1, len(ours_body)):
+        if ours_body[idx].startswith("## [v"):
+            next_section_idx = idx
+            break
+    if next_section_idx is None:
+        return None
+    new_block = [*section_lines, ""]
+    return [*ours_body[:next_section_idx], *new_block, *ours_body[next_section_idx:]]
+
+
+def _build_rebuilt_footer(
+    version: str,
+    ours_footer: list[str],
+    theirs_footer: list[str],
+) -> list[str] | None:
+    """Assemble the new footer: [Unreleased] link, new [vX.Y.Z] link, old links.
+
+    :param version: The release version (no ``v`` prefix).
+    :type version: str
+    :param ours_footer: Footer lines from the ours-side CHANGELOG.
+    :type ours_footer: list[str]
+    :param theirs_footer: Footer lines from the theirs-side CHANGELOG.
+    :type theirs_footer: list[str]
+    :return: The rebuilt footer lines, or ``None`` if the release link is absent.
+    :rtype: list[str] | None
+    """
+    new_version_footer_line = None
+    for line in theirs_footer:
+        match = VERSION_FOOTER_LINE_RE.match(line)
+        if match is not None and match.group("version") == version:
+            new_version_footer_line = line
+            break
+    if new_version_footer_line is None:
+        return None
+    unreleased_link = f"[Unreleased]: {REPO_COMPARE_URL}/v{version}...HEAD"
+    rebuilt = [unreleased_link, new_version_footer_line]
+    for line in ours_footer:
+        if not line or line.startswith("[Unreleased]:"):
+            continue
+        match = VERSION_FOOTER_LINE_RE.match(line)
+        if match is not None and match.group("version") == version:
+            continue
+        rebuilt.append(line)
+    return rebuilt
+
+
+def _prune_consumed_fragments() -> int:
+    """Delete ``changelog.d/`` fragments that the release branch consumed.
+
+    Consumed = present in the merge-base's ``changelog.d/`` but absent in
+    the release branch's ``changelog.d/`` (the release branch's
+    ``cmd_assemble`` step deleted them). Fragments newly added to main
+    after scope-lock did not exist at the merge-base, so they are not in
+    the consumed set and are preserved.
+
+    ``RESERVED_FILENAMES`` are excluded from consideration even if they
+    happen to be missing on one side. Files matching :data:`FRAGMENT_RE`
+    are deleted from the working tree; all other files are left alone.
+
+    :return: The number of fragment files attempted to be deleted (count
+        includes files that were already removed by git's auto-merge
+        before this function ran).
+    :rtype: int
+    """
+    try:
+        merge_base = _git_merge_base("HEAD", "MERGE_HEAD")
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"error: failed to compute merge-base of HEAD and MERGE_HEAD: {exc}",
+            file=sys.stderr,
+        )
+        return 0
+    changelog_d_path = str(CHANGELOG_D).rstrip("/")
+    baseline_fragments = _git_ls_tree(merge_base, changelog_d_path)
+    theirs_fragments = _git_ls_tree("MERGE_HEAD", changelog_d_path)
+    consumed_names = baseline_fragments - theirs_fragments
+    pruned = 0
+    for name in sorted(consumed_names):
+        if name in RESERVED_FILENAMES:
+            continue
+        if FRAGMENT_RE.match(name) is None:
+            continue
+        fragment_path = CHANGELOG_D / name
+        if fragment_path.exists():
+            fragment_path.unlink()
+        pruned += 1
+    return pruned
+
+
+def cmd_resolve_backmerge(version: str) -> int:
+    """Resolve the CHANGELOG.md + changelog.d/ conflict produced by a back-merge.
+
+    Reads ``CHANGELOG.md`` from refs (ours = HEAD, theirs = MERGE_HEAD) via
+    :func:`_git_show_ref`. This works whether or not CHANGELOG.md was
+    conflicted, because MERGE_HEAD always exists during a mid-merge state.
+    Writes the merged result to ``CHANGELOG.md`` in the working tree and
+    deletes ``changelog.d/`` fragments that the release branch consumed
+    (determined by directory diff between the scope-lock merge-base and
+    MERGE_HEAD, so post-scope-lock additions to main are preserved).
+
+    :param version: The release version (no ``v`` prefix).
+    :type version: str
+    :return: ``0`` on success, ``1`` on error.
+    :rtype: int
+    """
+    try:
+        ours = _git_show_ref("HEAD", "CHANGELOG.md")
+        theirs = _git_show_ref("MERGE_HEAD", "CHANGELOG.md")
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"error: failed to read CHANGELOG.md from refs: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        section_lines = _extract_version_section(theirs, version)
+    except FragmentError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    ours_body, ours_footer = _split_body_and_footer(ours)
+    _, theirs_footer = _split_body_and_footer(theirs)
+
+    merged_body = _splice_release_into_body(ours_body, section_lines)
+    if merged_body is None:
+        if "## [Unreleased]" not in ours_body:
+            print(
+                "error: ours-side CHANGELOG.md: missing ``## [Unreleased]`` heading",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "error: ours-side CHANGELOG.md: no existing ``## [v...]`` heading "
+                "to splice the new release before",
+                file=sys.stderr,
+            )
+        return 1
+
+    rebuilt_footer = _build_rebuilt_footer(version, ours_footer, theirs_footer)
+    if rebuilt_footer is None:
+        print(
+            f"error: release-side CHANGELOG.md: missing ``[v{version}]:`` "
+            "compare-link footer line",
+            file=sys.stderr,
+        )
+        return 1
+
+    while merged_body and merged_body[-1].strip() == "":
+        merged_body.pop()
+    CHANGELOG_MD.write_text(
+        "\n".join([*merged_body, "", *rebuilt_footer]) + "\n",
+        encoding="utf-8",
+    )
+
+    pruned = _prune_consumed_fragments()
+    print(
+        f"Resolved back-merge for v{version}: "
+        f"merged CHANGELOG.md, pruned {pruned} consumed fragment(s).",
+    )
+    return 0
 
 
 def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
@@ -511,6 +938,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the rendered section and list consumed fragments without writing.",
     )
 
+    backmerge_parser = subparsers.add_parser(
+        "resolve-backmerge",
+        help="Resolve CHANGELOG.md + changelog.d/ conflict after a release back-merge.",
+    )
+    backmerge_parser.add_argument(
+        "--release",
+        required=True,
+        help="The release version being back-merged (no ``v`` prefix), e.g. 0.13.0.",
+    )
+
     return parser
 
 
@@ -530,6 +967,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_check()
     if args.command == "list":
         return cmd_list()
+    if args.command == "resolve-backmerge":
+        return cmd_resolve_backmerge(args.release)
     return cmd_assemble(
         args.version,
         args.date,

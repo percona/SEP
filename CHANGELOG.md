@@ -259,7 +259,6 @@ See `changelog.d/README.md` for the full workflow.
 - SEP-701: Update `aiohttp` to 3.13.3
 - SEP-728: Update `python-multipart` to 0.0.22
 
-[Unreleased]: https://github.com/percona/SEP/compare/v0.12.1...HEAD
 [v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1
 [v0.12.0]: https://github.com/percona/SEP/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/percona/SEP/compare/v0.10.3...v0.11.0

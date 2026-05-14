@@ -30,6 +30,22 @@ jobs:
       - name: Run bandit
         run: make bandit
 
+  lock_check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.11.9"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Check pyproject.toml/poetry.lock consistency
+        run: poetry check --lock --strict
+
   check_migrations:
     strategy:
       matrix:
@@ -62,7 +78,7 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: poetry
       - name: Install test dependencies
-        run: poetry install --with syncmysql
+        run: poetry sync --no-root --with syncmysql
       - name: Run tests
         run: make test
       - name: Generate coverage comment data
