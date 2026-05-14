@@ -16,10 +16,11 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { useState, type ReactNode } from 'react';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import { buildValidationRules, coerceFormValues } from './utils/validationMapper';
 import { evaluatePredicate, isPresent } from './utils/predicateEvaluator';
@@ -1194,5 +1195,160 @@ describe('SchemaFormRenderer — capabilities.alert_on_fail', () => {
     await user.click(screen.getByRole('button', { name: /Run/ }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ alert_on_fail: true }));
+  });
+});
+
+// ── Unsaved changes guard (integration) ──────────────────────────────────────
+
+const GUARD_SECTIONS: FormSection[] = [
+  { title: 'Main', fields: [{ type: 'string', name: 'title', label: 'Title' }] },
+];
+
+/**
+ * Renders SchemaFormRenderer inside a createMemoryRouter so that useBlocker
+ * (and therefore the in-app navigation guard) is active.
+ */
+function renderWithRouter(ui: ReactNode, { initialPath = '/form' }: { initialPath?: string } = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const router = createMemoryRouter(
+    [
+      { path: '/form', element: ui },
+      { path: '/other', element: <div>Other page</div> },
+    ],
+    { initialEntries: [initialPath] },
+  );
+  return {
+    router,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+  };
+}
+
+describe('SchemaFormRenderer — unsaved changes guard', () => {
+  beforeEach(() => {
+    useAlertConfigMock.mockReset();
+    useAlertConfigMock.mockReturnValue({ data: { available: false }, isLoading: false });
+  });
+
+  it('AC#3 — does not block navigation when form is clean', async () => {
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />,
+    );
+
+    act(() => {
+      router.navigate('/other');
+    });
+
+    expect(await screen.findByText('Other page')).toBeInTheDocument();
+  });
+
+  it('AC#1 — shows confirmation dialog when dirty form navigates away', async () => {
+    const user = userEvent.setup();
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />,
+    );
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    act(() => {
+      router.navigate('/other');
+    });
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /unsaved changes/i })).toBeInTheDocument();
+    expect(screen.queryByText('Other page')).toBeNull();
+  });
+
+  it('AC#1 — Stay button cancels navigation and keeps form state intact', async () => {
+    const user = userEvent.setup();
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />,
+    );
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    act(() => {
+      router.navigate('/other');
+    });
+
+    await screen.findByRole('dialog');
+    await user.click(screen.getByRole('button', { name: /stay/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Other page')).toBeNull();
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('hello');
+  });
+
+  it('AC#1 — Discard changes button proceeds with navigation', async () => {
+    const user = userEvent.setup();
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />,
+    );
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    act(() => {
+      router.navigate('/other');
+    });
+
+    await screen.findByRole('dialog');
+    await user.click(screen.getByRole('button', { name: /discard/i }));
+
+    expect(await screen.findByText('Other page')).toBeInTheDocument();
+  });
+
+  it('AC#4 — does not block navigation after successful submit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={onSubmit} submitLabel="Save" />,
+    );
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      router.navigate('/other');
+    });
+
+    expect(await screen.findByText('Other page')).toBeInTheDocument();
+  });
+
+  it('AC#5 — re-arms guard after failed async mutation (submitError set after submit)', async () => {
+    const user = userEvent.setup();
+
+    // FormWithMutationError simulates a parent that sets submitError after its
+    // async mutation rejects. onSubmit returns synchronously (no throw), so
+    // RHF marks isSubmitSuccessful=true — then submitError is set to re-arm.
+    function FormWithMutationError() {
+      const [submitError, setSubmitError] = useState<string | null>(null);
+      return (
+        <SchemaFormRenderer
+          sections={GUARD_SECTIONS}
+          onSubmit={() => {
+            setSubmitError('Mutation failed');
+          }}
+          submitError={submitError}
+          submitLabel="Save"
+        />
+      );
+    }
+
+    const { router } = renderWithRouter(<FormWithMutationError />);
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(screen.getByText('Mutation failed')).toBeInTheDocument());
+    // Flush effects from reset() so the blocker re-registers on the router
+    await act(async () => {});
+
+    // Guard must be re-armed: navigation should now prompt.
+    act(() => {
+      router.navigate('/other');
+    });
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 });

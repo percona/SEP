@@ -15,14 +15,20 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { memo, useMemo } from 'react';
+import { memo, useContext, useMemo } from 'react';
 import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
+import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -32,6 +38,7 @@ import { FieldRenderer } from './fields';
 import { useConditionalField } from './hooks/useConditionalField';
 import { useCardinalityRules } from './hooks/useCardinalityRules';
 import { useFailRules } from './hooks/useFailRules';
+import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard';
 import { coerceFormValues } from './utils/validationMapper';
 import type { FormSection, PluginField } from './types';
 
@@ -158,6 +165,36 @@ export interface SchemaFormRendererProps {
   capabilities?: PluginCapabilities;
 }
 
+/**
+ * Blocks in-app navigation while `isGuarded` is true.
+ * Rendered only when the component tree is inside a Data Router, so `useBlocker`
+ * never runs in contexts where it would throw (legacy MemoryRouter, test renders
+ * without createMemoryRouter, etc.).
+ */
+function UnsavedChangesBlocker({ isGuarded }: { isGuarded: boolean }) {
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isGuarded && currentLocation.pathname !== nextLocation.pathname,
+  );
+
+  return (
+    <Dialog open={blocker.state === 'blocked'} aria-labelledby="unsaved-dialog-title">
+      <DialogTitle id="unsaved-dialog-title">Unsaved changes</DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          You have unsaved changes. If you leave this page your changes will be lost.
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => blocker.reset?.()}>Stay</Button>
+        <Button onClick={() => blocker.proceed?.()} color="error" variant="contained">
+          Discard changes
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 /** Inner form body — lives inside FormProvider so it can call useFormContext / useCardinalityRules. */
 function SchemaFormBody({
   sections,
@@ -168,6 +205,8 @@ function SchemaFormBody({
   capabilities,
 }: SchemaFormRendererProps) {
   const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
+  const isGuarded = useUnsavedChangesGuard(submitError);
+  const inDataRouter = Boolean(useContext(UNSAFE_DataRouterContext));
   const allFields = useMemo(() => flattenFields(sections), [sections]);
   const beforeSubmitSections = useMemo(
     () => sections.filter((section) => !section.render_after_submit),
@@ -203,55 +242,58 @@ function SchemaFormBody({
   };
 
   return (
-    <Box
-      component="form"
-      onSubmit={handleSubmit(handleFormSubmit)}
-      noValidate
-      sx={{ maxWidth: 640 }}
-    >
-      {submitError && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {submitError}
-        </Alert>
-      )}
-      {hasInlineErrors && formState.isSubmitted && !submitError && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Fix the highlighted fields before submitting.
-        </Alert>
-      )}
+    <>
+      {inDataRouter && <UnsavedChangesBlocker isGuarded={isGuarded} />}
+      <Box
+        component="form"
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        sx={{ maxWidth: 640 }}
+      >
+        {submitError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {submitError}
+          </Alert>
+        )}
+        {hasInlineErrors && formState.isSubmitted && !submitError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Fix the highlighted fields before submitting.
+          </Alert>
+        )}
 
-      {beforeSubmitSections.map((section, idx) => (
-        <SectionRenderer
-          key={`${section.title}-${idx}`}
-          section={section}
-          idx={idx}
-          violations={violationsBySection.get(section) ?? []}
-        />
-      ))}
+        {beforeSubmitSections.map((section, idx) => (
+          <SectionRenderer
+            key={`${section.title}-${idx}`}
+            section={section}
+            idx={idx}
+            violations={violationsBySection.get(section) ?? []}
+          />
+        ))}
 
-      {capabilities?.alert_on_fail && (
-        <Box sx={{ mb: 2 }}>
-          <AlertOnFailField />
-        </Box>
-      )}
+        {capabilities?.alert_on_fail && (
+          <Box sx={{ mb: 2 }}>
+            <AlertOnFailField />
+          </Box>
+        )}
 
-      <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
-        {submitLabel}
-      </Button>
+        <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
+          {submitLabel}
+        </Button>
 
-      {afterSubmitSections.length > 0 ? (
-        <Box sx={{ mt: 3 }}>
-          {afterSubmitSections.map((section, idx) => (
-            <SectionRenderer
-              key={`${section.title}-after-${idx}`}
-              section={section}
-              idx={idx}
-              violations={violationsBySection.get(section) ?? []}
-            />
-          ))}
-        </Box>
-      ) : null}
-    </Box>
+        {afterSubmitSections.length > 0 ? (
+          <Box sx={{ mt: 3 }}>
+            {afterSubmitSections.map((section, idx) => (
+              <SectionRenderer
+                key={`${section.title}-after-${idx}`}
+                section={section}
+                idx={idx}
+                violations={violationsBySection.get(section) ?? []}
+              />
+            ))}
+          </Box>
+        ) : null}
+      </Box>
+    </>
   );
 }
 
