@@ -91,7 +91,7 @@ _TOPOLOGY_HEARTBEAT_SECONDS = 15.0
 
 
 class TopologyCollectBody(BaseModel):
-    """Body for ``POST /topology/collect``.
+    """Describe the request body for ``POST /topology/collect``.
 
     :param shards: Number of executor hosts to dispatch in parallel. Hosts
         are split round-robin across the chosen executors. Capped at
@@ -113,7 +113,7 @@ class TopologyCollectBody(BaseModel):
 
 
 class TopologyCollectResponse(BaseModel):
-    """Response body for ``POST /topology/collect``.
+    """Represent the response body for ``POST /topology/collect``.
 
     ``task_history_ids`` lists the dispatched ``run-python`` tasks the
     frontend then polls (``/result``) and tails (``/stream``) to
@@ -129,7 +129,7 @@ class TopologyCollectResponse(BaseModel):
 
 
 class TopologyResultResponse(BaseModel):
-    """Response body for ``GET /topology/result``.
+    """Represent the response body for ``GET /topology/result``.
 
     ``status`` is ``running`` while any of the underlying tasks is
     still pending, ``ok`` once every task has finished, and ``failed``
