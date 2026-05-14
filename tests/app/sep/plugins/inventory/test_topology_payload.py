@@ -116,3 +116,41 @@ def test_collect_host_uses_my_cnf_fallback(monkeypatch) -> None:
     assert calls[0]["user"] == "root"
     assert calls[0]["password"] == "secret"
     assert calls[0]["read_default_file"] == "~/.my.cnf"
+
+
+def test_query_repl_info_uses_source_fallback_when_master_columns_are_null(
+    monkeypatch,
+) -> None:
+    """New MySQL source columns are used when old master columns exist but are NULL."""
+    payload, _calls = _load_payload_module(monkeypatch)
+    cursor = _FakeCursor()
+
+    def _fetchone() -> dict[str, Any]:
+        return {
+            "Master_Host": None,
+            "Source_Host": "primary.example",
+            "Master_Port": None,
+            "Source_Port": 3307,
+            "Master_Server_Id": None,
+            "Source_Server_Id": 99,
+            "Master_UUID": None,
+            "Source_UUID": "source-uuid",
+            "Slave_IO_Running": None,
+            "Replica_IO_Running": "Yes",
+            "Slave_SQL_Running": None,
+            "Replica_SQL_Running": "Yes",
+            "Seconds_Behind_Master": None,
+            "Seconds_Behind_Source": 3,
+            "Auto_Position": 1,
+        }
+
+    cursor.fetchone = _fetchone
+
+    repl = payload._query_repl_info(cursor)
+
+    assert repl["source_host"] == "primary.example"
+    assert repl["source_port"] == 3307
+    assert repl["source_server_id"] == 99
+    assert repl["source_uuid"] == "source-uuid"
+    assert repl["seconds_behind"] == 3
+    assert repl["repl_status"] == "ok"
