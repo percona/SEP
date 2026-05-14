@@ -94,7 +94,7 @@ async def troubleshooting_index(
 
 
 @router.post(
-    "/execute/{snippet_filename}",
+    "/execute",
     dependencies=[IsAuthenticated, IsCsrfValidated],
 )
 async def troubleshooting_execute(
@@ -105,7 +105,8 @@ async def troubleshooting_execute(
     """Execute a snippet via AJAX and return the task ID as JSON.
 
     Proxy the execution request to the Tasks API and return the task history
-    ID for subsequent output polling.
+    ID for subsequent output polling. The caller passes ``snippet_filename`` as
+    a query parameter so nested snippet keys do not occupy a routed path segment.
 
     :param tasks_api: The authenticated Tasks API client.
     :type tasks_api: TaskAPI
