@@ -18,8 +18,8 @@
 import pytest
 from pydantic import ValidationError
 
+from app.sep.plugins.inventory.deps import AvailableSyncer
 from app.sep.plugins.inventory.models import (
-    AvailableSyncerResponse,
     InventorySyncScheduleCreateForm,
     PluginTaskResponse,
 )
@@ -61,12 +61,12 @@ class TestPluginTaskResponse:
         assert dumped == {"name": "inventory-sync", "display_name": "Inventory Sync"}
 
 
-class TestAvailableSyncerResponse:
-    """Tests for the AvailableSyncerResponse model."""
+class TestAvailableSyncer:
+    """Tests for the AvailableSyncer model."""
 
     def test_accepts_valid_data(self) -> None:
         """Ensure model instantiates from valid name and display_name."""
-        syncer = AvailableSyncerResponse(
+        syncer = AvailableSyncer(
             name="app.sep.sync.syncers.pmm.PMMSyncer",
             display_name="PMM",
         )
@@ -76,28 +76,26 @@ class TestAvailableSyncerResponse:
     def test_rejects_missing_name(self) -> None:
         """Ensure missing ``name`` raises ValidationError."""
         with pytest.raises(ValidationError):
-            AvailableSyncerResponse(display_name="PMM")
+            AvailableSyncer(display_name="PMM")
 
     def test_rejects_missing_display_name(self) -> None:
         """Ensure missing ``display_name`` raises ValidationError."""
         with pytest.raises(ValidationError):
-            AvailableSyncerResponse(name="app.sep.sync.syncers.pmm.PMMSyncer")
+            AvailableSyncer(name="app.sep.sync.syncers.pmm.PMMSyncer")
 
     def test_name_must_be_string(self) -> None:
         """Ensure non-string ``name`` raises ValidationError."""
         with pytest.raises(ValidationError):
-            AvailableSyncerResponse(name=42, display_name="PMM")
+            AvailableSyncer(name=42, display_name="PMM")
 
     def test_display_name_must_be_string(self) -> None:
         """Ensure non-string ``display_name`` raises ValidationError."""
         with pytest.raises(ValidationError):
-            AvailableSyncerResponse(
-                name="app.sep.sync.syncers.pmm.PMMSyncer", display_name=42
-            )
+            AvailableSyncer(name="app.sep.sync.syncers.pmm.PMMSyncer", display_name=42)
 
     def test_serializes_to_dict(self) -> None:
         """Ensure model_dump returns expected keys."""
-        syncer = AvailableSyncerResponse(
+        syncer = AvailableSyncer(
             name="app.sep.sync.syncers.pmm.PMMSyncer",
             display_name="PMM",
         )

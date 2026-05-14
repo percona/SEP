@@ -39,21 +39,6 @@ class PluginTaskResponse(BaseModel):
     display_name: str
 
 
-class AvailableSyncerResponse(BaseModel):
-    """Represent a single available syncer entry from ``GET /api/plugins/inventory/available-syncers/``.
-
-    :param name: Fully qualified class identifier (e.g.
-        ``"app.sep.sync.syncers.pmm.PMMSyncer"``). Matches the value persisted
-        in ``SyncInstance.syncer`` and accepted by ``POST /inventory/schedule/``.
-    :type name: str
-    :param display_name: Human-readable label for the syncer dropdown.
-    :type display_name: str
-    """
-
-    name: str
-    display_name: str
-
-
 class InventorySyncScheduleCreateForm(BaseModel):
     """Define the form-data shape for attaching an inventory-sync schedule.
 

@@ -17,7 +17,7 @@
 
 import json
 from collections.abc import Callable
-from typing import Annotated, Any, NamedTuple
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from pydantic import BaseModel, ConfigDict
@@ -66,7 +66,7 @@ class InventorySyncStatusResponse(BaseModel):
     is_running: bool
 
 
-class AvailableSyncer(NamedTuple):
+class AvailableSyncer(BaseModel):
     """Provide template-facing metadata for an available syncer.
 
     :param name: The fully qualified ``"module.ClassName"`` identifier matching
