@@ -60,6 +60,7 @@ const NODE_TYPES = {
  * browser tabs each get their own collection without interfering.
  */
 const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.inventory.topology.taskIds';
+const TOPOLOGY_AUTO_COLLECT_STORAGE_KEY = 'inventory-topology-auto-collect-fired';
 
 function readPersistedTaskIds(): number[] | null {
   if (typeof sessionStorage === 'undefined') {
@@ -213,13 +214,12 @@ export function InventoryTopology() {
   const collect = useCollectTopology();
   const result = useTopologyResult(taskIds);
   const stream = useTopologyStream(taskIds, { enabled: !!taskIds });
-  const autoCollectStorageKey = 'inventory-topology-auto-collect-fired';
   const [autoCollectHandled, setAutoCollectHandled] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
       return false;
     }
 
-    return window.sessionStorage.getItem(autoCollectStorageKey) === 'true';
+    return window.sessionStorage.getItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY) === 'true';
   });
 
   useEffect(() => {
@@ -227,8 +227,11 @@ export function InventoryTopology() {
       return;
     }
 
-    window.sessionStorage.setItem(autoCollectStorageKey, autoCollectHandled ? 'true' : 'false');
-  }, [autoCollectHandled, autoCollectStorageKey]);
+    window.sessionStorage.setItem(
+      TOPOLOGY_AUTO_COLLECT_STORAGE_KEY,
+      autoCollectHandled ? 'true' : 'false',
+    );
+  }, [autoCollectHandled]);
 
   const markAutoCollectHandled = useCallback(() => {
     setAutoCollectHandled(true);
