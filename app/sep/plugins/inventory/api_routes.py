@@ -91,6 +91,7 @@ _TOPOLOGY_TASK = "run-python"
 _TOPOLOGY_STDOUT_STEP = "run-script"
 _MAX_TOPOLOGY_SHARDS = 8
 _TOPOLOGY_HEARTBEAT_SECONDS = 15.0
+_TOPOLOGY_POLL_INTERVAL_SECONDS = 0.5
 
 
 class TopologyCollectBody(BaseModel):
@@ -184,7 +185,7 @@ def _select_topology_targets(
                 f"Executor host {requested_executor!r} is not available.",
             )
         return [requested_executor]
-    return list(available_hosts.keys())[: max(1, min(shards, _MAX_TOPOLOGY_SHARDS))]
+    return list(available_hosts.keys())[:shards]
 
 
 @router.post(
@@ -383,7 +384,7 @@ async def _stream_one_task(
                     current in _TOPOLOGY_FINISHED_STATUSES
                 ):
                     break
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(_TOPOLOGY_POLL_INTERVAL_SECONDS)
         except HTTPException as exc:
             await _put_task_error(exc)
             return
