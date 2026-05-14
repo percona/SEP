@@ -71,7 +71,7 @@ schema_endpoint(router=router, plugin_schema=inventory_schema)
 
 # Module-level singleton avoids the B008 lint warning about function calls in
 # argument defaults; the optional-body semantics are unchanged.
-_OPTIONAL_TRIGGER_BODY: Any = Body(default=None)
+_OPTIONAL_TRIGGER_BODY = Body(default=None)
 
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
