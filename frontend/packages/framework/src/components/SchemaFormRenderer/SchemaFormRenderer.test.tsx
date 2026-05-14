@@ -25,8 +25,11 @@ import { buildValidationRules, coerceFormValues } from './utils/validationMapper
 import { evaluatePredicate, isPresent } from './utils/predicateEvaluator';
 import type { FormSection } from './types';
 
+const useAlertConfigMock = vi.fn();
+
 vi.mock('@sep/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
+  useAlertConfig: () => useAlertConfigMock(),
 }));
 import { apiClient } from '@sep/api';
 const mockedApi = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
@@ -101,6 +104,13 @@ describe('coerceFormValues', () => {
       { type: 'bool', name: 'flag', label: 'Flag' },
     ]);
     expect(out).toEqual({ title: 'hi', flag: true });
+  });
+
+  it('passes through extra keys absent from fields (capability-injected fields)', () => {
+    const out = coerceFormValues({ title: 'x', alert_on_fail: true }, [
+      { type: 'string', name: 'title', label: 'Title' },
+    ]);
+    expect(out.alert_on_fail).toBe(true);
   });
 
   it('unwraps option objects from service/schema/table/host fields to scalar ids', () => {
@@ -1081,5 +1091,108 @@ describe('SchemaFormRenderer — conditional required', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'because', needsReason: true }),
     );
+  });
+});
+
+// ── capabilities.alert_on_fail ────────────────────────────────────────────
+
+describe('SchemaFormRenderer — capabilities.alert_on_fail', () => {
+  const sections: FormSection[] = [
+    { title: 'Main', fields: [{ type: 'string', name: 'title', label: 'Title' }] },
+  ];
+
+  beforeEach(() => {
+    useAlertConfigMock.mockReset();
+  });
+
+  it('renders AlertOnFailField when capabilities.alert_on_fail is true', () => {
+    useAlertConfigMock.mockReturnValue({
+      data: { available: true },
+      isLoading: false,
+      isError: false,
+    });
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={() => {}}
+        capabilities={{ alert_on_fail: true }}
+      />,
+    );
+    expect(screen.getByRole('checkbox', { name: /Alert on failure/i })).toBeInTheDocument();
+  });
+
+  it('does not render AlertOnFailField when capabilities.alert_on_fail is false', () => {
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={() => {}}
+        capabilities={{ alert_on_fail: false }}
+      />,
+    );
+    expect(screen.queryByRole('checkbox', { name: /Alert on failure/i })).toBeNull();
+  });
+
+  it('does not render AlertOnFailField when capabilities is undefined', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.queryByRole('checkbox', { name: /Alert on failure/i })).toBeNull();
+  });
+
+  it('renders the field disabled when no alert provider is configured', () => {
+    useAlertConfigMock.mockReturnValue({
+      data: { available: false },
+      isLoading: false,
+      isError: false,
+    });
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={() => {}}
+        capabilities={{ alert_on_fail: true }}
+      />,
+    );
+    expect(screen.getByRole('checkbox', { name: /Alert on failure/i })).toBeDisabled();
+  });
+
+  it('submits alert_on_fail: false by default', async () => {
+    useAlertConfigMock.mockReturnValue({
+      data: { available: true },
+      isLoading: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        capabilities={{ alert_on_fail: true }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ alert_on_fail: false }));
+  });
+
+  it('submits alert_on_fail: true when user checks the field', async () => {
+    useAlertConfigMock.mockReturnValue({
+      data: { available: true },
+      isLoading: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        capabilities={{ alert_on_fail: true }}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: /Alert on failure/i }));
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ alert_on_fail: true }));
   });
 });

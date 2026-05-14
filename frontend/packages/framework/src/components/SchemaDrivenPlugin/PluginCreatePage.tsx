@@ -84,6 +84,7 @@ export function PluginCreatePage({
         onSubmit={handleSubmit}
         loading={create.isPending}
         submitLabel={`Create ${title}`}
+        capabilities={multi ? undefined : schema.capabilities}
       />
     </Box>
   );

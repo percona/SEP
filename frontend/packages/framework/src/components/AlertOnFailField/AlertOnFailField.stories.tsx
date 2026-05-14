@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, FormProvider } from 'react-hook-form';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
@@ -40,15 +40,19 @@ function StoryHarness({ available, defaultValue }: StoryArgs) {
 
   useEffect(() => () => queryClient.clear(), [queryClient]);
 
-  const { control, watch } = useForm();
-  const value = watch(ALERT_ON_FAIL_FIELD_NAME);
+  const methods = useForm();
+  const value = methods.watch(ALERT_ON_FAIL_FIELD_NAME);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <AlertOnFailField control={control} defaultValue={defaultValue} />
-        <code style={{ fontSize: 12, opacity: 0.6 }}>alert_on_fail: {String(value ?? false)}</code>
-      </div>
+      <FormProvider {...methods}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <AlertOnFailField defaultValue={defaultValue} />
+          <code style={{ fontSize: 12, opacity: 0.6 }}>
+            alert_on_fail: {String(value ?? false)}
+          </code>
+        </div>
+      </FormProvider>
     </QueryClientProvider>
   );
 }

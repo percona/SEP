@@ -163,12 +163,6 @@ checksums_schema = PluginSchema(
                     default="150",
                     description="Pause until replica lag falls below this value (seconds)",
                 ),
-                BoolField(
-                    name="alert_on_fail",
-                    label="Alert on Failure",
-                    description="Send an alert if the task fails",
-                    default=False,
-                ),
             ],
         ),
     ],
