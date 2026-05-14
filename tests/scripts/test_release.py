@@ -429,6 +429,95 @@ def test_dev_pr_keeps_gh_token_when_pr_token_unset(monkeypatch):
     assert os.environ["GH_TOKEN"] == "pat-token"
 
 
+# --- cmd_rc dev-version-bump call-site -------------------------------------
+
+
+def test_cmd_rc_rc1_invokes_dev_version_bump(repo, monkeypatch):
+    """RC1 dev-bumps main as part of scope-lock (atomic with the RC cut)."""
+
+    def fake_run(cmd, **kwargs):
+        wheel = Path("dist") / "sep-0.13.0rc1-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "main\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    bump_calls = []
+
+    def fake_dev_bump(version, stable_tag):
+        bump_calls.append((version, stable_tag))
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+    monkeypatch.setattr(release, "_local_branch_exists", lambda _b: False)
+    monkeypatch.setattr(release, "_invoke_post_jira_webhook", lambda *_a, **_kw: True)
+    monkeypatch.setattr(release, "_create_dev_version_bump_pr", fake_dev_bump)
+
+    rc = release.cmd_rc("0.13.0", 1, sign_via_github_api=False)
+    assert rc == 0
+    assert bump_calls == [("0.13.0", "v0.13.0")]
+
+
+def test_cmd_rc_rc2_does_not_invoke_dev_version_bump(repo, monkeypatch):
+    """RC2+ must NOT redo the dev-bump (it was done atomically with RC1)."""
+
+    def fake_run(cmd, **kwargs):
+        wheel = Path("dist") / "sep-0.13.0rc2-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "release/v0.13.0\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    bump_calls = []
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+    monkeypatch.setattr(
+        release,
+        "_create_dev_version_bump_pr",
+        lambda v, t: bump_calls.append((v, t)),
+    )
+
+    rc = release.cmd_rc("0.13.0", 2, sign_via_github_api=False)
+    assert rc == 0
+    assert bump_calls == []
+
+
 # --- argparse --------------------------------------------------------------
 
 
@@ -489,3 +578,188 @@ def test_main_catches_called_process_error_with_string_cmd(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "release: command failed (exit code 1): make build" in err
     assert "Traceback" not in err
+
+
+# --- back-merge -----------------------------------------------------------
+
+
+def test_cmd_stable_back_merges_into_main(repo, monkeypatch):
+    """cmd_stable ends with a back-merge of release/vX.Y.Z into main.
+
+    Asserts the ordered sequence: tag/push on release branch, then fetch,
+    checkout main, merge --no-ff, resolve CHANGELOG, commit, push, then
+    delete the release branch. The ancestor-invariant assertion runs after
+    push and before delete.
+    """
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(tuple(cmd))
+        wheel = Path("dist") / "sep-0.13.0-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        _is_ancestor_prefix = ["git", "merge-base", "--is-ancestor", "v0.13.0"]
+        if cmd[:4] == _is_ancestor_prefix:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "release/v0.13.0\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+
+    rc = release.cmd_stable("0.13.0", sign_via_github_api=False)
+    assert rc == 0
+
+    merge_idx = next(
+        i for i, c in enumerate(calls) if c[:3] == ("git", "merge", "--no-ff")
+    )
+    resolve_idx = next(
+        i
+        for i, c in enumerate(calls[merge_idx:], start=merge_idx)
+        if "resolve-backmerge" in c
+    )
+    commit_idx = next(
+        i
+        for i, c in enumerate(calls[resolve_idx:], start=resolve_idx)
+        if c[:2] == ("git", "commit")
+    )
+    push_idx = next(
+        i
+        for i, c in enumerate(calls[commit_idx:], start=commit_idx)
+        if c[:3] == ("git", "push", "origin") and "main" in c
+    )
+    ancestor_idx = next(
+        i
+        for i, c in enumerate(calls[push_idx:], start=push_idx)
+        if c[:4] == ("git", "merge-base", "--is-ancestor", "v0.13.0")
+    )
+    delete_idx = next(
+        i
+        for i, c in enumerate(calls[ancestor_idx:], start=ancestor_idx)
+        if c[:4] == ("git", "push", "origin", "--delete")
+    )
+    assert merge_idx < resolve_idx < commit_idx < push_idx < ancestor_idx < delete_idx
+
+
+def test_cmd_stable_aborts_if_ancestor_invariant_fails(repo, monkeypatch):
+    """Abort when the ancestor invariant fails after the back-merge push.
+
+    If ``git merge-base --is-ancestor vX.Y.Z origin/main`` exits non-zero,
+    cmd_stable returns non-zero and does NOT delete the release branch.
+    """
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(tuple(cmd))
+        wheel = Path("dist") / "sep-0.13.0-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        _is_ancestor_prefix = ["git", "merge-base", "--is-ancestor", "v0.13.0"]
+        if cmd[:4] == _is_ancestor_prefix:
+
+            class R:
+                stdout = ""
+                returncode = 1
+
+            return R()
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "release/v0.13.0\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+
+    rc = release.cmd_stable("0.13.0", sign_via_github_api=False)
+    assert rc != 0
+    assert not any(c[:4] == ("git", "push", "origin", "--delete") for c in calls)
+
+
+def test_cmd_stable_aborts_if_unexpected_merge_failure(repo, monkeypatch):
+    """If git merge fails AND no unmerged paths exist, cmd_stable aborts."""
+
+    def fake_run(cmd, **kwargs):
+        wheel = Path("dist") / "sep-0.13.0-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        # Simulate git merge failing unexpectedly (e.g., lockfile)
+        if cmd[:3] == ["git", "merge", "--no-ff"]:
+
+            class R:
+                stdout = ""
+                returncode = 1
+
+            return R()
+        # Simulate "no unmerged paths" — git ls-files -u returns empty
+        if cmd[:3] == ["git", "ls-files", "-u"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "release/v0.13.0\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+
+    rc = release.cmd_stable("0.13.0", sign_via_github_api=False)
+    assert rc != 0
