@@ -346,7 +346,7 @@ def _build_sse_event(event: str, data: Any) -> str:
 
 
 async def _stream_one_task(
-    tasks_api: RemoteAPI, task_history_id: int, queue: asyncio.Queue
+    tasks_api: RemoteAPI, task_history_id: int, queue: asyncio.Queue[dict[str, Any]]
 ) -> None:
     """Tail one task's stdout NDJSON; push parsed events to ``queue``."""
     last_status: str | None = None
@@ -426,7 +426,7 @@ async def _stream_one_task(
 async def _topology_event_stream(
     tasks_api: RemoteAPI, task_ids: list[int]
 ) -> AsyncGenerator[str, None]:
-    queue: asyncio.Queue = asyncio.Queue()
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     workers = [
         asyncio.create_task(_stream_one_task(tasks_api, tid, queue)) for tid in task_ids
     ]

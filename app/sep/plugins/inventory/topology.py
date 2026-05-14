@@ -34,6 +34,8 @@ import logging
 from collections import defaultdict
 from typing import Any, TYPE_CHECKING
 
+from app.inventory.constants import DEFAULT_MYSQL_PORT
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
@@ -340,7 +342,7 @@ def _resolve_replication_source(
         if node_id := hash_to_node.get(candidate):
             return node_id
     source_host = repl.get("source_host")
-    source_port = _coerce_int(repl.get("source_port")) or 3306
+    source_port = _coerce_int(repl.get("source_port")) or DEFAULT_MYSQL_PORT
     source_key = (source_host, source_port)
     if node_id := addr_to_node.get(source_key):
         return node_id
