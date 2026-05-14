@@ -14,7 +14,15 @@ runs:
   using: "composite"
   steps:
     - name: Install poetry
-      run: pipx install poetry==2.1.2
+      run: pipx install poetry==2.4.1
+      shell: bash
+    - name: Inject Poetry export plugin
+      # `[tool.poetry.requires-plugins]` would otherwise self-install the
+      # plugin on first use, but its synthetic project pins virtualenv to the
+      # version bundled with Poetry — which `solver.min-release-age` in
+      # poetry.toml may filter out on fresh PyPI releases. Pre-injecting via
+      # pipx puts the plugin in Poetry's venv before any solver runs.
+      run: pipx inject poetry 'poetry-plugin-export>=1.9.0,<2.0.0'
       shell: bash
     - name: Setup Python
       uses: actions/setup-python@28f2168f4d98ee0445e3c6321f6e6616c83dd5ec # v6.2.0
