@@ -8,7 +8,7 @@ Bandit (ruff `S` rules) catches generic findings automatically — flag those on
 
 ## Must flag (Critical)
 
-- **Hardcoded secrets** — API keys, OAuth client secrets, DB credentials, JWT signing keys, passwords. Secrets go in `.env` only — never in `settings.yaml`, source code, fixtures, or config. `.env` is gitignored.
+- **Hardcoded secrets** — API keys, OAuth client secrets, DB credentials, JWT signing keys, passwords. Secrets must come from environment variables (optionally via a local `.env`) and must never be committed to `settings.yaml`, source code, fixtures, or config. `.env` is gitignored.
 - **Raw SQL with user-controlled input** — `session.execute(text(...))` or f-string SQL where any part comes from a request parameter, form field, URL path, header, or JSON body. All DB access goes through CRUD managers, which parameterise.
 - **`| safe` filter in Jinja2 templates** with user-controlled data defeats auto-escaping. `Markup()` carries the same risk.
 - **Missing CSRF validation** on a new state-changing endpoint (POST / PUT / DELETE / PATCH). Need `validate_csrf` in the dependency chain — decorator-level `dependencies=[IsCsrfValidated]`, router-level, or shared parent router. Trace the full chain.

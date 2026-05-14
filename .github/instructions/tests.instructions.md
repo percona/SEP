@@ -20,9 +20,9 @@ Every test has a **subject** (code under test + machinery it directly operates o
 
 ## Never mock `AsyncSession` on a session-touching SUT — CRITICAL
 
-If the SUT receives `session: AsyncSession` and performs ANY session operation directly or transitively (`session.add`, `commit`, `refresh`, `execute`, or any `BaseSQLModelManager.save`/`get_or_404`/`create`/`update`), the test MUST use the real `session` fixture from `tests/app/tasks/conftest.py` (or the analogous inventory/sep fixture), not `AsyncMock(spec=AsyncSession)`.
+If the SUT receives `session: AsyncSession` and performs ANY session operation directly or transitively (`session.add`, `commit`, `refresh`, `execute`, or any `BaseSQLModelManager.save`/`get_or_404`/`create`/`update`), consider using the real `session` fixture from `tests/app/tasks/conftest.py` (or the analogous inventory/sep fixture), not `AsyncMock(spec=AsyncSession)`.
 
-Mocking `AsyncSession` bypasses SQLAlchemy's entire lifecycle — commit/flush, `expire_on_commit`, relationship loading, deferred columns, identity-map caching, lazy loads. A mocked session silently accepts every attribute access, so a test passes green while production fails on the first real call. Disposition: DELETE if a real-session sibling already covers the same SUT entrypoint and outcome; otherwise REWRITE with the real `session` fixture in the same PR.
+Mocking `AsyncSession` bypasses SQLAlchemy's entire lifecycle — commit/flush, `expire_on_commit`, relationship loading, deferred columns, identity-map caching, lazy loads. A mocked session silently accepts every attribute access, so a test passes green while production fails on the first real call. If a real-session sibling already covers the same SUT entrypoint and outcome, consider deleting the mock-based duplicate; otherwise consider rewriting it with the real `session` fixture in the same PR.
 
 Sub-cases: tuple-as-session typo (`_session = (AsyncMock(...),)` — trailing comma) silently makes every session call a tuple attribute access. `MagicMock(spec=<SQLModel>)` + `AsyncMock(spec=AsyncSession)` together on the same SUT is the most aggressive variant.
 
@@ -36,7 +36,7 @@ Patches like `patch.object(<SUT class>, "<sibling_method>", …)` or `patch("app
 
 ## Three or more boundary mocks signal a missing seam
 
-A test with ≥3 distinct `patch(...)` calls is **Mockery** — the SUT has too many direct boundary dependencies and needs a seam. SPLIT the SUT before splitting the test.
+A test with ≥3 distinct `patch(...)` calls is **Mockery** — the SUT has too many direct boundary dependencies and needs a seam. Consider splitting the SUT before splitting the test.
 
 ## Don't reach into private module state
 
