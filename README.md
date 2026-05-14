@@ -78,7 +78,7 @@
 | app/sep/deps.py                                                                                             |      287 |       10 |     97% |341, 344-345, 363, 828-829, 1009-1012 |
 | app/sep/exceptions.py                                                                                       |       13 |        0 |    100% |           |
 | app/sep/inventory.py                                                                                        |       97 |        9 |     91% |81, 92, 229, 286, 304, 326, 363, 385, 419 |
-| app/sep/main.py                                                                                             |      154 |       11 |     93% |74-76, 92-106, 368-372 |
+| app/sep/main.py                                                                                             |      154 |       11 |     93% |74-76, 92-106, 376-380 |
 | app/sep/middleware/csrf.py                                                                                  |       48 |        1 |     98% |       129 |
 | app/sep/middleware/messages/\_middleware.py                                                                 |       28 |        0 |    100% |           |
 | app/sep/middleware/messages/\_utils.py                                                                      |       53 |       10 |     81% |85, 118, 259-266 |
@@ -116,12 +116,6 @@
 | app/sep/plugins/atw/models.py                                                                               |       26 |        0 |    100% |           |
 | app/sep/plugins/atw/routes.py                                                                               |       24 |        9 |     62% |     49-73 |
 | app/sep/plugins/atw/schema.py                                                                               |       13 |        0 |    100% |           |
-| app/sep/plugins/backup/deps.py                                                                              |       74 |       11 |     85% |100, 137, 192, 198-200, 204, 206, 209-210, 291 |
-| app/sep/plugins/backup/models.py                                                                            |       91 |        1 |     99% |       286 |
-| app/sep/plugins/backup/restore/deps.py                                                                      |       69 |       20 |     71% |78-84, 103, 119, 159-180, 204, 220-225, 258 |
-| app/sep/plugins/backup/restore/models.py                                                                    |       73 |        1 |     99% |       198 |
-| app/sep/plugins/backup/restore/routes.py                                                                    |       65 |       30 |     54% |58, 96-150, 171-180, 217-219 |
-| app/sep/plugins/backup/routes.py                                                                            |       76 |        6 |     92% |74, 178-179, 232-237 |
 | app/sep/plugins/backup\_mongo/deps.py                                                                       |       80 |       34 |     58% |66, 89-102, 129-155, 189, 256, 272-274, 307 |
 | app/sep/plugins/backup\_mongo/models.py                                                                     |       89 |        0 |    100% |           |
 | app/sep/plugins/backup\_mongo/restore/deps.py                                                               |      145 |       54 |     63% |53-66, 83, 85-87, 126, 189, 320-341, 355-373, 425, 442-453, 488 |
@@ -155,6 +149,12 @@
 | app/sep/plugins/inventory/routes.py                                                                         |      175 |        0 |    100% |           |
 | app/sep/plugins/inventory/schema.py                                                                         |        8 |        0 |    100% |           |
 | app/sep/plugins/inventory/sync.py                                                                           |       31 |        0 |    100% |           |
+| app/sep/plugins/mysql\_backups/deps.py                                                                      |       74 |       11 |     85% |100, 137, 192, 198-200, 204, 206, 209-210, 291 |
+| app/sep/plugins/mysql\_backups/models.py                                                                    |       91 |        1 |     99% |       286 |
+| app/sep/plugins/mysql\_backups/restore/deps.py                                                              |       69 |       11 |     84% |78-84, 103, 119, 204, 220-225, 258 |
+| app/sep/plugins/mysql\_backups/restore/models.py                                                            |       73 |        1 |     99% |       198 |
+| app/sep/plugins/mysql\_backups/restore/routes.py                                                            |       65 |        8 |     88% |141-142, 171-180, 217-219 |
+| app/sep/plugins/mysql\_backups/routes.py                                                                    |       76 |        6 |     92% |74, 178-179, 232-237 |
 | app/sep/plugins/report/deps.py                                                                              |       28 |        0 |    100% |           |
 | app/sep/plugins/report/models.py                                                                            |      111 |        0 |    100% |           |
 | app/sep/plugins/report/routes.py                                                                            |       39 |        0 |    100% |           |
@@ -219,7 +219,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      219 |       39 |     82% |125-129, 186, 207-214, 246, 295-303, 353-354, 381-382, 410-411, 430, 563, 587, 600-614, 635-648, 664-665 |
-| **TOTAL**                                                                                                   | **15325** | **2159** | **86%** |           |
+| **TOTAL**                                                                                                   | **15325** | **2128** | **86%** |           |
 
 
 ## Setup coverage badge
