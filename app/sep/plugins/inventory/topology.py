@@ -87,25 +87,21 @@ def merge_host_records(
     Last-write-wins on duplicate ``host`` keys; ``host_error`` always replaces
     a prior ``host_done`` so a later shard's failure is visible.
     """
-    by_host: dict[str, dict[str, Any]] = {}
-    errors: dict[str, str] = {}
+    out: dict[str, dict[str, Any]] = {}
     for stream in event_streams:
         for ev in stream:
             kind = ev.get("event")
             host = ev.get("host")
             if not host:
+                logger.debug("Skipping topology event without host: %r", ev)
                 continue
             if kind == "host_done":
-                by_host[host] = ev.get("data") or {}
-                errors.pop(host, None)
+                out[host] = {"status": "ok", "data": ev.get("data") or {}}
             elif kind == "host_error":
-                errors[host] = str(ev.get("error", "unknown error"))
-                by_host.pop(host, None)
-    out: dict[str, dict[str, Any]] = {}
-    for host, data in by_host.items():
-        out[host] = {"status": "ok", "data": data}
-    for host, err in errors.items():
-        out[host] = {"status": "error", "error": err}
+                out[host] = {
+                    "status": "error",
+                    "error": str(ev.get("error", "unknown error")),
+                }
     return out
 
 
