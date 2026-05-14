@@ -228,11 +228,13 @@ class TestBuildGraphFromStdouts:
 
     def test_round_trips_through_ndjson(self) -> None:
         """Serialised host events round-trip back into a graph."""
+        expected_host_count = 2
         stdout = "\n".join(
-            json.dumps(_host_data("h:3306", server_hash="x")) for _ in range(1)
+            json.dumps(_host_data(f"h{i}:3306", server_hash=f"x{i}"))
+            for i in range(expected_host_count)
         )
         graph = build_graph_from_stdouts([stdout])
-        assert graph["summary"]["host_count"] == 1
+        assert graph["summary"]["host_count"] == expected_host_count
 
 
 class TestShardHosts:
