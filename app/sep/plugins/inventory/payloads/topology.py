@@ -130,7 +130,11 @@ def _query_server_info(cursor: DictCursor) -> dict[str, Any]:
         row = cursor.fetchone()
         if not row:
             raise pymysql.MySQLError("Server identity query returned no rows")
-        row["server_uuid"] = None
+
+        # Legacy servers do not expose ``@@server_uuid`` or ``@@super_read_only``.
+        # Reuse the stable fallback hash as a synthetic identity so downstream
+        # topology correlation still has a per-host key on this compatibility path.
+        row["server_uuid"] = row.get("server_hash")
         row["super_read_only"] = 0
     if not row:
         raise pymysql.MySQLError("Server identity query returned no rows")
