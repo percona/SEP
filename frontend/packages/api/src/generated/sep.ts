@@ -1462,7 +1462,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/alert-troubleshooting/execute/{snippet_filename}': {
+  '/alert-troubleshooting/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -1476,18 +1476,22 @@ export interface paths {
      * @description Execute a snippet via AJAX and return the task ID as JSON.
      *
      *     Proxy the execution request to the Tasks API and return the task history
-     *     ID for subsequent output polling.
+     *     ID for subsequent output polling. The target snippet is identified by
+     *     the ``snippet_filename`` query parameter rather than a URL path segment
+     *     so nested filenames such as ``diag/slow-query.sh`` survive intermediate
+     *     routing layers (SEP-1128).
      *
      *     :param tasks_api: The authenticated Tasks API client.
      *     :type tasks_api: TaskAPI
-     *     :param snippet: The validated executable snippet.
+     *     :param snippet: The validated executable snippet (resolved from
+     *         the ``snippet_filename`` query parameter).
      *     :type snippet: AjaxExecutableSnippet
      *     :param execution_request_meta: The assembled execution metadata.
      *     :type execution_request_meta: ExecutionRequestMeta
      *     :return: A JSON response with the task ID and submission status.
      *     :rtype: JSONResponse
      */
-    post: operations['troubleshooting_execute_alert_troubleshooting_execute__snippet_filename__post'];
+    post: operations['troubleshooting_execute_alert_troubleshooting_execute_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -6442,13 +6446,13 @@ export interface operations {
       };
     };
   };
-  troubleshooting_execute_alert_troubleshooting_execute__snippet_filename__post: {
+  troubleshooting_execute_alert_troubleshooting_execute_post: {
     parameters: {
-      query?: never;
-      header?: never;
-      path: {
+      query: {
         snippet_filename: string;
       };
+      header?: never;
+      path?: never;
       cookie?: never;
     };
     requestBody?: never;
