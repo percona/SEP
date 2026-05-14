@@ -21,7 +21,6 @@ implemented in ``app.sep.plugins.inventory.deps``; see
 """
 
 import json
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import status
@@ -247,19 +246,18 @@ class TestTopologyCollect:
         self, test_client, mock_inventory_api_dep, mock_task_api_dep
     ):
         """Ensure topology collect splits hosts across shards and dispatches run-python tasks."""
-        mock_inventory_api_dep.get = AsyncMock(
-            return_value={
-                "items": [
-                    _mysql_service(1, "10.0.0.1"),
-                    _mysql_service(2, "10.0.0.2"),
-                    _mysql_service(3, "10.0.0.3"),
-                ]
-            }
-        )
-        mock_task_api_dep.get = AsyncMock(
-            return_value={"executor-a": "1.1.1.1", "executor-b": "2.2.2.2"}
-        )
-        mock_task_api_dep.post = AsyncMock(side_effect=[{"id": 101}, {"id": 102}])
+        mock_inventory_api_dep.get.return_value = {
+            "items": [
+                _mysql_service(1, "10.0.0.1"),
+                _mysql_service(2, "10.0.0.2"),
+                _mysql_service(3, "10.0.0.3"),
+            ]
+        }
+        mock_task_api_dep.get.return_value = {
+            "executor-a": "1.1.1.1",
+            "executor-b": "2.2.2.2",
+        }
+        mock_task_api_dep.post.side_effect = [{"id": 101}, {"id": 102}]
 
         response = test_client.post(
             "/api/plugins/inventory/topology/collect", json={"shards": 2}
@@ -278,8 +276,8 @@ class TestTopologyCollect:
         self, test_client, mock_inventory_api_dep, mock_task_api_dep
     ):
         """Ensure topology collect 404s when the inventory has no MySQL services."""
-        mock_inventory_api_dep.get = AsyncMock(return_value={"items": []})
-        mock_task_api_dep.get = AsyncMock(return_value={"executor-a": "1.1.1.1"})
+        mock_inventory_api_dep.get.return_value = {"items": []}
+        mock_task_api_dep.get.return_value = {"executor-a": "1.1.1.1"}
         response = test_client.post("/api/plugins/inventory/topology/collect", json={})
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -287,10 +285,10 @@ class TestTopologyCollect:
         self, test_client, mock_inventory_api_dep, mock_task_api_dep
     ):
         """Ensure an explicit, unknown executor_host yields 400."""
-        mock_inventory_api_dep.get = AsyncMock(
-            return_value={"items": [_mysql_service(1, "10.0.0.1")]}
-        )
-        mock_task_api_dep.get = AsyncMock(return_value={"executor-a": "1.1.1.1"})
+        mock_inventory_api_dep.get.return_value = {
+            "items": [_mysql_service(1, "10.0.0.1")]
+        }
+        mock_task_api_dep.get.return_value = {"executor-a": "1.1.1.1"}
         response = test_client.post(
             "/api/plugins/inventory/topology/collect",
             json={"executor_host": "missing"},
@@ -315,10 +313,10 @@ class TestTopologyCollect:
         self, test_client, mock_inventory_api_dep, mock_task_api_dep, hosts_payload
     ):
         """Ensure malformed Tasks API hosts payloads produce a friendly 502."""
-        mock_inventory_api_dep.get = AsyncMock(
-            return_value={"items": [_mysql_service(1, "10.0.0.1")]}
-        )
-        mock_task_api_dep.get = AsyncMock(return_value=hosts_payload)
+        mock_inventory_api_dep.get.return_value = {
+            "items": [_mysql_service(1, "10.0.0.1")]
+        }
+        mock_task_api_dep.get.return_value = hosts_payload
 
         response = test_client.post("/api/plugins/inventory/topology/collect", json={})
 
@@ -342,12 +340,10 @@ class TestTopologyResult:
 
     def test_running_status_when_any_task_pending(self, test_client, mock_task_api_dep):
         """Ensure result endpoint reports ``running`` while any task is unfinished."""
-        mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                {"id": 1, "status": "success"},
-                {"id": 2, "status": "running"},
-            ]
-        )
+        mock_task_api_dep.get.side_effect = [
+            {"id": 1, "status": "success"},
+            {"id": 2, "status": "running"},
+        ]
         response = test_client.get(
             "/api/plugins/inventory/topology/result", params={"ids": "1,2"}
         )
@@ -362,9 +358,7 @@ class TestTopologyResult:
         self, test_client, mock_task_api_dep, terminal_status: str
     ):
         """Ensure unsuccessful terminal tasks with no graph data do not report ``ok``."""
-        mock_task_api_dep.get = AsyncMock(
-            return_value={"id": 9, "status": terminal_status}
-        )
+        mock_task_api_dep.get.return_value = {"id": 9, "status": terminal_status}
         mock_task_api_dep.stream = _stdout_stream("")
 
         response = test_client.get(
