@@ -146,7 +146,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     }
 
 </style>
-{% from "backups/backup/partials/info-icon.html.j2" import info_icon %}
+{% from "mysql_backups/backup/partials/info-icon.html.j2" import info_icon %}
 <form id="create-backup-form"
       class="create-backup-form window"
       method="post"
@@ -165,7 +165,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <div class="doc-inline-callout" role="note">
                 <span class="material-symbols-outlined" aria-hidden="true">info</span>
                 <div>
-                    Need a step-by-step checklist? <a href="{{ url_for('backups_docs') }}" target="_blank" rel="noopener">Open the backup documentation</a> in a new tab for detailed guidance.
+                    Need a step-by-step checklist? <a href="{{ url_for('mysql_backups_docs') }}"
+    target="_blank"
+    rel="noopener">Open the backup documentation</a> in a new tab for detailed guidance.
                 </div>
             </div>
             <fieldset>

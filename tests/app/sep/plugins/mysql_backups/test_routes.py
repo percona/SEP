@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.plugins.backup.routes module."""
+"""Define tests for the app.sep.plugins.mysql_backups.routes module."""
 
 from unittest.mock import AsyncMock
 
@@ -27,12 +27,12 @@ from app.sep.connectivity import (
     CHECK_TIMEOUT,
 )
 from app.sep.main import sep_app
-from app.sep.plugins.backup.deps import (
+from app.sep.plugins.mysql_backups.deps import (
     build_backup_task_payload,
     get_backups_index_context,
     get_backups_task,
 )
-from app.sep.plugins.backup.models import BackupCreate, BackupType
+from app.sep.plugins.mysql_backups.models import BackupCreate, BackupType
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
@@ -98,7 +98,7 @@ def _mock_get_backups_task_dep(created_task):
 @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
 def test_backups_index(test_client):
     """Test GET /backups/ route."""
-    response = test_client.get("/backups/")
+    response = test_client.get("/mysql_backups/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert "<title>Backups — Services Enablement Platform</title>" in response.text
@@ -116,12 +116,12 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
     sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
 
     response = test_client.post(
-        "/backups/", data=backup_create.model_dump(), follow_redirects=False
+        "/mysql_backups/", data=backup_create.model_dump(), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
         response.headers["location"]
-        == f"{test_client.base_url}/backups/{backup_create.task_name}"
+        == f"{test_client.base_url}/mysql_backups/{backup_create.task_name}"
     )
 
     mock_task_api_dep.post.assert_called_once()
@@ -145,12 +145,14 @@ def test_backups_create_full_form_dependency_chain_without_payload_override(
     mock_task_api_dep.post.return_value = AsyncMock()
 
     response = test_client.post(
-        "/backups/",
+        "/mysql_backups/",
         data=backup_create.model_dump(),
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"].endswith(f"/backups/{backup_create.task_name}")
+    assert response.headers["location"].endswith(
+        f"/mysql_backups/{backup_create.task_name}"
+    )
     mock_task_api_dep.post.assert_awaited_once()
     assert mock_task_api_dep.post.await_args.args[0] == "/"
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
@@ -193,14 +195,14 @@ def test_backups_create_triggers_connectivity_check(
     ]
 
     response = test_client.post(
-        "/backups/",
+        "/mysql_backups/",
         data={**backup_create.model_dump(), "check_connectivity": "true"},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
         response.headers["location"]
-        == f"{test_client.base_url}/backups/{backup_create.task_name}"
+        == f"{test_client.base_url}/mysql_backups/{backup_create.task_name}"
     )
 
     assert mock_task_api_dep.post.call_count == EXPECTED_CONNECTIVITY_POST_CALLS
@@ -247,12 +249,12 @@ def test_backups_create_skips_connectivity_check_when_opted_out(
     sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
 
     response = test_client.post(
-        "/backups/", data=backup_create.model_dump(), follow_redirects=False
+        "/mysql_backups/", data=backup_create.model_dump(), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
         response.headers["location"]
-        == f"{test_client.base_url}/backups/{backup_create.task_name}"
+        == f"{test_client.base_url}/mysql_backups/{backup_create.task_name}"
     )
 
     assert mock_task_api_dep.post.call_count == 1
@@ -281,7 +283,7 @@ def test_backups_detail(
         ]
     )
     mock_inventory_api_dep.get.return_value = AsyncMock()
-    response = test_client.get(f"/backups/{created_task.name}")
+    response = test_client.get(f"/mysql_backups/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert (
         f"<title>Backups - {created_task.name} — Services Enablement Platform</title>"
@@ -301,12 +303,14 @@ def test_backups_detail(
 )
 def test_backups_execute(test_client, mock_task_api_dep, created_task):
     """Test POST /backups/{task_name} route with no chain_task_names."""
-    response = test_client.post(f"/backups/{created_task.name}", follow_redirects=False)
+    response = test_client.post(
+        f"/mysql_backups/{created_task.name}", follow_redirects=False
+    )
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
         response.headers["location"]
-        == f"{test_client.base_url}/backups/{created_task.name}"
+        == f"{test_client.base_url}/mysql_backups/{created_task.name}"
     )
 
     mock_task_api_dep.post.assert_called_once()
@@ -327,7 +331,7 @@ def test_backups_execute_with_chain_task_names(
 ):
     """Test POST /backups/{task_name} passes chain_task_names to the tasks API."""
     response = test_client.post(
-        f"/backups/{created_task.name}",
+        f"/mysql_backups/{created_task.name}",
         data={"chain_task_names": ["task-a", "task-b"]},
         follow_redirects=False,
     )
@@ -343,10 +347,10 @@ def test_backups_execute_with_chain_task_names(
 def test_backups_delete(test_client, mock_task_api_dep, created_task):
     """Test POST /backups/{task_name}/delete route."""
     response = test_client.post(
-        f"/backups/{created_task.name}/delete", follow_redirects=False
+        f"/mysql_backups/{created_task.name}/delete", follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["Location"] == "/backups"
+    assert response.headers["Location"] == "/mysql_backups"
 
     mock_task_api_dep.delete.assert_called_once()
     called_args, called_kwargs = mock_task_api_dep.delete.call_args

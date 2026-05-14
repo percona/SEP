@@ -118,7 +118,15 @@ for plugin in sep_settings.PLUGINS:
     imported_plugins.add(plugin.module_name.split(".")[-1])
 
 _TASK_INFRA_PLUGINS = frozenset(
-    {"alters", "archives", "tasks", "backup", "backup_mongo", "backup_pg", "checksums"}
+    {
+        "alters",
+        "archives",
+        "tasks",
+        "mysql_backups",
+        "backup_mongo",
+        "backup_pg",
+        "checksums",
+    }
 )
 
 if _TASK_INFRA_PLUGINS & imported_plugins:
