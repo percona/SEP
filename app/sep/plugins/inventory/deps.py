@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, NamedTuple
 
 from fastapi import Depends, Request
+from pydantic import BaseModel, ConfigDict
 
 from app.core.config import settings
 from app.core.exceptions import (
@@ -35,6 +36,34 @@ from app.sep.sync.models import BaseSyncer
 from app.tasks.config import tasks_settings
 
 INVENTORY_PLUGIN_ENTITY_NAMES = frozenset({"nodes", "services", "schemas", "tables"})
+
+
+class InventorySyncTriggerBody(BaseModel):
+    """Optional JSON body for the ad-hoc inventory sync trigger.
+
+    A ``None`` or empty ``syncer`` selects the sync-all path; a non-empty
+    string targets a single configured syncer by its fully qualified
+    ``"module.ClassName"`` identifier. Unknown fields are rejected with
+    HTTP 422 so a typo on the client never silently degrades to sync-all.
+
+    :param syncer: Fully qualified syncer name, or ``None`` for sync-all.
+    :type syncer: str | None
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    syncer: str | None = None
+
+
+class InventorySyncStatusResponse(BaseModel):
+    """Response body for the ad-hoc inventory sync status endpoint.
+
+    :param is_running: ``True`` when an inventory-wide sync is currently
+        in progress; ``False`` otherwise.
+    :type is_running: bool
+    """
+
+    is_running: bool
 
 
 class AvailableSyncer(NamedTuple):

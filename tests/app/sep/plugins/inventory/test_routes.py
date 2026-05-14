@@ -16,22 +16,20 @@
 """Define tests for the app.sep.plugins.inventory.routes module."""
 
 import re
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException, status
+from fastapi import HTTPException, status
 from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum, SourceEnum
-from app.sep.crud import SyncItemManager
 from app.sep.deps import (
     AVAILABLE_TIMEZONES,
     get_created_node,
     get_created_schema,
     get_created_service,
-    get_inventory_api,
     get_tasks_api,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
@@ -46,114 +44,14 @@ from tests.app.factories import (
     MOCK_CREATED_SERVICE_ID,
     MOCK_CREATED_TABLE_ID,
 )
-
-
-class _StubPMMSyncer:
-    """Stand in for a PMM syncer; capability checks default to ``True``."""
-
-    def can_sync_inventory(self) -> bool:
-        return True
-
-    def can_sync_node(self, node: CreatedNode) -> bool:
-        return True
-
-    def can_sync_service(self, service: CreatedService) -> bool:
-        return True
-
-    def can_sync_schema(self, schema: CreatedSchema) -> bool:
-        return True
-
-
-class _StubMySQLSyncer:
-    """Stand in for a MySQL syncer; capability checks default to ``True``."""
-
-    def can_sync_inventory(self) -> bool:
-        return True
-
-    def can_sync_node(self, node: CreatedNode) -> bool:
-        return True
-
-    def can_sync_service(self, service: CreatedService) -> bool:
-        return True
-
-    def can_sync_schema(self, schema: CreatedSchema) -> bool:
-        return True
-
-
-_PMM_STUB_NAME = f"{_StubPMMSyncer.__module__}.{_StubPMMSyncer.__name__}"
-_MYSQL_STUB_NAME = f"{_StubMySQLSyncer.__module__}.{_StubMySQLSyncer.__name__}"
-_EXPECTED_STUB_COUNT = 2
-
-
-def _no_syncers() -> list:
-    """Resolve ``SyncersDep`` to an empty list for the no-syncers test path."""
-    return []
-
-
-@pytest.fixture
-def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
-    """Mock the InventoryAPI dependency."""
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_inventory_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_sync_item_manager(mocker) -> AsyncMock:
-    """Mock the SyncItemManager sync_is_running method."""
-    return mocker.patch.object(
-        SyncItemManager, "sync_is_running", new=AsyncMock(return_value=False)
-    )
-
-
-@pytest.fixture
-def mock_syncers() -> list:
-    """Override the SyncersDep with two stub syncers."""
-    stubs = [_StubPMMSyncer(), _StubMySQLSyncer()]
-    sep_app.dependency_overrides[get_syncers] = lambda: stubs
-    yield stubs
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_background_tasks():
-    """Mock the Background tasks dependency."""
-    mock = MagicMock(spec=BackgroundTasks)
-    sep_app.dependency_overrides[BackgroundTasks] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_run_sync_funcs(mocker):
-    """Replace the ``run_*_sync`` symbols on the routes module with AsyncMocks.
-
-    The real background-task callables open database sessions and invoke
-    ``syncer.api_auth(...)``, which the lightweight stub syncers cannot
-    satisfy. Patching them at the routes-module level lets the real
-    ``BackgroundTasks`` instance schedule and execute the mocks immediately
-    after the response, capturing the args originally passed to
-    ``add_task``.
-    """
-    return {
-        "inventory": mocker.patch(
-            "app.sep.plugins.inventory.routes.run_inventory_sync",
-            new=AsyncMock(),
-        ),
-        "node": mocker.patch(
-            "app.sep.plugins.inventory.routes.run_node_sync",
-            new=AsyncMock(),
-        ),
-        "service": mocker.patch(
-            "app.sep.plugins.inventory.routes.run_service_sync",
-            new=AsyncMock(),
-        ),
-        "schema": mocker.patch(
-            "app.sep.plugins.inventory.routes.run_schema_sync",
-            new=AsyncMock(),
-        ),
-    }
+from tests.app.sep.plugins.inventory.conftest import (
+    _EXPECTED_STUB_COUNT,
+    _MYSQL_STUB_NAME,
+    _no_syncers,
+    _PMM_STUB_NAME,
+    _StubMySQLSyncer,
+    _StubPMMSyncer,
+)
 
 
 @pytest.fixture
@@ -219,6 +117,19 @@ def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     mock_inventory_api_dep.get.assert_any_await("/", params={"limit": 0})
     mock_task_api_dep.get.assert_any_await("/inventory-sync/periodic/")
+
+
+def test_jinja_sync_route_is_marked_deprecated_in_openapi():
+    """Lock in the deprecation flag for the legacy Jinja2 ``POST /inventory/sync/``.
+
+    The React control consumes the new JSON route at
+    ``POST /api/plugins/inventory/sync/``; the Jinja2 trigger remains
+    functional until Wave 3 but must advertise ``deprecated: true`` in
+    OpenAPI so downstream tooling can surface the warning.
+    """
+    openapi = sep_app.openapi()
+    operation = openapi["paths"]["/inventory/sync/"]["post"]
+    assert operation.get("deprecated") is True
 
 
 @pytest.mark.asyncio
