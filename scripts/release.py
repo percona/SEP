@@ -463,10 +463,11 @@ def _print_stable_next_steps(version: str) -> None:
     :type version: str
     """
     print()
+    print(f"Verified: v{version} is an ancestor of origin/main.")
+    print()
     print("Next steps:")
     print("  1. Publish release notes")
     print(f"  2. Mark Jira version {version} as released")
-    print("  3. Merge the dev version bump PR")
 
 
 def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
@@ -582,6 +583,12 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
     print()
     _run(["make", "trigger-jenkins", f"TAG={rc_tag}"])
 
+    if rc == 1:
+        # Scope-lock + dev-bump are atomic. Main runs at the next .dev0 for
+        # the entire QA window — fixes during QA land on the release branch
+        # (no main-first cherry-picks under the back-merge model).
+        _create_dev_version_bump_pr(version, f"v{version}")
+
     _print_rc_next_steps(
         version=version,
         rc=rc,
@@ -633,7 +640,7 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
                 "--title",
                 f"Bump dev version to v{dev_version}",
                 "--body",
-                f"Automated dev version bump after {stable_tag} stable release.",
+                f"Automated dev version bump after scope-locking {stable_tag} into release/{stable_tag}.",
             ],
         )
     finally:
@@ -642,6 +649,166 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
                 os.environ.pop("GH_TOKEN", None)
             else:
                 os.environ["GH_TOKEN"] = saved_gh_token
+
+
+def _has_unmerged_paths() -> bool:
+    """Return ``True`` if any path in the working tree has unresolved merge conflicts.
+
+    :return: ``True`` if ``git ls-files -u`` reports any entries.
+    :rtype: bool
+    """
+    result = _run(["git", "ls-files", "-u"], check=False, capture=True)
+    return bool(result.stdout.strip())
+
+
+def _checkout_ours_if_unmerged(path: str) -> None:
+    """Run ``git checkout --ours <path>`` only if ``path`` is unmerged.
+
+    :param path: The repository-relative path to potentially resolve.
+    :type path: str
+    """
+    result = _run(["git", "ls-files", "-u", path], check=False, capture=True)
+    if result.stdout.strip():
+        _run(["git", "checkout", "--ours", path])
+
+
+def _back_merge_release_into_main(
+    *, version: str, release_branch: str, tag: str
+) -> int:
+    """Back-merge ``release_branch`` into main and assert the ancestor invariant.
+
+    Sequence:
+
+    1. ``git fetch origin``
+    2. ``git checkout main`` (and pull to align with origin/main)
+    3. ``git merge --no-ff release_branch`` — expected to conflict on
+       ``CHANGELOG.md`` and the version files
+    4. Resolve CHANGELOG via ``scripts/changelog.py resolve-backmerge --release X.Y.Z``
+    5. Resolve version files by re-checking out main's side (the dev-bumped
+       value wins; the release branch's stable version must not overwrite it)
+    6. ``git commit`` to finalize the merge
+    7. ``git push origin main``
+    8. Assert ``git merge-base --is-ancestor vX.Y.Z origin/main`` exits 0
+
+    On step-8 failure, this function returns non-zero **without** deleting the
+    release branch, so the operator can inspect / re-attempt before losing
+    state.
+
+    :param version: The X.Y.Z release version (no ``v`` prefix).
+    :type version: str
+    :param release_branch: The release branch (``release/vX.Y.Z``).
+    :type release_branch: str
+    :param tag: The release tag (``vX.Y.Z``).
+    :type tag: str
+    :return: ``0`` on success, non-zero if any step or the invariant fails.
+    :rtype: int
+    """
+    print("==> Fetching origin for back-merge...")
+    _run(["git", "fetch", "origin"])
+    print("==> Checking out main...")
+    _run(["git", "checkout", "main"])
+    _run(["git", "pull", "origin", "main"])
+
+    print(f"==> Merging {release_branch} into main with --no-ff...")
+    # Expect a non-zero exit because of the CHANGELOG / version-file
+    # conflict — that's the whole point of this step.
+    # Do not use `-s ours`: it records ancestry but drops the release-side
+    # commits, which does not fix the SHA-split compare-link problem the
+    # back-merge model is solving.
+    merge_result = _run(
+        ["git", "merge", "--no-ff", "--no-commit", release_branch],
+        check=False,
+    )
+    if merge_result.returncode != 0 and not _has_unmerged_paths():
+        print(
+            "error: git merge --no-ff exited non-zero but did not leave a "
+            "conflict to resolve; aborting back-merge.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("==> Resolving CHANGELOG.md and changelog.d/ via scripts/changelog.py...")
+    resolve_result = _run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "changelog.py"),
+            "resolve-backmerge",
+            "--release",
+            version,
+        ],
+        check=False,
+    )
+    if resolve_result.returncode != 0:
+        print(
+            "error: scripts/changelog.py resolve-backmerge failed; aborting "
+            "back-merge. The working tree is left in a mid-merge state — run "
+            "'git merge --abort' to clean up before retrying.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        "==> Resolving version files by keeping main's dev version (if conflicted)..."
+    )
+    for path in (str(PYPROJECT), str(APP_INIT)):
+        _checkout_ours_if_unmerged(path)
+
+    print("==> Staging resolved files...")
+    _run(
+        [
+            "git",
+            "add",
+            "CHANGELOG.md",
+            "changelog.d",
+            str(PYPROJECT),
+            str(APP_INIT),
+        ]
+    )
+
+    print("==> Finalizing the merge commit...")
+    _run(
+        [
+            "git",
+            "commit",
+            "--no-edit",
+            "-m",
+            f"Merge release/v{version} into main (back-merge for {tag})",
+        ],
+    )
+
+    print("==> Pushing main...")
+    _run(["git", "push", "origin", "main"])
+
+    print(f"==> Asserting ancestor invariant on local main: {tag} ...")
+    local_invariant = _run(
+        ["git", "merge-base", "--is-ancestor", tag, "main"],
+        check=False,
+    )
+    if local_invariant.returncode != 0:
+        print(
+            f"error: post-back-merge invariant failed locally — {tag} is NOT an "
+            "ancestor of main. Leaving release branch in place for "
+            "investigation.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"==> Refreshing origin/main and asserting invariant remotely: {tag} ...")
+    _run(["git", "fetch", "origin", "main"])
+    remote_invariant = _run(
+        ["git", "merge-base", "--is-ancestor", tag, "origin/main"],
+        check=False,
+    )
+    if remote_invariant.returncode != 0:
+        print(
+            f"error: post-back-merge invariant failed against origin/main — "
+            f"{tag} is NOT an ancestor of origin/main. The push may have been "
+            "rejected or rewound. Leaving release branch in place for "
+            "investigation.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
 
 
 def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
@@ -713,12 +880,17 @@ def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
     else:
         print("Note: gh CLI not found, skipping GitHub release creation.")
 
-    _create_dev_version_bump_pr(version, tag)
+    back_merge_rc = _back_merge_release_into_main(
+        version=version,
+        release_branch=expected_branch,
+        tag=tag,
+    )
+    if back_merge_rc != 0:
+        return back_merge_rc
 
-    print("==> Deleting release branch...")
-    _run(["git", "checkout", "main"])
+    print("==> Deleting release branch (post back-merge)...")
     _run(["git", "push", "origin", "--delete", expected_branch], check=False)
-    _run(["git", "branch", "-d", expected_branch], check=False)
+    _run(["git", "branch", "-D", expected_branch], check=False)
 
     print()
     print(f"=== Stable {version} released successfully ===")

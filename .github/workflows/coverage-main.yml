@@ -32,7 +32,7 @@ jobs:
           cache: poetry
 
       - name: Install test dependencies
-        run: poetry install --with syncmysql
+        run: poetry sync --no-root --with syncmysql
 
       - name: Run tests
         run: make test
