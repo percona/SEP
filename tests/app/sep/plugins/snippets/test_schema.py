@@ -15,6 +15,8 @@
 
 """Tests for the snippets plugin schema synthesiser."""
 
+from urllib.parse import urlencode
+
 import pytest
 
 from app.sep.plugins.framework.schema import (
@@ -44,20 +46,34 @@ def _execution_section(schema):
     return next(section for section in schema.forms if section.title == "Execution")
 
 
+def _script_preview_section(schema):
+    return next(
+        section for section in schema.forms if section.title == "Script preview"
+    )
+
+
 @pytest.mark.asyncio
 async def test_per_snippet_schema_includes_host_and_preview(create_snippet):
-    """Every per-snippet schema includes a host selector and a preview URL with ``snippet_filename`` in the query string."""
+    """Per-snippet schema keeps host in Execution; preview is a separate collapsible section using the query API."""
     snippet = await create_snippet("hello.sh", approved=True)
 
     schema = build_snippet_schema(snippet)
 
-    section = _execution_section(schema)
-    field_types = {type(field) for field in section.fields}
+    execution = _execution_section(schema)
+    field_types = {type(field) for field in execution.fields}
     assert HostField in field_types
-    assert ScriptPreviewField in field_types
-    preview = next(f for f in section.fields if isinstance(f, ScriptPreviewField))
+    assert ScriptPreviewField not in field_types
+    preview_section = _script_preview_section(schema)
+    assert preview_section.collapsible is True
+    assert preview_section.collapsed_by_default is True
+    assert preview_section.render_after_submit is True
+    preview = next(
+        f for f in preview_section.fields if isinstance(f, ScriptPreviewField)
+    )
+    assert preview.label == "Snippet file"
     assert preview.endpoint_url == (
-        f"/plugins/snippets/snippet/preview?snippet_filename={snippet.filename}"
+        "/plugins/snippets/snippet/preview?"
+        + urlencode({"snippet_filename": snippet.filename})
     )
 
 
@@ -68,10 +84,13 @@ async def test_per_snippet_schema_url_encodes_nested_filenames(create_snippet):
 
     schema = build_snippet_schema(snippet)
 
-    section = _execution_section(schema)
-    preview = next(f for f in section.fields if isinstance(f, ScriptPreviewField))
+    preview_section = _script_preview_section(schema)
+    preview = next(
+        f for f in preview_section.fields if isinstance(f, ScriptPreviewField)
+    )
     assert preview.endpoint_url == (
-        "/plugins/snippets/snippet/preview?snippet_filename=diag%2Fslow-query.sh"
+        "/plugins/snippets/snippet/preview?"
+        + urlencode({"snippet_filename": snippet.filename})
     )
     path, _, _query = preview.endpoint_url.partition("?")
     assert path == "/plugins/snippets/snippet/preview"

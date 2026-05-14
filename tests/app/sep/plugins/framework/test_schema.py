@@ -686,11 +686,11 @@ class TestScriptPreviewField:
         field = ScriptPreviewField(
             name="preview",
             label="Preview",
-            endpoint_url="/api/plugins/snippets/x.sh/script-preview",
+            endpoint_url="/api/plugins/snippets/x.sh/preview",
         )
 
         assert field.field_type == "script_preview"
-        assert field.endpoint_url == "/api/plugins/snippets/x.sh/script-preview"
+        assert field.endpoint_url == "/api/plugins/snippets/x.sh/preview"
         assert field.depends_on == []
         assert field.language is None
 

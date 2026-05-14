@@ -171,7 +171,7 @@ class TestSnippetsApiPerSnippetSchema:
     async def test_returns_per_snippet_schema_with_preview_field(
         self, test_client, create_snippet
     ):
-        """The execution section embeds a ScriptPreviewField with a baked URL."""
+        """The schema exposes a dedicated post-submit ScriptPreview section."""
         snippet = await create_snippet("hello.sh", approved=True)
 
         response = test_client.get(
@@ -187,12 +187,19 @@ class TestSnippetsApiPerSnippetSchema:
         )
         field_types = {field["type"] for field in execution_section["fields"]}
         assert "host" in field_types
-        assert "script_preview" in field_types
+        assert "script_preview" not in field_types
+        preview_section = next(
+            section for section in body["forms"] if section["title"] == "Script preview"
+        )
+        assert preview_section["collapsible"] is True
+        assert preview_section["collapsed_by_default"] is True
+        assert preview_section["render_after_submit"] is True
         preview_field = next(
             field
-            for field in execution_section["fields"]
+            for field in preview_section["fields"]
             if field["type"] == "script_preview"
         )
+        assert preview_field["label"] == "Snippet file"
         assert preview_field["endpoint_url"] == (
             f"/plugins/snippets/snippet/preview?snippet_filename={snippet.filename}"
         )
