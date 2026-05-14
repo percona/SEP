@@ -290,6 +290,23 @@ class TestTopologyCollect:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    @pytest.mark.parametrize("hosts_payload", [None, []])
+    def test_rejects_invalid_executor_hosts_payload(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep, hosts_payload
+    ):
+        """Ensure malformed Tasks API hosts payloads produce a friendly 502."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value={"items": [_mysql_service(1, "10.0.0.1")]}
+        )
+        mock_task_api_dep.get = AsyncMock(return_value=hosts_payload)
+
+        response = test_client.post("/api/plugins/inventory/topology/collect", json={})
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json()["detail"] == (
+            "Tasks API returned an invalid executor hosts payload."
+        )
+
 
 def _stdout_stream(stdout: str):
     """Return an async-iterator factory producing the framed log stream."""

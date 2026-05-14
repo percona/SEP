@@ -214,6 +214,11 @@ async def topology_collect(
             detail="No MySQL services found in inventory.",
         )
     available_hosts = await tasks_api.get("/hosts/")
+    if not isinstance(available_hosts, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Tasks API returned an invalid executor hosts payload.",
+        )
     targets = _select_topology_targets(available_hosts, body.executor_host, body.shards)
     chunks = shard_hosts(hosts, len(targets))
     targets = targets[: len(chunks)]
