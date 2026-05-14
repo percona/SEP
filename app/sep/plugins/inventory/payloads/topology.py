@@ -119,7 +119,7 @@ def _query_server_info(cursor: DictCursor) -> dict[str, Any]:
             "@@super_read_only AS super_read_only, @@read_only AS read_only, "
             "@@version AS version, @@log_bin AS log_bin, @@hostname AS hostname"
         )
-        row = cursor.fetchone() or {}
+        row = cursor.fetchone()
     except pymysql.MySQLError:
         cursor.execute(
             "SELECT SHA2(CONCAT(@@server_id, @@hostname, @@port), 256) AS server_hash, "
@@ -127,9 +127,13 @@ def _query_server_info(cursor: DictCursor) -> dict[str, Any]:
             "@@read_only AS read_only, @@version AS version, "
             "@@log_bin AS log_bin, @@hostname AS hostname"
         )
-        row = cursor.fetchone() or {}
+        row = cursor.fetchone()
+        if not row:
+            raise pymysql.MySQLError("Server identity query returned no rows")
         row["server_uuid"] = None
         row["super_read_only"] = 0
+    if not row:
+        raise pymysql.MySQLError("Server identity query returned no rows")
     if row.get("super_read_only") == 1:
         read_only = "SR"
     elif row.get("read_only") == 1:

@@ -23,6 +23,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import pytest
+
 
 class _FakeCursor:
     def __enter__(self) -> _FakeCursor:
@@ -154,3 +156,13 @@ def test_query_repl_info_uses_source_fallback_when_master_columns_are_null(
     assert repl["source_uuid"] == "source-uuid"
     assert repl["seconds_behind"] == 3
     assert repl["repl_status"] == "ok"
+
+
+def test_query_server_info_rejects_empty_identity_row(monkeypatch) -> None:
+    """Empty identity query results become host_error instead of mostly-null nodes."""
+    payload, _calls = _load_payload_module(monkeypatch)
+    cursor = _FakeCursor()
+    cursor.fetchone = lambda: None
+
+    with pytest.raises(payload.pymysql.MySQLError, match="Server identity query"):
+        payload._query_server_info(cursor)
