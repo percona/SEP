@@ -37,7 +37,7 @@ from typing import Any, TYPE_CHECKING
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, MutableMapping
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +321,7 @@ def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is na
 def _resolve_replication_source(
     repl: Mapping[str, Any],
     hash_to_node: Mapping[str, str],
-    addr_to_node: Mapping[tuple[str, int], str],
+    addr_to_node: MutableMapping[tuple[str, int], str],
     nodes: list[dict[str, Any]],
 ) -> str:
     """Find or synthesize the node id for a replica's replication source.

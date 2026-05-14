@@ -362,82 +362,112 @@ def _build_sse_event(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
+async def _put_task_error(
+    queue: asyncio.Queue[dict[str, Any]],
+    task_history_id: int,
+    exc: HTTPException,
+) -> None:
+    """Queue a task-level error event for one topology shard."""
+    await queue.put(
+        {
+            "event": "task_error",
+            "data": {
+                "task_history_id": task_history_id,
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            },
+        }
+    )
+
+
+async def _put_task_done(
+    queue: asyncio.Queue[dict[str, Any]], task_history_id: int
+) -> None:
+    """Queue the completion marker for one topology shard worker."""
+    await queue.put(
+        {
+            "event": "task_done",
+            "data": {"task_history_id": task_history_id},
+        }
+    )
+
+
+async def _poll_task_until_streamable(
+    tasks_api: RemoteAPI,
+    task_history_id: int,
+    queue: asyncio.Queue[dict[str, Any]],
+) -> None:
+    """Poll task history until logs can be streamed or task is terminal."""
+    last_status: str | None = None
+    while True:
+        history = await _fetch_task_history(tasks_api, task_history_id)
+        current = history.get("status")
+        if current != last_status:
+            last_status = current
+            await queue.put(
+                {
+                    "event": "task_status",
+                    "data": {
+                        "task_history_id": task_history_id,
+                        "status": current,
+                    },
+                }
+            )
+        if current == TaskHistoryStatusEnum.RUNNING.value or _is_terminal_task_status(
+            current
+        ):
+            return
+        await asyncio.sleep(_TOPOLOGY_POLL_INTERVAL_SECONDS)
+
+
+async def _stream_task_stdout(
+    tasks_api: RemoteAPI,
+    task_history_id: int,
+    queue: asyncio.Queue[dict[str, Any]],
+) -> None:
+    """Parse stdout log chunks into topology events for one shard."""
+    async for raw_line in tasks_api.stream(
+        f"/history/{task_history_id}/logs/",
+        params={"step": _TOPOLOGY_STDOUT_STEP},
+    ):
+        if not raw_line:
+            continue
+        try:
+            log_entry = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        if log_entry.get("type") != "stdout":
+            continue
+        msg = log_entry.get("msg", "")
+        for ev in parse_ndjson(msg):
+            await queue.put(
+                {
+                    "event": ev.get("event", "host_done"),
+                    "data": {
+                        "task_history_id": task_history_id,
+                        **ev,
+                    },
+                }
+            )
+
+
 async def _stream_one_task(
     tasks_api: RemoteAPI, task_history_id: int, queue: asyncio.Queue[dict[str, Any]]
 ) -> None:
     """Tail one task's stdout NDJSON; push parsed events to ``queue``."""
-    last_status: str | None = None
-
-    async def _put_task_error(exc: HTTPException) -> None:
-        await queue.put(
-            {
-                "event": "task_error",
-                "data": {
-                    "task_history_id": task_history_id,
-                    "status_code": exc.status_code,
-                    "detail": exc.detail,
-                },
-            }
-        )
-
     try:
         try:
-            while True:
-                history = await _fetch_task_history(tasks_api, task_history_id)
-                current = history.get("status")
-                if current != last_status:
-                    last_status = current
-                    await queue.put(
-                        {
-                            "event": "task_status",
-                            "data": {
-                                "task_history_id": task_history_id,
-                                "status": current,
-                            },
-                        }
-                    )
-                if current == TaskHistoryStatusEnum.RUNNING.value or (
-                    current in _TOPOLOGY_FINISHED_STATUSES
-                ):
-                    break
-                await asyncio.sleep(_TOPOLOGY_POLL_INTERVAL_SECONDS)
+            await _poll_task_until_streamable(tasks_api, task_history_id, queue)
         except HTTPException as exc:
-            await _put_task_error(exc)
+            await _put_task_error(queue, task_history_id, exc)
             return
 
         try:
-            async for raw_line in tasks_api.stream(
-                f"/history/{task_history_id}/logs/",
-                params={"step": _TOPOLOGY_STDOUT_STEP},
-            ):
-                if not raw_line:
-                    continue
-                try:
-                    log_entry = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    continue
-                if log_entry.get("type") != "stdout":
-                    continue
-                msg = log_entry.get("msg", "")
-                for ev in parse_ndjson(msg):
-                    await queue.put(
-                        {
-                            "event": ev.get("event", "host_done"),
-                            "data": {
-                                "task_history_id": task_history_id,
-                                **ev,
-                            },
-                        }
-                    )
+            await _stream_task_stdout(tasks_api, task_history_id, queue)
         except HTTPException as exc:
-            await _put_task_error(exc)
+            await _put_task_error(queue, task_history_id, exc)
     finally:
-        await queue.put(
-            {
-                "event": "task_done",
-                "data": {"task_history_id": task_history_id},
-            }
-        )
+        await _put_task_done(queue, task_history_id)
 
 
 async def _topology_event_stream(
