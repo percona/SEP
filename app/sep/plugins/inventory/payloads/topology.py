@@ -241,6 +241,7 @@ def _query_repl_info(cursor: DictCursor) -> dict[str, Any]:
                 "Replicate_Wild_Ignore_Table",
             )
         ) else "none"
+        auto_position = _first_not_none(row, "Auto_Position", "Source_Auto_Position")
         return {
             "source_host": _first_not_none(row, "Master_Host", "Source_Host"),
             "source_port": _first_not_none(row, "Master_Port", "Source_Port"),
@@ -255,7 +256,7 @@ def _query_repl_info(cursor: DictCursor) -> dict[str, Any]:
             ),
             "repl_status": repl_status,
             "repl_filter": repl_filter,
-            "auto_position": row.get("Auto_Position", 0),
+            "auto_position": auto_position if auto_position is not None else 0,
         }
     return {"source_host": None}
 
