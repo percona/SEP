@@ -247,10 +247,14 @@ class TestShardHosts:
         assert flattened == sorted(hosts)
         assert len(chunks) == min(shards, len(hosts))
 
-    def test_zero_or_one_shard_returns_single_chunk(self) -> None:
-        """Degenerate shard counts (0 or 1) collapse to a single chunk containing every host."""
-        assert shard_hosts(["a"], 0) == [["a"]]
+    def test_one_shard_returns_single_chunk(self) -> None:
+        """A single shard contains every host."""
         assert shard_hosts(["a", "b"], 1) == [["a", "b"]]
+
+    def test_zero_shards_rejected(self) -> None:
+        """Shard count must match the API contract: at least one shard."""
+        with pytest.raises(ValueError, match="shards must be >= 1"):
+            shard_hosts(["a"], 0)
 
 
 class TestBuildTopologyMeta:
