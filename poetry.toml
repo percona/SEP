@@ -1,0 +1,8 @@
+[solver]
+min-release-age = 7
+
+[requests]
+max-retries = 3
+
+[keyring]
+enabled = false
