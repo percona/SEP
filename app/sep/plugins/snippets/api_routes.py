@@ -267,8 +267,8 @@ async def snippets_api_execute(
 ) -> SnippetExecutionResponse:
     """Execute a snippet against the tasks API.
 
-    Mirrors the legacy ``POST /{snippet_filename}`` Jinja2 route, but
-    accepts a JSON body and returns a structured response pointing at
+    Mirrors the legacy Jinja2 ``POST /snippets/execute?snippet_filename=...``
+    route, but accepts a JSON body and returns a structured response pointing at
     the created task.
 
     :param snippet: The snippet being executed.

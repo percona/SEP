@@ -49,7 +49,14 @@ async def app_index(
     snippets = await SnippetManager.list(session)
     form_hosts = executor_hosts_ctx.as_form_hosts()
     context["snippets"] = {
-        snippet.filename: snippet.to_form(form_hosts, f"/snippets/{snippet.filename}")
+        snippet.filename: snippet.to_form(
+            form_hosts,
+            str(
+                request.url_for("snippets_execute").include_query_params(
+                    snippet_filename=snippet.filename
+                )
+            ),
+        )
         for snippet in snippets
     }
     # arrumar linenos

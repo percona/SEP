@@ -152,9 +152,11 @@ def validate_snippet_parameters(request: Request, snippet: SnippetDep) -> Snippe
     :rtype: Snippet
     """
     if snippet.is_approved:
-        snippet_path = request.url_for(
-            "snippets_detail", snippet_filename=snippet.filename
-        ).path
+        snippet_path = (
+            request.url_for("snippets_detail")
+            .include_query_params(snippet_filename=snippet.filename)
+            .path
+        )
         add_msg_func = (
             messages.warning
             if snippets_settings.META.IGNORE_INVALID_PARAMETERS
