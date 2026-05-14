@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define Pydantic models for the Inventory plugin's schedule UI."""
+"""Define Pydantic models for the Inventory plugin's schedule UI and API responses."""
 
 from typing import Any
 
@@ -22,6 +22,34 @@ from pydantic import BaseModel, model_validator
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
+
+
+class PluginTaskResponse(BaseModel):
+    """Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.
+
+    :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
+    :type name: str
+    :param display_name: Human-readable label for the schedule UI.
+    :type display_name: str
+    """
+
+    name: str
+    display_name: str
+
+
+class AvailableSyncerResponse(BaseModel):
+    """Represent a single available syncer entry from ``GET /api/plugins/inventory/available-syncers/``.
+
+    :param name: Fully qualified class identifier (e.g.
+        ``"app.sep.sync.syncers.pmm.PMMSyncer"``). Matches the value persisted
+        in ``SyncInstance.syncer`` and accepted by ``POST /inventory/schedule/``.
+    :type name: str
+    :param display_name: Human-readable label for the syncer dropdown.
+    :type display_name: str
+    """
+
+    name: str
+    display_name: str
 
 
 class InventorySyncScheduleCreateForm(BaseModel):
