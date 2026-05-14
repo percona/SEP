@@ -25,6 +25,10 @@ from typing import Any
 
 import pytest
 
+_SOURCE_PORT = 3307
+_SOURCE_SERVER_ID = 99
+_SECONDS_BEHIND = 3
+
 
 class _FakeCursor:
     def __enter__(self) -> _FakeCursor:
@@ -132,9 +136,9 @@ def test_query_repl_info_uses_source_fallback_when_master_columns_are_null(
             "Master_Host": None,
             "Source_Host": "primary.example",
             "Master_Port": None,
-            "Source_Port": 3307,
+            "Source_Port": _SOURCE_PORT,
             "Master_Server_Id": None,
-            "Source_Server_Id": 99,
+            "Source_Server_Id": _SOURCE_SERVER_ID,
             "Master_UUID": None,
             "Source_UUID": "source-uuid",
             "Slave_IO_Running": None,
@@ -142,7 +146,7 @@ def test_query_repl_info_uses_source_fallback_when_master_columns_are_null(
             "Slave_SQL_Running": None,
             "Replica_SQL_Running": "Yes",
             "Seconds_Behind_Master": None,
-            "Seconds_Behind_Source": 3,
+            "Seconds_Behind_Source": _SECONDS_BEHIND,
             "Auto_Position": 1,
         }
 
@@ -151,10 +155,10 @@ def test_query_repl_info_uses_source_fallback_when_master_columns_are_null(
     repl = payload._query_repl_info(cursor)
 
     assert repl["source_host"] == "primary.example"
-    assert repl["source_port"] == 3307
-    assert repl["source_server_id"] == 99
+    assert repl["source_port"] == _SOURCE_PORT
+    assert repl["source_server_id"] == _SOURCE_SERVER_ID
     assert repl["source_uuid"] == "source-uuid"
-    assert repl["seconds_behind"] == 3
+    assert repl["seconds_behind"] == _SECONDS_BEHIND
     assert repl["repl_status"] == "ok"
 
 
