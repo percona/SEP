@@ -84,11 +84,11 @@ _TOPOLOGY_TASK = "run-python"
 _TOPOLOGY_STDOUT_STEP = "run-script"
 _TOPOLOGY_FINISHED_STATUSES = frozenset(
     {
-        TaskHistoryStatusEnum.SUCCESS,
-        TaskHistoryStatusEnum.FAILED,
-        TaskHistoryStatusEnum.LOST,
-        TaskHistoryStatusEnum.STOPPED,
-        TaskHistoryStatusEnum.STALE,
+        TaskHistoryStatusEnum.SUCCESS.value,
+        TaskHistoryStatusEnum.FAILED.value,
+        TaskHistoryStatusEnum.LOST.value,
+        TaskHistoryStatusEnum.STOPPED.value,
+        TaskHistoryStatusEnum.STALE.value,
     }
 )
 _MAX_TOPOLOGY_SHARDS = 8
