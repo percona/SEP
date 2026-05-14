@@ -17,11 +17,15 @@
 
 import { memo, useMemo } from 'react';
 import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
+import Accordion from '@mui/material/Accordion';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import AccordionSummary from '@mui/material/AccordionSummary';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { PluginCapabilities } from '@sep/api';
 import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
 import { FieldRenderer } from './fields';
@@ -88,12 +92,8 @@ const SectionRenderer = memo(function SectionRenderer({
   idx,
   violations,
 }: SectionRendererProps) {
-  return (
-    <Box component="fieldset" sx={{ border: 0, p: 0, mb: 3 }}>
-      {idx > 0 && <Divider sx={{ mb: 2 }} />}
-      <Typography component="legend" variant="h6" sx={{ mb: 1, px: 0 }}>
-        {section.title}
-      </Typography>
+  const sectionContent = (
+    <>
       {section.description && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           {section.description}
@@ -107,6 +107,41 @@ const SectionRenderer = memo(function SectionRenderer({
       {section.fields.map((field) => (
         <ConditionalFieldSlot key={field.name} field={field} />
       ))}
+    </>
+  );
+
+  return (
+    <Box component="fieldset" sx={{ border: 0, p: 0, mb: 3 }}>
+      {idx > 0 && <Divider sx={{ mb: 2 }} />}
+      {section.collapsible ? (
+        <Accordion
+          defaultExpanded={!section.collapsed_by_default}
+          disableGutters
+          slotProps={{ transition: { unmountOnExit: true } }}
+        >
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon />}
+            sx={{
+              pl: 2,
+              pr: 1,
+              minHeight: 48,
+              '& .MuiAccordionSummary-content': { my: 1 },
+            }}
+          >
+            <Typography component="legend" variant="subtitle1" sx={{ fontWeight: 600 }}>
+              {section.title}
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ px: 0, pl: 2 }}>{sectionContent}</AccordionDetails>
+        </Accordion>
+      ) : (
+        <>
+          <Typography component="legend" variant="h6" sx={{ mb: 1, px: 0 }}>
+            {section.title}
+          </Typography>
+          {sectionContent}
+        </>
+      )}
     </Box>
   );
 });
@@ -134,17 +169,30 @@ function SchemaFormBody({
 }: SchemaFormRendererProps) {
   const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
   const allFields = useMemo(() => flattenFields(sections), [sections]);
+  const beforeSubmitSections = useMemo(
+    () => sections.filter((section) => !section.render_after_submit),
+    [sections],
+  );
+  const afterSubmitSections = useMemo(
+    () => sections.filter((section) => section.render_after_submit),
+    [sections],
+  );
   const cardinalityViolations = useCardinalityRules(sections);
   const failViolations = useFailRules(sections);
 
   // Merge cardinality and fail violations per section into a flat list for SectionRenderer.
-  const violationsPerSection = useMemo(
-    () =>
-      sections.map((_, i) => [...(cardinalityViolations[i] ?? []), ...(failViolations[i] ?? [])]),
-    [sections, cardinalityViolations, failViolations],
-  );
+  const violationsBySection = useMemo(() => {
+    const map = new Map<FormSection, Array<{ message: string }>>();
+    sections.forEach((section, i) => {
+      map.set(section, [...(cardinalityViolations[i] ?? []), ...(failViolations[i] ?? [])]);
+    });
+    return map;
+  }, [sections, cardinalityViolations, failViolations]);
 
-  const hasSectionViolations = violationsPerSection.some((vs) => vs.length > 0);
+  const hasSectionViolations = useMemo(
+    () => [...violationsBySection.values()].some((vs) => vs.length > 0),
+    [violationsBySection],
+  );
   const hasInlineErrors = Object.keys(formState.errors).length > 0;
 
   const handleFormSubmit: SubmitHandler<Record<string, unknown>> = (values) => {
@@ -172,12 +220,12 @@ function SchemaFormBody({
         </Alert>
       )}
 
-      {sections.map((section, idx) => (
+      {beforeSubmitSections.map((section, idx) => (
         <SectionRenderer
-          key={section.title}
+          key={`${section.title}-${idx}`}
           section={section}
           idx={idx}
-          violations={violationsPerSection[idx] ?? []}
+          violations={violationsBySection.get(section) ?? []}
         />
       ))}
 
@@ -190,6 +238,19 @@ function SchemaFormBody({
       <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
         {submitLabel}
       </Button>
+
+      {afterSubmitSections.length > 0 ? (
+        <Box sx={{ mt: 3 }}>
+          {afterSubmitSections.map((section, idx) => (
+            <SectionRenderer
+              key={`${section.title}-after-${idx}`}
+              section={section}
+              idx={idx}
+              violations={violationsBySection.get(section) ?? []}
+            />
+          ))}
+        </Box>
+      ) : null}
     </Box>
   );
 }

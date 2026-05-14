@@ -44,19 +44,32 @@ def _execution_section(schema):
     return next(section for section in schema.forms if section.title == "Execution")
 
 
+def _script_preview_section(schema):
+    return next(
+        section for section in schema.forms if section.title == "Script preview"
+    )
+
+
 @pytest.mark.asyncio
 async def test_per_snippet_schema_includes_host_and_preview(create_snippet):
-    """Every per-snippet schema includes a host selector and the preview pane."""
+    """Per-snippet schema keeps host in Execution and preview in its own section."""
     snippet = await create_snippet("hello.sh", approved=True)
 
     schema = build_snippet_schema(snippet)
 
-    section = _execution_section(schema)
-    field_types = {type(field) for field in section.fields}
+    execution = _execution_section(schema)
+    field_types = {type(field) for field in execution.fields}
     assert HostField in field_types
-    assert ScriptPreviewField in field_types
-    preview = next(f for f in section.fields if isinstance(f, ScriptPreviewField))
-    assert preview.endpoint_url == f"/plugins/snippets/{snippet.filename}/preview"
+    assert ScriptPreviewField not in field_types
+    preview_section = _script_preview_section(schema)
+    assert preview_section.collapsible is True
+    assert preview_section.collapsed_by_default is True
+    assert preview_section.render_after_submit is True
+    preview = next(
+        f for f in preview_section.fields if isinstance(f, ScriptPreviewField)
+    )
+    assert preview.label == "Snippet file"
+    assert preview.endpoint_url == (f"/plugins/snippets/{snippet.filename}/preview")
 
 
 @pytest.mark.asyncio

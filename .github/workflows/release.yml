@@ -84,3 +84,16 @@ jobs:
           else
             make release-stable VERSION="$VERSION" SIGN_VIA_API=1
           fi
+
+      - name: Assert back-merge ancestor invariant
+        if: ${{ inputs.release_type == 'stable' }}
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor "v${VERSION}" origin/main; then
+            echo "::error::Post-release invariant failed: v${VERSION} is NOT an ancestor of origin/main. The back-merge in cmd_stable did not land. Investigate before re-running."
+            exit 1
+          fi
+          echo "OK: v${VERSION} is an ancestor of origin/main."
