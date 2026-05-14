@@ -54,6 +54,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPServiceUnavailableException,
 )
+from app.core.requests import RemoteAPI
 from app.sep.deps import InventoryAPI, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory import payloads
@@ -152,7 +153,7 @@ def _format_host_entry(service: dict[str, Any]) -> str | None:
     return f"{address}:{port}"
 
 
-async def _collect_mysql_host_entries(inventory_api: Any) -> list[str]:
+async def _collect_mysql_host_entries(inventory_api: RemoteAPI) -> list[str]:
     """Return ``host:port`` entries for every MySQL service in inventory."""
     response = await inventory_api.get(
         "/services/", params={"service_type": "mysql", "limit": 0}
@@ -270,11 +271,13 @@ def _parse_ids_param(ids: str) -> list[int]:
     return parsed
 
 
-async def _fetch_task_history(tasks_api: Any, task_history_id: int) -> dict[str, Any]:
+async def _fetch_task_history(
+    tasks_api: RemoteAPI, task_history_id: int
+) -> dict[str, Any]:
     return await tasks_api.get(f"/history/{task_history_id}")
 
 
-async def _fetch_task_stdout(tasks_api: Any, task_history_id: int) -> str:
+async def _fetch_task_stdout(tasks_api: RemoteAPI, task_history_id: int) -> str:
     """Fetch and concatenate the stdout payload for a finished task history."""
     output: list[str] = []
     async for chunk in tasks_api.stream(
@@ -341,7 +344,7 @@ def _build_sse_event(event: str, data: Any) -> str:
 
 
 async def _stream_one_task(
-    tasks_api: Any, task_history_id: int, queue: asyncio.Queue
+    tasks_api: RemoteAPI, task_history_id: int, queue: asyncio.Queue
 ) -> None:
     """Tail one task's stdout NDJSON; push parsed events to ``queue``."""
     last_status: str | None = None
@@ -419,7 +422,7 @@ async def _stream_one_task(
 
 
 async def _topology_event_stream(
-    tasks_api: Any, task_ids: list[int]
+    tasks_api: RemoteAPI, task_ids: list[int]
 ) -> AsyncGenerator[str, None]:
     queue: asyncio.Queue = asyncio.Queue()
     workers = [
