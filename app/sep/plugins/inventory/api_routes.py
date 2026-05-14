@@ -165,7 +165,7 @@ def _format_host_entry(service: dict[str, Any]) -> str | None:
 async def _collect_mysql_host_entries(inventory_api: RemoteAPI) -> list[str]:
     """Return ``host:port`` entries for every MySQL service in inventory."""
     response = await inventory_api.get(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0}
+        "/services/", params={"service_type": ServiceTypeEnum.MYSQL.value, "limit": 0}
     )
     items = response.get("items", []) if isinstance(response, dict) else []
     seen: set[str] = set()

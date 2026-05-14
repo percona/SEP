@@ -44,7 +44,7 @@ import myloginpath
 import pymysql
 from pymysql.cursors import DictCursor
 
-DEFAULT_PORT = 3306
+DEFAULT_MYSQL_PORT = 3306
 DEFAULT_CONNECT_TIMEOUT = 5
 DEFAULT_READ_TIMEOUT = 10
 DEFAULT_MAX_WORKERS = 16
@@ -57,7 +57,7 @@ def parse_host_port(host_entry: str) -> tuple[str, int]:
         explicit port suffix.
     :type host_entry: str
     :return: Hostname/address plus parsed port, falling back to
-        :data:`DEFAULT_PORT` when no valid port is supplied.
+        :data:`DEFAULT_MYSQL_PORT` when no valid port is supplied.
     :rtype: tuple[str, int]
     """
     if ":" in host_entry:
@@ -65,8 +65,8 @@ def parse_host_port(host_entry: str) -> tuple[str, int]:
         try:
             return host, int(port_str)
         except ValueError:
-            return host_entry, DEFAULT_PORT
-    return host_entry, DEFAULT_PORT
+            return host_entry, DEFAULT_MYSQL_PORT
+    return host_entry, DEFAULT_MYSQL_PORT
 
 
 def _strip_quotes(value: str) -> str:
@@ -96,7 +96,7 @@ def _section_to_creds(parser: RawConfigParser, section: str) -> dict[str, Any] |
     """
     try:
         data = {k: _strip_quotes(v) for k, v in parser.items(section)}
-        data["port"] = int(data["port"]) if "port" in data else DEFAULT_PORT
+        data["port"] = int(data["port"]) if "port" in data else DEFAULT_MYSQL_PORT
         return data
     except (ValueError, KeyError):
         return None

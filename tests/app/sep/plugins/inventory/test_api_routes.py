@@ -27,6 +27,8 @@ import pytest
 from fastapi import status
 
 from app.core.exceptions import HTTPServiceUnavailableException
+from app.inventory.constants import DEFAULT_MYSQL_PORT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.inventory import api_routes as inventory_api_routes
 from app.sep.plugins.inventory.api_routes import _topology_event_stream
 from app.sep.plugins.inventory.deps import INVENTORY_PLUGIN_ENTITY_NAMES
@@ -93,7 +95,7 @@ class TestInventoryGateway:
             json={
                 "node_id": _CREATE_SERVICE_TEST_NODE_ID,
                 "name": "db",
-                "type": "mysql",
+                "type": ServiceTypeEnum.MYSQL.value,
             },
         )
         assert response.status_code == status.HTTP_200_OK
@@ -111,7 +113,7 @@ class TestInventoryGateway:
             json={
                 "node_id": "abc",
                 "name": "db",
-                "type": "mysql",
+                "type": ServiceTypeEnum.MYSQL.value,
             },
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -226,11 +228,13 @@ class TestInventoryGateway:
         mock_inventory_api_dep.get.assert_not_called()
 
 
-def _mysql_service(service_id: int, address: str, port: int = 3306) -> dict:
+def _mysql_service(
+    service_id: int, address: str, port: int = DEFAULT_MYSQL_PORT
+) -> dict:
     return {
         "id": service_id,
         "name": f"svc-{service_id}",
-        "type": "mysql",
+        "type": ServiceTypeEnum.MYSQL.value,
         "port": port,
         "node": {"id": service_id, "name": address, "address": address},
     }
