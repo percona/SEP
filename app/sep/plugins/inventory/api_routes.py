@@ -332,13 +332,17 @@ async def topology_result(
     with HTTP cache validation here.
     """
     task_ids = _parse_ids_param(ids)
-    histories = [await _fetch_task_history(tasks_api, tid) for tid in task_ids]
+    histories = list(
+        await asyncio.gather(*(_fetch_task_history(tasks_api, tid) for tid in task_ids))
+    )
     pending = [
         int(h["id"]) for h in histories if not _is_terminal_task_status(h.get("status"))
     ]
     if pending:
         return TopologyResultResponse(status="running", pending_task_ids=pending)
-    stdouts = [await _fetch_task_stdout(tasks_api, tid) for tid in task_ids]
+    stdouts = list(
+        await asyncio.gather(*(_fetch_task_stdout(tasks_api, tid) for tid in task_ids))
+    )
     graph = build_graph_from_stdouts(stdouts)
     has_failures = _has_unsuccessful_terminal_status(histories)
     return TopologyResultResponse(
