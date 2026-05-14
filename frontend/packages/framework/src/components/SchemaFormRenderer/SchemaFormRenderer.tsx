@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { memo, useContext, useMemo } from 'react';
+import { memo, useCallback, useContext, useMemo } from 'react';
 import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
 import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import Accordion from '@mui/material/Accordion';
@@ -172,10 +172,17 @@ export interface SchemaFormRendererProps {
  * without createMemoryRouter, etc.).
  */
 function UnsavedChangesBlocker({ isGuarded }: { isGuarded: boolean }) {
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      isGuarded && currentLocation.pathname !== nextLocation.pathname,
+  const shouldBlock = useCallback(
+    ({
+      currentLocation,
+      nextLocation,
+    }: {
+      currentLocation: { pathname: string };
+      nextLocation: { pathname: string };
+    }) => isGuarded && currentLocation.pathname !== nextLocation.pathname,
+    [isGuarded],
   );
+  const blocker = useBlocker(shouldBlock);
 
   return (
     <Dialog open={blocker.state === 'blocked'} aria-labelledby="unsaved-dialog-title">

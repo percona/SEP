@@ -173,15 +173,32 @@ describe('useUnsavedChangesGuard — re-arm after failed async mutation', () => 
     expect(mockReset).not.toHaveBeenCalled();
   });
 
-  it('does not call reset() when submitError was already set at mount (no falsy→truthy transition)', () => {
-    // Simulates an edit page where submitError was truthy from a prior session
-    // and isSubmitSuccessful happens to be true. The guard must NOT re-arm
-    // because submitError did not transition from falsy to truthy.
-    setFormState({ isDirty: false, isSubmitSuccessful: true });
-    renderHook(
+  it('re-arms guard on each consecutive submit failure even when submitError string is unchanged', () => {
+    // After first re-arm reset() clears isSubmitSuccessful→false. A second
+    // submit flips it back to true while submitError stays the same string.
+    // The effect must fire again because isSubmitSuccessful changed.
+    setFormState({ isDirty: true, isSubmitSuccessful: false });
+
+    const { rerender } = renderHook(
       (props: { submitError?: string | null }) => useUnsavedChangesGuard(props.submitError),
-      { initialProps: { submitError: 'Pre-existing server error' as string | null } },
+      { initialProps: { submitError: null as string | null } },
     );
+
+    // First failure: isSubmitSuccessful flips to true, submitError arrives
+    setFormState({ isDirty: true, isSubmitSuccessful: true });
+    act(() => rerender({ submitError: 'Server error' }));
+    expect(mockReset).toHaveBeenCalledTimes(1);
+
+    // Simulate the reset() having cleared isSubmitSuccessful — must rerender so
+    // the effect sees the intermediate false value before the next true flip.
+    mockReset.mockReset();
+    setFormState({ isDirty: true, isSubmitSuccessful: false });
+    act(() => rerender({ submitError: 'Server error' }));
     expect(mockReset).not.toHaveBeenCalled();
+
+    // Second submit: isSubmitSuccessful flips to true again, same error string
+    setFormState({ isDirty: true, isSubmitSuccessful: true });
+    act(() => rerender({ submitError: 'Server error' }));
+    expect(mockReset).toHaveBeenCalledTimes(1);
   });
 });

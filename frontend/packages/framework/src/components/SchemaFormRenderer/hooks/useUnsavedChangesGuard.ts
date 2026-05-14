@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 
 /**
@@ -32,18 +32,16 @@ export function useUnsavedChangesGuard(submitError?: string | null): boolean {
   const { isDirty, isSubmitSuccessful } = formState;
   const isGuarded = isDirty && !isSubmitSuccessful;
 
-  // Track the previous submitError value so the re-arm only fires when
-  // submitError transitions from falsy → truthy (not on initial mount when
-  // the error was already present, e.g. on an edit-page reload).
-  const prevSubmitErrorRef = useRef<string | null | undefined>(submitError);
-
-  // Re-arm: clear isSubmitSuccessful when the parent's async mutation fails
-  // after the synchronous onSubmit already returned without throwing (RHF
-  // flips isSubmitSuccessful=true before the async leg resolves).
+  // Re-arm: clear isSubmitSuccessful each time the parent's async mutation fails
+  // after the synchronous onSubmit returned without throwing (RHF flips
+  // isSubmitSuccessful=true before the async leg resolves). This fires whenever
+  // isSubmitSuccessful transitions back to true while an error is present —
+  // covering both the first failure and subsequent failures with the same error
+  // string, since the dep on isSubmitSuccessful ensures re-execution.
+  // Note: useForm always initialises isSubmitSuccessful=false, so this effect
+  // cannot fire spuriously on mount.
   useEffect(() => {
-    const wasEmpty = !prevSubmitErrorRef.current;
-    prevSubmitErrorRef.current = submitError;
-    if (submitError && wasEmpty && isSubmitSuccessful) {
+    if (submitError && isSubmitSuccessful) {
       reset(undefined, { keepValues: true, keepDirty: true, keepIsSubmitted: false });
     }
   }, [submitError, isSubmitSuccessful, reset]);
