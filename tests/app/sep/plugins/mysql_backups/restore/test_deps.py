@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.plugins.backup.restore.deps module."""
+"""Define tests for the app.sep.plugins.mysql_backups.restore.deps module."""
 
 import pytest
 from fastapi import HTTPException, status
@@ -21,9 +21,9 @@ from fastapi import HTTPException, status
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.backup.models import BackupType
-from app.sep.plugins.backup.restore.deps import build_restore_task_payload
-from app.sep.plugins.backup.restore.models import RestoreCreate
+from app.sep.plugins.mysql_backups.models import BackupType
+from app.sep.plugins.mysql_backups.restore.deps import build_restore_task_payload
+from app.sep.plugins.mysql_backups.restore.models import RestoreCreate
 from app.tasks.models import TaskOwner, TaskWrite
 
 
@@ -40,7 +40,7 @@ async def test_build_restore_task_payload_includes_service_name_when_service_id_
 ):
     """All MySQL restore branches inject ``_service_name`` when service_id is set."""
     mocker.patch(
-        "app.sep.plugins.backup.restore.deps.get_created_entity",
+        "app.sep.plugins.mysql_backups.restore.deps.get_created_entity",
         return_value=created_service,
     )
 
@@ -71,7 +71,7 @@ async def test_build_restore_task_payload_omits_service_name_when_service_id_uns
 ):
     """xtrabackup/binlog skip the service lookup and meta key when service_id is None."""
     get_created_entity = mocker.patch(
-        "app.sep.plugins.backup.restore.deps.get_created_entity",
+        "app.sep.plugins.mysql_backups.restore.deps.get_created_entity",
     )
 
     form = RestoreCreate(
@@ -95,7 +95,7 @@ async def test_build_restore_task_payload_mydumper_without_service_id_raises(
 ):
     """MYDUMPER preserves the eager-raise contract when service_id is unset."""
     get_created_entity = mocker.patch(
-        "app.sep.plugins.backup.restore.deps.get_created_entity",
+        "app.sep.plugins.mysql_backups.restore.deps.get_created_entity",
         side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
     )
 
@@ -137,7 +137,7 @@ async def test_build_restore_task_payload_skips_lookup_for_unknown_service_senti
 ):
     """xtrabackup/binlog with the ``-1`` UI sentinel skip the lookup entirely."""
     get_created_entity = mocker.patch(
-        "app.sep.plugins.backup.restore.deps.get_created_entity",
+        "app.sep.plugins.mysql_backups.restore.deps.get_created_entity",
     )
 
     form = RestoreCreate(
@@ -171,7 +171,7 @@ async def test_build_restore_task_payload_swallows_404_for_non_mydumper(
     so the swallow path is exercised end-to-end.
     """
     mocker.patch(
-        "app.sep.plugins.backup.restore.deps.get_created_entity",
+        "app.sep.plugins.mysql_backups.restore.deps.get_created_entity",
         side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
     )
 

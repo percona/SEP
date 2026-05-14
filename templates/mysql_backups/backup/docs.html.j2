@@ -20,7 +20,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 {%- endblock title %}
 {% block style %}
     <link rel="stylesheet"
-          href="{{ url_for('static', path='/css/backups-docs.css') }}">
+          href="{{ url_for('static', path='/css/mysql_backups-docs.css') }}">
 {% endblock style %}
 {% block main %}
     <article class="backup-docs">
@@ -30,7 +30,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 <p>Use this reference to plan and configure reliable backup jobs for MySQL and MariaDB.</p>
             </div>
             <div class="backup-docs__header-actions">
-                <a href="{{ url_for('backups_index') }}">
+                <a href="{{ url_for('mysql_backups_index') }}">
                     <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
                     Back to backups
                 </a>
