@@ -345,23 +345,43 @@ async def _stream_one_task(
 ) -> None:
     """Tail one task's stdout NDJSON; push parsed events to ``queue``."""
     last_status: str | None = None
+
+    async def _put_task_error(exc: HTTPException) -> None:
+        await queue.put(
+            {
+                "event": "task_error",
+                "data": {
+                    "task_history_id": task_history_id,
+                    "status_code": exc.status_code,
+                    "detail": exc.detail,
+                },
+            }
+        )
+
     try:
-        while True:
-            history = await _fetch_task_history(tasks_api, task_history_id)
-            current = history.get("status")
-            if current != last_status:
-                last_status = current
-                await queue.put(
-                    {
-                        "event": "task_status",
-                        "data": {"task_history_id": task_history_id, "status": current},
-                    }
-                )
-            if current == TaskHistoryStatusEnum.RUNNING.value or (
-                current in _TOPOLOGY_FINISHED_STATUSES
-            ):
-                break
-            await asyncio.sleep(0.5)
+        try:
+            while True:
+                history = await _fetch_task_history(tasks_api, task_history_id)
+                current = history.get("status")
+                if current != last_status:
+                    last_status = current
+                    await queue.put(
+                        {
+                            "event": "task_status",
+                            "data": {
+                                "task_history_id": task_history_id,
+                                "status": current,
+                            },
+                        }
+                    )
+                if current == TaskHistoryStatusEnum.RUNNING.value or (
+                    current in _TOPOLOGY_FINISHED_STATUSES
+                ):
+                    break
+                await asyncio.sleep(0.5)
+        except HTTPException as exc:
+            await _put_task_error(exc)
+            return
 
         try:
             async for raw_line in tasks_api.stream(
@@ -388,16 +408,7 @@ async def _stream_one_task(
                         }
                     )
         except HTTPException as exc:
-            await queue.put(
-                {
-                    "event": "task_error",
-                    "data": {
-                        "task_history_id": task_history_id,
-                        "status_code": exc.status_code,
-                        "detail": exc.detail,
-                    },
-                }
-            )
+            await _put_task_error(exc)
     finally:
         await queue.put(
             {
