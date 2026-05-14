@@ -15,9 +15,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import type { ComponentType, ReactNode } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { ComponentType } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
 import type { FormSection } from './types';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 
@@ -137,6 +138,27 @@ const withQueryClient = (Story: ComponentType) => {
     </QueryClientProvider>
   );
 };
+
+function AlertConfigSeeder({ available, children }: { available: boolean; children: ReactNode }) {
+  const queryClient = useQueryClient();
+  queryClient.setQueryData(ALERT_CONFIG_QUERY_KEY, { available });
+  return <>{children}</>;
+}
+
+function withAlertConfig(available: boolean) {
+  return (Story: ComponentType) => (
+    <AlertConfigSeeder available={available}>
+      <Story />
+    </AlertConfigSeeder>
+  );
+}
+
+const SIMPLE_TASK_SECTIONS: FormSection[] = [
+  {
+    title: 'Task',
+    fields: [{ type: 'string', name: 'task_name', label: 'Task Name', required: true }],
+  },
+];
 
 const meta: Meta<typeof SchemaFormRenderer> = {
   title: 'Framework/SchemaFormRenderer',
@@ -418,6 +440,34 @@ export const ArchivesSourceXor: Story = {
       },
     ],
     submitLabel: 'Run archive',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/** Alert provider configured: checkbox is enabled and actionable. */
+export const WithAlertCapabilityEnabled: Story = {
+  decorators: [withAlertConfig(true)],
+  args: {
+    sections: SIMPLE_TASK_SECTIONS,
+    capabilities: { alert_on_fail: true },
+    submitLabel: 'Create task',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/** No alert provider configured: checkbox is rendered but disabled with a tooltip. */
+export const WithAlertCapabilityUnavailable: Story = {
+  decorators: [withAlertConfig(false)],
+  args: {
+    sections: SIMPLE_TASK_SECTIONS,
+    capabilities: { alert_on_fail: true },
+    submitLabel: 'Create task',
     onSubmit: (v: Record<string, unknown>) => {
       // eslint-disable-next-line no-console
       console.log('submit', v);
