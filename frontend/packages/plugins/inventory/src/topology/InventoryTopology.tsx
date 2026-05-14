@@ -303,7 +303,7 @@ export function InventoryTopology() {
           disabled={collect.isPending}
           data-testid="topology-refresh-button"
         >
-          {taskIds ? 'Refresh' : 'Refresh'}
+          {taskIds ? 'Refresh' : 'Collect'}
         </Button>
       </Stack>
 
