@@ -253,10 +253,11 @@ class TestShardHosts:
         """A single shard contains every host."""
         assert shard_hosts(["a", "b"], 1) == [["a", "b"]]
 
-    def test_zero_shards_rejected(self) -> None:
+    @pytest.mark.parametrize("shards", [0, -1, -7])
+    def test_invalid_shards_rejected(self, shards: int) -> None:
         """Shard count must match the API contract: at least one shard."""
         with pytest.raises(ValueError, match="shards must be >= 1"):
-            shard_hosts(["a"], 0)
+            shard_hosts(["a"], shards)
 
 
 class TestBuildTopologyMeta:
