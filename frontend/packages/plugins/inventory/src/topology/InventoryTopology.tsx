@@ -213,24 +213,49 @@ export function InventoryTopology() {
   const collect = useCollectTopology();
   const result = useTopologyResult(taskIds);
   const stream = useTopologyStream(taskIds, { enabled: !!taskIds });
+  const autoCollectStorageKey = 'inventory-topology-auto-collect-fired';
+  const [autoCollectHandled, setAutoCollectHandled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    return window.sessionStorage.getItem(autoCollectStorageKey) === 'true';
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.sessionStorage.setItem(autoCollectStorageKey, autoCollectHandled ? 'true' : 'false');
+  }, [autoCollectHandled, autoCollectStorageKey]);
+
+  const markAutoCollectHandled = useCallback(() => {
+    setAutoCollectHandled(true);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
+    markAutoCollectHandled();
     const response = await collect.mutateAsync(undefined);
     setTaskIds(response.task_history_ids);
-  }, [collect, setTaskIds]);
+  }, [collect, markAutoCollectHandled, setTaskIds]);
+
+  useEffect(() => {
+    if (taskIds !== null) {
+      markAutoCollectHandled();
+    }
+  }, [taskIds, markAutoCollectHandled]);
 
   // First-visit auto-collect: when a fresh Topology page has nothing
   // persisted, kick off a collection automatically so the user sees a
   // loading spinner rather than the empty "Click Collect" placeholder.
-  // Idempotent across remounts (the persisted ids prevent re-firing)
-  // and re-renders (the ref makes it run at most once per mount).
-  const autoCollectFiredRef = useRef(false);
+  // Idempotent across remounts and re-renders because the "already
+  // handled" state is persisted for the browser session.
   useEffect(() => {
-    if (taskIds === null && !collect.isPending && !collect.error && !autoCollectFiredRef.current) {
-      autoCollectFiredRef.current = true;
+    if (taskIds === null && !collect.isPending && !collect.error && !autoCollectHandled) {
       void handleRefresh();
     }
-  }, [taskIds, collect.isPending, collect.error, handleRefresh]);
+  }, [taskIds, collect.isPending, collect.error, autoCollectHandled, handleRefresh]);
 
   const isCollecting = collect.isPending || result.data?.status === 'running';
   const graph = result.data?.graph ?? null;
