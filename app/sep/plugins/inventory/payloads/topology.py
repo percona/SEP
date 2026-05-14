@@ -152,6 +152,11 @@ def _query_server_info(cursor: DictCursor) -> dict[str, Any]:
     }
 
 
+def _first_not_none(row: dict[str, Any], primary: str, fallback: str) -> Any:
+    value = row.get(primary)
+    return value if value is not None else row.get(fallback)
+
+
 def _query_repl_info(cursor: DictCursor) -> dict[str, Any]:
     """Return replication source info from SHOW REPLICA / SHOW SLAVE STATUS."""
     for query in ("SHOW REPLICA STATUS", "SHOW SLAVE STATUS"):
@@ -162,8 +167,8 @@ def _query_repl_info(cursor: DictCursor) -> dict[str, Any]:
         row = cursor.fetchone()
         if not row:
             return {"source_host": None}
-        io = row.get("Replica_IO_Running") or row.get("Slave_IO_Running")
-        sql = row.get("Replica_SQL_Running") or row.get("Slave_SQL_Running")
+        io = _first_not_none(row, "Replica_IO_Running", "Slave_IO_Running")
+        sql = _first_not_none(row, "Replica_SQL_Running", "Slave_SQL_Running")
         repl_status = "ok" if (io == "Yes" and sql == "Yes") else "err"
         repl_filter = "yes" if any(
             row.get(k)
@@ -177,15 +182,17 @@ def _query_repl_info(cursor: DictCursor) -> dict[str, Any]:
             )
         ) else "none"
         return {
-            "source_host": row.get("Master_Host") or row.get("Source_Host"),
-            "source_port": row.get("Master_Port") or row.get("Source_Port"),
-            "source_server_id": row.get("Master_Server_Id")
-            or row.get("Source_Server_Id"),
-            "source_uuid": row.get("Master_UUID") or row.get("Source_UUID"),
+            "source_host": _first_not_none(row, "Master_Host", "Source_Host"),
+            "source_port": _first_not_none(row, "Master_Port", "Source_Port"),
+            "source_server_id": _first_not_none(
+                row, "Master_Server_Id", "Source_Server_Id"
+            ),
+            "source_uuid": _first_not_none(row, "Master_UUID", "Source_UUID"),
             "io_running": io,
             "sql_running": sql,
-            "seconds_behind": row.get("Seconds_Behind_Master")
-            or row.get("Seconds_Behind_Source"),
+            "seconds_behind": _first_not_none(
+                row, "Seconds_Behind_Master", "Seconds_Behind_Source"
+            ),
             "repl_status": repl_status,
             "repl_filter": repl_filter,
             "auto_position": row.get("Auto_Position", 0),
