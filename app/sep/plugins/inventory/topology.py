@@ -226,7 +226,7 @@ def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is na
     for host_entry, record in host_records.items():
         if record.get("status") != "ok":
             continue
-        data = record["data"] or {}
+        data = record.get("data") or {}
         repl = data.get("replication") or {}
         source_host = repl.get("source_host")
         if not source_host:
