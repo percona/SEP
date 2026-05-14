@@ -23,6 +23,8 @@ from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
 
+INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+
 
 class PluginTaskResponse(BaseModel):
     """Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.
@@ -129,7 +131,7 @@ class InventorySyncScheduleCreateForm(BaseModel):
             exclude_unset=True,
             exclude={"syncer"},
         )
-        payload["task"] = "inventory-sync"
+        payload["task"] = INVENTORY_SYNC_TASK_NAME
         if self.syncer:
             payload["execute_request"] = {"meta": {"syncer": self.syncer}}
         return payload
