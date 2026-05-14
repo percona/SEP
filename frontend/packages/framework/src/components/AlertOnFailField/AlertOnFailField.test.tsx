@@ -18,7 +18,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useForm, type FieldValues, type UseFormGetValues } from 'react-hook-form';
+import { useForm, FormProvider, type FieldValues, type UseFormGetValues } from 'react-hook-form';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
@@ -55,13 +55,15 @@ function Harness({
   onSubmit?: (values: Record<string, unknown>) => void;
   formSpy?: (api: { getValues: UseFormGetValues<FieldValues> }) => void;
 }) {
-  const { control, handleSubmit, getValues } = useForm();
-  formSpy?.({ getValues });
+  const methods = useForm();
+  formSpy?.({ getValues: methods.getValues });
   return (
-    <form onSubmit={handleSubmit((v) => onSubmit?.(v))}>
-      <AlertOnFailField control={control} defaultValue={defaultValue} />
-      <button type="submit">submit</button>
-    </form>
+    <FormProvider {...methods}>
+      <form onSubmit={methods.handleSubmit((v) => onSubmit?.(v))}>
+        <AlertOnFailField defaultValue={defaultValue} />
+        <button type="submit">submit</button>
+      </form>
+    </FormProvider>
   );
 }
 

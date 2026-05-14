@@ -30,9 +30,10 @@ from app.sep.plugins.alert_troubleshooting.deps import (
     TroubleshootingDetailContext,
     TroubleshootingIndexContext,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 _TERMINAL_STATUSES = frozenset({"success", "failed", "stopped", "stale"})

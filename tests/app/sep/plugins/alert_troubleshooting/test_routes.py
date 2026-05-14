@@ -300,3 +300,20 @@ class TestTroubleshootingOutput:
         response = test_client.get("/alert-troubleshooting/output/1")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert "error" in response.json()
+
+
+class TestDeprecationHeader:
+    """Assert that Jinja2 routes emit RFC 8594 ``Deprecation`` header."""
+
+    def test_index_has_deprecation_header(self, test_client: TestClient):
+        """GET /alert-troubleshooting/ response carries ``Deprecation: true``."""
+        grouped = {
+            AlertServiceType.MYSQL: [
+                AlertInfo(name="MySQLSlowQueries", label="MySQL Slow Queries"),
+            ],
+        }
+        sep_app.dependency_overrides[get_troubleshooting_index_context] = (
+            _override_context(grouped)
+        )
+        response = test_client.get("/alert-troubleshooting/")
+        assert response.headers.get("Deprecation") == "true"
