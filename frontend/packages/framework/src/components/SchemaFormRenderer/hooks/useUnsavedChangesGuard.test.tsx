@@ -104,7 +104,9 @@ describe('useUnsavedChangesGuard — beforeunload listener', () => {
   it('does not register beforeunload listener when not guarded', () => {
     setFormState({ isDirty: false, isSubmitSuccessful: false });
     renderHook(() => useUnsavedChangesGuard());
-    const beforeunloadCalls = addSpy.mock.calls.filter(([event]) => event === 'beforeunload');
+    const beforeunloadCalls = addSpy.mock.calls.filter(
+      ([event]: [string]) => event === 'beforeunload',
+    );
     expect(beforeunloadCalls).toHaveLength(0);
   });
 
