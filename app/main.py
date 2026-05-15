@@ -21,8 +21,9 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from multiprocessing import Process
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Response
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app import __summary__, __version__
 from app.api.main import api_router
@@ -30,6 +31,7 @@ from app.celery import celery as celery_app
 from app.core.config import create_app, settings
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
+from app.core.utils.openapi import merge_openapi_documents
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
 from app.sep.main import sep_app, sep_startup
@@ -74,6 +76,8 @@ app = create_app(
         "``/api/sep/openapi.json`` (the SEP web app: ``sep_app`` — shared routes, "
         "plugins, etc.; not merged into this document)."
     ),
+    docs_url=None,
+    redoc_url=None,
 )
 app.add_middleware(LogContextMiddleware)
 
@@ -96,6 +100,67 @@ def sep_openapi_json() -> JSONResponse:
     :rtype: JSONResponse
     """
     return JSONResponse(sep_app.openapi())
+
+
+_merged_openapi_cache: dict[str, dict] = {}
+
+
+@app.get(
+    "/api/openapi.json",
+    tags=["sep"],
+    summary="Unified public OpenAPI schema (core + SEP web app)",
+    response_model=None,
+    include_in_schema=False,
+)
+def merged_openapi_json() -> JSONResponse:
+    """Return the merged OpenAPI document for the public ``/api/*`` surface.
+
+    Unions the core API spec (``app.openapi()``) with the SEP web app spec
+    (``sep_app.openapi()``) via
+    :func:`app.core.utils.openapi.merge_openapi_documents`. The two upstream specs
+    at ``/openapi.json`` and ``/api/sep/openapi.json`` are unchanged — they remain
+    the source of truth for the React frontend's ``openapi-typescript`` codegen.
+
+    The merged document is computed once on first call and cached on the module;
+    FastAPI's own ``app.openapi_schema`` cache fixes the upstream specs after the
+    first hit, and routes are not added at runtime.
+
+    :return: The merged OpenAPI 3.x JSON document.
+    :rtype: JSONResponse
+    """
+    if "doc" not in _merged_openapi_cache:
+        _merged_openapi_cache["doc"] = merge_openapi_documents(
+            app.openapi(), sep_app.openapi()
+        )
+    return JSONResponse(_merged_openapi_cache["doc"])
+
+
+@app.get(
+    "/api/docs",
+    tags=["sep"],
+    summary="Swagger UI for the unified SEP public API",
+    response_model=None,
+    include_in_schema=False,
+)
+def merged_swagger_ui() -> HTMLResponse:
+    """Return Swagger UI HTML pointing at the unified ``/api/openapi.json``."""
+    return get_swagger_ui_html(
+        openapi_url="/api/openapi.json",
+        title="SEP Public API - Swagger UI",
+    )
+
+
+@app.get("/docs", include_in_schema=False)
+@app.get("/redoc", include_in_schema=False)
+def _disabled_top_level_docs() -> Response:
+    """Reject ``/docs`` and ``/redoc`` with a 404.
+
+    The auto-generated Swagger UI on the top-level app is disabled (see
+    ``docs_url=None`` / ``redoc_url=None`` on ``create_app``). Use ``/api/docs``
+    instead. Without these explicit handlers, the ``sep_app`` mount at ``/``
+    would serve its auth redirect for unknown paths and these would not return 404.
+    """
+    return Response(status_code=404)
 
 
 app.mount("/api/inventory", inventory_app)
