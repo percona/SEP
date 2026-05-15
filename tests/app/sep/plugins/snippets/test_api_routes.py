@@ -159,6 +159,12 @@ class TestSnippetsPluginSchema:
 class TestSnippetsApiPerSnippetSchema:
     """Tests for ``GET /api/plugins/snippets/{snippet_filename}/schema``."""
 
+    async def test_returns_422_when_snippet_filename_missing(self, test_client):
+        """Missing ``snippet_filename`` is rejected by request validation."""
+        response = test_client.get(f"{API_BASE}/snippet/schema")
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     async def test_returns_404_for_unknown_snippet(self, test_client):
         """A missing snippet filename surfaces as a 404."""
         response = test_client.get(
@@ -1016,12 +1022,12 @@ class TestSnippetsApiNestedFilenameContract:
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        execution_section = next(
-            section for section in body["forms"] if section["title"] == "Execution"
+        preview_section = next(
+            section for section in body["forms"] if section["title"] == "Script preview"
         )
         preview_field = next(
             field
-            for field in execution_section["fields"]
+            for field in preview_section["fields"]
             if field["type"] == "script_preview"
         )
         # The baked URL must round-trip through the same builder shape so a

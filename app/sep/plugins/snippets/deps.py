@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Annotated
 
-from fastapi import Depends, Header, Request, status
+from fastapi import Depends, Header, Query, Request, status
 from pydantic import ValidationError
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -113,7 +113,10 @@ def validate_snippet_filename(filename: str) -> None:
 
 async def get_snippet(
     session: SessionDep,
-    snippet_filename: str,
+    snippet_filename: Annotated[
+        str,
+        Query(description="Snippet filename (relative path under snippets root)."),
+    ],
 ) -> Snippet:
     """Fetch and return a snippet by the specified filename.
 
@@ -152,18 +155,13 @@ def validate_snippet_parameters(request: Request, snippet: SnippetDep) -> Snippe
     :rtype: Snippet
     """
     if snippet.is_approved:
-        snippet_path = (
-            request.url_for("snippets_detail")
-            .include_query_params(snippet_filename=snippet.filename)
-            .path
-        )
         add_msg_func = (
             messages.warning
             if snippets_settings.META.IGNORE_INVALID_PARAMETERS
             else messages.error
         )
         for error in snippet.validated_parameters.errors:
-            add_msg_func(request, error, snippet_path, sticky=True)
+            add_msg_func(request, error, None, sticky=False)
     return snippet
 
 
@@ -329,7 +327,7 @@ async def get_validated_execution_args(
             request,
             exc,
             "Error executing snippet",
-            request.url.path,
+            None,
             exclude_types=("none_required",),
         )
         raise _get_snippet_redirect_exc(request, referer) from None

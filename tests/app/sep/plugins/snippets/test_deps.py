@@ -30,6 +30,7 @@ from app.sep.plugins.snippets.deps import (
     get_snippet_execution_request_meta,
     SnippetBatchExistenceResult,
     validate_snippet_filename,
+    validate_snippet_parameters,
 )
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import (
@@ -109,6 +110,25 @@ async def test_get_executable_snippet_for_api_raises_403_for_uninterpretable(
 
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
     assert "cannot be executed" in str(exc_info.value.detail)
+
+
+def test_validate_snippet_parameters_adds_non_sticky_messages():
+    """Validation warnings are flash messages without path scoping."""
+    request = MagicMock()
+    snippet = MagicMock()
+    snippet.is_approved = True
+    snippet.validated_parameters.errors = ["Bad parameter"]
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        warning_mock = MagicMock()
+        error_mock = MagicMock()
+        monkeypatch.setattr(snippets_deps.messages, "warning", warning_mock)
+        monkeypatch.setattr(snippets_deps.messages, "error", error_mock)
+        validate_snippet_parameters(request=request, snippet=snippet)
+
+    assert warning_mock.call_count + error_mock.call_count == 1
+    called_mock = warning_mock if warning_mock.call_count else error_mock
+    called_mock.assert_called_once_with(request, "Bad parameter", None, sticky=False)
 
 
 class TestCheckSnippetBatchExistence:
