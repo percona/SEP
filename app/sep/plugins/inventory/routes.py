@@ -126,14 +126,22 @@ async def node_list(
     )
 
 
-@router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/sync/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    deprecated=True,
+)
 async def sync_inventory(
     user: CurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
-    """Start inventory sync as a background task."""
+    """Start inventory sync as a background task.
+
+    Deprecated in favour of the React sync control at
+    ``POST /api/plugins/inventory/sync/``; functional until Wave 3.
+    """
     try:
         selected = filter_syncers_by_name(
             syncers,
