@@ -35,8 +35,8 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
-from app.sep.plugins.backup.models import BackupType
-from app.sep.plugins.backup.restore.deps import (
+from app.sep.plugins.mysql_backups.models import BackupType
+from app.sep.plugins.mysql_backups.restore.deps import (
     get_restores_index_context,
     parse_restore_task_data,
     RestoreGeneratedTask,
@@ -57,7 +57,7 @@ async def restores_index(
     """Homepage of restores plugin."""
     return templates.TemplateResponse(
         request=request,
-        name="backups/restore/index.html.j2",
+        name="mysql_backups/restore/index.html.j2",
         context=context,
     )
 
@@ -149,7 +149,7 @@ async def restores_detail(
 
     return templates.TemplateResponse(
         request=request,
-        name="backups/restore/details.html.j2",
+        name="mysql_backups/restore/details.html.j2",
         context=context,
     )
 

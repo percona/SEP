@@ -13,13 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.plugins.backup.restore.models module."""
+"""Define tests for the app.sep.plugins.mysql_backups.restore.models module."""
 
 import pytest
 from pydantic import ValidationError
 
-from app.sep.plugins.backup.models import BackupType
-from app.sep.plugins.backup.restore.models import RestoreConfigServer
+from app.sep.plugins.mysql_backups.models import BackupType
+from app.sep.plugins.mysql_backups.restore.models import RestoreConfigServer
 
 
 def _server_with_backup_source(backup_source: str) -> dict:

@@ -1238,6 +1238,10 @@ button.list-item:focus-visible {
     content: "history";
 }
 
+.list-item.mysql_backups .icon::before {
+    content: "history";
+}
+
 .list-item.restores .icon::before {
     content: "refresh";
 }
