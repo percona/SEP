@@ -237,7 +237,7 @@ def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is na
         source_host = repl.get("source_host")
         if not source_host:
             continue
-        source_node_id = _resolve_replication_source(
+        source_node_id = _resolve_or_add_replication_source(
             repl, hash_to_node, addr_to_node, nodes
         )
         target_node_id = _server_node_id(host_entry)
@@ -318,7 +318,7 @@ def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is na
     return {"nodes": nodes, "edges": edges, "summary": summary}
 
 
-def _resolve_replication_source(
+def _resolve_or_add_replication_source(
     repl: Mapping[str, Any],
     hash_to_node: Mapping[str, str],
     addr_to_node: MutableMapping[tuple[str, int], str],

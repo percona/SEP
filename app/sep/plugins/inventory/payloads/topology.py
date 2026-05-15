@@ -54,7 +54,8 @@ def parse_host_port(host_entry: str) -> tuple[str, int]:
     """Split a ``host[:port]`` entry into host and port.
 
     :param host_entry: Host entry from the payload config. May include an
-        explicit port suffix.
+        explicit port suffix. Inventory currently supplies IPv4/hostname
+        entries; bare IPv6 literals are not supported here.
     :type host_entry: str
     :return: Hostname/address plus parsed port, falling back to
         :data:`DEFAULT_MYSQL_PORT` when no valid port is supplied.
