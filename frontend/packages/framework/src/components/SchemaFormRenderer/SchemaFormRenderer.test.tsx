@@ -1235,7 +1235,7 @@ describe('SchemaFormRenderer — unsaved changes guard', () => {
     useAlertConfigMock.mockReturnValue({ data: { available: false }, isLoading: false });
   });
 
-  it('AC#6 — renders without crash outside a Data Router (beforeunload still fires)', () => {
+  it('AC#6 — renders without crash outside a Data Router', () => {
     // When SchemaFormRenderer is mounted without a router context (e.g. inside
     // a unit test that uses renderWithProviders) the in-app blocker is skipped
     // but the component should still mount and render normally.

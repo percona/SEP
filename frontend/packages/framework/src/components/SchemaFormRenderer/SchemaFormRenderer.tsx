@@ -17,6 +17,7 @@
 
 import { memo, useCallback, useContext, useMemo } from 'react';
 import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
+// UNSAFE_DataRouterContext is an unstable react-router API — pinned to react-router-dom ^7.6.0; review on version bumps.
 import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -185,7 +186,11 @@ function UnsavedChangesBlocker({ isGuarded }: { isGuarded: boolean }) {
   const blocker = useBlocker(shouldBlock);
 
   return (
-    <Dialog open={blocker.state === 'blocked'} aria-labelledby="unsaved-dialog-title">
+    <Dialog
+      open={blocker.state === 'blocked'}
+      onClose={() => blocker.reset?.()}
+      aria-labelledby="unsaved-dialog-title"
+    >
       <DialogTitle id="unsaved-dialog-title">Unsaved changes</DialogTitle>
       <DialogContent>
         <DialogContentText>

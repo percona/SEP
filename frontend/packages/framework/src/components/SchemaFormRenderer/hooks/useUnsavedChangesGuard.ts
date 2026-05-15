@@ -54,6 +54,7 @@ export function useUnsavedChangesGuard(submitError?: string | null): boolean {
     }
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
+      e.returnValue = ''; // Safari + older Chromium still require returnValue
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
