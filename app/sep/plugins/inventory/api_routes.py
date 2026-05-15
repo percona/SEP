@@ -48,6 +48,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPBadRequestException,
@@ -57,7 +58,7 @@ from app.core.exceptions import (
 from app.core.requests import RemoteAPI
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.deps import InventoryAPI, TaskAPI
+from app.sep.deps import CurrentUser, InventoryAPI, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory import payloads
 from app.sep.plugins.inventory.deps import (
@@ -75,6 +76,7 @@ from app.sep.plugins.inventory.topology import (
     build_topology_meta,
     parse_ndjson,
     shard_hosts,
+    TOPOLOGY_JOB_PREFIX,
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -296,6 +298,25 @@ async def _fetch_task_history(
     return await tasks_api.get(f"/history/{task_history_id}")
 
 
+def _is_inventory_topology_history(history: dict[str, Any], current_user_id: str) -> bool:
+    execution_request = history.get("execution_request") or {}
+    meta = execution_request.get("meta") or {}
+    return (
+        history.get("executed_by") == current_user_id
+        and execution_request.get("task") == _TOPOLOGY_TASK
+        and meta.get("_job_id_prefix") == TOPOLOGY_JOB_PREFIX
+    )
+
+
+def _require_inventory_topology_histories(
+    histories: list[dict[str, Any]], current_user: CurrentUser
+) -> None:
+    """Reject task histories not dispatched by this user for inventory topology."""
+    current_user_id = str(current_user.id)
+    if not all(_is_inventory_topology_history(h, current_user_id) for h in histories):
+        raise HTTPForbiddenException("Task history is not accessible.")
+
+
 async def _fetch_task_stdout(tasks_api: RemoteAPI, task_history_id: int) -> str:
     """Fetch and concatenate the stdout payload for a finished task history."""
     output: list[str] = []
@@ -330,6 +351,7 @@ def _is_terminal_task_status(status_value: Any) -> bool:
 @router.get("/topology/result", response_model=TopologyResultResponse)
 async def topology_result(
     tasks_api: TaskAPI,
+    current_user: CurrentUser,
     ids: str = Query(..., description="Comma-separated task history ids"),
 ) -> TopologyResultResponse:
     """Return the merged graph for the supplied task history ids.
@@ -345,6 +367,7 @@ async def topology_result(
     histories = list(
         await asyncio.gather(*(_fetch_task_history(tasks_api, tid) for tid in task_ids))
     )
+    _require_inventory_topology_histories(histories, current_user)
     pending = [
         int(h["id"]) for h in histories if not _is_terminal_task_status(h.get("status"))
     ]
@@ -513,6 +536,7 @@ async def _topology_event_stream(
 @router.get("/topology/stream")
 async def topology_stream(
     tasks_api: TaskAPI,
+    current_user: CurrentUser,
     ids: str = Query(..., description="Comma-separated task history ids"),
 ) -> StreamingResponse:
     """SSE stream of per-host topology events from the supplied tasks.
@@ -521,6 +545,10 @@ async def topology_stream(
     React Flow graph progressively as each MySQL host finishes.
     """
     task_ids = _parse_ids_param(ids)
+    histories = list(
+        await asyncio.gather(*(_fetch_task_history(tasks_api, tid) for tid in task_ids))
+    )
+    _require_inventory_topology_histories(histories, current_user)
     return StreamingResponse(
         _topology_event_stream(tasks_api, task_ids),
         media_type="text/event-stream",

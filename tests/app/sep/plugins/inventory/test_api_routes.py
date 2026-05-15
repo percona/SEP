@@ -31,6 +31,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.inventory import api_routes as inventory_api_routes
 from app.sep.plugins.inventory.api_routes import _topology_event_stream
 from app.sep.plugins.inventory.deps import INVENTORY_PLUGIN_ENTITY_NAMES
+from app.sep.plugins.inventory.topology import TOPOLOGY_JOB_PREFIX
 
 _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
 _CREATE_SERVICE_TEST_NODE_ID = 7
@@ -239,6 +240,18 @@ def _mysql_service(
     }
 
 
+def _topology_history(history_id: int, status_value: str, user_id: str) -> dict:
+    return {
+        "id": history_id,
+        "status": status_value,
+        "executed_by": user_id,
+        "execution_request": {
+            "task": "run-python",
+            "meta": {"_job_id_prefix": TOPOLOGY_JOB_PREFIX},
+        },
+    }
+
+
 class TestTopologyCollect:
     """Tests for ``POST /api/plugins/inventory/topology/collect``."""
 
@@ -338,11 +351,14 @@ def _stdout_stream(stdout: str):
 class TestTopologyResult:
     """Tests for ``GET /api/plugins/inventory/topology/result``."""
 
-    def test_running_status_when_any_task_pending(self, test_client, mock_task_api_dep):
+    def test_running_status_when_any_task_pending(
+        self, test_client, mock_task_api_dep, regular_user
+    ):
         """Ensure result endpoint reports ``running`` while any task is unfinished."""
+        user_id = str(regular_user.id)
         mock_task_api_dep.get.side_effect = [
-            {"id": 1, "status": "success"},
-            {"id": 2, "status": "running"},
+            _topology_history(1, "success", user_id),
+            _topology_history(2, "running", user_id),
         ]
         response = test_client.get(
             "/api/plugins/inventory/topology/result", params={"ids": "1,2"}
@@ -355,10 +371,12 @@ class TestTopologyResult:
 
     @pytest.mark.parametrize("terminal_status", ["failed", "lost", "stopped", "stale"])
     def test_terminal_failure_with_no_stdout_returns_failed(
-        self, test_client, mock_task_api_dep, terminal_status: str
+        self, test_client, mock_task_api_dep, regular_user, terminal_status: str
     ):
         """Ensure unsuccessful terminal tasks with no graph data do not report ``ok``."""
-        mock_task_api_dep.get.return_value = {"id": 9, "status": terminal_status}
+        mock_task_api_dep.get.return_value = _topology_history(
+            9, terminal_status, str(regular_user.id)
+        )
         mock_task_api_dep.stream = _stdout_stream("")
 
         response = test_client.get(
@@ -370,6 +388,48 @@ class TestTopologyResult:
         assert body["status"] == "failed"
         assert body["pending_task_ids"] == []
         assert body["graph"]["nodes"] == []
+
+    @pytest.mark.parametrize("route", ["result", "stream"])
+    def test_rejects_too_many_ids(self, test_client, mock_task_api_dep, route: str):
+        """Ensure result and stream endpoints cap task fan-out."""
+        ids = ",".join(
+            str(i) for i in range(1, inventory_api_routes._MAX_TOPOLOGY_SHARDS + 2)
+        )
+        response = test_client.get(
+            f"/api/plugins/inventory/topology/{route}", params={"ids": ids}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "task history ids are allowed" in response.text
+        mock_task_api_dep.get.assert_not_called()
+
+    @pytest.mark.parametrize("route", ["result", "stream"])
+    def test_rejects_other_users_task_history(
+        self, test_client, mock_task_api_dep, route: str
+    ):
+        """Ensure topology endpoints do not expose another user's task output."""
+        mock_task_api_dep.get.return_value = _topology_history(
+            77, "success", "other-user-id"
+        )
+        response = test_client.get(
+            f"/api/plugins/inventory/topology/{route}", params={"ids": "77"}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "Task history is not accessible" in response.text
+        mock_task_api_dep.stream.assert_not_called()
+
+    def test_rejects_non_topology_task_history(
+        self, test_client, mock_task_api_dep, regular_user
+    ):
+        """Ensure guessed non-topology task ids cannot be reused by topology result."""
+        history = _topology_history(77, "success", str(regular_user.id))
+        history["execution_request"]["meta"]["_job_id_prefix"] = "backup"
+        mock_task_api_dep.get.return_value = history
+        response = test_client.get(
+            "/api/plugins/inventory/topology/result", params={"ids": "77"}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "Task history is not accessible" in response.text
+        mock_task_api_dep.stream.assert_not_called()
 
     def test_invalid_ids_yields_400(self, test_client, mock_task_api_dep):
         """Ensure non-integer ids in the query string return HTTP 400."""
