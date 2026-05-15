@@ -159,6 +159,7 @@ export function SchemaListView({
         density: 'compact',
       }}
       muiTablePaperProps={{
+        className: 'MuiTableSep',
         elevation: 0,
         variant: 'outlined',
         // The Percona theme's `background.paper` doesn't always resolve to

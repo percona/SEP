@@ -280,6 +280,9 @@ function TaskHistoryTableView({
         enableHiding={false}
         enablePagination
         enableSorting
+        muiTablePaperProps={{
+          className: 'MuiTableSep',
+        }}
         initialState={{
           density: 'compact',
           sorting: [{ id: 'started_at', desc: true }],

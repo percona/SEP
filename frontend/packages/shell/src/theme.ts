@@ -34,9 +34,47 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
         variants: [
           { props: { variant: 'contained', color: 'success' }, style: { color: '#fff' } },
           { props: { variant: 'contained', color: 'error' }, style: { color: '#fff' } },
-          { props: { variant: 'contained', color: 'warning' }, style: { color: '#fff' } },
+          {
+            props: { variant: 'contained', color: 'warning' },
+            style: { color: mode === 'light' ? '#fff' : 'initial' },
+          },
           { props: { variant: 'contained', color: 'info' }, style: { color: '#fff' } },
         ],
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            ...(theme.palette.mode === 'light' && {
+              '&.MuiTableSep .MuiToolbar-root': {
+                backgroundColor: theme.palette.background.paper,
+              },
+              '&.MuiTableSep .MuiTableRow-root': {
+                backgroundColor: theme.palette.background.paper + ' !important',
+              },
+            }),
+          }),
+        },
+      },
+      MuiInputBase: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            ...(theme.palette.mode === 'light' && {
+              backgroundColor: theme.palette.background.paper,
+            }),
+          }),
+        },
+      },
+      MuiChip: {
+        styleOverrides: {
+          root: ({ theme, ownerState }) => ({
+            ...(theme.palette.mode === 'light' &&
+              ownerState.variant === 'filled' &&
+              ownerState.color === 'default' && {
+                // Default filled chip blends into #F6F5F5 page bg — add visible surface
+                backgroundColor: 'rgba(40, 39, 39, 0.12)',
+              }),
+          }),
+        },
       },
     },
   };
