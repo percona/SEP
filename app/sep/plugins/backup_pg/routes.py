@@ -125,6 +125,7 @@ async def pg_backups_detail(
         "delete_url": request.url_for("pg_backups_delete", task_name=task.name),
         "config": task_config.get("ALL_SERVERS", {}),
         "is_edit_enabled": not task.protected,
+        "is_edit_form_present": False,
         "alert_on_fail": task.alert_on_fail,
     }
 

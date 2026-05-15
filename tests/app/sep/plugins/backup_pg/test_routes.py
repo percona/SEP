@@ -300,6 +300,11 @@ def test_pg_backups_detail_uses_own_delete_route(
     # sidebar when mysql_backups is mounted; we only guard the task-specific
     # URLs that historically used `url_for("mysql_backups_*", task_name=...)`.
     assert f"/mysql_backups/{created_task.name}" not in response.text
+    # The PG details page does not ship an edit form, so the Edit button must
+    # be hidden (gated on `is_edit_form_present`). The Delete button must
+    # still render so users can delete tasks via the UI.
+    assert "delete-tasks-button" in response.text
+    assert "edit-tasks-button" not in response.text
 
 
 def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
