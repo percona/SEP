@@ -1453,8 +1453,12 @@ class TestSyncQueueItemChainDispatch:
         mock_save = AsyncMock()
 
         async def sync_mutates_in_place(
-            queue_item: TaskHistory, writer_session=None
+            queue_item: TaskHistory,
+            writer_session=None,
+            *,
+            await_annotations: bool = False,
         ) -> TaskHistory:
+            del writer_session, await_annotations
             queue_item.status = TaskHistoryStatusEnum.FAILED
             queue_item.started_at = datetime(2026, 4, 1, 10, 1, 0, tzinfo=UTC)
             queue_item.finished_at = datetime(2026, 4, 1, 10, 2, 0, tzinfo=UTC)
@@ -2599,7 +2603,13 @@ class TestSyncQueueItemRegression:
         )
         saved_history = await TaskHistoryManager.save(session, history)
 
-        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+        async def fake_sync(
+            item: TaskHistory,
+            *,
+            writer_session=None,
+            await_annotations: bool = False,
+        ) -> TaskHistory:
+            del writer_session, await_annotations
             item.status = TaskHistoryStatusEnum.SUCCESS
             return item
 

@@ -595,7 +595,7 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
     executor = get_executor_for_task(task)
     async with async_session() as writer_session:
         queue_item = await executor.sync_task_history(
-            queue_item, writer_session=writer_session
+            queue_item, writer_session=writer_session, await_annotations=True
         )
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:

@@ -252,7 +252,9 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
             with patch(
                 "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
             ) as mock_create:
-                await executor.sync_task_history(loaded, writer_session=writer_session)
+                await executor.sync_task_history(
+                    loaded, writer_session=writer_session, await_annotations=True
+                )
 
         assert loaded.status == TaskHistoryStatusEnum.SUCCESS
         mock_create.assert_awaited_once_with(
