@@ -611,11 +611,16 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
             ],
         )
         await session.refresh(saved, attribute_names=["execution_request"])
-    await maybe_dispatch_chain(saved, was_running=was_running)
+    await maybe_dispatch_chain(saved, was_running=was_running, await_annotations=True)
     return saved
 
 
-async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None:
+async def maybe_dispatch_chain(
+    saved: TaskHistory,
+    *,
+    was_running: bool,
+    await_annotations: bool = False,
+) -> None:
     """Dispatch the next chained task when ``saved`` is in a chain-eligible state.
 
     Eligibility requires ``was_running`` (the parent was RUNNING when this sync
@@ -628,6 +633,12 @@ async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None
     :type saved: TaskHistory
     :param was_running: Whether the parent was RUNNING when this sync started.
     :type was_running: bool
+    :param await_annotations: Forwarded to the chained ``dispatch_queue_item``
+        call. Celery contexts (``sync_queue_item``) pass ``True`` so the chained
+        STARTED annotation reaches PMM before the loop stops; the FastAPI sync
+        route keeps the default ``False`` to avoid blocking the response on PMM
+        availability. See SEP-1204.
+    :type await_annotations: bool
     """
     if not was_running:
         return
@@ -641,13 +652,20 @@ async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None
     )
     chain_task_names = meta.get("_chain_task_names")
     if should_chain and chain_task_names:
-        await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
+        await _dispatch_chained_task(
+            chain_task_names[0],
+            saved,
+            chain_task_names[1:],
+            await_annotations=await_annotations,
+        )
 
 
 async def _dispatch_chained_task(
     chain_task_name: str,
     parent: TaskHistory,
     remaining_chain: list[str] | None = None,
+    *,
+    await_annotations: bool = False,
 ) -> None:
     """Dispatch the next chained task after the parent completes successfully.
 
@@ -662,6 +680,9 @@ async def _dispatch_chained_task(
     :type parent: TaskHistory
     :param remaining_chain: Task names to chain after this one, if any.
     :type remaining_chain: list[str] | None
+    :param await_annotations: Forwarded to ``dispatch_queue_item``. See
+        :func:`maybe_dispatch_chain` for the FastAPI vs Celery rationale.
+    :type await_annotations: bool
     """
     if parent.execution_request.meta.get("_chain_depth", 0) >= _MAX_CHAIN_DEPTH:
         logger.warning(
@@ -713,7 +734,7 @@ async def _dispatch_chained_task(
             executed_by=parent.executed_by,
             anonymize_mask=parent.anonymize_mask,
         )
-        await dispatch_queue_item(chain_history, await_annotations=True)
+        await dispatch_queue_item(chain_history, await_annotations=await_annotations)
     except Exception:
         logger.exception(
             "Failed to dispatch chained task %r from parent %r",

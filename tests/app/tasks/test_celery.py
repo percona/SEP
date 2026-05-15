@@ -1296,7 +1296,9 @@ class TestDispatchChainedTask:
             mock_task_first.return_value = chain_task
             mock_dispatch.return_value = AsyncMock()
 
-            await _dispatch_chained_task(chain_task.name, parent_history)
+            await _dispatch_chained_task(
+                chain_task.name, parent_history, await_annotations=True
+            )
 
         mock_dispatch.assert_awaited_once()
         dispatched_history = mock_dispatch.call_args[0][0]
@@ -1560,7 +1562,9 @@ class TestSyncQueueItemChainDispatch:
 
             await sync_queue_item(1)
 
-        mock_chain.assert_awaited_once_with(chain_task.name, done_history, [])
+        mock_chain.assert_awaited_once_with(
+            chain_task.name, done_history, [], await_annotations=True
+        )
 
     @pytest.mark.asyncio
     async def test_no_chain_dispatch_when_still_running(self) -> None:
@@ -1717,7 +1721,9 @@ class TestSyncQueueItemChainDispatch:
 
             await sync_queue_item(1)
 
-        mock_chain.assert_awaited_once_with(chain_task.name, terminal_history, [])
+        mock_chain.assert_awaited_once_with(
+            chain_task.name, terminal_history, [], await_annotations=True
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
