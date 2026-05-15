@@ -136,6 +136,7 @@ export interface TopologyResultResponse {
   status: 'running' | 'ok' | 'failed';
   graph: TopologyGraph | null;
   pending_task_ids?: number[];
+  failed_task_ids?: number[];
 }
 
 /** Stream event payloads (SSE) */

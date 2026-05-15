@@ -299,6 +299,7 @@ export function InventoryTopology() {
   const isCollecting = collect.isPending || result.data?.status === 'running';
   const graph = result.data?.graph ?? null;
   const summary = graph?.summary;
+  const failedTaskCount = result.data?.failed_task_ids?.length ?? 0;
 
   // The graph is rendered from `useTopologyResult` polling, not from
   // the SSE stream. When polling has already delivered a successful
@@ -349,6 +350,11 @@ export function InventoryTopology() {
       {collect.error ? <Alert severity="error">{collect.error.message}</Alert> : null}
       {result.error ? (
         <Alert severity="error">Failed to load result: {result.error.message}</Alert>
+      ) : null}
+      {failedTaskCount > 0 && graph ? (
+        <Alert severity="warning">
+          {failedTaskCount} topology shard(s) failed; graph may be incomplete.
+        </Alert>
       ) : null}
       {showStreamError ? (
         <Alert

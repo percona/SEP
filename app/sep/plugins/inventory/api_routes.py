@@ -147,12 +147,14 @@ class TopologyResultResponse(BaseModel):
     still pending, ``ok`` once every task has finished, and ``failed``
     when at least one task failed and produced no usable output.
     ``graph`` is the merged React-Flow graph; ``pending_task_ids``
-    lists the still-running tasks for the UI's progress chip.
+    lists the still-running tasks for the UI's progress chip, and
+    ``failed_task_ids`` lets the UI warn when only some shards failed.
     """
 
     status: Literal["running", "ok", "failed"]
     graph: dict[str, Any] | None = None
     pending_task_ids: list[int] = Field(default_factory=list)
+    failed_task_ids: list[int] = Field(default_factory=list)
 
 
 def _format_host_entry(service: dict[str, Any]) -> str | None:
@@ -298,7 +300,9 @@ async def _fetch_task_history(
     return await tasks_api.get(f"/history/{task_history_id}")
 
 
-def _is_inventory_topology_history(history: dict[str, Any], current_user_id: str) -> bool:
+def _is_inventory_topology_history(
+    history: dict[str, Any], current_user_id: str
+) -> bool:
     execution_request = history.get("execution_request") or {}
     meta = execution_request.get("meta") or {}
     return (
@@ -335,10 +339,12 @@ async def _fetch_task_stdout(tasks_api: RemoteAPI, task_history_id: int) -> str:
     return "".join(output)
 
 
-def _has_unsuccessful_terminal_status(histories: list[dict[str, Any]]) -> bool:
-    return any(
-        h.get("status") != TaskHistoryStatusEnum.SUCCESS.value for h in histories
-    )
+def _unsuccessful_terminal_task_ids(histories: list[dict[str, Any]]) -> list[int]:
+    return [
+        int(h["id"])
+        for h in histories
+        if h.get("status") != TaskHistoryStatusEnum.SUCCESS.value
+    ]
 
 
 def _is_terminal_task_status(status_value: Any) -> bool:
@@ -377,10 +383,11 @@ async def topology_result(
         await asyncio.gather(*(_fetch_task_stdout(tasks_api, tid) for tid in task_ids))
     )
     graph = build_graph_from_stdouts(stdouts)
-    has_failures = _has_unsuccessful_terminal_status(histories)
+    failed_task_ids = _unsuccessful_terminal_task_ids(histories)
     return TopologyResultResponse(
-        status="failed" if has_failures and not graph["nodes"] else "ok",
+        status="failed" if failed_task_ids and not graph["nodes"] else "ok",
         graph=graph,
+        failed_task_ids=failed_task_ids,
     )
 
 

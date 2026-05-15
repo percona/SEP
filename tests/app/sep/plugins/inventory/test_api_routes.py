@@ -348,6 +348,23 @@ def _stdout_stream(stdout: str):
     return _stream
 
 
+def _host_done_stdout(host: str) -> str:
+    return json.dumps(
+        {
+            "event": "host_done",
+            "host": host,
+            "data": {
+                "address": host.rsplit(":", 1)[0],
+                "port": DEFAULT_MYSQL_PORT,
+                "server": {"server_hash": f"hash-{host}", "server_id": 1},
+                "replication": {},
+                "cluster": {},
+                "gtid_mode": "",
+            },
+        }
+    )
+
+
 class TestTopologyResult:
     """Tests for ``GET /api/plugins/inventory/topology/result``."""
 
@@ -387,7 +404,36 @@ class TestTopologyResult:
         body = response.json()
         assert body["status"] == "failed"
         assert body["pending_task_ids"] == []
+        assert body["failed_task_ids"] == [9]
         assert body["graph"]["nodes"] == []
+
+    def test_partial_shard_failure_returns_failed_task_ids(
+        self, test_client, mock_task_api_dep, regular_user
+    ):
+        """Ensure whole-shard failures remain visible when other shards return a graph."""
+        user_id = str(regular_user.id)
+        mock_task_api_dep.get.side_effect = [
+            _topology_history(1, "success", user_id),
+            _topology_history(2, "failed", user_id),
+        ]
+
+        async def _stream(path, params=None):
+            if "/history/1/" in path:
+                yield json.dumps(
+                    {"type": "stdout", "msg": _host_done_stdout("h1:3306")}
+                ).encode("utf-8")
+
+        mock_task_api_dep.stream = _stream
+
+        response = test_client.get(
+            "/api/plugins/inventory/topology/result", params={"ids": "1,2"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["status"] == "ok"
+        assert body["failed_task_ids"] == [2]
+        assert body["graph"]["nodes"]
 
     @pytest.mark.parametrize("route", ["result", "stream"])
     def test_rejects_too_many_ids(self, test_client, mock_task_api_dep, route: str):
