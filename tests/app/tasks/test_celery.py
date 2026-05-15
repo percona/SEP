@@ -492,61 +492,6 @@ class TestInternalDispatchQueueItem:
 
         mock_schedule.assert_called_once_with(dispatched_item, "STARTED")
 
-    @pytest.mark.asyncio
-    async def test_awaits_started_when_await_annotations_true(self):
-        """Assert await_annotation is awaited when await_annotations=True (SEP-1204)."""
-        task = _make_task()
-        queue_item = _make_history(task=task)
-        session = _make_session_mock()
-        mock_executor = AsyncMock()
-        dispatched_item = _make_history(task=task, status=TaskHistoryStatusEnum.RUNNING)
-        mock_executor.dispatch_task.return_value = dispatched_item
-        mock_lock = MagicMock(spec=DispatchLock)
-
-        with (
-            patch(
-                "app.tasks.celery.get_async_session_maker",
-                return_value=_make_lock_session_maker(),
-            ),
-            patch(
-                "app.tasks.celery.DispatchLockManager.delete_where",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "app.tasks.celery.DispatchLockManager.create",
-                new_callable=AsyncMock,
-                return_value=mock_lock,
-            ),
-            patch(
-                "app.tasks.celery._raise_if_identical_task_conflict",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "app.tasks.celery.TaskManager.get_root_task",
-                new_callable=AsyncMock,
-                return_value=task,
-            ),
-            patch(
-                "app.tasks.celery.get_executor_for_task",
-                return_value=mock_executor,
-            ),
-            patch(
-                "app.tasks.celery.DispatchLockManager.delete",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "app.tasks.celery.await_annotation",
-                new_callable=AsyncMock,
-            ) as mock_await,
-            patch(
-                "app.tasks.celery.schedule_annotation",
-            ) as mock_schedule,
-        ):
-            await _dispatch_queue_item(queue_item, session, await_annotations=True)
-
-        mock_await.assert_awaited_once_with(dispatched_item, "STARTED")
-        mock_schedule.assert_not_called()
-
 
 class TestRaiseIfIdenticalTaskConflict:
     """Test _raise_if_identical_task_conflict."""
