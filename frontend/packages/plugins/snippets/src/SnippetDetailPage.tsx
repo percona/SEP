@@ -15,136 +15,62 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Alert,
-  Box,
-  CircularProgress,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  Divider,
-  IconButton,
-  Link as MuiLink,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
+import { Alert, Box, CircularProgress, IconButton, Link as MuiLink, Tooltip } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
-import {
-  SchemaFormRenderer,
-  TaskHistoryTable,
-  TaskLogViewer,
-  buildSnippetExecutionFormPayload,
-  snippetPluginSchemaPath,
-  useSnippetPluginSchema,
-  type TaskHistoryEntry,
-} from '@sep/framework';
-import { useSnippetDownload, useSnippetExecution, useSnippetHistory } from './hooks';
+import { SnippetExecutionAccordion } from '@sep/framework';
+import { useSnippetDownload, useSnippetSchema } from './hooks';
 
 /**
  * Snippet detail page rendered at `/snippets/:filename`.
  *
- * Composes three panels: the execution form (which embeds the script
- * preview as the per-snippet schema's read-only `ScriptPreviewField`),
- * and the per-snippet execution history table. The legacy Jinja2 detail
- * page remains mounted for capabilities not yet ported (chaining,
- * scheduling, alerting); the deprecation header reminds clients of the
- * impending removal.
+ * Delegates form rendering, execution, log streaming, and history display
+ * to ``SnippetExecutionAccordion``. No ``executorHost`` prop is passed, so
+ * the accordion renders the schema-driven host selector field.
+ *
+ * The legacy Jinja2 detail page remains mounted for capabilities not yet
+ * ported (chaining, scheduling, alerting).
  */
 export function SnippetDetailPage() {
   const { filename } = useParams<{ filename: string }>();
   const navigate = useNavigate();
-
-  const schemaQuery = useSnippetPluginSchema(
-    filename ? snippetPluginSchemaPath(filename) : undefined,
-  );
-  const historyQuery = useSnippetHistory(filename);
-  const executionMutation = useSnippetExecution(filename);
+  const schemaQuery = useSnippetSchema(filename, true);
   const downloadMutation = useSnippetDownload(filename);
-
-  const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
-
-  const handleSubmit = (values: Record<string, unknown>) => {
-    if (!filename) {
-      return;
-    }
-    // Stay on the snippet detail page after execute — `useSnippetPluginExecution`
-    // invalidates the per-snippet history query on success so the new run
-    // appears in the table without navigating away (mirrors legacy Jinja2
-    // behaviour and avoids the placeholder /tasks/* React route).
-    executionMutation.mutate(buildSnippetExecutionFormPayload(values));
-  };
-
-  const handleViewLogs = useCallback((entry: TaskHistoryEntry) => {
-    setLogsEntry(entry);
-  }, []);
-
-  const handleCloseLogs = useCallback(() => {
-    setLogsEntry(null);
-  }, []);
-
-  const submitError = executionMutation.isError
-    ? (executionMutation.error?.message ?? 'Execution failed')
-    : null;
-
-  const handleDownload = useCallback(() => {
-    if (!filename) {
-      return;
-    }
-    downloadMutation.mutate();
-  }, [filename, downloadMutation]);
-
-  const downloadError = downloadMutation.isError
-    ? (downloadMutation.error?.message ?? 'Download failed')
-    : null;
 
   if (!filename) {
     return <Alert severity="error">Missing snippet filename in the URL.</Alert>;
   }
 
-  if (schemaQuery.isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const displayTitle = schemaQuery.data?.display_name ?? filename;
+  const description = schemaQuery.data?.description;
 
-  if (schemaQuery.error || !schemaQuery.data) {
-    return (
-      <Alert severity="error">
-        Failed to load snippet schema: {schemaQuery.error?.message ?? 'unknown error'}
-      </Alert>
-    );
-  }
+  const downloadError = downloadMutation.isError
+    ? (downloadMutation.error?.message ?? 'Download failed')
+    : null;
 
   return (
     <Box>
-      <MuiLink
-        component="button"
-        type="button"
-        onClick={() => navigate('..')}
-        sx={{ mb: 2, display: 'inline-block' }}
-      >
-        ← Back to snippets
-      </MuiLink>
       <Box
         sx={{
           display: 'flex',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 2,
           mb: 1,
         }}
       >
-        <Typography variant="h4">{schemaQuery.data.display_name}</Typography>
+        <MuiLink
+          component="button"
+          type="button"
+          onClick={() => navigate('..')}
+          sx={{ display: 'inline-block' }}
+        >
+          ← Back to snippets
+        </MuiLink>
         <Tooltip title={`Download ${filename}`}>
           <span>
             <IconButton
               aria-label={`Download ${filename}`}
-              onClick={handleDownload}
+              onClick={() => downloadMutation.mutate()}
               disabled={downloadMutation.isPending}
               size="small"
             >
@@ -153,73 +79,20 @@ export function SnippetDetailPage() {
           </span>
         </Tooltip>
       </Box>
-      {schemaQuery.data.description && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          {schemaQuery.data.description}
-        </Typography>
-      )}
+
       {downloadError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => downloadMutation.reset()}>
           Failed to download snippet: {downloadError}
         </Alert>
       )}
 
-      <SchemaFormRenderer
-        sections={schemaQuery.data.forms ?? []}
-        onSubmit={handleSubmit}
-        submitLabel="Execute"
-        loading={executionMutation.isPending}
-        submitError={submitError}
+      <SnippetExecutionAccordion
+        snippetFilename={filename}
+        title={displayTitle}
+        description={description}
+        defaultExpanded
+        showHistory
       />
-
-      <Divider sx={{ my: 4 }} />
-
-      <Typography variant="h6" sx={{ mb: 1 }}>
-        Execution history
-      </Typography>
-      {historyQuery.error ? (
-        <Alert severity="error">
-          Failed to load execution history: {historyQuery.error.message}
-        </Alert>
-      ) : (
-        <TaskHistoryTable
-          data={historyQuery.data?.items ?? []}
-          isLoading={historyQuery.isLoading}
-          hideTaskNameColumn
-          onViewLogs={handleViewLogs}
-        />
-      )}
-
-      <Dialog
-        open={logsEntry !== null}
-        onClose={handleCloseLogs}
-        fullWidth
-        maxWidth="lg"
-        aria-labelledby="snippet-task-logs-title"
-      >
-        <DialogTitle
-          id="snippet-task-logs-title"
-          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-        >
-          <span>
-            Task logs
-            {logsEntry?.task?.name ? ` — ${logsEntry.task.name}` : ''}
-            {logsEntry?.id !== null && logsEntry?.id !== undefined ? ` #${logsEntry.id}` : ''}
-          </span>
-          <IconButton aria-label="Close logs dialog" onClick={handleCloseLogs} size="small">
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent dividers sx={{ p: 0 }}>
-          {logsEntry?.id !== null && logsEntry?.id !== undefined ? (
-            <TaskLogViewer
-              taskHistoryId={logsEntry.id}
-              taskStatus={logsEntry.status}
-              height={520}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </Box>
   );
 }

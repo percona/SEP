@@ -121,7 +121,7 @@ async def pg_backups_detail(
         "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "entities": {entity.name: entity.value for entity in decoded_entities},
-        "delete_url": request.url_for("backups_delete", task_name=task.name),
+        "delete_url": request.url_for("mysql_backups_delete", task_name=task.name),
         "config": task_config.get("ALL_SERVERS", {}),
         "is_edit_enabled": not task.protected,
         "alert_on_fail": task.alert_on_fail,

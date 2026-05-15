@@ -26,6 +26,8 @@ import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import type { PluginCapabilities } from '@sep/api';
+import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
 import { FieldRenderer } from './fields';
 import { useConditionalField } from './hooks/useConditionalField';
 import { useCardinalityRules } from './hooks/useCardinalityRules';
@@ -152,6 +154,8 @@ export interface SchemaFormRendererProps {
   defaultValues?: Record<string, unknown>;
   /** Server-side error to show above the form (e.g. API failure from the caller's mutation). */
   submitError?: string | null;
+  /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
+  capabilities?: PluginCapabilities;
 }
 
 /** Inner form body — lives inside FormProvider so it can call useFormContext / useCardinalityRules. */
@@ -161,6 +165,7 @@ function SchemaFormBody({
   submitLabel = 'Run',
   loading = false,
   submitError,
+  capabilities,
 }: SchemaFormRendererProps) {
   const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
   const allFields = useMemo(() => flattenFields(sections), [sections]);
@@ -224,6 +229,12 @@ function SchemaFormBody({
         />
       ))}
 
+      {capabilities?.alert_on_fail && (
+        <Box sx={{ mb: 2 }}>
+          <AlertOnFailField />
+        </Box>
+      )}
+
       <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
         {submitLabel}
       </Button>
@@ -245,17 +256,23 @@ function SchemaFormBody({
 }
 
 export function SchemaFormRenderer(props: SchemaFormRendererProps) {
-  const { sections, defaultValues } = props;
+  const { sections, defaultValues, capabilities } = props;
   const allFields = useMemo(() => flattenFields(sections), [sections]);
 
-  const formDefaults = useMemo(
-    () =>
-      allFields.reduce<Record<string, unknown>>((acc, field) => {
-        acc[field.name] = defaultValues?.[field.name] ?? fieldDefault(field);
-        return acc;
-      }, {}),
-    [allFields, defaultValues],
-  );
+  const formDefaults = useMemo(() => {
+    const defaults = allFields.reduce<Record<string, unknown>>((acc, field) => {
+      acc[field.name] = defaultValues?.[field.name] ?? fieldDefault(field);
+      return acc;
+    }, {});
+    if (capabilities?.alert_on_fail) {
+      // Capability-injected fields are not in allFields, so coerceFormValues leaves them
+      // unchanged (extra keys pass through as-is via the initial spread). The value seeded
+      // here must therefore already be the correct submit type — boolean for alert_on_fail.
+      // If more capability fields are added, ensure they are pre-coerced at this point.
+      defaults[ALERT_ON_FAIL_FIELD_NAME] = defaultValues?.[ALERT_ON_FAIL_FIELD_NAME] ?? false;
+    }
+    return defaults;
+  }, [allFields, defaultValues, capabilities]);
 
   const methods = useForm<Record<string, unknown>>({ defaultValues: formDefaults });
 

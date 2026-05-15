@@ -25,6 +25,7 @@
     "@sep/api": "workspace:*",
     "@sep/framework": "workspace:*",
     "@sep/inventory": "workspace:*",
+    "@sep/plugin-alert-troubleshooting": "workspace:*",
     "@sep/plugin-atw": "workspace:*",
     "@sep/plugin-checksums": "workspace:*",
     "@sep/plugin-dipper": "workspace:*",
@@ -43,10 +44,9 @@
   "devDependencies": {
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@vitejs/plugin-react-swc": "^4.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
     "typescript": "~6.0.3",
     "vite": "^8.0.12",
-    "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.0.0"
   }
 }
