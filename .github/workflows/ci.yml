@@ -153,7 +153,7 @@ jobs:
         uses: ./.github/actions/setup-python-job
 
       - name: Install pnpm
-        run: npm install -g pnpm@10.33.0
+        run: npm install -g pnpm@11.1.2
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
