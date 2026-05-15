@@ -283,6 +283,10 @@ def _parse_ids_param(ids: str) -> list[int]:
             parsed.append(value)
     if not parsed:
         raise HTTPBadRequestException("No task history ids provided.")
+    if len(parsed) > _MAX_TOPOLOGY_SHARDS:
+        raise HTTPBadRequestException(
+            f"At most {_MAX_TOPOLOGY_SHARDS} task history ids are allowed."
+        )
     return parsed
 
 
