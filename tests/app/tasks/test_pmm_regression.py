@@ -199,21 +199,23 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
     async def test_detached_item_terminal_pmm_with_writer_session(
         self, session: AsyncSession
     ) -> None:
-        """Assert schedule_annotation survives the load→writer session boundary.
+        """Assert the terminal PMM annotation survives the load→writer session boundary.
 
         Reproduce the SEP-1021 production flow: ``sync_queue_item`` loads the
         ``TaskHistory`` with ``undefer(TaskHistory.execution_request)`` in a
         reader session, closes that session, then calls
         ``executor.sync_task_history(queue_item, writer_session=...)`` inside
-        a fresh writer session. Without the fix, ``schedule_annotation``
-        reads the deferred column through the attribute getter across the
-        session boundary and raises ``MissingGreenlet`` on async drivers,
-        aborting ``sync_task_history`` before chain dispatch is reached.
+        a fresh writer session. The terminal annotation site (post-SEP-1204
+        ``await await_annotation(...)``; pre-SEP-1204 ``schedule_annotation``)
+        must snapshot the request primitives via ``execution_request_for_pmm_snapshot``
+        rather than touching the deferred column getter across the closed
+        reader session — that would raise ``MissingGreenlet`` on async
+        drivers and abort ``sync_task_history`` before chain dispatch.
 
         Patch ``create_pmm_annotation`` (the HTTP boundary) so the real
-        ``schedule_annotation`` — and therefore ``execution_request_for_pmm_snapshot``
-        — run, and assert the background annotation fires with the
-        primitives captured from the detached instance.
+        ``await_annotation`` — and therefore ``execution_request_for_pmm_snapshot``
+        — runs, and assert the annotation fires with the primitives
+        captured from the detached instance.
         """
         task = await TaskManager.create(
             session,
@@ -245,15 +247,12 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
                 id=saved.id,
             )
 
-        _background_tasks.clear()
         async with maker() as writer_session:
             executor = _SuccessAfterRunExecutor()
             with patch(
                 "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
             ) as mock_create:
                 await executor.sync_task_history(loaded, writer_session=writer_session)
-                for bg_task in list(_background_tasks):
-                    await bg_task
 
         assert loaded.status == TaskHistoryStatusEnum.SUCCESS
         mock_create.assert_awaited_once_with(
