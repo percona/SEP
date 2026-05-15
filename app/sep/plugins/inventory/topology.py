@@ -58,6 +58,9 @@ def make_primary_hash(server_id: Any, server_uuid: Any, port: Any) -> str:
     Mirrors ``GAS/tools/bin/db_tree.py::make_primary_hash`` so existing
     operator intuition transfers (replica's source_server_id+uuid+port hash
     must equal its primary's @@server_hash).
+    MySQL 5.7 lacks ``server_uuid`` in replica status, so the collector
+    synthesizes it from ``server_hash``; replica-to-5.7-primary correlation
+    then matches on the address+port fallback rather than this hash.
     """
     raw = f"{server_id or ''}|{server_uuid or ''}|{port or ''}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()

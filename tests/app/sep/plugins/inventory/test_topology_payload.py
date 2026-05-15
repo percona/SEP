@@ -121,7 +121,7 @@ def test_collect_host_uses_my_cnf_fallback(monkeypatch) -> None:
     assert calls
     assert calls[0]["user"] == "root"
     assert calls[0]["password"] == "secret"
-    assert calls[0]["read_default_file"] == "~/.my.cnf"
+    assert calls[0]["read_default_file"] == str(Path("~/.my.cnf").expanduser())
 
 
 def test_query_repl_info_uses_source_fallback_when_master_columns_are_null(

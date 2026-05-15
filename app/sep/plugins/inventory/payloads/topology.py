@@ -354,7 +354,7 @@ def collect_host(
         "port": port,
         "user": creds.get("user"),
         "password": creds.get("password"),
-        "read_default_file": "~/.my.cnf",
+        "read_default_file": str(Path("~/.my.cnf").expanduser()),
         "connect_timeout": connect_timeout,
         "read_timeout": read_timeout,
         "write_timeout": read_timeout,

@@ -207,6 +207,7 @@ async def topology_collect(
     body: TopologyCollectWrite,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
+    current_user: CurrentUser,  # noqa: ARG001
 ) -> TopologyCollectResponse:
     """Dispatch one or more topology collector tasks. Returns the task ids.
 
