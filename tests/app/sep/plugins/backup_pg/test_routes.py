@@ -263,8 +263,8 @@ def test_pg_backups_delete(test_client, mock_task_api_dep, created_task):
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["Location"] == "/backup_pg"
 
-    mock_task_api_dep.delete.assert_called_once()
-    called_args, _ = mock_task_api_dep.delete.call_args
+    mock_task_api_dep.delete.assert_awaited_once()
+    called_args, _ = mock_task_api_dep.delete.await_args
     assert called_args[0] == f"/{created_task.name}"
 
 

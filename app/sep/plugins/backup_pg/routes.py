@@ -201,6 +201,15 @@ async def pg_backups_delete(
     task: BackupsTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Delete backups task."""
+    """Delete backups task.
+
+    :param task: The PG backups task to delete, resolved by the
+        ``BackupsTask`` dependency from the ``task_name`` path param.
+    :type task: BackupsTask
+    :param tasks_api: The tasks-API client used to issue the delete call.
+    :type tasks_api: TaskAPI
+    :return: HTTP 303 redirect to the plugin index.
+    :rtype: RedirectResponse
+    """
     await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/backup_pg", status_code=status.HTTP_303_SEE_OTHER)
