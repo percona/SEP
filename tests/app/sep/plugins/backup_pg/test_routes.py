@@ -254,26 +254,6 @@ def test_backups_execute_with_chain_task_names(
     assert called_kwargs["json"]["chain_task_names"] == ["task-a", "task-b"]
 
 
-def test_pg_backups_update(
-    test_client, mock_task_api_dep, mock_build_backup_task_payload_dep, created_task
-):
-    """Test POST /backup-pg/{task_name}/update route."""
-    response = test_client.post(
-        f"/backup-pg/{created_task.name}/update",
-        data={"task_name": created_task.name},
-        follow_redirects=False,
-    )
-    assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"].endswith(
-        f"/backup-pg/{mock_build_backup_task_payload_dep.name}"
-    )
-
-    mock_task_api_dep.put.assert_called_once()
-    called_args, called_kwargs = mock_task_api_dep.put.call_args
-    assert called_args[0] == f"/{created_task.name}"
-    assert called_kwargs["json"] == mock_build_backup_task_payload_dep.model_dump()
-
-
 @pytest.mark.usefixtures("_mock_get_backups_task_dep")
 def test_pg_backups_delete(test_client, mock_task_api_dep, created_task):
     """Test POST /backup-pg/{task_name}/delete route."""

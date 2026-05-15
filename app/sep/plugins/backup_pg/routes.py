@@ -192,29 +192,6 @@ async def pg_backups_execute(
 
 
 @router.post(
-    "/{task_name}/update",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
-    response_class=RedirectResponse,
-)
-async def pg_backups_update(
-    request: Request,
-    task_name: str,
-    updated_task: BackupGeneratedTask,
-    tasks_api: TaskAPI,
-) -> RedirectResponse:
-    """Update backups task."""
-    logger.debug("Updating backups task: %s", updated_task)
-    await tasks_api.put(
-        f"/{task_name}",
-        json=updated_task.model_dump(),
-    )
-    return RedirectResponse(
-        request.url_for("pg_backups_detail", task_name=updated_task.name),
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-
-
-@router.post(
     "/{task_name}/delete",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
