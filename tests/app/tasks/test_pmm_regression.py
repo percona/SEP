@@ -28,7 +28,7 @@ from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.pmm import _background_tasks, schedule_annotation
+from app.core.pmm import _background_tasks, await_annotation, schedule_annotation
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.models import (
     TaskExecutionRequest,
@@ -260,5 +260,128 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
             text=f"SEP {task.name} - COMPLETED",
             node_name="node-z",
             tags=["sep", task.name, "completed"],
+            service_names=["svc1"],
+        )
+
+
+class TestAwaitAnnotation:
+    """Regression suite for SEP-1204 — ``await_annotation`` precondition + snapshot.
+
+    Mirrors :class:`TestScheduleAnnotationPrecondition` and
+    :class:`TestScheduleAnnotationDetachedInstance` for the awaited helper used
+    from Celery worker contexts where ``asyncio.create_task`` is abandoned when
+    the outer coroutine returns.
+    """
+
+    @pytest.mark.asyncio
+    async def test_raises_when_execution_request_unloaded(self, session: AsyncSession):
+        """Assert ``await_annotation`` rejects a deferred instance."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="backup_data")),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task="backup_data",
+                target="node-1",
+                meta={},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+
+        with pytest.raises(
+            RuntimeError,
+            match="execution_request to be loaded",
+        ):
+            await await_annotation(saved, "STARTED")
+
+    @pytest.mark.asyncio
+    async def test_awaits_annotate_task_event_after_explicit_refresh(
+        self, session: AsyncSession
+    ):
+        """Assert ``await_annotation`` awaits ``annotate_task_event`` with snapshotted kwargs."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="backup_data")),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task="backup_data",
+                target="node-1",
+                meta={"_service_names": ["svc1"]},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+        await session.refresh(saved, attribute_names=["execution_request"])
+
+        with patch(
+            "app.core.pmm.annotate_task_event", new_callable=AsyncMock
+        ) as mock_annotate:
+            await await_annotation(saved, "STARTED")
+
+        mock_annotate.assert_awaited_once_with(
+            task_name="backup_data",
+            target="node-1",
+            meta={"_service_names": ["svc1"]},
+            event="STARTED",
+        )
+
+    @pytest.mark.asyncio
+    async def test_safe_across_load_writer_session_boundary(
+        self, session: AsyncSession
+    ):
+        """Assert ``await_annotation`` snapshots primitives from a detached instance.
+
+        Reproduce the SEP-1021 load→writer-session pattern: fetch the
+        ``TaskHistory`` (with ``undefer(TaskHistory.execution_request)``) in
+        a reader session, close the reader, then await the helper from a
+        fresh writer session. The snapshot must come from the loaded
+        :attr:`loaded_value` (per :func:`execution_request_for_pmm_snapshot`)
+        — touching the deferred attribute getter across the closed reader
+        would raise ``MissingGreenlet`` on async drivers.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="backup_data")),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task="backup_data",
+                target="node-1",
+                meta={"_service_names": ["svc1"]},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+        await session.commit()
+
+        engine = session.bind
+        if engine is None:
+            raise RuntimeError("expected AsyncSession.bind to be set")
+        maker = get_async_session_maker_from_engine(engine)
+        async with maker() as load_session:
+            loaded = await TaskHistoryManager.get_or_404(
+                load_session,
+                query_options=[undefer(TaskHistory.execution_request)],
+                id=saved.id,
+            )
+
+        with patch(
+            "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+        ) as mock_create:
+            await await_annotation(loaded, "STARTED")
+
+        mock_create.assert_awaited_once_with(
+            text="SEP backup_data - STARTED",
+            node_name="node-1",
+            tags=["sep", "backup_data", "started"],
             service_names=["svc1"],
         )

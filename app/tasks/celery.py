@@ -50,7 +50,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
-from app.core.pmm import schedule_annotation
+from app.core.pmm import await_annotation, schedule_annotation
 from app.core.utils import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.tasks.config import tasks_settings
@@ -112,7 +112,9 @@ def execute_task_queue(self: CeleryTask, queue_id: int) -> dict[str, Any]:
     logger.info("Executing task with queue_id: %s", queue_id)
     queue_item = celery.loop.run_until_complete(get_task_history(queue_id))
     return jsonable_encoder(
-        celery.loop.run_until_complete(dispatch_queue_item(queue_item))
+        celery.loop.run_until_complete(
+            dispatch_queue_item(queue_item, await_annotations=True)
+        )
     )
 
 
@@ -150,7 +152,9 @@ def execute_task_by_name(
         )
         if skipped is not None:
             return jsonable_encoder(skipped)
-        task_history = celery.loop.run_until_complete(dispatch_queue_item(task_history))
+        task_history = celery.loop.run_until_complete(
+            dispatch_queue_item(task_history, await_annotations=True)
+        )
     except BaseNomadException:
         alert_msg = (
             f"Failed to dispatch periodic task "
@@ -367,7 +371,10 @@ async def prepare_periodic_task_history(
 
 
 async def dispatch_queue_item(
-    queue_item: TaskHistory, session: AsyncSession | None = None
+    queue_item: TaskHistory,
+    session: AsyncSession | None = None,
+    *,
+    await_annotations: bool = False,
 ) -> TaskHistory:
     """Process an item from the history table.
 
@@ -375,6 +382,12 @@ async def dispatch_queue_item(
     :type queue_item: TaskHistory
     :param session: Optional SQLAlchemy asynchronous session to use for the operation.
     :type session: AsyncSession | None
+    :param await_annotations: When True, await the STARTED PMM annotation inline
+        instead of scheduling it as a fire-and-forget background task. Required
+        from Celery contexts that drive the event loop via discrete
+        ``celery.loop.run_until_complete(...)`` calls; the FastAPI default
+        (``False``) keeps the request path non-blocking. See SEP-1204.
+    :type await_annotations: bool
     :return: The TaskHistory object post execution.
     :rtype: TaskHistory
     :raises HTTPException: If the queue item status is not PENDING,
@@ -385,12 +398,19 @@ async def dispatch_queue_item(
     if session is None:
         async_session = get_async_session_maker()
         async with async_session() as async_session:
-            return await _dispatch_queue_item(queue_item, async_session)
-    return await _dispatch_queue_item(queue_item, session)
+            return await _dispatch_queue_item(
+                queue_item, async_session, await_annotations=await_annotations
+            )
+    return await _dispatch_queue_item(
+        queue_item, session, await_annotations=await_annotations
+    )
 
 
 async def _dispatch_queue_item(
-    queue_item: TaskHistory, session: AsyncSession
+    queue_item: TaskHistory,
+    session: AsyncSession,
+    *,
+    await_annotations: bool = False,
 ) -> TaskHistory:
     if queue_item.status != TaskHistoryStatusEnum.PENDING:
         raise HTTPConflictException("Queue item is not in a pending state.")
@@ -432,7 +452,10 @@ async def _dispatch_queue_item(
         raise
     else:
         await session.refresh(result, attribute_names=["execution_request"])
-        schedule_annotation(result, "STARTED")
+        if await_annotations:
+            await await_annotation(result, "STARTED")
+        else:
+            schedule_annotation(result, "STARTED")
         return result
     finally:
         async with lock_session_maker() as async_session:
@@ -690,7 +713,7 @@ async def _dispatch_chained_task(
             executed_by=parent.executed_by,
             anonymize_mask=parent.anonymize_mask,
         )
-        await dispatch_queue_item(chain_history)
+        await dispatch_queue_item(chain_history, await_annotations=True)
     except Exception:
         logger.exception(
             "Failed to dispatch chained task %r from parent %r",
