@@ -247,6 +247,12 @@ class SnippetsCapabilitiesResponse(BaseModel):
     (currently the manual refresh button) so the React shell can decide
     whether to render those controls without probing the gated endpoints.
 
+    Distinct from :class:`~app.sep.plugins.framework.schema.Capabilities`,
+    which describes static UI feature flags on
+    :attr:`~app.sep.plugins.framework.schema.PluginSchema.capabilities`
+    (chaining, scheduling, alert_on_fail). This model is the per-
+    deployment runtime counterpart returned by ``GET /capabilities``.
+
     :param manual_sync_enabled: Whether manual snippet refresh is enabled
         in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).
     :type manual_sync_enabled: bool
