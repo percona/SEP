@@ -33,4 +33,3 @@ export {
   pathThroughPairIndex,
   pathToNestedInventoryParent,
 } from './inventoryNestedPaths';
-export { InventoryTopology } from './topology';
