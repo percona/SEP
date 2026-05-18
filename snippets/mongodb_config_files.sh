@@ -35,7 +35,11 @@ echo
 # Try to detect the config file from the running mongod process command line
 echo "Checking running mongod process for --config flag..."
 PROCESS_CONFIG=""
-MONGOD_CMD=$(ps -wweo args 2> /dev/null | grep -E '^\s*(sudo\s+)?mongod' | grep -v grep | head -1 || true)
+MONGOD_CMD=""
+MONGOD_PID=$(pgrep -x mongod 2> /dev/null | head -1)
+if [[ -n $MONGOD_PID ]]; then
+    MONGOD_CMD=$(ps -p "$MONGOD_PID" -o args= 2> /dev/null || true)
+fi
 if [[ -n $MONGOD_CMD ]]; then
     # Extract --config or -f argument value
     if [[ $MONGOD_CMD =~ --config[[:space:]]+([^[:space:]]+) ]]; then

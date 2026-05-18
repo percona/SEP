@@ -90,13 +90,15 @@ done
 echo "=== MongoDB FTDC Collect ==="
 echo ""
 
-# --- Step 1: Locate the MongoDB data directory ---
-
 if [[ -n $DATA_DIR ]]; then
     echo "Using provided data directory: $DATA_DIR"
 else
     # Try to detect --dbpath from the running mongod process
-    MONGOD_CMD=$(ps -wweo args 2> /dev/null | grep -E '^\s*(sudo\s+)?mongod' | grep -v grep | head -1 || true)
+    MONGOD_CMD=""
+    MONGOD_PID=$(pgrep -x mongod 2> /dev/null | head -1)
+    if [[ -n $MONGOD_PID ]]; then
+        MONGOD_CMD=$(ps -p "$MONGOD_PID" -o args= 2> /dev/null || true)
+    fi
     if [[ -n $MONGOD_CMD ]]; then
         if [[ $MONGOD_CMD =~ --dbpath[[:space:]]+([^[:space:]]+) ]]; then
             DATA_DIR="${BASH_REMATCH[1]}"
@@ -144,8 +146,6 @@ if [[ ! -d $DATA_DIR ]]; then
     exit 1
 fi
 
-# --- Step 2: Locate the diagnostic.data directory ---
-
 FTDC_DIR="$DATA_DIR/diagnostic.data"
 
 if [[ ! -d $FTDC_DIR ]]; then
@@ -157,8 +157,6 @@ fi
 echo ""
 echo "=== FTDC directory: $FTDC_DIR ==="
 echo ""
-
-# --- Step 3: List FTDC files ---
 
 FTDC_FILES=$(find "$FTDC_DIR" -maxdepth 1 -type f | sort)
 
@@ -175,8 +173,6 @@ TOTAL_SIZE=$(du -sh "$FTDC_DIR" | cut -f1)
 FILE_COUNT=$(find "$FTDC_DIR" -maxdepth 1 -type f | wc -l)
 echo "Total: $FILE_COUNT file(s), $TOTAL_SIZE"
 echo ""
-
-# --- Step 4: Copy files to destination (if requested) ---
 
 if [[ -z $DEST ]]; then
     echo "No destination specified (--dest). Files listed above but not copied."
