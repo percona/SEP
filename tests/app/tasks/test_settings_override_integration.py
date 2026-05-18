@@ -1,0 +1,124 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""End-to-end-ish integration tests for the Tasks-side override layer."""
+
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
+from sqlmodel.pool import StaticPool
+
+from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
+from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.utils import json_serializer
+from app.tasks.config import (
+    PreExecutionCheckMode,
+    tasks_settings,
+    TasksSettings,
+)
+
+
+@pytest_asyncio.fixture(name="override_session_maker")
+async def _override_session_maker() -> async_sessionmaker:
+    """Provide an in-memory SQLite session maker isolated from the main test DB."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    return get_async_session_maker_from_engine(engine)
+
+
+def _tasks_proxies() -> dict:
+    """Return the Tasks-side proxy registry mirroring the lifespan wiring."""
+    return {
+        SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_settings, TasksSettings),
+    }
+
+
+@pytest.mark.asyncio
+async def test_pre_execution_connectivity_check_override(
+    override_session_maker: async_sessionmaker,
+) -> None:
+    """An override for ``PRE_EXECUTION_CONNECTIVITY_CHECK`` is reflected on the proxy."""
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="PRE_EXECUTION_CONNECTIVITY_CHECK",
+                value="block",
+            ),
+        )
+    await refresh_all(lambda: override_session_maker, _tasks_proxies())
+    assert (
+        tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK is PreExecutionCheckMode.BLOCK
+    )
+
+
+_OVERRIDE_STALENESS_SECONDS = 7200
+_YAML_DEFAULT_STALENESS_SECONDS = 3600
+
+
+@pytest.mark.asyncio
+async def test_staleness_threshold_override(
+    override_session_maker: async_sessionmaker,
+) -> None:
+    """An override for ``STALENESS_THRESHOLD_SECONDS`` is reflected on the proxy."""
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="STALENESS_THRESHOLD_SECONDS",
+                value=_OVERRIDE_STALENESS_SECONDS,
+            ),
+        )
+    await refresh_all(lambda: override_session_maker, _tasks_proxies())
+    assert tasks_settings.STALENESS_THRESHOLD_SECONDS == _OVERRIDE_STALENESS_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_inactive_override_falls_back_to_yaml_default(
+    override_session_maker: async_sessionmaker,
+) -> None:
+    """Deactivating the override row returns the proxy to the YAML default."""
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="STALENESS_THRESHOLD_SECONDS",
+                value=_OVERRIDE_STALENESS_SECONDS,
+            ),
+        )
+    await refresh_all(lambda: override_session_maker, _tasks_proxies())
+    assert tasks_settings.STALENESS_THRESHOLD_SECONDS == _OVERRIDE_STALENESS_SECONDS
+
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.update_where(
+            session,
+            {"is_active": False},
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key="STALENESS_THRESHOLD_SECONDS",
+        )
+    await refresh_all(lambda: override_session_maker, _tasks_proxies())
+    assert tasks_settings.STALENESS_THRESHOLD_SECONDS == _YAML_DEFAULT_STALENESS_SECONDS

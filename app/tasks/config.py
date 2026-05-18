@@ -24,7 +24,10 @@ from pydantic import PositiveInt
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
-from app.core.utils.lazy import LazyProxy
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import ReloadClassification
+from app.core.utils.pydantic import field_with_metadata
 from app.tasks.execution.executors.nomad import NomadExecutor
 
 
@@ -81,8 +84,14 @@ class TasksSettings(BaseYamlAppSettings):
         content_security_policy_strict=False
     )
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
-    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = PreExecutionCheckMode.WARN
-    STALENESS_THRESHOLD_SECONDS: PositiveInt = 3600
+    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = field_with_metadata(
+        PreExecutionCheckMode.WARN, metadata={"reload": ReloadClassification.HOT}
+    )
+    STALENESS_THRESHOLD_SECONDS: PositiveInt = field_with_metadata(
+        3600, metadata={"reload": ReloadClassification.HOT}
+    )
 
 
-tasks_settings: TasksSettings = LazyProxy(TasksSettings)
+tasks_settings: TasksSettings = OverridableSettingsProxy(
+    TasksSettings, setting_class=SettingClassEnum.TASKS_SETTINGS
+)

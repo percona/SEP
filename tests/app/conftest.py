@@ -15,6 +15,7 @@
 
 """Define test fixtures."""
 
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -23,10 +24,15 @@ from faker import Faker
 from pytest_mock import MockerFixture
 
 from app.core.auth.models import OAuthToken
+from app.core.config import settings
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
+from app.sep.config import sep_settings
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
+from app.sep.middleware.messages.config import messages_settings
+from app.sep.snippets.config import snippets_settings
+from app.tasks.config import tasks_settings
 from tests.app.factories import (
     CasdoorUserFactory,
     CreatedNodeFactory,
@@ -35,6 +41,37 @@ from tests.app.factories import (
     CreatedTableFactory,
     OAuthTokenFactory,
 )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _disable_settings_override_refresher_for_session() -> Iterator[None]:
+    """Disable the DB-override background refresher for the entire test session.
+
+    ``TestClient(...)`` enters each FastAPI app's lifespan, which would otherwise
+    open a session against the production engine via the real refresher. We use
+    ``pytest.MonkeyPatch()`` directly (not the function-scoped ``monkeypatch``
+    fixture, which raises ``ScopeMismatch`` at session scope) so the patch
+    survives across tests. Tests that need to exercise the refresher re-enable
+    it locally via the function-scoped ``monkeypatch`` fixture.
+    """
+    mp = pytest.MonkeyPatch()
+    mp.setattr(settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", False)
+    yield
+    mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _override_snapshot_cleared() -> None:
+    """Clear every wired ``OverridableSettingsProxy`` snapshot before each test.
+
+    Tests that monkey-patch ``*_settings`` attributes assume the proxy's
+    ``__getattr__`` falls through to the wrapped Pydantic instance. An active
+    snapshot entry would shadow the monkey-patched value and confuse the test.
+    """
+    sep_settings._set_snapshot({})
+    tasks_settings._set_snapshot({})
+    snippets_settings._set_snapshot({})
+    messages_settings._set_snapshot({})
 
 
 @pytest.fixture(scope="session")

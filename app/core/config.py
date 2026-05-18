@@ -21,6 +21,7 @@ import secrets
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
+from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Self, TypeVar
@@ -66,6 +67,7 @@ from app.core.utils.fields import (
     RelativeFilePathField,
     StrHttpUrl,
     StrImportableAttribute,
+    TimedeltaSeconds,
     URL,
 )
 from app.core.utils.lazy import LazyProxy
@@ -353,6 +355,13 @@ class Settings(BaseYamlSettings):
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
     :param PMM: PMM connection and authentication configuration.
     :type PMM: PMMSettings
+    :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: How often each service refreshes its
+        DB-backed setting overrides. Defaults to 30 seconds.
+    :type SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds
+    :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: Master kill-switch for the DB-override
+        background refresher. Tests set this to ``False`` to keep ``TestClient``
+        lifespans hermetic; production leaves it ``True``.
+    :type SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool
     """
 
     CASDOOR: CasdoorSDK
@@ -369,6 +378,8 @@ class Settings(BaseYamlSettings):
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
     PMM: PMMSettings = PMMSettings()
+    SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
+    SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field

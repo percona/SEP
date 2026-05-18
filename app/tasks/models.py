@@ -54,6 +54,7 @@ from app.core.alerts.models import AlertSeverity
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.db.sql_types import AutoJSON, MaybeCompressedText
+from app.core.settings_override.models import SettingOverride  # noqa: F401
 from app.core.utils.fields import (
     EmptyStrToNone,
     EnumFieldMixin,

@@ -15,9 +15,10 @@
 
 """Define SEP routes."""
 
+import asyncio
 import logging.config
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from traceback import format_exception
 from typing import Annotated, Any
 
@@ -34,12 +35,15 @@ from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
+from app.core.settings_override.lifecycle import ProxyEntry, start_refresh_task
+from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.celery import sync_snippets
-from app.sep.config import sep_settings
+from app.sep.config import sep_settings, SEPSettings
+from app.sep.db import get_async_session_maker
 from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
@@ -55,8 +59,9 @@ from app.sep.deps import (
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
+from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
-from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
 
@@ -102,8 +107,34 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
     )
-    async with app.state.inventory_api, app.state.tasks_api, default_lifespan(app):
-        yield
+    # Force-resolve ``messages_settings`` so the proxy's underlying Pydantic
+    # instance is constructed (and validated) at lifespan startup rather than
+    # at first attribute access -- preserving the fail-fast behavior the
+    # previous eager ``MessagesSettings()`` provided.
+    messages_settings._resolve()  # noqa: SLF001
+    refresher: asyncio.Task | None = None
+    if settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED:
+        refresher = await start_refresh_task(
+            get_async_session_maker,
+            proxies={
+                SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+                SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
+                    snippets_settings, SnippetsSettings
+                ),
+                SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
+                    messages_settings, MessagesSettings
+                ),
+            },
+            interval=settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
+        )
+    try:
+        async with app.state.inventory_api, app.state.tasks_api, default_lifespan(app):
+            yield
+    finally:
+        if refresher is not None:
+            refresher.cancel()
+            with suppress(asyncio.CancelledError):
+                await refresher
 
 
 lifespan = sep_lifespan
