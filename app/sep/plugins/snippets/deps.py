@@ -115,7 +115,10 @@ async def get_snippet(
     session: SessionDep,
     snippet_filename: Annotated[
         str,
-        Query(description="Snippet filename (relative path under snippets root)."),
+        Query(
+            ...,
+            description="Snippet filename (relative path under snippets root).",
+        ),
     ],
 ) -> Snippet:
     """Fetch and return a snippet by the specified filename.
@@ -155,13 +158,18 @@ def validate_snippet_parameters(request: Request, snippet: SnippetDep) -> Snippe
     :rtype: Snippet
     """
     if snippet.is_approved:
+        snippet_path = str(
+            request.url_for("snippets_detail").include_query_params(
+                snippet_filename=snippet.filename
+            )
+        )
         add_msg_func = (
             messages.warning
             if snippets_settings.META.IGNORE_INVALID_PARAMETERS
             else messages.error
         )
         for error in snippet.validated_parameters.errors:
-            add_msg_func(request, error, None, sticky=False)
+            add_msg_func(request, error, snippet_path, sticky=True)
     return snippet
 
 

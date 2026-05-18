@@ -156,14 +156,51 @@ class TestSnippetsPluginSchema:
 
 
 @pytest.mark.asyncio
-class TestSnippetsApiPerSnippetSchema:
-    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/schema``."""
+class TestSnippetsApiSnippetFilenameQueryParam:
+    """Contract tests for the required ``snippet_filename`` query parameter."""
 
-    async def test_returns_422_when_snippet_filename_missing(self, test_client):
-        """Missing ``snippet_filename`` is rejected by request validation."""
-        response = test_client.get(f"{API_BASE}/snippet/schema")
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/snippet/schema",
+            "/snippet/preview",
+        ],
+    )
+    async def test_returns_422_when_snippet_filename_missing(self, test_client, path):
+        """Requests without ``snippet_filename`` are rejected before snippet lookup."""
+        response = test_client.get(f"{API_BASE}{path}")
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            err.get("loc") == ["query", "snippet_filename"]
+            for err in detail
+            if isinstance(err, dict)
+        )
+
+    @pytest.mark.parametrize(
+        "bad_filename",
+        [
+            "..evil.sh",
+            ".hidden.sh",
+            "no-extension",
+        ],
+    )
+    async def test_traversal_or_unsafe_filename_returns_400(
+        self, test_client, bad_filename
+    ):
+        """Filenames with traversal sequences or invalid forms return 400."""
+        response = test_client.get(
+            f"{API_BASE}/snippet/schema",
+            params={"snippet_filename": bad_filename},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiPerSnippetSchema:
+    """Tests for ``GET /api/plugins/snippets/snippet/schema``."""
 
     async def test_returns_404_for_unknown_snippet(self, test_client):
         """A missing snippet filename surfaces as a 404."""
