@@ -115,8 +115,9 @@ def _resolve_capabilities_response_model(
     Uses :func:`typing.get_type_hints` so deferred-evaluation annotations
     (``from __future__ import annotations``) resolve to the real class
     rather than a string. Falls back to the function's ``__annotations__``
-    dict only if ``get_type_hints`` fails to resolve — e.g. for builtins
-    where forward refs aren't relevant.
+    dict only when :func:`typing.get_type_hints` raises :class:`NameError`
+    — i.e. a forward-ref that resolves against a module the caller hasn't
+    imported. Other failures propagate unchanged.
 
     :param provider: A callable annotated with its return type. The
         callable may declare arbitrary parameters (typically resolved by

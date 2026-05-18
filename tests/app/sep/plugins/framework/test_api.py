@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the plugin ``/schema`` discovery endpoint helper."""
+"""Define tests for the plugin discovery endpoint helpers (``/schema`` and ``/capabilities``)."""
 
 from dataclasses import dataclass
 
@@ -740,7 +740,7 @@ class TestCapabilitiesEndpointRegistration:
     def test_non_class_return_annotation_raises_type_error(self) -> None:
         """Provider whose return annotation isn't a class fails."""
 
-        def provider() -> int | None:  # type: ignore[empty-body]
+        def provider() -> int | None:
             return None
 
         router = APIRouter()
@@ -750,7 +750,7 @@ class TestCapabilitiesEndpointRegistration:
     def test_non_basemodel_class_return_annotation_raises_type_error(self) -> None:
         """Provider returning a non-BaseModel class fails."""
 
-        def provider() -> dict:  # type: ignore[empty-body]
+        def provider() -> dict:
             return {}
 
         router = APIRouter()
@@ -764,7 +764,7 @@ class TestCapabilitiesEndpointRegistration:
         class _NotAModel:
             flag: bool
 
-        def provider() -> _NotAModel:  # type: ignore[empty-body]
+        def provider() -> _NotAModel:
             return _NotAModel(flag=True)
 
         router = APIRouter()
