@@ -13,7 +13,7 @@
 #   - MongoDBNoPrimary
 # ---
 
-set -e
+set -euo pipefail
 
 print_config_file() {
     local file="$1"
