@@ -40,6 +40,7 @@ from typing import Any
 from pydantic import BaseModel, computed_field, Field
 
 from app.core.utils.fields import NonEmptyStr, UniqueList
+from app.sep.plugins.framework.schema import PluginDeploymentCapabilities
 
 
 class SnippetResponse(BaseModel):
@@ -240,7 +241,7 @@ class RefreshResponse(BaseModel):
     refreshed_at: datetime
 
 
-class SnippetsCapabilitiesResponse(BaseModel):
+class SnippetsCapabilitiesResponse(PluginDeploymentCapabilities):
     """Represent per-deployment capability flags for the Snippets plugin.
 
     Exposes flags that gate the visibility of admin-only UI affordances

@@ -190,8 +190,8 @@ def capabilities_endpoint(
       gate privileged flags, expose them on a separate route, not here.
     - The provider must be a function (or method) with a return-type
       annotation that resolves to a :class:`pydantic.BaseModel` subclass.
-      Lambdas are rejected at registration time because their annotations
-      are unavailable in the usual way.
+      Lambdas are rejected because their syntax provides no way to declare
+      a return-type annotation.
     - The provider may declare arbitrary parameters; ``functools.wraps``
       preserves the signature so FastAPI inspects it and resolves any
       ``Depends(...)`` defaults per request (settings, session, current

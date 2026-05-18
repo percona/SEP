@@ -640,7 +640,7 @@ class TestCapabilitiesEndpointRegistration:
     """Inspect the router and the fail-fast guards in isolation."""
 
     def test_registers_single_get_capabilities_route(self) -> None:
-        """Helper registers exactly one ``GET /capabilities`` route."""
+        """Assert the helper registers exactly one ``GET /capabilities`` route."""
 
         def provider() -> _DummyCapabilities:
             return _DummyCapabilities(flag=True)
@@ -657,7 +657,7 @@ class TestCapabilitiesEndpointRegistration:
         assert routes[0].methods == {"GET"}
 
     def test_route_declares_api_authenticated(self) -> None:
-        """Route declares ``IsApiAuthenticated`` as a per-route dependency."""
+        """Assert the route declares ``IsApiAuthenticated`` as a per-route dependency."""
 
         def provider() -> _DummyCapabilities:
             return _DummyCapabilities(flag=True)
@@ -674,7 +674,7 @@ class TestCapabilitiesEndpointRegistration:
         assert get_api_authenticated_user in callables
 
     def test_response_model_inferred_from_return_annotation(self) -> None:
-        """Route's ``response_model`` matches the provider's return annotation."""
+        """Assert the route's ``response_model`` matches the provider's return annotation."""
 
         def provider() -> _DummyCapabilities:
             return _DummyCapabilities(flag=True)
@@ -690,7 +690,7 @@ class TestCapabilitiesEndpointRegistration:
         assert route.response_model is _DummyCapabilities
 
     def test_second_call_raises_value_error(self) -> None:
-        """Calling helper twice on same router raises ``ValueError``."""
+        """Assert calling the helper twice on same router raises ``ValueError``."""
 
         def provider() -> _DummyCapabilities:
             return _DummyCapabilities(flag=True)
@@ -702,7 +702,7 @@ class TestCapabilitiesEndpointRegistration:
             capabilities_endpoint(router, capabilities_provider=provider)
 
     def test_second_call_raises_value_error_on_prefixed_router(self) -> None:
-        """Duplicate guard works when the router carries a prefix."""
+        """Assert the duplicate guard works when the router carries a prefix."""
 
         def provider() -> _DummyCapabilities:
             return _DummyCapabilities(flag=True)
@@ -714,7 +714,7 @@ class TestCapabilitiesEndpointRegistration:
             capabilities_endpoint(router, capabilities_provider=provider)
 
     def test_coexists_with_schema_endpoint_on_same_router(self) -> None:
-        """Schema and capabilities helpers must not collide on the same router."""
+        """Assert schema and capabilities helpers do not collide on the same router."""
 
         def provider() -> _DummyCapabilities:
             return _DummyCapabilities(flag=True)
@@ -728,7 +728,7 @@ class TestCapabilitiesEndpointRegistration:
         assert "/capabilities" in paths
 
     def test_missing_return_annotation_raises_type_error(self) -> None:
-        """Provider without a return annotation fails at registration."""
+        """Assert a provider without a return annotation fails at registration."""
 
         def provider():  # no return annotation
             return _DummyCapabilities(flag=True)
@@ -738,7 +738,7 @@ class TestCapabilitiesEndpointRegistration:
             capabilities_endpoint(router, capabilities_provider=provider)
 
     def test_non_class_return_annotation_raises_type_error(self) -> None:
-        """Provider whose return annotation isn't a class fails."""
+        """Assert a provider whose return annotation isn't a class fails."""
 
         def provider() -> int | None:
             return None
@@ -748,7 +748,7 @@ class TestCapabilitiesEndpointRegistration:
             capabilities_endpoint(router, capabilities_provider=provider)
 
     def test_non_basemodel_class_return_annotation_raises_type_error(self) -> None:
-        """Provider returning a non-BaseModel class fails."""
+        """Assert a provider returning a non-BaseModel class fails."""
 
         def provider() -> dict:
             return {}
@@ -758,7 +758,7 @@ class TestCapabilitiesEndpointRegistration:
             capabilities_endpoint(router, capabilities_provider=provider)
 
     def test_dataclass_return_annotation_raises_type_error(self) -> None:
-        """A dataclass return annotation is not a BaseModel subclass — fails."""
+        """Assert a dataclass return annotation is not a BaseModel subclass — fails."""
 
         @dataclass
         class _NotAModel:
@@ -772,7 +772,7 @@ class TestCapabilitiesEndpointRegistration:
             capabilities_endpoint(router, capabilities_provider=provider)
 
     def test_async_provider_raises_type_error(self) -> None:
-        """An ``async def`` provider is rejected at registration.
+        """Assert an ``async def`` provider is rejected at registration.
 
         Calling an async function from the sync handler would return a
         coroutine object, which response_model serialisation cannot
@@ -789,7 +789,7 @@ class TestCapabilitiesEndpointRegistration:
             capabilities_endpoint(router, capabilities_provider=provider)
 
     def test_future_annotations_provider_resolved(self) -> None:
-        """Resolve a provider whose return annotation is stringized.
+        """Assert a provider whose return annotation is stringized.
 
         ``from __future__ import annotations`` stores every annotation
         as a string; the helper must resolve it back to the real class
@@ -824,7 +824,7 @@ class TestCapabilitiesEndpointRegistration:
         assert route.response_model is _DummyCapabilities
 
     def test_plain_basemodel_subclass_accepted(self) -> None:
-        """Any direct BaseModel subclass is accepted as the response type."""
+        """Assert any direct BaseModel subclass is accepted as the response type."""
 
         class _RawModel(BaseModel):
             flag: bool
@@ -856,7 +856,7 @@ class TestCapabilitiesEndpointAuthenticated:
     def test_authed_get_returns_provider_payload(
         self, authed_capabilities_client: TestClient
     ) -> None:
-        """An authed GET returns the provider's payload as JSON."""
+        """Assert an authed GET returns the provider's payload as JSON."""
         _provider_state["flag"] = True
         response = authed_capabilities_client.get(
             "/api/plugins/test-capabilities-endpoint/capabilities"
@@ -869,7 +869,7 @@ class TestCapabilitiesEndpointAuthenticated:
     def test_response_body_matches_pydantic_dump(
         self, authed_capabilities_client: TestClient
     ) -> None:
-        """Response equals the provider's pydantic dump."""
+        """Assert the response equals the provider's pydantic dump."""
         _provider_state["flag"] = False
         body = authed_capabilities_client.get(
             "/api/plugins/test-capabilities-endpoint/capabilities"
@@ -880,7 +880,7 @@ class TestCapabilitiesEndpointAuthenticated:
     def test_provider_invoked_per_request(
         self, authed_capabilities_client: TestClient
     ) -> None:
-        """Mutating provider state between requests is reflected live.
+        """Assert mutating provider state between requests is reflected live.
 
         Critical for hot-reload semantics: the helper must not cache
         the provider's return value across requests, or deployment-
@@ -900,7 +900,7 @@ class TestCapabilitiesEndpointAuthenticated:
 
 
 class TestCapabilitiesEndpointUnauthenticated:
-    """Unauthenticated access returns JSON 401 with no redirect."""
+    """Assert unauthenticated access returns JSON 401 with no redirect."""
 
     @pytest.fixture
     def unauthed_capabilities_client(self) -> TestClient:
@@ -911,7 +911,7 @@ class TestCapabilitiesEndpointUnauthenticated:
     def test_unauthed_get_returns_401_json(
         self, unauthed_capabilities_client: TestClient
     ) -> None:
-        """Unauthenticated GET returns 401 JSON, not a 303 redirect."""
+        """Assert unauthenticated GET returns 401 JSON, not a 303 redirect."""
         response = unauthed_capabilities_client.get(
             "/api/plugins/test-capabilities-endpoint/capabilities",
             follow_redirects=False,
@@ -922,7 +922,7 @@ class TestCapabilitiesEndpointUnauthenticated:
         assert "detail" in response.json()
 
     def test_naked_app_unauth_returns_401(self) -> None:
-        """Per-route dep gates the route even outside ``api_router``."""
+        """Assert the per-route dep gates the route even outside ``api_router``."""
         plugin_router = APIRouter()
         capabilities_endpoint(plugin_router, capabilities_provider=_stateful_provider)
         app = FastAPI()
@@ -937,7 +937,7 @@ class TestCapabilitiesEndpointUnauthenticated:
 
 
 class TestCapabilitiesEndpointOpenApi:
-    """The capabilities route documents itself in the OpenAPI spec."""
+    """Assert the capabilities route documents itself in the OpenAPI spec."""
 
     def test_openapi_documents_capabilities_response(
         self, regular_user: CasdoorUser
@@ -965,10 +965,10 @@ class TestCapabilitiesEndpointOpenApi:
 
 
 class TestCapabilitiesEndpointRuntime:
-    """Request-time failure modes are surfaced, not silently swallowed."""
+    """Assert request-time failure modes are surfaced, not silently swallowed."""
 
     def test_provider_exception_returns_500(self, regular_user: CasdoorUser) -> None:
-        """A provider raising at request time propagates to a 500.
+        """Assert a provider raising at request time propagates to a 500.
 
         Pins the documented "out of scope to swallow" contract: provider
         correctness is the caller's responsibility. A regression that
@@ -989,7 +989,7 @@ class TestCapabilitiesEndpointRuntime:
     def test_provider_with_depends_param_resolved(
         self, regular_user: CasdoorUser
     ) -> None:
-        """Provider params annotated with ``Depends`` resolve per request.
+        """Assert provider params annotated with ``Depends`` resolve per request.
 
         ``functools.wraps`` preserves the provider's signature so FastAPI
         inspects its parameter defaults and wires DI normally. This pins
