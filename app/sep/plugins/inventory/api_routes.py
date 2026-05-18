@@ -53,7 +53,16 @@ import logging
 from pathlib import Path
 from typing import Any, Literal, Self, TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
@@ -67,7 +76,15 @@ from app.core.exceptions import (
 from app.core.requests import RemoteAPI
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.deps import CurrentUser, InventoryAPI, TaskAPI
+from app.sep.crud import SyncItemManager
+from app.sep.deps import (
+    ApiCurrentUser,
+    CurrentUser,
+    InventoryAPI,
+    SessionDep,
+    TaskAPI,
+)
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory import payloads
 from app.sep.plugins.inventory.deps import (
