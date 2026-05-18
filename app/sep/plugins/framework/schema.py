@@ -20,6 +20,7 @@ __all__ = [
     "BaseField",
     "BoolField",
     "Capabilities",
+    "ChainedPredecessor",
     "Choice",
     "ChoiceField",
     "Column",
@@ -636,6 +637,39 @@ class DerivedTask(SchemaBaseModel):
     parent_link: bool = True
 
 
+class ChainedPredecessor(SchemaBaseModel):
+    """Represent a chained predecessor task that runs before the parent.
+
+    The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes
+    this spec when POSTing, PUTting, or DELETEing a plugin's tasks: each
+    predecessor is created with ``data["parent"]`` linked to the parent's
+    name (when ``parent_link`` is true) and named
+    ``f"{parent_name}{name_suffix}"``. After every create succeeds, the
+    cascade fires ``POST /execute/{first_predecessor_name}`` with
+    ``chain_task_names`` spanning the remaining predecessors followed by
+    the parent; ``chain_on_failure`` is derived from ``on_failure``
+    (``"halt"`` maps to ``False``, ``"continue"`` maps to ``True``). The
+    chain inherits ``_chain_on_failure`` chain-wide via celery's
+    :func:`_dispatch_chained_task`.
+
+    :param name_suffix: String appended to the parent's ``name`` to form
+        the predecessor's name (for example ``"-pre-checks"``).
+    :type name_suffix: NonEmptyStr
+    :param on_failure: Chain semantics when the predecessor terminates
+        non-successfully. ``"halt"`` (default) stops the chain;
+        ``"continue"`` lets the chain continue regardless. Translates to
+        the boolean ``chain_on_failure`` flag at execute time.
+    :type on_failure: Literal["halt", "continue"]
+    :param parent_link: When true, set ``data["parent"]`` on the
+        predecessor payload to the parent's ``name``. Defaults to ``True``.
+    :type parent_link: bool
+    """
+
+    name_suffix: NonEmptyStr
+    on_failure: Literal["halt", "continue"] = "halt"
+    parent_link: bool = True
+
+
 class Capabilities(SchemaBaseModel):
     """Represent plugin-level feature flags.
 
@@ -854,6 +888,12 @@ class PluginSchema(SchemaBaseModel):
         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
         across the parent and N derived siblings. Defaults to ``None``.
     :type derived: list[DerivedTask] | None
+    :param predecessors: Optional declarative specs for tasks that must run
+        before the parent. Consumed by
+        :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+        across the predecessors and the parent, including the chain wiring
+        applied at execute time. Defaults to ``None``.
+    :type predecessors: list[ChainedPredecessor] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -867,6 +907,7 @@ class PluginSchema(SchemaBaseModel):
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
     derived: list[DerivedTask] | None = None
+    predecessors: list[ChainedPredecessor] | None = None
 
     @field_validator("derived", mode="after")
     @classmethod
@@ -893,6 +934,45 @@ class PluginSchema(SchemaBaseModel):
         duplicates = sorted(suffix for suffix, count in counts.items() if count > 1)
         if duplicates:
             raise ValueError(f"Duplicate derived name_suffix values: {duplicates}")
+        return value
+
+    @field_validator("predecessors", mode="after")
+    @classmethod
+    def _validate_predecessors(
+        cls, value: list[ChainedPredecessor] | None
+    ) -> list[ChainedPredecessor] | None:
+        """Reject duplicate ``name_suffix`` and mixed ``on_failure`` values.
+
+        Duplicate suffixes would cause deterministic task-name collisions on
+        cascade. Mixed ``on_failure`` policies cannot be expressed by the
+        underlying chain machinery: celery's
+        :func:`_dispatch_chained_task` inherits ``_chain_on_failure`` from
+        the parent's execution request and applies it to every chained
+        step (``app/tasks/celery.py:673-675``). Reject both at schema
+        construction time so the failure surfaces at plugin load, not on
+        first task creation.
+
+        :param value: The validated ``predecessors`` list, or ``None``.
+        :type value: list[ChainedPredecessor] | None
+        :return: The input ``value`` unchanged when valid.
+        :rtype: list[ChainedPredecessor] | None
+        :raises ValueError: When two entries share a ``name_suffix`` or when
+            the entries have differing ``on_failure`` values.
+        """
+        if not value:
+            return value
+        counts = Counter(spec.name_suffix for spec in value)
+        duplicates = sorted(suffix for suffix, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(f"Duplicate predecessors name_suffix values: {duplicates}")
+        on_failure_values = {spec.on_failure for spec in value}
+        if len(on_failure_values) > 1:
+            raise ValueError(
+                "Mixed on_failure policies in predecessors are not supported; "
+                "all entries must share the same on_failure value because "
+                "celery's chain machinery inherits _chain_on_failure chain-wide. "
+                f"Found: {sorted(on_failure_values)}"
+            )
         return value
 
     @model_validator(mode="after")
