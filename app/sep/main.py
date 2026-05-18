@@ -138,6 +138,7 @@ _TASK_INFRA_PLUGINS = frozenset(
         "backup_mongo",
         "backup_pg",
         "checksums",
+        "gascan",
     }
 )
 

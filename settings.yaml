@@ -83,6 +83,10 @@ default:
         MODULE_NAME: checksums
         URI_PATH: /checksums
         CSS_CLASS: checksums
+      - NAME: Gascan
+        MODULE_NAME: gascan
+        URI_PATH: /gascan
+        CSS_CLASS: gascan
       - NAME: MongoDB Backups
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo

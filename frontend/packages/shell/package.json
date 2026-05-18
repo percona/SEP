@@ -28,6 +28,7 @@
     "@sep/plugin-alert-troubleshooting": "workspace:*",
     "@sep/plugin-atw": "workspace:*",
     "@sep/plugin-checksums": "workspace:*",
+    "@sep/plugin-gascan": "workspace:*",
     "@sep/plugin-dipper": "workspace:*",
     "@sep/plugins-snippets": "workspace:*",
     "@sep/shared": "workspace:*",

@@ -1,0 +1,196 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define routes for the gascan plugin."""
+
+import logging
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import FutureDatetime
+
+from app.core.alerts.config import alert_settings
+from app.sep.config import sep_settings
+from app.sep.deps import (
+    DefaultContext,
+    ExecutorHostsCtx,
+    get_chainable_tasks,
+    HasNoConflictedRunningTasks,
+    IsAuthenticated,
+    IsCsrfValidated,
+    TaskAPI,
+)
+from app.sep.plugins.gascan.deps import (
+    GascanGeneratedTask,
+    GascanTask,
+    get_gascan_index_context,
+    parse_gascan_task_args,
+)
+from app.tasks.models import TaskHistoryStatusEnum
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+templates = sep_settings.TEMPLATES
+
+
+@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def gascan_index(
+    request: Request,
+    context: Annotated[dict[str, Any], Depends(get_gascan_index_context)],
+) -> HTMLResponse:
+    """Homepage of the gascan plugin."""
+    context["csrf_token"] = request.state.csrf_token
+    return templates.TemplateResponse(
+        request=request,
+        name="gascan/index.html.j2",
+        context=context,
+    )
+
+
+@router.post(
+    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
+)
+async def gascan_create(
+    request: Request,
+    task: GascanGeneratedTask,
+    task_api: TaskAPI,
+) -> RedirectResponse:
+    """Create a gascan task."""
+    logger.debug("Create gascan task: %s", task)
+    await task_api.post(
+        "/",
+        json=task.model_dump(),
+    )
+
+    task_path = request.url_for("gascan_detail", task_name=task.name)
+    return RedirectResponse(
+        task_path,
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def gascan_detail(
+    task: GascanTask,
+    request: Request,
+    context: DefaultContext,
+    tasks_api: TaskAPI,
+    executor_hosts_ctx: ExecutorHostsCtx,
+) -> HTMLResponse:
+    """Retrieve a gascan task."""
+    data = task.data
+    meta = data["meta"]
+    decoded_entities = task.anonymized_entities
+    task_data = {
+        "name": task.name,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+        "created_by": task.created_by,
+        "last_updated_by": task.last_updated_by,
+        "hostname": meta["target"],
+        "cmd": f"{meta['command']} {meta['args']}",
+        "meta": meta,
+        "entities": {entity.name: entity.value for entity in decoded_entities},
+        "delete_url": request.url_for("gascan_delete", task_name=task.name),
+        "alert_on_fail": task.alert_on_fail,
+        "is_edit_enabled": not task.protected,
+    }
+    task_data.update(parse_gascan_task_args(meta))
+
+    context["task"] = task_data
+    context["executor_hosts"] = executor_hosts_ctx.with_host(
+        task_data["hostname"]
+    ).as_template_list()
+
+    response = await tasks_api.get(f"/{task.name}/history/")
+    context["history"] = response["items"]
+    response = await tasks_api.get(
+        f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    )
+    context["running_tasks"] = response["items"]
+    context["stats"] = await tasks_api.get(f"/stats/{task.name}")
+    context["alert_on_fail_default"] = task_data["alert_on_fail"]
+    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
+    context["chainable_tasks"] = await get_chainable_tasks(
+        tasks_api, task.owner, meta["target"], task.name
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="gascan/details.html.j2",
+        context=context,
+    )
+
+
+@router.post(
+    "/{task_name}",
+    dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
+    response_class=RedirectResponse,
+)
+async def gascan_execute(
+    task: GascanTask,
+    tasks_api: TaskAPI,
+    eta: Annotated[FutureDatetime | None, Form()] = None,
+    chain_task_names: Annotated[list[str] | None, Form()] = None,
+    chain_on_failure: Annotated[bool | None, Form()] = None,
+) -> RedirectResponse:
+    """Execute a gascan task."""
+    await tasks_api.post(
+        f"/execute/{task.name}",
+        json={
+            "eta": eta,
+            "chain_task_names": chain_task_names,
+            "chain_on_failure": chain_on_failure,
+        },
+    )
+    return RedirectResponse("/gascan", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/update",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def gascan_update(
+    request: Request,
+    task_name: str,
+    updated_task: GascanGeneratedTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Update a gascan task."""
+    logger.debug("Updating gascan task: %s", updated_task)
+    await tasks_api.put(
+        f"/{task_name}",
+        json=updated_task.model_dump(),
+    )
+
+    return RedirectResponse(
+        request.url_for("gascan_detail", task_name=updated_task.name),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post(
+    "/{task_name}/delete",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def gascan_delete(
+    task: GascanTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Delete a gascan task."""
+    await tasks_api.delete(f"/{task.name}")
+    return RedirectResponse("/gascan", status_code=status.HTTP_303_SEE_OTHER)

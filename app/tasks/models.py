@@ -202,6 +202,8 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     :vartype RESTORES: str
     :cvar CHECKSUMS: Value for checksum tasks.
     :vartype CHECKSUMS: str
+    :cvar GASCAN: Value for gascan management tasks.
+    :vartype GASCAN: str
     """
 
     ANY = "ANY"
@@ -210,6 +212,7 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     BACKUPS = "BACKUPS"
     RESTORES = "RESTORES"
     CHECKSUMS = "CHECKSUMS"
+    GASCAN = "GASCAN"
     BACKUP_MONGO = "BACKUP_MONGO"
     RESTORE_MONGO = "RESTORE_MONGO"
     BACKUP_PG = "BACKUP_PG"
