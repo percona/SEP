@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-#Test comment
 
 # ---
 # allow_extra_args: false
