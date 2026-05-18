@@ -20,25 +20,25 @@ implemented in ``app.sep.plugins.inventory.deps``; see
 ``tests/app/sep/plugins/inventory/test_deps.py`` for direct unit coverage.
 """
 
+import json
 from unittest.mock import AsyncMock
 
-import json, pytest
+import pytest
 from fastapi import status
 
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.inventory import api_routes as inventory_api_routes
-from app.sep.plugins.inventory.api_routes import _topology_event_stream
-from app.sep.plugins.inventory.deps import INVENTORY_PLUGIN_ENTITY_NAMES
-from app.sep.plugins.inventory.topology import TOPOLOGY_JOB_PREFIX
 from app.sep.crud import SyncItemManager
 from app.sep.main import sep_app
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.inventory import api_routes as inventory_api_routes
+from app.sep.plugins.inventory.api_routes import _topology_event_stream
 from app.sep.plugins.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
 )
+from app.sep.plugins.inventory.topology import TOPOLOGY_JOB_PREFIX
 from tests.app.sep.plugins.inventory.conftest import no_syncers, PMM_STUB_NAME
 
 _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
@@ -452,6 +452,8 @@ class TestInventorySyncStatus:
             )
         finally:
             sep_app.openapi_schema = prior_schema
+
+
 def _mysql_service(
     service_id: int, address: str, port: int = DEFAULT_MYSQL_PORT
 ) -> dict:

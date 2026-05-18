@@ -167,6 +167,8 @@ async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusRespo
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
     return InventorySyncStatusResponse(is_running=is_running)
+
+
 _TOPOLOGY_PAYLOAD_PATH = Path(payloads.__file__).parent / "topology.py"
 _TOPOLOGY_TASK = "run-python"
 _TOPOLOGY_STDOUT_STEP = "run-script"
