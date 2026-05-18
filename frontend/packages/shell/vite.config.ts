@@ -66,10 +66,6 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      '/stop-task': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
     },
   },
   optimizeDeps: {
