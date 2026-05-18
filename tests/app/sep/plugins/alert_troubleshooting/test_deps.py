@@ -270,6 +270,17 @@ class TestCollectGroupedAlerts:
         labels = [a.label for a in result[AlertServiceType.GENERIC]]
         assert labels == sorted(labels)
 
+    def test_service_types_returned_in_label_order(self):
+        """Assert service-type keys are sorted by label regardless of insertion order."""
+        snippets = [
+            _fake_snippet({"alerts": ["MongoDBReplicaLag"], "service_type": "mongodb"}),
+            _fake_snippet({"alerts": ["MySQLSlowQueries"], "service_type": "mysql"}),
+        ]
+        result = collect_grouped_alerts(snippets)
+        keys = list(result.keys())
+        labels = [k.label for k in keys]
+        assert labels == sorted(labels), f"Expected sorted labels, got {labels}"
+
     def test_no_snippets(self):
         """Assert empty snippet list produces empty result."""
         result = collect_grouped_alerts([])

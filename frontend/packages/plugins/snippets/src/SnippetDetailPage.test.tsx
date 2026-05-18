@@ -15,31 +15,27 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useSnippetPluginSchema } from '@sep/framework';
 import { SnippetDetailPage } from './SnippetDetailPage';
-import { useSnippetDownload, useSnippetExecution, useSnippetHistory } from './hooks';
+import { useSnippetDownload, useSnippetSchema } from './hooks';
 
 vi.mock('./hooks', () => ({
-  useSnippetHistory: vi.fn(),
-  useSnippetExecution: vi.fn(),
+  useSnippetSchema: vi.fn(),
   useSnippetDownload: vi.fn(),
 }));
 
 vi.mock('@sep/framework', () => ({
-  useSnippetPluginSchema: vi.fn(),
-  snippetPluginSchemaPath: (filename: string) =>
-    `/plugins/snippets/snippet/schema?snippet_filename=${encodeURIComponent(filename)}`,
-  SchemaFormRenderer: () => <div>Execution form</div>,
-  TaskHistoryTable: () => <div>History table</div>,
-  TaskLogViewer: () => <div>Logs viewer</div>,
+  SnippetExecutionAccordion: ({ title, description }: { title?: string; description?: string }) => (
+    <div data-testid="snippet-execution-accordion">
+      {title && <span data-testid="accordion-title">{title}</span>}
+      {description && <span data-testid="accordion-description">{description}</span>}
+    </div>
+  ),
 }));
 
-const mockSchema = vi.mocked(useSnippetPluginSchema);
-const mockHistory = vi.mocked(useSnippetHistory);
-const mockExecution = vi.mocked(useSnippetExecution);
+const mockSchema = vi.mocked(useSnippetSchema);
 const mockDownload = vi.mocked(useSnippetDownload);
 
 function renderAt(filename: string) {
@@ -52,82 +48,74 @@ function renderAt(filename: string) {
   );
 }
 
-describe('SnippetDetailPage — Download button', () => {
-  const mutate = vi.fn();
-  const reset = vi.fn();
-
+describe('SnippetDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSchema.mockReturnValue({
-      data: {
-        name: 'snippets',
-        display_name: 'hello.sh',
-        description: 'A friendly snippet',
-        forms: [],
-        list_view: { columns: [] },
-      },
+      data: undefined,
       isLoading: false,
       error: null,
-    } as unknown as ReturnType<typeof useSnippetPluginSchema>);
-    mockHistory.mockReturnValue({
-      data: { items: [], total: 0, offset: 0, limit: 50 },
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSnippetHistory>);
-    mockExecution.mockReturnValue({
+    } as unknown as ReturnType<typeof useSnippetSchema>);
+    mockDownload.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
       isError: false,
       error: null,
-    } as unknown as ReturnType<typeof useSnippetExecution>);
-    mockDownload.mockReturnValue({
-      mutate,
-      reset,
-      isPending: false,
-      isError: false,
+      reset: vi.fn(),
+    } as unknown as ReturnType<typeof useSnippetDownload>);
+  });
+
+  it('passes display_name from schema as accordion title', () => {
+    mockSchema.mockReturnValue({
+      data: { display_name: 'My Snippet', description: undefined },
+      isLoading: false,
       error: null,
-    } as unknown as ReturnType<typeof useSnippetDownload>);
+    } as unknown as ReturnType<typeof useSnippetSchema>);
+
+    renderAt('my-snippet.sh');
+
+    expect(screen.getByTestId('accordion-title')).toHaveTextContent('My Snippet');
   });
 
-  it('fires the download mutation when the Download button is clicked', () => {
-    renderAt('hello.sh');
-
-    const button = screen.getByRole('button', { name: 'Download hello.sh' });
-    fireEvent.click(button);
-
-    expect(mutate).toHaveBeenCalledTimes(1);
-  });
-
-  it('disables the Download button while the mutation is pending', () => {
-    mockDownload.mockReturnValue({
-      mutate,
-      reset,
-      isPending: true,
-      isError: false,
+  it('falls back to filename as title when schema has no display_name', () => {
+    mockSchema.mockReturnValue({
+      data: undefined,
+      isLoading: false,
       error: null,
-    } as unknown as ReturnType<typeof useSnippetDownload>);
+    } as unknown as ReturnType<typeof useSnippetSchema>);
 
-    renderAt('hello.sh');
+    renderAt('fallback.sh');
 
-    const button = screen.getByRole('button', { name: 'Download hello.sh' });
-    expect(button).toBeDisabled();
+    expect(screen.getByTestId('accordion-title')).toHaveTextContent('fallback.sh');
   });
 
-  it('surfaces a download error inline without crashing the page', () => {
-    mockDownload.mockReturnValue({
-      mutate,
-      reset,
-      isPending: false,
-      isError: true,
-      error: new Error('boom'),
-    } as unknown as ReturnType<typeof useSnippetDownload>);
+  it('passes description from schema to accordion', () => {
+    mockSchema.mockReturnValue({
+      data: { display_name: 'My Snippet', description: 'Does useful things' },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippetSchema>);
 
-    renderAt('hello.sh');
+    renderAt('my-snippet.sh');
 
-    expect(screen.getByText(/Failed to download snippet:/)).toBeInTheDocument();
-    expect(screen.getByText(/boom/)).toBeInTheDocument();
-    // The rest of the page must still render — the error sits next to the
-    // existing schema form, not in place of it.
-    expect(screen.getByText('Execution form')).toBeInTheDocument();
+    expect(screen.getByTestId('accordion-description')).toHaveTextContent('Does useful things');
+  });
+
+  it('renders back navigation link', () => {
+    renderAt('check.sh');
+
+    expect(screen.getByRole('button', { name: /back to snippets/i })).toBeInTheDocument();
+  });
+
+  it('renders the SnippetExecutionAccordion', () => {
+    renderAt('check.sh');
+
+    expect(screen.getByTestId('snippet-execution-accordion')).toBeInTheDocument();
+  });
+
+  it('calls useSnippetSchema with executionOnly=true to avoid a duplicate schema fetch', () => {
+    renderAt('check.sh');
+
+    expect(mockSchema).toHaveBeenCalledWith('check.sh', true);
   });
 });

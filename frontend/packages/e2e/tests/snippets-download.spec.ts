@@ -183,9 +183,11 @@ test.describe('Snippet detail — download', () => {
 
     await page.goto(PLUGIN_ROUTE);
 
-    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME, exact: true })).toBeVisible(
+      {
+        timeout: 30_000,
+      },
+    );
 
     const downloadButton = page.getByRole('button', {
       name: `Download ${SNIPPET_FILENAME}`,
@@ -212,9 +214,11 @@ test.describe('Snippet detail — download', () => {
 
     await page.goto(PLUGIN_ROUTE);
 
-    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME, exact: true })).toBeVisible(
+      {
+        timeout: 30_000,
+      },
+    );
 
     await page.getByRole('button', { name: `Download ${SNIPPET_FILENAME}` }).click();
 
