@@ -40,6 +40,7 @@ from typing import Any
 from pydantic import BaseModel, computed_field, Field
 
 from app.core.utils.fields import NonEmptyStr, UniqueList
+from app.sep.plugins.framework.schema import PluginDeploymentCapabilities
 
 
 class SnippetResponse(BaseModel):
@@ -240,12 +241,18 @@ class RefreshResponse(BaseModel):
     refreshed_at: datetime
 
 
-class SnippetsCapabilitiesResponse(BaseModel):
+class SnippetsCapabilitiesResponse(PluginDeploymentCapabilities):
     """Represent per-deployment capability flags for the Snippets plugin.
 
     Exposes flags that gate the visibility of admin-only UI affordances
     (currently the manual refresh button) so the React shell can decide
     whether to render those controls without probing the gated endpoints.
+
+    Distinct from :class:`~app.sep.plugins.framework.schema.Capabilities`,
+    which describes static UI feature flags on
+    :attr:`~app.sep.plugins.framework.schema.PluginSchema.capabilities`
+    (chaining, scheduling, alert_on_fail). This model is the per-
+    deployment runtime counterpart returned by ``GET /capabilities``.
 
     :param manual_sync_enabled: Whether manual snippet refresh is enabled
         in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).
