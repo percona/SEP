@@ -29,6 +29,15 @@ for the schema-driven React client. POST and PUT bodies are parsed with the
 ``inventory_plugin_json_object_body``) so non-object JSON consistently yields
 HTTP 422.
 
+In addition to CRUD, this router mounts the ad-hoc inventory-sync trigger
+(``POST /sync/``) and the running-state polling endpoint
+(``GET /sync/status/``) consumed by the React inventory sync control. Periodic
+``/schedule/`` and node/service/schema-scoped sync routes remain on the Jinja2
+router for now and are owned by SEP-1141 / a Wave 3 follow-up; do not mount
+them here without coordinating with those tickets. The inventory service
+remains the canonical CRUD surface at ``/api/inventory/*``; this router is the
+typed entry point for the React plugin.
+
 Schedule and periodic sync routes are not mounted here so SEP-1058 can own the
 React schedule UI; do not add schedule or inventory-sync proxy routes without
 coordinating with that ticket. The inventory service remains the canonical CRUD
@@ -62,15 +71,20 @@ from app.sep.deps import CurrentUser, InventoryAPI, TaskAPI
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory import payloads
 from app.sep.plugins.inventory.deps import (
+    filter_syncers_by_name,
     inventory_plugin_query_params,
     inventory_service_create_path,
     inventory_service_detail_path,
     inventory_service_list_path,
     InventoryPluginJsonObjectBody,
+    InventorySyncStatusResponse,
+    InventorySyncTriggerWrite,
     require_inventory_plugin_entity,
+    SyncersDep,
     unwrap_inventory_plugin_list_payload,
 )
 from app.sep.plugins.inventory.schema import inventory_schema
+from app.sep.plugins.inventory.sync import run_inventory_sync
 from app.sep.plugins.inventory.topology import (
     build_graph_from_stdouts,
     build_topology_meta,
@@ -88,6 +102,71 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
 
+# Module-level singleton avoids the B008 lint warning about function calls in
+# argument defaults; the optional-body semantics are unchanged.
+_OPTIONAL_TRIGGER_BODY = Body(default=None)
+
+
+@router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
+async def inventory_sync_trigger(
+    user: ApiCurrentUser,
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+    body: InventorySyncTriggerWrite | None = _OPTIONAL_TRIGGER_BODY,
+) -> Response:
+    """Schedule an ad-hoc inventory sync as a background task.
+
+    Mirrors the Jinja2 ``POST /inventory/sync/`` handler but accepts an
+    optional JSON body ``{"syncer": "<qualified_name>"}``. When ``syncer``
+    is absent, ``None``, or empty, every configured syncer runs in
+    declaration order; otherwise only the named syncer is forwarded. An
+    unknown or inapplicable syncer raises HTTP 400 — never a silent no-op.
+
+    :param user: Current API-authenticated user; the access token is
+        forwarded to the background task.
+    :type user: ApiCurrentUser
+    :param syncers: Configured syncers from ``SyncersDep``.
+    :type syncers: SyncersDep
+    :param background_tasks: FastAPI's background task scheduler.
+    :type background_tasks: BackgroundTasks
+    :param body: Optional trigger body.
+    :type body: InventorySyncTriggerWrite | None
+    :return: Empty 202 Accepted response.
+    :rtype: Response
+    :raises HTTPBadRequestException: When ``body.syncer`` is set but does
+        not match any configured syncer that can sync inventory.
+    """
+    syncer_name = body.syncer if body is not None else None
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_inventory(),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
+    background_tasks.add_task(run_inventory_sync, user.access_token, *selected)
+    return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+@router.get("/sync/status/")
+async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusResponse:
+    """Return whether an inventory-wide sync is currently running.
+
+    Replaces the server-rendered ``sync_is_running`` template variable
+    used by the Jinja2 inventory page so the React control can poll the
+    same state without scraping HTML.
+
+    :param session: SQLModel async session.
+    :type session: SessionDep
+    :return: ``{"is_running": <bool>}``.
+    :rtype: InventorySyncStatusResponse
+    """
+    is_running = await SyncItemManager.sync_is_running(
+        session,
+        SyncInventoryEntityTypeEnum.INVENTORY,
+    )
+    return InventorySyncStatusResponse(is_running=is_running)
 _TOPOLOGY_PAYLOAD_PATH = Path(payloads.__file__).parent / "topology.py"
 _TOPOLOGY_TASK = "run-python"
 _TOPOLOGY_STDOUT_STEP = "run-script"
