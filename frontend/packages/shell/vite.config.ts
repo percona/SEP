@@ -42,16 +42,24 @@ export default defineConfig({
     port: 5174,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'https://localhost:8444',
         changeOrigin: true,
+        secure: false,
       },
-      '/sep_app': {
-        target: 'http://localhost:8000',
+      '/stream-logs': {
+        target: 'https://localhost:8444',
         changeOrigin: true,
+        secure: false,
       },
       '/legacy': {
-        target: 'http://localhost:8000',
+        target: 'https://localhost:8444',
         changeOrigin: true,
+        secure: false,
+      },
+      '/static': {
+        target: 'https://localhost:8444',
+        changeOrigin: true,
+        secure: false,
       },
     },
   },

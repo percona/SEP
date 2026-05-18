@@ -41,6 +41,9 @@ const InventoryPlugin = lazy(() =>
 const SnippetsPluginLazy = lazy(() =>
   import('@sep/plugins-snippets').then((m) => ({ default: m.SnippetsPlugin })),
 );
+const MumPlugin = lazy(() =>
+  import('@sep/plugin-mum').then((m) => ({ default: m.MumPlugin })),
+);
 
 function SnippetsPlugin() {
   const { isAdmin } = useAuth();
@@ -68,6 +71,7 @@ export const router = createBrowserRouter([
           { path: 'tasks/*', element: <PlaceholderPage /> },
           { path: 'snippets/*', element: <SnippetsPlugin /> },
           { path: 'atw/*', element: <AtwPlugin /> },
+          { path: 'mum/*', element: <MumPlugin /> },
           { path: 'dipper/*', element: <DipperPlugin /> },
           { path: 'alerts/templates', element: <PlaceholderPage /> },
           { path: 'alerts/troubleshooting', element: <PlaceholderPage /> },

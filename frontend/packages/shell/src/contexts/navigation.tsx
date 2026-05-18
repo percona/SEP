@@ -31,6 +31,7 @@ import ArchiveIcon from '@mui/icons-material/Archive';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import ScienceIcon from '@mui/icons-material/Science';
+import GroupIcon from '@mui/icons-material/Group';
 import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { SvgIconProps } from '@mui/material';
@@ -75,6 +76,7 @@ const defaultNavItems: NavItem[] = [
   },
   { title: 'Archive', icon: ArchiveIcon, to: '/archive' },
   { title: 'Dipper Data Collection', icon: ScienceIcon, to: '/dipper' },
+  { title: 'MongoDB User Management', icon: GroupIcon, to: '/mum' },
   { title: 'Reports', icon: BarChartIcon, to: '/reports' },
 ];
 

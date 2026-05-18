@@ -305,6 +305,34 @@ importers:
         specifier: ^4.0.0
         version: 4.1.5(@types/node@22.19.17)(jsdom@29.1.1)(msw@2.14.4(@types/node@22.19.17)(typescript@6.0.3))(vite@8.0.12(@types/node@22.19.17)(esbuild@0.27.7)(tsx@4.21.0))
 
+  packages/plugins/mum:
+    dependencies:
+      '@emotion/react':
+        specifier: ^11.0.0
+        version: 11.14.0(@types/react@19.2.14)(react@19.2.6)
+      '@emotion/styled':
+        specifier: ^11.0.0
+        version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6)
+      '@mui/material':
+        specifier: ^7.3.7
+        version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@sep/api':
+        specifier: workspace:*
+        version: link:../../api
+      react:
+        specifier: ^19.0.0
+        version: 19.2.6
+      react-router-dom:
+        specifier: ^7.0.0
+        version: 7.15.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.14
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
   packages/plugins/inventory:
     dependencies:
       '@mui/material':
@@ -477,6 +505,9 @@ importers:
       '@sep/plugin-dipper':
         specifier: workspace:*
         version: link:../plugins/dipper
+      '@sep/plugin-mum':
+        specifier: workspace:*
+        version: link:../plugins/mum
       '@sep/plugins-snippets':
         specifier: workspace:*
         version: link:../plugins/snippets
