@@ -170,7 +170,7 @@ These are some, but not all, the possible settings you can have, per app:
 | SEP__SESSION__MAX_AGE      | sep       | no       | 3600                                                | 3600                                             |
 | SEP__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                        |
 | SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
-| SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/inventory/docs, /api/tasks/docs] |
+| SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
 
 
@@ -223,6 +223,7 @@ SEP supports configurable security headers through the `SEP__SECURITY_HEADERS` s
 SEP:
   SECURITY_HEADERS:
     CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+      - /api/docs
       - /api/inventory/docs
       - /api/tasks/docs
 ```
