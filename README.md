@@ -143,14 +143,12 @@
 | app/sep/plugins/framework/deprecation.py                                                                    |       16 |        0 |    100% |           |
 | app/sep/plugins/framework/rules.py                                                                          |      474 |        6 |     99% |307, 312, 317, 477, 793, 810 |
 | app/sep/plugins/framework/schema.py                                                                         |      212 |        1 |     99% |       912 |
-| app/sep/plugins/inventory/api\_routes.py                                                                    |      279 |       31 |     89% |263, 287, 295, 350, 371, 377, 388, 430, 433-435, 452-453, 553, 566-576, 601, 623-625, 637, 658 |
+| app/sep/plugins/inventory/api\_routes.py                                                                    |       51 |        0 |    100% |           |
 | app/sep/plugins/inventory/deps.py                                                                           |      128 |       13 |     90% |239-263, 356-361, 404, 411 |
 | app/sep/plugins/inventory/models.py                                                                         |       27 |        1 |     96% |        78 |
-| app/sep/plugins/inventory/payloads/topology.py                                                              |      176 |       81 |     54% |68-70, 82, 102-103, 119-121, 123, 127-129, 134, 137-141, 161-176, 180, 182, 226-227, 262, 279-280, 284-293, 312-313, 315, 350, 385-386, 400-437, 449-454, 458 |
 | app/sep/plugins/inventory/routes.py                                                                         |      175 |        0 |    100% |           |
 | app/sep/plugins/inventory/schema.py                                                                         |        8 |        0 |    100% |           |
 | app/sep/plugins/inventory/sync.py                                                                           |       31 |        0 |    100% |           |
-| app/sep/plugins/inventory/topology.py                                                                       |      155 |        7 |     95% |100-101, 135, 138-139, 289, 351 |
 | app/sep/plugins/mysql\_backups/deps.py                                                                      |       74 |       11 |     85% |100, 137, 192, 198-200, 204, 206, 209-210, 291 |
 | app/sep/plugins/mysql\_backups/models.py                                                                    |       91 |        1 |     99% |       286 |
 | app/sep/plugins/mysql\_backups/restore/deps.py                                                              |       69 |       11 |     84% |78-84, 103, 119, 204, 220-225, 258 |
@@ -186,7 +184,7 @@
 | app/sep/sync/models.py                                                                                      |      348 |       60 |     83% |75-84, 98-100, 119, 267-269, 330, 390-391, 424, 478-480, 537, 567, 583, 603-607, 708, 722, 742-743, 823, 837, 859-860, 941, 954, 978-980, 1052, 1065, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py                                                                       |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                        |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       22 |     76% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 291-294, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       19 |     80% |83-87, 107-110, 121, 176-184, 232, 236-252, 344 |
 | app/sep/tasks.py                                                                                            |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                 |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                      |       20 |        0 |    100% |           |
@@ -195,7 +193,7 @@
 | app/tasks/anonymizer/anonymize.py                                                                           |       50 |        0 |    100% |           |
 | app/tasks/anonymizer/config.py                                                                              |       27 |        1 |     96% |        68 |
 | app/tasks/anonymizer/entities.py                                                                            |       28 |        0 |    100% |           |
-| app/tasks/celery.py                                                                                         |      288 |       10 |     97% |297, 307-308, 331-333, 610, 669, 692-693 |
+| app/tasks/celery.py                                                                                         |      288 |       10 |     97% |297, 307-308, 331-333, 610, 671, 694-695 |
 | app/tasks/config.py                                                                                         |       22 |        0 |    100% |           |
 | app/tasks/connectivity/constants.py                                                                         |        4 |        0 |    100% |           |
 | app/tasks/connectivity/models.py                                                                            |       11 |        0 |    100% |           |
@@ -215,13 +213,13 @@
 | app/tasks/logs/log\_reader.py                                                                               |       54 |        0 |    100% |           |
 | app/tasks/logs/log\_writer.py                                                                               |      123 |        8 |     93% |116, 226-227, 349, 353, 357, 537, 543 |
 | app/tasks/main.py                                                                                           |       58 |        9 |     84% |57-60, 134-135, 142-146 |
-| app/tasks/models.py                                                                                         |      293 |        3 |     99% |599, 1048-1049 |
+| app/tasks/models.py                                                                                         |      291 |        3 |     99% |591, 1040-1041 |
 | app/tasks/periodic/crud.py                                                                                  |       26 |        0 |    100% |           |
 | app/tasks/periodic/deps.py                                                                                  |       11 |        0 |    100% |           |
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      219 |       39 |     82% |125-129, 186, 207-214, 246, 295-303, 353-354, 381-382, 410-411, 430, 563, 587, 600-614, 635-648, 664-665 |
-| **TOTAL**                                                                                                   | **15909** | **2249** | **86%** |           |
+| **TOTAL**                                                                                                   | **15348** | **2127** | **86%** |           |
 
 
 ## Setup coverage badge
