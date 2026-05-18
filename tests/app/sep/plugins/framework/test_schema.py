@@ -1333,3 +1333,32 @@ class TestPluginSchemaPredecessorsField:
 
         assert schema.predecessors is not None
         assert len(schema.predecessors) == 1
+
+    def test_shared_suffix_with_derived_is_rejected(self) -> None:
+        """Reject ``name_suffix`` shared between ``derived`` and ``predecessors``."""
+        with pytest.raises(
+            ValidationError,
+            match="name_suffix values shared between derived and predecessors",
+        ):
+            PluginSchema(
+                name="chain-demo",
+                display_name="Chain Demo",
+                forms=[],
+                list_view=_minimal_list_view(),
+                derived=[DerivedTask(name_suffix="-x")],
+                predecessors=[ChainedPredecessor(name_suffix="-x")],
+            )
+
+    def test_disjoint_suffixes_with_derived_accepted(self) -> None:
+        """Accept ``derived`` and ``predecessors`` when their suffixes do not overlap."""
+        schema = PluginSchema(
+            name="chain-demo",
+            display_name="Chain Demo",
+            forms=[],
+            list_view=_minimal_list_view(),
+            derived=[DerivedTask(name_suffix="-dry-run")],
+            predecessors=[ChainedPredecessor(name_suffix="-pre-checks")],
+        )
+
+        assert schema.derived is not None
+        assert schema.predecessors is not None

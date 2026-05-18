@@ -976,6 +976,34 @@ class PluginSchema(SchemaBaseModel):
         return value
 
     @model_validator(mode="after")
+    def _validate_cascade_suffixes_disjoint(self) -> Self:
+        """Reject ``name_suffix`` values shared between ``derived`` and ``predecessors``.
+
+        Both cascade families produce task names of the form
+        ``f"{parent_name}{name_suffix}"`` on cascade. A suffix declared on
+        both lists would target the same task name on the tasks API, so
+        the create/update/delete flow that manages both task sets would
+        collide deterministically. Reject at schema-construction time so
+        the failure surfaces at plugin load rather than on first cascade.
+
+        :return: The validated plugin schema instance.
+        :rtype: PluginSchema
+        :raises ValueError: When the two lists share at least one
+            ``name_suffix`` value.
+        """
+        if not self.derived or not self.predecessors:
+            return self
+        derived_suffixes = {spec.name_suffix for spec in self.derived}
+        predecessor_suffixes = {spec.name_suffix for spec in self.predecessors}
+        shared = sorted(derived_suffixes & predecessor_suffixes)
+        if shared:
+            raise ValueError(
+                f"name_suffix values shared between derived and predecessors "
+                f"would collide on cascade: {shared}"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
         """Ensure every field name is unique within the active form set.
 
