@@ -23,6 +23,7 @@ import {
   snippetPluginDownloadPath,
   snippetPluginExecutePath,
   snippetPluginHistoryPath,
+  snippetPluginSchemaPath,
   type PaginatedTaskHistory,
 } from '@sep/framework';
 import type {
@@ -92,8 +93,11 @@ export function useSnippetSchema(filename: string | undefined, executionOnly = f
       ? ['snippets', filename, 'schema', { execution_only: true }]
       : ['snippets', filename, 'schema'],
     queryFn: async () => {
+      if (!filename) {
+        throw new Error('Missing snippet filename');
+      }
       const { data } = await apiClient.get<PluginSchema>(
-        `${SNIPPETS_BASE}/${encodeURIComponent(filename ?? '')}/schema`,
+        snippetPluginSchemaPath(filename),
         executionOnly ? { params: { execution_only: true } } : undefined,
       );
       return data;
