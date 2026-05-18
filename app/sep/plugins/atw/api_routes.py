@@ -23,8 +23,8 @@ from pydantic import BaseModel
 
 from app.sep.deps import SessionDep
 from app.sep.plugins.atw.models import (
-    _CATEGORY_ROOT_LABELS,
     ATWCategory,
+    CATEGORY_ROOT_LABELS,
     derive_category_root,
 )
 from app.sep.plugins.atw.schema import atw_schema
@@ -122,7 +122,7 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
             snippets_by_cell[(root, tag)].append(snippet)
 
     grouped: list[ATWCategoryListing] = []
-    for root_label in _CATEGORY_ROOT_LABELS.values():
+    for root_label in CATEGORY_ROOT_LABELS.values():
         for category in ATWCategory:
             cell_snippets = snippets_by_cell.get((root_label, category.name), [])
             if not cell_snippets:
