@@ -15,13 +15,15 @@
 
 """Define the main FastAPI app."""
 
+import functools
 import logging.config
 from argparse import ArgumentParser
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from multiprocessing import Process
+from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, status
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -102,7 +104,17 @@ def sep_openapi_json() -> JSONResponse:
     return JSONResponse(sep_app.openapi())
 
 
-_merged_openapi_cache: dict[str, dict] = {}
+@functools.lru_cache(maxsize=1)
+def _get_merged_openapi() -> dict[str, Any]:
+    """Return the merged OpenAPI document, computed once and cached for the process.
+
+    FastAPI's own ``app.openapi_schema`` cache fixes the upstream specs after the
+    first hit, and routes are not added at runtime, so a single-entry cache is safe.
+
+    :return: The merged OpenAPI 3.x JSON document.
+    :rtype: dict[str, Any]
+    """
+    return merge_openapi_documents(app.openapi(), sep_app.openapi())
 
 
 @app.get(
@@ -121,18 +133,10 @@ def merged_openapi_json() -> JSONResponse:
     at ``/openapi.json`` and ``/api/sep/openapi.json`` are unchanged — they remain
     the source of truth for the React frontend's ``openapi-typescript`` codegen.
 
-    The merged document is computed once on first call and cached on the module;
-    FastAPI's own ``app.openapi_schema`` cache fixes the upstream specs after the
-    first hit, and routes are not added at runtime.
-
     :return: The merged OpenAPI 3.x JSON document.
     :rtype: JSONResponse
     """
-    if "doc" not in _merged_openapi_cache:
-        _merged_openapi_cache["doc"] = merge_openapi_documents(
-            app.openapi(), sep_app.openapi()
-        )
-    return JSONResponse(_merged_openapi_cache["doc"])
+    return JSONResponse(_get_merged_openapi())
 
 
 @app.get(
@@ -160,7 +164,7 @@ def _disabled_top_level_docs() -> Response:
     instead. Without these explicit handlers, the ``sep_app`` mount at ``/``
     would serve its auth redirect for unknown paths and these would not return 404.
     """
-    return Response(status_code=404)
+    return Response(status_code=status.HTTP_404_NOT_FOUND)
 
 
 app.mount("/api/inventory", inventory_app)

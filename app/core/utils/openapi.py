@@ -84,7 +84,15 @@ def _merge_schemas(
     s_schemas: dict[str, Any],
     rename_map: dict[str, str],
 ) -> None:
-    """Fold ``s_schemas`` into ``p_schemas`` honouring ``rename_map`` collisions."""
+    """Fold ``s_schemas`` into ``p_schemas`` honouring ``rename_map`` collisions.
+
+    :param p_schemas: The primary ``components.schemas`` mapping, mutated in place.
+    :type p_schemas: dict[str, Any]
+    :param s_schemas: The secondary ``components.schemas`` mapping to fold in.
+    :type s_schemas: dict[str, Any]
+    :param rename_map: Mapping of secondary schema name → renamed target.
+    :type rename_map: dict[str, str]
+    """
     for name, body in s_schemas.items():
         final_name = rename_map.get(name, name)
         if final_name in p_schemas and p_schemas[final_name] == body:
@@ -102,6 +110,17 @@ def _build_security_rename_map(
     Identical bodies dedup; differing bodies under the same name are renamed by
     appending ``secondary_suffix`` to the secondary entry. Raises if the renamed
     target collides with an existing name in either spec.
+
+    :param p_security: The primary ``components.securitySchemes`` mapping.
+    :type p_security: dict[str, Any]
+    :param s_security: The secondary ``components.securitySchemes`` mapping.
+    :type s_security: dict[str, Any]
+    :param secondary_suffix: Suffix appended to a colliding secondary name.
+    :type secondary_suffix: str
+    :return: Mapping of original secondary name → renamed target. Empty when no
+        collisions occur.
+    :rtype: dict[str, str]
+    :raises ValueError: If the renamed target already exists in either spec.
     """
     rename_map: dict[str, str] = {}
     for name, body in s_security.items():
@@ -122,6 +141,11 @@ def _rewrite_security_refs(node: Any, rename_map: dict[str, str]) -> None:
     Walks the structure looking for ``security`` keys whose value is a list of
     dicts mapping scheme name → scopes (per the OpenAPI security-requirement
     object). Each dict has its keys renamed per ``rename_map``.
+
+    :param node: Any nested dict/list found in an OpenAPI document.
+    :type node: Any
+    :param rename_map: Mapping of old scheme name → new scheme name.
+    :type rename_map: dict[str, str]
     """
     if isinstance(node, dict):
         for key, value in node.items():
@@ -144,7 +168,15 @@ def _merge_security_schemes(
     s_security: dict[str, Any],
     rename_map: dict[str, str],
 ) -> None:
-    """Fold ``s_security`` into ``p_components['securitySchemes']`` honouring renames."""
+    """Fold ``s_security`` into ``p_components['securitySchemes']`` honouring renames.
+
+    :param p_components: The primary ``components`` mapping, mutated in place.
+    :type p_components: dict[str, Any]
+    :param s_security: The secondary ``components.securitySchemes`` mapping.
+    :type s_security: dict[str, Any]
+    :param rename_map: Mapping of secondary scheme name → renamed target.
+    :type rename_map: dict[str, str]
+    """
     if not s_security:
         return
     p_security = p_components.setdefault("securitySchemes", {})
@@ -156,7 +188,16 @@ def _merge_security_schemes(
 
 
 def _merge_tags(p_tags: list[Any], s_tags: list[Any]) -> list[Any]:
-    """Return a deduped list of tags, primary entries winning on name conflicts."""
+    """Return a deduped list of tags, primary entries winning on name conflicts.
+
+    :param p_tags: The primary ``tags`` list.
+    :type p_tags: list[Any]
+    :param s_tags: The secondary ``tags`` list to fold in.
+    :type s_tags: list[Any]
+    :return: A new list with primary entries first followed by secondary entries
+        whose ``name`` is not already present.
+    :rtype: list[Any]
+    """
     seen = {t["name"] for t in p_tags if isinstance(t, dict) and "name" in t}
     merged = list(p_tags)
     for tag in s_tags:
@@ -169,7 +210,14 @@ def _merge_tags(p_tags: list[Any], s_tags: list[Any]) -> list[Any]:
 
 
 def _merge_top_level_security(p: dict[str, Any], s_security: Any) -> None:
-    """Union the document-level ``security`` requirement list from secondary into primary."""
+    """Union the document-level ``security`` requirement list from secondary into primary.
+
+    :param p: The primary OpenAPI document, mutated in place.
+    :type p: dict[str, Any]
+    :param s_security: The secondary document-level ``security`` list (or any
+        falsy value, in which case this is a no-op).
+    :type s_security: Any
+    """
     if not s_security:
         return
     merged = list(p.get("security", []))
@@ -180,7 +228,14 @@ def _merge_top_level_security(p: dict[str, Any], s_security: Any) -> None:
 
 
 def _prune_empty_components(p: dict[str, Any], p_components: dict[str, Any]) -> None:
-    """Drop empty ``schemas`` / ``securitySchemes`` / ``components`` entries."""
+    """Drop empty ``schemas`` / ``securitySchemes`` / ``components`` entries.
+
+    :param p: The primary OpenAPI document, mutated in place when ``components``
+        is emptied.
+    :type p: dict[str, Any]
+    :param p_components: The primary ``components`` mapping, mutated in place.
+    :type p_components: dict[str, Any]
+    """
     if not p_components.get("schemas"):
         p_components.pop("schemas", None)
     if "securitySchemes" in p_components and not p_components["securitySchemes"]:
@@ -203,8 +258,11 @@ def merge_openapi_documents(
     * ``tags`` are unioned, deduped by ``name`` (primary entry wins).
     * ``components.schemas``: identical entries dedup; on name collision with a
       different body, the secondary entry is renamed by appending
-      ``secondary_suffix`` and every ``$ref`` in the secondary spec is rewritten
-      to point at the renamed schema.
+      ``secondary_suffix`` and ``$ref`` values pointing at the renamed schema are
+      rewritten throughout the secondary spec (including ``paths`` and
+      ``components.schemas``; other ``components.*`` sections such as
+      ``parameters``/``requestBodies``/``responses`` are not folded into the
+      merged document and are dropped).
     * ``components.securitySchemes``: identical entries dedup; on name collision
       with a different body, the secondary entry is renamed by appending
       ``secondary_suffix`` and every security requirement in the secondary spec
@@ -259,8 +317,7 @@ def merge_openapi_documents(
             rename_map[name] = renamed
 
     if rename_map:
-        _rewrite_schema_refs(s_paths, rename_map)
-        _rewrite_schema_refs(s_schemas, rename_map)
+        _rewrite_schema_refs(s, rename_map)
 
     s_security = s_components.get("securitySchemes", {})
     p_security = p_components.setdefault("securitySchemes", {}) if s_security else {}
@@ -268,9 +325,7 @@ def merge_openapi_documents(
         p_security, s_security, secondary_suffix
     )
     if security_rename_map:
-        _rewrite_security_refs(s_paths, security_rename_map)
-        if "security" in s:
-            _rewrite_security_refs({"security": s["security"]}, security_rename_map)
+        _rewrite_security_refs(s, security_rename_map)
 
     p_paths.update(s_paths)
     _merge_schemas(p_schemas, s_schemas, rename_map)
