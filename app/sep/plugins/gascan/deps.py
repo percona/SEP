@@ -74,11 +74,11 @@ def _assemble_gascan_payload(
     """
     args: list[str] = []
     if playbook:
-        args.append(f"--playbook={playbook}")
+        args.append(f"-playbook={playbook}")
     if limit:
-        args.append(f"--limit={limit}")
+        args.append(f"-limit={limit}")
     if override:
-        args.append(f"--override={override}")
+        args.append(f"-override={override}")
 
     return TaskWrite(
         owner=TaskOwner.GASCAN,
@@ -259,9 +259,9 @@ def parse_single_gascan_arg(arg: str, form_values: dict[str, Any]) -> None:
     :type form_values: dict[str, Any]
     """
     arg_mappings = {
-        "--playbook=": "playbook",
-        "--limit=": "limit",
-        "--override=": "override",
+        "-playbook=": "playbook",
+        "-limit=": "limit",
+        "-override=": "override",
     }
 
     for arg_pattern, field_name in arg_mappings.items():

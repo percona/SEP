@@ -50,9 +50,9 @@ class TestGascanPayloadAssembly:
         assert meta["command"] == "gascan"
         assert meta["target"] == "executor1"
         args = shlex.split(meta["args"])
-        assert "--playbook=backup.yml" in args
-        assert "--limit=web" in args
-        assert "--override=env=prod" in args
+        assert "-playbook=backup.yml" in args
+        assert "-limit=web" in args
+        assert "-override=env=prod" in args
 
     def test_assemble_gascan_payload_omits_empty_optional_args(self):
         """Assert empty limit and override are not passed to the command."""
@@ -62,7 +62,7 @@ class TestGascanPayloadAssembly:
             playbook="run.yml",
         )
         args = shlex.split(payload.data["meta"]["args"])
-        assert args == ["--playbook=run.yml"]
+        assert args == ["-playbook=run.yml"]
 
     @pytest.mark.asyncio
     async def test_form_and_json_paths_produce_identical_task_write(self):
@@ -89,7 +89,7 @@ class TestGascanPayloadAssembly:
     def test_parse_gascan_task_args_round_trip(self):
         """Assert parse_gascan_task_args recovers form values from meta args."""
         meta = {
-            "args": "--playbook=backup.yml --limit=web --override=env=prod",
+            "args": "-playbook=backup.yml -limit=web -override=env=prod",
         }
         parsed = parse_gascan_task_args(meta)
         assert parsed["playbook"] == "backup.yml"

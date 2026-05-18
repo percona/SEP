@@ -38,7 +38,7 @@ def build_gascan_task(name: str = "gascan-task") -> dict:
             "task": "run-command",
             "meta": {
                 "command": "gascan",
-                "args": "--playbook=site.yml --limit=web",
+                "args": "-playbook=site.yml -limit=web",
                 "target": "host1",
             },
         },
@@ -119,9 +119,9 @@ class TestGascanCreateEndpoint:
         posted = mock_task_api_dep.post.await_args.kwargs["json"]
         assert posted["owner"] == TaskOwner.GASCAN.value
         args = shlex.split(posted["data"]["meta"]["args"])
-        assert "--playbook=site.yml" in args
-        assert "--limit=db" in args
-        assert "--override=x=1" in args
+        assert "-playbook=site.yml" in args
+        assert "-limit=db" in args
+        assert "-override=x=1" in args
 
 
 class TestGascanDetailAndDeleteEndpoints:
