@@ -155,3 +155,29 @@ export function useStopTaskHistory() {
     },
   });
 }
+
+export type TaskExecuteRequest = TasksComponents['schemas']['TaskExecuteRequest'];
+
+/**
+ * Dispatch a saved task for immediate execution (or with optional ETA / chain).
+ */
+export function useExecuteTask() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    TaskHistoryEntry,
+    Error,
+    { taskName: string; body?: TaskExecuteRequest | null }
+  >({
+    mutationFn: async ({ taskName, body }) => {
+      const { data } = await apiClient.post<TaskHistoryEntry>(
+        `/tasks/execute/${encodeURIComponent(taskName)}`,
+        body ?? {},
+      );
+      return data;
+    },
+    onSuccess: (_data, { taskName }) => {
+      queryClient.invalidateQueries({ queryKey: ['task-history'] });
+      queryClient.invalidateQueries({ queryKey: ['task-history', taskName] });
+    },
+  });
+}

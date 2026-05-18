@@ -44,6 +44,7 @@ export {
   useTaskHistory,
   useTaskHistoryByName,
   useStopTaskHistory,
+  useExecuteTask,
   isRunningStatus,
   RUNNING_STATUSES,
 } from './useTaskHistory';
@@ -52,6 +53,7 @@ export type {
   TaskHistoryEntry,
   PaginatedTaskHistory,
   UseTaskHistoryOptions,
+  TaskExecuteRequest,
 } from './useTaskHistory';
 
 export { useTaskHistoryFiles } from './useTaskHistoryFiles';

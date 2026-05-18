@@ -25,6 +25,7 @@ import type { PluginSchema } from '@sep/api';
 import { PluginDetailPage, pickExecutionData, resolveTabFromSplat } from './PluginDetailPage';
 
 const mockDeleteMutate = vi.fn();
+const mockExecuteMutate = vi.fn();
 const mockUsePluginTask = vi.fn();
 
 // Manual factory keeps axios out of the resolution graph.
@@ -40,12 +41,16 @@ vi.mock('@sep/api', () => ({
   getToken: () => null,
   refreshAccessToken: vi.fn(),
   emitUnauthorized: vi.fn(),
-  apiClient: { get: vi.fn(), defaults: {} },
+  apiClient: { get: vi.fn(), post: vi.fn(), defaults: {} },
   setTokenProvider: vi.fn(),
 }));
 
 vi.mock('../../hooks', () => ({
   useTaskHistoryByName: () => ({ data: { items: [] }, isLoading: false, error: null }),
+  useExecuteTask: () => ({
+    mutateAsync: mockExecuteMutate,
+    isPending: false,
+  }),
 }));
 
 const schema: PluginSchema = {
@@ -146,6 +151,28 @@ describe('resolveTabFromSplat', () => {
   it('returns overview for non-logs paths', () => {
     expect(resolveTabFromSplat('overview')).toBe('overview');
     expect(resolveTabFromSplat('something-else')).toBe('overview');
+  });
+});
+
+describe('PluginDetailPage execute flow', () => {
+  it('confirms then calls execute mutation on success', async () => {
+    mockExecuteMutate.mockReset();
+    mockExecuteMutate.mockResolvedValue({ id: 99 });
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK');
+
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
+
+    await waitFor(() =>
+      expect(mockExecuteMutate).toHaveBeenCalledWith({ taskName: 'FECHK' }),
+    );
   });
 });
 
