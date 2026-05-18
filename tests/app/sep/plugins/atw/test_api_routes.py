@@ -166,6 +166,29 @@ class TestAtwListEndpoint:
         assert len(payload) == 1
         assert payload[0]["category_root"] == "Generic"
 
+    def test_atw_list_missing_service_type_falls_back_to_generic(
+        self, test_client: TestClient
+    ) -> None:
+        """Ensure missing ``service_type`` meta buckets under Generic, not MySQL."""
+        snippet = _mock_atw_snippet(
+            filename="no-service-type.sh",
+            atw=["OVERALL_SLOWNESS"],
+            service_type=None,
+        )
+
+        with patch(
+            "app.sep.plugins.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/plugins/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category_root"] == "Generic"
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippet_count"] == 1
+
     def test_atw_list_unknown_service_type_falls_back_to_generic(
         self, test_client: TestClient
     ) -> None:
