@@ -148,7 +148,7 @@ export function MumPlugin() {
           else setStreamError('Could not parse output JSON.');
         });
 
-        es.onerror = () => { setStreamError('Stream failed.'); stopStreaming(); };
+        es.onerror = () => { if (esRef.current) { setStreamError('Stream failed.'); stopStreaming(); } };
       } catch (e) {
         setStreamError(String((e as Error)?.message ?? e));
         setIsStreaming(false);
@@ -193,7 +193,7 @@ export function MumPlugin() {
         else setRolesStreamError('Could not parse output JSON.');
       });
 
-      es.onerror = () => { setRolesStreamError('Stream failed.'); stopRoles(); };
+      es.onerror = () => { if (rolesEsRef.current) { setRolesStreamError('Stream failed.'); stopRoles(); } };
     } catch (e) {
       setRolesStreamError(String((e as Error)?.message ?? e));
       setIsRolesStreaming(false);
