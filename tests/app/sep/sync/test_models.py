@@ -16,25 +16,34 @@
 """Define tests for the app.sep.sync.model module."""
 
 import uuid
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import PrivateAttr
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.models import AlertService, AlertSeverity
 from app.inventory.models import ServiceTypeEnum
-from app.sep.crud import SyncInstanceManager
+from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.inventory import (
     CreatedNode,
     CreatedSchema,
     CreatedService,
     CreatedTable,
+    Node,
+    Schema,
+    Service,
+    Table,
 )
 from app.sep.models import (
     SyncInstance,
+    SyncInstanceWrite,
     SyncInventoryEntityTypeEnum,
     SyncItem,
     SyncItemWrite,
+    SyncStatusEnum,
 )
 from app.sep.sync.exceptions import SyncFailError
 from app.sep.sync.models import BaseSyncer, BaseTaskSyncer
@@ -48,20 +57,162 @@ from tests.app.factories import (
 )
 
 
-@pytest.fixture
-def mock_sync_items(mock_remote_api, mocker) -> dict[tuple[int, None], SyncItem]:
-    """Mock SyncItem and context manager for BaseSyncer."""
-    mock_sync_item = AsyncMock(spec=SyncItem)
-    mock_context_manager = AsyncMock()
-    mock_context_manager.__aenter__.return_value = mock_sync_item
-    mock_context_manager.__aexit__.return_value = None
-    mocker.patch(
-        "app.sep.sync.models.BaseSyncer.manage_sync_item",
-        return_value=mock_context_manager,
+class StubTestSyncer(BaseSyncer):
+    """Minimal ``BaseSyncer`` implementation for model-layer tests."""
+
+    SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.TABLE
+    fetch_node_returns_none: ClassVar[bool] = False
+    fetch_service_returns_none: ClassVar[bool] = False
+    _perform_calls: list[str] = PrivateAttr(default_factory=list)
+
+    @property
+    def perform_calls(self) -> list[str]:
+        """Return recorded perform-operation markers."""
+        return self._perform_calls
+
+    async def perform_inventory_sync(self) -> None:
+        """Record inventory-sync invocation."""
+        self._perform_calls.append("inventory")
+
+    async def fetch_node(self, created_node: CreatedNode) -> Node | None:
+        """Return a node model unless this stub is configured to skip."""
+        if self.fetch_node_returns_none:
+            return None
+        return Node(
+            address=created_node.address,
+            name=created_node.name,
+            external_id=created_node.external_id,
+            type=created_node.type,
+            source=created_node.source,
+        )
+
+    async def perform_node_sync(
+        self,
+        created_node: CreatedNode,
+        updated_node: Node,
+    ) -> None:
+        """Record node-sync invocation."""
+        self._perform_calls.append(f"node:{created_node.id}")
+
+    async def fetch_service(self, created_service: CreatedService) -> Service | None:
+        """Return a service model unless this stub is configured to skip."""
+        if self.fetch_service_returns_none:
+            return None
+        return Service(
+            name=created_service.name,
+            type=created_service.type,
+            external_id=created_service.external_id,
+            port=created_service.port,
+            environment=created_service.environment,
+            cluster=created_service.cluster,
+        )
+
+    async def perform_service_sync(
+        self,
+        created_service: CreatedService,
+        updated_service: Service,
+    ) -> None:
+        """Record service-sync invocation."""
+        self._perform_calls.append(f"service:{created_service.id}")
+
+    async def fetch_schema(self, created_schema: CreatedSchema) -> Schema:
+        """Return a schema model mirroring the created schema."""
+        return Schema(name=created_schema.name)
+
+    async def perform_schema_sync(
+        self,
+        created_schema: CreatedSchema,
+        updated_schema: Schema,
+    ) -> None:
+        """Record schema-sync invocation."""
+        self._perform_calls.append(f"schema:{created_schema.id}")
+
+    async def fetch_table(self, created_table: CreatedTable) -> Table:
+        """Return a table model mirroring the created table."""
+        return Table(
+            name=created_table.name,
+            create=created_table.create,
+            keys=created_table.keys,
+        )
+
+    async def perform_table_sync(
+        self,
+        created_table: CreatedTable,
+        updated_table: Table,
+    ) -> None:
+        """Record table-sync invocation."""
+        self._perform_calls.append(f"table:{created_table.id}")
+
+
+def _build_syncer(
+    syncer_cls: type[BaseSyncer], session: AsyncSession, **kwargs
+) -> BaseSyncer:
+    """Construct a syncer and bind a real session (mirrors ``__aenter__`` assignment)."""
+    syncer = syncer_cls(**kwargs)
+    syncer._session = session
+    return syncer
+
+
+async def _create_sync_instance(
+    session: AsyncSession, syncer_cls: type[BaseSyncer]
+) -> SyncInstance:
+    return await SyncInstanceManager.create(
+        session,
+        SyncInstanceWrite(syncer=syncer_cls.get_name()),
     )
-    return {
-        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
-    }
+
+
+async def _create_sync_item(
+    session: AsyncSession,
+    sync_instance: SyncInstance,
+    entity_type: SyncInventoryEntityTypeEnum,
+    entity_id: int | None,
+) -> SyncItem:
+    return await SyncItemManager.create(
+        session,
+        SyncItemWrite(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            sync_instance_id=sync_instance.id,
+        ),
+    )
+
+
+async def _sync_item_status(
+    session: AsyncSession,
+    sync_item_id: uuid.UUID,
+) -> SyncStatusEnum:
+    sync_item = await session.get(SyncItem, sync_item_id)
+    await session.refresh(sync_item)
+    return sync_item.status
+
+
+async def _manage_sync_item_failure_test_setup(
+    session: AsyncSession,
+    mock_remote_api,
+    *,
+    entity_type: SyncInventoryEntityTypeEnum,
+    entity_id: int | None,
+    break_on_error: bool = False,
+) -> tuple[StubTestSyncer, SyncItem, AsyncMock]:
+    """Return a syncer, persisted SyncItem, and mocked alert trigger for failure tests."""
+    sync_instance = await _create_sync_instance(session, StubTestSyncer)
+    sync_item = await _create_sync_item(
+        session,
+        sync_instance,
+        entity_type,
+        entity_id,
+    )
+    syncer = _build_syncer(
+        StubTestSyncer,
+        session,
+        inventory_api=mock_remote_api,
+        sync_instance=sync_instance,
+        sync_items={(entity_type, entity_id): sync_item},
+        break_on_error=break_on_error,
+    )
+    mock_trigger = AsyncMock()
+    return syncer, sync_item, mock_trigger
 
 
 @pytest.fixture
@@ -97,44 +248,6 @@ def created_table(created_schema) -> CreatedTable:
     created_table = CreatedTableFactory.build()
     created_table.database = created_schema
     return created_table
-
-
-def _manage_sync_item_failure_test_setup(
-    mock_remote_api,
-    mocker,
-    *,
-    entity_type: SyncInventoryEntityTypeEnum,
-    entity_id: int | None,
-    break_on_error: bool = False,
-):
-    """Return a syncer and patched mocks for ``manage_sync_item`` failure tests."""
-    mock_sync_instance = AsyncMock(spec=SyncInstance)
-    mock_sync_instance.id = uuid.uuid4()
-    mock_sync_item = AsyncMock(spec=SyncItem)
-    mock_sync_items = {(entity_type, entity_id): mock_sync_item}
-
-    class TestSyncer(BaseSyncer):
-        _session = AsyncMock(spec=AsyncSession)
-
-    syncer = TestSyncer(
-        inventory_api=mock_remote_api,
-        sync_instance=mock_sync_instance,
-        sync_items=mock_sync_items,
-        break_on_error=break_on_error,
-    )
-    mocker.patch(
-        "app.sep.sync.models.BaseSyncer.prepare_sync",
-        new_callable=AsyncMock,
-    )
-    mocker.patch(
-        "app.sep.sync.models.SyncItemManager.start_sync", new_callable=AsyncMock
-    )
-    mock_fail_sync = mocker.patch(
-        "app.sep.sync.models.SyncItemManager.fail_sync", new_callable=AsyncMock
-    )
-    mock_trigger = mocker.patch.object(AlertService, "trigger", new_callable=AsyncMock)
-    syncer_name = TestSyncer.get_name()
-    return syncer, mock_fail_sync, mock_trigger, syncer_name
 
 
 @pytest.mark.asyncio
@@ -226,62 +339,49 @@ async def test_get_children_entities(entity_type, mock_remote_api, created_servi
 
 
 @pytest.mark.asyncio
-async def test_get_sync_items(mock_remote_api, mocker):
+async def test_get_sync_items(session: AsyncSession, mock_remote_api):
     """Test retrieving multiple SyncItems for specified entities."""
-    mock_sync_instance = AsyncMock(spec=SyncInstance)
-    mock_sync_instance.id = uuid.uuid4()
-    mock_sync_item_write = AsyncMock(spec=SyncItemWrite)
-
-    class TestSyncer(BaseSyncer):
-        _session = AsyncMock(spec=AsyncSession)
-
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, StubTestSyncer)
+    syncer = _build_syncer(
+        StubTestSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=mock_sync_instance,
+        sync_instance=sync_instance,
     )
-    mock_get_or_create = mocker.patch(
-        "app.sep.sync.models.SyncItemManager.get_or_create",
-        new_callable=AsyncMock,
+
+    sync_items = await syncer.get_sync_items(
+        SyncInventoryEntityTypeEnum.INVENTORY, None
     )
-    mock_get_or_create.side_effect = [
-        (mock_sync_item_write, True),
-    ]
-    await syncer.get_sync_items(SyncInventoryEntityTypeEnum.INVENTORY, None)
+
+    assert len(sync_items) == 1
+    assert sync_items[0].entity_type == SyncInventoryEntityTypeEnum.INVENTORY
+    assert sync_items[0].entity_id is None
+    assert sync_items[0].sync_instance_id == sync_instance.id
 
 
 @pytest.mark.asyncio
-async def test_manage_sync_item(mock_remote_api, mocker):
+async def test_manage_sync_item(session: AsyncSession, mock_remote_api):
     """Test managing the synchronization lifecycle of a SyncItem."""
-    mock_sync_instance = AsyncMock(spec=SyncInstance)
-    mock_sync_instance.id = uuid.uuid4()
-    mock_sync_item = AsyncMock(spec=SyncItem)
-    mock_sync_items = {
-        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
-    }
-
-    class TestSyncer(BaseSyncer):
-        _session = (AsyncMock(spec=AsyncSession),)
-
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, StubTestSyncer)
+    sync_item = await _create_sync_item(
+        session,
+        sync_instance,
+        SyncInventoryEntityTypeEnum.INVENTORY,
+        None,
+    )
+    syncer = _build_syncer(
+        StubTestSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=mock_sync_instance,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
+        sync_items={(SyncInventoryEntityTypeEnum.INVENTORY, None): sync_item},
     )
-    mock_prepare_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.prepare_sync",
-        new_callable=AsyncMock,
-    )
-    mock_start_sync = mocker.patch(
-        "app.sep.sync.models.SyncItemManager.start_sync", new_callable=AsyncMock
-    )
-    mock_finish_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.finish_sync", new_callable=AsyncMock
-    )
+
     async with syncer.manage_sync_item(SyncInventoryEntityTypeEnum.INVENTORY, None):
         pass
-    assert mock_prepare_sync.call_count == 0
-    assert mock_start_sync.call_count == 1
-    assert mock_finish_sync.call_count == 1
+
+    assert len(syncer.sync_items) == 1
+    assert await _sync_item_status(session, sync_item.id) == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.parametrize(
@@ -293,6 +393,7 @@ async def test_manage_sync_item(mock_remote_api, mocker):
 )
 @pytest.mark.asyncio
 async def test_manage_sync_item_failure_triggers_alert(
+    session: AsyncSession,
     mock_remote_api,
     mocker,
     entity_type,
@@ -303,20 +404,20 @@ async def test_manage_sync_item_failure_triggers_alert(
     entity_id = created_node.id if use_created_node else None
     created_entity = created_node if use_created_node else None
 
-    syncer, mock_fail_sync, mock_trigger, syncer_name = (
-        _manage_sync_item_failure_test_setup(
-            mock_remote_api,
-            mocker,
-            entity_type=entity_type,
-            entity_id=entity_id,
-        )
+    syncer, sync_item, mock_trigger = await _manage_sync_item_failure_test_setup(
+        session,
+        mock_remote_api,
+        entity_type=entity_type,
+        entity_id=entity_id,
     )
+    mocker.patch.object(AlertService, "trigger", mock_trigger)
     entity_id_repr = "top_level" if entity_id is None else str(created_node.external_id)
+    syncer_name = StubTestSyncer.get_name()
 
     async with syncer.manage_sync_item(entity_type, created_entity):
         raise RuntimeError(f"Simulate {entity_type.name.lower()} sync failure.")
 
-    mock_fail_sync.assert_awaited_once()
+    assert await _sync_item_status(session, sync_item.id) == SyncStatusEnum.FAILED
     mock_trigger.assert_awaited_once()
     alert_data = mock_trigger.call_args[0][0]
     assert alert_data["severity"] == AlertSeverity.ERROR
@@ -337,16 +438,17 @@ async def test_manage_sync_item_failure_triggers_alert(
 
 @pytest.mark.asyncio
 async def test_manage_sync_item_failure_alert_when_break_on_error(
-    created_node, mock_remote_api, mocker
+    session: AsyncSession, created_node, mock_remote_api, mocker
 ):
     """Assert the alert fires before ``SyncFailError`` when ``break_on_error`` is True."""
-    syncer, mock_fail_sync, mock_trigger, _ = _manage_sync_item_failure_test_setup(
+    syncer, sync_item, mock_trigger = await _manage_sync_item_failure_test_setup(
+        session,
         mock_remote_api,
-        mocker,
         entity_type=SyncInventoryEntityTypeEnum.NODE,
         entity_id=created_node.id,
         break_on_error=True,
     )
+    mocker.patch.object(AlertService, "trigger", mock_trigger)
 
     with pytest.raises(SyncFailError):
         async with syncer.manage_sync_item(
@@ -354,57 +456,53 @@ async def test_manage_sync_item_failure_alert_when_break_on_error(
         ):
             raise RuntimeError("Simulate node sync failure.")
 
-    mock_fail_sync.assert_awaited_once()
+    assert await _sync_item_status(session, sync_item.id) == SyncStatusEnum.FAILED
     mock_trigger.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_finsih_sync(mock_remote_api, mocker):
+async def test_finsih_sync(session: AsyncSession, mock_remote_api):
     """Test finalizing synchronization for a given entity and its children."""
-    mock_sync_item = AsyncMock(spec=SyncItem)
-    mock_sync_items = {
-        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
-    }
-
-    class TestSyncer(BaseSyncer):
-        _session = (AsyncMock(spec=AsyncSession),)
-
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, StubTestSyncer)
+    sync_item = await _create_sync_item(
+        session,
+        sync_instance,
+        SyncInventoryEntityTypeEnum.INVENTORY,
+        None,
+    )
+    syncer = _build_syncer(
+        StubTestSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
+        sync_items={(SyncInventoryEntityTypeEnum.INVENTORY, None): sync_item},
     )
-    mock_finish_sync = mocker.patch(
-        "app.sep.sync.models.SyncItemManager.finish_sync", new_callable=AsyncMock
-    )
+
     await syncer.finish_sync(SyncInventoryEntityTypeEnum.INVENTORY, None)
 
-    assert mock_finish_sync.call_count == 1
+    assert await _sync_item_status(session, sync_item.id) == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio
 async def test_delete_node(
+    session: AsyncSession,
     created_node,
     created_service,
     created_schema,
     created_table,
     mock_remote_api,
-    mocker,
 ):
     """Test deleting inventories from the inventory system."""
-    mock_sync_item = AsyncMock(spec=SyncItem)
-    mock_sync_items = {
-        (SyncInventoryEntityTypeEnum.INVENTORY, None): mock_sync_item,
-    }
+    sync_instance = await _create_sync_instance(session, StubTestSyncer)
 
-    class TestSyncer(BaseSyncer):
-        _session = (AsyncMock(spec=AsyncSession),)
+    class NodeLimitSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
 
-    syncer = TestSyncer(
+    syncer = _build_syncer(
+        NodeLimitSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
     )
 
     mock_remote_api.delete.side_effect = [
@@ -414,13 +512,6 @@ async def test_delete_node(
         created_table.model_dump(),
     ]
 
-    mock_context_manager = AsyncMock()
-    mock_context_manager.__aenter__.return_value = mock_sync_item
-    mock_context_manager.__aexit__.return_value = None
-    mocker.patch(
-        "app.sep.sync.models.BaseSyncer.manage_sync_item",
-        return_value=mock_context_manager,
-    )
     await syncer.delete_node(created_node)
     mock_remote_api.delete.assert_awaited_once_with(f"/{created_node.id}")
     mock_remote_api.delete.reset_mock()
@@ -435,191 +526,212 @@ async def test_delete_node(
 
 
 @pytest.mark.asyncio
-async def test_sync_inventory(mock_remote_api, mock_sync_items, mocker):
+async def test_sync_inventory(session: AsyncSession, mock_remote_api):
     """Test synchronizating the entire inventory."""
 
-    class TestSyncer(BaseSyncer):
+    class InventorySyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
-        _session = (AsyncMock(spec=AsyncSession),)
 
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, InventorySyncer)
+    syncer = _build_syncer(
+        InventorySyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
     )
 
-    mock_perform_inventory_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.perform_inventory_sync",
-        new_callable=AsyncMock,
-    )
     await syncer.sync_inventory()
-    mock_perform_inventory_sync.assert_called_once()
+
+    assert syncer.perform_calls == ["inventory"]
+    result = await session.exec(
+        select(SyncItem).where(
+            SyncItem.sync_instance_id == sync_instance.id,
+            SyncItem.entity_type == SyncInventoryEntityTypeEnum.INVENTORY,
+            SyncItem.entity_id.is_(None),
+        )
+    )
+    inventory_sync_item = result.one()
+    assert inventory_sync_item.status == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio
-async def test_sync_node(created_node, mock_remote_api, mock_sync_items, mocker):
+async def test_sync_node(session: AsyncSession, created_node, mock_remote_api):
     """Test synchronizing data for a specific node."""
 
-    class TestSyncer(BaseSyncer):
+    class NodeSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
-        _session = (AsyncMock(spec=AsyncSession),)
 
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, NodeSyncer)
+    syncer = _build_syncer(
+        NodeSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
     )
 
-    mock_perform_node_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.perform_node_sync",
-        new_callable=AsyncMock,
-    )
-    mock_fetch_node = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.fetch_node",
-        new_callable=AsyncMock,
-    )
     await syncer.sync_node(created_node, None)
-    mock_perform_node_sync.assert_called_once()
-    mock_fetch_node.assert_called_once()
+
+    assert syncer.perform_calls == [f"node:{created_node.id}"]
+    result = await session.exec(
+        select(SyncItem).where(
+            SyncItem.sync_instance_id == sync_instance.id,
+            SyncItem.entity_type == SyncInventoryEntityTypeEnum.NODE,
+            SyncItem.entity_id == created_node.id,
+        )
+    )
+    node_sync_item = result.one()
+    assert node_sync_item.status == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio
 async def test_sync_node_skips_when_fetch_returns_none(
-    created_node, mock_remote_api, mock_sync_items, mocker
+    session: AsyncSession, created_node, mock_remote_api
 ):
     """Test sync_node skips synchronization when fetch_node returns None."""
 
-    class TestSyncer(BaseSyncer):
+    class SkippingNodeSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
-        _session = (AsyncMock(spec=AsyncSession),)
+        fetch_node_returns_none: ClassVar[bool] = True
 
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, SkippingNodeSyncer)
+    syncer = _build_syncer(
+        SkippingNodeSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
     )
 
-    mock_perform_node_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.perform_node_sync",
-        new_callable=AsyncMock,
-    )
-    mocker.patch(
-        "app.sep.sync.models.BaseSyncer.fetch_node",
-        new_callable=AsyncMock,
-        return_value=None,
-    )
     await syncer.sync_node(created_node, None)
-    mock_perform_node_sync.assert_not_called()
+
+    assert syncer.perform_calls == []
+    result = await session.exec(
+        select(SyncItem).where(
+            SyncItem.sync_instance_id == sync_instance.id,
+            SyncItem.entity_type == SyncInventoryEntityTypeEnum.NODE,
+            SyncItem.entity_id == created_node.id,
+        )
+    )
+    node_sync_item = result.one()
+    assert node_sync_item.status == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio
-async def test_sync_service(created_service, mock_remote_api, mock_sync_items, mocker):
+async def test_sync_service(session: AsyncSession, created_service, mock_remote_api):
     """Test synchronizing data for a specific service."""
 
-    class TestSyncer(BaseSyncer):
+    class ServiceSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SERVICE
-        _session = (AsyncMock(spec=AsyncSession),)
 
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, ServiceSyncer)
+    syncer = _build_syncer(
+        ServiceSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
     )
 
-    mock_perform_service_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.perform_service_sync",
-        new_callable=AsyncMock,
-    )
-    mock_fetch_service = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.fetch_service",
-        new_callable=AsyncMock,
-    )
     await syncer.sync_service(created_service, None)
-    mock_perform_service_sync.assert_called_once()
-    mock_fetch_service.assert_called_once()
+
+    assert syncer.perform_calls == [f"service:{created_service.id}"]
+    result = await session.exec(
+        select(SyncItem).where(
+            SyncItem.sync_instance_id == sync_instance.id,
+            SyncItem.entity_type == SyncInventoryEntityTypeEnum.SERVICE,
+            SyncItem.entity_id == created_service.id,
+        )
+    )
+    service_sync_item = result.one()
+    assert service_sync_item.status == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio
 async def test_sync_service_skips_when_fetch_returns_none(
-    created_service, mock_remote_api, mock_sync_items, mocker
+    session: AsyncSession, created_service, mock_remote_api
 ):
     """Test sync_service skips synchronization when fetch_service returns None."""
 
-    class TestSyncer(BaseSyncer):
+    class SkippingServiceSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SERVICE
-        _session = (AsyncMock(spec=AsyncSession),)
+        fetch_service_returns_none: ClassVar[bool] = True
 
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, SkippingServiceSyncer)
+    syncer = _build_syncer(
+        SkippingServiceSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
     )
 
-    mock_perform_service_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.perform_service_sync",
-        new_callable=AsyncMock,
-    )
-    mocker.patch(
-        "app.sep.sync.models.BaseSyncer.fetch_service",
-        new_callable=AsyncMock,
-        return_value=None,
-    )
     await syncer.sync_service(created_service, None)
-    mock_perform_service_sync.assert_not_called()
+
+    assert syncer.perform_calls == []
+    result = await session.exec(
+        select(SyncItem).where(
+            SyncItem.sync_instance_id == sync_instance.id,
+            SyncItem.entity_type == SyncInventoryEntityTypeEnum.SERVICE,
+            SyncItem.entity_id == created_service.id,
+        )
+    )
+    service_sync_item = result.one()
+    assert service_sync_item.status == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio
-async def test_sync_schema(created_schema, mock_remote_api, mock_sync_items, mocker):
+async def test_sync_schema(session: AsyncSession, created_schema, mock_remote_api):
     """Test synchronizing data for a specific schema."""
 
-    class TestSyncer(BaseSyncer):
+    class SchemaSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SCHEMA
-        _session = (AsyncMock(spec=AsyncSession),)
 
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, SchemaSyncer)
+    syncer = _build_syncer(
+        SchemaSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
     )
 
-    mock_perform_schema_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.perform_schema_sync",
-        new_callable=AsyncMock,
-    )
-    mock_fetch_schema = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.fetch_schema",
-        new_callable=AsyncMock,
-    )
     await syncer.sync_schema(created_schema, None)
-    mock_perform_schema_sync.assert_called_once()
-    mock_fetch_schema.assert_called_once()
+
+    assert syncer.perform_calls == [f"schema:{created_schema.id}"]
+    result = await session.exec(
+        select(SyncItem).where(
+            SyncItem.sync_instance_id == sync_instance.id,
+            SyncItem.entity_type == SyncInventoryEntityTypeEnum.SCHEMA,
+            SyncItem.entity_id == created_schema.id,
+        )
+    )
+    schema_sync_item = result.one()
+    assert schema_sync_item.status == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio
-async def test_sync_table(created_table, mock_remote_api, mock_sync_items, mocker):
+async def test_sync_table(session: AsyncSession, created_table, mock_remote_api):
     """Test synchronizing data for a specific table."""
 
-    class TestSyncer(BaseSyncer):
+    class TableSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.TABLE
-        _session = (AsyncMock(spec=AsyncSession),)
 
-    syncer = TestSyncer(
+    sync_instance = await _create_sync_instance(session, TableSyncer)
+    syncer = _build_syncer(
+        TableSyncer,
+        session,
         inventory_api=mock_remote_api,
-        sync_instance=None,
-        sync_items=mock_sync_items,
+        sync_instance=sync_instance,
     )
 
-    mock_perform_table_sync = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.perform_table_sync",
-        new_callable=AsyncMock,
-    )
-    mock_fetch_table = mocker.patch(
-        "app.sep.sync.models.BaseSyncer.fetch_table",
-        new_callable=AsyncMock,
-    )
     await syncer.sync_table(created_table, None)
-    mock_perform_table_sync.assert_called_once()
-    mock_fetch_table.assert_called_once()
+
+    assert syncer.perform_calls == [f"table:{created_table.id}"]
+    result = await session.exec(
+        select(SyncItem).where(
+            SyncItem.sync_instance_id == sync_instance.id,
+            SyncItem.entity_type == SyncInventoryEntityTypeEnum.TABLE,
+            SyncItem.entity_id == created_table.id,
+        )
+    )
+    table_sync_item = result.one()
+    assert table_sync_item.status == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio
@@ -639,7 +751,7 @@ async def test_update_table(created_table, mock_remote_api):
 
 
 @pytest.mark.asyncio
-async def test_wait_for_task_output(mock_remote_api):
+async def test_wait_for_task_output(session: AsyncSession, mock_remote_api, mocker):
     """Test waiting for a task to complete and retrieve its output."""
     step_name = "mock_step_name"
     expected_call_count = 2
@@ -659,13 +771,23 @@ async def test_wait_for_task_output(mock_remote_api):
         },
     ]
 
-    class TestTaskSyncer(BaseTaskSyncer):
-        _session = (AsyncMock(spec=AsyncSession),)
+    async def empty_stream(*_args, **_kwargs):
+        if False:  # pragma: no cover - makes this an async generator
+            yield ""
 
-    task_syncer = TestTaskSyncer(
+    mock_remote_api.stream = empty_stream
+    mocker.patch("app.sep.sync.models.asyncio.sleep", new_callable=AsyncMock)
+
+    class TaskTestSyncer(BaseTaskSyncer):
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.INVENTORY
+
+    sync_instance = await _create_sync_instance(session, TaskTestSyncer)
+    task_syncer = _build_syncer(
+        TaskTestSyncer,
+        session,
         inventory_api=mock_remote_api,
         tasks_api=mock_remote_api,
-        sync_instance=None,
+        sync_instance=sync_instance,
         tasks_execution_wait_interval=0,
     )
 
