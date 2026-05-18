@@ -178,14 +178,6 @@ class TaskHistoryStatusEnum(StrEnum):
             TaskHistoryStatusEnum.STALE,
         ]
 
-    def is_terminal(self) -> bool:
-        """Check if task execution has reached a terminal state.
-
-        :return: True if task execution will not transition again.
-        :rtype: bool
-        """
-        return self.is_finished() or self == TaskHistoryStatusEnum.LOST
-
 
 class TaskOwner(EnumFieldMixin, StrEnum):
     """Control the choice of task owners.

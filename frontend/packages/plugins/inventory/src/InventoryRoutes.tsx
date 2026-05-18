@@ -20,7 +20,6 @@ import type { PluginSchema } from '@sep/api';
 import { PluginDetailPage, PluginListPage } from '@sep/framework';
 import { renderInventoryDetailChildren } from './InventoryPluginNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
-import { InventoryTopology } from './topology';
 
 const INVENTORY_DETAIL_SUPPRESS_KEYS = [
   'services',
@@ -82,7 +81,6 @@ export function InventoryRoutes({
   return (
     <Routes>
       <Route index element={<Navigate to="nodes" replace />} />
-      <Route path="topology" element={<InventoryTopology />} />
       <Route
         path="nodes"
         element={
