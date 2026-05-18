@@ -44,8 +44,41 @@ def sanitize_error_message(error_message: str) -> str:
     return redacted_message
 
 
+def _uri_from_mongo_alias() -> Optional[str]:
+    """Parse the 'mongo' shell alias from /etc/profile and build a MongoDB URI.
+
+    The alias is written by Ansible in the form:
+        alias mongo='mongosh admin -u <user> -p <pwd> --port <port> --host <host>'
+    Returns a URI string or None if the alias cannot be found/parsed.
+    """
+    try:
+        profile = Path("/etc/profile").read_text(encoding="utf-8")
+    except Exception:
+        return None
+
+    for line in profile.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("alias mongo="):
+            continue
+        # Strip alias mongo=' ... ' or alias mongo=" ... "
+        body = re.sub(r"^alias mongo=['\"](.+)['\"]$", r"\1", stripped)
+        user = re.search(r"-u\s+(\S+)", body)
+        pwd  = re.search(r"-p\s+(\S+)", body)
+        host = re.search(r"--host\s+(\S+)", body)
+        port = re.search(r"--port\s+(\d+)", body)
+        if user and pwd and host:
+            from urllib.parse import quote_plus
+            p = port.group(1) if port else "27017"
+            return (
+                f"mongodb://{quote_plus(user.group(1))}:{quote_plus(pwd.group(1))}"
+                f"@{host.group(1)}:{p}/admin"
+                f"?directConnection=true"
+            )
+    return None
+
+
 def mum_creds() -> str:
-    """Load MongoDB URI from env first, then ~/.mongodb_uri.
+    """Load MongoDB URI from env, ~/.mongodb_uri, or the 'mongo' shell alias.
 
     Exits with code 1 if no usable URI source is available.
     """
@@ -61,9 +94,21 @@ def mum_creds() -> str:
         if not creds:
             raise ValueError("Empty MongoDB URI")
         return creds
-    except Exception as exc:  # noqa: BLE001 - we want to exit on any error
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001
         print(f"Failed to read MongoDB URI from {creds_path}: {exc}", file=sys.stderr)
-        sys.exit(1)
+
+    alias_uri = _uri_from_mongo_alias()
+    if alias_uri:
+        return alias_uri
+
+    print(
+        "No MongoDB URI found: set MONGODB_URI, create ~/.mongodb_uri, "
+        "or define an 'alias mongo=...' with -u/-p/--host in /etc/profile.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def parse_args() -> argparse.Namespace:

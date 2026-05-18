@@ -239,10 +239,14 @@ async def mum_options(
     tasks_api: TaskAPI,
 ) -> JSONResponse:
     """Return executor hosts and MongoDB services for MUM UI."""
-    services = await inventory_api.get(
+    services_resp = await inventory_api.get(
         "/services/", params={"service_type": ServiceTypeEnum.MONGODB}
     )
-    # Optional: attach schemas like server-side templates do
+    services = (
+        services_resp.get("items", [])
+        if isinstance(services_resp, dict)
+        else (services_resp or [])
+    )
     for service in services:
         try:
             service["schemas"] = await inventory_api.get(
