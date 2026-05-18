@@ -192,13 +192,19 @@ if [[ -z $COLLECTION ]]; then
     usage 1
 fi
 
-# Warn if the query looks like an insert (explain not supported for inserts)
+EXPLAIN_ORDER="after"
 if [[ -n $QUERY ]]; then
     QUERY_METHOD=$(echo "$QUERY" | grep -oP '^\s*\K\w+' 2>/dev/null || true)
     case "${QUERY_METHOD,,}" in
         insertone | insertmany | insert)
             echo "Warning: explain() does not support insert operations ('${QUERY_METHOD}'). Skipping explain." >&2
             QUERY=""
+            ;;
+        find | findone | aggregate)
+            EXPLAIN_ORDER="after"
+            ;;
+        *)
+            EXPLAIN_ORDER="before"
             ;;
     esac
 fi
@@ -280,9 +286,15 @@ CMDS_FILE="${DEST}/commands.sh"
     if [[ -n $QUERY ]]; then
         echo ""
         echo "# Query explain (allPlansExecution)"
-        echo "\"\$MONGO_BIN\" --host '${HOST}' --port ${PORT} --quiet \\"
-        echo "  --eval 'printjson(db.getSiblingDB(\"${DATABASE}\").getCollection(\"${COLLECTION}\").explain(\"allPlansExecution\").${QUERY})' \\"
-        echo "  > \"\$DEST/query.out\""
+        if [[ $EXPLAIN_ORDER == "after" ]]; then
+            echo "\"\$MONGO_BIN\" --host '${HOST}' --port ${PORT} --quiet \\"
+            echo "  --eval 'printjson(db.getSiblingDB(\"${DATABASE}\").getCollection(\"${COLLECTION}\").${QUERY}.explain(\"allPlansExecution\"))' \\"
+            echo "  > \"\$DEST/query.out\""
+        else
+            echo "\"\$MONGO_BIN\" --host '${HOST}' --port ${PORT} --quiet \\"
+            echo "  --eval 'printjson(db.getSiblingDB(\"${DATABASE}\").getCollection(\"${COLLECTION}\").explain(\"allPlansExecution\").${QUERY})' \\"
+            echo "  > \"\$DEST/query.out\""
+        fi
     fi
 } > "${CMDS_FILE}"
 chmod +x "${CMDS_FILE}"
@@ -308,7 +320,11 @@ if [ $EXECUTE -eq 1 ]; then
 
     if [[ -n $QUERY ]]; then
         echo "Running explain(\"allPlansExecution\")..."
-        JS_EXPLAIN="JSON.stringify(db.getSiblingDB('${ESC_DB}').getCollection('${ESC_COLL}').explain('allPlansExecution').${QUERY}, null, 2)"
+        if [[ $EXPLAIN_ORDER == "after" ]]; then
+            JS_EXPLAIN="JSON.stringify(db.getSiblingDB('${ESC_DB}').getCollection('${ESC_COLL}').${QUERY}.explain('allPlansExecution'), null, 2)"
+        else
+            JS_EXPLAIN="JSON.stringify(db.getSiblingDB('${ESC_DB}').getCollection('${ESC_COLL}').explain('allPlansExecution').${QUERY}, null, 2)"
+        fi
         mongo_eval "$JS_EXPLAIN" "${DEST}/query.out"
     fi
 fi
