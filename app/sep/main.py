@@ -37,6 +37,7 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
+from app.api.main import api_router as core_api_router
 from app.sep.api.router import api_router
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings
@@ -62,7 +63,7 @@ from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
-JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/", "/api/sep/")
+JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/", "/api/sep/", "/api/oauth/", "/api/users/", "/api/config/")
 
 
 async def sep_startup() -> None:
@@ -156,6 +157,7 @@ if {"snippets", "dipper"} & imported_plugins:
 
     sep_app.include_router(artifacts_router, prefix="/artifacts")
 
+sep_app.include_router(core_api_router)
 sep_app.include_router(api_router)
 
 if "snippets" in imported_plugins:
@@ -184,7 +186,10 @@ async def internal_error_handler(
     """Load custom error page."""
     base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)
-    user = await get_current_user(request)
+    try:
+        user = await get_current_user(request)
+    except Exception:
+        user = None
     messages.error(
         request,
         "Internal Server Error. Please contact the administrators for help.",
@@ -237,9 +242,14 @@ async def custom_404_handler(
 @sep_app.exception_handler(BaseAuthProviderException)
 async def auth_provider_exception_handler(
     request: Request, exc: BaseAuthProviderException
-) -> RedirectResponse:
+) -> Response:
     """Handle exceptions raised by auth providers."""
     logger.exception("Error connecting to auth provider:", exc_info=exc)
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES) or is_bearer_authenticated(request):
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+        )
     messages.error(request, exc.detail, sticky=True)
     next_path = request.query_params.get("next", request.url.path)
     redirect_location = request.url_for("login").path
