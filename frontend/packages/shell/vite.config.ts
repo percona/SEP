@@ -53,6 +53,23 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      // Task log SSE and related routes live outside /api (see app/sep/main.py).
+      '/stream-logs': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/execution-events': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/files': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/stop-task': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   optimizeDeps: {
