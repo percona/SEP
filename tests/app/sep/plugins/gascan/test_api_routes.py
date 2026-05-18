@@ -16,7 +16,7 @@
 """Tests for the gascan plugin JSON API routes under /api/plugins/gascan/."""
 
 import shlex
-from datetime import UTC, datetime
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock, call
 
 from fastapi import status
@@ -70,9 +70,7 @@ class TestGascanSchemaEndpoint:
         assert data["name"] == "gascan"
         assert data["display_name"] == "Gascan Management"
         field_names = {
-            field["name"]
-            for section in data["forms"]
-            for field in section["fields"]
+            field["name"] for section in data["forms"] for field in section["fields"]
         }
         assert {"task_name", "hostname", "playbook", "limit", "override"} <= field_names
 
@@ -103,7 +101,9 @@ class TestGascanListEndpoint:
 class TestGascanCreateEndpoint:
     """Tests for POST /api/plugins/gascan/."""
 
-    def test_gascan_create_posts_assembled_payload(self, test_client, mock_task_api_dep):
+    def test_gascan_create_posts_assembled_payload(
+        self, test_client, mock_task_api_dep
+    ):
         """Assert create endpoint builds gascan command args correctly."""
         created = build_gascan_task("new-gascan")
         mock_task_api_dep.post = AsyncMock(return_value=created)

@@ -30,7 +30,11 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
-from app.sep.plugins.gascan.models import GascanCreate, GascanTaskResponse, GascanTaskWrite
+from app.sep.plugins.gascan.models import (
+    GascanCreate,
+    GascanTaskResponse,
+    GascanTaskWrite,
+)
 from app.tasks.models import (
     Task,
     TaskBackendEnum,

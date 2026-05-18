@@ -25,6 +25,7 @@ from fastapi import APIRouter
 from fastapi import status as http_status
 
 from app.sep.deps import TaskAPI
+from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.gascan.deps import (
     build_gascan_api_task_response,
     build_gascan_task,
@@ -35,7 +36,6 @@ from app.sep.plugins.gascan.deps import (
 )
 from app.sep.plugins.gascan.models import GascanTaskResponse, GascanTaskWrite
 from app.sep.plugins.gascan.schema import gascan_schema
-from app.sep.plugins.framework.api import schema_endpoint
 from app.tasks.models import Task, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)

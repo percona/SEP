@@ -101,7 +101,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     {% if not k.startswith('_') %}
                         <tr>
                             <th>{{ k }}</th>
-                            <td><code>{{ v }}</code></td>
+                            <td>
+                                <code>{{ v }}</code>
+                            </td>
                         </tr>
                     {% endif %}
                 {% endfor %}
