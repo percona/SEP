@@ -17,6 +17,23 @@
 
 from enum import StrEnum
 
+CATEGORY_ROOT_LABELS: dict[str, str] = {
+    "mysql": "MySQL",
+    "mongodb": "MongoDB",
+    "postgresql": "PostgreSQL",
+    "proxysql": "ProxySQL",
+    "haproxy": "HAProxy",
+    "external": "External",
+    "generic": "Generic",
+}
+
+
+def derive_category_root(service_type: str | None) -> str:
+    """Map snippet ``service_type`` meta to an ATW category-root display label."""
+    if not service_type:
+        return "Generic"
+    return CATEGORY_ROOT_LABELS.get(service_type.lower(), "Generic")
+
 
 class ParentCategory(StrEnum):
     """Enumerate top-level categories for ATW."""
