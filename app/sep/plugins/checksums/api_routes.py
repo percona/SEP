@@ -51,7 +51,7 @@ from app.sep.plugins.checksums.models import (
 from app.sep.plugins.checksums.schema import checksums_schema
 from app.sep.plugins.framework import maybe_record_connectivity_warning
 from app.sep.plugins.framework.api import schema_endpoint
-from app.tasks.models import Task, TaskHistoryStatusEnum
+from app.tasks.models import Task, TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -139,9 +139,10 @@ async def checksums_api_execute(
         f"/execute/{task.name}",
         json=body.model_dump(exclude_none=True),
     )
+    task_history = TaskHistoryResponse.model_validate(created)
     return ChecksumExecutionResponse(
         task_name=task.name,
-        task_id=created.get("id") if isinstance(created, dict) else None,
+        task_id=task_history.id,
     )
 
 
