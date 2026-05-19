@@ -183,7 +183,7 @@ def test_archives_create_accepts_empty_dest_port(
     created_schema,
     created_table,
 ):
-    """POST /archives/ coerces empty-string optional ints to None (SEP-1224).
+    """POST /archives/ coerces empty-string optional ints to None.
 
     Goes through the real form-parsing chain (no ``build_archives_task_payload``
     override) so the ``EmptyStrToNone`` ``BeforeValidator`` is the only thing
@@ -227,7 +227,7 @@ def test_archives_update_accepts_empty_dest_port(
     """POST /archives/{task_name}/update coerces empty-string optional ints to None.
 
     Same real-form-binding pattern as the create test — the update route shares
-    the ``ArchivesGeneratedTask`` dep, so the SEP-1224 fix has to cover it too.
+    the ``ArchivesGeneratedTask`` dep, so the empty-string fix has to cover it too.
     """
     created_archives = ArchivesCreate(
         alias="arch_update_empty_port",

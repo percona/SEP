@@ -645,9 +645,9 @@ class TestResolveDestinationHostAndDb:
         """Manual dest_host, no dest_port: dest_port defaults to ``DEFAULT_MYSQL_PORT``.
 
         Without this default, an omitted ``DEST_PORT`` falls through to the
-        payload script's ``dst_port = src_port`` fallback (SEP-1224), which
-        would silently route the archive to whatever port the source uses
-        instead of MySQL's default. See ``app/sep/plugins/archives/payload``.
+        payload script's ``dst_port = src_port`` fallback, which would
+        silently route the archive to whatever port the source uses instead
+        of MySQL's default. See ``app/sep/plugins/archives/payload``.
         """
         mock_remote_api.get = AsyncMock()
         form = _make_form_with_source_ids(

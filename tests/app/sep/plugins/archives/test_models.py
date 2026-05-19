@@ -390,7 +390,7 @@ class TestArchivesCreateDestinationValidation:
 
 
 class TestArchivesCreateEmptyStringCoercion:
-    """Empty-string coercion to ``None`` on form-bound optional int fields (SEP-1224)."""
+    """Empty-string coercion to ``None`` on form-bound optional int fields."""
 
     @pytest.mark.parametrize(
         "field",
