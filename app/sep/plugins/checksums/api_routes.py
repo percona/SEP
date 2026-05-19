@@ -27,6 +27,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
+from app.core.exceptions import HTTPConflictException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
@@ -117,6 +118,42 @@ async def checksums_api_create(
     )
     return build_checksums_api_task_response(
         task,
+        status=None,
+        connectivity_warning=connectivity_warning,
+    )
+
+
+@router.put("/{task_name}", response_model=ChecksumTaskResponse)
+async def checksums_api_update(
+    task: ChecksumsTask,
+    body: ChecksumTaskWrite,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+    *,
+    check_connectivity: Annotated[bool, Query()] = True,
+) -> ChecksumTaskResponse:
+    """Update a checksum task from a JSON payload request body.
+
+    :param check_connectivity: Whether to verify the target database is
+        reachable after the update. Defaults to ``True``; pass
+        ``check_connectivity=false`` to opt out. Note that the form flow
+        defaults to ``False`` (HTML checkbox semantics); this asymmetry is
+        intentional.
+    :type check_connectivity: bool
+    """
+    if task.protected:
+        raise HTTPConflictException("Cannot edit a protected task.")
+    logger.debug("Update checksums task (JSON path): %s", task.name)
+    task_write = await build_checksum_task(body, inventory_api)
+    updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
+    updated_task = Task.model_validate(updated)
+    connectivity_warning = await maybe_record_connectivity_warning(
+        tasks_api,
+        updated_task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
+    )
+    return build_checksums_api_task_response(
+        updated_task,
         status=None,
         connectivity_warning=connectivity_warning,
     )

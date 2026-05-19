@@ -971,3 +971,312 @@ class TestChecksumsExecuteEndpoint:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+class TestChecksumsUpdateEndpoint:
+    """Tests for PUT /api/plugins/checksums/{task_name}."""
+
+    def test_checksums_update_returns_200(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Ensure updating a checksum task returns HTTP 200 with the task body."""
+        task = build_checksum_task()
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.put = AsyncMock(return_value=task)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.put(f"/api/plugins/checksums/{task['name']}", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == task["name"]
+        assert data["service_type"] == ServiceTypeEnum.MYSQL.value
+
+    def test_checksums_update_calls_tasks_api_put_with_path_task_name(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Ensure PUT calls tasks_api.put with the path task name and correct owner."""
+        task = build_checksum_task()
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.put = AsyncMock(return_value=task)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        test_client.put(f"/api/plugins/checksums/{task['name']}", json=body)
+
+        mock_task_api_dep.put.assert_awaited_once()
+        put_path, put_kwargs = mock_task_api_dep.put.call_args
+        assert put_path == (f"/{task['name']}",)
+        assert put_kwargs["json"]["owner"] == TaskOwner.CHECKSUMS.value
+
+    def test_checksums_update_rename_uses_path_task_name_in_put_url(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Ensure the PUT URL uses the path task name even when body contains a new name."""
+        old_name = "old-task-name"
+        new_name = "new-task-name"
+        task = build_checksum_task(old_name)
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.put = AsyncMock(return_value=task)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(
+            task_name=new_name, service_id=created_service.id
+        )
+        test_client.put(f"/api/plugins/checksums/{old_name}", json=body)
+
+        put_path, put_kwargs = mock_task_api_dep.put.call_args
+        assert put_path == (f"/{old_name}",)
+        assert put_kwargs["json"]["name"] == new_name
+
+    def test_checksums_update_returns_404_for_missing_task(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 404 when the task does not exist."""
+        with patch(
+            "app.sep.plugins.checksums.api_routes.get_checksums_task",
+            new=AsyncMock(side_effect=HTTPNotFoundException()),
+        ):
+            body = build_checksum_write_body()
+            response = test_client.put("/api/plugins/checksums/nonexistent", json=body)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_404_for_wrong_owner(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 404 when the task is not owned by checksums."""
+        with patch(
+            "app.sep.plugins.checksums.api_routes.get_checksums_task",
+            new=AsyncMock(side_effect=HTTPNotFoundException()),
+        ):
+            body = build_checksum_write_body()
+            response = test_client.put(
+                "/api/plugins/checksums/some-backup-task", json=body
+            )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_404_when_service_not_found(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 404 when the inventory service does not exist."""
+        task = build_checksum_task()
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_inventory_api_dep.get = AsyncMock(side_effect=HTTPNotFoundException())
+
+        body = build_checksum_write_body(service_id=9999)
+        response = test_client.put(f"/api/plugins/checksums/{task['name']}", json=body)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_409_for_protected_task(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Ensure PUT returns 409 without calling the Tasks API when task is protected."""
+        task = build_checksum_task()
+        task["protected"] = True
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.put(f"/api/plugins/checksums/{task['name']}", json=body)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_422_missing_required_fields(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 422 when all required fields are absent.
+
+        The ChecksumsTask dep resolves before body validation, so a valid task
+        response is needed in the mock to let Pydantic body validation win.
+        """
+        mock_task_api_dep.get = AsyncMock(return_value=build_checksum_task("some-task"))
+
+        response = test_client.put("/api/plugins/checksums/some-task", json={})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_422_missing_task_name(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 422 when task_name is absent."""
+        mock_task_api_dep.get = AsyncMock(return_value=build_checksum_task("some-task"))
+
+        response = test_client.put(
+            "/api/plugins/checksums/some-task",
+            json={"hostname": "host1", "service_id": 1},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_422_missing_hostname(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 422 when hostname is absent."""
+        mock_task_api_dep.get = AsyncMock(return_value=build_checksum_task("some-task"))
+
+        response = test_client.put(
+            "/api/plugins/checksums/some-task",
+            json={"task_name": "some-task", "service_id": 1},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_422_missing_service_id(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 422 when service_id is absent."""
+        mock_task_api_dep.get = AsyncMock(return_value=build_checksum_task("some-task"))
+
+        response = test_client.put(
+            "/api/plugins/checksums/some-task",
+            json={"task_name": "some-task", "hostname": "host1"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_422_for_empty_task_name(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 422 when task_name is an empty string."""
+        mock_task_api_dep.get = AsyncMock(return_value=build_checksum_task("some-task"))
+
+        response = test_client.put(
+            "/api/plugins/checksums/some-task",
+            json={"task_name": "", "hostname": "host1", "service_id": 1},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_422_for_empty_hostname(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 422 when hostname is an empty string."""
+        mock_task_api_dep.get = AsyncMock(return_value=build_checksum_task("some-task"))
+
+        response = test_client.put(
+            "/api/plugins/checksums/some-task",
+            json={"task_name": "some-task", "hostname": "", "service_id": 1},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_422_for_non_integer_service_id(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Ensure PUT returns 422 when service_id is not a number."""
+        mock_task_api_dep.get = AsyncMock(return_value=build_checksum_task("some-task"))
+
+        response = test_client.put(
+            "/api/plugins/checksums/some-task",
+            json={"task_name": "some-task", "hostname": "host1", "service_id": "abc"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_422_for_invalid_check_connectivity(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Reject unparseable check_connectivity values with HTTP 422."""
+        mock_task_api_dep.get = AsyncMock(return_value=build_checksum_task("some-task"))
+
+        body = build_checksum_write_body()
+        response = test_client.put(
+            "/api/plugins/checksums/some-task",
+            json=body,
+            params={"check_connectivity": "garbage"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_opt_out_skips_connectivity_check(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Skip the connectivity check when check_connectivity=false."""
+        task = build_checksum_task(with_connectivity_meta=True)
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.put = AsyncMock(return_value=task)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.put(
+            f"/api/plugins/checksums/{task['name']}",
+            json=body,
+            params={"check_connectivity": "false"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["connectivity_warning"] is None
+        assert mock_task_api_dep.put.await_count == 1
+        assert get_latest_connectivity_result("host1", "mysql") is None
+
+    def test_checksums_update_with_connectivity_check_failure_populates_warning(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Populate connectivity_warning when the connectivity check fails."""
+        task = build_checksum_task(with_connectivity_meta=True)
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.put = AsyncMock(return_value=task)
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"success": False, "error": "connection refused"}
+        )
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.put(
+            f"/api/plugins/checksums/{task['name']}",
+            json=body,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["connectivity_warning"] == {
+            "target": "host1",
+            "service_type": "mysql",
+            "message": "connection refused",
+        }
+        assert get_latest_connectivity_result("host1", "mysql") is False
+
+    def test_checksums_update_propagates_tasks_api_error(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Ensure errors raised by tasks_api.put propagate to the caller."""
+        task = build_checksum_task()
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.put = AsyncMock(side_effect=HTTPNotFoundException())
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.put(f"/api/plugins/checksums/{task['name']}", json=body)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
