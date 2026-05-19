@@ -183,6 +183,7 @@ async def _sync_item_status(
     sync_item_id: uuid.UUID,
 ) -> SyncStatusEnum:
     sync_item = await session.get(SyncItem, sync_item_id)
+    assert sync_item is not None, f"SyncItem {sync_item_id} not found"
     await session.refresh(sync_item)
     return sync_item.status
 
@@ -590,7 +591,11 @@ async def test_sync_node(
     fetch_returns_none,
     expected_perform_calls,
 ):
-    """Test synchronizing a node, including when fetch_node returns None."""
+    """Test synchronizing a node, including when fetch_node returns None.
+
+    When fetch returns None, ``manage_sync_item`` still creates the SyncItem and
+    ``finish_sync`` marks it SUCCESS after the early return skips ``perform_node_sync``.
+    """
 
     class NodeSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
@@ -634,7 +639,11 @@ async def test_sync_service(
     fetch_returns_none,
     expected_perform_calls,
 ):
-    """Test synchronizing a service, including when fetch_service returns None."""
+    """Test synchronizing a service, including when fetch_service returns None.
+
+    When fetch returns None, ``manage_sync_item`` still creates the SyncItem and
+    ``finish_sync`` marks it SUCCESS after the early return skips ``perform_service_sync``.
+    """
 
     class ServiceSyncer(StubTestSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SERVICE
@@ -758,8 +767,8 @@ async def test_wait_for_task_output(session: AsyncSession, mock_remote_api, mock
     ]
 
     async def empty_stream(*_args, **_kwargs):
-        if False:  # pragma: no cover - makes this an async generator
-            yield ""
+        for _ in ():
+            yield _
 
     mock_remote_api.stream = empty_stream
     mocker.patch("app.sep.sync.models.asyncio.sleep", new_callable=AsyncMock)
