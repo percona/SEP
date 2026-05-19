@@ -38,7 +38,12 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
           { props: { variant: 'contained', color: 'error' }, style: { color: '#fff' } },
           // Only override warning text color in light mode; dark mode keeps MUI's computed contrastText.
           ...(mode === 'light'
-            ? [{ props: { variant: 'contained', color: 'warning' }, style: { color: '#fff' } }]
+            ? [
+                {
+                  props: { variant: 'contained' as const, color: 'warning' as const },
+                  style: { color: '#fff' },
+                },
+              ]
             : []),
           { props: { variant: 'contained', color: 'info' }, style: { color: '#fff' } },
         ],
