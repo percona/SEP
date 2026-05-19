@@ -38,6 +38,7 @@ from app.sep.plugins.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
 )
+from app.sep.plugins.inventory.models import MAX_TOPOLOGY_SHARDS
 from app.sep.plugins.inventory.topology import TOPOLOGY_JOB_PREFIX
 from tests.app.sep.plugins.inventory.conftest import no_syncers, PMM_STUB_NAME
 
@@ -703,7 +704,7 @@ class TestTopologyResult:
     def test_rejects_too_many_ids(self, test_client, mock_task_api_dep, route: str):
         """Ensure result and stream endpoints cap task fan-out."""
         ids = ",".join(
-            str(i) for i in range(1, inventory_api_routes._MAX_TOPOLOGY_SHARDS + 2)
+            str(i) for i in range(1, MAX_TOPOLOGY_SHARDS + 2)
         )
         response = test_client.get(
             f"/api/plugins/inventory/topology/{route}", params={"ids": ids}
