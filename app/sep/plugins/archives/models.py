@@ -45,12 +45,12 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :type service_id: int
     :param source_db_id: The source database schema ID from which data will be purged.
         Must be None if source_query is set.
-    :type source_db_id: int | None
+    :type source_db_id: int | EmptyStrToNone
     :param source_db_name: The name of the source database schema.
     :type source_db_name: str
     :param source_table_id: The source table ID within the specified schema from which
         data will be purged. Must be None if source_query is set.
-    :type source_table_id: int | None
+    :type source_table_id: int | EmptyStrToNone
     :param source_table_name: The name of the source table.
     :type source_table_name: str
     :param source_query: Optional; a query defining the source data to be purged.
@@ -61,7 +61,7 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :type where: NonEmptyStr | None
     :param dest_table_id: Optional; The destination table ID.
         Must be None if dest_file is set.
-    :type dest_table_id: int | None
+    :type dest_table_id: int | EmptyStrToNone
     :param dest_table_name: The name of the destination table.
     :type dest_table_name: str
     :param dest_file: Optional; The destination file path.
@@ -77,9 +77,9 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     :param extra_args: Optional; Additional arguments for the archive task.
     :type extra_args: NonEmptyStr | None
     :param limit: Optional; The maximum number of records to be processed.
-    :type limit: int | None
+    :type limit: int | EmptyStrToNone
     :param sleep: Optional; Sleep duration between operations for rate limiting.
-    :type sleep: int | None
+    :type sleep: int | EmptyStrToNone
     :param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.
         ``None`` means the checkbox was left unset (binary logging stays enabled).
     :type disable_binlog: int | None
@@ -92,13 +92,16 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
         If set, dest_table and dest_file must not be set, and vice versa.
     :type delete_data: int | None
     :param dest_service_id: Optional; The Inventory ID of the destination database service.
-    :type dest_service_id: int | None
+    :type dest_service_id: int | EmptyStrToNone
     :param dest_host: Optional; The hostname of the destination database.
     :type dest_host: str | None
     :param dest_port: Optional; The port of the destination database (1-65535).
-    :type dest_port: int | None
+        The ``ge``/``le`` range constraint is scoped to the ``int`` arm so it
+        does not run against ``None`` when ``EmptyStrToNone`` coerces an empty
+        form input.
+    :type dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone
     :param dest_db_id: Optional; The destination database schema ID.
-    :type dest_db_id: int | None
+    :type dest_db_id: int | EmptyStrToNone
     :param dest_db_name: The name of the destination database schema.
     :type dest_db_name: str
     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
@@ -134,8 +137,6 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     )
     dest_service_id: int | EmptyStrToNone = None
     dest_host: str | None = None
-    # Constraints are scoped to the ``int`` arm so the ``ge``/``le`` checks do
-    # not run against ``None`` when ``EmptyStrToNone`` coerces an empty input.
     dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone = None
     dest_db_id: int | EmptyStrToNone = None
     dest_db_name: str = ""
