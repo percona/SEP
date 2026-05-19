@@ -545,6 +545,28 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa:
     await settings.close_client_registry()
 
 
+class _UnsetType:
+    """Sentinel type for unset ``create_app`` parameters.
+
+    Distinguishes "caller did not pass this argument" from "caller passed ``None``"
+    so we can preserve FastAPI's own defaults when the parameter is omitted while
+    still letting callers explicitly set the value to ``None``.
+    """
+
+    _instance: "_UnsetType | None" = None
+
+    def __new__(cls) -> "_UnsetType":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "_UNSET"
+
+
+_UNSET = _UnsetType()
+
+
 def create_app(
     *routers: APIRouter,
     lifespan: Lifespan[AppType] | None = None,
@@ -555,6 +577,8 @@ def create_app(
     version: str | None = None,
     description: str | None = None,
     generate_unique_id_function: Callable[[APIRoute], str] | None = None,
+    docs_url: str | None | _UnsetType = _UNSET,
+    redoc_url: str | None | _UnsetType = _UNSET,
 ) -> FastAPI:
     """Create and configure the FastAPI app.
 
@@ -581,6 +605,14 @@ def create_app(
         values. When omitted, :func:`app.core.utils.openapi.generate_tag_prefixed_unique_id`
         is used so similarly named handlers across routers do not collide.
     :type generate_unique_id_function: Callable[[APIRoute], str] | None
+    :param docs_url: Override for FastAPI's ``docs_url`` parameter. Pass ``None`` to
+        disable the auto-generated Swagger UI. When omitted, FastAPI's default of
+        ``"/docs"`` is preserved.
+    :type docs_url: str | None | _UnsetType
+    :param redoc_url: Override for FastAPI's ``redoc_url`` parameter. Pass ``None`` to
+        disable the auto-generated ReDoc UI. When omitted, FastAPI's default of
+        ``"/redoc"`` is preserved.
+    :type redoc_url: str | None | _UnsetType
     :return: An instance of the FastAPI application with an attached Celery app.
     :rtype: FastAPI
     """
@@ -594,6 +626,10 @@ def create_app(
     openapi_kwargs["generate_unique_id_function"] = (
         generate_unique_id_function or generate_tag_prefixed_unique_id
     )
+    if docs_url is not _UNSET:
+        openapi_kwargs["docs_url"] = docs_url
+    if redoc_url is not _UNSET:
+        openapi_kwargs["redoc_url"] = redoc_url
     app = FastAPI(lifespan=lifespan, **openapi_kwargs)
     if backend_cors_origins is not None:
         app.add_middleware(
