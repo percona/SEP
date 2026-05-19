@@ -121,6 +121,19 @@ describe('SyncControl', () => {
   describe('primary-button trigger', () => {
     afterEach(() => vi.restoreAllMocks());
 
+    it('disables button immediately while POST is in flight (optimistic race-fix)', async () => {
+      const user = userEvent.setup();
+      stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
+      // Never-resolving POST — holds the mutation in isPending and keeps the
+      // optimistic is_running=true cache write (onMutate) in effect.
+      vi.spyOn(apiClient, 'post').mockImplementation(() => new Promise(() => {}));
+      render(<SyncControl />, { wrapper: makeWrapper() });
+      const btn = await screen.findByRole('button', { name: /sync all/i });
+      expect(btn).toBeEnabled();
+      await user.click(btn);
+      expect(btn).toBeDisabled();
+    });
+
     it('POSTs to /sync/ with empty body when primary button clicked', async () => {
       const user = userEvent.setup();
       stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
