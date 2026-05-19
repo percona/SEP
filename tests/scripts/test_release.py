@@ -159,7 +159,6 @@ def _patch_rc_ok(
     """
     branch = "main" if rc == 1 else "release/v0.12.0"
     runner = _FakeRunner(_make_rc_preconditions(branch=branch))
-    monkeypatch.setattr(release, "_run", runner)
     monkeypatch.setattr(release, "_bump_version", lambda *_a, **_kw: None)
     monkeypatch.setattr(release, "_local_branch_exists", lambda _branch: False)
     monkeypatch.setattr(release, "_gh_available", lambda: True)
@@ -895,6 +894,49 @@ def test_rc1_after_prep_refuses_to_reset_when_local_ahead(monkeypatch, capsys):
     assert "is ahead of origin" in err
     cmds = list(runner.calls)
     assert ("git", "reset", "--hard", "origin/release/v0.12.0") not in cmds
+
+
+def test_rc1_after_prep_aborts_when_rev_list_fails(monkeypatch, capsys):
+    """Under after-prep, refuse to reset --hard when ``git rev-list`` exits non-zero.
+
+    A failing rev-list leaves the ahead-count ambiguous; resetting would be
+    the most dangerous fallback. The script must error out and let the
+    operator inspect manually.
+    """
+
+    def fake_run(cmd, *, check=True, capture=False):
+        # The local-branch-exists path runs `git rev-list --count
+        # origin/release/v0.12.0..release/v0.12.0`. Force exit 128 to
+        # simulate a corrupt ref or unexpected git failure.
+        if cmd[:3] == ["git", "rev-list", "--count"] and any(
+            arg.startswith("origin/release/") for arg in cmd[3:]
+        ):
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=128,
+                stdout="",
+                stderr="fatal: ambiguous argument\n",
+            )
+        stdout_overrides = {
+            ("git", "rev-parse", "--abbrev-ref", "HEAD"): "main\n",
+            ("git", "status", "--porcelain"): "",
+        }
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=0,
+            stdout=stdout_overrides.get(tuple(cmd), ""),
+            stderr="",
+        )
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_local_branch_exists", lambda _b: True)
+    monkeypatch.setattr(release, "_remote_branch_exists", lambda _b: True)
+    monkeypatch.setattr(release, "_gh_available", lambda: True)
+
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 1
+    err = capsys.readouterr().err
+    assert "git rev-list failed" in err
+    assert "Refusing to reset" in err
 
 
 def test_rc1_after_prep_still_bumps_and_tags(monkeypatch):

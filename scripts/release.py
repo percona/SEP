@@ -644,7 +644,15 @@ def _sync_after_prep_branch(branch: str) -> int:
         check=False,
         capture=True,
     )
-    ahead_count = int(ahead.stdout.strip() or "0") if ahead.returncode == 0 else 0
+    if ahead.returncode != 0:
+        print(
+            f"Error: git rev-list failed (exit {ahead.returncode}) while "
+            f"checking if {branch} is ahead of origin/{branch}. Refusing "
+            "to reset without a clean ahead-count signal — inspect manually.",
+            file=sys.stderr,
+        )
+        return 1
+    ahead_count = int(ahead.stdout.strip() or "0")
     if ahead_count > 0:
         print(
             f"Error: local {branch} is ahead of origin/{branch} by "
