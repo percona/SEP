@@ -96,7 +96,6 @@ class SettingOverride(BaseSQLModel, table=True):
         sa_column=Column(
             EnumField(SettingClassEnum, native_enum=False, create_constraint=True),
             nullable=False,
-            index=True,
         ),
     )
     key: str = SQLField(index=True, nullable=False, max_length=255)

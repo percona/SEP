@@ -22,9 +22,11 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
     ProxyEntry,
     refresh_all,
@@ -35,6 +37,7 @@ from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils import json_serializer
 from app.sep.config import SEPSettings
+from app.tasks.config import TasksSettings
 
 
 @pytest_asyncio.fixture(name="session_maker")
@@ -100,6 +103,76 @@ async def test_refresh_all_retains_previous_snapshot_on_error(
     await refresh_all(lambda: session_maker, registry)
     # Previous snapshot is retained -- the refresh did not clobber it.
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_rolls_back_session_between_proxies(
+    session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mid-cycle failure rolls the session back so the next proxy can still load.
+
+    Without the rollback, Postgres would leave the session in
+    ``InFailedSqlTransaction`` after the first proxy's failed query and
+    every subsequent proxy on the same session would also fail. SQLite
+    doesn't reproduce that aborted-tx state, so we simulate it by spying
+    on ``session.rollback`` and asserting it fires between proxies, and by
+    making the first proxy fail while asserting the second still picks up
+    its row from the DB.
+    """
+    sep_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
+        SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    tasks_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
+        TasksSettings, setting_class=SettingClassEnum.TASKS_SETTINGS
+    )
+    registry = {
+        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_proxy, SEPSettings),
+        SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_proxy, TasksSettings),
+    }
+    tasks_override = 7200
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="STALENESS_THRESHOLD_SECONDS",
+                value=tasks_override,
+            ),
+        )
+
+    real_build_snapshot = build_snapshot
+    call_count = {"n": 0}
+
+    async def _fail_first(
+        session: object,
+        settings_cls: type,
+        setting_class: SettingClassEnum,
+    ) -> object:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("first proxy explodes mid-cycle")
+        return await real_build_snapshot(session, settings_cls, setting_class)
+
+    monkeypatch.setattr(
+        "app.core.settings_override.lifecycle.build_snapshot", _fail_first
+    )
+
+    rollback_calls = {"n": 0}
+    real_rollback = AsyncSession.rollback
+
+    async def _counting_rollback(self: AsyncSession) -> None:
+        rollback_calls["n"] += 1
+        await real_rollback(self)
+
+    monkeypatch.setattr(AsyncSession, "rollback", _counting_rollback)
+
+    await refresh_all(lambda: session_maker, registry)
+
+    assert rollback_calls["n"] >= 1, "session.rollback() was not called after failure"
+    # Second proxy must have loaded successfully after the rollback -- the
+    # failure on proxy 1 must NOT block the manager.list() call on proxy 2.
+    assert tasks_override == tasks_proxy.STALENESS_THRESHOLD_SECONDS
 
 
 @pytest.mark.asyncio

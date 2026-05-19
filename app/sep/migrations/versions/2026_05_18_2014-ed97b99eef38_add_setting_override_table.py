@@ -69,12 +69,6 @@ def upgrade() -> None:
         op.f("ix_settingoverride_key"), "settingoverride", ["key"], unique=False
     )
     op.create_index(
-        op.f("ix_settingoverride_setting_class"),
-        "settingoverride",
-        ["setting_class"],
-        unique=False,
-    )
-    op.create_index(
         "ix_settingoverride_setting_class_key",
         "settingoverride",
         ["setting_class", "key"],
@@ -86,9 +80,6 @@ def downgrade() -> None:
     """Drop the ``settingoverride`` table from the SEP database."""
     op.drop_index(
         "ix_settingoverride_setting_class_key", table_name="settingoverride"
-    )
-    op.drop_index(
-        op.f("ix_settingoverride_setting_class"), table_name="settingoverride"
     )
     op.drop_index(op.f("ix_settingoverride_key"), table_name="settingoverride")
     op.drop_index(op.f("ix_settingoverride_is_active"), table_name="settingoverride")

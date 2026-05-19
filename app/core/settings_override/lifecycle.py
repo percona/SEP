@@ -60,12 +60,16 @@ async def refresh_all(
 
     Per-proxy failures (raised from :func:`build_snapshot` once a session is
     open) are caught and logged: the previous snapshot is retained for that
-    proxy and the rest of ``proxies`` continue to refresh. Failures that
-    occur *before* per-proxy iteration begins -- specifically from
-    ``session_maker_factory()`` or ``async_session_maker()`` -- are NOT
-    handled here; they propagate to the caller. The background refresher
-    in :func:`start_refresh_task` wraps its periodic invocation in a broad
-    ``except`` so transient engine/pool errors do not kill the task.
+    proxy and the rest of ``proxies`` continue to refresh. The session is
+    rolled back after each failure so that on Postgres -- where a failed
+    query leaves the transaction in ``InFailedSqlTransaction`` state until
+    explicit rollback -- the next proxy's ``manager.list(...)`` does not
+    inherit the aborted transaction. Failures that occur *before* per-proxy
+    iteration begins -- specifically from ``session_maker_factory()`` or
+    ``async_session_maker()`` -- are NOT handled here; they propagate to the
+    caller. The background refresher in :func:`start_refresh_task` wraps its
+    periodic invocation in a broad ``except`` so transient engine/pool
+    errors do not kill the task.
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``. Invoked exactly once per call
@@ -93,6 +97,10 @@ async def refresh_all(
                     "Failed to refresh overrides for %s; keeping previous snapshot",
                     setting_class.value,
                 )
+                # Roll back so a Postgres ``InFailedSqlTransaction`` from this
+                # proxy does not cascade into every subsequent proxy's
+                # ``manager.list(...)`` on the shared session.
+                await session.rollback()
                 continue
             entry.proxy._set_snapshot(snapshot)  # noqa: SLF001
 

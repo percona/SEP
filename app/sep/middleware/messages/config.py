@@ -32,6 +32,14 @@ MESSAGE_NOTSET_LEVEL = 0
 class MessagesSettings(BaseYamlSettings):
     """Define configuration options for the messages middleware.
 
+    Wrapped in :class:`OverridableSettingsProxy` below, which defers
+    validation to first attribute access. ``app.sep.main.sep_lifespan``
+    calls ``messages_settings._resolve()`` at startup to restore the
+    fail-fast validation the pre-proxy eager ``MessagesSettings()``
+    construction provided -- removing or relocating that call regresses to
+    lazy validation, surfacing config errors at first request instead of
+    startup.
+
     :cvar SETTINGS_PREFIXES: The prefixes for snippets related settings in the
         configuration file. Set to `["SEP", "MESSAGES"]`.
     :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
