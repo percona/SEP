@@ -648,11 +648,15 @@ class Capabilities(SchemaBaseModel):
     :param scheduling: Whether the plugin supports scheduling tasks on a
         periodic interval. Defaults to ``False``.
     :type scheduling: bool
+    :param topology: Whether the plugin exposes its topology view. Defaults to
+        ``False``.
+    :type topology: bool
     """
 
     chaining: bool = False
     alert_on_fail: bool = False
     scheduling: bool = False
+    topology: bool = False
 
 
 def _collect_reference_errors(

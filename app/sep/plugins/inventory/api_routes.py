@@ -51,7 +51,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, Literal, Self, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from fastapi import (
     APIRouter,
@@ -64,7 +64,6 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, model_validator
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
@@ -76,16 +75,18 @@ from app.core.exceptions import (
 from app.core.requests import RemoteAPI
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
+from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
     ApiCurrentUser,
     CurrentUser,
     InventoryAPI,
+    IsApiAuthenticated,
     SessionDep,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.framework.schema import Capabilities, PluginSchema
 from app.sep.plugins.inventory import payloads
 from app.sep.plugins.inventory.deps import (
     filter_syncers_by_name,
@@ -99,6 +100,12 @@ from app.sep.plugins.inventory.deps import (
     require_inventory_plugin_entity,
     SyncersDep,
     unwrap_inventory_plugin_list_payload,
+)
+from app.sep.plugins.inventory.models import (
+    MAX_TOPOLOGY_SHARDS,
+    TopologyCollectResponse,
+    TopologyCollectWrite,
+    TopologyResultResponse,
 )
 from app.sep.plugins.inventory.schema import inventory_schema
 from app.sep.plugins.inventory.sync import run_inventory_sync
@@ -117,11 +124,28 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-schema_endpoint(router=router, plugin_schema=inventory_schema)
 
 # Module-level singleton avoids the B008 lint warning about function calls in
 # argument defaults; the optional-body semantics are unchanged.
 _OPTIONAL_TRIGGER_BODY = Body(default=None)
+
+
+@router.get(
+    "/schema",
+    response_model=PluginSchema,
+    response_model_by_alias=True,
+    response_model_exclude_none=True,
+    dependencies=[IsApiAuthenticated],
+)
+async def get_schema() -> PluginSchema:
+    """Return the inventory plugin schema with deployment-time capabilities."""
+    return inventory_schema.model_copy(
+        update={
+            "capabilities": Capabilities(
+                topology=sep_settings.INVENTORY_TOPOLOGY_ENABLED,
+            )
+        },
+    )
 
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
@@ -189,88 +213,15 @@ async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusRespo
 _TOPOLOGY_PAYLOAD_PATH = Path(payloads.__file__).parent / "topology.py"
 _TOPOLOGY_TASK = "run-python"
 _TOPOLOGY_STDOUT_STEP = "run-script"
-_MAX_TOPOLOGY_SHARDS = 8
+_MAX_TOPOLOGY_SHARDS = MAX_TOPOLOGY_SHARDS
 _TOPOLOGY_HEARTBEAT_SECONDS = 15.0
 _TOPOLOGY_POLL_INTERVAL_SECONDS = 0.5
 
 
-class TopologyCollectWrite(BaseModel):
-    """Describe the request body for ``POST /topology/collect``.
-
-    :param shards: Number of executor hosts to dispatch in parallel. Hosts
-        are split round-robin across the chosen executors. Capped at
-        :data:`_MAX_TOPOLOGY_SHARDS`.
-    :type shards: int
-    :param executor_host: Optional explicit executor. Must be used with
-        ``shards=1`` because it selects a single-shard run.
-    :type executor_host: str | None
-    :param connect_timeout: Per-host MySQL TCP connect timeout (seconds).
-    :type connect_timeout: int
-    :param read_timeout: Per-host MySQL read/write timeout (seconds).
-    :type read_timeout: int
-    """
-
-    shards: int = Field(default=1, ge=1, le=_MAX_TOPOLOGY_SHARDS)
-    executor_host: str | None = None
-    connect_timeout: int = Field(default=5, ge=1, le=60)
-    read_timeout: int = Field(default=10, ge=1, le=120)
-
-    @model_validator(mode="after")
-    def _reject_executor_with_multiple_shards(self) -> Self:
-        if self.executor_host and self.shards != 1:
-            raise ValueError("executor_host requires shards=1")
-        return self
-
-
-class TopologyCollectResponse(BaseModel):
-    """Represent the response body for ``POST /topology/collect``.
-
-    ``task_history_ids`` lists the dispatched ``run-python`` tasks the
-    frontend then polls (``/result``) and tails (``/stream``) to
-    assemble the topology graph. ``targets`` echoes the executor hosts
-    the work was sharded across so the UI can surface where the
-    collection ran.
-
-    :param task_history_ids: Created task history ids, one per shard.
-    :type task_history_ids: list[int]
-    :param targets: Executor hosts selected for topology collection.
-    :type targets: list[str]
-    :param host_count: Number of MySQL hosts included in the collection.
-    :type host_count: int
-    :param shard_count: Number of dispatched topology shards.
-    :type shard_count: int
-    """
-
-    task_history_ids: list[int]
-    targets: list[str]
-    host_count: int
-    shard_count: int
-
-
-class TopologyResultResponse(BaseModel):
-    """Represent the response body for ``GET /topology/result``.
-
-    ``status`` is ``running`` while any of the underlying tasks is
-    still pending, ``ok`` once every task has finished, and ``failed``
-    when at least one task failed and produced no usable output.
-    ``graph`` is the merged React-Flow graph; ``pending_task_ids``
-    lists the still-running tasks for the UI's progress chip, and
-    ``failed_task_ids`` lets the UI warn when only some shards failed.
-
-    :param status: Aggregate topology collection status.
-    :type status: Literal["running", "ok", "failed"]
-    :param graph: Merged React-Flow graph when collection output is ready.
-    :type graph: dict[str, Any] | None
-    :param pending_task_ids: Task ids still pending or running.
-    :type pending_task_ids: list[int]
-    :param failed_task_ids: Terminal task ids that did not finish successfully.
-    :type failed_task_ids: list[int]
-    """
-
-    status: Literal["running", "ok", "failed"]
-    graph: dict[str, Any] | None = None
-    pending_task_ids: list[int] = Field(default_factory=list)
-    failed_task_ids: list[int] = Field(default_factory=list)
+def _require_topology_enabled() -> None:
+    """Reject topology API access while the feature flag is off."""
+    if not sep_settings.INVENTORY_TOPOLOGY_ENABLED:
+        raise HTTPNotFoundException("Inventory topology is disabled.")
 
 
 def _format_host_entry(service: dict[str, Any]) -> str | None:
@@ -358,6 +309,7 @@ async def topology_collect(
     split round-robin across the first N executor hosts so geographically
     split inventories run in parallel.
     """
+    _require_topology_enabled()
     hosts = await _collect_mysql_host_entries(inventory_api)
     if not hosts:
         raise HTTPNotFoundException(
@@ -430,9 +382,9 @@ def _parse_ids_param(ids: str) -> list[int]:
             parsed.append(value)
     if not parsed:
         raise HTTPBadRequestException("No task history ids provided.")
-    if len(parsed) > _MAX_TOPOLOGY_SHARDS:
+    if len(parsed) > MAX_TOPOLOGY_SHARDS:
         raise HTTPBadRequestException(
-            f"At most {_MAX_TOPOLOGY_SHARDS} task history ids are allowed."
+            f"At most {MAX_TOPOLOGY_SHARDS} task history ids are allowed."
         )
     return parsed
 
@@ -512,6 +464,7 @@ async def topology_result(
     polling once status flips to ``ok``, so the server doesn't bother
     with HTTP cache validation here.
     """
+    _require_topology_enabled()
     task_ids = _parse_ids_param(ids)
     histories = list(
         await asyncio.gather(*(_fetch_task_history(tasks_api, tid) for tid in task_ids))
@@ -694,6 +647,7 @@ async def topology_stream(
     Frontend hooks (``useTopologyStream``) consume this to render the
     React Flow graph progressively as each MySQL host finishes.
     """
+    _require_topology_enabled()
     task_ids = _parse_ids_param(ids)
     histories = list(
         await asyncio.gather(*(_fetch_task_history(tasks_api, tid) for tid in task_ids))

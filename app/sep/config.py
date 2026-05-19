@@ -452,6 +452,9 @@ class SEPSettings(BaseYamlAppSettings):
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
     :type CONNECTIVITY_CHECK_DEFAULT: bool
+    :param INVENTORY_TOPOLOGY_ENABLED: Whether to expose the experimental
+        inventory topology UI and API endpoints. Defaults to ``False``.
+    :type INVENTORY_TOPOLOGY_ENABLED: bool
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -476,6 +479,7 @@ class SEPSettings(BaseYamlAppSettings):
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
     CONNECTIVITY_CHECK_DEFAULT: bool = True
+    INVENTORY_TOPOLOGY_ENABLED: bool = False
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @model_validator(mode="before")
