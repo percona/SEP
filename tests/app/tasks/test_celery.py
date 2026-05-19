@@ -217,7 +217,9 @@ class TestDispatchQueueItem:
         ) as mock_dispatch:
             result = await dispatch_queue_item(queue_item, session=session)
 
-        mock_dispatch.assert_awaited_once_with(queue_item, session)
+        mock_dispatch.assert_awaited_once_with(
+            queue_item, session, await_annotations=False
+        )
         assert result is expected
 
     @pytest.mark.asyncio
@@ -240,7 +242,28 @@ class TestDispatchQueueItem:
             result = await dispatch_queue_item(queue_item, session=None)
 
         mock_dispatch.assert_awaited_once()
+        assert mock_dispatch.await_args.kwargs == {"await_annotations": False}
         assert result is expected
+
+    @pytest.mark.asyncio
+    async def test_await_annotations_flag_propagated_to_internal(self):
+        """Assert ``await_annotations=True`` reaches ``_dispatch_queue_item`` (SEP-1204)."""
+        queue_item = _make_history()
+        session = _make_session_mock()
+        expected = _make_history(status=TaskHistoryStatusEnum.RUNNING)
+
+        with patch(
+            "app.tasks.celery._dispatch_queue_item",
+            new_callable=AsyncMock,
+            return_value=expected,
+        ) as mock_dispatch:
+            await dispatch_queue_item(
+                queue_item, session=session, await_annotations=True
+            )
+
+        mock_dispatch.assert_awaited_once_with(
+            queue_item, session, await_annotations=True
+        )
 
 
 class TestInternalDispatchQueueItem:
@@ -1010,8 +1033,8 @@ class TestExecuteTaskQueue:
             call_order.append(("get_task_history", qid))
             return queue_item
 
-        async def mock_dispatch(item):
-            call_order.append(("dispatch_queue_item", item.id))
+        async def mock_dispatch(item, *, await_annotations=False):
+            call_order.append(("dispatch_queue_item", item.id, await_annotations))
             return dispatched
 
         test_loop = asyncio.new_event_loop()
@@ -1039,7 +1062,7 @@ class TestExecuteTaskQueue:
 
         assert isinstance(result, dict)
         assert ("get_task_history", 10) in call_order
-        assert ("dispatch_queue_item", queue_item.id) in call_order
+        assert ("dispatch_queue_item", queue_item.id, True) in call_order
 
 
 class TestSyncQueueItem:
@@ -1218,12 +1241,15 @@ class TestDispatchChainedTask:
             mock_task_first.return_value = chain_task
             mock_dispatch.return_value = AsyncMock()
 
-            await _dispatch_chained_task(chain_task.name, parent_history)
+            await _dispatch_chained_task(
+                chain_task.name, parent_history, await_annotations=True
+            )
 
         mock_dispatch.assert_awaited_once()
         dispatched_history = mock_dispatch.call_args[0][0]
         assert dispatched_history.execution_request.target == "host1"
         assert dispatched_history.execution_request.meta.get("_chain_depth") == 1
+        assert mock_dispatch.await_args.kwargs.get("await_annotations") is True
 
     @pytest.mark.asyncio
     async def test_unknown_task_logs_warning(self) -> None:
@@ -1374,8 +1400,12 @@ class TestSyncQueueItemChainDispatch:
         mock_save = AsyncMock()
 
         async def sync_mutates_in_place(
-            queue_item: TaskHistory, writer_session=None
+            queue_item: TaskHistory,
+            writer_session=None,
+            *,
+            await_annotations: bool = False,
         ) -> TaskHistory:
+            del writer_session, await_annotations
             queue_item.status = TaskHistoryStatusEnum.FAILED
             queue_item.started_at = datetime(2026, 4, 1, 10, 1, 0, tzinfo=UTC)
             queue_item.finished_at = datetime(2026, 4, 1, 10, 2, 0, tzinfo=UTC)
@@ -1477,7 +1507,9 @@ class TestSyncQueueItemChainDispatch:
 
             await sync_queue_item(1)
 
-        mock_chain.assert_awaited_once_with(chain_task.name, done_history, [])
+        mock_chain.assert_awaited_once_with(
+            chain_task.name, done_history, [], await_annotations=True
+        )
 
     @pytest.mark.asyncio
     async def test_no_chain_dispatch_when_still_running(self) -> None:
@@ -1634,7 +1666,9 @@ class TestSyncQueueItemChainDispatch:
 
             await sync_queue_item(1)
 
-        mock_chain.assert_awaited_once_with(chain_task.name, terminal_history, [])
+        mock_chain.assert_awaited_once_with(
+            chain_task.name, terminal_history, [], await_annotations=True
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1855,8 +1889,11 @@ async def _list_log_chunks(async_session_maker, task_history_id: int):
         )
 
 
-async def _fake_dispatch_mark_running(queue_item: TaskHistory) -> TaskHistory:
+async def _fake_dispatch_mark_running(
+    queue_item: TaskHistory, *, await_annotations: bool = False
+) -> TaskHistory:
     """Minimal dispatch stand-in: mark the item RUNNING and return it."""
+    del await_annotations
     queue_item.status = TaskHistoryStatusEnum.RUNNING
     return queue_item
 
@@ -2241,6 +2278,61 @@ class TestExecuteTaskByName:
             assert result["execution_request"]["target"] == "node-1"
 
 
+class TestExecuteTaskByNamePeriodicAnnotationRegression:
+    """Regression suite for SEP-1204 — periodic dispatch ``STARTED`` annotation.
+
+    Before SEP-1204, ``_dispatch_queue_item`` posted the ``STARTED`` annotation
+    via ``schedule_annotation`` (fire-and-forget ``asyncio.create_task``). When
+    called from the Celery worker (``execute_task_by_name`` →
+    ``celery.loop.run_until_complete(dispatch_queue_item(...))``), the inner
+    coroutine returned immediately after scheduling and the loop stopped with
+    the annotation task still pending; the HTTP POST never reached PMM.
+
+    This end-to-end test drives ``execute_task_by_name.__wrapped__`` through
+    the real ``run_until_complete``, lets the production
+    ``_dispatch_queue_item`` flow run against a real in-memory aiosqlite
+    session, and asserts ``annotate_task_event`` is awaited with
+    ``event="STARTED"`` before the wrapper returns. A regression that
+    reverts to ``schedule_annotation`` here would fail this assertion
+    because the abandoned background task never reaches the PMM boundary.
+    """
+
+    def test_started_annotation_reaches_pmm_for_periodic_dispatch(self, mocker):
+        """Assert ``annotate_task_event`` is awaited with ``STARTED`` (SEP-1204)."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="backup_data", alert_on_fail=False)
+            )
+
+            async def fake_dispatch_task(
+                passed_session: AsyncSession,
+                item: TaskHistory,
+                _task: Task | None = None,
+            ) -> TaskHistory:
+                item.status = TaskHistoryStatusEnum.RUNNING
+                return await TaskHistoryManager.save(
+                    passed_session, item, flag_modified_fields=["execution_request"]
+                )
+
+            fake_executor = MagicMock(spec=BaseExecutor)
+            fake_executor.get_hosts = MagicMock(return_value={"node-1": "10.0.0.1"})
+            fake_executor.dispatch_task = fake_dispatch_task
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=fake_executor
+            )
+            mock_annotate = mocker.patch(
+                "app.core.pmm.annotate_task_event", new_callable=AsyncMock
+            )
+
+            _run_skip_gate(test_loop, task_name="backup_data")
+
+        mock_annotate.assert_awaited_once()
+        kwargs = mock_annotate.await_args.kwargs
+        assert kwargs["event"] == "STARTED"
+        assert kwargs["task_name"] == "backup_data"
+        assert kwargs["target"] == "node-1"
+
+
 def _noop_async_session_maker():
     """Return a session maker whose sessions are no-op context managers.
 
@@ -2462,7 +2554,13 @@ class TestSyncQueueItemRegression:
         )
         saved_history = await TaskHistoryManager.save(session, history)
 
-        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+        async def fake_sync(
+            item: TaskHistory,
+            *,
+            writer_session=None,
+            await_annotations: bool = False,
+        ) -> TaskHistory:
+            del writer_session, await_annotations
             item.status = TaskHistoryStatusEnum.SUCCESS
             return item
 

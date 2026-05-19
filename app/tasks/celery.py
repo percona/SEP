@@ -50,7 +50,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
-from app.core.pmm import schedule_annotation
+from app.core.pmm import await_annotation, schedule_annotation
 from app.core.utils import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.tasks.config import tasks_settings
@@ -112,7 +112,9 @@ def execute_task_queue(self: CeleryTask, queue_id: int) -> dict[str, Any]:
     logger.info("Executing task with queue_id: %s", queue_id)
     queue_item = celery.loop.run_until_complete(get_task_history(queue_id))
     return jsonable_encoder(
-        celery.loop.run_until_complete(dispatch_queue_item(queue_item))
+        celery.loop.run_until_complete(
+            dispatch_queue_item(queue_item, await_annotations=True)
+        )
     )
 
 
@@ -150,7 +152,9 @@ def execute_task_by_name(
         )
         if skipped is not None:
             return jsonable_encoder(skipped)
-        task_history = celery.loop.run_until_complete(dispatch_queue_item(task_history))
+        task_history = celery.loop.run_until_complete(
+            dispatch_queue_item(task_history, await_annotations=True)
+        )
     except BaseNomadException:
         alert_msg = (
             f"Failed to dispatch periodic task "
@@ -367,7 +371,10 @@ async def prepare_periodic_task_history(
 
 
 async def dispatch_queue_item(
-    queue_item: TaskHistory, session: AsyncSession | None = None
+    queue_item: TaskHistory,
+    session: AsyncSession | None = None,
+    *,
+    await_annotations: bool = False,
 ) -> TaskHistory:
     """Process an item from the history table.
 
@@ -375,6 +382,12 @@ async def dispatch_queue_item(
     :type queue_item: TaskHistory
     :param session: Optional SQLAlchemy asynchronous session to use for the operation.
     :type session: AsyncSession | None
+    :param await_annotations: When True, await the STARTED PMM annotation inline
+        instead of scheduling it as a fire-and-forget background task. Required
+        from Celery contexts that drive the event loop via discrete
+        ``celery.loop.run_until_complete(...)`` calls; the FastAPI default
+        (``False``) keeps the request path non-blocking. See SEP-1204.
+    :type await_annotations: bool
     :return: The TaskHistory object post execution.
     :rtype: TaskHistory
     :raises HTTPException: If the queue item status is not PENDING,
@@ -385,12 +398,19 @@ async def dispatch_queue_item(
     if session is None:
         async_session = get_async_session_maker()
         async with async_session() as async_session:
-            return await _dispatch_queue_item(queue_item, async_session)
-    return await _dispatch_queue_item(queue_item, session)
+            return await _dispatch_queue_item(
+                queue_item, async_session, await_annotations=await_annotations
+            )
+    return await _dispatch_queue_item(
+        queue_item, session, await_annotations=await_annotations
+    )
 
 
 async def _dispatch_queue_item(
-    queue_item: TaskHistory, session: AsyncSession
+    queue_item: TaskHistory,
+    session: AsyncSession,
+    *,
+    await_annotations: bool = False,
 ) -> TaskHistory:
     if queue_item.status != TaskHistoryStatusEnum.PENDING:
         raise HTTPConflictException("Queue item is not in a pending state.")
@@ -432,7 +452,10 @@ async def _dispatch_queue_item(
         raise
     else:
         await session.refresh(result, attribute_names=["execution_request"])
-        schedule_annotation(result, "STARTED")
+        if await_annotations:
+            await await_annotation(result, "STARTED")
+        else:
+            schedule_annotation(result, "STARTED")
         return result
     finally:
         async with lock_session_maker() as async_session:
@@ -572,7 +595,7 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
     executor = get_executor_for_task(task)
     async with async_session() as writer_session:
         queue_item = await executor.sync_task_history(
-            queue_item, writer_session=writer_session
+            queue_item, writer_session=writer_session, await_annotations=True
         )
     queue_item.sync_in_progress_started_at = None
     async with async_session() as session:
@@ -588,11 +611,16 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
             ],
         )
         await session.refresh(saved, attribute_names=["execution_request"])
-    await maybe_dispatch_chain(saved, was_running=was_running)
+    await maybe_dispatch_chain(saved, was_running=was_running, await_annotations=True)
     return saved
 
 
-async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None:
+async def maybe_dispatch_chain(
+    saved: TaskHistory,
+    *,
+    was_running: bool,
+    await_annotations: bool = False,
+) -> None:
     """Dispatch the next chained task when ``saved`` is in a chain-eligible state.
 
     Eligibility requires ``was_running`` (the parent was RUNNING when this sync
@@ -605,6 +633,12 @@ async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None
     :type saved: TaskHistory
     :param was_running: Whether the parent was RUNNING when this sync started.
     :type was_running: bool
+    :param await_annotations: Forwarded to the chained ``dispatch_queue_item``
+        call. Celery contexts (``sync_queue_item``) pass ``True`` so the chained
+        STARTED annotation reaches PMM before the loop stops; the FastAPI sync
+        route keeps the default ``False`` to avoid blocking the response on PMM
+        availability. See SEP-1204.
+    :type await_annotations: bool
     """
     if not was_running:
         return
@@ -616,13 +650,20 @@ async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None
     )
     chain_task_names = meta.get("_chain_task_names")
     if should_chain and chain_task_names:
-        await _dispatch_chained_task(chain_task_names[0], saved, chain_task_names[1:])
+        await _dispatch_chained_task(
+            chain_task_names[0],
+            saved,
+            chain_task_names[1:],
+            await_annotations=await_annotations,
+        )
 
 
 async def _dispatch_chained_task(
     chain_task_name: str,
     parent: TaskHistory,
     remaining_chain: list[str] | None = None,
+    *,
+    await_annotations: bool = False,
 ) -> None:
     """Dispatch the next chained task after the parent completes successfully.
 
@@ -637,6 +678,9 @@ async def _dispatch_chained_task(
     :type parent: TaskHistory
     :param remaining_chain: Task names to chain after this one, if any.
     :type remaining_chain: list[str] | None
+    :param await_annotations: Forwarded to ``dispatch_queue_item``. See
+        :func:`maybe_dispatch_chain` for the FastAPI vs Celery rationale.
+    :type await_annotations: bool
     """
     if parent.execution_request.meta.get("_chain_depth", 0) >= _MAX_CHAIN_DEPTH:
         logger.warning(
@@ -688,7 +732,7 @@ async def _dispatch_chained_task(
             executed_by=parent.executed_by,
             anonymize_mask=parent.anonymize_mask,
         )
-        await dispatch_queue_item(chain_history)
+        await dispatch_queue_item(chain_history, await_annotations=await_annotations)
     except Exception:
         logger.exception(
             "Failed to dispatch chained task %r from parent %r",
