@@ -23,6 +23,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config import (
     BaseYamlAppSettings,
+    create_app,
     default_lifespan,
     PMMSettings,
     Settings,
@@ -317,3 +318,24 @@ def test_settings_secret_key_is_secretstr():
     secret_value = settings.SECRET_KEY.get_secret_value()
     if secret_value:
         assert secret_value not in repr(settings.SECRET_KEY)
+
+
+def test_create_app_default_docs_urls():
+    """``create_app`` without docs kwargs preserves FastAPI's default docs URLs."""
+    app = create_app()
+    assert app.docs_url == "/docs"
+    assert app.redoc_url == "/redoc"
+
+
+def test_create_app_disables_docs_when_none():
+    """``create_app`` forwards ``docs_url=None`` and ``redoc_url=None`` to FastAPI."""
+    app = create_app(docs_url=None, redoc_url=None)
+    assert app.docs_url is None
+    assert app.redoc_url is None
+
+
+def test_create_app_custom_docs_url():
+    """``create_app`` forwards a custom ``docs_url`` to FastAPI."""
+    app = create_app(docs_url="/custom-docs", redoc_url="/custom-redoc")
+    assert app.docs_url == "/custom-docs"
+    assert app.redoc_url == "/custom-redoc"

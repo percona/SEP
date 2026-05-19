@@ -545,3 +545,16 @@ class TestExceptionHandlers:
         response = test_client.get(non_existent_path, follow_redirects=False)
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/login?next={non_existent_path}"
+
+
+def test_sep_app_keeps_default_docs_urls():
+    """``sep_app`` keeps FastAPI's default ``/docs`` and ``/redoc`` URLs.
+
+    Only the top-level combined app disables the auto-generated docs (see SEP-1203).
+    ``sep_app`` itself must retain default behavior so it stays self-describing in
+    standalone use; the top-level ``_disabled_top_level_docs`` handler in
+    ``app/main.py`` (registered before ``app.mount("/", sep_app)``) is what makes
+    ``GET /docs`` on the combined app return 404 via mount-order precedence.
+    """
+    assert sep_app.docs_url == "/docs"
+    assert sep_app.redoc_url == "/redoc"
