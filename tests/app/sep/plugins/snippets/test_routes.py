@@ -378,8 +378,7 @@ class TestCompletedTasksPartialHasLogs:
     """Render the shared completed-tasks partial to verify the ``has_logs`` gating.
 
     Renders the template directly via the SEP Jinja environment instead of
-    spinning up the full snippets-detail HTTP flow. The template change is
-    the actual user-visible fix for SEP-1020 -- a Jinja typo on the gating
+    spinning up the full snippets-detail HTTP flow. A Jinja typo on the gating
     line would silently swallow the **View Logs** button across every
     plugin that includes the partial.
     """
