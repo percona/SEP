@@ -127,21 +127,27 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     try:
-        with TestClient(sep_app, raise_server_exceptions=False) as client:
-            client.post("/snippets/refresh", follow_redirects=False)
-            assert update_snippets_spy.await_count == 1
+        # Per tests/CLAUDE.md: never wrap TestClient(sep_app) in `with` --
+        # that triggers ``sep_lifespan`` and queries the celery beat
+        # ``schedule.db`` which is absent in fresh CI. Instantiate
+        # directly; the snapshot is wired manually via ``refresh_all``
+        # below, so the route observes the override without needing the
+        # lifespan to start the refresher.
+        client = TestClient(sep_app, raise_server_exceptions=False)
+        client.post("/snippets/refresh", follow_redirects=False)
+        assert update_snippets_spy.await_count == 1
 
-            await _insert_override(
-                override_session_maker,
-                SettingClassEnum.SNIPPETS_SETTINGS,
-                "ENABLE_MANUAL_SYNC",
-                value=False,
-            )
-            await refresh_all(lambda: override_session_maker, _sep_proxies())
+        await _insert_override(
+            override_session_maker,
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "ENABLE_MANUAL_SYNC",
+            value=False,
+        )
+        await refresh_all(lambda: override_session_maker, _sep_proxies())
 
-            client.post("/snippets/refresh", follow_redirects=False)
-            # The HOT override must short-circuit the route before update_snippets.
-            assert update_snippets_spy.await_count == 1
+        client.post("/snippets/refresh", follow_redirects=False)
+        # The HOT override must short-circuit the route before update_snippets.
+        assert update_snippets_spy.await_count == 1
     finally:
         sep_app.dependency_overrides = {}
 
