@@ -19,7 +19,7 @@ __all__ = ["build_snapshot"]
 
 import logging
 from types import MappingProxyType
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
@@ -28,6 +28,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import is_hot_reloadable
+from app.core.utils.pydantic import CustomFieldMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -90,13 +91,31 @@ async def build_snapshot(
 def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
     """Coerce a raw JSON-decoded value to the field's declared Python type.
 
+    Constraint metadata attached to the field's annotation (e.g. ``Gt(0)`` from
+    ``PositiveInt``) is preserved by re-assembling an ``Annotated`` type from
+    ``field_info.annotation`` plus every non-:class:`CustomFieldMetadata` item
+    in ``field_info.metadata``. Without this, ``TypeAdapter(field_info.annotation)``
+    would accept values the original settings model rejects -- e.g. a negative
+    integer override for a ``PositiveInt`` field would silently load.
+
     :param field_info: The Pydantic field metadata for the target attribute.
     :type field_info: FieldInfo
     :param raw: The JSON-decoded value as stored on the override row.
     :type raw: Any
-    :return: The validated Python value matching ``field_info.annotation``.
+    :return: The validated Python value matching ``field_info.annotation``
+        plus its preserved constraint metadata.
     :rtype: Any
     :raises ValidationError: If ``raw`` cannot be coerced to the declared
-        type. Callers handle and log.
+        type or violates a preserved constraint. Callers handle and log.
     """
-    return TypeAdapter(field_info.annotation).validate_python(raw)
+    constraints = tuple(
+        item
+        for item in field_info.metadata
+        if not isinstance(item, CustomFieldMetadata)
+    )
+    annotated_type: Any
+    if constraints:
+        annotated_type = Annotated[(field_info.annotation, *constraints)]
+    else:
+        annotated_type = field_info.annotation
+    return TypeAdapter(annotated_type).validate_python(raw)

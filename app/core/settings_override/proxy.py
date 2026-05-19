@@ -18,7 +18,7 @@
 __all__ = ["OverridableSettingsProxy"]
 
 from collections.abc import Mapping
-from typing import Generic, TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils.lazy import LazyProxy
@@ -30,7 +30,7 @@ T = TypeVar("T")
 _EMPTY_SNAPSHOT: Mapping[str, object] = {}
 
 
-class OverridableSettingsProxy(LazyProxy[T], Generic[T]):
+class OverridableSettingsProxy(LazyProxy[T]):
     """:class:`LazyProxy` that returns DB-backed override values when present.
 
     Attribute reads first consult an in-memory snapshot of overrides for the

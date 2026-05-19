@@ -169,6 +169,48 @@ async def test_dict_for_scalar_field_skipped(
 
 
 @pytest.mark.asyncio
+async def test_positive_int_constraint_rejects_zero(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``PositiveInt`` constraint metadata is preserved across coercion.
+
+    ``ARTIFACT_DOWNLOAD_TTL`` is annotated ``PositiveInt`` (= ``Annotated[int,
+    Gt(0)]``). The bare-annotation coercion would accept ``0`` because
+    ``TypeAdapter(int)`` drops the constraint, leaving issued tokens to
+    expire immediately. The cache preserves the constraint and rejects.
+    """
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="ARTIFACT_DOWNLOAD_TTL",
+        value=0,
+    )
+    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    assert "ARTIFACT_DOWNLOAD_TTL" not in snapshot
+    assert any("coercion" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_positive_int_constraint_rejects_negative(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Negative integers are rejected for ``PositiveInt`` fields."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="STALENESS_THRESHOLD_SECONDS",
+        value=-1,
+    )
+    snapshot = await build_snapshot(
+        session, TasksSettings, SettingClassEnum.TASKS_SETTINGS
+    )
+    assert "STALENESS_THRESHOLD_SECONDS" not in snapshot
+    assert any("coercion" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_other_entries_remain_after_failure(session: AsyncSession) -> None:
     """A single coercion failure does not drop other valid entries."""
     await _insert(
