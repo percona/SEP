@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""MySQL replication topology collector payload.
+"""Collect MySQL replication topology data.
 
 Runs on an executor host via the Tasks API ``run-python`` task. Reads a JSON
 config (host list + per-host options), queries each MySQL instance
