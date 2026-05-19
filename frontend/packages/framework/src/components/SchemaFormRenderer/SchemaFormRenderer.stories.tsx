@@ -18,6 +18,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { createMemoryRouter, RouterProvider, Link } from 'react-router-dom';
 import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
 import type { FormSection } from './types';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
@@ -472,5 +473,57 @@ export const WithAlertCapabilityUnavailable: Story = {
       // eslint-disable-next-line no-console
       console.log('submit', v);
     },
+  },
+};
+
+/**
+ * Demonstrates the unsaved-changes guard inside a memory router.
+ *
+ * 1. Type something in the Task Name field to make the form dirty.
+ * 2. Click "Leave this page" — the confirmation dialog appears.
+ * 3. Click "Stay" to cancel or "Discard changes" to proceed.
+ *
+ * The guard does not fire when the form is clean or after a successful submit.
+ */
+export const UnsavedChangesGuard: StoryObj = {
+  render: () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: (
+            <div style={{ padding: 24 }}>
+              <SchemaFormRenderer
+                sections={SIMPLE_TASK_SECTIONS}
+                submitLabel="Save task"
+                onSubmit={(v) => {
+                  // eslint-disable-next-line no-console
+                  console.log('submit', v);
+                }}
+              />
+              <Link to="/other" style={{ display: 'block', marginTop: 24 }}>
+                Leave this page →
+              </Link>
+            </div>
+          ),
+        },
+        {
+          path: '/other',
+          element: (
+            <div style={{ padding: 24 }}>
+              <p>You left the form page.</p>
+              <Link to="/">← Go back</Link>
+            </div>
+          ),
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    return (
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    );
   },
 };
