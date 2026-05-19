@@ -15,16 +15,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { usePluginSchema, type PluginSchema } from '@sep/api';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
-import Tab from '@mui/material/Tab';
-import Tabs from '@mui/material/Tabs';
 import Typography from '@mui/material/Typography';
 import { InventoryBreadcrumbs } from './InventoryPluginNavigation';
-import { inventoryMountPrefix } from './inventoryNestedPaths';
 import { InventoryRoutes } from './InventoryRoutes';
 
 export interface InventoryPluginProps {
@@ -63,38 +58,8 @@ export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPlugin
 
   return (
     <>
-      <InventoryViewTabs />
       <InventoryBreadcrumbs schema={schema} />
       <InventoryRoutes schema={schema} mockEntityItems={mockEntityItems} />
     </>
-  );
-}
-
-function InventoryViewTabs() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const prefix = useMemo(() => inventoryMountPrefix(location.pathname), [location.pathname]);
-  const value = useMemo(() => {
-    if (!prefix) {
-      return 'browse';
-    }
-    return location.pathname.startsWith(`${prefix}/topology`) ? 'topology' : 'browse';
-  }, [location.pathname, prefix]);
-
-  if (!prefix) {
-    return null;
-  }
-
-  return (
-    <Tabs
-      value={value}
-      onChange={(_, next) => {
-        navigate(next === 'topology' ? `${prefix}/topology` : `${prefix}/nodes`);
-      }}
-      sx={{ mb: 1 }}
-    >
-      <Tab value="browse" label="Browse" />
-      <Tab value="topology" label="Topology" />
-    </Tabs>
   );
 }
