@@ -22,6 +22,7 @@ from traceback import format_exception
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
@@ -327,7 +328,7 @@ async def request_validation_exception_handler(
         request
     ):
         return JSONResponse(
-            {"detail": exc.errors()},
+            {"detail": jsonable_encoder(exc.errors())},
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
 
