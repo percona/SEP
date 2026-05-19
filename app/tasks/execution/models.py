@@ -23,7 +23,7 @@ from typing import Any
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.pmm import schedule_annotation
+from app.core.pmm import await_annotation, schedule_annotation
 from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.utils import parse_payload
@@ -264,6 +264,8 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         self,
         queue_item: TaskHistory,
         writer_session: AsyncSession | None = None,
+        *,
+        await_annotations: bool = False,
     ) -> TaskHistory:
         """Sync the task history with the backend and trigger the configured alerts.
 
@@ -274,6 +276,13 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
             ``None``, the executor falls back to whatever session management it
             has available.
         :type writer_session: AsyncSession | None
+        :param await_annotations: When True, await the terminal PMM annotation
+            inline instead of scheduling it as a fire-and-forget background
+            task. Required from Celery contexts that drive the event loop via
+            discrete ``celery.loop.run_until_complete(...)`` calls; the FastAPI
+            default (``False``) keeps user-facing request paths (manual sync
+            route, connectivity polling, stop-task) non-blocking. See SEP-1204.
+        :type await_annotations: bool
         :return: The updated task history with execution details.
         :rtype: TaskHistory
         """
@@ -286,7 +295,10 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         if was_running:
             event = _TERMINAL_STATUS_EVENT_MAP.get(queue_item.status)
             if event:
-                schedule_annotation(queue_item, event)
+                if await_annotations:
+                    await await_annotation(queue_item, event)
+                else:
+                    schedule_annotation(queue_item, event)
         return queue_item
 
     @abstractmethod

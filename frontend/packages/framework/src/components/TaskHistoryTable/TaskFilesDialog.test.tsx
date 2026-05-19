@@ -91,6 +91,11 @@ describe('TaskFilesDialog', () => {
     expect(screen.getByText('1.0 KB')).toBeInTheDocument();
     expect(screen.getByText('logs')).toBeInTheDocument();
     expect(screen.getByText('Folder')).toBeInTheDocument();
+    // Verify the list request escapes the default /api base URL so it hits /files/{id}
+    expect(mockedApiClient.get).toHaveBeenCalledWith(
+      '/files/1',
+      expect.objectContaining({ baseURL: '' }),
+    );
   });
 
   it('shows empty state when file list is empty', async () => {
@@ -151,7 +156,11 @@ describe('TaskFilesDialog', () => {
     await waitFor(() =>
       expect(mockedApiClient.get).toHaveBeenCalledWith(
         '/files/42/download',
-        expect.objectContaining({ params: { path: 'output/result.txt' }, responseType: 'blob' }),
+        expect.objectContaining({
+          baseURL: '',
+          params: { path: 'output/result.txt' },
+          responseType: 'blob',
+        }),
       ),
     );
   });
@@ -186,7 +195,11 @@ describe('TaskFilesDialog', () => {
     await waitFor(() =>
       expect(mockedApiClient.get).toHaveBeenCalledWith(
         '/files/42/download',
-        expect.objectContaining({ params: { path: 'output/logs/' }, responseType: 'blob' }),
+        expect.objectContaining({
+          baseURL: '',
+          params: { path: 'output/logs/' },
+          responseType: 'blob',
+        }),
       ),
     );
     expect(capture.anchor?.download).toBe('logs.tar.gz');
