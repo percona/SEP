@@ -1,10 +1,6 @@
 packages:
   - 'packages/*'
   - 'packages/plugins/*'
-onlyBuiltDependencies:
-  - '@swc/core'
-  - 'esbuild'
-  - '@percona/percona-ui'
 minimumReleaseAge: 10080
 minimumReleaseAgeIgnoreMissingTime: false
 allowBuilds:
