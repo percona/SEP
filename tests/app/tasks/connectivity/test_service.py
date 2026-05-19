@@ -52,6 +52,9 @@ from tests.app.factories import TaskFactory
 MOCK_TASK_HISTORY_ID = 42
 EXPECTED_INDEPENDENT_CALL_COUNT = 2
 MIN_POLL_ITERATIONS = 2
+# ``_expire_and_fetch`` call sequence in ``test_fresh_fetch_retries_until_logs_are_populated``:
+# 1 post-dispatch (RUNNING), 2 post-terminal-sync (SUCCESS, no logs),
+# 3-4 ``_fetch_fresh_task_history`` retries (empty, then populated).
 FRESH_FETCH_POPULATE_CALL = 4
 
 
@@ -158,7 +161,7 @@ class TestCheckConnectivityRealSession:
         return await TaskManager.create(session, task_write)
 
     @pytest_asyncio.fixture
-    async def test_session_maker(self, session: AsyncSession):
+    async def async_session_maker(self, session: AsyncSession):
         """Return a session-maker bound to the current test engine."""
         return get_async_session_maker_from_engine(session.bind)
 
@@ -205,7 +208,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
         service_type: ConnectivityServiceType,
     ) -> None:
         """Verify successful connectivity checks for each service type."""
@@ -239,7 +242,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
@@ -255,7 +258,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Verify a connection-refused payload maps to a failed response."""
         request = _make_request(timeout=POLL_INTERVAL * 2)
@@ -288,7 +291,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
@@ -301,7 +304,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Verify FAILED task status returns stderr as the response error."""
         request = _make_request(timeout=POLL_INTERVAL * 2)
@@ -334,7 +337,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
@@ -348,7 +351,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Verify RUNNING tasks time out when they never finish."""
         request = _make_request(timeout=POLL_INTERVAL)
@@ -373,7 +376,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
@@ -387,7 +390,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Verify malformed stdout maps to a parse error response."""
         request = _make_request(timeout=POLL_INTERVAL * 2)
@@ -420,7 +423,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
@@ -433,7 +436,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Verify FAILED status still returns stderr written after transition."""
         request = _make_request(timeout=POLL_INTERVAL * 2)
@@ -459,7 +462,7 @@ class TestCheckConnectivityRealSession:
                 fetched.status == TaskHistoryStatusEnum.FAILED
                 and not logs_written["done"]
             ):
-                async with test_session_maker() as writer_session:
+                async with async_session_maker() as writer_session:
                     await self._append_log(
                         writer_session,
                         task_history_id,
@@ -480,7 +483,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch(
                 "app.tasks.connectivity.service._expire_and_fetch",
@@ -498,7 +501,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Verify SUCCESS status still parses stdout written after transition."""
         request = _make_request(timeout=POLL_INTERVAL * 2)
@@ -524,7 +527,7 @@ class TestCheckConnectivityRealSession:
                 fetched.status == TaskHistoryStatusEnum.SUCCESS
                 and not logs_written["done"]
             ):
-                async with test_session_maker() as writer_session:
+                async with async_session_maker() as writer_session:
                     await self._append_log(
                         writer_session,
                         task_history_id,
@@ -545,7 +548,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch(
                 "app.tasks.connectivity.service._expire_and_fetch",
@@ -562,7 +565,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Verify fresh-fetch retries until post-sync logs are persisted."""
         request = _make_request(timeout=POLL_INTERVAL * 2)
@@ -587,7 +590,7 @@ class TestCheckConnectivityRealSession:
         ):
             expire_calls["n"] += 1
             if expire_calls["n"] == FRESH_FETCH_POPULATE_CALL:
-                async with test_session_maker() as writer_session:
+                async with async_session_maker() as writer_session:
                     await self._append_log(
                         writer_session,
                         task_history_id,
@@ -607,7 +610,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch(
                 "app.tasks.connectivity.service._expire_and_fetch",
@@ -625,7 +628,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Verify PENDING tasks time out when no transition occurs."""
         request = _make_request(timeout=POLL_INTERVAL)
@@ -660,7 +663,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
@@ -699,21 +702,6 @@ class TestCheckConnectivityRealSession:
             timeout=POLL_INTERVAL,
         )
 
-        async def real_dispatch(
-            queue_item: TaskHistory, db: AsyncSession
-        ) -> TaskHistory:
-            queue_item.status = TaskHistoryStatusEnum.RUNNING
-            queue_item.execution_request.tracking.update(
-                evaluation_id="eval-1", job_id="job-1"
-            )
-            saved = await TaskHistoryManager.save(
-                db, queue_item, flag_modified_fields=["execution_request"]
-            )
-            # Production reload: deferred column_property is left unloaded
-            # so a plain attribute read would trip MissingGreenlet.
-            await db.refresh(saved)
-            return saved
-
         captured_history_id = []
 
         async def sync_task_history(
@@ -735,7 +723,7 @@ class TestCheckConnectivityRealSession:
         with (
             patch(
                 "app.tasks.connectivity.service.dispatch_queue_item",
-                side_effect=real_dispatch,
+                side_effect=self._real_dispatch_running,
             ),
             patch(
                 "app.tasks.connectivity.service.get_executor_for_task",
@@ -754,7 +742,7 @@ class TestCheckConnectivityRealSession:
         self,
         session: AsyncSession,
         run_python_task: Task,
-        test_session_maker,
+        async_session_maker,
     ) -> None:
         """Regression for SEP-1034: supply a writer session to log persistence.
 
@@ -779,19 +767,6 @@ class TestCheckConnectivityRealSession:
             service_type=ConnectivityServiceType.MYSQL,
             timeout=POLL_INTERVAL * 4,
         )
-
-        async def real_dispatch(
-            queue_item: TaskHistory, db: AsyncSession
-        ) -> TaskHistory:
-            queue_item.status = TaskHistoryStatusEnum.RUNNING
-            queue_item.execution_request.tracking.update(
-                evaluation_id="eval-1", job_id="job-1"
-            )
-            saved = await TaskHistoryManager.save(
-                db, queue_item, flag_modified_fields=["execution_request"]
-            )
-            await db.refresh(saved)
-            return saved
 
         stdout_bytes = b'{"success": true}'
         call_count = {"n": 0}
@@ -824,7 +799,7 @@ class TestCheckConnectivityRealSession:
         with (
             patch(
                 "app.tasks.connectivity.service.dispatch_queue_item",
-                side_effect=real_dispatch,
+                side_effect=self._real_dispatch_running,
             ),
             patch(
                 "app.tasks.connectivity.service.get_executor_for_task",
@@ -832,7 +807,7 @@ class TestCheckConnectivityRealSession:
             ),
             patch(
                 "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=test_session_maker,
+                return_value=async_session_maker,
             ),
             patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
