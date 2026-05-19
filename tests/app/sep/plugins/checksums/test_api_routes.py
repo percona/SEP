@@ -22,7 +22,11 @@ from unittest.mock import AsyncMock, call, patch
 import pytest
 from fastapi import status
 
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPConflictException,
+    HTTPNotFoundException,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     clear_connectivity_caches,
@@ -887,8 +891,12 @@ class TestChecksumsExecuteEndpoint:
         sep_app.dependency_overrides[check_for_conflicted_running_tasks] = (
             raise_conflict
         )
-
-        response = test_client.post("/api/plugins/checksums/busy-task/execute", json={})
+        try:
+            response = test_client.post(
+                "/api/plugins/checksums/busy-task/execute", json={}
+            )
+        finally:
+            sep_app.dependency_overrides.pop(check_for_conflicted_running_tasks, None)
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
@@ -919,7 +927,47 @@ class TestChecksumsExecuteEndpoint:
             json={"chain_on_failure": True},
         )
 
-        mock_task_api_dep.post.assert_called_once_with(
+        mock_task_api_dep.post.assert_awaited_once_with(
             "/execute/my-task",
             json={"chain_on_failure": True},
         )
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_propagates_tasks_api_error(self, test_client, mock_task_api_dep):
+        """Ensure errors raised by the Tasks API /execute call propagate to the caller."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+        mock_task_api_dep.post.side_effect = HTTPBadGatewayException()
+
+        response = test_client.post("/api/plugins/checksums/my-task/execute", json={})
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_task_id_is_none_when_tasks_api_omits_id(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure task_id serializes as null when the Tasks API response has no 'id' key."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+        mock_task_api_dep.post.return_value = {}
+
+        response = test_client.post("/api/plugins/checksums/my-task/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["task_id"] is None
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_422_for_non_string_chain_task_names(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure chain_task_names containing non-string elements is rejected with 422."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+
+        response = test_client.post(
+            "/api/plugins/checksums/my-task/execute",
+            json={"chain_task_names": [1, 2, 3]},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
