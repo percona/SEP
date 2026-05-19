@@ -15,22 +15,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useQuery } from '@tanstack/react-query';
-import { apiClient, type SepComponents } from '@sep/api';
-
-export type FileMetadata = SepComponents['schemas']['FileMetadata'];
-export type TaskHistoryFilesMap = Record<string, FileMetadata>;
-
-export function useTaskHistoryFiles(taskHistoryId: number | null | undefined) {
-  return useQuery<TaskHistoryFilesMap>({
-    queryKey: ['task-history-files', taskHistoryId],
-    enabled: taskHistoryId !== null && taskHistoryId !== undefined,
-    staleTime: 0,
-    queryFn: async () => {
-      const { data } = await apiClient.get<TaskHistoryFilesMap>(`/files/${taskHistoryId}`, {
-        baseURL: '',
-      });
-      return data;
-    },
-  });
-}
+// Project-prefixed class applied to MRT paper containers so theme.ts can scope
+// overrides without using MUI's reserved "Mui*" prefix.
+export const SEP_TABLE_CLASS = 'SepTable';
