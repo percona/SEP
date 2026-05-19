@@ -29,6 +29,7 @@ export function useTaskFileDownload() {
   return useMutation<void, Error, TaskFileDownloadParams>({
     mutationFn: async ({ taskHistoryId, path, isDir }) => {
       const { data } = await apiClient.get<Blob>(`/files/${taskHistoryId}/download`, {
+        baseURL: '',
         params: { path },
         responseType: 'blob',
       });

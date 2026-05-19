@@ -48,14 +48,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     <script src="{{ url_for('static', path='/js/chain-builder.js') }}"
             nonce="{{ request.state.csp_nonce }}"></script>
 {% endblock behaviours_optimized_extra %}
-{% block sticky %}
-    <div class="toggle-btn-group"
-         role="group"
-         aria-label="Backup and Restore navigation">
-        <a href="{{ url_for('mysql_backups_index') }}" class="toggle-btn active">Backup</a>
-        <a href="{{ url_for('restores_index') }}" class="toggle-btn">Restore</a>
-    </div>
-{% endblock sticky %}
 {% block main %}
     <table data-table>
         <caption>Overview</caption>
@@ -180,5 +172,4 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         {% set history_tasks = history %}
         {% include "tasks/partials/completed-tasks.html.j2" %}
     </section>
-    {% include "mysql_backups/backup/partials/edit-form.html.j2" %}
 {% endblock main %}
