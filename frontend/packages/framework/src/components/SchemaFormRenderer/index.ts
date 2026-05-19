@@ -20,6 +20,7 @@ export type { SchemaFormRendererProps } from './SchemaFormRenderer';
 export { FieldRenderer } from './fields';
 export { useCascadingField } from './hooks/useCascadingField';
 export { useConditionalField } from './hooks/useConditionalField';
+export { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard';
 export type { ConditionalFieldState } from './hooks/useConditionalField';
 export { useCardinalityRules } from './hooks/useCardinalityRules';
 export type { CardinalityViolation } from './hooks/useCardinalityRules';

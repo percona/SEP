@@ -17,7 +17,7 @@ FROM node:22-slim AS frontend-builder
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.1.2 --activate
 
 COPY frontend/ .
 
