@@ -17,14 +17,20 @@
 
 from datetime import datetime, UTC
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi import status
 
 from app.core.exceptions import HTTPNotFoundException
 from app.sep.deps import get_task_by_name
 from app.sep.main import sep_app
-from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum
+from app.tasks.models import (
+    SYSTEM_USER,
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+)
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/plugins/tasks"
@@ -83,6 +89,16 @@ class TestTasksPluginSchemaEndpoint:
 class TestTasksPluginListEndpoint:
     """Tests for GET /api/plugins/tasks/."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_username_mapping(self):
+        """Avoid live Casdoor calls when list routes resolve user display names."""
+        with patch(
+            "app.sep.plugins.tasks.api_routes.get_username_mapping",
+            new_callable=AsyncMock,
+            return_value={},
+        ):
+            yield
+
     def test_list_returns_empty_array(self, test_client, mock_task_api_dep):
         """Ensure an empty upstream list maps to an empty JSON array."""
         mock_task_api_dep.get = AsyncMock(
@@ -119,6 +135,36 @@ class TestTasksPluginListEndpoint:
         assert row["created_at"] == task["created_at"]
         assert row["created_by"] == "creator-id"
         assert row["last_updated_by"] == "editor-id"
+
+    @patch(
+        "app.sep.plugins.tasks.api_routes.get_username_mapping",
+        new_callable=AsyncMock,
+    )
+    def test_list_resolves_user_ids_to_usernames(
+        self,
+        mock_username_mapping,
+        test_client,
+        mock_task_api_dep,
+        admin_user,
+    ):
+        """Ensure list rows show Casdoor usernames like the legacy tasks list page."""
+        admin_user_id = str(admin_user.id)
+        mock_username_mapping.return_value = {admin_user_id: "Admin"}
+        task = build_task_payload(
+            name="monitor-task",
+            created_by=SYSTEM_USER,
+            last_updated_by=admin_user_id,
+        )
+        mock_task_api_dep.get = AsyncMock(
+            return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
+        )
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()[0]
+        assert row["created_by"] == SYSTEM_USER
+        assert row["last_updated_by"] == "Admin"
 
 
 class TestTasksPluginDetailEndpoint:

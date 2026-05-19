@@ -17,20 +17,7 @@
 
 import { Box, Typography } from '@mui/material';
 import { Route, Routes, useParams } from 'react-router-dom';
-
-function TasksListShell() {
-  return (
-    <Box>
-      <Typography variant="h4" component="h1">
-        Task Manager
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-        View task definitions, execution history, and running task logs. Task creation and execution
-        remain on owning plugins and the legacy /tasks/ page.
-      </Typography>
-    </Box>
-  );
-}
+import { TasksListPage } from './TasksListPage';
 
 function TaskDetailShell() {
   const { taskName } = useParams<{ taskName: string }>();
@@ -50,7 +37,7 @@ function TaskDetailShell() {
 export function TasksPlugin() {
   return (
     <Routes>
-      <Route index element={<TasksListShell />} />
+      <Route index element={<TasksListPage />} />
       <Route path=":taskName" element={<TaskDetailShell />} />
     </Routes>
   );

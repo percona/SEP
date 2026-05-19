@@ -27,7 +27,12 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from app.sep.deps import ExecutorHostsCtx, IsApiAuthenticated, TaskAPI
+from app.sep.deps import (
+    ExecutorHostsCtx,
+    get_username_mapping,
+    IsApiAuthenticated,
+    TaskAPI,
+)
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.tasks.deps import TaskDep
 from app.sep.plugins.tasks.models import (
@@ -58,6 +63,23 @@ def iso_or_none(value: Any) -> str | None:
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
+
+
+def resolve_user_display(
+    user_id: str | None, user_id_to_username: dict[str, str]
+) -> str | None:
+    """Map a stored user id to a display name, matching legacy Jinja task lists.
+
+    :param user_id: Casdoor user id from the tasks API, or ``None``.
+    :type user_id: str | None
+    :param user_id_to_username: Mapping from user id to Casdoor username.
+    :type user_id_to_username: dict[str, str]
+    :return: The username when known, otherwise the original id, or ``None``.
+    :rtype: str | None
+    """
+    if user_id is None:
+        return None
+    return user_id_to_username.get(user_id, user_id)
 
 
 def build_periodic_summary(item: dict[str, Any]) -> PeriodicTaskSummary:
@@ -94,13 +116,18 @@ async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
     :rtype: list[TaskListResponse]
     """
     response = await tasks_api.get("/")
+    user_id_to_username = await get_username_mapping()
     return [
         TaskListResponse(
             name=item["name"],
             backend=TaskBackendEnum(item["backend"]),
             created_at=iso_or_none(item.get("created_at")),
-            created_by=item.get("created_by"),
-            last_updated_by=item.get("last_updated_by"),
+            created_by=resolve_user_display(
+                item.get("created_by"), user_id_to_username
+            ),
+            last_updated_by=resolve_user_display(
+                item.get("last_updated_by"), user_id_to_username
+            ),
         )
         for item in response["items"]
     ]

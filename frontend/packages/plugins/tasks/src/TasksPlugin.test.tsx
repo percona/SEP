@@ -16,28 +16,79 @@
  */
 
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PluginSchema } from '@sep/api';
 import { TasksPlugin } from './TasksPlugin';
+import { useTasksList, useTasksPluginSchema } from './hooks';
+
+vi.mock('./hooks', () => ({
+  useTasksPluginSchema: vi.fn(),
+  useTasksList: vi.fn(),
+}));
+
+vi.mock('@sep/framework', () => ({
+  SchemaListView: ({ data }: { data: Record<string, unknown>[] }) => (
+    <div data-testid="schema-list">
+      {data.map((row) => (
+        <span key={String(row.name)}>{String(row.name)}</span>
+      ))}
+    </div>
+  ),
+}));
+
+const mockUseTasksPluginSchema = vi.mocked(useTasksPluginSchema);
+const mockUseTasksList = vi.mocked(useTasksList);
+
+const mockSchema: PluginSchema = {
+  name: 'tasks',
+  display_name: 'Task Manager',
+  description: 'View task definitions and execution history.',
+  forms: [],
+  list_view: {
+    columns: [{ key: 'name', label: 'Name', sortable: true }],
+    default_sort: 'name',
+  },
+};
+
+function renderPlugin(initialEntry: string) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <TasksPlugin />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
 describe('TasksPlugin', () => {
-  it('renders the list shell at the index route', () => {
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <TasksPlugin />
-      </MemoryRouter>,
-    );
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseTasksPluginSchema.mockReturnValue({
+      data: mockSchema,
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useTasksPluginSchema>);
+    mockUseTasksList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useTasksList>);
+  });
+
+  it('renders the list page at the index route', () => {
+    renderPlugin('/');
 
     expect(screen.getByRole('heading', { name: 'Task Manager' })).toBeInTheDocument();
-    expect(screen.getByText(/legacy \/tasks\/ page/i)).toBeInTheDocument();
+    expect(screen.getByTestId('schema-list')).toBeInTheDocument();
   });
 
   it('renders the detail shell for a task route', () => {
-    render(
-      <MemoryRouter initialEntries={['/my-task']}>
-        <TasksPlugin />
-      </MemoryRouter>,
-    );
+    renderPlugin('/my-task');
 
     expect(screen.getByRole('heading', { name: 'my-task' })).toBeInTheDocument();
     expect(screen.getByText(/task detail view \(shell\)/i)).toBeInTheDocument();

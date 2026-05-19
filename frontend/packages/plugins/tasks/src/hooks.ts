@@ -15,17 +15,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** Plugin key used for ``/api/plugins/{name}/`` routes and schema fetching. */
-export const TASKS_PLUGIN_NAME = 'tasks';
+import { useQuery } from '@tanstack/react-query';
+import { apiClient, usePluginSchema } from '@sep/api';
+import { TASKS_PLUGIN_NAME, TASKS_PLUGINS_API_BASE, type TaskListRow } from './types';
 
-/** Base path for the tasks plugin JSON API under the SEP layer. */
-export const TASKS_PLUGINS_API_BASE = '/plugins/tasks';
+/** Fetch the read-only Task Manager plugin schema. */
+export function useTasksPluginSchema() {
+  return usePluginSchema(TASKS_PLUGIN_NAME);
+}
 
-/** One task row from ``GET /api/plugins/tasks/``. */
-export interface TaskListRow {
-  name: string;
-  backend: string;
-  created_at: string | null;
-  created_by: string | null;
-  last_updated_by: string | null;
+/** Fetch task definition rows for the list view. */
+export function useTasksList(options?: { enabled?: boolean }) {
+  return useQuery<TaskListRow[]>({
+    queryKey: ['tasks', 'list'],
+    enabled: options?.enabled !== false,
+    queryFn: async () => {
+      const { data } = await apiClient.get<TaskListRow[]>(`${TASKS_PLUGINS_API_BASE}/`);
+      return data;
+    },
+  });
 }

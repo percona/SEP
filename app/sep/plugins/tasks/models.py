@@ -58,11 +58,12 @@ class TaskListResponse(BaseModel):
     :type backend: TaskBackendEnum
     :param created_at: When the task was created, or ``None`` if unavailable.
     :type created_at: str | None
-    :param created_by: The user ID of the user who created the task, or
-        ``None`` if unknown.
+    :param created_by: Display name for the task creator (Casdoor username when
+        resolvable, otherwise the stored user id), or ``None`` if unknown.
     :type created_by: str | None
-    :param last_updated_by: The user ID of the user who last updated the
-        task, or ``None`` if unknown.
+    :param last_updated_by: Display name for the user who last updated the
+        task (Casdoor username when resolvable, otherwise the stored user id),
+        or ``None`` if unknown.
     :type last_updated_by: str | None
     """
 
