@@ -8,6 +8,7 @@ Customer-facing documentation of how data moves through the **Services Enablemen
 |------|---------|
 | [`sep-task-execution-dfd.mmd`](sep-task-execution-dfd.mmd) | Level-1 DFD (happy path + audit/logging) |
 | [`sep-task-execution-sequence.mmd`](sep-task-execution-sequence.mmd) | Sequence diagram (time-ordered detail) |
+| [`data-capture-redaction-retention.md`](data-capture-redaction-retention.md) | What SEP captures, redacts, stores, exposes, and retains for task output |
 | [`security-review-checklist.md`](security-review-checklist.md) | Security sign-off before customer delivery (DFD §1–7, Nomad §8) |
 | [`../nomad-driver-deployment.md`](../nomad-driver-deployment.md) | Nomad `raw_exec` driver, deployment topology, non-root agent, API access |
 | [`exports/sep-task-execution-dfd.pdf`](exports/sep-task-execution-dfd.pdf) | Exported PDF — main DFD (regenerate after `.mmd` changes) |
