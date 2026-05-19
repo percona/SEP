@@ -856,7 +856,8 @@ def test_rc1_after_prep_errors_when_dev_bump_pr_unmerged(monkeypatch, capsys):
     )
     assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 1
     err = capsys.readouterr().err
-    assert "dev-bump PR opened by `make release-prep` must be merged" in err
+    assert "merge the dev-bump PR opened by `make release-prep`" in err
+    assert "before the next release cycle" in err
     assert dev_bump_calls == []
 
 
