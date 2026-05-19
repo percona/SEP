@@ -500,9 +500,11 @@ def build_topology_graph(
 
     :param host_records: Output of :func:`merge_host_records` - ``{host_entry:
         {"status": "ok"|"error", "data"|"error": ...}}``.
+    :type host_records: Mapping[str, dict[str, Any]]
     :return: Graph dict with ``nodes`` (mysql + cluster + unknown_source) and
         ``edges`` (replication + dual_primary). The shape matches what the
         ``InventoryTopology`` React component expects.
+    :rtype: dict[str, Any]
     """
     nodes, cluster_members, hash_to_node, addr_to_node = _build_mysql_nodes(
         host_records
