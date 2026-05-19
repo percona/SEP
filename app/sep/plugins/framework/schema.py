@@ -34,6 +34,7 @@ __all__ = [
     "IntegerField",
     "ListView",
     "MultiChoiceField",
+    "PluginDeploymentCapabilities",
     "PluginEntitySchema",
     "PluginSchema",
     "SchemaBaseModel",
@@ -1006,3 +1007,14 @@ class PluginSchema(SchemaBaseModel):
         if errors:
             raise ValueError("; ".join(errors))
         return self
+
+
+class PluginDeploymentCapabilities(BaseModel):
+    """Serve as the base class for plugin ``GET /capabilities`` response models.
+
+    Inherit from this class when defining the response model for a plugin's
+    ``capabilities_endpoint()`` provider.  The marker lets consumers
+    statically identify deployment-capabilities models and distinguishes them
+    from :class:`Capabilities`, which describes static UI feature flags on
+    :attr:`PluginSchema.capabilities` (chaining, scheduling, alert_on_fail).
+    """
