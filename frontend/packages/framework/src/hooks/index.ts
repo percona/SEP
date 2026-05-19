@@ -53,7 +53,6 @@ export type {
   TaskHistoryEntry,
   PaginatedTaskHistory,
   UseTaskHistoryOptions,
-  TaskExecuteRequest,
 } from './useTaskHistory';
 
 export { useTaskHistoryFiles } from './useTaskHistoryFiles';

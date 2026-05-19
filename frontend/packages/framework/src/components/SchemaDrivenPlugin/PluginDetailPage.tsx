@@ -361,7 +361,7 @@ function ActionBar({ schema, pluginName, taskName }: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeletePluginTask(pluginName);
-  const executeTask = useExecuteTask();
+  const executeTask = useExecuteTask(pluginName);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [executeConfirmOpen, setExecuteConfirmOpen] = useState(false);
 

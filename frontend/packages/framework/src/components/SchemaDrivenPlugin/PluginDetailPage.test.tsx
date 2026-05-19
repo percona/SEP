@@ -170,9 +170,44 @@ describe('PluginDetailPage execute flow', () => {
     const dialog = await screen.findByRole('dialog');
     await userEvent.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
 
-    await waitFor(() =>
-      expect(mockExecuteMutate).toHaveBeenCalledWith({ taskName: 'FECHK' }),
-    );
+    await waitFor(() => expect(mockExecuteMutate).toHaveBeenCalledWith({ taskName: 'FECHK' }));
+  });
+
+  it('shows error snackbar and closes dialog on execute failure', async () => {
+    mockExecuteMutate.mockReset();
+    mockExecuteMutate.mockRejectedValue(new Error('Execute failed'));
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK');
+
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Execute failed')).toBeInTheDocument());
+  });
+
+  it('closes dialog without calling execute when cancelled', async () => {
+    mockExecuteMutate.mockReset();
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK');
+
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(mockExecuteMutate).not.toHaveBeenCalled();
   });
 });
 

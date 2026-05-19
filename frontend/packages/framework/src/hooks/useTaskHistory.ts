@@ -156,28 +156,29 @@ export function useStopTaskHistory() {
   });
 }
 
-export type TaskExecuteRequest = TasksComponents['schemas']['TaskExecuteRequest'];
-
 /**
- * Dispatch a saved task for immediate execution (or with optional ETA / chain).
+ * Dispatch a saved task for immediate execution.
+ *
+ * Pass `pluginName` to also refresh the plugin-task detail query so the status
+ * chip on the detail page updates immediately after execution.
  */
-export function useExecuteTask() {
+export function useExecuteTask(pluginName?: string) {
   const queryClient = useQueryClient();
-  return useMutation<
-    TaskHistoryEntry,
-    Error,
-    { taskName: string; body?: TaskExecuteRequest | null }
-  >({
-    mutationFn: async ({ taskName, body }) => {
+  return useMutation<TaskHistoryEntry, Error, { taskName: string }>({
+    mutationFn: async ({ taskName }) => {
       const { data } = await apiClient.post<TaskHistoryEntry>(
         `/tasks/execute/${encodeURIComponent(taskName)}`,
-        body ?? {},
+        {},
       );
       return data;
     },
     onSuccess: (_data, { taskName }) => {
       queryClient.invalidateQueries({ queryKey: ['task-history'] });
       queryClient.invalidateQueries({ queryKey: ['task-history', taskName] });
+      if (pluginName) {
+        queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks'] });
+        queryClient.removeQueries({ queryKey: ['plugins', pluginName, 'tasks', taskName] });
+      }
     },
   });
 }
