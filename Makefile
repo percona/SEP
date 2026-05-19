@@ -4,6 +4,10 @@ SHELL=env bash
 
 PYTHON?=python3
 RELEASE_VER?=HEAD
+# Pin Poetry so the bootstrap doesn't pull a fresh release whose transitive
+# deps (e.g. virtualenv) are then filtered out by solver.min-release-age=7
+# during the project's plugin resolve.
+POETRY_VERSION?=2.4.0
 ifdef VIRTUAL_ENV
     VENV=${VIRTUAL_ENV}
 else
@@ -16,7 +20,7 @@ ifdef POETRY
 	VENV=${VIRTUAL_ENV}
 	VENV_BIN="${VENV}/bin"
 else
-	START_PKGS=pip wheel poetry
+	START_PKGS=pip wheel poetry==${POETRY_VERSION}
 	POETRY="${VENV_BIN}/poetry"
 endif
 PIP?="${VENV_BIN}/pip"
