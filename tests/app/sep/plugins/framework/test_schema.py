@@ -1237,6 +1237,24 @@ class TestPluginSchemaPredecessorsField:
 
         assert schema.predecessors is None
 
+    def test_empty_list_collapses_to_none(self) -> None:
+        """Collapse ``predecessors=[]`` to ``None`` so the contract is single-valued.
+
+        ``cascade_create_predecessors`` rejects an empty input as a
+        programmer error; the schema validator preempts that by collapsing
+        empty lists at construction time, so plugins can pass either form
+        without surprising consumers.
+        """
+        schema = PluginSchema(
+            name="chain-demo",
+            display_name="Chain Demo",
+            forms=[],
+            list_view=_minimal_list_view(),
+            predecessors=[],
+        )
+
+        assert schema.predecessors is None
+
     def test_with_predecessors_round_trips_through_json(self) -> None:
         """Round-trip a schema carrying ``predecessors`` losslessly via JSON."""
         schema = PluginSchema(

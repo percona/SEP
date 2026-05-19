@@ -948,19 +948,23 @@ class PluginSchema(SchemaBaseModel):
         underlying chain machinery: celery's
         :func:`_dispatch_chained_task` inherits ``_chain_on_failure`` from
         the parent's execution request and applies it to every chained
-        step (``app/tasks/celery.py:673-675``). Reject both at schema
-        construction time so the failure surfaces at plugin load, not on
-        first task creation.
+        step. Reject both at schema construction time so the failure
+        surfaces at plugin load, not on first task creation.
+
+        Also collapses ``[]`` to ``None`` so the field's contract is
+        single-valued: either the plugin declares predecessors (non-empty
+        list) or omits them entirely.
 
         :param value: The validated ``predecessors`` list, or ``None``.
         :type value: list[ChainedPredecessor] | None
-        :return: The input ``value`` unchanged when valid.
+        :return: The input ``value`` when non-empty, ``None`` when the
+            input was ``None`` or an empty list.
         :rtype: list[ChainedPredecessor] | None
         :raises ValueError: When two entries share a ``name_suffix`` or when
             the entries have differing ``on_failure`` values.
         """
         if not value:
-            return value
+            return None
         counts = Counter(spec.name_suffix for spec in value)
         duplicates = sorted(suffix for suffix, count in counts.items() if count > 1)
         if duplicates:

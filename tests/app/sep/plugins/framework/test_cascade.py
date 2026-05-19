@@ -553,7 +553,7 @@ class TestCascadeCreatePredecessors:
         tasks_api.post.assert_not_awaited()
 
     async def test_single_predecessor_halt_success(self) -> None:
-        """Issue POSTs in order and fire execute with halt → chain_on_failure=False."""
+        """POST parent then predecessor, then fire execute with halt → chain_on_failure=False."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         spec = ChainedPredecessor(name_suffix="-pre-checks", on_failure="halt")
         pred_payload = _predecessor_payload()
@@ -567,8 +567,8 @@ class TestCascadeCreatePredecessors:
             parent_payload, pred_payload, spec
         )
         assert tasks_api.post.await_args_list == [
-            call("/", json=expected_pred_built),
             call("/", json=parent_payload),
+            call("/", json=expected_pred_built),
             call(
                 "/execute/t1-pre-checks",
                 json={"chain_task_names": ["t1"], "chain_on_failure": False},
@@ -616,9 +616,9 @@ class TestCascadeCreatePredecessors:
             parent_payload, pred_payloads[1], specs[1]
         )
         assert tasks_api.post.await_args_list == [
+            call("/", json=parent_payload),
             call("/", json=first_built),
             call("/", json=second_built),
-            call("/", json=parent_payload),
             call(
                 "/execute/t1-pred1",
                 json={
@@ -628,8 +628,8 @@ class TestCascadeCreatePredecessors:
             ),
         ]
 
-    async def test_first_predecessor_create_failure_no_rollback(self) -> None:
-        """Skip rollback when the first predecessor POST itself fails."""
+    async def test_parent_create_failure_no_rollback(self) -> None:
+        """Skip rollback when the parent POST itself fails."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         tasks_api.post.side_effect = exc
@@ -644,10 +644,8 @@ class TestCascadeCreatePredecessors:
         assert exc_info.value is exc
         tasks_api.delete.assert_not_awaited()
 
-    async def test_second_predecessor_create_failure_rolls_back_first_lifo(
-        self,
-    ) -> None:
-        """Roll back already-created predecessors in reverse order."""
+    async def test_first_predecessor_create_failure_rolls_back_parent(self) -> None:
+        """Roll back the parent when the first predecessor POST fails."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         exc = HTTPException(status_code=status.HTTP_409_CONFLICT)
         tasks_api.post.side_effect = [None, exc]
@@ -665,10 +663,10 @@ class TestCascadeCreatePredecessors:
             )
 
         assert exc_info.value is exc
-        assert tasks_api.delete.await_args_list == [call("/t1-a")]
+        assert tasks_api.delete.await_args_list == [call("/t1")]
 
-    async def test_parent_create_failure_rolls_back_predecessors_lifo(self) -> None:
-        """Roll back predecessors after parent POST fails; execute never fires."""
+    async def test_second_predecessor_create_failure_rolls_back_lifo(self) -> None:
+        """Roll back the first predecessor and parent in reverse after the second predecessor POST fails."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         tasks_api.post.side_effect = [None, None, exc]
@@ -686,7 +684,7 @@ class TestCascadeCreatePredecessors:
             )
 
         assert exc_info.value is exc
-        assert tasks_api.delete.await_args_list == [call("/t1-b"), call("/t1-a")]
+        assert tasks_api.delete.await_args_list == [call("/t1-a"), call("/t1")]
 
     async def test_execute_failure_rolls_back_parent_and_predecessors(self) -> None:
         """Roll back parent + predecessors in reverse when the execute call fails."""
@@ -704,8 +702,8 @@ class TestCascadeCreatePredecessors:
 
         assert exc_info.value is exc
         assert tasks_api.delete.await_args_list == [
-            call("/t1"),
             call("/t1-pre-checks"),
+            call("/t1"),
         ]
 
     async def test_rollback_delete_failure_is_logged_and_swallowed(
@@ -735,7 +733,7 @@ class TestCascadeCreatePredecessors:
             )
 
         assert exc_info.value is original
-        assert tasks_api.delete.await_args_list == [call("/t1"), call("/t1-pre-checks")]
+        assert tasks_api.delete.await_args_list == [call("/t1-pre-checks"), call("/t1")]
         assert logger_warning.call_count == len(tasks_api.delete.await_args_list)
         for warning_call in logger_warning.call_args_list:
             assert "Rollback DELETE failed" in warning_call.args[0]
@@ -818,31 +816,41 @@ class TestCascadeUpdatePredecessors:
         assert result.failures[0].exception is parent_exc
         assert result.successes == ["t1-a", "t1-b"]
 
-    async def test_parent_rename_failure_skips_predecessor_loop(self) -> None:
-        """Skip predecessor PUTs when a parent rename fails (would orphan children)."""
+    async def test_parent_rename_rejected_upfront(self) -> None:
+        """Reject a parent rename before any PUT — the chain wiring stores the old name."""
         tasks_api = AsyncMock(spec=RemoteAPI)
-        parent_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        tasks_api.put.side_effect = [parent_exc]
         parent_updated = _parent_payload(name="t2")
 
-        result = await cascade_update_predecessors(
-            tasks_api,
-            "t1",
-            parent_updated,
-            ["t1-a", "t1-b"],
-            [
-                (ChainedPredecessor(name_suffix="-a"), _predecessor_payload()),
-                (ChainedPredecessor(name_suffix="-b"), _predecessor_payload()),
-            ],
-        )
+        with pytest.raises(ValueError, match="does not support renaming the parent"):
+            await cascade_update_predecessors(
+                tasks_api,
+                "t1",
+                parent_updated,
+                ["t1-a"],
+                [(ChainedPredecessor(name_suffix="-a"), _predecessor_payload())],
+            )
 
-        tasks_api.put.assert_awaited_once_with("/t1", json=parent_updated)
-        assert not result.success
-        assert result.successes == []
-        assert [f.task_name for f in result.failures] == ["t1", "t1-a", "t1-b"]
-        assert result.failures[0].exception is parent_exc
-        assert isinstance(result.failures[1].exception, RuntimeError)
-        assert "parent rename failed" in str(result.failures[1].exception)
+        tasks_api.put.assert_not_awaited()
+
+    async def test_predecessor_rename_rejected_upfront(self) -> None:
+        """Reject a predecessor rename before any PUT — the chain wiring stores the old name."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(ValueError, match="does not support renaming predecessors"):
+            await cascade_update_predecessors(
+                tasks_api,
+                "t1",
+                _parent_payload(),
+                ["t1-old"],
+                [
+                    (
+                        ChainedPredecessor(name_suffix="-new"),
+                        _predecessor_payload(),
+                    )
+                ],
+            )
+
+        tasks_api.put.assert_not_awaited()
 
     async def test_single_predecessor_put_failure_collects_and_continues(
         self,
