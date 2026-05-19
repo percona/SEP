@@ -610,7 +610,9 @@ async def maybe_dispatch_chain(saved: TaskHistory, *, was_running: bool) -> None
         return
     meta = saved.execution_request.meta or {}
     chain_on_failure = meta.get("_chain_on_failure", False)
-    is_terminal = saved.status.is_terminal()
+    is_terminal = (
+        saved.status.is_finished() or saved.status == TaskHistoryStatusEnum.LOST
+    )
     should_chain = saved.status == TaskHistoryStatusEnum.SUCCESS or (
         chain_on_failure and is_terminal
     )
