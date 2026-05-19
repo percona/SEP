@@ -213,6 +213,7 @@ development:
     TASKS_ENDPOINT: http://localhost:8000/api/tasks
     SECURITY_HEADERS:
       CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+        - /api/docs
         - /api/inventory/docs
         - /api/tasks/docs
     PLUGINS:
@@ -301,6 +302,7 @@ production_docker:
     SSL_KEYFILE: /data/certs/sep/localhost-cert-key.pem
     SECURITY_HEADERS:
       CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+        - /api/docs
         - /api/inventory/docs
         - /api/tasks/docs
     SESSION:
