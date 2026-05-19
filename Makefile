@@ -4,9 +4,12 @@ SHELL=env bash
 
 PYTHON?=python3
 RELEASE_VER?=HEAD
-# Pin Poetry so the bootstrap doesn't pull a fresh release whose transitive
-# deps (e.g. virtualenv) are then filtered out by solver.min-release-age=7
-# during the project's plugin resolve.
+# Pin Poetry and pre-install the required plugin via pip. Without the plugin
+# pre-installed, `poetry install` runs an auto-resolve to add it, which racks
+# the bootstrap-fresh transitive deps (e.g. virtualenv) against the project's
+# solver.min-release-age=7 and fails ("virtualenv 21.3.3 doesn't match any
+# versions"). Pre-installing means Poetry sees the plugin in its env and skips
+# the resolve entirely.
 POETRY_VERSION?=2.4.0
 ifdef VIRTUAL_ENV
     VENV=${VIRTUAL_ENV}
@@ -20,7 +23,7 @@ ifdef POETRY
 	VENV=${VIRTUAL_ENV}
 	VENV_BIN="${VENV}/bin"
 else
-	START_PKGS=pip wheel poetry==${POETRY_VERSION}
+	START_PKGS=pip wheel poetry==${POETRY_VERSION} poetry-plugin-export
 	POETRY="${VENV_BIN}/poetry"
 endif
 PIP?="${VENV_BIN}/pip"
