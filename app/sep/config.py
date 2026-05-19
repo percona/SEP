@@ -122,14 +122,14 @@ class Plugin(BaseCaseInsensitiveModel):
         """Resolve the full module path for the plugin.
 
         This method takes the module name provided and prefixes it with
-        "app.sep.plugins." to resolve the full import path. Legacy MySQL
+        ``app.sep.plugins.`` to resolve the full import path. Legacy MySQL
         backups plugin names (``backup``, ``backups``) are remapped to
         ``mysql_backups`` with a deprecation warning before prefixing; the
         legacy aliases will not be supported in the next version.
 
         :param v: The module name to resolve.
         :type v: str
-        :return: The full module path with the "app.sep.plugins." prefix.
+        :return: The full module path with the ``app.sep.plugins.`` prefix.
         :rtype: str
         """
         if v in _LEGACY_BACKUP_MODULE_NAMES:
