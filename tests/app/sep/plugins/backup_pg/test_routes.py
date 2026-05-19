@@ -26,7 +26,10 @@ from app.sep.connectivity import (
     get_latest_connectivity_result,
 )
 from app.sep.main import sep_app
-from app.sep.plugins.backup_pg.deps import build_backup_task_payload
+from app.sep.plugins.backup_pg.deps import (
+    build_backup_task_payload,
+    get_backups_index_context,
+)
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
@@ -249,3 +252,105 @@ def test_backups_execute_with_chain_task_names(
     called_args, called_kwargs = mock_task_api_dep.post.call_args
     assert called_args[0] == f"/execute/{created_task.name}"
     assert called_kwargs["json"]["chain_task_names"] == ["task-a", "task-b"]
+
+
+@pytest.mark.usefixtures("_mock_get_backups_task_dep")
+def test_pg_backups_delete(test_client, mock_task_api_dep, created_task):
+    """Test POST /backup-pg/{task_name}/delete route."""
+    response = test_client.post(
+        f"/backup-pg/{created_task.name}/delete", follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["Location"] == "/backup_pg"
+
+    mock_task_api_dep.delete.assert_awaited_once()
+    called_args, _ = mock_task_api_dep.delete.await_args
+    assert called_args[0] == f"/{created_task.name}"
+
+
+@pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
+def test_pg_backups_detail_uses_own_delete_route(
+    test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
+):
+    """Test pg_backups_detail uses its own delete route.
+
+    Regression for SEP-1207: pg_backups_detail must use pg_backups_delete,
+    not mysql_backups_delete, so the page renders even when mysql_backups
+    plugin is disabled.
+    """
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            [],
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+    )
+
+    response = test_client.get(f"/backup-pg/{created_task.name}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert f"/backup-pg/{created_task.name}/delete" in response.text
+    # No cross-plugin URLs that include the task name (delete/update/detail).
+    # The page may still contain `/mysql_backups/` from the global plugin nav
+    # sidebar when mysql_backups is mounted; we only guard the task-specific
+    # URLs that historically used `url_for("mysql_backups_*", task_name=...)`.
+    assert f"/mysql_backups/{created_task.name}" not in response.text
+    # The PG details page does not ship an edit form, so the Edit button must
+    # be hidden (gated on `is_edit_form_present`). The Delete button must
+    # still render so users can delete tasks via the UI.
+    assert "delete-tasks-button" in response.text
+    assert "edit-tasks-button" not in response.text
+
+
+def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
+    """Test the index page links periodic tasks to its own detail route.
+
+    Regression for SEP-1207: the periodic-task rows on the PG backups index
+    page must link to pg_backups_detail, not mysql_backups_detail, so the page
+    renders even when the mysql_backups plugin is disabled.
+    """
+    sep_app.dependency_overrides[get_backups_index_context] = lambda: {
+        "user": "default_user",
+        "executor_hosts": ["host1"],
+        "services": [],
+        # A non-empty `tasks` list forces the template to render the "Saved"
+        # branch, which is what includes the Periodic Tasks partial we need
+        # to exercise for this regression.
+        "tasks": [{"name": "pg_periodic_task"}],
+        "pending_tasks": [],
+        "history_tasks": [],
+        "running_tasks": [],
+        "periodic_tasks": [
+            {
+                "id": 1,
+                "task": "pg_periodic_task",
+                "interval": {"every": 5, "period": "minutes"},
+                "crontab": None,
+                "period": "every 5 minutes",
+                "start_time": None,
+                "last_run_at": None,
+                "next_run_at": None,
+                "total_run_count": 0,
+                "enabled": True,
+                "execute_request": None,
+            },
+        ],
+        "chainable_tasks": [],
+        "AVAILABLE_TIMEZONES": ["UTC"],
+        "alert_on_fail_default": False,
+        "alert_on_fail_available": False,
+        "connectivity_check_default": True,
+    }
+
+    response = test_client.get("/backup-pg/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "/backup-pg/pg_periodic_task" in response.text
+    assert "/mysql_backups/pg_periodic_task" not in response.text
+
+    sep_app.dependency_overrides = {}
