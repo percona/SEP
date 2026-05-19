@@ -102,17 +102,19 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <span class="label">Execute</span>
         </button>
         {% if task.is_edit_enabled %}
-            <button type="button"
-                    class="text medium edit-button submitButton triggerEditTask edit-tasks-button"
-                    data-task="{{ task.name }}"
-                    aria-label="Edit task for modification"
-                    data-tooltip
-                    data-modal="trigger"
-                    data-modal-target="modalEditTask"
-                    form="edit-task-form">
-                <span class="material-symbols-outlined">edit</span>
-                <span class="label">Edit</span>
-            </button>
+            {% if task.is_edit_form_present is not defined or task.is_edit_form_present %}
+                <button type="button"
+                        class="text medium edit-button submitButton triggerEditTask edit-tasks-button"
+                        data-task="{{ task.name }}"
+                        aria-label="Edit task for modification"
+                        data-tooltip
+                        data-modal="trigger"
+                        data-modal-target="modalEditTask"
+                        form="edit-task-form">
+                    <span class="material-symbols-outlined">edit</span>
+                    <span class="label">Edit</span>
+                </button>
+            {% endif %}
             <button class="text medium delete-button submitButton delete-tasks-button"
                     form="delete-task-form">
                 <span class="material-symbols-outlined">delete_forever</span>
