@@ -66,7 +66,7 @@ def parse_host_port(host_entry: str) -> tuple[str, int]:
         try:
             return host, int(port_str)
         except ValueError:
-            return host_entry, DEFAULT_MYSQL_PORT
+            return host, DEFAULT_MYSQL_PORT
     return host_entry, DEFAULT_MYSQL_PORT
 
 
