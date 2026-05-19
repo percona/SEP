@@ -76,6 +76,7 @@ from app.sep.deps import (
     CurrentUser,
     InventoryAPI,
     IsApiAuthenticated,
+    IsCsrfValidated,
     SessionDep,
     TaskAPI,
 )
@@ -287,6 +288,7 @@ def _select_topology_targets(
 
 @router.post(
     "/topology/collect",
+    dependencies=[IsCsrfValidated],
     response_model=TopologyCollectResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
