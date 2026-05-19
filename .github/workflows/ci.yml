@@ -54,6 +54,7 @@ jobs:
       precommit: ${{ steps.filter.outputs.precommit }}
       frontend: ${{ steps.filter.outputs.frontend }}
       docker: ${{ steps.filter.outputs.docker }}
+      shell: ${{ steps.filter.outputs.shell }}
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -70,6 +71,8 @@ jobs:
               - 'poetry.toml'
             precommit:
               - '.pre-commit-config.yaml'
+            shell:
+              - '**/*.sh'
             frontend:
               - 'frontend/**'
               - 'package.json'
@@ -138,7 +141,8 @@ jobs:
           needs.changes.outputs.python == 'true' ||
           needs.changes.outputs.precommit == 'true' ||
           needs.changes.outputs.frontend == 'true' ||
-          needs.changes.outputs.docker == 'true'
+          needs.changes.outputs.docker == 'true' ||
+          needs.changes.outputs.shell == 'true'
         )
       }}
     needs:
@@ -153,7 +157,14 @@ jobs:
         uses: ./.github/actions/setup-python-job
 
       - name: Install pnpm
-        run: npm install -g pnpm@10.33.0
+        run: npm install -g pnpm@11.1.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22.13.0"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile

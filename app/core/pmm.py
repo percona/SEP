@@ -143,6 +143,44 @@ async def annotate_task_event(
     )
 
 
+def _snapshot_for_annotation(queue_item: TaskHistory, event: str) -> dict[str, Any]:
+    """Validate the precondition and snapshot kwargs for ``annotate_task_event``.
+
+    Enforce the SEP-1009/1017/1021 invariants exactly once: the deferred
+    ``execution_request`` column must be loaded, the snapshot is taken from
+    :attr:`loaded_value` when available (per :func:`execution_request_for_pmm_snapshot`),
+    and ``meta`` is deep-copied so background callers observe the values at
+    scheduling time even if the originating request mutates nested structures
+    inside the attribute afterwards.
+
+    :param queue_item: The task history record.
+    :type queue_item: TaskHistory
+    :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``).
+    :type event: str
+    :return: Keyword arguments for :func:`annotate_task_event`.
+    :rtype: dict[str, Any]
+    :raises RuntimeError: If ``execution_request`` is not loaded on
+        ``queue_item``.
+    """
+    if _EXECUTION_REQUEST_ATTR in sa_inspect(queue_item).unloaded:
+        raise RuntimeError(
+            "PMM annotation helpers require queue_item.execution_request "
+            "to be loaded. Call "
+            '`await session.refresh(obj, attribute_names=["execution_request"])`'
+            " before schedule_annotation/await_annotation(obj, ...). The column "
+            "is deferred=True and a sync access triggers MissingGreenlet on "
+            "asyncpg/aiosqlite (or DetachedInstanceError once the session "
+            "has closed)."
+        )
+    execution_request = execution_request_for_pmm_snapshot(queue_item)
+    return {
+        "task_name": execution_request.task,
+        "target": execution_request.target,
+        "meta": copy.deepcopy(execution_request.meta),
+        "event": event,
+    }
+
+
 def schedule_annotation(
     queue_item: TaskHistory,
     event: str,
@@ -171,6 +209,13 @@ def schedule_annotation(
     at scheduling time even if the originating request mutates nested
     structures inside the attribute afterwards.
 
+    Use this helper from FastAPI request handlers, where the event loop
+    keeps running after the response is sent. From Celery contexts that
+    drive the loop via discrete ``celery.loop.run_until_complete(...)``
+    calls, prefer :func:`await_annotation` — fire-and-forget tasks
+    scheduled here are abandoned when the outer coroutine returns and
+    never reach PMM. See SEP-1204.
+
     :param queue_item: The task history record.
     :type queue_item: TaskHistory
     :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``).
@@ -178,25 +223,33 @@ def schedule_annotation(
     :raises RuntimeError: If ``execution_request`` is not loaded on
         ``queue_item``.
     """
-    if _EXECUTION_REQUEST_ATTR in sa_inspect(queue_item).unloaded:
-        raise RuntimeError(
-            "schedule_annotation requires queue_item.execution_request "
-            "to be loaded. Call "
-            '`await session.refresh(obj, attribute_names=["execution_request"])`'
-            " before schedule_annotation(obj, ...). The column is "
-            "deferred=True and a sync access triggers MissingGreenlet on "
-            "asyncpg/aiosqlite (or DetachedInstanceError once the session "
-            "has closed)."
-        )
-    execution_request = execution_request_for_pmm_snapshot(queue_item)
-    meta = copy.deepcopy(execution_request.meta)
-    task = asyncio.create_task(
-        annotate_task_event(
-            task_name=execution_request.task,
-            target=execution_request.target,
-            meta=meta,
-            event=event,
-        )
-    )
+    kwargs = _snapshot_for_annotation(queue_item, event)
+    task = asyncio.create_task(annotate_task_event(**kwargs))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+
+
+async def await_annotation(queue_item: TaskHistory, event: str) -> None:
+    """Await a PMM annotation directly.
+
+    Same precondition and snapshot semantics as :func:`schedule_annotation`,
+    but ``annotate_task_event`` is awaited inline so the call completes
+    before the outer coroutine returns. Use this from Celery worker tasks
+    that drive the event loop with ``celery.loop.run_until_complete(...)``:
+    a fire-and-forget background task scheduled there is abandoned when the
+    outer coroutine returns and never reaches PMM (SEP-1204).
+
+    ``annotate_task_event`` is internally bounded by
+    ``settings.PMM.annotations_timeout``; errors are swallowed by
+    :func:`create_pmm_annotation`'s ``except`` block, so this helper never
+    raises on PMM failures.
+
+    :param queue_item: The task history record.
+    :type queue_item: TaskHistory
+    :param event: The event label (e.g. ``"STARTED"``, ``"COMPLETED"``).
+    :type event: str
+    :raises RuntimeError: If ``execution_request`` is not loaded on
+        ``queue_item``.
+    """
+    kwargs = _snapshot_for_annotation(queue_item, event)
+    await annotate_task_event(**kwargs)
