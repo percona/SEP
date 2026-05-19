@@ -78,7 +78,7 @@ class Plugin(BaseCaseInsensitiveModel):
     :param name: The name of the plugin.
     :type name: str
     :param module_name: The name of the module associated with the plugin. This field is
-        automatically prefixed with "app.sep.plugins." during validation.
+        automatically prefixed with ``app.sep.plugins.`` during validation.
     :type module_name: StrImportableModule
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
