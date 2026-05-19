@@ -773,11 +773,11 @@ def cmd_prep(version: str, *, sign_via_github_api: bool) -> int:
     """Prepare a release on Day 27: scope-lock without bumping or tagging.
 
     Carries the scope-lock side effects of today's atomic ``cmd_rc(RC=1)`` —
-    create + push the release branch, fire the rule #16 webhook, open the
-    dev-bump PR on main, smoke-build the wheel, and trigger an internal-only
-    Jenkins build (``pushImageDocker=false``) tagged by HEAD SHA. The
-    follow-up ``cmd_rc(RC=1)`` (Day 28) does the version bump, tag, GH
-    pre-release, and the Docker-Hub-pushing Jenkins build.
+    create + push the release branch, fire the Jira version-create webhook,
+    open the dev-bump PR on main, smoke-build the wheel, and trigger an
+    internal-only Jenkins build (``pushImageDocker=false``) tagged by HEAD
+    SHA. The follow-up ``cmd_rc(RC=1)`` (Day 28) does the version bump, tag,
+    GH pre-release, and the Docker-Hub-pushing Jenkins build.
 
     :param version: The X.Y.Z release version (no ``v`` prefix).
     :type version: str

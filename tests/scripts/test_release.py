@@ -786,7 +786,7 @@ def test_prep_via_github_api_errors_without_gh(monkeypatch, capsys):
 
 
 def test_rc1_after_prep_still_fires_webhook(monkeypatch):
-    """Rule #16 is idempotent — RC=1 still fires the webhook under after-prep."""
+    """Re-fire the version-create webhook under after-prep (rule is idempotent)."""
     calls = []
     _patch_rc_ok(
         monkeypatch,
