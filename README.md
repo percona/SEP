@@ -460,11 +460,26 @@ SEP:
 
 #### Inventory MySQL Topology
 
-The Inventory plugin ships a **Topology** tab next to **Browse** that draws an
-interactive React Flow graph of every MySQL service the inventory knows about:
-replication chains (primary → replica with GTID/IO/SQL state), dual-primary
-pairs, and Percona XtraDB Cluster groups. Topology data is collected **live, on
-demand** - there is no persisted snapshot in the database - by dispatching
+The Inventory plugin has an experimental **Topology** tab next to **Browse**
+that is hidden by default. Enable it only on deployments ready to test live
+topology collection:
+
+```yaml
+SEP:
+  INVENTORY_TOPOLOGY_ENABLED: true
+```
+
+Or set the equivalent environment variable:
+
+```bash
+SEP__INVENTORY_TOPOLOGY_ENABLED=true
+```
+
+When enabled, the tab draws an interactive React Flow graph of every MySQL
+service the inventory knows about: replication chains (primary → replica with
+GTID/IO/SQL state), dual-primary pairs, and Percona XtraDB Cluster groups.
+Topology data is collected **live, on demand** - there is no persisted snapshot
+in the database - by dispatching
 sharded `run-python` tasks (capped at 8 shards) to executor hosts via the
 Tasks API. Each shard runs the
 [`topology.py`](app/sep/plugins/inventory/payloads/topology.py) payload, which
