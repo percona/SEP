@@ -406,6 +406,29 @@ class Settings(BaseYamlSettings):
         deep_dict_update(logging_config, v)
         return logging_config
 
+    @field_validator("SETTINGS_OVERRIDE_REFRESH_INTERVAL")
+    @classmethod
+    def _settings_override_refresh_interval_positive(
+        cls, value: timedelta
+    ) -> timedelta:
+        """Reject zero or negative refresh intervals.
+
+        ``start_refresh_task()`` passes ``interval.total_seconds()`` directly
+        to ``asyncio.sleep()``. A non-positive interval would turn the
+        refresher into a tight loop that hammers the DB every iteration.
+
+        :param value: The configured refresh interval.
+        :type value: timedelta
+        :return: The validated interval.
+        :rtype: timedelta
+        :raises ValueError: If ``value`` is not strictly positive.
+        """
+        if value.total_seconds() <= 0:
+            raise ValueError(
+                "SETTINGS_OVERRIDE_REFRESH_INTERVAL must be a positive duration"
+            )
+        return value
+
     @model_validator(mode="after")
     def set_log_level(self) -> Self:
         """Set the logging level for the application.

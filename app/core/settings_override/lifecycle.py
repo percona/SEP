@@ -58,9 +58,14 @@ async def refresh_all(
 ) -> None:
     """Refresh override snapshots for all wired proxies in a single session.
 
-    On failure for any single proxy, the existing snapshot on that proxy is
-    retained and the error is logged. Other proxies in ``proxies`` continue
-    to refresh -- a per-proxy failure does not abort the cycle.
+    Per-proxy failures (raised from :func:`build_snapshot` once a session is
+    open) are caught and logged: the previous snapshot is retained for that
+    proxy and the rest of ``proxies`` continue to refresh. Failures that
+    occur *before* per-proxy iteration begins -- specifically from
+    ``session_maker_factory()`` or ``async_session_maker()`` -- are NOT
+    handled here; they propagate to the caller. The background refresher
+    in :func:`start_refresh_task` wraps its periodic invocation in a broad
+    ``except`` so transient engine/pool errors do not kill the task.
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``. Invoked exactly once per call
@@ -68,6 +73,10 @@ async def refresh_all(
     :type session_maker_factory: SessionMakerFactory
     :param proxies: The wired proxy registry keyed by class identifier.
     :type proxies: ProxyRegistry
+    :raises Exception: Re-raises any failure from ``session_maker_factory()``
+        or from opening the ``async_session_maker()`` context (engine not
+        reachable, pool exhausted, auth, ...). Per-proxy ``build_snapshot``
+        failures are handled inline and do NOT propagate.
     """
     async_session_maker = session_maker_factory()
     async with async_session_maker() as session:
@@ -82,6 +91,9 @@ async def refresh_all(
                     setting_class.value,
                 )
                 continue
+            # ``_set_snapshot`` is the intentional refresher-only entry point
+            # for swapping the proxy's snapshot; see its docstring. The
+            # SLF001 silence is local to this caller, not a per-file blanket.
             entry.proxy._set_snapshot(snapshot)  # noqa: SLF001
 
 
@@ -101,11 +113,19 @@ async def start_refresh_task(
     :type session_maker_factory: SessionMakerFactory
     :param proxies: The wired proxy registry keyed by class identifier.
     :type proxies: ProxyRegistry
-    :param interval: The wall-clock delay between refresh cycles.
+    :param interval: The wall-clock delay between refresh cycles. Must be a
+        positive duration; the :class:`Settings` field validator enforces
+        this at construction time.
     :type interval: timedelta
     :return: The background refresh task. Callers must cancel and await this
         task during shutdown to drain pending iterations cleanly.
     :rtype: asyncio.Task
+    :raises Exception: Re-raises any failure from the inline initial
+        :func:`refresh_all` call -- typically a ``session_maker_factory()``
+        or session-open failure (see :func:`refresh_all`). Subsequent
+        iterations inside the background task are wrapped in ``except`` and
+        do NOT propagate; only the startup-time refresh can break the
+        lifespan.
     """
     await refresh_all(session_maker_factory, proxies)
     interval_seconds = interval.total_seconds()

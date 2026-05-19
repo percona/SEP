@@ -27,14 +27,23 @@ from app.core.db.sql_types import AutoJSON
 
 
 class SettingClassEnum(StrEnum):
-    """Settings classes that may have HOT override rows in this iteration.
+    """Enumerate settings classes that may have HOT override rows.
 
     Only classes whose proxy is actually wired in this ticket are listed:
     ``SEPSettings``, ``TasksSettings``, ``SnippetsSettings`` and
     ``MessagesSettings``. ``Settings``, ``InventorySettings``,
     ``AlertSettings`` and ``AnonymizerSettings`` are intentionally NOT here
-    -- wrapping them is deferred to follow-up tickets. Adding a value later
-    requires a per-track Alembic migration to extend the enum column.
+    -- wrapping them is deferred to follow-up tickets.
+
+    To wire a new settings class:
+
+    1. Add a member here whose value matches the Pydantic class ``__name__``.
+    2. Generate an Alembic migration on every consumer track that extends the
+       ``CHECK`` constraint on ``settingoverride.setting_class``. The column
+       uses ``native_enum=False`` so the value list lives in a constraint,
+       not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
+    3. Wire a ``ProxyEntry`` for the new class in the relevant service's
+       lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
 
     :cvar SEP_SETTINGS: ``SEPSettings`` class identifier.
     :vartype SEP_SETTINGS: str
@@ -53,7 +62,7 @@ class SettingClassEnum(StrEnum):
 
 
 class SettingOverride(BaseSQLModel, table=True):
-    """Admin-managed runtime override of a single settings field.
+    """Represent an admin-managed runtime override of a single settings field.
 
     The same concrete class is shared across services. Each service's Alembic
     env re-imports the class via ``from app.<svc>.models import *`` (the
@@ -84,7 +93,11 @@ class SettingOverride(BaseSQLModel, table=True):
     )
 
     setting_class: SettingClassEnum = SQLField(
-        sa_column=Column(EnumField(SettingClassEnum), nullable=False, index=True),
+        sa_column=Column(
+            EnumField(SettingClassEnum, native_enum=False),
+            nullable=False,
+            index=True,
+        ),
     )
     key: str = SQLField(index=True, nullable=False, max_length=255)
     value: JsonValue = SQLField(

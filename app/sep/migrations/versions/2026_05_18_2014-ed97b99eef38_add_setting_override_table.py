@@ -49,6 +49,7 @@ def upgrade() -> None:
                 "SNIPPETS_SETTINGS",
                 "MESSAGES_SETTINGS",
                 name="settingclassenum",
+                native_enum=False,
             ),
             nullable=False,
         ),

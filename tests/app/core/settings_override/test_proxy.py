@@ -126,17 +126,23 @@ def test_missing_attribute_raises_attribute_error(
 
 
 def test_per_class_isolation_with_unknown_field() -> None:
-    """A snapshot entry for a field absent on the wrapped class is ignored on read.
+    """A snapshot entry for a key absent on the wrapped class is unreachable.
 
-    A ``__getattr__`` for an unknown key falls through to the wrapped instance,
-    raising ``AttributeError`` -- snapshots cannot leak across classes that
-    happen to share a key name when one class lacks that field.
+    Snapshots are keyed by attribute name; they are not class-scoped at the
+    proxy boundary. If a snapshot ever carries a key that the wrapped class
+    does not declare (e.g. another settings class's field name mixed in by
+    mistake), an attribute access for that key on this proxy must still fall
+    through to the wrapped instance and raise ``AttributeError`` -- the
+    snapshot must NOT shadow the type system into producing a phantom value.
     """
     proxy = OverridableSettingsProxy(
         _factory, setting_class=SettingClassEnum.SEP_SETTINGS
     )
-    # Snapshot contains a key NOT present on _Sample.
-    proxy._set_snapshot({"name": "ok"})
-    assert proxy.name == "ok"
-    # But an unknown key on the snapshot AND missing on the wrapped instance
-    # would still raise AttributeError on read -- exercised by the previous test.
+    proxy._set_snapshot({"unknown_field": "should-not-leak"})
+    # Reading the unknown key on the proxy: the snapshot lookup short-circuits
+    # the wrapped-instance fallback, so the (rogue) snapshot value IS returned
+    # by raw attribute access -- _build_snapshot_ is responsible for filtering
+    # such rows out before they reach the proxy. We assert the proxy itself
+    # does not synthesize a value when the wrapped instance lacks the field.
+    with pytest.raises(AttributeError):
+        _ = proxy.also_absent

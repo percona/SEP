@@ -55,6 +55,11 @@ async def build_snapshot(
     :type setting_class: SettingClassEnum
     :return: An immutable mapping of field name to coerced typed value.
     :rtype: MappingProxyType[str, Any]
+    :raises sqlalchemy.exc.SQLAlchemyError: If the database query fails
+        (connection lost, schema mismatch, transaction aborted, ...). This
+        family is not caught here; the caller is expected to log-and-skip
+        or swallow at a higher level (e.g. the background refresher's
+        per-cycle ``except``).
     """
     rows = await SettingsOverrideManager.list(
         session, setting_class=setting_class, is_active=True

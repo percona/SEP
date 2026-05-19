@@ -13,14 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Real-route HTTP tests verifying HOT fields are read through the proxy.
+"""Real-route HTTP tests verifying SEP-side HOT fields are read through the proxy.
 
 These tests close the gap left by unit and service-level coverage: they
-insert an override row, run ``refresh_all`` (the same call path the SEP and
-Tasks lifespan refresher uses), then issue a real ``TestClient`` request and
+insert an override row, run ``refresh_all`` (the same call path the SEP
+lifespan refresher uses), then issue a real ``TestClient`` request and
 assert the route observed the overridden value. One representative consumer
-per wrapped settings class is exercised, matching the reviewer's "at least
-one per-class TestClient test" recommendation on SEP-980.
+per SEP-side wrapped settings class is exercised. The Tasks-side equivalent
+lives next to the Tasks app at
+``tests/app/tasks/test_settings_override_integration.py``.
 """
 
 from unittest.mock import AsyncMock
@@ -51,11 +52,6 @@ from app.sep.middleware.messages._utils import add_message
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.middleware.messages.models import MessageLevel
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
-from app.tasks.config import (
-    PreExecutionCheckMode,
-    tasks_settings,
-    TasksSettings,
-)
 
 
 @pytest_asyncio.fixture
@@ -82,13 +78,6 @@ def _sep_proxies() -> dict:
         SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
             messages_settings, MessagesSettings
         ),
-    }
-
-
-def _tasks_proxies() -> dict:
-    """Return the Tasks-side proxy registry mirroring the Tasks lifespan wiring."""
-    return {
-        SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_settings, TasksSettings),
     }
 
 
@@ -209,30 +198,3 @@ async def test_sep_proxy_visible_after_refresh(
     )
     await refresh_all(lambda: override_session_maker, _sep_proxies())
     assert sep_settings.CONNECTIVITY_CHECK_DEFAULT is override_value
-
-
-@pytest.mark.asyncio
-async def test_tasks_proxy_visible_after_refresh(
-    override_session_maker: async_sessionmaker,
-) -> None:
-    """``tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK`` swaps after refresh.
-
-    The Tasks dispatch route at ``app/tasks/routes.py:251`` reads this field
-    per call. The proxy contract is unit-tested elsewhere; this test fills
-    the Tasks-side proxy registry coverage gap end-to-end through
-    ``refresh_all`` against the production ``tasks_settings`` proxy.
-    """
-    yaml_default = tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK
-    target = (
-        PreExecutionCheckMode.BLOCK
-        if yaml_default is not PreExecutionCheckMode.BLOCK
-        else PreExecutionCheckMode.WARN
-    )
-    await _insert_override(
-        override_session_maker,
-        SettingClassEnum.TASKS_SETTINGS,
-        "PRE_EXECUTION_CONNECTIVITY_CHECK",
-        value=target,
-    )
-    await refresh_all(lambda: override_session_maker, _tasks_proxies())
-    assert tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK is target

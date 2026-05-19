@@ -68,10 +68,10 @@ def _override_snapshot_cleared() -> None:
     ``__getattr__`` falls through to the wrapped Pydantic instance. An active
     snapshot entry would shadow the monkey-patched value and confuse the test.
     """
-    sep_settings._set_snapshot({})
-    tasks_settings._set_snapshot({})
-    snippets_settings._set_snapshot({})
-    messages_settings._set_snapshot({})
+    sep_settings._set_snapshot({})  # noqa: SLF001
+    tasks_settings._set_snapshot({})  # noqa: SLF001
+    snippets_settings._set_snapshot({})  # noqa: SLF001
+    messages_settings._set_snapshot({})  # noqa: SLF001
 
 
 @pytest.fixture(scope="session")

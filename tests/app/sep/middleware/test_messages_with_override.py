@@ -28,13 +28,12 @@ def test_messages_settings_resolved_at_lifespan_startup(
 ) -> None:
     """``messages_settings._resolve()`` fires during the SEP lifespan startup.
 
-    Prior to SEP-980, ``messages_settings = MessagesSettings()`` validated
-    eagerly at module-import time. Converting to ``OverridableSettingsProxy``
-    defers validation to first attribute access -- the SEP lifespan calls
-    ``messages_settings._resolve()`` to restore the eager-validation
-    semantics. Patching ``MessagesSettings.__init__`` to raise and entering
-    the lifespan must surface the error during startup, not on first
-    request.
+    ``MessagesSettings`` is now wrapped in :class:`OverridableSettingsProxy`,
+    which defers validation to first attribute access. The SEP lifespan
+    calls ``messages_settings._resolve()`` to restore the eager-validation
+    semantics it had before the proxy conversion. Patching
+    ``MessagesSettings.__init__`` to raise and entering the lifespan must
+    surface the error during startup, not on first request.
     """
     # Drop the previously-resolved instance so ``_resolve`` re-invokes the
     # factory under the broken ``__init__`` instead of returning a cached value.

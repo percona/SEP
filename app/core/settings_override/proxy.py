@@ -31,7 +31,7 @@ _EMPTY_SNAPSHOT: Mapping[str, object] = {}
 
 
 class OverridableSettingsProxy(LazyProxy[T]):
-    """:class:`LazyProxy` that returns DB-backed override values when present.
+    """Wrap a :class:`LazyProxy` so attribute reads consult a DB-backed override snapshot.
 
     Attribute reads first consult an in-memory snapshot of overrides for the
     associated settings class. Any miss falls back to the wrapped Pydantic
@@ -66,7 +66,13 @@ class OverridableSettingsProxy(LazyProxy[T]):
         return super().__getattr__(name)
 
     def _set_snapshot(self, snapshot: Mapping[str, object]) -> None:
-        """Atomically replace the snapshot reference.
+        """Replace the snapshot reference atomically.
+
+        Protected to signal "internal API". Only two callers are intended:
+        the background refresher in
+        :mod:`app.core.settings_override.lifecycle` and per-test fixtures
+        that reset state between tests. Other code should read attributes
+        normally and let the refresher publish snapshots.
 
         :param snapshot: The new mapping of field name to typed override
             value. The mapping is treated as immutable -- callers must not

@@ -119,6 +119,7 @@ async def test_value_roundtrips_for_json_types(session: AsyncSession) -> None:
         ("bool_field", True),
         ("list_field", [1, 2, 3]),
         ("dict_field", {"a": 1, "b": [True, "x"]}),
+        ("null_field", None),
     ]
     for key, value in samples:
         await SettingsOverrideManager.create(
