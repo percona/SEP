@@ -230,6 +230,15 @@ class TopologyCollectResponse(BaseModel):
     assemble the topology graph. ``targets`` echoes the executor hosts
     the work was sharded across so the UI can surface where the
     collection ran.
+
+    :param task_history_ids: Created task history ids, one per shard.
+    :type task_history_ids: list[int]
+    :param targets: Executor hosts selected for topology collection.
+    :type targets: list[str]
+    :param host_count: Number of MySQL hosts included in the collection.
+    :type host_count: int
+    :param shard_count: Number of dispatched topology shards.
+    :type shard_count: int
     """
 
     task_history_ids: list[int]
@@ -247,6 +256,15 @@ class TopologyResultResponse(BaseModel):
     ``graph`` is the merged React-Flow graph; ``pending_task_ids``
     lists the still-running tasks for the UI's progress chip, and
     ``failed_task_ids`` lets the UI warn when only some shards failed.
+
+    :param status: Aggregate topology collection status.
+    :type status: Literal["running", "ok", "failed"]
+    :param graph: Merged React-Flow graph when collection output is ready.
+    :type graph: dict[str, Any] | None
+    :param pending_task_ids: Task ids still pending or running.
+    :type pending_task_ids: list[int]
+    :param failed_task_ids: Terminal task ids that did not finish successfully.
+    :type failed_task_ids: list[int]
     """
 
     status: Literal["running", "ok", "failed"]
@@ -256,16 +274,29 @@ class TopologyResultResponse(BaseModel):
 
 
 def _format_host_entry(service: dict[str, Any]) -> str | None:
+    """Return a collector ``host:port`` entry for an inventory service.
+
+    :param service: Inventory service payload with optional nested node data.
+    :type service: dict[str, Any]
+    :return: ``address:port`` or ``name:port`` when address data exists.
+    :rtype: str | None
+    """
     node = service.get("node") or {}
     address = node.get("address") or service.get("name")
-    port = service.get("port") or DEFAULT_MYSQL_PORT
-    if not address:
-        return None
-    return f"{address}:{port}"
+    if address:
+        port = service.get("port") or DEFAULT_MYSQL_PORT
+        return f"{address}:{port}"
+    return None
 
 
 async def _collect_mysql_host_entries(inventory_api: RemoteAPI) -> list[str]:
-    """Return ``host:port`` entries for every MySQL service in inventory."""
+    """Return ``host:port`` entries for every MySQL service in inventory.
+
+    :param inventory_api: Remote inventory API client.
+    :type inventory_api: RemoteAPI
+    :return: De-duplicated MySQL ``host:port`` entries in inventory order.
+    :rtype: list[str]
+    """
     response = await inventory_api.get(
         "/services/", params={"service_type": ServiceTypeEnum.MYSQL.value, "limit": 0}
     )
@@ -283,6 +314,19 @@ async def _collect_mysql_host_entries(inventory_api: RemoteAPI) -> list[str]:
 def _select_topology_targets(
     available_hosts: dict[str, str], requested_executor: str | None, shards: int
 ) -> list[str]:
+    """Select executor host names for topology collection.
+
+    :param available_hosts: Mapping of executor host names to host addresses.
+    :type available_hosts: dict[str, str]
+    :param requested_executor: Optional explicit executor host name.
+    :type requested_executor: str | None
+    :param shards: Requested number of executor shards.
+    :type shards: int
+    :return: Selected executor host names.
+    :rtype: list[str]
+    :raises HTTPServiceUnavailableException: When no executor hosts are available.
+    :raises HTTPBadRequestException: When the explicit executor is unavailable.
+    """
     if not available_hosts:
         raise HTTPServiceUnavailableException(
             "No executor hosts available for topology collection.",
