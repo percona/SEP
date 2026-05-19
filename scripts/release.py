@@ -664,9 +664,11 @@ def _maybe_open_dev_bump_pr(version: str) -> int:
     if _remote_branch_exists(dev_branch):
         print(
             f"Error: origin/{dev_branch} exists but origin/main has not "
-            f"been bumped to {next_dev_version} yet. The dev-bump PR opened "
-            "by `make release-prep` must be merged before rc1 can complete. "
-            "Merge it (release-manager bypass) and re-run rc1.",
+            f"been bumped to {next_dev_version} yet. The rc1 release has "
+            "already been published; the only outstanding step is to merge "
+            "the dev-bump PR opened by `make release-prep` (release-manager "
+            "bypass) before the next release cycle. No rc1 re-dispatch "
+            "needed.",
             file=sys.stderr,
         )
         return 1
