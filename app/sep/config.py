@@ -65,6 +65,8 @@ from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
 logger = logging.getLogger(__name__)
 
+_LEGACY_BACKUP_MODULE_NAMES = frozenset({"backup", "backups"})
+
 
 class Plugin(BaseCaseInsensitiveModel):
     """Represent a SEP plugin.
@@ -76,7 +78,7 @@ class Plugin(BaseCaseInsensitiveModel):
     :param name: The name of the plugin.
     :type name: str
     :param module_name: The name of the module associated with the plugin. This field is
-        automatically prefixed with "app.sep.plugins." during validation.
+        automatically prefixed with ``app.sep.plugins.`` during validation.
     :type module_name: StrImportableModule
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
@@ -107,13 +109,25 @@ class Plugin(BaseCaseInsensitiveModel):
         """Resolve the full module path for the plugin.
 
         This method takes the module name provided and prefixes it with
-        "app.sep.plugins." to resolve the full import path.
+        ``app.sep.plugins.`` to resolve the full import path. Legacy MySQL
+        backups plugin names (``backup``, ``backups``) are remapped to
+        ``mysql_backups`` with a deprecation warning before prefixing; the
+        legacy aliases will not be supported in the next version.
 
         :param v: The module name to resolve.
         :type v: str
-        :return: The full module path with the "app.sep.plugins." prefix.
+        :return: The full module path with the ``app.sep.plugins.`` prefix.
         :rtype: str
         """
+        if v in _LEGACY_BACKUP_MODULE_NAMES:
+            logger.warning(
+                "Plugin MODULE_NAME %r is deprecated; remapping to "
+                "'mysql_backups'. The legacy value will not be supported "
+                "in the next version — update settings.yaml to use "
+                "'mysql_backups'.",
+                v,
+            )
+            v = "mysql_backups"
         return f"app.sep.plugins.{v}"
 
     @model_validator(mode="before")
@@ -322,7 +336,7 @@ class HealthReportSettings(BaseLowercaseModel):
         if not self.upload:
             return ["Upload is disabled"]
 
-        reasons: list[str] = []
+        reasons = []
         if self.endpoint is None:
             reasons.append("Endpoint is not configured")
         else:
@@ -352,13 +366,13 @@ class SEPSettings(BaseYamlAppSettings):
     :param SESSION: Session configuration options.
     :type SESSION: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
-        `Path("templates")`.
+        ``Path("templates")``.
     :type TEMPLATES_DIR: RelativeDirectoryPathField
     :param STATIC_DIR: The directory containing static files. Defaults to
-        `Path("static")`.
+        ``Path("static")``.
     :type STATIC_DIR: RelativeDirectoryPathField
     :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
-        definition files. When `None`, the bundled `alert_definitions/` directory
+        definition files. When ``None``, the bundled ``alert_definitions/`` directory
         inside the alerts plugin is used.
     :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
@@ -368,8 +382,8 @@ class SEPSettings(BaseYamlAppSettings):
     :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
         duplicates removed.
     :type PLUGINS: UniqueList[Plugin]
-    :param PROXY_HEADERS: Whether to use proxy headers (like `X-Forwarded-For`).
-        Defaults to `False`.
+    :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
+        Defaults to ``False``.
     :type PROXY_HEADERS: bool
     :param DATABASE: The database configuration options.
         Defaults to an SQLite database with the name 'sep.db'.
@@ -391,7 +405,7 @@ class SEPSettings(BaseYamlAppSettings):
         Upload is disabled by default.
     :type HEALTH_REPORT: HealthReportSettings
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
-        `$summary` and `$version` placeholders. Defaults to `"$summary $version"`.
+        ``$summary`` and ``$version`` placeholders. Defaults to ``"$summary $version"``.
     :type FOOTER_TEMPLATE: Template
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
@@ -449,8 +463,8 @@ class SEPSettings(BaseYamlAppSettings):
 
         This property creates, caches, and returns a
         :class:`jinja2.environment.Environment` object configured with the
-        `jinja2.ext.do` extension, the `syntax_highlight` filter, and the
-        `syntax_highlight_css` utility function as global.
+        ``jinja2.ext.do`` extension, the ``syntax_highlight`` filter, and the
+        ``syntax_highlight_css`` utility function as global.
 
         :return: The Environment configured for Jinja2.
         :rtype: Environment
@@ -471,8 +485,8 @@ class SEPSettings(BaseYamlAppSettings):
     def TEMPLATES(self) -> Jinja2Templates:
         """Return a Jinja2Templates object for template rendering.
 
-        This property creates, caches, and returns a `Jinja2Templates` object configured
-        with the `TEMPLATES_DIR` directory.
+        This property creates, caches, and returns a ``Jinja2Templates`` object configured
+        with the ``TEMPLATES_DIR`` directory.
 
         :return: The Jinja2 templates object for rendering templates.
         :rtype: Jinja2Templates
@@ -485,7 +499,7 @@ class SEPSettings(BaseYamlAppSettings):
     def FOOTER_TEXT(self) -> str:
         """Return the rendered footer template.
 
-        This property renders the `FOOTER_TEMPLATE` with the current application
+        This property renders the ``FOOTER_TEMPLATE`` with the current application
         version and summary, returning the resulting string.
 
         :return: The rendered footer string.
@@ -500,12 +514,12 @@ class SEPSettings(BaseYamlAppSettings):
     def coerce_footer_template(cls, v: Any) -> Any:
         """Coerce the footer template to a Template object.
 
-        If the provided value is a string, convert it to a `Template` object. Else,
+        If the provided value is a string, convert it to a ``Template`` object. Else,
         return it as is.
 
         :param v: The footer template value to coerce.
         :type v: Any
-        :return: The coerced `Template` object or the original input value.
+        :return: The coerced ``Template`` object or the original input value.
         :rtype: Any
         """
         if isinstance(v, str):

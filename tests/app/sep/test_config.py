@@ -18,8 +18,10 @@
 from string import Template
 from unittest.mock import patch
 
+import pytest
+
 from app.core.config import PMMSettings
-from app.sep.config import _DeprecatedPMMConfig, SEPSettings
+from app.sep.config import _DeprecatedPMMConfig, Plugin, SEPSettings
 
 PMM_ENDPOINT = "https://pmm.example.com"
 CORE_PMM_ENDPOINT = "https://core.example.com"
@@ -29,7 +31,7 @@ class TestFooterTemplate:
     """Define tests for the FOOTER_TEMPLATE setting."""
 
     def test_footer_template_default(self):
-        """Assert FOOTER_TEMPLATE defaults to `$summary $version`."""
+        """Assert FOOTER_TEMPLATE defaults to ``$summary $version``."""
         settings = SEPSettings()
         assert settings.FOOTER_TEMPLATE.template == "$summary $version"
 
@@ -104,3 +106,44 @@ class TestForwardDeprecatedPMMFields:
             mock_settings.PMM = core_pmm
             SEPSettings(PMM=_DeprecatedPMMConfig())
         assert mock_settings.PMM is core_pmm
+
+
+class TestPluginModuleNameDeprecation:
+    """Test the legacy ``backup``/``backups`` MODULE_NAME shim on ``Plugin``."""
+
+    @pytest.mark.parametrize("legacy_value", ["backup", "backups"])
+    def test_legacy_value_is_remapped_to_mysql_backups(self, legacy_value: str):
+        """Assert legacy aliases resolve to ``mysql_backups`` and log a deprecation warning."""
+        with patch("app.sep.config.logger") as mock_logger:
+            plugin = Plugin(name="MySQL Backups", module_name=legacy_value)
+        assert plugin.module_name == "app.sep.plugins.mysql_backups"
+        mock_logger.warning.assert_called_once()
+        rendered = mock_logger.warning.call_args.args[0] % tuple(
+            mock_logger.warning.call_args.args[1:]
+        )
+        assert repr(legacy_value) in rendered
+        assert "mysql_backups" in rendered
+        assert "next version" in rendered
+
+    def test_modern_value_resolves_without_warning(self):
+        """Assert the modern ``mysql_backups`` value resolves normally with no warning."""
+        with patch("app.sep.config.logger") as mock_logger:
+            plugin = Plugin(name="MySQL Backups", module_name="mysql_backups")
+        assert plugin.module_name == "app.sep.plugins.mysql_backups"
+        mock_logger.warning.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("sibling_value", "expected_module"),
+        [
+            ("backup_mongo", "app.sep.plugins.backup_mongo"),
+            ("backup_pg", "app.sep.plugins.backup_pg"),
+        ],
+    )
+    def test_sibling_backup_module_is_not_remapped(
+        self, sibling_value: str, expected_module: str
+    ):
+        """Assert sibling plugins whose names begin with ``backup`` are unaffected."""
+        with patch("app.sep.config.logger") as mock_logger:
+            plugin = Plugin(name="Backups", module_name=sibling_value)
+        assert plugin.module_name == expected_module
+        mock_logger.warning.assert_not_called()
