@@ -133,11 +133,6 @@ async def start_refresh_task(
     async def _loop() -> None:
         while True:
             await asyncio.sleep(interval_seconds)
-            # Catch broadly so a transient session-maker or initial-query
-            # failure does not kill the background task. ``refresh_all`` only
-            # handles per-proxy failures once a session is open; failures
-            # earlier (engine restart, connection pool exhausted) would
-            # otherwise propagate out and stop the refresher permanently.
             try:
                 await refresh_all(session_maker_factory, proxies)
             except Exception:
