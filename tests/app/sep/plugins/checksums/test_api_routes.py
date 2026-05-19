@@ -24,7 +24,6 @@ from fastapi import status
 
 from app.core.exceptions import (
     HTTPBadGatewayException,
-    HTTPConflictException,
     HTTPNotFoundException,
 )
 from app.inventory.models import ServiceTypeEnum
@@ -32,8 +31,6 @@ from app.sep.connectivity import (
     clear_connectivity_caches,
     get_latest_connectivity_result,
 )
-from app.sep.deps import check_for_conflicted_running_tasks
-from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -100,6 +97,25 @@ def build_checksum_write_body(
         "service_id": service_id,
         "recursion_method": "processlist",
         **kwargs,
+    }
+
+
+def build_execute_response(
+    task_id: int | None = 99, task_name: str = "my-task"
+) -> dict:
+    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests.
+
+    :param task_id: The task history id to embed. Defaults to ``99``.
+    :type task_id: int | None
+    :param task_name: The task name to embed in the nested task payload.
+    :type task_name: str
+    :return: A dict that validates against ``TaskHistoryResponse``.
+    :rtype: dict
+    """
+    return {
+        "id": task_id,
+        "execution_request": {"task": "pt-table-checksum", "target": "host1"},
+        "task": {**build_checksum_task(task_name), "deleted_at": None},
     }
 
 
@@ -858,7 +874,7 @@ class TestChecksumsExecuteEndpoint:
         expected_task_id = 99
         task = build_checksum_task("my-task")
         mock_task_api_dep.get.return_value = task
-        mock_task_api_dep.post.return_value = {"id": expected_task_id}
+        mock_task_api_dep.post.return_value = build_execute_response(expected_task_id)
 
         response = test_client.post("/api/plugins/checksums/my-task/execute", json={})
 
@@ -878,6 +894,7 @@ class TestChecksumsExecuteEndpoint:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks_raises")
     def test_execute_returns_409_when_task_already_running(
         self, test_client, mock_task_api_dep
     ):
@@ -885,18 +902,7 @@ class TestChecksumsExecuteEndpoint:
         task = build_checksum_task("busy-task")
         mock_task_api_dep.get.return_value = task
 
-        def raise_conflict():
-            raise HTTPConflictException("Task is already running or pending.")
-
-        sep_app.dependency_overrides[check_for_conflicted_running_tasks] = (
-            raise_conflict
-        )
-        try:
-            response = test_client.post(
-                "/api/plugins/checksums/busy-task/execute", json={}
-            )
-        finally:
-            sep_app.dependency_overrides.pop(check_for_conflicted_running_tasks, None)
+        response = test_client.post("/api/plugins/checksums/busy-task/execute", json={})
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
@@ -920,7 +926,7 @@ class TestChecksumsExecuteEndpoint:
         """Ensure only non-None fields are forwarded to the Tasks API execute call."""
         task = build_checksum_task("my-task")
         mock_task_api_dep.get.return_value = task
-        mock_task_api_dep.post.return_value = {"id": 1}
+        mock_task_api_dep.post.return_value = build_execute_response(1)
 
         test_client.post(
             "/api/plugins/checksums/my-task/execute",
@@ -944,18 +950,17 @@ class TestChecksumsExecuteEndpoint:
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
-    def test_execute_task_id_is_none_when_tasks_api_omits_id(
+    def test_execute_raises_on_invalid_tasks_api_response(
         self, test_client, mock_task_api_dep
     ):
-        """Ensure task_id serializes as null when the Tasks API response has no 'id' key."""
+        """Ensure a non-TaskHistoryResponse Tasks API reply surfaces as 500, not null task_id."""
         task = build_checksum_task("my-task")
         mock_task_api_dep.get.return_value = task
         mock_task_api_dep.post.return_value = {}
 
         response = test_client.post("/api/plugins/checksums/my-task/execute", json={})
 
-        assert response.status_code == status.HTTP_201_CREATED
-        assert response.json()["task_id"] is None
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_execute_returns_422_for_non_string_chain_task_names(
