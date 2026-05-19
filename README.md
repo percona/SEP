@@ -34,7 +34,7 @@
 | app/core/middleware/log\_context.py                                                                         |       26 |        0 |    100% |           |
 | app/core/middleware/security\_headers.py                                                                    |      105 |        0 |    100% |           |
 | app/core/models.py                                                                                          |       21 |        0 |    100% |           |
-| app/core/pmm.py                                                                                             |       45 |        1 |     98% |        53 |
+| app/core/pmm.py                                                                                             |       50 |        1 |     98% |        53 |
 | app/core/requests/registry.py                                                                               |       49 |       14 |     71% |101, 112, 125-142 |
 | app/core/requests/remote\_api.py                                                                            |      215 |        8 |     96% |96, 115, 414, 454-457, 465 |
 | app/core/security.py                                                                                        |        4 |        0 |    100% |           |
@@ -184,7 +184,7 @@
 | app/sep/sync/models.py                                                                                      |      348 |       60 |     83% |75-84, 98-100, 119, 267-269, 330, 390-391, 424, 478-480, 537, 567, 583, 603-607, 708, 722, 742-743, 823, 837, 859-860, 941, 954, 978-980, 1052, 1065, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py                                                                       |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                        |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       19 |     80% |83-87, 107-110, 121, 176-184, 234, 236-252, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       22 |     76% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 291-294, 344 |
 | app/sep/tasks.py                                                                                            |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                 |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                      |       20 |        0 |    100% |           |
@@ -193,7 +193,7 @@
 | app/tasks/anonymizer/anonymize.py                                                                           |       50 |        0 |    100% |           |
 | app/tasks/anonymizer/config.py                                                                              |       27 |        1 |     96% |        68 |
 | app/tasks/anonymizer/entities.py                                                                            |       28 |        0 |    100% |           |
-| app/tasks/celery.py                                                                                         |      288 |       10 |     97% |297, 307-308, 331-333, 610, 671, 694-695 |
+| app/tasks/celery.py                                                                                         |      290 |        8 |     97% |301, 335-337, 644, 715, 738-739 |
 | app/tasks/config.py                                                                                         |       22 |        0 |    100% |           |
 | app/tasks/connectivity/constants.py                                                                         |        4 |        0 |    100% |           |
 | app/tasks/connectivity/models.py                                                                            |       11 |        0 |    100% |           |
@@ -208,7 +208,7 @@
 | app/tasks/execution/executors/celery/models.py                                                              |       82 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/exceptions.py                                                           |        4 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/models.py                                                               |      655 |      151 |     77% |104-106, 113, 153, 171-174, 194, 237, 425, 709, 715, 848, 850, 979, 1021-1051, 1072-1086, 1112-1122, 1143-1146, 1225-1227, 1253-1254, 1291-1292, 1326-1327, 1494-1543, 1551-1552, 1556, 1580-1624, 1681-1682, 1754-1755, 1773-1825 |
-| app/tasks/execution/models.py                                                                               |       63 |        1 |     98% |       229 |
+| app/tasks/execution/models.py                                                                               |       65 |        1 |     98% |       229 |
 | app/tasks/execution/utils.py                                                                                |       26 |        0 |    100% |           |
 | app/tasks/logs/log\_reader.py                                                                               |       54 |        0 |    100% |           |
 | app/tasks/logs/log\_writer.py                                                                               |      123 |        8 |     93% |116, 226-227, 349, 353, 357, 537, 543 |
@@ -219,7 +219,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      219 |       39 |     82% |125-129, 186, 207-214, 246, 295-303, 353-354, 381-382, 410-411, 430, 563, 587, 600-614, 635-648, 664-665 |
-| **TOTAL**                                                                                                   | **15531** | **2136** | **86%** |           |
+| **TOTAL**                                                                                                   | **15540** | **2137** | **86%** |           |
 
 
 ## Setup coverage badge
