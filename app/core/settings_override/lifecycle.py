@@ -91,9 +91,6 @@ async def refresh_all(
                     setting_class.value,
                 )
                 continue
-            # ``_set_snapshot`` is the intentional refresher-only entry point
-            # for swapping the proxy's snapshot; see its docstring. The
-            # SLF001 silence is local to this caller, not a per-file blanket.
             entry.proxy._set_snapshot(snapshot)  # noqa: SLF001
 
 
