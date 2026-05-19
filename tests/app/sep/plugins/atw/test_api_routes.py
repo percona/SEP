@@ -20,9 +20,12 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.atw import api_routes as atw_api_routes
-from app.sep.plugins.atw.models import ATWCategory, ParentCategory
+from app.sep.plugins.atw.models import ATWCategory, CATEGORY_ROOT_LABELS, ParentCategory
 from app.sep.snippets.models import Snippet
+
+_GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
 
 
 def _mock_atw_snippet(
@@ -73,7 +76,7 @@ class TestAtwListEndpoint:
         )
         assert overall is not None
         assert overall["snippet_count"] == 1
-        assert overall["category_root"] == "MySQL"
+        assert overall["category_root"] == CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
         assert overall["parent_category"] == "PERFORMANCE_ISSUES"
         summary = overall["snippets"][0]
         assert summary["name"] == "diag/slow-query.sh"
@@ -108,7 +111,7 @@ class TestAtwListEndpoint:
             entry for entry in payload if entry["category"] == "OVERALL_SLOWNESS"
         )
         assert overall["snippet_count"] == 1
-        assert overall["category_root"] == "MySQL"
+        assert overall["category_root"] == CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
         assert overall["snippets"][0]["name"] == "diag/slow-query.sh"
         assert overall["snippets"][0]["title"] == "Slow Query Diagnostics"
         assert overall["snippets"][0]["description"] == (
@@ -138,7 +141,12 @@ class TestAtwListEndpoint:
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
-        expected_roots = ["MySQL", "MongoDB"]
+        populated_types = (ServiceTypeEnum.MYSQL, ServiceTypeEnum.MONGODB)
+        expected_roots = [
+            CATEGORY_ROOT_LABELS[service_type]
+            for service_type in CATEGORY_ROOT_LABELS
+            if service_type in populated_types
+        ]
         roots = [entry["category_root"] for entry in payload]
         assert roots == expected_roots
         for entry in payload:
@@ -164,7 +172,7 @@ class TestAtwListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         assert len(payload) == 1
-        assert payload[0]["category_root"] == "Generic"
+        assert payload[0]["category_root"] == _GENERIC_ROOT
 
     def test_atw_list_missing_service_type_falls_back_to_generic(
         self, test_client: TestClient
@@ -185,7 +193,7 @@ class TestAtwListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         assert len(payload) == 1
-        assert payload[0]["category_root"] == "Generic"
+        assert payload[0]["category_root"] == _GENERIC_ROOT
         assert payload[0]["category"] == "OVERALL_SLOWNESS"
         assert payload[0]["snippet_count"] == 1
 
@@ -208,7 +216,7 @@ class TestAtwListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         assert len(payload) == 1
-        assert payload[0]["category_root"] == "Generic"
+        assert payload[0]["category_root"] == _GENERIC_ROOT
         assert payload[0]["category"] == "GALERA"
 
     def test_atw_list_omits_empty_root_category_cells(
@@ -231,10 +239,11 @@ class TestAtwListEndpoint:
         payload = response.json()
         assert len(payload) == 1
         populated = {(e["category_root"], e["category"]) for e in payload}
-        assert populated == {("MySQL", "OVERALL_SLOWNESS")}
+        mysql_root = CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
+        assert populated == {(mysql_root, "OVERALL_SLOWNESS")}
         for category in ATWCategory:
             if category.name != "OVERALL_SLOWNESS":
-                assert ("MySQL", category.name) not in populated
+                assert (mysql_root, category.name) not in populated
 
     def test_atw_list_non_list_atw_meta_not_substring_matched(
         self, test_client: TestClient
