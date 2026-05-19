@@ -9,6 +9,7 @@
 #    type: str
 #    label: MongoDB host
 #    description: Hostname or IP address of the MongoDB instance
+#    default: 127.0.0.1
 #  - name: port
 #    type: int
 #    label: MongoDB port
@@ -64,8 +65,8 @@
 
 set -euo pipefail
 
-HOST=""
-PORT=
+HOST="127.0.0.1"
+PORT=27017
 USER=""
 PASSWORD=""
 AUTH_DB="admin"
@@ -194,7 +195,7 @@ fi
 
 EXPLAIN_ORDER="after"
 if [[ -n $QUERY ]]; then
-    QUERY_METHOD=$(echo "$QUERY" | grep -oP '^\s*\K\w+' 2>/dev/null || true)
+    QUERY_METHOD=$(echo "$QUERY" | grep -oP '^\s*\K\w+' 2> /dev/null || true)
     case "${QUERY_METHOD,,}" in
         insertone | insertmany | insert)
             echo "Warning: explain() does not support insert operations ('${QUERY_METHOD}'). Skipping explain." >&2
@@ -247,8 +248,8 @@ mongo_eval() {
         escaped_password="$(js_escape "$PASSWORD")"
         auth_prefix="db = db.getSiblingDB('${escaped_auth_db}'); if (!db.auth('${escaped_user}', '${escaped_password}')) { quit(1); }"
     fi
-    printf '%s\n%s\n' "$auth_prefix" "$script" \
-        | "$MONGO_BIN" "${MONGO_ARGS[@]}" --quiet > "$outfile" 2>&1
+    printf '%s\n%s\n' "$auth_prefix" "$script" |
+        "$MONGO_BIN" "${MONGO_ARGS[@]}" --quiet > "$outfile" 2>&1
 }
 
 ESC_DB="$(js_escape "$DATABASE")"
@@ -260,40 +261,41 @@ JS_INDEXES="JSON.stringify(db.getSiblingDB('${ESC_DB}').getCollection('${ESC_COL
 
 # Write commands.sh so the user can review and re-run manually
 CMDS_FILE="${DEST}/commands.sh"
+# shellcheck disable=SC2016
 {
     echo "#!/usr/bin/env bash"
     echo "# MongoDB query tuning commands for ${DATABASE}.${COLLECTION}"
     echo "# Generated: $(date)"
     echo "# Re-run manually: bash commands.sh"
     echo ""
-    echo "MONGO_BIN=\${MONGO_BIN:-mongosh}"
-    echo "DEST=\${DEST:-.}"
+    echo 'MONGO_BIN=${MONGO_BIN:-mongosh}'
+    echo 'DEST=${DEST:-.}'
     echo ""
     echo "# Database stats"
     echo "\"\$MONGO_BIN\" --host '${HOST}' --port ${PORT} --quiet \\"
     echo "  --eval 'printjson(db.getSiblingDB(\"${DATABASE}\").runCommand({dbStats: 1}))' \\"
-    echo "  > \"\$DEST/dbStats.out\""
+    echo '  > "$DEST/dbStats.out"'
     echo ""
     echo "# Collection stats with index details"
     echo "\"\$MONGO_BIN\" --host '${HOST}' --port ${PORT} --quiet \\"
     echo "  --eval 'printjson(db.getSiblingDB(\"${DATABASE}\").getCollection(\"${COLLECTION}\").stats({indexDetails: true}))' \\"
-    echo "  > \"\$DEST/collStats.out\""
+    echo '  > "$DEST/collStats.out"'
     echo ""
     echo "# Collection index definitions"
     echo "\"\$MONGO_BIN\" --host '${HOST}' --port ${PORT} --quiet \\"
     echo "  --eval 'printjson(db.getSiblingDB(\"${DATABASE}\").getCollection(\"${COLLECTION}\").getIndexes())' \\"
-    echo "  > \"\$DEST/getIndexes.out\""
+    echo '  > "$DEST/getIndexes.out"'
     if [[ -n $QUERY ]]; then
         echo ""
         echo "# Query explain (allPlansExecution)"
         if [[ $EXPLAIN_ORDER == "after" ]]; then
             echo "\"\$MONGO_BIN\" --host '${HOST}' --port ${PORT} --quiet \\"
             echo "  --eval 'printjson(db.getSiblingDB(\"${DATABASE}\").getCollection(\"${COLLECTION}\").${QUERY}.explain(\"allPlansExecution\"))' \\"
-            echo "  > \"\$DEST/query.out\""
+            echo '  > "$DEST/query.out"'
         else
             echo "\"\$MONGO_BIN\" --host '${HOST}' --port ${PORT} --quiet \\"
             echo "  --eval 'printjson(db.getSiblingDB(\"${DATABASE}\").getCollection(\"${COLLECTION}\").explain(\"allPlansExecution\").${QUERY})' \\"
-            echo "  > \"\$DEST/query.out\""
+            echo '  > "$DEST/query.out"'
         fi
     fi
 } > "${CMDS_FILE}"
@@ -319,7 +321,7 @@ if [ $EXECUTE -eq 1 ]; then
     mongo_eval "$JS_INDEXES" "${DEST}/getIndexes.out"
 
     if [[ -n $QUERY ]]; then
-        echo "Running explain(\"allPlansExecution\")..."
+        echo 'Running explain("allPlansExecution")...'
         if [[ $EXPLAIN_ORDER == "after" ]]; then
             JS_EXPLAIN="JSON.stringify(db.getSiblingDB('${ESC_DB}').getCollection('${ESC_COLL}').${QUERY}.explain('allPlansExecution'), null, 2)"
         else
