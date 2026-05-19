@@ -22,6 +22,7 @@ import IconButton from '@mui/material/IconButton';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import type { ListColumn, ListView } from '@sep/api';
+import { SEP_TABLE_CLASS } from '../../constants';
 
 interface SchemaListViewProps {
   listView: ListView;
@@ -159,7 +160,7 @@ export function SchemaListView({
         density: 'compact',
       }}
       muiTablePaperProps={{
-        className: 'MuiTableSep',
+        className: SEP_TABLE_CLASS,
         elevation: 0,
         variant: 'outlined',
         // The Percona theme's `background.paper` doesn't always resolve to

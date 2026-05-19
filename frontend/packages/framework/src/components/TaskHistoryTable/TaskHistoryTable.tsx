@@ -36,6 +36,7 @@ import {
   useTaskHistory,
   useTaskHistoryByName,
 } from '../../hooks/useTaskHistory';
+import { SEP_TABLE_CLASS } from '../../constants';
 import { ChainDisplay } from './ChainDisplay';
 import { StatusBadge } from './StatusBadge';
 import { TaskFilesDialog } from './TaskFilesDialog';
@@ -281,7 +282,7 @@ function TaskHistoryTableView({
         enablePagination
         enableSorting
         muiTablePaperProps={{
-          className: 'MuiTableSep',
+          className: SEP_TABLE_CLASS,
         }}
         initialState={{
           density: 'compact',

@@ -24,9 +24,11 @@
 // import { typographyClasses } from '@mui/material/Typography';
 import { sepThemeOptions as sepThemeOptionsOriginal } from '@percona/percona-ui';
 import type { PaletteMode, ThemeOptions } from '@mui/material';
+import { SEP_TABLE_CLASS } from '@sep/framework';
 
 import { deepmerge } from '@mui/utils';
 
+// TODO: remove temporary overrides below once percona-ui ships the upstream fix (percona-ui PR #20).
 const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
   const newOptions: ThemeOptions = {
     components: {
@@ -34,10 +36,10 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
         variants: [
           { props: { variant: 'contained', color: 'success' }, style: { color: '#fff' } },
           { props: { variant: 'contained', color: 'error' }, style: { color: '#fff' } },
-          {
-            props: { variant: 'contained', color: 'warning' },
-            style: { color: mode === 'light' ? '#fff' : 'initial' },
-          },
+          // Only override warning text color in light mode; dark mode keeps MUI's computed contrastText.
+          ...(mode === 'light'
+            ? [{ props: { variant: 'contained', color: 'warning' }, style: { color: '#fff' } }]
+            : []),
           { props: { variant: 'contained', color: 'info' }, style: { color: '#fff' } },
         ],
       },
@@ -45,21 +47,16 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
         styleOverrides: {
           root: ({ theme }) => ({
             ...(theme.palette.mode === 'light' && {
-              '&.MuiTableSep .MuiToolbar-root': {
+              [`&.${SEP_TABLE_CLASS} .MuiToolbar-root`]: {
                 backgroundColor: theme.palette.background.paper,
               },
-              '&.MuiTableSep .MuiTableRow-root': {
+              // Exclude running rows so action.hover highlight still applies.
+              [`&.${SEP_TABLE_CLASS} .MuiTableRow-root:not([data-running="true"])`]: {
                 backgroundColor: theme.palette.background.paper + ' !important',
               },
-            }),
-          }),
-        },
-      },
-      MuiInputBase: {
-        styleOverrides: {
-          root: ({ theme }) => ({
-            ...(theme.palette.mode === 'light' && {
-              backgroundColor: theme.palette.background.paper,
+              [`&.${SEP_TABLE_CLASS} .MuiInputBase-root`]: {
+                backgroundColor: theme.palette.background.paper,
+              },
             }),
           }),
         },
@@ -70,8 +67,8 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
             ...(theme.palette.mode === 'light' &&
               ownerState.variant === 'filled' &&
               ownerState.color === 'default' && {
-                // Default filled chip blends into #F6F5F5 page bg — add visible surface
-                backgroundColor: 'rgba(40, 39, 39, 0.12)',
+                // Default filled chip blends into page bg — add visible surface.
+                backgroundColor: theme.palette.action.selected,
               }),
           }),
         },
