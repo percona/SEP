@@ -114,6 +114,7 @@ def test_concurrent_swap_is_atomic(
         stop.set()
         reader.result()
 
+    assert observed, "reader thread observed no values; concurrency was not exercised"
     assert set(observed) <= {"alpha", "beta"}
 
 
@@ -126,23 +127,23 @@ def test_missing_attribute_raises_attribute_error(
 
 
 def test_per_class_isolation_with_unknown_field() -> None:
-    """A snapshot entry for a key absent on the wrapped class is unreachable.
+    """Attribute access for a key absent from both snapshot and wrapped class raises.
 
-    Snapshots are keyed by attribute name; they are not class-scoped at the
-    proxy boundary. If a snapshot ever carries a key that the wrapped class
-    does not declare (e.g. another settings class's field name mixed in by
-    mistake), an attribute access for that key on this proxy must still fall
-    through to the wrapped instance and raise ``AttributeError`` -- the
-    snapshot must NOT shadow the type system into producing a phantom value.
+    Snapshots are keyed by attribute name and are not filtered at the proxy
+    boundary -- if a rogue snapshot entry slips past :func:`build_snapshot`'s
+    field-existence check, ``proxy.<rogue_key>`` would still return the
+    snapshot's value. The protection against phantom values lives in
+    :func:`build_snapshot`, not the proxy.
+
+    What the proxy *does* guarantee is that attribute access for a key
+    present in neither the snapshot nor the wrapped instance raises
+    ``AttributeError`` rather than silently returning ``None`` or empty.
+    This test exercises that guarantee with a snapshot that contains an
+    unrelated rogue key and an access for a distinct never-defined key.
     """
     proxy = OverridableSettingsProxy(
         _factory, setting_class=SettingClassEnum.SEP_SETTINGS
     )
     proxy._set_snapshot({"unknown_field": "should-not-leak"})
-    # Reading the unknown key on the proxy: the snapshot lookup short-circuits
-    # the wrapped-instance fallback, so the (rogue) snapshot value IS returned
-    # by raw attribute access -- _build_snapshot_ is responsible for filtering
-    # such rows out before they reach the proxy. We assert the proxy itself
-    # does not synthesize a value when the wrapped instance lacks the field.
     with pytest.raises(AttributeError):
         _ = proxy.also_absent

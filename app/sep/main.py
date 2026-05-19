@@ -94,6 +94,11 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
+    # Force-resolve ``messages_settings`` so the proxy's underlying Pydantic
+    # instance is constructed (and validated) before any lifespan side
+    # effects (DB init, snippet sync enqueue) can fire. Mirrors the previous
+    # eager ``MessagesSettings()`` fail-fast behavior at import time.
+    messages_settings._resolve()  # noqa: SLF001
     await sep_startup()
     app.state.inventory_api = RemoteAPI(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
@@ -107,11 +112,6 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
     )
-    # Force-resolve ``messages_settings`` so the proxy's underlying Pydantic
-    # instance is constructed (and validated) at lifespan startup rather than
-    # at first attribute access -- preserving the fail-fast behavior the
-    # previous eager ``MessagesSettings()`` provided.
-    messages_settings._resolve()  # noqa: SLF001
     refresher: asyncio.Task | None = None
     if settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED:
         refresher = await start_refresh_task(

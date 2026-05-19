@@ -75,7 +75,6 @@ async def test_pre_execution_connectivity_check_override(
 
 
 _OVERRIDE_STALENESS_SECONDS = 7200
-_YAML_DEFAULT_STALENESS_SECONDS = 3600
 
 
 @pytest.mark.asyncio
@@ -102,10 +101,10 @@ async def test_tasks_proxy_visible_after_refresh(
 ) -> None:
     """``tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK`` swaps after refresh.
 
-    The Tasks dispatch route at ``app/tasks/routes.py:251`` reads this field
-    per call. The proxy contract is unit-tested elsewhere; this test fills
-    the Tasks-side proxy registry coverage gap end-to-end through
-    ``refresh_all`` against the production ``tasks_settings`` proxy.
+    The Tasks dispatch route reads this field per call. The proxy contract
+    is unit-tested elsewhere; this test fills the Tasks-side proxy registry
+    coverage gap end-to-end through ``refresh_all`` against the production
+    ``tasks_settings`` proxy.
     """
     yaml_default = tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK
     target = (
@@ -130,7 +129,8 @@ async def test_tasks_proxy_visible_after_refresh(
 async def test_inactive_override_falls_back_to_yaml_default(
     override_session_maker: async_sessionmaker,
 ) -> None:
-    """Deactivating the override row returns the proxy to the YAML default."""
+    """Deactivating the override row returns the proxy to the resolved default."""
+    baseline = tasks_settings.STALENESS_THRESHOLD_SECONDS
     async with override_session_maker() as session:
         await SettingsOverrideManager.create(
             session,
@@ -151,4 +151,4 @@ async def test_inactive_override_falls_back_to_yaml_default(
             key="STALENESS_THRESHOLD_SECONDS",
         )
     await refresh_all(lambda: override_session_maker, _tasks_proxies())
-    assert tasks_settings.STALENESS_THRESHOLD_SECONDS == _YAML_DEFAULT_STALENESS_SECONDS
+    assert baseline == tasks_settings.STALENESS_THRESHOLD_SECONDS

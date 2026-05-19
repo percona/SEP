@@ -13,14 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Real-route HTTP tests verifying SEP-side HOT fields are read through the proxy.
+"""SEP-side proxy coverage for HOT overrides at the production call sites.
 
-These tests close the gap left by unit and service-level coverage: they
-insert an override row, run ``refresh_all`` (the same call path the SEP
-lifespan refresher uses), then issue a real ``TestClient`` request and
-assert the route observed the overridden value. One representative consumer
-per SEP-side wrapped settings class is exercised. The Tasks-side equivalent
-lives next to the Tasks app at
+Each case inserts an override row, runs ``refresh_all`` (the same call path
+the SEP lifespan refresher uses), and then asserts the override is visible
+at the consumer's call shape -- which varies by consumer:
+
+* ``test_snippets_refresh_route_observes_enable_manual_sync_override`` issues
+  a real ``TestClient`` request and spies on the sync helper.
+* ``test_messages_middleware_observes_level_override`` calls the middleware's
+  ``add_message`` helper directly (the path the middleware itself takes per
+  request), without a full HTTP round-trip.
+* ``test_sep_proxy_visible_after_refresh`` reads the proxy attribute
+  directly -- the exact shape ``app/sep/deps.py`` uses per request.
+
+One representative consumer per SEP-side wrapped settings class is
+exercised. The Tasks-side equivalent lives next to the Tasks app at
 ``tests/app/tasks/test_settings_override_integration.py``.
 """
 

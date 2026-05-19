@@ -50,6 +50,7 @@ def upgrade() -> None:
                 "MESSAGES_SETTINGS",
                 name="settingclassenum",
                 native_enum=False,
+                create_constraint=True,
             ),
             nullable=False,
         ),

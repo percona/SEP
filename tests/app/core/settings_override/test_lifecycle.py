@@ -67,19 +67,20 @@ async def test_refresh_all_swaps_snapshot(
     session_maker: async_sessionmaker,
 ) -> None:
     """``refresh_all`` populates the proxy snapshot from the override table."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
                 setting_class=SettingClassEnum.SEP_SETTINGS,
                 key="CONNECTIVITY_CHECK_DEFAULT",
-                value=False,
+                value=override_value,
             ),
         )
 
-    proxy, registry = _make_proxies()
     await refresh_all(lambda: session_maker, registry)
-    assert proxy.CONNECTIVITY_CHECK_DEFAULT is False
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
 
 
 @pytest.mark.asyncio
@@ -89,7 +90,8 @@ async def test_refresh_all_retains_previous_snapshot_on_error(
 ) -> None:
     """Errors during ``build_snapshot`` keep the previous snapshot intact."""
     proxy, registry = _make_proxies()
-    proxy._set_snapshot({"CONNECTIVITY_CHECK_DEFAULT": False})
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    proxy._set_snapshot({"CONNECTIVITY_CHECK_DEFAULT": override_value})
 
     async def _boom(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("boom")
@@ -97,7 +99,7 @@ async def test_refresh_all_retains_previous_snapshot_on_error(
     monkeypatch.setattr("app.core.settings_override.lifecycle.build_snapshot", _boom)
     await refresh_all(lambda: session_maker, registry)
     # Previous snapshot is retained -- the refresh did not clobber it.
-    assert proxy.CONNECTIVITY_CHECK_DEFAULT is False
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
 
 
 @pytest.mark.asyncio
@@ -105,22 +107,23 @@ async def test_start_refresh_task_runs_initial_load(
     session_maker: async_sessionmaker,
 ) -> None:
     """``start_refresh_task`` awaits an initial refresh before returning the task."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
                 setting_class=SettingClassEnum.SEP_SETTINGS,
                 key="CONNECTIVITY_CHECK_DEFAULT",
-                value=False,
+                value=override_value,
             ),
         )
 
-    proxy, registry = _make_proxies()
     task = await start_refresh_task(
         lambda: session_maker, registry, interval=timedelta(seconds=3600)
     )
     try:
-        assert proxy.CONNECTIVITY_CHECK_DEFAULT is False
+        assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -148,6 +151,7 @@ async def test_refresh_picks_up_changes_on_next_cycle(
 ) -> None:
     """Adding an override row between cycles becomes visible after the next refresh."""
     proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
     task = await start_refresh_task(
         lambda: session_maker, registry, interval=timedelta(milliseconds=50)
     )
@@ -158,13 +162,13 @@ async def test_refresh_picks_up_changes_on_next_cycle(
                 SettingOverride(
                     setting_class=SettingClassEnum.SEP_SETTINGS,
                     key="CONNECTIVITY_CHECK_DEFAULT",
-                    value=False,
+                    value=override_value,
                 ),
             )
         for _ in range(50):
             await asyncio.sleep(0.05)
             try:
-                if proxy.CONNECTIVITY_CHECK_DEFAULT is False:
+                if proxy.CONNECTIVITY_CHECK_DEFAULT is override_value:
                     return
             except AttributeError:
                 continue

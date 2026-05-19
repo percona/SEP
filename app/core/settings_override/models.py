@@ -94,7 +94,7 @@ class SettingOverride(BaseSQLModel, table=True):
 
     setting_class: SettingClassEnum = SQLField(
         sa_column=Column(
-            EnumField(SettingClassEnum, native_enum=False),
+            EnumField(SettingClassEnum, native_enum=False, create_constraint=True),
             nullable=False,
             index=True,
         ),

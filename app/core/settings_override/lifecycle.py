@@ -73,10 +73,13 @@ async def refresh_all(
     :type session_maker_factory: SessionMakerFactory
     :param proxies: The wired proxy registry keyed by class identifier.
     :type proxies: ProxyRegistry
-    :raises Exception: Re-raises any failure from ``session_maker_factory()``
-        or from opening the ``async_session_maker()`` context (engine not
-        reachable, pool exhausted, auth, ...). Per-proxy ``build_snapshot``
-        failures are handled inline and do NOT propagate.
+    :raises Exception: Re-raises any failure from
+        ``session_maker_factory()`` itself (e.g. the factory is misconfigured
+        or its engine cannot be constructed). Connection-time failures
+        against the DB -- engine unreachable, pool exhausted, auth -- do not
+        surface here because ``async_session_maker()`` does not check out a
+        connection; those errors fire later inside ``build_snapshot()`` and
+        are caught by the per-proxy handler.
     """
     async_session_maker = session_maker_factory()
     async with async_session_maker() as session:
@@ -118,11 +121,13 @@ async def start_refresh_task(
         task during shutdown to drain pending iterations cleanly.
     :rtype: asyncio.Task
     :raises Exception: Re-raises any failure from the inline initial
-        :func:`refresh_all` call -- typically a ``session_maker_factory()``
-        or session-open failure (see :func:`refresh_all`). Subsequent
-        iterations inside the background task are wrapped in ``except`` and
-        do NOT propagate; only the startup-time refresh can break the
-        lifespan.
+        :func:`refresh_all` call -- in practice limited to
+        ``session_maker_factory()`` failures (see :func:`refresh_all` for the
+        narrowed contract). Connection-time DB failures from the initial
+        snapshot build are caught per-proxy and do NOT propagate.
+        Subsequent iterations inside the background task are also wrapped in
+        ``except`` and do NOT propagate; only ``session_maker_factory()``
+        failures at startup can break the lifespan.
     """
     await refresh_all(session_maker_factory, proxies)
     interval_seconds = interval.total_seconds()
