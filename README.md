@@ -170,7 +170,7 @@ These are some, but not all, the possible settings you can have, per app:
 | SEP__SESSION__MAX_AGE      | sep       | no       | 3600                                                | 3600                                             |
 | SEP__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                        |
 | SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
-| SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/inventory/docs, /api/tasks/docs] |
+| SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
 
 
@@ -223,6 +223,7 @@ SEP supports configurable security headers through the `SEP__SECURITY_HEADERS` s
 SEP:
   SECURITY_HEADERS:
     CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+      - /api/docs
       - /api/inventory/docs
       - /api/tasks/docs
 ```
@@ -456,34 +457,6 @@ SEP:
         - information_schema
       DEFAULT_EXECUTOR_HOST: "ip-10-0-1-5.region.compute.internal"  # Nomad node name from /api/tasks/hosts/ that can reach RDS
 ```
-
-#### Inventory MySQL Topology
-
-The Inventory plugin ships a **Topology** tab next to **Browse** that draws an
-interactive React Flow graph of every MySQL service the inventory knows about:
-replication chains (primary → replica with GTID/IO/SQL state), dual-primary
-pairs, and Percona XtraDB Cluster groups. Topology data is collected **live, on
-demand** - there is no persisted snapshot in the database - by dispatching
-sharded `run-python` tasks (capped at 8 shards) to executor hosts via the
-Tasks API. Each shard runs the
-[`topology.py`](app/sep/plugins/inventory/payloads/topology.py) payload, which
-fans out per-host queries with a `ThreadPoolExecutor` and streams NDJSON
-events back; the API merges them and pushes progressive updates to the UI over
-Server-Sent Events. Results are cached client-side with TanStack Query, so
-re-opening the tab is free until the user clicks
-**Refresh**.
-
-Topology runtime limits live in
-[`api_routes.py`](app/sep/plugins/inventory/api_routes.py) as module constants:
-maximum shards is 8, SSE heartbeat is 15 seconds, and task-status polling is
-every 0.5 seconds. Changing those values currently requires a code deploy; move
-them into `inventory_settings` first if they need per-deployment tuning.
-
-The payload reuses the same credential rules as `MySQLSyncer` -
-`~/.my.cnf` and `~/.mylogin.cnf` on the executor, with per-host login paths
-matched by `host:port` (or `host_port`) and a `client` fallback - so no
-additional configuration is required if you already have `MySQLSyncer` running
-against the same hosts.
 
 ### SSL Configuration
 
