@@ -37,12 +37,6 @@ router for now and are owned by SEP-1141 / a Wave 3 follow-up; do not mount
 them here without coordinating with those tickets. The inventory service
 remains the canonical CRUD surface at ``/api/inventory/*``; this router is the
 typed entry point for the React plugin.
-
-Schedule and periodic sync routes are not mounted here so SEP-1058 can own the
-React schedule UI; do not add schedule or inventory-sync proxy routes without
-coordinating with that ticket. The inventory service remains the canonical CRUD
-surface at ``/api/inventory/*``; this router is the typed entry point for the
-React plugin.
 """
 
 from __future__ import annotations
