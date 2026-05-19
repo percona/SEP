@@ -17,12 +17,12 @@
 
 from datetime import date
 from enum import IntEnum
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import Field, field_validator, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 
 
 class SwapDropEnum(IntEnum):
@@ -108,21 +108,21 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     alias: NonEmptyStr
     hostname: NonEmptyStr
     service_id: int
-    source_db_id: int | None = None
+    source_db_id: int | EmptyStrToNone = None
     source_db_name: str = ""
-    source_table_id: int | None = None
+    source_table_id: int | EmptyStrToNone = None
     source_table_name: str = ""
     source_query: NonEmptyStr | None = None
     where: NonEmptyStr | None = None
-    dest_table_id: int | None = None
+    dest_table_id: int | EmptyStrToNone = None
     dest_table_name: str = ""
     dest_file: NonEmptyStr | None = None
     swap_drop: int = Field(..., ge=0, le=2)
     swp_table_suffix: date | None = None
     use_index: NonEmptyStr | None = None
     extra_args: NonEmptyStr | None = None
-    limit: int | None = None
-    sleep: int | None = None
+    limit: int | EmptyStrToNone = None
+    sleep: int | EmptyStrToNone = None
     disable_binlog: int | None = Field(
         None, ge=0, le=1, description="Optional flag to disable binary logging."
     )
@@ -132,10 +132,12 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
     delete_data: int | None = Field(
         None, ge=0, le=1, description="Optional flag to delete data."
     )
-    dest_service_id: int | None = None
+    dest_service_id: int | EmptyStrToNone = None
     dest_host: str | None = None
-    dest_port: int | None = Field(None, ge=1, le=65535)
-    dest_db_id: int | None = None
+    # Constraints are scoped to the ``int`` arm so the ``ge``/``le`` checks do
+    # not run against ``None`` when ``EmptyStrToNone`` coerces an empty input.
+    dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone = None
+    dest_db_id: int | EmptyStrToNone = None
     dest_db_name: str = ""
     alert_on_fail: bool = False
 

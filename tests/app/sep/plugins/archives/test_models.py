@@ -387,3 +387,89 @@ class TestArchivesCreateDestinationValidation:
         )
         assert form.dest_host is None
         assert form.dest_db_name == ""
+
+
+class TestArchivesCreateEmptyStringCoercion:
+    """Empty-string coercion to ``None`` on form-bound optional int fields (SEP-1224)."""
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "source_db_id",
+            "source_table_id",
+            "dest_table_id",
+            "limit",
+            "sleep",
+            "dest_service_id",
+            "dest_port",
+            "dest_db_id",
+        ],
+    )
+    def test_empty_string_optional_int_coerced_to_none(self, field: str) -> None:
+        """Empty strings on form-bound optional ints become ``None``, not 422.
+
+        Uses a SWAP_DROP + ``source_query`` base so every parametrized field can
+        legitimately be ``None`` without tripping the source/destination
+        exclusivity validators.
+        """
+        base = {
+            "alias": "t",
+            "hostname": "h",
+            "service_id": 1,
+            "source_query": "SELECT 1",
+            "swap_drop": SwapDropEnum.SWAP_DROP,
+            field: "",
+        }
+        form = ArchivesCreate(**base)
+        assert getattr(form, field) is None
+
+    def test_dest_port_non_empty_string_parsed_as_int(self) -> None:
+        """A non-empty ``dest_port`` string still parses to ``int`` (range-checked)."""
+        form = ArchivesCreate(
+            alias="t",
+            hostname="h",
+            service_id=1,
+            source_db_id=1,
+            source_table_id=1,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=2,
+            dest_host="archive.host",
+            dest_port="3307",
+        )
+        assert form.dest_port == SAMPLE_DEST_PORT
+        assert isinstance(form.dest_port, int)
+
+    def test_dest_port_out_of_range_still_rejected(self) -> None:
+        """Non-empty ``dest_port`` above 65535 still fails the range constraint."""
+        with pytest.raises(ValidationError) as exc_info:
+            ArchivesCreate(
+                alias="t",
+                hostname="h",
+                service_id=1,
+                source_db_id=1,
+                source_table_id=1,
+                swap_drop=SwapDropEnum.PURGE_ONLY,
+                where="id > 1",
+                dest_table_id=2,
+                dest_host="archive.host",
+                dest_port="99999",
+            )
+        assert "less than or equal to 65535" in str(exc_info.value)
+
+    def test_dest_port_non_numeric_still_rejected(self) -> None:
+        """Non-empty, non-numeric ``dest_port`` still fails int parsing."""
+        with pytest.raises(ValidationError) as exc_info:
+            ArchivesCreate(
+                alias="t",
+                hostname="h",
+                service_id=1,
+                source_db_id=1,
+                source_table_id=1,
+                swap_drop=SwapDropEnum.PURGE_ONLY,
+                where="id > 1",
+                dest_table_id=2,
+                dest_host="archive.host",
+                dest_port="abc",
+            )
+        assert "valid integer" in str(exc_info.value)
