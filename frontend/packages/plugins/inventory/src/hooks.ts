@@ -61,7 +61,14 @@ export function useTriggerSync() {
       const { data } = await apiClient.post(`${INVENTORY_BASE}/sync/`, body);
       return data;
     },
-    onSuccess: () => {
+    onMutate: () => {
+      // Optimistically mark as running so the button disables immediately,
+      // preventing a second POST before the status refetch returns.
+      queryClient.setQueryData<SyncStatus>(['inventory', 'sync-status'], (prev) =>
+        prev ? { ...prev, is_running: true } : { is_running: true },
+      );
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory', 'sync-status'] });
     },
   });

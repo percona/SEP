@@ -71,11 +71,12 @@ describe('SyncControl', () => {
     afterEach(() => vi.restoreAllMocks());
 
     it('renders nothing when available-syncers is empty', async () => {
-      stubGet([]);
+      const spy = stubGet([]);
       const { container } = render(<SyncControl />, { wrapper: makeWrapper() });
-      await waitFor(() => {
-        expect(container.firstChild).toBeNull();
-      });
+      // Wait for the query to settle (spy called) before asserting — avoids a
+      // false positive where the assertion passes during the loading phase.
+      await waitFor(() => expect(spy).toHaveBeenCalled());
+      expect(container.firstChild).toBeNull();
     });
   });
 
