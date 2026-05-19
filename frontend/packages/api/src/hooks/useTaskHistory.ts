@@ -15,22 +15,27 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
-export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
-export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
-export type { AlertConfig } from './useAlertConfig';
-export { useDashboardStats } from './useDashboardStats';
-export type { DashboardStats } from './useDashboardStats';
-export { useRecentTaskHistory } from './useTaskHistory';
-export type { TaskHistoryItem } from './useTaskHistory';
+import { useQuery } from '@tanstack/react-query';
+import type { components } from '../generated/tasks';
+import { apiClient } from '../client';
+
+export type TaskHistoryItem = components['schemas']['TaskHistoryResponse'];
+
+interface PaginatedTaskHistory {
+  items: TaskHistoryItem[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export function useRecentTaskHistory(limit = 5) {
+  return useQuery<PaginatedTaskHistory>({
+    queryKey: ['tasks', 'history', { limit }],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PaginatedTaskHistory>('/tasks/history/', {
+        params: { limit },
+      });
+      return data;
+    },
+  });
+}

@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useState } from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Grid from '@mui/material/Grid';
@@ -35,94 +35,38 @@ import type { MRT_ColumnDef } from 'material-react-table';
 import DnsIcon from '@mui/icons-material/Dns';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import CodeIcon from '@mui/icons-material/Code';
-import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import { useNavigate } from 'react-router-dom';
+import { formatDistanceToNow } from 'date-fns';
+import { useDashboardStats, useRecentTaskHistory, type TaskHistoryItem } from '@sep/api';
 import { useAuth } from '../contexts/auth';
-
-// -- Mock data (will be replaced with React Query hooks against real API) --
-
-interface StatCard {
-  title: string;
-  value: number;
-  icon: React.ElementType;
-  color: string;
-  to: string;
-}
-
-const stats: StatCard[] = import.meta.env.DEV
-  ? [
-      { title: 'Nodes', value: 42, icon: DnsIcon, color: 'primary.main', to: '/inventory' },
-      {
-        title: 'Active Tasks',
-        value: 7,
-        icon: AssignmentIcon,
-        color: 'warning.main',
-        to: '/tasks',
-      },
-      { title: 'Snippets', value: 23, icon: CodeIcon, color: 'info.main', to: '/snippets' },
-      {
-        title: 'Alerts',
-        value: 3,
-        icon: NotificationsActiveIcon,
-        color: 'error.main',
-        to: '/alerts/templates',
-      },
-    ]
-  : [];
 
 interface RecentTask {
   id: number;
   name: string;
   target: string;
-  status: 'running' | 'completed' | 'failed' | 'pending';
+  status: 'running' | 'success' | 'failed' | 'pending' | 'stopped' | 'lost' | 'stale';
   started: string;
 }
 
-const recentTasks: RecentTask[] = import.meta.env.DEV
-  ? [
-      {
-        id: 1,
-        name: 'pt-online-schema-change',
-        target: 'prod-db-01',
-        status: 'running',
-        started: '2 min ago',
-      },
-      {
-        id: 2,
-        name: 'xtrabackup',
-        target: 'prod-db-03',
-        status: 'completed',
-        started: '15 min ago',
-      },
-      {
-        id: 3,
-        name: 'pt-table-checksum',
-        target: 'staging-db-01',
-        status: 'completed',
-        started: '1 hour ago',
-      },
-      {
-        id: 4,
-        name: 'archive-tables',
-        target: 'prod-db-02',
-        status: 'failed',
-        started: '3 hours ago',
-      },
-    ]
-  : [];
-
-const StatusIconMap = {
+const StatusIconMap: Record<RecentTask['status'], React.ElementType> = {
   running: PendingIcon,
-  completed: SuccessIcon,
+  success: SuccessIcon,
   failed: ErrorIcon,
   pending: WarningIcon,
-} as const;
+  stopped: WarningIcon,
+  lost: ErrorIcon,
+  stale: WarningIcon,
+};
 
-const statusColorMap: Record<string, 'info' | 'success' | 'error' | 'warning'> = {
+const statusColorMap: Record<RecentTask['status'], 'info' | 'success' | 'error' | 'warning'> = {
   running: 'info',
-  completed: 'success',
+  success: 'success',
   failed: 'error',
   pending: 'warning',
+  stopped: 'warning',
+  lost: 'error',
+  stale: 'warning',
 };
 
 const columns: MRT_ColumnDef<RecentTask>[] = [
@@ -160,10 +104,59 @@ const columns: MRT_ColumnDef<RecentTask>[] = [
   },
 ];
 
+function mapHistoryToRecentTask(item: TaskHistoryItem): RecentTask {
+  const status = (item.status ?? 'pending') as RecentTask['status'];
+  const started = item.started_at
+    ? formatDistanceToNow(new Date(item.started_at), { addSuffix: true })
+    : '—';
+  return {
+    id: item.id ?? 0,
+    name: item.task.name,
+    target: item.execution_request.target,
+    status,
+    started,
+  };
+}
+
 export default function DashboardPage() {
   const auth = useAuth();
   const navigate = useNavigate();
-  const [loading] = useState(false); // will be driven by React Query
+
+  const statsQuery = useDashboardStats();
+  const historyQuery = useRecentTaskHistory(5);
+
+  const stats = [
+    {
+      title: 'Nodes',
+      value: statsQuery.data?.nodes ?? 0,
+      icon: DnsIcon,
+      color: 'primary.main',
+      to: '/inventory',
+    },
+    {
+      title: 'Active Tasks',
+      value: statsQuery.data?.tasks ?? 0,
+      icon: AssignmentIcon,
+      color: 'warning.main',
+      to: '/tasks',
+    },
+    {
+      title: 'Snippets',
+      value: statsQuery.data?.snippets ?? 0,
+      icon: CodeIcon,
+      color: 'info.main',
+      to: '/snippets',
+    },
+    {
+      title: 'Targets',
+      value: statsQuery.data?.targets ?? 0,
+      icon: DeviceHubIcon,
+      color: 'error.main',
+      to: '/tasks',
+    },
+  ];
+
+  const recentTasks = (historyQuery.data?.items ?? []).map(mapHistoryToRecentTask);
 
   return (
     <>
@@ -177,8 +170,14 @@ export default function DashboardPage() {
         Welcome back, {auth.user?.username}
       </Typography>
 
+      {statsQuery.isError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Failed to load dashboard stats: {statsQuery.error?.message}
+        </Alert>
+      )}
+
       {/* Stats Cards — using percona-ui's OverviewCard */}
-      <LoadableChildren loading={loading}>
+      <LoadableChildren loading={statsQuery.isLoading}>
         <Grid container spacing={3} sx={{ mb: 3, alignItems: 'stretch' }}>
           {stats.map((stat) => (
             <Grid
@@ -214,6 +213,12 @@ export default function DashboardPage() {
         </Grid>
       </LoadableChildren>
 
+      {historyQuery.isError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Failed to load recent tasks: {historyQuery.error?.message}
+        </Alert>
+      )}
+
       {/* Recent Tasks — using percona-ui's Table (material-react-table wrapper) */}
       <Box>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -222,17 +227,19 @@ export default function DashboardPage() {
             View All
           </Button>
         </Box>
-        <Table<RecentTask>
-          columns={columns}
-          data={recentTasks}
-          tableName="dashboard-recent-tasks"
-          noDataMessage="No recent tasks"
-          enableTopToolbar={false}
-          enableColumnActions={false}
-          enableSorting={false}
-          enablePagination={false}
-          enableBottomToolbar={false}
-        />
+        <LoadableChildren loading={historyQuery.isLoading}>
+          <Table<RecentTask>
+            columns={columns}
+            data={recentTasks}
+            tableName="dashboard-recent-tasks"
+            noDataMessage="No recent tasks"
+            enableTopToolbar={false}
+            enableColumnActions={false}
+            enableSorting={false}
+            enablePagination={false}
+            enableBottomToolbar={false}
+          />
+        </LoadableChildren>
       </Box>
     </>
   );
