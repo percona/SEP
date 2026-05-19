@@ -199,7 +199,7 @@ function UnsavedChangesBlocker({ isGuarded }: { isGuarded: boolean }) {
       </DialogContent>
       <DialogActions>
         <Button onClick={() => blocker.reset?.()}>Stay</Button>
-        <Button onClick={() => blocker.proceed?.()} color="error" variant="contained">
+        <Button onClick={() => blocker.proceed?.()} color="error" variant="outlined">
           Discard changes
         </Button>
       </DialogActions>
