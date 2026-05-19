@@ -986,7 +986,17 @@ class TestChecksumsUpdateEndpoint:
     ):
         """Ensure updating a checksum task returns HTTP 200 with the task body."""
         task = build_checksum_task()
-        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                task,
+                {
+                    "items": [{"status": TaskHistoryStatusEnum.FAILED.value}],
+                    "total": 1,
+                    "offset": 0,
+                    "limit": 50,
+                },
+            ]
+        )
         mock_task_api_dep.put = AsyncMock(return_value=task)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
@@ -999,13 +1009,38 @@ class TestChecksumsUpdateEndpoint:
         data = response.json()
         assert data["name"] == task["name"]
         assert data["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert data["status"] == TaskHistoryStatusEnum.FAILED.value
+
+    def test_checksums_update_status_null_when_no_history(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Ensure PUT returns status=null when the updated task has no history."""
+        task = build_checksum_task()
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                task,
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+            ]
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=task)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.put(f"/api/plugins/checksums/{task['name']}", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] is None
 
     def test_checksums_update_calls_tasks_api_put_with_path_task_name(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
     ):
         """Ensure PUT calls tasks_api.put with the path task name and correct owner."""
         task = build_checksum_task()
-        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[task, {"items": [], "total": 0, "offset": 0, "limit": 50}]
+        )
         mock_task_api_dep.put = AsyncMock(return_value=task)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
@@ -1026,7 +1061,9 @@ class TestChecksumsUpdateEndpoint:
         old_name = "old-task-name"
         new_name = "new-task-name"
         task = build_checksum_task(old_name)
-        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[task, {"items": [], "total": 0, "offset": 0, "limit": 50}]
+        )
         mock_task_api_dep.put = AsyncMock(return_value=task)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
@@ -1222,7 +1259,9 @@ class TestChecksumsUpdateEndpoint:
     ):
         """Skip the connectivity check when check_connectivity=false."""
         task = build_checksum_task(with_connectivity_meta=True)
-        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[task, {"items": [], "total": 0, "offset": 0, "limit": 50}]
+        )
         mock_task_api_dep.put = AsyncMock(return_value=task)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
@@ -1246,7 +1285,9 @@ class TestChecksumsUpdateEndpoint:
     ):
         """Populate connectivity_warning when the connectivity check fails."""
         task = build_checksum_task(with_connectivity_meta=True)
-        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[task, {"items": [], "total": 0, "offset": 0, "limit": 50}]
+        )
         mock_task_api_dep.put = AsyncMock(return_value=task)
         mock_task_api_dep.post = AsyncMock(
             return_value={"success": False, "error": "connection refused"}

@@ -141,12 +141,13 @@ async def checksums_api_update(
         intentional.
     :type check_connectivity: bool
     """
+    logger.debug("Update checksums task (JSON path): %s", task.name)
     if task.protected:
         raise HTTPConflictException("Cannot edit a protected task.")
-    logger.debug("Update checksums task (JSON path): %s", task.name)
     task_write = await build_checksum_task(body, inventory_api)
     updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
     updated_task = Task.model_validate(updated)
+    task_status = await get_checksums_task_status(updated_task.name, tasks_api)
     connectivity_warning = await maybe_record_connectivity_warning(
         tasks_api,
         updated_task.data.get("meta", {}),
@@ -154,7 +155,7 @@ async def checksums_api_update(
     )
     return build_checksums_api_task_response(
         updated_task,
-        status=None,
+        status=task_status,
         connectivity_warning=connectivity_warning,
     )
 
