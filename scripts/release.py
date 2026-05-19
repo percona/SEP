@@ -14,23 +14,30 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Release SEP — cut an RC or promote to stable.
+"""Release SEP — prep a release, cut an RC, or promote to stable.
 
 Owns the preconditions, version-bump, tagging, GitHub release, and Jenkins
-trigger for ``make release-rc`` and ``make release-stable``. Both Makefile
-targets are thin shims that forward ``VERSION`` / ``RC`` to this script.
+trigger for ``make release-prep``, ``make release-rc`` and
+``make release-stable``. All three Makefile targets are thin shims that
+forward ``VERSION`` (and ``RC`` for ``release-rc``) to this script.
 
 Subcommands:
 
-- ``rc``: cut release candidate ``vX.Y.ZrcN`` from ``main`` (RC=1) or the
-  existing ``release/vX.Y.Z`` branch (RC>1). When RC=1, dispatches the Jira
-  ``version-create`` automation webhook (via ``scripts/post_jira_webhook.py``)
-  before the long-running build / push steps to lock the
-  ``fixVersion=sep-next`` scope early.
-- ``stable``: promote ``release/vX.Y.Z`` to stable ``vX.Y.Z`` and create a
-  dev-version-bump PR on ``main``. The Jira ``version-released`` automation
-  webhook is dispatched from the ``trigger-jenkins`` Makefile rule, gated on
-  the same ``JENKINS_*`` env vars that gate the build trigger itself.
+- ``prep``: Day-27 prep step. Creates ``release/vX.Y.Z`` from ``main``
+  HEAD, dispatches the Jira ``version-create`` automation webhook to lock
+  the ``fixVersion=sep-next`` scope, opens the ``main`` dev-version-bump
+  PR, smoke-builds the wheel, and triggers an internal-registry-only
+  Jenkins build for the team-wide internal QA day before rc1 publishes
+  to Docker Hub. No version bump, no tag.
+- ``rc``: cut release candidate ``vX.Y.ZrcN``. ``RC=1`` runs from
+  ``main`` (legacy fresh-from-main path) or, if a prior ``prep`` already
+  pushed ``release/vX.Y.Z``, from that existing branch (after-prep
+  path) — idempotent against the scope-lock side effects already done
+  by prep. ``RC>1`` runs from the existing release branch.
+- ``stable``: promote ``release/vX.Y.Z`` to stable ``vX.Y.Z`` and
+  back-merge into ``main``. The Jira ``version-released`` automation
+  webhook is dispatched from the ``trigger-jenkins`` Makefile rule, gated
+  on the same ``JENKINS_*`` env vars that gate the build trigger itself.
 
 All webhook dispatch is best-effort: ``scripts/post_jira_webhook.py`` exits
 non-zero on failure with a redacted warning on stderr, and the "Next steps"
