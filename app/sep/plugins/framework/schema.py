@@ -20,6 +20,7 @@ __all__ = [
     "BaseField",
     "BoolField",
     "Capabilities",
+    "ChainedPredecessor",
     "Choice",
     "ChoiceField",
     "Column",
@@ -636,6 +637,39 @@ class DerivedTask(SchemaBaseModel):
     parent_link: bool = True
 
 
+class ChainedPredecessor(SchemaBaseModel):
+    """Represent a chained predecessor task that runs before the parent.
+
+    The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes
+    this spec when POSTing, PUTting, or DELETEing a plugin's tasks: each
+    predecessor is created with ``data["parent"]`` linked to the parent's
+    name (when ``parent_link`` is true) and named
+    ``f"{parent_name}{name_suffix}"``. After every create succeeds, the
+    cascade fires ``POST /execute/{first_predecessor_name}`` with
+    ``chain_task_names`` spanning the remaining predecessors followed by
+    the parent; ``chain_on_failure`` is derived from ``on_failure``
+    (``"halt"`` maps to ``False``, ``"continue"`` maps to ``True``). The
+    chain inherits ``_chain_on_failure`` chain-wide via celery's
+    :func:`_dispatch_chained_task`.
+
+    :param name_suffix: String appended to the parent's ``name`` to form
+        the predecessor's name (for example ``"-pre-checks"``).
+    :type name_suffix: NonEmptyStr
+    :param on_failure: Chain semantics when the predecessor terminates
+        non-successfully. ``"halt"`` (default) stops the chain;
+        ``"continue"`` lets the chain continue regardless. Translates to
+        the boolean ``chain_on_failure`` flag at execute time.
+    :type on_failure: Literal["halt", "continue"]
+    :param parent_link: When true, set ``data["parent"]`` on the
+        predecessor payload to the parent's ``name``. Defaults to ``True``.
+    :type parent_link: bool
+    """
+
+    name_suffix: NonEmptyStr
+    on_failure: Literal["halt", "continue"] = "halt"
+    parent_link: bool = True
+
+
 class Capabilities(SchemaBaseModel):
     """Represent plugin-level feature flags.
 
@@ -854,6 +888,12 @@ class PluginSchema(SchemaBaseModel):
         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
         across the parent and N derived siblings. Defaults to ``None``.
     :type derived: list[DerivedTask] | None
+    :param predecessors: Optional declarative specs for tasks that must run
+        before the parent. Consumed by
+        :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+        across the predecessors and the parent, including the chain wiring
+        applied at execute time. Defaults to ``None``.
+    :type predecessors: list[ChainedPredecessor] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -867,6 +907,7 @@ class PluginSchema(SchemaBaseModel):
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
     derived: list[DerivedTask] | None = None
+    predecessors: list[ChainedPredecessor] | None = None
 
     @field_validator("derived", mode="after")
     @classmethod
@@ -894,6 +935,77 @@ class PluginSchema(SchemaBaseModel):
         if duplicates:
             raise ValueError(f"Duplicate derived name_suffix values: {duplicates}")
         return value
+
+    @field_validator("predecessors", mode="after")
+    @classmethod
+    def _validate_predecessors(
+        cls, value: list[ChainedPredecessor] | None
+    ) -> list[ChainedPredecessor] | None:
+        """Reject duplicate ``name_suffix`` and mixed ``on_failure`` values.
+
+        Duplicate suffixes would cause deterministic task-name collisions on
+        cascade. Mixed ``on_failure`` policies cannot be expressed by the
+        underlying chain machinery: celery's
+        :func:`_dispatch_chained_task` inherits ``_chain_on_failure`` from
+        the parent's execution request and applies it to every chained
+        step. Reject both at schema construction time so the failure
+        surfaces at plugin load, not on first task creation.
+
+        Also collapses ``[]`` to ``None`` so the field's contract is
+        single-valued: either the plugin declares predecessors (non-empty
+        list) or omits them entirely.
+
+        :param value: The validated ``predecessors`` list, or ``None``.
+        :type value: list[ChainedPredecessor] | None
+        :return: The input ``value`` when non-empty, ``None`` when the
+            input was ``None`` or an empty list.
+        :rtype: list[ChainedPredecessor] | None
+        :raises ValueError: When two entries share a ``name_suffix`` or when
+            the entries have differing ``on_failure`` values.
+        """
+        if not value:
+            return None
+        counts = Counter(spec.name_suffix for spec in value)
+        duplicates = sorted(suffix for suffix, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(f"Duplicate predecessors name_suffix values: {duplicates}")
+        on_failure_values = {spec.on_failure for spec in value}
+        if len(on_failure_values) > 1:
+            raise ValueError(
+                "Mixed on_failure policies in predecessors are not supported; "
+                "all entries must share the same on_failure value because "
+                "celery's chain machinery inherits _chain_on_failure chain-wide. "
+                f"Found: {sorted(on_failure_values)}"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_cascade_suffixes_disjoint(self) -> Self:
+        """Reject ``name_suffix`` values shared between ``derived`` and ``predecessors``.
+
+        Both cascade families produce task names of the form
+        ``f"{parent_name}{name_suffix}"`` on cascade. A suffix declared on
+        both lists would target the same task name on the tasks API, so
+        the create/update/delete flow that manages both task sets would
+        collide deterministically. Reject at schema-construction time so
+        the failure surfaces at plugin load rather than on first cascade.
+
+        :return: The validated plugin schema instance.
+        :rtype: PluginSchema
+        :raises ValueError: When the two lists share at least one
+            ``name_suffix`` value.
+        """
+        if not self.derived or not self.predecessors:
+            return self
+        derived_suffixes = {spec.name_suffix for spec in self.derived}
+        predecessor_suffixes = {spec.name_suffix for spec in self.predecessors}
+        shared = sorted(derived_suffixes & predecessor_suffixes)
+        if shared:
+            raise ValueError(
+                f"name_suffix values shared between derived and predecessors "
+                f"would collide on cascade: {shared}"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
