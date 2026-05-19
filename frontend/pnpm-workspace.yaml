@@ -9,3 +9,9 @@ minimumReleaseAge: 10080
 # Activates on pnpm v11+ (silently ignored on 10.x). Keeps fail-closed intent
 # discoverable once the workspace bumps the pnpm pin.
 minimumReleaseAgeIgnoreMissingTime: false
+# Dev-tooling releases frequently; exclude from the 7-day cooldown (see oxc-project).
+minimumReleaseAgeExclude:
+  - '@oxlint/*'
+  - oxlint
+  - '@oxfmt/*'
+  - oxfmt

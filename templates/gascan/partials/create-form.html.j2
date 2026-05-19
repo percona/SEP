@@ -1,0 +1,121 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<style>
+    fieldset {
+        width: 95%;
+        justify-content: flex-start;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        margin-bottom: 0.5em;
+    }
+
+    .field {
+        flex: 0 0 48%;
+        box-sizing: border-box;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+    }
+
+    .field label {
+        width: 135px;
+        margin-right: 10px;
+    }
+
+    .field input {
+        flex: 1;
+    }
+</style>
+<form id="create-gascan-form"
+      class="create-gascan-form window"
+      method="post"
+      action=""
+      data-confirm-message="Are you sure you want to create this gascan task?">
+    <dialog id="modalCreateTask"
+            aria-modal="true"
+            aria-labelledby="modalCreateTaskTitle"
+            data-modal="target"
+            class="large">
+        <header>
+            <h3 id="modalCreateTaskTitle" class="h5 title">Configure a gascan task</h3>
+        </header>
+        <section>
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+            <fieldset>
+                <legend>Task</legend>
+                <div class="select">
+                    {% set hostname_title = "Select the executor host for task execution." %}
+                    <label for="hostname" title="{{ hostname_title }}">
+                        <span class="material-symbols-outlined">arrow_drop_down</span>
+                        <span class="label">Executor host</span>
+                        {% if executor_hosts|length == 1 %}
+                            {% set single_host = executor_hosts[0] %}
+                            <select id="hostname" name="hostname" title="{{ hostname_title }}" disabled>
+                                <option value="{{ single_host.value }}" selected>{{ single_host.label }}</option>
+                            </select>
+                            <input type="hidden" name="hostname" value="{{ single_host.value }}">
+                        {% else %}
+                            <select id="hostname" name="hostname" required>
+                                {% for host in executor_hosts %}<option value="{{ host.value }}">{{ host.label }}</option>{% endfor %}
+                            </select>
+                        {% endif %}
+                    </label>
+                </div>
+                <div class="field">
+                    <label for="task_name">Task name</label>
+                    <input type="text"
+                           id="task_name"
+                           name="task_name"
+                           required
+                           placeholder="Enter a unique task name">
+                </div>
+            </fieldset>
+            <fieldset>
+                <legend>Gascan</legend>
+                <div class="field">
+                    <label for="playbook">Playbook</label>
+                    <input type="text" id="playbook" name="playbook" required>
+                </div>
+                <div class="field">
+                    <label for="limit">Limit</label>
+                    <input type="text" id="limit" name="limit">
+                </div>
+                <div class="field">
+                    <label for="override">Override</label>
+                    <input type="text" id="override" name="override">
+                </div>
+            </fieldset>
+            {% if alert_on_fail_available %}
+                <label class="checkbox">
+                    <input type="checkbox"
+                           id="alert_on_fail"
+                           name="alert_on_fail"
+                           {% if alert_on_fail_default %}checked{% endif %} />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Alert on failure</span>
+                </label>
+            {% endif %}
+        </section>
+        <footer>
+            <button type="button" class="text" data-modal="close">Cancel</button>
+            <button type="submit" class="contained">Create</button>
+        </footer>
+    </dialog>
+</form>

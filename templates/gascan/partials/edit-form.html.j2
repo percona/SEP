@@ -1,0 +1,131 @@
+{#
+Copyright (C) 2026 Percona LLC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses />.
+#}
+<style>
+    fieldset {
+        width: 95%;
+        justify-content: flex-start;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        margin-bottom: 0.5em;
+    }
+
+    .field {
+        flex: 0 0 48%;
+        box-sizing: border-box;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+    }
+
+    .field label {
+        width: 135px;
+        margin-right: 10px;
+    }
+
+    .field input {
+        flex: 1;
+    }
+</style>
+<form id="edit-task-form"
+      class="edit-task-form window"
+      method="post"
+      action="{{ url_for('gascan_update', task_name=task.name) }}"
+      data-confirm-message='Are you sure you want to edit task "{{ task.name }}"?'>
+    <dialog id="modalEditTask"
+            aria-modal="true"
+            aria-labelledby="modalEditTaskTitle"
+            data-modal="target"
+            class="large">
+        <header>
+            <h3 id="modalEditTaskTitle" class="h5 title">Edit task</h3>
+        </header>
+        <section>
+            <p>
+                You are about to edit the task <strong id="modalTaskName">{{ task.name }}</strong>.
+            </p>
+            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+            <fieldset>
+                <legend>Task</legend>
+                <div class="select">
+                    {% set hostname_title = "Select the executor host for task execution." %}
+                    <label for="hostname" title="{{ hostname_title }}">
+                        <span class="material-symbols-outlined">arrow_drop_down</span>
+                        <span class="label">Executor host</span>
+                        <select id="hostname" name="hostname" title="{{ hostname_title }}">
+                            {% for host in executor_hosts %}
+                                <option value="{{ host.value }}"
+                                        {% if host.value == task['hostname'] %}selected{% endif %}>
+                                    {{ host.label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+                <div class="field">
+                    <label for="task_name">Task name</label>
+                    <input type="text"
+                           id="task_name"
+                           name="task_name"
+                           value="{{ task.name }}"
+                           required>
+                </div>
+            </fieldset>
+            <fieldset>
+                <legend>Gascan</legend>
+                <div class="field">
+                    <label for="playbook">Playbook</label>
+                    <input type="text"
+                           id="playbook"
+                           name="playbook"
+                           value="{{ task.playbook }}"
+                           required>
+                </div>
+                <div class="field">
+                    <label for="limit">Limit</label>
+                    <input type="text" id="limit" name="limit" value="{{ task.limit }}">
+                </div>
+                <div class="field">
+                    <label for="override">Override</label>
+                    <input type="text" id="override" name="override" value="{{ task.override }}">
+                </div>
+            </fieldset>
+            {% if alert_on_fail_available %}
+                <label class="checkbox">
+                    <input type="checkbox"
+                           id="alert_on_fail"
+                           name="alert_on_fail"
+                           {% if task.alert_on_fail %}checked{% endif %} />
+                    <div class="checkmark">
+                        <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
+                        <span class="material-symbols-outlined checked">check_box</span>
+                    </div>
+                    <span class="label">Alert on failure</span>
+                </label>
+            {% endif %}
+        </section>
+        <footer>
+            <button type="button" class="text" data-modal="close">Cancel</button>
+            <button type="submit" class="contained">Save</button>
+        </footer>
+    </dialog>
+</form>
+{% if task.is_edit_enabled %}
+    <button type="button"
+            class="contained"
+            data-modal="trigger"
+            data-modal-target="modalEditTask">Edit</button>
+{% endif %}

@@ -1250,6 +1250,10 @@ button.list-item:focus-visible {
     content: "new_releases";
 }
 
+.list-item.gascan .icon::before {
+    content: "build";
+}
+
 .list-item.backup_mongo .icon::before {
     content: "nature";
 }

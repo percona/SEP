@@ -31,6 +31,7 @@ import ArchiveIcon from '@mui/icons-material/Archive';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import ScienceIcon from '@mui/icons-material/Science';
+import BuildIcon from '@mui/icons-material/Build';
 import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { SvgIconProps } from '@mui/material';
@@ -64,6 +65,7 @@ const defaultNavItems: NavItem[] = [
     children: [{ title: 'Alters', icon: TableChartIcon, to: '/schema-change/alters' }],
   },
   { title: 'Checksums', icon: CheckCircleIcon, to: '/plugins/checksums' },
+  { title: 'Gascan', icon: BuildIcon, to: '/plugins/gascan' },
   {
     title: 'Backups',
     icon: BackupIcon,
