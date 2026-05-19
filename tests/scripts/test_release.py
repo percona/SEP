@@ -135,33 +135,10 @@ def _make_stable_preconditions(version):
     }
 
 
-def _patch_rc_ok(
-    monkeypatch,
-    *,
-    rc=1,
-    webhook_result=True,
-    webhook_calls=None,
-    after_prep=False,
-    bump_branch_exists=False,
+def _install_rc_probes(
+    monkeypatch, *, after_prep, bump_branch_exists, main_at_next_dev
 ):
-    """Patch ``_run``, ``_invoke_post_jira_webhook``, ``_bump_version``, and build artifacts for cmd_rc.
-
-    :param after_prep: When ``True`` (RC=1 only), simulate prep already
-        pushed the release branch. The release-branch probe returns True;
-        ``current_branch`` is irrelevant. When ``False``, the release-branch
-        probe returns False (fresh-from-main).
-    :type after_prep: bool
-    :param bump_branch_exists: When ``True`` (RC=1 only), simulate the
-        ``bump-dev-version-*`` branch already on origin (prep opened the
-        PR). The dev-bump probe returns True so ``cmd_rc`` skips opening
-        a duplicate PR.
-    :type bump_branch_exists: bool
-    """
-    branch = "main" if rc == 1 else "release/v0.12.0"
-    runner = _FakeRunner(_make_rc_preconditions(branch=branch))
-    monkeypatch.setattr(release, "_bump_version", lambda *_a, **_kw: None)
-    monkeypatch.setattr(release, "_local_branch_exists", lambda _branch: False)
-    monkeypatch.setattr(release, "_gh_available", lambda: True)
+    """Install the branch-existence and origin-main-version probes used by cmd_rc."""
 
     def fake_remote_branch_exists(probe_branch):
         if probe_branch.startswith("release/"):
@@ -171,6 +148,70 @@ def _patch_rc_ok(
         return False
 
     monkeypatch.setattr(release, "_remote_branch_exists", fake_remote_branch_exists)
+
+    def fake_origin_main_version(_re):
+        parts = "0.12.0".split(".")
+        next_dev = f"{parts[0]}.{int(parts[1]) + 1}.0.dev0"
+        return next_dev if main_at_next_dev else "0.12.0.dev0"
+
+    monkeypatch.setattr(
+        release, "_origin_main_pyproject_version", fake_origin_main_version
+    )
+
+
+def _install_rc_api_spies(monkeypatch, call_order):
+    """Install spies for the GitHub-API publish path used by cmd_rc."""
+
+    def spy_push_commit(*_a, **kwargs):
+        call_order.append(("api_commit", kwargs.get("message")))
+        return "fakecommitsha"
+
+    def spy_create_tag(tag, target_sha):
+        call_order.append(("api_tag", tag, target_sha))
+
+    monkeypatch.setattr(
+        release,
+        "_api_branch_head_sha",
+        lambda *_a, **_kw: "fakebasesha",
+    )
+    monkeypatch.setattr(release, "_api_push_signed_commit", spy_push_commit)
+    monkeypatch.setattr(release, "_api_create_tag_ref", spy_create_tag)
+
+
+def _patch_rc_ok(
+    monkeypatch,
+    *,
+    rc=1,
+    webhook_result=True,
+    webhook_calls=None,
+    after_prep=False,
+    bump_branch_exists=False,
+    main_at_next_dev=False,
+):
+    """Patch ``_run``, webhook, ``_bump_version`` and probes for cmd_rc.
+
+    :param after_prep: When ``True`` (RC=1 only), simulate prep already
+        pushed the release branch.
+    :type after_prep: bool
+    :param bump_branch_exists: When ``True`` (RC=1 only), simulate the
+        ``bump-dev-version-*`` branch on origin (an open PR).
+    :type bump_branch_exists: bool
+    :param main_at_next_dev: When ``True`` (RC=1 only), simulate ``origin/main``
+        being already at the next ``vX.Y+1.0.dev0``.
+    :type main_at_next_dev: bool
+    """
+    branch = "main" if rc == 1 else "release/v0.12.0"
+    runner = _FakeRunner(_make_rc_preconditions(branch=branch))
+    monkeypatch.setattr(release, "_bump_version", lambda *_a, **_kw: None)
+    monkeypatch.setattr(release, "_local_branch_exists", lambda _branch: False)
+    monkeypatch.setattr(release, "_gh_available", lambda: True)
+
+    _install_rc_probes(
+        monkeypatch,
+        after_prep=after_prep,
+        bump_branch_exists=bump_branch_exists,
+        main_at_next_dev=main_at_next_dev,
+    )
 
     call_order = []
     runner_orig_call = runner.__call__
@@ -188,26 +229,8 @@ def _patch_rc_ok(
         return webhook_result
 
     monkeypatch.setattr(release, "_invoke_post_jira_webhook", spy_webhook)
-
-    def spy_push_commit(*_a, **kwargs):
-        call_order.append(("api_commit", kwargs.get("message")))
-        return "fakecommitsha"
-
-    def spy_create_tag(tag, target_sha):
-        call_order.append(("api_tag", tag, target_sha))
-
-    monkeypatch.setattr(
-        release,
-        "_api_branch_head_sha",
-        lambda *_a, **_kw: "fakebasesha",
-    )
-    monkeypatch.setattr(release, "_api_push_signed_commit", spy_push_commit)
-    monkeypatch.setattr(release, "_api_create_tag_ref", spy_create_tag)
-
-    def fake_wheel_exists(self):
-        return True
-
-    monkeypatch.setattr(release.Path, "exists", fake_wheel_exists)
+    _install_rc_api_spies(monkeypatch, call_order)
+    monkeypatch.setattr(release.Path, "exists", lambda _self: True)
     monkeypatch.setattr(release.Path, "read_text", lambda _self, **_kw: "")
     return runner, call_order
 
@@ -782,8 +805,41 @@ def test_rc1_after_prep_still_fires_webhook(monkeypatch):
     ]
 
 
-def test_rc1_after_prep_skips_dev_bump_pr_when_branch_exists(monkeypatch):
-    """Under after-prep with bump-dev-version branch on origin, dev_bump_pr is skipped."""
+def test_rc1_after_prep_skips_dev_bump_when_main_already_on_next_dev(monkeypatch):
+    """Skip the dev-bump PR when ``origin/main`` is already at the next .dev0.
+
+    Covers the normal flow where the prep-opened dev-bump PR has already been
+    merged. GitHub's branch-auto-delete-after-merge setting (the recommended
+    setting) removes the source branch on merge, so by rc1 day the
+    bump-dev-version branch may be gone even though main is already at the
+    next .dev0 — probing the branch alone would incorrectly re-fire the
+    dev-bump call.
+    """
+    dev_bump_calls = []
+    monkeypatch.setattr(
+        release,
+        "_create_dev_version_bump_pr",
+        lambda v, t: dev_bump_calls.append((v, t)),
+    )
+    _patch_rc_ok(
+        monkeypatch,
+        rc=1,
+        webhook_result=True,
+        after_prep=True,
+        bump_branch_exists=False,
+        main_at_next_dev=True,
+    )
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 0
+    assert dev_bump_calls == []
+
+
+def test_rc1_after_prep_errors_when_dev_bump_pr_unmerged(monkeypatch, capsys):
+    """Abort when the dev-bump branch is on origin but main is not yet bumped.
+
+    The operator forgot to merge the prep-opened dev-bump PR before
+    dispatching rc1. ``cmd_rc`` returns non-zero with an explicit operator
+    instruction rather than try to recreate the PR and fail at ``git push``.
+    """
     dev_bump_calls = []
     monkeypatch.setattr(
         release,
@@ -796,8 +852,11 @@ def test_rc1_after_prep_skips_dev_bump_pr_when_branch_exists(monkeypatch):
         webhook_result=True,
         after_prep=True,
         bump_branch_exists=True,
+        main_at_next_dev=False,
     )
-    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 0
+    assert release.cmd_rc("0.12.0", 1, sign_via_github_api=True) == 1
+    err = capsys.readouterr().err
+    assert "dev-bump PR opened by `make release-prep` must be merged" in err
     assert dev_bump_calls == []
 
 

@@ -597,28 +597,74 @@ def _create_rc_github_prerelease(rc_tag: str, branch: str, wheel: Path) -> None:
     _run(["gh", "release", "upload", rc_tag, str(wheel)])
 
 
-def _maybe_open_dev_bump_pr(version: str) -> None:
-    """Open the dev-bump PR on main unless prep already opened it.
+def _origin_main_pyproject_version(version_re: re.Pattern[str]) -> str | None:
+    """Return ``origin/main``'s ``version = "..."`` value (PEP 440), or None.
 
-    Scope-lock + dev-bump are atomic. Main runs at the next .dev0 for
-    the entire QA window — fixes during QA land on the release branch
-    (no main-first cherry-picks under the back-merge model). The
-    bump-dev-version branch is probed on origin so an after-prep
-    re-entry skips the already-opened PR; the probe also repairs a
-    ``prep`` that crashed before reaching this step.
+    Fetches ``origin/main`` and reads ``pyproject.toml`` from the remote ref
+    via ``git show`` so the probe doesn't depend on the local working tree.
+
+    :param version_re: Compiled regex matching the version line in
+        ``pyproject.toml`` (passed in to avoid coupling helpers).
+    :type version_re: re.Pattern[str]
+    :return: The version string, or ``None`` if the fetch / show failed or
+        no version line was found.
+    :rtype: str | None
+    """
+    _run(["git", "fetch", "origin", "main"])
+    result = _run(
+        ["git", "show", "origin/main:pyproject.toml"],
+        check=False,
+        capture=True,
+    )
+    if result.returncode != 0:
+        return None
+    match = version_re.search(result.stdout)
+    if match is None:
+        return None
+    return match.group(0).split('"')[1]
+
+
+def _maybe_open_dev_bump_pr(version: str) -> int:
+    """Open the dev-bump PR on main unless main is already on the next .dev0.
+
+    Scope-lock + dev-bump are atomic. Main runs at the next .dev0 for the
+    entire QA window — fixes during QA land on the release branch (no
+    main-first cherry-picks under the back-merge model). To stay idempotent
+    against a prior ``prep`` whose dev-bump PR has already been merged, probe
+    ``origin/main``'s actual version: if main is already at
+    ``vX.Y+1.0.dev0``, the PR landed (whether or not GitHub auto-deleted the
+    source branch). When main is still at the previous ``.dev0`` but the
+    bump branch exists on origin (an open PR awaiting merge), abort with a
+    clear operator instruction rather than try to recreate the PR and fail
+    at ``git push`` on the duplicate branch.
 
     :param version: The X.Y.Z release version (no ``v`` prefix).
     :type version: str
+    :return: ``0`` on success / skip, ``1`` when an open dev-bump PR blocks
+        progress and requires operator action.
+    :rtype: int
     """
     parts = version.split(".")
-    dev_branch = f"bump-dev-version-{parts[0]}.{int(parts[1]) + 1}.0.dev0"
+    next_dev_version = f"{parts[0]}.{int(parts[1]) + 1}.0.dev0"
+    origin_main_version = _origin_main_pyproject_version(_VERSION_LINE_RE)
+    if origin_main_version == next_dev_version:
+        print(
+            f"==> Skipping dev version bump PR — origin/main is already at "
+            f"{next_dev_version} (dev-bump from a prior prep was merged)."
+        )
+        return 0
+    dev_branch = f"bump-dev-version-{next_dev_version}"
     if _remote_branch_exists(dev_branch):
         print(
-            f"==> Skipping dev version bump PR — origin/{dev_branch} "
-            "already exists (likely from a prior prep run)."
+            f"Error: origin/{dev_branch} exists but origin/main has not "
+            f"been bumped to {next_dev_version} yet. The dev-bump PR opened "
+            "by `make release-prep` must be merged before rc1 can complete. "
+            "Merge it (release-manager bypass) and re-run rc1.",
+            file=sys.stderr,
         )
-        return
+        return 1
     _create_dev_version_bump_pr(version, f"v{version}")
+    return 0
 
 
 def _sync_after_prep_branch(branch: str) -> int:
@@ -932,15 +978,19 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
     print()
     _run(["make", "trigger-jenkins", f"TAG={rc_tag}"])
 
+    dev_bump_exit_code = 0
     if rc == 1:
-        _maybe_open_dev_bump_pr(version)
+        # The release artifacts have already been published. A non-zero
+        # exit here is informational — the operator must merge an open
+        # dev-bump PR by hand before the next release cycle.
+        dev_bump_exit_code = _maybe_open_dev_bump_pr(version)
 
     _print_rc_next_steps(
         version=version,
         rc=rc,
         jira_version_created=jira_version_created,
     )
-    return 0
+    return dev_bump_exit_code
 
 
 def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
