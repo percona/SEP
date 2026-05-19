@@ -161,9 +161,18 @@ class TestPluginModuleNameDeprecation:
         assert plugin.module_name == "app.sep.plugins.mysql_backups"
         mock_logger.warning.assert_not_called()
 
-    def test_sibling_backup_module_is_not_remapped(self):
+    @pytest.mark.parametrize(
+        ("sibling_value", "expected_module"),
+        [
+            ("backup_mongo", "app.sep.plugins.backup_mongo"),
+            ("backup_pg", "app.sep.plugins.backup_pg"),
+        ],
+    )
+    def test_sibling_backup_module_is_not_remapped(
+        self, sibling_value: str, expected_module: str
+    ):
         """Assert sibling plugins whose names begin with ``backup`` are unaffected."""
         with patch("app.sep.config.logger") as mock_logger:
-            plugin = Plugin(name="MongoDB Backups", module_name="backup_mongo")
-        assert plugin.module_name == "app.sep.plugins.backup_mongo"
+            plugin = Plugin(name="Backups", module_name=sibling_value)
+        assert plugin.module_name == expected_module
         mock_logger.warning.assert_not_called()
