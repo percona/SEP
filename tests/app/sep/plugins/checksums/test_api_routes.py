@@ -22,12 +22,14 @@ from unittest.mock import AsyncMock, call, patch
 import pytest
 from fastapi import status
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     clear_connectivity_caches,
     get_latest_connectivity_result,
 )
+from app.sep.deps import check_for_conflicted_running_tasks
+from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -839,3 +841,85 @@ class TestChecksumsDeleteEndpoint:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_task_api_dep.delete.assert_awaited_once_with(f"/{task['name']}")
+
+
+class TestChecksumsExecuteEndpoint:
+    """Tests for POST /api/plugins/checksums/{task_name}/execute."""
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_201_with_task_name_and_id(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure executing a checksum task returns 201 with task_name and task_id."""
+        expected_task_id = 99
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+        mock_task_api_dep.post.return_value = {"id": expected_task_id}
+
+        response = test_client.post("/api/plugins/checksums/my-task/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["task_name"] == "my-task"
+        assert data["task_id"] == expected_task_id
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_404_for_unknown_task(self, test_client, mock_task_api_dep):
+        """Ensure executing an unknown task name returns 404."""
+        mock_task_api_dep.get.side_effect = HTTPNotFoundException()
+
+        response = test_client.post(
+            "/api/plugins/checksums/ghost-task/execute", json={}
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_execute_returns_409_when_task_already_running(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure executing a task that is already running returns 409."""
+        task = build_checksum_task("busy-task")
+        mock_task_api_dep.get.return_value = task
+
+        def raise_conflict():
+            raise HTTPConflictException("Task is already running or pending.")
+
+        sep_app.dependency_overrides[check_for_conflicted_running_tasks] = (
+            raise_conflict
+        )
+
+        response = test_client.post("/api/plugins/checksums/busy-task/execute", json={})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_422_for_past_eta(self, test_client, mock_task_api_dep):
+        """Ensure a past-dated eta is rejected with 422 by Pydantic validation."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+
+        response = test_client.post(
+            "/api/plugins/checksums/my-task/execute",
+            json={"eta": "2000-01-01T00:00:00Z"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_forwards_only_provided_fields(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure only non-None fields are forwarded to the Tasks API execute call."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+        mock_task_api_dep.post.return_value = {"id": 1}
+
+        test_client.post(
+            "/api/plugins/checksums/my-task/execute",
+            json={"chain_on_failure": True},
+        )
+
+        mock_task_api_dep.post.assert_called_once_with(
+            "/execute/my-task",
+            json={"chain_on_failure": True},
+        )

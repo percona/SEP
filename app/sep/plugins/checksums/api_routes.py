@@ -28,7 +28,12 @@ from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.deps import InventoryAPI, TaskAPI
+from app.sep.deps import (
+    HasNoConflictedRunningTasks,
+    InventoryAPI,
+    IsApiAuthenticated,
+    TaskAPI,
+)
 from app.sep.plugins.checksums.deps import (
     build_checksum_task,
     build_checksums_api_task_response,
@@ -37,7 +42,12 @@ from app.sep.plugins.checksums.deps import (
     get_checksums_task,
     get_checksums_task_status,
 )
-from app.sep.plugins.checksums.models import ChecksumTaskResponse, ChecksumTaskWrite
+from app.sep.plugins.checksums.models import (
+    ChecksumExecuteWrite,
+    ChecksumExecutionResponse,
+    ChecksumTaskResponse,
+    ChecksumTaskWrite,
+)
 from app.sep.plugins.checksums.schema import checksums_schema
 from app.sep.plugins.framework import maybe_record_connectivity_warning
 from app.sep.plugins.framework.api import schema_endpoint
@@ -109,6 +119,29 @@ async def checksums_api_create(
         task,
         status=None,
         connectivity_warning=connectivity_warning,
+    )
+
+
+@router.post(
+    "/{task_name}/execute",
+    response_model=ChecksumExecutionResponse,
+    status_code=http_status.HTTP_201_CREATED,
+    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
+)
+async def checksums_api_execute(
+    task: ChecksumsTask,
+    body: ChecksumExecuteWrite,
+    tasks_api: TaskAPI,
+) -> ChecksumExecutionResponse:
+    """Execute a checksum task."""
+    logger.info("Executing checksums task %r", task.name)
+    created = await tasks_api.post(
+        f"/execute/{task.name}",
+        json=body.model_dump(exclude_none=True),
+    )
+    return ChecksumExecutionResponse(
+        task_name=task.name,
+        task_id=created.get("id") if isinstance(created, dict) else None,
     )
 
 
