@@ -48,6 +48,7 @@ export default defineConfig({
       '/legacy': { target: BACKEND, changeOrigin: true },
       '/stream-logs': { target: BACKEND, changeOrigin: true },
       '/execution-events': { target: BACKEND, changeOrigin: true },
+      '/files': { target: BACKEND, changeOrigin: true },
     },
   },
   optimizeDeps: {

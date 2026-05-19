@@ -29,6 +29,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
+    get_check_connectivity_flag,
 )
 from app.sep.deps import (
     DefaultContext,
@@ -211,6 +212,10 @@ async def get_backups_task(
 
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
+
+BackupsIndexContext = Annotated[dict[str, Any], Depends(get_backups_index_context)]
+
+CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]
 
 
 def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
