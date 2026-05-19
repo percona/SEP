@@ -2,7 +2,7 @@
 
 Customer-facing reference for security and cloud architects reviewing how **HashiCorp Nomad** is deployed and used by the **Services Enablement Platform (SEP)**. This document describes the **Percona GAS automation** deployment (`nomad.yaml` / `sep.yaml` in the GAS automation repository) and how SEP consumes Nomad at runtime.
 
-**Related:** [SEP Task Execution DFD](sep-task-execution-dfd/README.md) (application data flows and command controls).  
+**Related:** [SEP Task Execution DFD](sep-task-execution-dfd/README.md) (application data flows and command controls).
 **Security sign-off:** [security-review-checklist.md](sep-task-execution-dfd/security-review-checklist.md) §8 before customer delivery.
 
 ---
