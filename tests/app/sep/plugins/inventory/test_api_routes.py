@@ -55,6 +55,18 @@ class TestInventorySchemaEndpoint:
         body = response.json()
         assert body["name"] == "inventory"
         assert len(body["entities"]) == _EXPECTED_SCHEMA_ENTITY_COUNT
+        assert body["capabilities"]["topology"] is False
+
+    def test_schema_reflects_topology_feature_flag(self, test_client, monkeypatch):
+        """Ensure the schema exposes the runtime topology capability."""
+        monkeypatch.setattr(
+            inventory_api_routes.sep_settings, "INVENTORY_TOPOLOGY_ENABLED", True
+        )
+
+        response = test_client.get("/api/plugins/inventory/schema")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["capabilities"]["topology"] is True
 
 
 class TestInventoryGateway:
@@ -481,6 +493,26 @@ def _topology_history(history_id: int, status_value: str, user_id: str) -> dict:
 class TestTopologyCollect:
     """Tests for ``POST /api/plugins/inventory/topology/collect``."""
 
+    @pytest.fixture(autouse=True)
+    def _enable_topology(self, monkeypatch):
+        monkeypatch.setattr(
+            inventory_api_routes.sep_settings, "INVENTORY_TOPOLOGY_ENABLED", True
+        )
+
+    def test_returns_404_when_topology_disabled(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep, monkeypatch
+    ):
+        """Ensure topology collect is hidden while the feature flag is off."""
+        monkeypatch.setattr(
+            inventory_api_routes.sep_settings, "INVENTORY_TOPOLOGY_ENABLED", False
+        )
+
+        response = test_client.post("/api/plugins/inventory/topology/collect", json={})
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_inventory_api_dep.get.assert_not_called()
+        mock_task_api_dep.post.assert_not_called()
+
     def test_dispatches_one_task_per_shard(
         self, test_client, mock_inventory_api_dep, mock_task_api_dep
     ):
@@ -593,6 +625,12 @@ def _host_done_stdout(host: str) -> str:
 
 class TestTopologyResult:
     """Tests for ``GET /api/plugins/inventory/topology/result``."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_topology(self, monkeypatch):
+        monkeypatch.setattr(
+            inventory_api_routes.sep_settings, "INVENTORY_TOPOLOGY_ENABLED", True
+        )
 
     def test_running_status_when_any_task_pending(
         self, test_client, mock_task_api_dep, regular_user

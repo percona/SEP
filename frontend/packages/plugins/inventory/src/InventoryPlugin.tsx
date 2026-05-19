@@ -60,17 +60,22 @@ export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPlugin
   if (!schema) {
     return null;
   }
+  const topologyEnabled = schema.capabilities?.topology === true;
 
   return (
     <>
-      <InventoryViewTabs />
+      <InventoryViewTabs topologyEnabled={topologyEnabled} />
       <InventoryBreadcrumbs schema={schema} />
-      <InventoryRoutes schema={schema} mockEntityItems={mockEntityItems} />
+      <InventoryRoutes
+        schema={schema}
+        mockEntityItems={mockEntityItems}
+        topologyEnabled={topologyEnabled}
+      />
     </>
   );
 }
 
-function InventoryViewTabs() {
+function InventoryViewTabs({ topologyEnabled }: { topologyEnabled: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const prefix = useMemo(() => inventoryMountPrefix(location.pathname), [location.pathname]);
@@ -78,8 +83,10 @@ function InventoryViewTabs() {
     if (!prefix) {
       return 'browse';
     }
-    return location.pathname.startsWith(`${prefix}/topology`) ? 'topology' : 'browse';
-  }, [location.pathname, prefix]);
+    return topologyEnabled && location.pathname.startsWith(`${prefix}/topology`)
+      ? 'topology'
+      : 'browse';
+  }, [location.pathname, prefix, topologyEnabled]);
 
   if (!prefix) {
     return null;
@@ -94,7 +101,7 @@ function InventoryViewTabs() {
       sx={{ mb: 1 }}
     >
       <Tab value="browse" label="Browse" />
-      <Tab value="topology" label="Topology" />
+      {topologyEnabled ? <Tab value="topology" label="Topology" /> : null}
     </Tabs>
   );
 }

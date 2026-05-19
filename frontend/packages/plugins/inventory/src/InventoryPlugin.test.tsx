@@ -168,6 +168,20 @@ describe('InventoryPlugin', () => {
     expect(await screen.findByLabelText('Inventory breadcrumb')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Inventory' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Nodes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Topology' })).not.toBeInTheDocument();
+  });
+
+  it('renders topology tab when schema capability enables it', async () => {
+    const topologyEnabledSchema: PluginSchema = {
+      ...mockSchema,
+      capabilities: { topology: true },
+    };
+
+    renderWithProviders(
+      <InventoryPlugin mockSchema={topologyEnabledSchema} mockEntityItems={{ nodes: [] }} />,
+    );
+
+    expect(await screen.findByRole('tab', { name: 'Topology' })).toBeInTheDocument();
   });
 
   it('does not offer create flow (browse-only)', async () => {

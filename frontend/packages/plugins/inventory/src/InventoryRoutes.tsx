@@ -64,9 +64,11 @@ function nestedParentPath(pathname: string): string | null {
 export function InventoryRoutes({
   schema,
   mockEntityItems,
+  topologyEnabled,
 }: {
   schema: PluginSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
+  topologyEnabled: boolean;
 }) {
   const detailProps = {
     schema,
@@ -82,7 +84,10 @@ export function InventoryRoutes({
   return (
     <Routes>
       <Route index element={<Navigate to="nodes" replace />} />
-      <Route path="topology" element={<InventoryTopology />} />
+      <Route
+        path="topology"
+        element={topologyEnabled ? <InventoryTopology /> : <Navigate to="../nodes" replace />}
+      />
       <Route
         path="nodes"
         element={

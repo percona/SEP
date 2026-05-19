@@ -139,88 +139,174 @@ def _coerce_int(value: Any) -> int | None:
         return None
 
 
-def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is naturally branchy
-    host_records: Mapping[str, dict[str, Any]],
-) -> dict[str, Any]:
-    """Build the React Flow ``{nodes, edges, summary}`` graph from per-host records.
+def _build_error_node(host_entry: str, record: Mapping[str, Any]) -> dict[str, Any]:
+    """Build a MySQL node for a failed host collection.
 
-    :param host_records: Output of :func:`merge_host_records` - ``{host_entry:
-        {"status": "ok"|"error", "data"|"error": ...}}``.
-    :return: Graph dict with ``nodes`` (mysql + cluster + unknown_source) and
-        ``edges`` (replication + dual_primary). The shape matches what the
-        ``InventoryTopology`` React component expects.
+    :param host_entry: Inventory host entry for the failed MySQL service.
+    :type host_entry: str
+    :param record: Merged ``host_error`` record.
+    :type record: Mapping[str, Any]
+    :return: React Flow node payload with error status.
+    :rtype: dict[str, Any]
+    """
+    return {
+        "id": _server_node_id(host_entry),
+        "type": NODE_TYPE_MYSQL,
+        "data": {
+            "host_entry": host_entry,
+            "error": record.get("error", "unknown error"),
+            "status": "error",
+        },
+    }
+
+
+def _build_mysql_node(host_entry: str, data: Mapping[str, Any]) -> dict[str, Any]:
+    """Build a MySQL node for a successfully collected host.
+
+    :param host_entry: Inventory host entry for the MySQL service.
+    :type host_entry: str
+    :param data: Collector payload for the host.
+    :type data: Mapping[str, Any]
+    :return: React Flow node payload with server, replication, and cluster data.
+    :rtype: dict[str, Any]
+    """
+    repl = data.get("replication") or {}
+    cluster = data.get("cluster") or {}
+    return {
+        "id": _server_node_id(host_entry),
+        "type": NODE_TYPE_MYSQL,
+        "data": {
+            "host_entry": host_entry,
+            "address": data.get("address"),
+            "port": data.get("port"),
+            "status": "ok",
+            "server": data.get("server") or {},
+            "replication": {k: v for k, v in repl.items() if k != "source_uuid"},
+            "cluster": cluster or None,
+            "gtid_mode": data.get("gtid_mode") or "",
+        },
+    }
+
+
+def _index_ok_host(
+    host_entry: str,
+    record: Mapping[str, Any],
+    nodes: list[dict[str, Any]],
+    cluster_members: dict[tuple[Any, Any], list[str]],
+    hash_to_node: dict[str, str],
+    addr_to_node: dict[tuple[str, int], str],
+) -> None:
+    """Index one successfully collected host into graph lookup structures.
+
+    :param host_entry: Inventory host entry for the MySQL service.
+    :type host_entry: str
+    :param record: Merged ``host_done`` record.
+    :type record: Mapping[str, Any]
+    :param nodes: Mutable React Flow node list.
+    :type nodes: list[dict[str, Any]]
+    :param cluster_members: Mutable cluster key to member node ids map.
+    :type cluster_members: dict[tuple[Any, Any], list[str]]
+    :param hash_to_node: Mutable server hash to node id index.
+    :type hash_to_node: dict[str, str]
+    :param addr_to_node: Mutable address+port to node id index.
+    :type addr_to_node: dict[tuple[str, int], str]
+    :return: ``None``.
+    :rtype: None
+    """
+    node_id = _server_node_id(host_entry)
+    data = record.get("data") or {}
+    server = data.get("server") or {}
+    cluster = data.get("cluster") or {}
+
+    nodes.append(_build_mysql_node(host_entry, data))
+    if server_hash := server.get("server_hash"):
+        hash_to_node[server_hash] = node_id
+    port = _coerce_int(data.get("port"))
+    if port is not None and (addr := data.get("address")):
+        addr_to_node[(addr, port)] = node_id
+    if cluster and cluster.get("cluster_name"):
+        cluster_key = (
+            cluster["cluster_name"],
+            cluster.get("cluster_status"),
+        )
+        cluster_members[cluster_key].append(node_id)
+
+
+def _build_mysql_nodes(
+    host_records: Mapping[str, dict[str, Any]],
+) -> tuple[
+    list[dict[str, Any]],
+    dict[tuple[Any, Any], list[str]],
+    dict[str, str],
+    dict[tuple[str, int], str],
+]:
+    """Build MySQL nodes and lookup indexes from merged host records.
+
+    :param host_records: Merged topology host records.
+    :type host_records: Mapping[str, dict[str, Any]]
+    :return: Nodes, cluster membership index, server hash index, and address index.
+    :rtype: tuple[list[dict[str, Any]], dict[tuple[Any, Any], list[str]], dict[str, str], dict[tuple[str, int], str]]
     """
     nodes: list[dict[str, Any]] = []
-    edges: list[dict[str, Any]] = []
-    cluster_members: dict[str, list[str]] = defaultdict(list)
-
+    cluster_members: dict[tuple[Any, Any], list[str]] = defaultdict(list)
     hash_to_node: dict[str, str] = {}
     addr_to_node: dict[tuple[str, int], str] = {}
 
     for host_entry, record in host_records.items():
-        node_id = _server_node_id(host_entry)
         if record.get("status") != "ok":
-            nodes.append(
-                {
-                    "id": node_id,
-                    "type": NODE_TYPE_MYSQL,
-                    "data": {
-                        "host_entry": host_entry,
-                        "error": record.get("error", "unknown error"),
-                        "status": "error",
-                    },
-                }
-            )
+            nodes.append(_build_error_node(host_entry, record))
             continue
-        data = record.get("data") or {}
-        server = data.get("server") or {}
-        repl = data.get("replication") or {}
-        cluster = data.get("cluster") or {}
-        gtid_mode = data.get("gtid_mode") or ""
-
-        nodes.append(
-            {
-                "id": node_id,
-                "type": NODE_TYPE_MYSQL,
-                "data": {
-                    "host_entry": host_entry,
-                    "address": data.get("address"),
-                    "port": data.get("port"),
-                    "status": "ok",
-                    "server": server,
-                    "replication": {
-                        k: v for k, v in repl.items() if k != "source_uuid"
-                    },
-                    "cluster": cluster or None,
-                    "gtid_mode": gtid_mode,
-                },
-            }
+        _index_ok_host(
+            host_entry,
+            record,
+            nodes,
+            cluster_members,
+            hash_to_node,
+            addr_to_node,
         )
-        if server_hash := server.get("server_hash"):
-            hash_to_node[server_hash] = node_id
-        port = _coerce_int(data.get("port"))
-        if port is not None and (addr := data.get("address")):
-            addr_to_node[(addr, port)] = node_id
-        if cluster and cluster.get("cluster_name"):
-            cluster_key = (
-                cluster["cluster_name"],
-                cluster.get("cluster_status"),
-            )
-            cluster_members[cluster_key].append(node_id)
+    return nodes, cluster_members, hash_to_node, addr_to_node
 
+
+def _first_cluster_data(
+    nodes: list[dict[str, Any]], members: list[str]
+) -> dict[str, Any]:
+    """Return cluster metadata from the first matching member node.
+
+    :param nodes: React Flow node list.
+    :type nodes: list[dict[str, Any]]
+    :param members: MySQL node ids in the cluster.
+    :type members: list[str]
+    :return: Cluster data from a member node, or an empty mapping.
+    :rtype: dict[str, Any]
+    """
+    return next(
+        (
+            node["data"]["cluster"]
+            for node in nodes
+            if node["id"] in members and (node.get("data") or {}).get("cluster")
+        ),
+        {},
+    )
+
+
+def _add_cluster_nodes(
+    nodes: list[dict[str, Any]],
+    cluster_members: Mapping[tuple[Any, Any], list[str]],
+) -> None:
+    """Add synthetic PXC cluster nodes to the graph.
+
+    :param nodes: Mutable React Flow node list.
+    :type nodes: list[dict[str, Any]]
+    :param cluster_members: Cluster key to member node ids map.
+    :type cluster_members: Mapping[tuple[Any, Any], list[str]]
+    :return: ``None``.
+    :rtype: None
+    """
     for (cluster_name, _cluster_status), members in cluster_members.items():
-        cluster_id = _cluster_node_id(cluster_name)
-        first_data = next(
-            (
-                node["data"]["cluster"]
-                for node in nodes
-                if node["id"] in members and (node.get("data") or {}).get("cluster")
-            ),
-            {},
-        )
+        first_data = _first_cluster_data(nodes, members)
         nodes.append(
             {
-                "id": cluster_id,
+                "id": _cluster_node_id(cluster_name),
                 "type": NODE_TYPE_CLUSTER,
                 "data": {
                     "cluster_name": cluster_name,
@@ -231,49 +317,122 @@ def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is na
             }
         )
 
+
+def _build_replication_edge(
+    source_node_id: str,
+    target_node_id: str,
+    repl: Mapping[str, Any],
+    gtid_mode: Any,
+) -> dict[str, Any]:
+    """Build a React Flow edge for one replication relationship.
+
+    :param source_node_id: Source MySQL or unknown-source node id.
+    :type source_node_id: str
+    :param target_node_id: Replica MySQL node id.
+    :type target_node_id: str
+    :param repl: Replication metadata from the collector.
+    :type repl: Mapping[str, Any]
+    :param gtid_mode: Target host GTID mode.
+    :type gtid_mode: Any
+    :return: React Flow replication edge payload.
+    :rtype: dict[str, Any]
+    """
+    return {
+        "id": _build_repl_edge_id(source_node_id, target_node_id),
+        "source": source_node_id,
+        "target": target_node_id,
+        "type": EDGE_TYPE_REPLICATION,
+        "data": {
+            "status": repl.get("repl_status"),
+            "io_running": repl.get("io_running"),
+            "sql_running": repl.get("sql_running"),
+            "seconds_behind": repl.get("seconds_behind"),
+            "auto_position": repl.get("auto_position"),
+            "filter": repl.get("repl_filter"),
+            "gtid_mode": gtid_mode,
+        },
+    }
+
+
+def _add_replication_edges(
+    host_records: Mapping[str, dict[str, Any]],
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    hash_to_node: Mapping[str, str],
+    addr_to_node: dict[tuple[str, int], str],
+) -> dict[str, str]:
+    """Add replication edges and collect primary hashes seen by replicas.
+
+    :param host_records: Merged topology host records.
+    :type host_records: Mapping[str, dict[str, Any]]
+    :param nodes: Mutable React Flow node list.
+    :type nodes: list[dict[str, Any]]
+    :param edges: Mutable React Flow edge list.
+    :type edges: list[dict[str, Any]]
+    :param hash_to_node: Server hash to node id index.
+    :type hash_to_node: Mapping[str, str]
+    :param addr_to_node: Mutable address+port to node id index.
+    :type addr_to_node: dict[tuple[str, int], str]
+    :return: Replica node id to computed primary hash map.
+    :rtype: dict[str, str]
+    """
     primary_hashes_seen: dict[str, str] = {}
     for host_entry, record in host_records.items():
         if record.get("status") != "ok":
             continue
         data = record.get("data") or {}
         repl = data.get("replication") or {}
-        source_host = repl.get("source_host")
-        if not source_host:
+        if not repl.get("source_host"):
             continue
         source_node_id = _resolve_or_add_replication_source(
             repl, hash_to_node, addr_to_node, nodes
         )
         target_node_id = _server_node_id(host_entry)
         edges.append(
-            {
-                "id": _build_repl_edge_id(source_node_id, target_node_id),
-                "source": source_node_id,
-                "target": target_node_id,
-                "type": EDGE_TYPE_REPLICATION,
-                "data": {
-                    "status": repl.get("repl_status"),
-                    "io_running": repl.get("io_running"),
-                    "sql_running": repl.get("sql_running"),
-                    "seconds_behind": repl.get("seconds_behind"),
-                    "auto_position": repl.get("auto_position"),
-                    "filter": repl.get("repl_filter"),
-                    "gtid_mode": data.get("gtid_mode"),
-                },
-            }
+            _build_replication_edge(
+                source_node_id, target_node_id, repl, data.get("gtid_mode")
+            )
         )
-        primary_hash = make_primary_hash(
+        primary_hashes_seen[target_node_id] = make_primary_hash(
             repl.get("source_server_id"),
             repl.get("source_uuid"),
             repl.get("source_port"),
         )
-        primary_hashes_seen[target_node_id] = primary_hash
+    return primary_hashes_seen
 
-    server_hashes = {
+
+def _server_hashes_by_node(nodes: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return server hashes keyed by MySQL node id.
+
+    :param nodes: React Flow node list.
+    :type nodes: list[dict[str, Any]]
+    :return: MySQL node id to server hash map for successful hosts.
+    :rtype: dict[str, Any]
+    """
+    return {
         node["id"]: (node.get("data") or {}).get("server", {}).get("server_hash")
         for node in nodes
         if node["type"] == NODE_TYPE_MYSQL
         and node.get("data", {}).get("status") == "ok"
     }
+
+
+def _add_dual_primary_edges(
+    edges: list[dict[str, Any]],
+    primary_hashes_seen: Mapping[str, str],
+    server_hashes: Mapping[str, Any],
+) -> None:
+    """Add dual-primary edges for mutually replicating MySQL nodes.
+
+    :param edges: Mutable React Flow edge list.
+    :type edges: list[dict[str, Any]]
+    :param primary_hashes_seen: Replica node id to computed primary hash map.
+    :type primary_hashes_seen: Mapping[str, str]
+    :param server_hashes: MySQL node id to server hash map.
+    :type server_hashes: Mapping[str, Any]
+    :return: ``None``.
+    :rtype: None
+    """
     pair_seen: set[str] = set()
     for replica_id, primary_hash in primary_hashes_seen.items():
         primary_id = next(
@@ -301,24 +460,64 @@ def build_topology_graph(  # noqa: C901, PLR0912, PLR0915 - graph assembly is na
             }
         )
 
-    summary = {
-        "host_count": sum(1 for n in nodes if n["type"] == NODE_TYPE_MYSQL),
+
+def _build_graph_summary(
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    cluster_members: Mapping[tuple[Any, Any], list[str]],
+) -> dict[str, int]:
+    """Build aggregate graph counts for the topology response.
+
+    :param nodes: React Flow node list.
+    :type nodes: list[dict[str, Any]]
+    :param edges: React Flow edge list.
+    :type edges: list[dict[str, Any]]
+    :param cluster_members: Cluster key to member node ids map.
+    :type cluster_members: Mapping[tuple[Any, Any], list[str]]
+    :return: Host, status, cluster, and edge counts.
+    :rtype: dict[str, int]
+    """
+    mysql_nodes = [node for node in nodes if node["type"] == NODE_TYPE_MYSQL]
+    return {
+        "host_count": len(mysql_nodes),
         "ok_count": sum(
-            1
-            for n in nodes
-            if n["type"] == NODE_TYPE_MYSQL
-            and (n.get("data") or {}).get("status") == "ok"
+            1 for node in mysql_nodes if (node.get("data") or {}).get("status") == "ok"
         ),
         "error_count": sum(
             1
-            for n in nodes
-            if n["type"] == NODE_TYPE_MYSQL
-            and (n.get("data") or {}).get("status") == "error"
+            for node in mysql_nodes
+            if (node.get("data") or {}).get("status") == "error"
         ),
         "cluster_count": len(cluster_members),
         "edge_count": len(edges),
     }
-    return {"nodes": nodes, "edges": edges, "summary": summary}
+
+
+def build_topology_graph(
+    host_records: Mapping[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Build the React Flow ``{nodes, edges, summary}`` graph from per-host records.
+
+    :param host_records: Output of :func:`merge_host_records` - ``{host_entry:
+        {"status": "ok"|"error", "data"|"error": ...}}``.
+    :return: Graph dict with ``nodes`` (mysql + cluster + unknown_source) and
+        ``edges`` (replication + dual_primary). The shape matches what the
+        ``InventoryTopology`` React component expects.
+    """
+    nodes, cluster_members, hash_to_node, addr_to_node = _build_mysql_nodes(
+        host_records
+    )
+    edges: list[dict[str, Any]] = []
+    _add_cluster_nodes(nodes, cluster_members)
+    primary_hashes_seen = _add_replication_edges(
+        host_records, nodes, edges, hash_to_node, addr_to_node
+    )
+    _add_dual_primary_edges(edges, primary_hashes_seen, _server_hashes_by_node(nodes))
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "summary": _build_graph_summary(nodes, edges, cluster_members),
+    }
 
 
 def _resolve_or_add_replication_source(
