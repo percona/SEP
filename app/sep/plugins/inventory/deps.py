@@ -17,7 +17,7 @@
 
 import json
 from collections.abc import Callable
-from typing import Annotated, Any, NamedTuple
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from pydantic import BaseModel, ConfigDict
@@ -66,7 +66,7 @@ class InventorySyncStatusResponse(BaseModel):
     is_running: bool
 
 
-class AvailableSyncer(NamedTuple):
+class AvailableSyncer(BaseModel):
     """Provide template-facing metadata for an available syncer.
 
     :param name: The fully qualified ``"module.ClassName"`` identifier matching
@@ -223,6 +223,22 @@ def get_syncers(
 
 
 SyncersDep = Annotated[list[BaseSyncer], Depends(get_syncers)]
+
+
+def get_inventory_available_syncers(syncers: SyncersDep) -> list[AvailableSyncer]:
+    """Return syncers capable of syncing inventory.
+
+    :param syncers: Resolved syncer instances from ``SyncersDep``.
+    :type syncers: list[BaseSyncer]
+    :return: Filtered list of syncers that pass ``can_sync_inventory``.
+    :rtype: list[AvailableSyncer]
+    """
+    return build_available_syncers(syncers, lambda s: s.can_sync_inventory())
+
+
+InventoryAvailableSyncersDep = Annotated[
+    list[AvailableSyncer], Depends(get_inventory_available_syncers)
+]
 
 
 async def get_syncers_standalone() -> list[BaseSyncer]:

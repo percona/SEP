@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define Pydantic models for the Inventory plugin's schedule UI."""
+"""Define Pydantic models for the Inventory plugin's schedule UI and API responses."""
 
 from typing import Any
 
@@ -22,6 +22,21 @@ from pydantic import BaseModel, model_validator
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
+
+INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+
+
+class PluginTaskResponse(BaseModel):
+    """Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.
+
+    :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
+    :type name: str
+    :param display_name: Human-readable label for the schedule UI.
+    :type display_name: str
+    """
+
+    name: str
+    display_name: str
 
 
 class InventorySyncScheduleCreateForm(BaseModel):
@@ -101,7 +116,7 @@ class InventorySyncScheduleCreateForm(BaseModel):
             exclude_unset=True,
             exclude={"syncer"},
         )
-        payload["task"] = "inventory-sync"
+        payload["task"] = INVENTORY_SYNC_TASK_NAME
         if self.syncer:
             payload["execute_request"] = {"meta": {"syncer": self.syncer}}
         return payload
