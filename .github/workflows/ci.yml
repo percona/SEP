@@ -88,6 +88,7 @@ jobs:
               - 'templates/**'
               - 'entrypoint.sh'
               - 'entrypoint_celery.sh'
+              - 'Makefile'
               - 'alembic.ini'
 
   precommit-light:
