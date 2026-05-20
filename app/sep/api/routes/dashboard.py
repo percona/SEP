@@ -16,13 +16,16 @@
 """Define the ``/api/sep/dashboard/`` JSON endpoint for dashboard statistics.
 
 Returns aggregate counts for the four dashboard stat cards in a single round
-trip so the React frontend avoids four parallel upstream calls. Each source
-degrades independently — a failure yields ``0`` for that counter and its name
-is appended to the ``X-Sep-Upstream-Error`` response header so the frontend
-can distinguish real zeroes from degraded counts.
+trip so the React frontend avoids four parallel upstream calls. All four
+sources are fetched concurrently via :func:`asyncio.gather`; each degrades
+independently — a failure yields ``0`` for that counter and its name is
+appended to the ``X-Sep-Upstream-Error`` response header so the frontend can
+distinguish real zeroes from degraded counts.
 """
 
-from fastapi import APIRouter, HTTPException, Response
+import asyncio
+
+from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
 from app.sep.deps import InventoryAPI, SessionDep, TaskAPI
@@ -84,41 +87,41 @@ async def get_dashboard_stats(
     :return: Aggregate counts for nodes, tasks, snippets, and targets.
     :rtype: DashboardStatsResponse
     """
-    nodes = 0
-    tasks = 0
-    snippets = 0
-    targets = 0
-    failed: list[str] = []
 
-    try:
+    async def _nodes() -> int:
         summary = await inventory_api.get("/summary/")
-        nodes = int(summary.get("nodes", 0))  # type: ignore[union-attr]
-    except (HTTPException, OSError, AttributeError, KeyError, TypeError, ValueError):
-        failed.append("nodes")
+        return int(summary.get("nodes", 0))  # type: ignore[union-attr]
 
-    try:
+    async def _tasks() -> int:
         task_list = await tasks_api.get("/", params={"limit": 0})
-        tasks = int(task_list.get("total", 0))  # type: ignore[union-attr]
-    except (HTTPException, OSError, AttributeError, KeyError, TypeError, ValueError):
-        failed.append("tasks")
+        return int(task_list.get("total", 0))  # type: ignore[union-attr]
 
-    try:
-        snippets = await SnippetManager.count(session)
-    except Exception:  # noqa: BLE001
-        failed.append("snippets")
+    async def _snippets() -> int:
+        return await SnippetManager.count(session)
 
-    try:
+    async def _targets() -> int:
         host_list = await tasks_api.get("/hosts/")
-        targets = len(host_list)  # type: ignore[arg-type]
-    except (HTTPException, OSError, AttributeError, TypeError):
-        failed.append("targets")
+        return len(host_list)  # type: ignore[arg-type]
+
+    sources = ("nodes", "tasks", "snippets", "targets")
+    results = await asyncio.gather(
+        _nodes(),
+        _tasks(),
+        _snippets(),
+        _targets(),
+        return_exceptions=True,
+    )
+
+    counts: dict[str, int] = {}
+    failed: list[str] = []
+    for name, result in zip(sources, results, strict=False):
+        if isinstance(result, Exception):
+            failed.append(name)
+            counts[name] = 0
+        else:
+            counts[name] = result  # type: ignore[assignment]
 
     if failed:
         response.headers[UPSTREAM_ERROR_HEADER] = ",".join(failed)
 
-    return DashboardStatsResponse(
-        nodes=nodes,
-        tasks=tasks,
-        snippets=snippets,
-        targets=targets,
-    )
+    return DashboardStatsResponse(**counts)

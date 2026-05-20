@@ -89,7 +89,7 @@ class TestDashboardStatsEndpoint:
             new=AsyncMock(return_value=5),
         )
         mock_inventory_api_dep.get.side_effect = HTTPException(
-            status_code=502, detail="inventory unreachable"
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="inventory unreachable"
         )
         mock_task_api_dep.get.side_effect = [
             {"items": [], "total": 3, "offset": 0, "limit": 0},
