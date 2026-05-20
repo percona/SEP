@@ -10,7 +10,7 @@
 #  - name: dest
 #    type: str
 #    label: Destination directory
-#    description: Directory where FTDC files will be copied. If omitted, files are only listed.
+#    description: Directory where FTDC files are copied for offline analysis. Defaults to /tmp/mongodb-ftdc.
 #    default: /tmp/mongodb-ftdc
 #    pattern: ^/[A-Za-z0-9._/-]+$
 #  - name: data-dir
@@ -113,7 +113,15 @@ else
     if [[ -z $DATA_DIR ]]; then
         for conf in /etc/mongod.conf /etc/mongodb.conf /usr/local/etc/mongod.conf; do
             if [[ -f $conf ]]; then
-                DB_PATH=$(grep -E '^\s*dbPath\s*:' "$conf" 2> /dev/null | head -1 | sed 's/.*dbPath\s*:\s*//' | tr -d '"'"'" | xargs || true)
+                DB_PATH=$(awk '
+                    /^[[:space:]]*storage[[:space:]]*:[[:space:]]*$/ { in_section = 1; next }
+                    in_section && /^[^[:space:]#]/ { in_section = 0 }
+                    in_section && /^[[:space:]]+dbPath[[:space:]]*:/ {
+                        sub(/^[[:space:]]*dbPath[[:space:]]*:[[:space:]]*/, "")
+                        print
+                        exit
+                    }
+                ' "$conf" 2> /dev/null | tr -d "\"'" | xargs 2> /dev/null || true)
                 if [[ -n $DB_PATH ]]; then
                     DATA_DIR="$DB_PATH"
                     echo "Detected data directory from config ($conf): $DATA_DIR"
@@ -183,15 +191,20 @@ fi
 echo "=== Copying FTDC files to $DEST ==="
 mkdir -p "$DEST"
 
-cp -v "$FTDC_DIR"/metrics.* "$DEST/" 2> /dev/null || true
+mapfile -d '' METRICS_FILES < <(find "$FTDC_DIR" -maxdepth 1 -type f -name 'metrics.*' -print0)
+if [[ ${#METRICS_FILES[@]} -eq 0 ]]; then
+    COPIED=0
+    echo "No metrics files found to copy."
+else
+    cp -v -- "${METRICS_FILES[@]}" "$DEST/"
+    COPIED=${#METRICS_FILES[@]}
+fi
 
-COPIED=$(find "$DEST" -maxdepth 1 -type f -name 'metrics.*' | wc -l)
 echo ""
 echo "Copied $COPIED file(s) to $DEST."
 echo ""
 echo "To decode FTDC files offline, use one of:"
 echo "  - keyhole: keyhole --diag $DEST"
 echo "  - bsondump: bsondump <file>"
-echo "  - Python ftdc library: pip install ftdc"
 echo ""
 echo "=== Done ==="

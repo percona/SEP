@@ -141,7 +141,15 @@ if [[ -z $LOG_FILE_ARG ]]; then
         done
     fi
     if [[ -n $CONFIG_FILE && -f $CONFIG_FILE ]]; then
-        DETECTED_LOG=$(grep -E '^\s*path\s*:' "$CONFIG_FILE" 2> /dev/null | head -1 | sed 's/.*path[[:space:]]*:[[:space:]]*//' | tr -d "\"'" | xargs 2> /dev/null || true)
+        DETECTED_LOG=$(awk '
+            /^[[:space:]]*systemLog[[:space:]]*:[[:space:]]*$/ { in_section = 1; next }
+            in_section && /^[^[:space:]#]/ { in_section = 0 }
+            in_section && /^[[:space:]]+path[[:space:]]*:/ {
+                sub(/^[[:space:]]*path[[:space:]]*:[[:space:]]*/, "")
+                print
+                exit
+            }
+        ' "$CONFIG_FILE" 2> /dev/null | tr -d "\"'" | xargs 2> /dev/null || true)
         if [[ -n $DETECTED_LOG ]]; then
             LOG_FILE_ARG="$DETECTED_LOG"
             echo "Detected log file from config ($CONFIG_FILE): $LOG_FILE_ARG" >&2

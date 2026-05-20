@@ -32,21 +32,23 @@ print_config_file() {
 echo "=== MongoDB Config File Discovery Script ==="
 echo
 
-# Try to detect the config file from the running mongod process command line
-echo "Checking running mongod process for --config flag..."
+# Try to detect the config file from the running mongod/mongos process command line
+echo "Checking running mongod/mongos process for --config flag..."
 PROCESS_CONFIG=""
-MONGOD_CMD=""
-MONGOD_PID=$(pgrep -x mongod 2> /dev/null | head -1)
-if [[ -n $MONGOD_PID ]]; then
-    MONGOD_CMD=$(ps -p "$MONGOD_PID" -o args= 2> /dev/null || true)
+MONGO_CMD=""
+MONGO_BIN=""
+MONGO_PID=$(pgrep -x 'mongo[ds]' 2> /dev/null | head -1)
+if [[ -n $MONGO_PID ]]; then
+    MONGO_CMD=$(ps -p "$MONGO_PID" -o args= 2> /dev/null || true)
+    MONGO_BIN=$(ps -p "$MONGO_PID" -o comm= 2> /dev/null || true)
 fi
-if [[ -n $MONGOD_CMD ]]; then
+if [[ -n $MONGO_CMD ]]; then
     # Extract --config or -f argument value
-    if [[ $MONGOD_CMD =~ --config[[:space:]]+([^[:space:]]+) ]]; then
+    if [[ $MONGO_CMD =~ --config[[:space:]]+([^[:space:]]+) ]]; then
         PROCESS_CONFIG="${BASH_REMATCH[1]}"
-    elif [[ $MONGOD_CMD =~ -f[[:space:]]+([^[:space:]]+) ]]; then
+    elif [[ $MONGO_CMD =~ -f[[:space:]]+([^[:space:]]+) ]]; then
         PROCESS_CONFIG="${BASH_REMATCH[1]}"
-    elif [[ $MONGOD_CMD =~ --config=([^[:space:]]+) ]]; then
+    elif [[ $MONGO_CMD =~ --config=([^[:space:]]+) ]]; then
         PROCESS_CONFIG="${BASH_REMATCH[1]}"
     fi
 fi
@@ -54,7 +56,7 @@ fi
 FOUND=0
 
 if [[ -n $PROCESS_CONFIG ]]; then
-    echo "Detected config file from running process: $PROCESS_CONFIG"
+    echo "Detected config file from running ${MONGO_BIN:-mongod/mongos} process: $PROCESS_CONFIG"
     if print_config_file "$PROCESS_CONFIG"; then
         FOUND=1
     fi
