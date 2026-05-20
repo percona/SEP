@@ -752,8 +752,8 @@ class BinlogRunner(multiprocessing.Process):
                 else:
                     proc.join()
                     # Check if the process exited with an error
-                    if proc.returncode != 0:
-                        self.logger.error("Child process exited with code %d", proc.returncode)
+                    if proc.exitcode != 0:
+                        self.logger.error("Child process exited with code %d", proc.exitcode)
                         sys.exit(1)
 
             procs = alive_procs
