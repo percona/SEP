@@ -101,8 +101,7 @@ class TestMysqlBackupsSchema:
             for section in mysql_backups_schema.forms
             for field in section.fields
         }
-        # ``upload`` is the only new attribute introduced by the schema.
-        assert schema_field_names - model_fields <= {"upload"}, (
+        assert schema_field_names - model_fields == set(), (
             f"Schema fields missing on BackupCreate: "
             f"{schema_field_names - model_fields}"
         )
