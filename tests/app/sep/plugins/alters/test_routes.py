@@ -214,7 +214,7 @@ def test_alters_create_pre_checks_filesystem_skip_flag(
     nomad_hosts,
     expect_skip_in_pre_checks_yaml,
 ):
-    """SEP-764: pre-checks YAML skip_filesystem_checks follows executor vs DB host (Nomad /hosts/)."""
+    """pre-checks YAML skip_filesystem_checks follows executor vs DB host (Nomad /hosts/)."""
     task = GeneratedTaskFactory.build(
         name="sep764-alter",
         data={
@@ -415,7 +415,9 @@ def test_get_table_details_inventory_error(
 ):
     """Inventory failure returns JSON 500."""
     mock_inventory_api_dep.get = AsyncMock(
-        side_effect=HTTPException(status_code=404, detail="missing")
+        side_effect=HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="missing"
+        )
     )
     response = test_client.get("/alters/table/999/details")
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -472,7 +474,7 @@ def test_alters_detail_when_hosts_api_fails(
     async def tasks_api_get(path: str, *args, **kwargs) -> object:
         # Do not rely on call order of FastAPI deps — match by path.
         if path == "/hosts/":
-            raise HTTPException(status_code=503)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
         if path.startswith("/stats/"):
             return {}
         if "/history/" in path or path == "/":
@@ -486,6 +488,47 @@ def test_alters_detail_when_hosts_api_fails(
     response = test_client.get(f"/alters/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
+
+
+@pytest.mark.usefixtures("_mock_get_alters_task_dep", "mock_get_username_mapping")
+def test_alters_edit_form_legacy_host_value_pre_selects_hosts(
+    test_client,
+    created_task,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+):
+    """Legacy stored ``--recursion-method=host`` renders edit form with ``hosts`` pre-selected."""
+    created_task.data = {
+        "task": "run-command",
+        "meta": {
+            "command": "pt-online-schema-change",
+            "args": ("'--alter=ADD COLUMN x INT' --recursion-method=host --execute"),
+            "target": "localhost",
+            "_schema_name": "public",
+            "_table_name": "t",
+        },
+    }
+
+    async def tasks_api_get(path: str, *args, **kwargs) -> object:
+        if path == "/hosts/":
+            return {}
+        if path.startswith("/stats/"):
+            return {}
+        if "/history/" in path or path == "/":
+            return {"items": [], "total": 0, "offset": 0, "limit": 50}
+        return []
+
+    mock_task_api_dep.get = AsyncMock(side_effect=tasks_api_get)
+    mock_inventory_api_dep.get = AsyncMock(
+        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+    )
+
+    response = test_client.get(f"/alters/{created_task.name}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert 'value="hosts"' in response.text
+    assert 'value="host"' not in response.text
+    assert "selected>hosts</option>" in response.text
 
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep", "mock_get_username_mapping")
@@ -521,7 +564,7 @@ def test_alters_detail_when_services_api_fails(
         if path == "/":
             return []
         if path.startswith("/services"):
-            raise HTTPException(status_code=500)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return []
 
     mock_task_api_dep.get = AsyncMock(side_effect=tasks_api_get_ok)
