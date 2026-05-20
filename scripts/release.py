@@ -988,18 +988,8 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
     _run(["make", "trigger-jenkins", f"TAG={rc_tag}"])
 
     dev_bump_exit_code = 0
-    # Scope-lock + dev-bump are atomic only for MINOR releases (Z == 0):
-    # main moves from X.Y.0.dev0 to X.(Y+1).0.dev0 to signal scope-lock for
-    # the QA window. Patch releases (Z > 0) cut from a main that is already
-    # at X.(Y+1).0.dev0 from the prior minor, so recomputing the next .dev0
-    # is a no-op and the resulting `git commit -am ...` aborts with "nothing
-    # to commit" — leaving the RC tag published but the workflow red. The
-    # workflow input is validated against ^[0-9]+\.[0-9]+\.[0-9]+$ so
-    # parts[2] is always an integer string here.
-    #
-    # The release artifacts have already been published. A non-zero exit
-    # here is informational — the operator must merge an open dev-bump PR
-    # by hand before the next release cycle.
+    # Only minor RC1 opens the next dev-bump PR. Patch releases already cut
+    # from a main branch that is on that next .dev0 version.
     if rc == 1 and version.split(".")[2] == "0":
         dev_bump_exit_code = _maybe_open_dev_bump_pr(version)
 
