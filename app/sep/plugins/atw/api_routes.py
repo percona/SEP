@@ -22,11 +22,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.sep.deps import SessionDep
-from app.sep.plugins.atw.models import (
-    ATWCategory,
-    CATEGORY_ROOT_LABELS,
-    derive_category_root,
-)
+from app.sep.plugins.atw.models import ATWCategory
 from app.sep.plugins.atw.schema import atw_schema
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.snippets.crud import SnippetManager
@@ -34,6 +30,9 @@ from app.sep.snippets.models import Snippet
 
 logger = logging.getLogger(__name__)
 
+# TODO(peter): Derive category_root from snippet/meta for multi-root ATW.
+# SEP-1127
+ATW_CATEGORY_ROOT = "MySQL"
 ATW_META_KEY = "atw"
 ATW_META_WARNING = (
     f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
@@ -104,10 +103,9 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     the ATW enum still defines the full taxonomy for validation (plugin schema).
     """
     snippets = await SnippetManager.list(session)
-    snippets_by_cell: defaultdict[tuple[str, str], list[Snippet]] = defaultdict(list)
+    snippets_by_atw_tag: defaultdict[str, list[Snippet]] = defaultdict(list)
     for snippet in snippets:
-        root = derive_category_root(snippet.meta.get("service_type"))
-        tags: list[str] = []
+        tags = []
         if ATW_META_KEY in snippet.meta:
             raw_atw = snippet.meta[ATW_META_KEY]
             if isinstance(raw_atw, list):
@@ -119,18 +117,18 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
                     type(raw_atw).__name__,
                 )
         for tag in dict.fromkeys(tags):
-            snippets_by_cell[(root, tag)].append(snippet)
+            snippets_by_atw_tag[tag].append(snippet)
 
     grouped: list[ATWCategoryListing] = []
-    for root_label in CATEGORY_ROOT_LABELS.values():
-        for category in ATWCategory:
-            cell_snippets = snippets_by_cell.get((root_label, category.name), [])
-            if not cell_snippets:
-                continue
-            category_snippets = [_build_summary(snippet) for snippet in cell_snippets]
+    for category in ATWCategory:
+        category_snippets = [
+            _build_summary(snippet)
+            for snippet in snippets_by_atw_tag.get(category.name, [])
+        ]
+        if category_snippets:
             grouped.append(
                 ATWCategoryListing(
-                    category_root=root_label,
+                    category_root=ATW_CATEGORY_ROOT,
                     parent_category=category.parent.name,
                     parent_category_label=category.parent.value,
                     category=category.name,

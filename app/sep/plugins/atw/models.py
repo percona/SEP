@@ -17,36 +17,6 @@
 
 from enum import StrEnum
 
-from app.inventory.models import ServiceTypeEnum
-
-_GENERIC_SERVICE_TYPE = "generic"
-
-# Insertion order defines the API response order for category_root.
-CATEGORY_ROOT_LABELS: dict[str, str] = {
-    ServiceTypeEnum.MYSQL: "MySQL",
-    ServiceTypeEnum.MONGODB: "MongoDB",
-    ServiceTypeEnum.POSTGRESQL: "PostgreSQL",
-    ServiceTypeEnum.PROXYSQL: "ProxySQL",
-    ServiceTypeEnum.HAPROXY: "HAProxy",
-    ServiceTypeEnum.EXTERNAL: "External",
-    _GENERIC_SERVICE_TYPE: "Generic",
-}
-
-
-def derive_category_root(service_type: str | None) -> str:
-    """Map snippet ``service_type`` meta to an ATW category-root display label.
-
-    :param service_type: Snippet frontmatter ``service_type`` value, or ``None``
-        when the key is absent.
-    :type service_type: str | None
-    :return: Display label for the category root (e.g. ``"MySQL"``, ``"Generic"``).
-    :rtype: str
-    """
-    generic_label = CATEGORY_ROOT_LABELS[_GENERIC_SERVICE_TYPE]
-    if not service_type:
-        return generic_label
-    return CATEGORY_ROOT_LABELS.get(service_type.lower(), generic_label)
-
 
 class ParentCategory(StrEnum):
     """Enumerate top-level categories for ATW."""
