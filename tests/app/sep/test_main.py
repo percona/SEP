@@ -19,6 +19,7 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi import HTTPException, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
@@ -546,11 +547,76 @@ class TestExceptionHandlers:
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/login?next={non_existent_path}"
 
+    def test_request_validation_error_handler_redirects_with_flash(
+        self, mocker, dummy_context, test_client
+    ):
+        """Form-binding 422s become flash messages + 303 back to the form."""
+        validation_errors = [
+            {
+                "type": "less_than_equal",
+                "loc": ("body", "DEST_PORT"),
+                "msg": "Input should be less than or equal to 65535",
+                "input": "99999",
+            },
+            {
+                "type": "none_required",
+                "loc": ("body", "DEST_PORT"),
+                "msg": "Input should be None",
+                "input": "99999",
+            },
+        ]
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=RequestValidationError(validation_errors),
+        )
+        from_validation_error_mock = mocker.patch(
+            "app.sep.main.messages.from_validation_error"
+        )
+        fake_referer = "/archives/"
+
+        response = test_client.get(
+            "/", headers={"Referer": fake_referer}, follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == fake_referer
+        from_validation_error_mock.assert_called_once()
+        call_kwargs = from_validation_error_mock.call_args.kwargs
+        assert "none_required" in call_kwargs["exclude_types"]
+
+    def test_request_validation_error_handler_bearer_returns_json(
+        self, mocker, dummy_context, test_client
+    ):
+        """Bearer-authenticated callers keep the JSON 422 shape."""
+        validation_errors = [
+            {
+                "type": "less_than_equal",
+                "loc": ("body", "DEST_PORT"),
+                "msg": "Input should be less than or equal to 65535",
+                "input": "99999",
+            },
+        ]
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=RequestValidationError(validation_errors),
+        )
+
+        response = test_client.get(
+            "/",
+            headers={"Authorization": "Bearer any-token"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        # JSON serialization turns the ``loc`` tuple into a list.
+        expected = [{**e, "loc": list(e["loc"])} for e in validation_errors]
+        assert response.json()["detail"] == expected
+
 
 def test_sep_app_keeps_default_docs_urls():
     """``sep_app`` keeps FastAPI's default ``/docs`` and ``/redoc`` URLs.
 
-    Only the top-level combined app disables the auto-generated docs (see SEP-1203).
+    Only the top-level combined app disables the auto-generated docs.
     ``sep_app`` itself must retain default behavior so it stays self-describing in
     standalone use; the top-level ``_disabled_top_level_docs`` handler in
     ``app/main.py`` (registered before ``app.mount("/", sep_app)``) is what makes
