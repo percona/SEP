@@ -150,7 +150,7 @@ def _install_rc_probes(
     monkeypatch.setattr(release, "_remote_branch_exists", fake_remote_branch_exists)
 
     def fake_origin_main_version(_re):
-        parts = "0.12.0".split(".")
+        parts = ["0", "12", "0"]
         next_dev = f"{parts[0]}.{int(parts[1]) + 1}.0.dev0"
         return next_dev if main_at_next_dev else "0.12.0.dev0"
 
@@ -537,6 +537,57 @@ def test_cmd_rc_rc1_invokes_dev_version_bump(repo, monkeypatch):
     assert bump_calls == [("0.13.0", "v0.13.0")]
 
 
+def test_cmd_rc_rc1_patch_does_not_invoke_dev_version_bump(repo, monkeypatch):
+    """Skip the dev-bump step for patch RC1 releases.
+
+    Main is already at X.(Y+1).0.dev0 from the prior minor release, so
+    recomputing the next .dev0 produces the value main already carries
+    and the bump commit would fail with "nothing to commit". cmd_rc must
+    skip the dev-bump call site entirely on patch RC1.
+    """
+
+    def fake_run(cmd, **kwargs):
+        wheel = Path("dist") / "sep-0.12.1rc1-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "main\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    bump_calls = []
+
+    def fake_dev_bump(version, stable_tag):
+        bump_calls.append((version, stable_tag))
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+    monkeypatch.setattr(release, "_local_branch_exists", lambda _b: False)
+    monkeypatch.setattr(release, "_remote_branch_exists", lambda _b: False)
+    monkeypatch.setattr(release, "_invoke_post_jira_webhook", lambda *_a, **_kw: True)
+    monkeypatch.setattr(release, "_create_dev_version_bump_pr", fake_dev_bump)
+
+    rc = release.cmd_rc("0.12.1", 1, sign_via_github_api=False)
+    assert rc == 0
+    assert bump_calls == []
+
+
 def test_cmd_rc_rc2_does_not_invoke_dev_version_bump(repo, monkeypatch):
     """RC2+ must NOT redo the dev-bump (it was done atomically with RC1)."""
 
@@ -702,6 +753,19 @@ def test_prep_ordering(monkeypatch):
     assert (
         checkout_idx < push_idx < webhook_idx < build_idx < jenkins_idx < dev_bump_idx
     )
+
+
+def test_prep_patch_release_skips_dev_bump(monkeypatch):
+    """Skip the dev-bump PR during patch-release prep."""
+    dev_bump_calls = []
+    _, call_order = _patch_prep_ok(
+        monkeypatch,
+        dev_bump_calls=dev_bump_calls,
+    )
+    assert release.cmd_prep("0.13.1", sign_via_github_api=True) == 0
+
+    assert dev_bump_calls == []
+    assert not any(c[0] == "dev_bump" for c in call_order)
 
 
 def test_prep_rejects_non_main_branch(monkeypatch, capsys):
