@@ -58,9 +58,8 @@ interface SnippetDownloadMockOptions {
   downloadBody?: string;
 }
 
-function snippetApiPaths(filename: string) {
-  const enc = encodeURIComponent(filename);
-  const base = `/api/plugins/snippets/${enc}`;
+function snippetApiPaths() {
+  const base = '/api/plugins/snippets/snippet';
   return {
     schema: `${base}/schema`,
     history: `${base}/history`,
@@ -78,11 +77,16 @@ async function mockSnippetDetailApis(
 ): Promise<void> {
   const downloadStatus = options.downloadStatus ?? 200;
   const downloadBody = options.downloadBody ?? DOWNLOAD_BYTES;
-  const paths = snippetApiPaths(SNIPPET_FILENAME);
+  const paths = snippetApiPaths();
 
   await page.route('**/api/**', (route) => {
     const req = route.request();
-    const { pathname } = new URL(req.url());
+    const url = new URL(req.url());
+    const { pathname } = url;
+    const queryFilename = url.searchParams.get('snippet_filename');
+    const matchesPerSnippet = (action: string): boolean =>
+      pathname === `${paths[action as 'schema' | 'history' | 'download']}` &&
+      queryFilename === SNIPPET_FILENAME;
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
@@ -104,7 +108,7 @@ async function mockSnippetDetailApis(
       });
     }
 
-    if (pathname === paths.schema) {
+    if (matchesPerSnippet('schema')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -112,7 +116,7 @@ async function mockSnippetDetailApis(
       });
     }
 
-    if (pathname === paths.history) {
+    if (matchesPerSnippet('history')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -120,7 +124,7 @@ async function mockSnippetDetailApis(
       });
     }
 
-    if (pathname === paths.download && req.method() === 'GET') {
+    if (matchesPerSnippet('download') && req.method() === 'GET') {
       return route.fulfill({
         status: downloadStatus,
         contentType: downloadStatus === 200 ? 'text/x-shellscript' : 'application/json',
@@ -156,18 +160,21 @@ test.describe('Snippet detail — download', () => {
     });
 
     let sawDownloadGet = false;
-    const paths = snippetApiPaths(SNIPPET_FILENAME);
+    const paths = snippetApiPaths();
     page.on('request', (req) => {
       if (req.method() !== 'GET') {
         return;
       }
-      let pathname: string;
+      let parsed: URL;
       try {
-        pathname = new URL(req.url()).pathname;
+        parsed = new URL(req.url());
       } catch {
         return;
       }
-      if (pathname === paths.download) {
+      if (
+        parsed.pathname === paths.download &&
+        parsed.searchParams.get('snippet_filename') === SNIPPET_FILENAME
+      ) {
         sawDownloadGet = true;
       }
     });

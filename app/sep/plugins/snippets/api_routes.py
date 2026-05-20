@@ -19,22 +19,23 @@ Mounted at ``/api/plugins/snippets/`` via ``plugins_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
 level and redeclared per route for safety. Route layout is snippet-centric:
 
-* ``GET /schema``                              — static plugin schema
-* ``GET /capabilities``                        — per-deployment capability flags
-* ``POST /refresh``                            — admin manual snippets cache refresh
-* ``GET /``                                    — list snippets
-* ``GET /{snippet_filename}/schema``           — per-snippet form schema
-* ``GET /{snippet_filename}/preview``          — script preview
-* ``GET /{snippet_filename}/download``         — raw snippet file download
-* ``GET /{snippet_filename}/history``          — execution history
-* ``POST /{snippet_filename}/execute``         — execute the snippet
-* ``PUT /{snippet_filename}/approval``         — approve the snippet
-* ``DELETE /{snippet_filename}/approval``      — remove snippet approval
-* ``PATCH /approvals``                         — batch-approve snippets
+* ``GET /schema``                                       — static plugin schema
+* ``GET /capabilities``                                 — per-deployment capability flags
+* ``POST /refresh``                                     — admin manual snippets cache refresh
+* ``GET /``                                             — list snippets
+* ``GET /snippet/schema?snippet_filename=...``          — per-snippet form schema
+* ``GET /snippet/preview?snippet_filename=...``         — script preview
+* ``GET /snippet/download?snippet_filename=...``        — raw snippet file download
+* ``GET /snippet/history?snippet_filename=...``         — execution history
+* ``POST /snippet/execute?snippet_filename=...``        — execute the snippet
+* ``PUT /snippet/approval?snippet_filename=...``        — approve the snippet
+* ``DELETE /snippet/approval?snippet_filename=...``     — remove snippet approval
+* ``PATCH /approvals``                                  — batch-approve snippets
 
-All dynamic segments live under two-segment ``/{snippet_filename}/...``
-paths; there is no single-segment dynamic catch-all, so the static
-collection routes ``/schema``, ``/approvals``, and ``/`` are unambiguous.
+Per-snippet routes carry the snippet filename in the ``snippet_filename``
+query parameter rather than a URL path segment. The ``/snippet/`` sub-prefix
+keeps the per-snippet endpoints disjoint from the collection-level static routes
+(``/schema``, ``/approvals``, ``/``), so route dispatch stays unambiguous.
 """
 
 import logging
@@ -154,7 +155,7 @@ async def snippets_api_list(session: SessionDep) -> list[SnippetResponse]:
 
 
 @router.get(
-    "/{snippet_filename}/schema",
+    "/snippet/schema",
     response_model=PluginSchema,
     response_model_by_alias=True,
     response_model_exclude_none=True,
@@ -172,7 +173,7 @@ async def snippets_api_per_snippet_schema(snippet: SnippetDep) -> PluginSchema:
 
 
 @router.get(
-    "/{snippet_filename}/preview",
+    "/snippet/preview",
     dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewResponse:
@@ -202,7 +203,7 @@ async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewRespo
 
 
 @router.get(
-    "/{snippet_filename}/download",
+    "/snippet/download",
     dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_download(snippet: SnippetDep) -> FileResponse:
@@ -228,7 +229,7 @@ async def snippets_api_download(snippet: SnippetDep) -> FileResponse:
 
 
 @router.get(
-    "/{snippet_filename}/history",
+    "/snippet/history",
     dependencies=[IsApiAuthenticated],
 )
 async def snippets_api_history(
@@ -255,7 +256,7 @@ async def snippets_api_history(
 
 
 @router.post(
-    "/{snippet_filename}/execute",
+    "/snippet/execute",
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated],
 )
@@ -267,8 +268,8 @@ async def snippets_api_execute(
 ) -> SnippetExecutionResponse:
     """Execute a snippet against the tasks API.
 
-    Mirrors the legacy ``POST /{snippet_filename}`` Jinja2 route, but
-    accepts a JSON body and returns a structured response pointing at
+    Mirrors the legacy Jinja2 ``POST /snippets/execute?snippet_filename=...``
+    route, but accepts a JSON body and returns a structured response pointing at
     the created task.
 
     :param snippet: The snippet being executed.
@@ -321,7 +322,7 @@ async def snippets_api_execute(
     )
 
 
-@router.put("/{snippet_filename}/approval", dependencies=[IsApiAuthenticated])
+@router.put("/snippet/approval", dependencies=[IsApiAuthenticated])
 async def snippets_api_approve(
     snippet: SnippetDep, user: ApiAdminUser, session: SessionDep
 ) -> SnippetResponse:
@@ -348,7 +349,7 @@ async def snippets_api_approve(
 
 
 @router.delete(
-    "/{snippet_filename}/approval",
+    "/snippet/approval",
     status_code=http_status.HTTP_204_NO_CONTENT,
     response_class=Response,
     dependencies=[IsApiAuthenticated],
