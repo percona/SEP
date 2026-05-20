@@ -21,16 +21,7 @@ import Chip from '@mui/material/Chip';
 import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import {
-  OverviewCard,
-  Table,
-  SuccessIcon,
-  ErrorIcon,
-  PendingIcon,
-  WarningIcon,
-  LoadableChildren,
-  DatabaseIcon,
-} from '@percona/percona-ui';
+import { OverviewCard, Table, LoadableChildren, DatabaseIcon } from '@percona/percona-ui';
 import type { MRT_ColumnDef } from 'material-react-table';
 import DnsIcon from '@mui/icons-material/Dns';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -38,36 +29,22 @@ import CodeIcon from '@mui/icons-material/Code';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
-import { useDashboardStats, useRecentTaskHistory, type TaskHistoryItem } from '@sep/api';
+import { useDashboardStats } from '@sep/api';
+import {
+  useTaskHistory,
+  TaskHistoryStatusBadge,
+  type TaskHistoryEntry,
+  type TaskHistoryStatus,
+} from '@sep/framework';
 import { useAuth } from '../contexts/auth';
 
 interface RecentTask {
   id: number;
   name: string;
   target: string;
-  status: 'running' | 'success' | 'failed' | 'pending' | 'stopped' | 'lost' | 'stale';
+  status: TaskHistoryStatus;
   started: string;
 }
-
-const StatusIconMap: Record<RecentTask['status'], React.ElementType> = {
-  running: PendingIcon,
-  success: SuccessIcon,
-  failed: ErrorIcon,
-  pending: WarningIcon,
-  stopped: WarningIcon,
-  lost: ErrorIcon,
-  stale: WarningIcon,
-};
-
-const statusColorMap: Record<RecentTask['status'], 'info' | 'success' | 'error' | 'warning'> = {
-  running: 'info',
-  success: 'success',
-  failed: 'error',
-  pending: 'warning',
-  stopped: 'warning',
-  lost: 'error',
-  stale: 'warning',
-};
 
 const columns: MRT_ColumnDef<RecentTask>[] = [
   {
@@ -87,16 +64,7 @@ const columns: MRT_ColumnDef<RecentTask>[] = [
   {
     accessorKey: 'status',
     header: 'Status',
-    Cell: ({ cell }) => {
-      const status = cell.getValue<RecentTask['status']>();
-      const StatusIcon = StatusIconMap[status];
-      return (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <StatusIcon size="small" />
-          <Chip label={status} size="small" color={statusColorMap[status]} />
-        </Box>
-      );
-    },
+    Cell: ({ cell }) => <TaskHistoryStatusBadge status={cell.getValue<TaskHistoryStatus>()} />,
   },
   {
     accessorKey: 'started',
@@ -104,17 +72,15 @@ const columns: MRT_ColumnDef<RecentTask>[] = [
   },
 ];
 
-function mapHistoryToRecentTask(item: TaskHistoryItem): RecentTask {
-  const status = (item.status ?? 'pending') as RecentTask['status'];
-  const started = item.started_at
-    ? formatDistanceToNow(new Date(item.started_at), { addSuffix: true })
-    : '—';
+function mapHistoryToRecentTask(item: TaskHistoryEntry): RecentTask {
   return {
     id: item.id ?? 0,
     name: item.task.name,
     target: item.execution_request.target,
-    status,
-    started,
+    status: item.status ?? 'pending',
+    started: item.started_at
+      ? formatDistanceToNow(new Date(item.started_at), { addSuffix: true })
+      : '—',
   };
 }
 
@@ -123,7 +89,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
 
   const statsQuery = useDashboardStats();
-  const historyQuery = useRecentTaskHistory(5);
+  const historyQuery = useTaskHistory({ limit: 5 });
 
   const stats = [
     {
@@ -173,6 +139,11 @@ export default function DashboardPage() {
       {statsQuery.isError && (
         <Alert severity="error" sx={{ mb: 2 }}>
           Failed to load dashboard stats: {statsQuery.error?.message}
+        </Alert>
+      )}
+      {statsQuery.data?.degraded && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Some counts may be unavailable: {statsQuery.data.degraded.join(', ')}
         </Alert>
       )}
 

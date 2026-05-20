@@ -32,5 +32,3 @@ export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
 export type { AlertConfig } from './useAlertConfig';
 export { useDashboardStats } from './useDashboardStats';
 export type { DashboardStats } from './useDashboardStats';
-export { useRecentTaskHistory } from './useTaskHistory';
-export type { TaskHistoryItem } from './useTaskHistory';

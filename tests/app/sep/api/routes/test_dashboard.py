@@ -21,6 +21,7 @@ import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
+from app.sep.api.routes.dashboard import UPSTREAM_ERROR_HEADER
 from app.sep.deps import get_session
 from app.sep.main import sep_app
 
@@ -37,7 +38,7 @@ def mock_session_dep() -> AsyncMock:
 class TestDashboardStatsEndpoint:
     """Tests for ``GET /api/sep/dashboard/`` happy-path and degradation cases."""
 
-    def test_returns_all_counts(
+    def test_returns_all_counts_no_error_header(
         self,
         test_client: TestClient,
         mock_task_api_dep: AsyncMock,
@@ -45,7 +46,7 @@ class TestDashboardStatsEndpoint:
         mock_session_dep: AsyncMock,
         mocker,
     ) -> None:
-        """Return the correct counts for all four stat cards on happy path."""
+        """Return all counts and omit the error header on happy path."""
         mocker.patch(
             "app.sep.api.routes.dashboard.SnippetManager.count",
             new=AsyncMock(return_value=23),
@@ -72,8 +73,9 @@ class TestDashboardStatsEndpoint:
             "snippets": 23,
             "targets": 3,
         }
+        assert UPSTREAM_ERROR_HEADER not in response.headers
 
-    def test_inventory_failure_yields_zero_nodes(
+    def test_inventory_failure_sets_error_header(
         self,
         test_client: TestClient,
         mock_task_api_dep: AsyncMock,
@@ -81,7 +83,7 @@ class TestDashboardStatsEndpoint:
         mock_session_dep: AsyncMock,
         mocker,
     ) -> None:
-        """Degrade to ``nodes=0`` when the Inventory API is unavailable."""
+        """Set the error header and return ``nodes=0`` when Inventory API fails."""
         mocker.patch(
             "app.sep.api.routes.dashboard.SnippetManager.count",
             new=AsyncMock(return_value=5),
@@ -99,8 +101,9 @@ class TestDashboardStatsEndpoint:
         assert data["nodes"] == 0
         assert data["tasks"] == 3  # noqa: PLR2004 — fixture value
         assert data["snippets"] == 5  # noqa: PLR2004 — fixture value
+        assert response.headers[UPSTREAM_ERROR_HEADER] == "nodes"
 
-    def test_tasks_api_failure_yields_zero_tasks_and_targets(
+    def test_inventory_none_response_sets_error_header(
         self,
         test_client: TestClient,
         mock_task_api_dep: AsyncMock,
@@ -108,7 +111,30 @@ class TestDashboardStatsEndpoint:
         mock_session_dep: AsyncMock,
         mocker,
     ) -> None:
-        """Degrade to ``tasks=0`` and ``targets=0`` when the Tasks API is unavailable."""
+        """Set the error header when Inventory API returns None (HTTP 204)."""
+        mocker.patch(
+            "app.sep.api.routes.dashboard.SnippetManager.count",
+            new=AsyncMock(return_value=0),
+        )
+        mock_inventory_api_dep.get.return_value = None
+        mock_task_api_dep.get.side_effect = [
+            {"items": [], "total": 0, "offset": 0, "limit": 0},
+            [],
+        ]
+        response = test_client.get("/api/sep/dashboard/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["nodes"] == 0
+        assert response.headers[UPSTREAM_ERROR_HEADER] == "nodes"
+
+    def test_tasks_api_failure_sets_error_header(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        mock_inventory_api_dep: AsyncMock,
+        mock_session_dep: AsyncMock,
+        mocker,
+    ) -> None:
+        """Set the error header for tasks and targets when the Tasks API is down."""
         mocker.patch(
             "app.sep.api.routes.dashboard.SnippetManager.count",
             new=AsyncMock(return_value=10),
@@ -122,8 +148,9 @@ class TestDashboardStatsEndpoint:
         assert data["targets"] == 0
         assert data["nodes"] == 8  # noqa: PLR2004 — fixture value
         assert data["snippets"] == 10  # noqa: PLR2004 — fixture value
+        assert response.headers[UPSTREAM_ERROR_HEADER] == "tasks,targets"
 
-    def test_snippet_db_failure_yields_zero_snippets(
+    def test_snippet_db_failure_sets_error_header(
         self,
         test_client: TestClient,
         mock_task_api_dep: AsyncMock,
@@ -131,7 +158,7 @@ class TestDashboardStatsEndpoint:
         mock_session_dep: AsyncMock,
         mocker,
     ) -> None:
-        """Degrade to ``snippets=0`` when the database query fails."""
+        """Set the error header for snippets when the database query fails."""
         mocker.patch(
             "app.sep.api.routes.dashboard.SnippetManager.count",
             new=AsyncMock(side_effect=Exception("db error")),
@@ -148,8 +175,9 @@ class TestDashboardStatsEndpoint:
         assert data["nodes"] == 4  # noqa: PLR2004 — fixture value
         assert data["tasks"] == 2  # noqa: PLR2004 — fixture value
         assert data["targets"] == 1
+        assert response.headers[UPSTREAM_ERROR_HEADER] == "snippets"
 
-    def test_empty_hosts_yields_zero_targets(
+    def test_all_sources_healthy_returns_real_zeroes(
         self,
         test_client: TestClient,
         mock_task_api_dep: AsyncMock,
@@ -157,7 +185,7 @@ class TestDashboardStatsEndpoint:
         mock_session_dep: AsyncMock,
         mocker,
     ) -> None:
-        """Return ``targets=0`` when the executor reports no hosts."""
+        """Return all-zero counts with no error header when sources are healthy but empty."""
         mocker.patch(
             "app.sep.api.routes.dashboard.SnippetManager.count",
             new=AsyncMock(return_value=0),
@@ -170,6 +198,7 @@ class TestDashboardStatsEndpoint:
         response = test_client.get("/api/sep/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"nodes": 0, "tasks": 0, "snippets": 0, "targets": 0}
+        assert UPSTREAM_ERROR_HEADER not in response.headers
 
 
 class TestDashboardStatsAuth:

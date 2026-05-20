@@ -18,19 +18,28 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
 
-export interface DashboardStats {
+interface DashboardStatsRaw {
   nodes: number;
   tasks: number;
   snippets: number;
   targets: number;
 }
 
+export interface DashboardStats extends DashboardStatsRaw {
+  /** Source names that failed and returned 0. Mirrors ``X-Sep-Upstream-Error``. */
+  degraded?: string[];
+}
+
 export function useDashboardStats() {
   return useQuery<DashboardStats>({
     queryKey: ['sep', 'dashboard', 'stats'],
     queryFn: async () => {
-      const { data } = await apiClient.get<DashboardStats>('/sep/dashboard/');
-      return data;
+      const response = await apiClient.get<DashboardStatsRaw>('/sep/dashboard/');
+      const errorHeader = response.headers['x-sep-upstream-error'] as string | undefined;
+      return {
+        ...response.data,
+        degraded: errorHeader ? errorHeader.split(',') : undefined,
+      };
     },
   });
 }

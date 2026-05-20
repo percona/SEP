@@ -103,6 +103,5 @@ export {
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
   useDashboardStats,
-  useRecentTaskHistory,
 } from './hooks';
-export type { AlertConfig, DashboardStats, TaskHistoryItem } from './hooks';
+export type { AlertConfig, DashboardStats } from './hooks';
