@@ -327,8 +327,8 @@ class InventoryPluginPage {
 
   constructor(private readonly page: Page) {}
 
-  async gotoNodes() {
-    await this.page.goto(`${PLUGIN_ROUTE}/nodes`);
+  async goto() {
+    await this.page.goto(PLUGIN_ROUTE);
   }
 
   async gotoNodeDetail(nodeId: number) {
@@ -349,7 +349,7 @@ test.describe('Inventory plugin smoke', () => {
 
   test('list page mounts and shows fixture node row', async ({ page }) => {
     const po = new InventoryPluginPage(page);
-    await po.gotoNodes();
+    await po.goto();
 
     await expect(po.heading('Nodes')).toBeVisible({ timeout: 10_000 });
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
@@ -404,7 +404,7 @@ test.describe('Inventory plugin smoke', () => {
     });
 
     const po = new InventoryPluginPage(page);
-    await po.gotoNodes();
+    await po.goto();
 
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
 
@@ -431,7 +431,7 @@ test.describe('Inventory plugin smoke', () => {
     });
 
     const po = new InventoryPluginPage(page);
-    await po.gotoNodes();
+    await po.goto();
 
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
 
