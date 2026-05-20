@@ -43,9 +43,10 @@ def generated_task() -> TaskWrite:
 @pytest.fixture
 def _mock_check_for_conflicted_running_tasks() -> None:
     """Mock check_for_conflicted_running_tasks."""
+    previous = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = lambda: None
     yield
-    sep_app.dependency_overrides = {}
+    sep_app.dependency_overrides = previous
 
 
 @pytest.fixture
@@ -55,6 +56,7 @@ def _mock_check_for_conflicted_running_tasks_raises() -> None:
     def raise_conflict() -> None:
         raise HTTPConflictException("Task is already running or pending.")
 
+    previous = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = raise_conflict
     yield
-    sep_app.dependency_overrides = {}
+    sep_app.dependency_overrides = previous
