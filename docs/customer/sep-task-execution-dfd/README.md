@@ -43,7 +43,7 @@ The UI does not submit arbitrary shell commands. SEP uses two main execution pat
 | Run | Pick an **approved** snippet (or dipper collector) and submit a **schema-defined** form | No saved task definition; `meta` is built on each run |
 | Command | Never typed by the user | Fixed Nomad job type (`exec-artifact`, etc.) plus server-built `meta` (target, interpreter, signed artifact URL) |
 
-**Snippets:** `POST /api/plugins/snippets/.../execute` → `POST /api/tasks/execute/exec-artifact`  
+**Snippets:** `POST /api/plugins/snippets/.../execute` → `POST /api/tasks/execute/exec-artifact`
 **Dipper:** `POST /api/plugins/dipper/` → same Tasks execute pattern with dipper script metadata.
 
 #### Path B — Create then execute (proxy plugins: checksums, gascan, alters)

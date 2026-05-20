@@ -2,8 +2,8 @@
 
 Complete this checklist before sending customer-facing task-execution or Nomad materials.
 
-**DFD deliverables:** [`exports/sep-task-execution-dfd.pdf`](exports/sep-task-execution-dfd.pdf) (and optional sequence PDF)  
-**Diagram sources:** `sep-task-execution-dfd.mmd`, `sep-task-execution-sequence.mmd`  
+**DFD deliverables:** [`exports/sep-task-execution-dfd.pdf`](exports/sep-task-execution-dfd.pdf) (and optional sequence PDF)
+**Diagram sources:** `sep-task-execution-dfd.mmd`, `sep-task-execution-sequence.mmd`
 **Companion docs:** [`README.md`](README.md), [`../nomad-driver-deployment.md`](../nomad-driver-deployment.md)
 
 ---
@@ -124,5 +124,5 @@ Complete **§8** when delivering [`nomad-driver-deployment.md`](../nomad-driver-
 
 **Follow-up actions (if any):**
 
-1. 
-2. 
+1.
+2.
