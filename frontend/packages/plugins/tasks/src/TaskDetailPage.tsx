@@ -132,7 +132,7 @@ function PeriodicSummaryTable({ rows }: { rows: PeriodicTaskSummaryRow[] }) {
 export function TaskDetailPage() {
   const navigate = useNavigate();
   const { taskName: rawTaskName } = useParams<{ taskName: string }>();
-  const taskName = rawTaskName ? decodeURIComponent(rawTaskName) : undefined;
+  const taskName = rawTaskName;
   const { data, isLoading, error } = useTaskDetail(taskName);
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
