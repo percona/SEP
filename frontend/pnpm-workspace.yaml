@@ -6,3 +6,6 @@ minimumReleaseAgeIgnoreMissingTime: false
 allowBuilds:
   esbuild: true
   msw: true
+minimumReleaseAgeExclude:
+  - brace-expansion@5.0.6
+  - ws@8.20.1
