@@ -121,7 +121,7 @@ export const WithExecutorHost: Story = {
   },
   parameters: {
     fetchResponses: {
-      '/api/plugins/snippets/host-snippet.sh/schema': baseSchema,
+      '/api/plugins/snippets/snippet/schema?snippet_filename=host-snippet.sh': baseSchema,
     },
   },
   play: async ({ canvasElement }) => {
@@ -146,7 +146,7 @@ export const DefaultExpanded: Story = {
   },
   parameters: {
     fetchResponses: {
-      '/api/plugins/snippets/expanded-snippet.sh/schema': baseSchema,
+      '/api/plugins/snippets/snippet/schema?snippet_filename=expanded-snippet.sh': baseSchema,
     },
   },
   play: async ({ canvasElement }) => {
@@ -173,8 +173,8 @@ export const WithHistory: Story = {
   },
   parameters: {
     fetchResponses: {
-      '/api/plugins/snippets/history-snippet.sh/schema': baseSchema,
-      '/api/plugins/snippets/history-snippet.sh/history': successHistory,
+      '/api/plugins/snippets/snippet/schema?snippet_filename=history-snippet.sh': baseSchema,
+      '/api/plugins/snippets/snippet/history?snippet_filename=history-snippet.sh': successHistory,
     },
   },
 };
@@ -194,8 +194,8 @@ export const AfterSuccessfulRun: Story = {
   },
   parameters: {
     fetchResponses: {
-      '/api/plugins/snippets/run-snippet.sh/schema': baseSchema,
-      '/api/plugins/snippets/run-snippet.sh/execute': { task_id: 4242 },
+      '/api/plugins/snippets/snippet/schema?snippet_filename=run-snippet.sh': baseSchema,
+      '/api/plugins/snippets/snippet/execute?snippet_filename=run-snippet.sh': { task_id: 4242 },
       '/execution-events/4242': [],
     },
     sseScripts: {
