@@ -214,9 +214,6 @@ class TestTasksPluginDetailEndpoint:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["task"]["name"] == "detail-task"
-        assert body["running_tasks"] == [
-            {"id": 11, "status": TaskHistoryStatusEnum.RUNNING.value}
-        ]
         assert body["execution_history"] == history
         assert body["periodic_summary"] == [
             {
@@ -224,7 +221,7 @@ class TestTasksPluginDetailEndpoint:
                 "name": "nightly",
                 "enabled": True,
                 "period": "0 0 * * *",
-                "next_run_at": "2026-05-20T00:00:00+00:00",
+                "next_run_at": "2026-05-20T00:00:00Z",
                 "last_run_at": None,
                 "total_run_count": 3,
                 "chain_task_names": ["follow-up-task"],
@@ -254,8 +251,12 @@ class TestTasksPluginDetailEndpoint:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["task"]["name"] == "template-task"
-        assert body["running_tasks"] == []
-        assert body["execution_history"] == {"items": []}
+        assert body["execution_history"] == {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 0,
+        }
         assert body["periodic_summary"] == []
         assert body["executor_hosts"] == [{"value": "nomad-1", "label": "nomad-1"}]
         assert mock_task_api_dep.get.await_count == EXPECTED_TEMPLATE_DETAIL_CALLS

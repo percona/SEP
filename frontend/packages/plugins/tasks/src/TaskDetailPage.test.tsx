@@ -44,6 +44,7 @@ vi.mock('./TaskSpecificationSection', () => ({
 }));
 
 vi.mock('@sep/framework', () => ({
+  RUNNING_STATUSES: new Set(['running', 'pending']),
   SEP_TABLE_CLASS: 'SepTable',
   ChainDisplay: ({ chainNames }: { chainNames?: readonly string[] }) => (
     <span data-testid="chain-display">{chainNames?.join(', ') ?? '—'}</span>
@@ -121,7 +122,6 @@ const detailTask: TaskDetailTask = {
 
 const detailBundle: TaskDetailBundle = {
   task: detailTask,
-  running_tasks: [historyEntry],
   execution_history: {
     items: [
       {
@@ -129,8 +129,9 @@ const detailBundle: TaskDetailBundle = {
         id: 10,
         status: 'success',
       },
+      historyEntry,
     ],
-    total: 1,
+    total: 2,
     offset: 0,
     limit: 50,
   },
@@ -211,8 +212,7 @@ describe('TaskDetailPage', () => {
       data: {
         ...detailBundle,
         task: { ...detailBundle.task, is_template: true },
-        running_tasks: [],
-        execution_history: { items: [] },
+        execution_history: { items: [], total: 0, offset: 0, limit: 50 },
         periodic_summary: [],
       },
       isLoading: false,

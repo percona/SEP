@@ -23,8 +23,6 @@ through ``TaskAPI``, mirroring the legacy Jinja routes in
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter
 
 from app.sep.deps import (
@@ -42,53 +40,13 @@ from app.sep.plugins.tasks.models import (
     TaskListResponse,
 )
 from app.sep.plugins.tasks.schema import TASKS_PLUGIN_SCHEMA
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskResponse
+from app.tasks.models import TaskBackendEnum, TaskResponse
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=TASKS_PLUGIN_SCHEMA)
 
-def resolve_user_display(
-    user_id: str | None, user_id_to_username: dict[str, str]
-) -> str | None:
-    """Map a stored user id to a display name, matching legacy Jinja task lists.
 
-    :param user_id: Casdoor user id from the tasks API, or ``None``.
-    :type user_id: str | None
-    :param user_id_to_username: Mapping from user id to Casdoor username.
-    :type user_id_to_username: dict[str, str]
-    :return: The username when known, otherwise the original id, or ``None``.
-    :rtype: str | None
-    """
-    if user_id is None:
-        return None
-    return user_id_to_username.get(user_id, user_id)
-
-
-def build_periodic_summary(item: dict[str, Any]) -> PeriodicTaskSummary:
-    """Map a tasks-API periodic-task dict to the plugin summary model.
-
-    :param item: One periodic task from ``GET /{task_name}/periodic/``.
-    :type item: dict[str, Any]
-    :return: The read-only periodic summary for the detail bundle.
-    :rtype: PeriodicTaskSummary
-    """
-    execute_request = item.get("execute_request") or {}
-    chain_task_names = execute_request.get("chain_task_names") or []
-    return PeriodicTaskSummary(
-        id=item["id"],
-        name=item["name"],
-        enabled=item["enabled"],
-        period=item.get("period"),
-        next_run_at=item.get("next_run_at"),
-        last_run_at=item.get("last_run_at"),
-        total_run_count=item.get("total_run_count"),
-        chain_task_names=chain_task_names,
-    )
-
-
-@router.get(
-    "/", dependencies=[IsApiAuthenticated], response_model=list[TaskListResponse]
-)
+@router.get("/", dependencies=[IsApiAuthenticated])
 async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
     """List task definitions for the read-only plugin UI.
 
@@ -104,11 +62,11 @@ async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
             name=item["name"],
             backend=TaskBackendEnum(item["backend"]),
             created_at=item.get("created_at"),
-            created_by=resolve_user_display(
-                item.get("created_by"), user_id_to_username
+            created_by=user_id_to_username.get(
+                item.get("created_by"), item.get("created_by")
             ),
-            last_updated_by=resolve_user_display(
-                item.get("last_updated_by"), user_id_to_username
+            last_updated_by=user_id_to_username.get(
+                item.get("last_updated_by"), item.get("last_updated_by")
             ),
         )
         for item in response["items"]
@@ -118,7 +76,6 @@ async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
 @router.get(
     "/{task_name}",
     dependencies=[IsApiAuthenticated],
-    response_model=TaskDetailResponse,
 )
 async def tasks_api_detail(
     task: TaskDep,
@@ -133,23 +90,23 @@ async def tasks_api_detail(
     :type tasks_api: TaskAPI
     :param executor_hosts_ctx: Executor hosts enriched with inventory labels.
     :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: Task definition, running rows, history, periodic schedules, and
-        executor hosts.
+    :return: Task definition, history, periodic schedules, and executor hosts.
     :rtype: TaskDetailResponse
     """
-    running_tasks: list[dict[str, Any]] = []
-    execution_history: dict[str, Any] = {"items": []}
+    execution_history: dict[str, object] = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 0,
+    }
     periodic_summary: list[PeriodicTaskSummary] = []
 
     if not task.is_template:
         periodic_response = await tasks_api.get(f"/{task.name}/periodic/")
-        periodic_summary = [build_periodic_summary(item) for item in periodic_response]
-        execution_history = await tasks_api.get(f"/{task.name}/history/")
-        running_tasks = [
-            item
-            for item in execution_history["items"]
-            if item["status"] == TaskHistoryStatusEnum.RUNNING
+        periodic_summary = [
+            PeriodicTaskSummary.model_validate(item) for item in periodic_response
         ]
+        execution_history = await tasks_api.get(f"/{task.name}/history/")
 
     executor_hosts = [
         ExecutorHostMetadata(value=host["value"], label=host["label"])
@@ -158,7 +115,6 @@ async def tasks_api_detail(
 
     return TaskDetailResponse(
         task=TaskResponse.model_validate(task.model_dump(mode="json")),
-        running_tasks=running_tasks,
         execution_history=execution_history,
         periodic_summary=periodic_summary,
         executor_hosts=executor_hosts,

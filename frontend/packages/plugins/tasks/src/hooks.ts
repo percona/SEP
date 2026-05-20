@@ -17,6 +17,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, usePluginSchema } from '@sep/api';
+import { RUNNING_STATUSES } from '@sep/framework';
 import {
   TASKS_PLUGIN_NAME,
   TASKS_PLUGINS_API_BASE,
@@ -55,8 +56,10 @@ export function useTaskDetail(taskName: string | undefined) {
       return data;
     },
     refetchInterval: (query) => {
-      const running = query.state.data?.running_tasks ?? [];
-      return running.length > 0 ? TASK_DETAIL_POLL_MS : false;
+      const historyItems = query.state.data?.execution_history.items ?? [];
+      return historyItems.some((item) => RUNNING_STATUSES.has(item.status))
+        ? TASK_DETAIL_POLL_MS
+        : false;
     },
   });
 }

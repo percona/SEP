@@ -40,6 +40,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ChainDisplay,
+  RUNNING_STATUSES,
   SEP_TABLE_CLASS,
   TaskHistoryTable,
   TaskLogViewer,
@@ -140,8 +141,8 @@ export function TaskDetailPage() {
 
   const task = data?.task;
   const isTemplate = task?.is_template ?? false;
-  const runningTasks = data?.running_tasks ?? [];
   const historyItems = data?.execution_history.items ?? [];
+  const runningTasks = historyItems.filter((item) => RUNNING_STATUSES.has(item.status));
   const periodicSummary = data?.periodic_summary ?? [];
 
   if (isLoading) {
@@ -184,9 +185,7 @@ export function TaskDetailPage() {
         <Box component="dl" sx={{ m: 0 }}>
           <DetailField label="Engine" value={task.backend || '—'} />
           <DetailField label="Created" value={formatTimestamp(task.created_at)} />
-          {task.created_by ? (
-            <DetailField label="Created by" value={task.created_by} />
-          ) : null}
+          {task.created_by ? <DetailField label="Created by" value={task.created_by} /> : null}
           {task.last_updated_by ? (
             <DetailField label="Last modified by" value={task.last_updated_by} />
           ) : null}
@@ -245,7 +244,7 @@ export function TaskDetailPage() {
           <span>
             Task logs
             {logsEntry?.task?.name ? ` — ${logsEntry.task.name}` : ''}
-            {logsEntry?.id !== null && logsEntry?.id !== undefined ? ` #${logsEntry.id}` : ''}
+            {logsEntry?.id != null ? ` #${logsEntry.id}` : ''}
           </span>
           <IconButton
             aria-label="Close logs dialog"
@@ -256,7 +255,7 @@ export function TaskDetailPage() {
           </IconButton>
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0 }}>
-          {logsEntry?.id !== null && logsEntry?.id !== undefined ? (
+          {logsEntry?.id != null ? (
             <TaskLogViewer
               taskHistoryId={logsEntry.id}
               taskStatus={logsEntry.status}

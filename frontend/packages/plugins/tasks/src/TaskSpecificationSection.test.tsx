@@ -45,9 +45,7 @@ describe('TaskSpecificationSection', () => {
       last_updated_by: null,
     };
 
-    render(
-      <TaskSpecificationSection task={task} />,
-    );
+    render(<TaskSpecificationSection task={task} />);
 
     expect(screen.getByRole('button', { name: 'Specification' })).toHaveAttribute(
       'aria-expanded',

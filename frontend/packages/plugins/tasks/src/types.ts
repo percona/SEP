@@ -16,7 +16,6 @@
  */
 
 import type { TasksComponents } from '@sep/api';
-import type { TaskHistoryEntry } from '@sep/framework';
 
 /** Plugin key used for ``/api/plugins/{name}/`` routes and schema fetching. */
 export const TASKS_PLUGIN_NAME = 'tasks';
@@ -51,17 +50,13 @@ export interface ExecutorHostRow {
 }
 
 export type TaskDetailTask = TasksComponents['schemas']['TaskResponse'];
+export type TaskExecutionHistory =
+  TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
 
 /** Payload from ``GET /api/plugins/tasks/{task_name}``. */
 export interface TaskDetailBundle {
   task: TaskDetailTask;
-  running_tasks: TaskHistoryEntry[];
-  execution_history: {
-    items: TaskHistoryEntry[];
-    total?: number;
-    offset?: number;
-    limit?: number;
-  };
+  execution_history: TaskExecutionHistory;
   periodic_summary: PeriodicTaskSummaryRow[];
   executor_hosts: ExecutorHostRow[];
 }

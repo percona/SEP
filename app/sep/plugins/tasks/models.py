@@ -17,9 +17,9 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field, model_validator
 
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import NonEmptyStr, UTCDatetime
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskResponse
 
 
@@ -57,7 +57,7 @@ class TaskListResponse(BaseModel):
     :param backend: The backend system used for task execution.
     :type backend: TaskBackendEnum
     :param created_at: When the task was created, or ``None`` if unavailable.
-    :type created_at: str | None
+    :type created_at: UTCDatetime | None
     :param created_by: Display name for the task creator (Casdoor username when
         resolvable, otherwise the stored user id), or ``None`` if unknown.
     :type created_by: str | None
@@ -67,11 +67,9 @@ class TaskListResponse(BaseModel):
     :type last_updated_by: str | None
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     name: str
     backend: TaskBackendEnum
-    created_at: str | None = None
+    created_at: UTCDatetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
 
@@ -86,8 +84,6 @@ class ExecutorHostMetadata(BaseModel):
         display name).
     :type label: str
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     value: str
     label: str
@@ -107,10 +103,10 @@ class PeriodicTaskSummary(BaseModel):
     :type period: str | None
     :param next_run_at: The next scheduled run time in ISO 8601 format, or
         ``None`` when not scheduled.
-    :type next_run_at: str | None
+    :type next_run_at: UTCDatetime | None
     :param last_run_at: The last run time in ISO 8601 format, or ``None`` if
         the schedule has never run.
-    :type last_run_at: str | None
+    :type last_run_at: UTCDatetime | None
     :param total_run_count: The total number of times the schedule has run,
         or ``None`` when unavailable.
     :type total_run_count: int | None
@@ -119,29 +115,43 @@ class PeriodicTaskSummary(BaseModel):
     :type chain_task_names: list[str]
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     id: int
     name: str
     enabled: bool
     period: str | None = None
-    next_run_at: str | None = None
-    last_run_at: str | None = None
+    next_run_at: UTCDatetime | None = None
+    last_run_at: UTCDatetime | None = None
     total_run_count: int | None = None
     chain_task_names: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_chain_task_names(cls, data: Any) -> Any:
+        """Populate ``chain_task_names`` from ``execute_request`` before validation.
+
+        :param data: The raw periodic-task payload from the tasks API.
+        :type data: Any
+        :return: The payload with ``chain_task_names`` normalized for validation.
+        :rtype: Any
+        """
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        execute_request = normalized.get("execute_request") or {}
+        normalized["chain_task_names"] = (
+            execute_request.get("chain_task_names") or []
+        )
+        return normalized
 
 
 class TaskDetailResponse(BaseModel):
     """Represent the aggregate payload for ``GET /api/plugins/tasks/{task_name}``.
 
-    Bundles the task definition, running executions, execution history,
-    periodic schedules, and executor host metadata into a single response for
-    the React detail page.
+    Bundle the task definition, execution history, periodic schedules, and
+    executor host metadata into a single response for the React detail page.
 
     :param task: The task definition as returned by the tasks API.
     :type task: TaskResponse
-    :param running_tasks: Task history rows with status ``RUNNING``.
-    :type running_tasks: list[dict[str, Any]]
     :param execution_history: Paginated task history from the tasks API
         (``items``, ``total``, ``offset``, ``limit``).
     :type execution_history: dict[str, Any]
@@ -153,10 +163,9 @@ class TaskDetailResponse(BaseModel):
     :type executor_hosts: list[ExecutorHostMetadata]
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     task: TaskResponse
-    running_tasks: list[dict[str, Any]] = Field(default_factory=list)
-    execution_history: dict[str, Any] = Field(default_factory=lambda: {"items": []})
+    execution_history: dict[str, Any] = Field(
+        default_factory=lambda: {"items": [], "total": 0, "offset": 0, "limit": 0}
+    )
     periodic_summary: list[PeriodicTaskSummary] = Field(default_factory=list)
     executor_hosts: list[ExecutorHostMetadata] = Field(default_factory=list)
