@@ -73,8 +73,8 @@ class TestSnippetsApprovalApiReviewContracts:
         """The module route inventory includes all approval endpoints."""
         docstring = snippets_api_routes.__doc__ or ""
 
-        assert "PUT /{snippet_filename}/approval" in docstring
-        assert "DELETE /{snippet_filename}/approval" in docstring
+        assert "PUT /snippet/approval?snippet_filename=..." in docstring
+        assert "DELETE /snippet/approval?snippet_filename=..." in docstring
         assert "PATCH /approvals" in docstring
 
     def test_batch_approve_base_is_not_exported(self):
@@ -156,12 +156,58 @@ class TestSnippetsPluginSchema:
 
 
 @pytest.mark.asyncio
+class TestSnippetsApiSnippetFilenameQueryParam:
+    """Contract tests for the required ``snippet_filename`` query parameter."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/snippet/schema",
+            "/snippet/preview",
+        ],
+    )
+    async def test_returns_422_when_snippet_filename_missing(self, test_client, path):
+        """Requests without ``snippet_filename`` are rejected before snippet lookup."""
+        response = test_client.get(f"{API_BASE}{path}")
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            err.get("loc") == ["query", "snippet_filename"]
+            for err in detail
+            if isinstance(err, dict)
+        )
+
+    @pytest.mark.parametrize(
+        "bad_filename",
+        [
+            "..evil.sh",
+            ".hidden.sh",
+            "no-extension",
+        ],
+    )
+    async def test_traversal_or_unsafe_filename_returns_400(
+        self, test_client, bad_filename
+    ):
+        """Filenames with traversal sequences or invalid forms return 400."""
+        response = test_client.get(
+            f"{API_BASE}/snippet/schema",
+            params={"snippet_filename": bad_filename},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.asyncio
 class TestSnippetsApiPerSnippetSchema:
-    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/schema``."""
+    """Tests for ``GET /api/plugins/snippets/snippet/schema``."""
 
     async def test_returns_404_for_unknown_snippet(self, test_client):
         """A missing snippet filename surfaces as a 404."""
-        response = test_client.get(f"{API_BASE}/missing.sh/schema")
+        response = test_client.get(
+            f"{API_BASE}/snippet/schema",
+            params={"snippet_filename": "missing.sh"},
+        )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -171,7 +217,10 @@ class TestSnippetsApiPerSnippetSchema:
         """The schema exposes a dedicated post-submit ScriptPreview section."""
         snippet = await create_snippet("hello.sh", approved=True)
 
-        response = test_client.get(f"{API_BASE}/{snippet.filename}/schema")
+        response = test_client.get(
+            f"{API_BASE}/snippet/schema",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -195,7 +244,7 @@ class TestSnippetsApiPerSnippetSchema:
         )
         assert preview_field["label"] == "Snippet file"
         assert preview_field["endpoint_url"] == (
-            f"/plugins/snippets/{snippet.filename}/preview"
+            f"/plugins/snippets/snippet/preview?snippet_filename={snippet.filename}"
         )
 
 
@@ -209,7 +258,10 @@ class TestSnippetsApiScriptPreview:
         """The preview response carries content, truncation flag, and a language hint."""
         snippet = await create_snippet("hello.sh", approved=True)
 
-        response = test_client.get(f"{API_BASE}/{snippet.filename}/preview")
+        response = test_client.get(
+            f"{API_BASE}/snippet/preview",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -232,7 +284,8 @@ class TestSnippetsApiScriptPreview:
             side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "boom"),
         ):
             response = test_client.get(
-                f"{API_BASE}/{snippet.filename}/preview",
+                f"{API_BASE}/snippet/preview",
+                params={"snippet_filename": snippet.filename},
             )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -244,6 +297,16 @@ class TestSnippetsApiScriptPreview:
         snippet = await create_snippet("hello.sh", approved=True)
 
         response = test_client.get(f"{API_BASE}/{snippet.filename}/script-preview")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_legacy_path_segment_route_returns_404(
+        self, test_client, create_snippet
+    ):
+        """The old ``/{filename}/preview`` path returns 404; preview lives under ``/snippet/preview``."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/preview")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -259,7 +322,10 @@ class TestSnippetsApiDownload:
         snippet = await create_snippet("hello.sh", approved=True)
         on_disk = (snippets_dir / snippet.filename).read_bytes()
 
-        response = test_client.get(f"{API_BASE}/{snippet.filename}/download")
+        response = test_client.get(
+            f"{API_BASE}/snippet/download",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_200_OK
         # ``FileResponse`` sets the disposition with a quoted filename.
@@ -275,7 +341,8 @@ class TestSnippetsApiDownload:
         snippet = await create_snippet("hello.sh", approved=True)
 
         response = api_unauthenticated_client.get(
-            f"{API_BASE}/{snippet.filename}/download",
+            f"{API_BASE}/snippet/download",
+            params={"snippet_filename": snippet.filename},
             follow_redirects=False,
         )
 
@@ -283,7 +350,10 @@ class TestSnippetsApiDownload:
 
     async def test_returns_404_for_unknown_snippet(self, test_client):
         """A missing DB row surfaces as a 404."""
-        response = test_client.get(f"{API_BASE}/missing.sh/download")
+        response = test_client.get(
+            f"{API_BASE}/snippet/download",
+            params={"snippet_filename": "missing.sh"},
+        )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -294,7 +364,10 @@ class TestSnippetsApiDownload:
         snippet = await create_snippet("hello.sh", approved=True)
         (snippets_dir / snippet.filename).unlink()
 
-        response = test_client.get(f"{API_BASE}/{snippet.filename}/download")
+        response = test_client.get(
+            f"{API_BASE}/snippet/download",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -324,7 +397,10 @@ class TestSnippetsApiHistory:
         }
         mock_task_api_dep.get = AsyncMock(return_value=upstream_payload)
 
-        response = test_client.get(f"{API_BASE}/{snippet.filename}/history")
+        response = test_client.get(
+            f"{API_BASE}/snippet/history",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -346,7 +422,8 @@ class TestSnippetsApiExecute:
         snippet = await create_snippet("hello.sh", approved=False)
 
         response = test_client.post(
-            f"{API_BASE}/{snippet.filename}/execute",
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
             json={"executor_host": "host1"},
         )
 
@@ -358,7 +435,8 @@ class TestSnippetsApiExecute:
     ):
         """Executing an unknown snippet returns 404 without calling the tasks API."""
         response = test_client.post(
-            f"{API_BASE}/missing.sh/execute",
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": "missing.sh"},
             json={"executor_host": "host1"},
         )
 
@@ -373,7 +451,8 @@ class TestSnippetsApiExecute:
         mock_task_api_dep.post = AsyncMock(return_value={"id": 99})
 
         response = test_client.post(
-            f"{API_BASE}/{snippet.filename}/execute",
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
             json={"executor_host": "host1", "args": {}},
         )
 
@@ -401,7 +480,10 @@ class TestSnippetsApiPutApproval:
         """An unapproved snippet flips to approved with admin attribution."""
         snippet = await create_snippet("hello.sh", approved=False)
 
-        response = api_admin_client.put(f"{API_BASE}/{snippet.filename}/approval")
+        response = api_admin_client.put(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -423,7 +505,10 @@ class TestSnippetsApiPutApproval:
         original_updated_by = snippet.updated_by
         original_reason = snippet.reason
 
-        response = api_admin_client.put(f"{API_BASE}/{snippet.filename}/approval")
+        response = api_admin_client.put(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -438,7 +523,10 @@ class TestSnippetsApiPutApproval:
         """A non-admin caller cannot approve."""
         snippet = await create_snippet("hello.sh", approved=False)
 
-        response = api_non_admin_client.put(f"{API_BASE}/{snippet.filename}/approval")
+        response = api_non_admin_client.put(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -449,14 +537,18 @@ class TestSnippetsApiPutApproval:
         snippet = await create_snippet("hello.sh", approved=False)
 
         response = api_unauthenticated_client.put(
-            f"{API_BASE}/{snippet.filename}/approval"
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     async def test_missing_snippet_returns_404(self, api_admin_client):
         """An unknown filename surfaces as 404."""
-        response = api_admin_client.put(f"{API_BASE}/missing.sh/approval")
+        response = api_admin_client.put(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": "missing.sh"},
+        )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -472,7 +564,10 @@ class TestSnippetsApiPutApproval:
         self, api_admin_client, bad_filename
     ):
         """Filenames with traversal sequences or invalid forms return 400."""
-        response = api_admin_client.put(f"{API_BASE}/{bad_filename}/approval")
+        response = api_admin_client.put(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": bad_filename},
+        )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -487,7 +582,10 @@ class TestSnippetsApiDeleteApproval:
         """An approved snippet flips back to unapproved with admin attribution."""
         snippet = await create_snippet("hello.sh", approved=True)
 
-        response = api_admin_client.delete(f"{API_BASE}/{snippet.filename}/approval")
+        response = api_admin_client.delete(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert response.content == b""
@@ -505,7 +603,10 @@ class TestSnippetsApiDeleteApproval:
         original_updated_by = snippet.updated_by
         original_reason = snippet.reason
 
-        response = api_admin_client.delete(f"{API_BASE}/{snippet.filename}/approval")
+        response = api_admin_client.delete(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
+        )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         await session.refresh(snippet)
@@ -517,14 +618,18 @@ class TestSnippetsApiDeleteApproval:
         snippet = await create_snippet("hello.sh", approved=True)
 
         response = api_non_admin_client.delete(
-            f"{API_BASE}/{snippet.filename}/approval"
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_missing_snippet_returns_404(self, api_admin_client):
         """An unknown filename surfaces as 404 (distinct from the 204 idempotent path)."""
-        response = api_admin_client.delete(f"{API_BASE}/missing.sh/approval")
+        response = api_admin_client.delete(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": "missing.sh"},
+        )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -540,7 +645,10 @@ class TestSnippetsApiDeleteApproval:
         self, api_admin_client, bad_filename
     ):
         """Filenames with traversal sequences or invalid forms return 400."""
-        response = api_admin_client.delete(f"{API_BASE}/{bad_filename}/approval")
+        response = api_admin_client.delete(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": bad_filename},
+        )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -551,7 +659,8 @@ class TestSnippetsApiDeleteApproval:
         snippet = await create_snippet("hello.sh", approved=True)
 
         response = api_unauthenticated_client.delete(
-            f"{API_BASE}/{snippet.filename}/approval"
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -931,6 +1040,141 @@ class TestSnippetsApiRefresh:
         response = api_admin_client.post(self.URL)
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiNestedFilenameContract:
+    """Tests for per-snippet routes when ``snippet_filename`` contains ``/`` (query-param contract)."""
+
+    NESTED_FILENAME = "diag/slow-query.sh"
+
+    async def test_get_per_snippet_schema(self, test_client, create_snippet):
+        """The per-snippet schema embeds a preview URL with ``/`` encoded in the query string."""
+        snippet = await create_snippet(self.NESTED_FILENAME, approved=True)
+
+        response = test_client.get(
+            f"{API_BASE}/snippet/schema",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        preview_section = next(
+            section for section in body["forms"] if section["title"] == "Script preview"
+        )
+        preview_field = next(
+            field
+            for field in preview_section["fields"]
+            if field["type"] == "script_preview"
+        )
+        # The baked URL must round-trip through the same builder shape so a
+        # client following it lands on the right preview endpoint.
+        assert preview_field["endpoint_url"] == (
+            "/plugins/snippets/snippet/preview?snippet_filename=diag%2Fslow-query.sh"
+        )
+
+    async def test_get_script_preview(self, test_client, create_snippet):
+        """The preview endpoint returns 200 and UTF-8 body text for a nested-path snippet key."""
+        snippet = await create_snippet(self.NESTED_FILENAME, approved=True)
+
+        response = test_client.get(
+            f"{API_BASE}/snippet/preview",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert "echo hi" in body["content"]
+
+    async def test_get_download(self, test_client, create_snippet, snippets_dir):
+        """The download endpoint streams on-disk bytes and quotes the full relative filename in ``Content-Disposition``."""
+        snippet = await create_snippet(self.NESTED_FILENAME, approved=True)
+        on_disk = (snippets_dir / snippet.filename).read_bytes()
+
+        response = test_client.get(
+            f"{API_BASE}/snippet/download",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.content == on_disk
+        disposition = response.headers["content-disposition"]
+        # ``FileResponse`` keeps the raw filename including the ``/``.
+        assert f'filename="{snippet.filename}"' in disposition
+
+    async def test_get_history(self, test_client, mock_task_api_dep, create_snippet):
+        """History endpoint passes the nested ``snippet_filename`` through to the tasks API filter unchanged."""
+        snippet = await create_snippet(self.NESTED_FILENAME, approved=True)
+        mock_task_api_dep.get = AsyncMock(
+            return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+        )
+
+        response = test_client.get(
+            f"{API_BASE}/snippet/history",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        call = mock_task_api_dep.get.call_args_list[0]
+        assert call.kwargs["params"] == {"snippet_filename": snippet.filename}
+
+    async def test_post_execute(self, test_client, mock_task_api_dep, create_snippet):
+        """Successful execution returns 201 and posts task ``meta`` with the nested snippet filename."""
+        snippet = await create_snippet(self.NESTED_FILENAME, approved=True)
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 7})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert body["snippet_filename"] == snippet.filename
+        meta = mock_task_api_dep.post.call_args.kwargs["json"]["meta"]
+        assert meta["_snippet_filename"] == snippet.filename
+
+    async def test_put_approval(
+        self, api_admin_client, create_snippet, session: AsyncSession
+    ):
+        """PUT approval flips a nested-path snippet to approved and persists it."""
+        snippet = await create_snippet(self.NESTED_FILENAME, approved=False)
+
+        response = api_admin_client.put(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["filename"] == snippet.filename
+        assert body["is_approved"] is True
+        await session.refresh(snippet)
+        assert snippet.is_approved is True
+
+    async def test_delete_approval(
+        self, api_admin_client, create_snippet, session: AsyncSession
+    ):
+        """DELETE approval clears approval for a nested-path snippet (204 + DB state)."""
+        snippet = await create_snippet(self.NESTED_FILENAME, approved=True)
+
+        response = api_admin_client.delete(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(snippet)
+        assert snippet.is_approved is False
+
+    async def test_legacy_path_shape_does_not_match(self, test_client, create_snippet):
+        """Legacy ``GET /{snippet_filename}/preview`` with a nested key returns 404 — no compatibility alias."""
+        snippet = await create_snippet(self.NESTED_FILENAME, approved=True)
+
+        response = test_client.get(f"{API_BASE}/{snippet.filename}/preview")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 # Override the module-level test_client fixture so it uses the same in-memory

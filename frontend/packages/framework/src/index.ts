@@ -66,6 +66,9 @@ export { ChainBuilder } from './components/ChainBuilder';
 export type { ChainBuilderProps, ChainValue, AvailableTask } from './components/ChainBuilder';
 export { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
+export { default as DetailSyntaxHighlighter } from './components/SchemaDrivenPlugin/DetailSyntaxHighlighter';
+export { detailSyntaxBlockSx } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
+export type { DetailSyntaxLanguage } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
 
 // Hooks
 export { useServices, useSchemas, useTables, useHosts } from './hooks';
@@ -122,6 +125,11 @@ export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/
 
 export {
   SNIPPETS_PLUGINS_API_BASE,
+  SNIPPET_PLUGIN_PER_SNIPPET_BASE,
+  snippetPluginApprovalPath,
+  snippetPluginDownloadPath,
   snippetPluginExecutePath,
+  snippetPluginHistoryPath,
+  snippetPluginPreviewPath,
   snippetPluginSchemaPath,
 } from './snippetPluginPaths';
