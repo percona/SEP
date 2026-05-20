@@ -38,7 +38,7 @@ services:
       - 5432
 
   redis:
-    image: docker.io/library/redis:7-alpine
+    image: docker.io/library/redis:7-bookworm
     command: redis-server --port 6379 --bind 127.0.0.1 --requirepass "${SEP_REDIS_PASSWORD}"
     environment:
       SEP_REDIS_PASSWORD: "${SEP_REDIS_PASSWORD}"
@@ -130,7 +130,7 @@ services:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 
   nginx:
-    image: docker.io/library/nginx:1.27-alpine
+    image: docker.io/library/nginx:1.27-bookworm
     ports:
       - "${NGINX_HTTP_PORT:-80}:80"
       - "${NGINX_HTTPS_PORT:-443}:443"
