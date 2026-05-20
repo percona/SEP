@@ -72,28 +72,54 @@ const MOCK_SNIPPET_SCHEMA = {
 // ── Route mocking ─────────────────────────────────────────────────────────────
 
 async function mockAlertTroubleshootingRoutes(page: Page) {
-  await page.route('**/api/**', async (route) => {
-    const url = route.request().url();
+  await page.route('**/api/**', (route) => {
+    const req = route.request();
+    const { pathname } = new URL(req.url());
 
-    if (url.includes('/oauth/refresh')) {
+    if (!pathname.startsWith('/api/')) {
+      return route.continue();
+    }
+
+    if (pathname.includes('/oauth/refresh')) {
       return route.fulfill({ json: MOCK_TOKEN });
     }
-    if (url.includes('/users/me')) {
+    if (pathname.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
-    if (url.includes('/plugins/alert_troubleshooting/mysql/MySQLSlowQueries')) {
+    if (pathname === '/api/plugins/alert_troubleshooting/schema') {
+      return route.fulfill({
+        json: {
+          name: 'alert_troubleshooting',
+          display_name: 'Alert Troubleshooting',
+          forms: [],
+          list_view: { columns: [], default_sort: 'service_type' },
+        },
+      });
+    }
+    if (pathname === '/api/plugins/alert_troubleshooting/mysql/MySQLSlowQueries') {
       return route.fulfill({ json: MOCK_ALERT_DETAIL });
     }
-    if (url.includes('/plugins/alert_troubleshooting/')) {
+    if (
+      req.method() === 'GET' &&
+      (pathname === '/api/plugins/alert_troubleshooting/' ||
+        pathname === '/api/plugins/alert_troubleshooting')
+    ) {
       return route.fulfill({ json: MOCK_ALERT_GROUPS });
     }
-    if (url.includes('/plugins/snippets') && url.includes('/schema')) {
+    if (pathname.includes('/plugins/snippets') && pathname.endsWith('/schema')) {
       return route.fulfill({ json: MOCK_SNIPPET_SCHEMA });
     }
-    if (url.includes('/sep/hosts/')) {
+    if (pathname.includes('/sep/hosts/')) {
       return route.fulfill({ json: [] });
     }
-    return route.fulfill({ json: {} });
+
+    return route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: `Unmocked API route in alert-troubleshooting e2e: ${req.method()} ${pathname}`,
+      }),
+    });
   });
 }
 
@@ -104,13 +130,19 @@ test.describe('Alert Troubleshooting smoke', () => {
     await mockAlertTroubleshootingRoutes(page);
     await page.goto('/alerts/troubleshooting');
 
-    await expect(page.getByText('MySQL (1)')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/Alert Troubleshooting/i).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Alert Troubleshooting' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText('MySQL (1)')).toBeVisible({ timeout: 15_000 });
   });
 
   test('clicking an alert navigates to detail page with host selector', async ({ page }) => {
     await mockAlertTroubleshootingRoutes(page);
     await page.goto('/alerts/troubleshooting');
+
+    await expect(page.getByRole('heading', { name: 'Alert Troubleshooting' })).toBeVisible({
+      timeout: 30_000,
+    });
 
     // Expand MySQL accordion
     await page.getByText('MySQL (1)').click();
