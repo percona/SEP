@@ -15,6 +15,7 @@
 
 """Define dependencies for the Backups plugin."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -363,12 +364,12 @@ async def get_mysql_backups_api_task_responses(
     params = {"owner": TaskOwner.BACKUPS.value}
     response = await tasks_api.get("/", params=params)
     tasks = [Task.model_validate(task) for task in response["items"]]
-    task_status_pairs = [
-        (task, await get_backups_task_status(task.name, tasks_api)) for task in tasks
-    ]
+    task_statuses = await asyncio.gather(
+        *(get_backups_task_status(task.name, tasks_api) for task in tasks)
+    )
     return [
         build_mysql_backups_api_task_response(task, status=task_status)
-        for task, task_status in task_status_pairs
+        for task, task_status in zip(tasks, task_statuses, strict=True)
         if status is None or task_status == status
     ]
 
