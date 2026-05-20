@@ -15,6 +15,8 @@
 
 """Tests for the snippets plugin schema synthesiser."""
 
+from urllib.parse import urlencode
+
 import pytest
 
 from app.sep.plugins.framework.schema import (
@@ -52,7 +54,7 @@ def _script_preview_section(schema):
 
 @pytest.mark.asyncio
 async def test_per_snippet_schema_includes_host_and_preview(create_snippet):
-    """Per-snippet schema keeps host in Execution and preview in its own section."""
+    """Per-snippet schema keeps host in Execution; preview is a separate collapsible section using the query API."""
     snippet = await create_snippet("hello.sh", approved=True)
 
     schema = build_snippet_schema(snippet)
@@ -69,7 +71,32 @@ async def test_per_snippet_schema_includes_host_and_preview(create_snippet):
         f for f in preview_section.fields if isinstance(f, ScriptPreviewField)
     )
     assert preview.label == "Snippet file"
-    assert preview.endpoint_url == (f"/plugins/snippets/{snippet.filename}/preview")
+    assert preview.endpoint_url == (
+        "/plugins/snippets/snippet/preview?"
+        + urlencode({"snippet_filename": snippet.filename})
+    )
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_url_encodes_nested_filenames(create_snippet):
+    """Nested relative keys encode ``/`` as ``%2F`` in ``snippet_filename`` only — the preview path segment stays constant."""
+    snippet = await create_snippet("diag/slow-query.sh", approved=True)
+
+    schema = build_snippet_schema(snippet)
+
+    preview_section = _script_preview_section(schema)
+    preview = next(
+        f for f in preview_section.fields if isinstance(f, ScriptPreviewField)
+    )
+    assert preview.endpoint_url == (
+        "/plugins/snippets/snippet/preview?"
+        + urlencode({"snippet_filename": snippet.filename})
+    )
+    path, _, _query = preview.endpoint_url.partition("?")
+    assert path == "/plugins/snippets/snippet/preview"
+    assert "%2F" not in path
+    assert "diag" not in path
+    assert "slow-query" not in path
 
 
 @pytest.mark.asyncio
