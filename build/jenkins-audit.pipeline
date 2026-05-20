@@ -44,6 +44,11 @@ pipeline {
 		PYTHON = "python${pyVersion}"
 		PYTHON_VERSION = "${pyVersion}"
 
+		// Pinned to match .github/workflows/ci.yml.
+		NODE_VERSION = "22.13.0"
+		PNPM_VERSION = "11.1.2"
+		PATH = "${env.WORKSPACE}/build/node/bin:${env.PATH}"
+
 		RELEASE_VER = "${releaseTag}"
 
 	}
@@ -85,8 +90,30 @@ pipeline {
 					venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel
 
 					${PYTHON} -m venv build/venv
-					build/venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel poetry
+					build/venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel 'poetry==2.4.1'
+					# Pre-install so Poetry's project-scoped plugin self-install
+					# never runs — that solver hits PyPI live and trips
+					# `solver.min-release-age` in poetry.toml on fresh transitives.
+					build/venv/bin/${PYTHON} -m pip install --no-cache 'poetry-plugin-export>=1.9.0,<2.0.0'
+					build/venv/bin/poetry check --lock --strict
 					build/venv/bin/poetry install --with audit
+
+					# Node + pnpm for the frontend pre-commit hooks (oxfmt, oxlint).
+					# `npm i -g pnpm` (not corepack) matches ci.yml and avoids
+					# corepack's outdated signing-key check in Node 22.13.0.
+					NODE_TARBALL="node-v${NODE_VERSION}-linux-x64"
+					NODE_TMP="$(mktemp -d)"
+					curl -fsSL -o "${NODE_TMP}/${NODE_TARBALL}.tar.xz" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}.tar.xz"
+					curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+						| grep " ${NODE_TARBALL}.tar.xz$" \
+						| (cd "${NODE_TMP}" && sha256sum --check --status)
+					tar -xJf "${NODE_TMP}/${NODE_TARBALL}.tar.xz" -C "${NODE_TMP}"
+					rm -rf build/node
+					mv "${NODE_TMP}/${NODE_TARBALL}" build/node
+					rm -rf "${NODE_TMP}"
+					build/node/bin/node --version
+					build/node/bin/npm install -g "pnpm@${PNPM_VERSION}"
+					(cd frontend && pnpm install --frozen-lockfile)
 				'''
 			}
 		}
