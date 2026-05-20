@@ -18,7 +18,91 @@
 import pytest
 from pydantic import ValidationError
 
-from app.sep.plugins.inventory.models import InventorySyncScheduleCreateForm
+from app.sep.plugins.inventory.deps import AvailableSyncer
+from app.sep.plugins.inventory.models import (
+    InventorySyncScheduleCreateForm,
+    PluginTaskResponse,
+)
+
+
+class TestPluginTaskResponse:
+    """Tests for the PluginTaskResponse model."""
+
+    def test_accepts_valid_data(self) -> None:
+        """Ensure model instantiates from valid name and display_name."""
+        task = PluginTaskResponse(name="inventory-sync", display_name="Inventory Sync")
+        assert task.name == "inventory-sync"
+        assert task.display_name == "Inventory Sync"
+
+    def test_rejects_missing_name(self) -> None:
+        """Ensure missing ``name`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            PluginTaskResponse(display_name="Inventory Sync")
+
+    def test_rejects_missing_display_name(self) -> None:
+        """Ensure missing ``display_name`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            PluginTaskResponse(name="inventory-sync")
+
+    def test_name_must_be_string(self) -> None:
+        """Ensure non-string ``name`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            PluginTaskResponse(name=123, display_name="Inventory Sync")
+
+    def test_display_name_must_be_string(self) -> None:
+        """Ensure non-string ``display_name`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            PluginTaskResponse(name="inventory-sync", display_name=123)
+
+    def test_serializes_to_dict(self) -> None:
+        """Ensure model_dump returns expected keys."""
+        task = PluginTaskResponse(name="inventory-sync", display_name="Inventory Sync")
+        dumped = task.model_dump()
+        assert dumped == {"name": "inventory-sync", "display_name": "Inventory Sync"}
+
+
+class TestAvailableSyncer:
+    """Tests for the AvailableSyncer model."""
+
+    def test_accepts_valid_data(self) -> None:
+        """Ensure model instantiates from valid name and display_name."""
+        syncer = AvailableSyncer(
+            name="app.sep.sync.syncers.pmm.PMMSyncer",
+            display_name="PMM",
+        )
+        assert syncer.name == "app.sep.sync.syncers.pmm.PMMSyncer"
+        assert syncer.display_name == "PMM"
+
+    def test_rejects_missing_name(self) -> None:
+        """Ensure missing ``name`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            AvailableSyncer(display_name="PMM")
+
+    def test_rejects_missing_display_name(self) -> None:
+        """Ensure missing ``display_name`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            AvailableSyncer(name="app.sep.sync.syncers.pmm.PMMSyncer")
+
+    def test_name_must_be_string(self) -> None:
+        """Ensure non-string ``name`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            AvailableSyncer(name=42, display_name="PMM")
+
+    def test_display_name_must_be_string(self) -> None:
+        """Ensure non-string ``display_name`` raises ValidationError."""
+        with pytest.raises(ValidationError):
+            AvailableSyncer(name="app.sep.sync.syncers.pmm.PMMSyncer", display_name=42)
+
+    def test_serializes_to_dict(self) -> None:
+        """Ensure model_dump returns expected keys."""
+        syncer = AvailableSyncer(
+            name="app.sep.sync.syncers.pmm.PMMSyncer",
+            display_name="PMM",
+        )
+        assert syncer.model_dump() == {
+            "name": "app.sep.sync.syncers.pmm.PMMSyncer",
+            "display_name": "PMM",
+        }
 
 
 def test_inventory_sync_schedule_form_rejects_cron_with_too_few_tokens() -> None:
