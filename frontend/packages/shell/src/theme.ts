@@ -34,6 +34,17 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
     components: {
       MuiButton: {
         variants: [
+          ...(mode === 'light'
+            ? [
+                {
+                  props: { variant: 'outlined' as const },
+                  style: {
+                    backgroundColor:
+                      sepThemeOptionsOriginal(mode).palette?.background?.paper ?? '#fff',
+                  },
+                },
+              ]
+            : []),
           { props: { variant: 'contained', color: 'success' }, style: { color: '#fff' } },
           { props: { variant: 'contained', color: 'error' }, style: { color: '#fff' } },
           // Only override warning text color in light mode; dark mode keeps MUI's computed contrastText.
@@ -59,9 +70,16 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
               [`&.${SEP_TABLE_CLASS} .MuiTableRow-root:not([data-running="true"])`]: {
                 backgroundColor: theme.palette.background.paper + ' !important',
               },
-              [`&.${SEP_TABLE_CLASS} .MuiInputBase-root`]: {
-                backgroundColor: theme.palette.background.paper,
-              },
+            }),
+          }),
+        },
+      },
+      // This is needed to fix the bg color on Input, Select, Autocomplete, etc. This is on purpose.
+      MuiInputBase: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            ...(theme.palette.mode === 'light' && {
+              backgroundColor: theme.palette.background.paper,
             }),
           }),
         },

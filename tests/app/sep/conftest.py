@@ -25,8 +25,13 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from pytest_mock import MockerFixture
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import StaticPool
+from sqlmodel import SQLModel
 
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
+from app.core.utils import json_serializer
 from app.models import CasdoorUser
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -36,6 +41,21 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
+
+
+@pytest_asyncio.fixture(name="session")
+async def session_fixture() -> AsyncSession:
+    """Create an async db session for testing."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(engine)
+    async with async_session_maker() as session:
+        yield session
 
 
 @pytest.fixture

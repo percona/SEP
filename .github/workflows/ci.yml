@@ -45,7 +45,7 @@ jobs:
 
   # Detect changed file types to gate downstream jobs.
   # Python/frontend patterns mirror .github/labeler.yml; CI also tracks
-  # .pre-commit-config.yaml separately to trigger precommit-heavy.
+  # .pre-commit-config.yaml separately to trigger precommit-python / precommit-frontend.
   changes:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
@@ -83,10 +83,13 @@ jobs:
               - 'frontend/**'
               - 'pyproject.toml'
               - 'poetry.lock'
+              - 'snippets/**'
+              - 'static/**'
+              - 'templates/**'
+              - 'entrypoint.sh'
+              - 'entrypoint_celery.sh'
               - 'Makefile'
-              - 'scripts/**'
-              - 'sep_installer.sh'
-              - 'sep_installer.sha256'
+              - 'alembic.ini'
 
   precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
@@ -98,7 +101,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Python
-        uses: ./.github/actions/setup-python-job
+        uses: actions/setup-python@28f2168f4d98ee0445e3c6321f6e6616c83dd5ec # v6.2.0
+        with:
+          python-version: "3.11"
 
       - name: Install pre-commit
         run: python -m pip install pre-commit==4.5.1
@@ -133,14 +138,13 @@ jobs:
         run: |
           pre-commit run --config .pre-commit-light-config.yaml --all-files
 
-  precommit-heavy:
+  precommit-python:
     if: >-
       ${{
         github.event.pull_request.draft == false &&
         (
           needs.changes.outputs.python == 'true' ||
           needs.changes.outputs.precommit == 'true' ||
-          needs.changes.outputs.frontend == 'true' ||
           needs.changes.outputs.docker == 'true' ||
           needs.changes.outputs.shell == 'true'
         )
@@ -154,10 +158,47 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Python
-        uses: ./.github/actions/setup-python-job
+        uses: actions/setup-python@28f2168f4d98ee0445e3c6321f6e6616c83dd5ec # v6.2.0
+        with:
+          python-version: "3.11"
 
-      - name: Install pnpm
-        run: npm install -g pnpm@11.1.2
+      - name: Install pre-commit
+        run: python -m pip install pre-commit==4.5.1
+
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Perform Python and system pre-commit checks
+        env:
+          SKIP: oxfmt,oxlint
+        run: pre-commit run --all-files
+
+  precommit-frontend:
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        (
+          needs.changes.outputs.frontend == 'true' ||
+          needs.changes.outputs.precommit == 'true'
+        )
+      }}
+    needs:
+      - label-gate
+      - changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 11.1.2
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -170,31 +211,16 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: frontend
 
-      - name: Cache Poetry virtualenv and wheel cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cache/pypoetry/virtualenvs
-            ~/.cache/pypoetry/cache
-          key: poetry-precommit-${{ runner.os }}-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
-          restore-keys: |
-            poetry-precommit-${{ runner.os }}-
+      - name: Run oxfmt
+        run: pnpm run format:check
+        working-directory: frontend
 
-      - name: Cache pre-commit hook environments
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
-          restore-keys: |
-            pre-commit-${{ runner.os }}-
-
-      - name: Perform pre-commit checks
-        env:
-          POETRY: poetry
-        run: make run-pre-commit
+      - name: Run oxlint
+        run: pnpm run lint
+        working-directory: frontend
 
   python:
-    # `lint-fmt-only`: precommit-heavy already re-runs the bumped linters.
+    # `lint-fmt-only`: precommit-python already re-runs the bumped linters.
     if: >-
       ${{
         github.event.pull_request.draft == false &&
@@ -219,9 +245,9 @@ jobs:
       - changes
 
   build:
-    # Run when Python or Docker-relevant paths change. Use always() so the job
-    # still runs when `python` is skipped (no .py changes but Containerfile /
-    # bundle assets changed). Any `python` failures will stop the run.
+    # Run when Docker-relevant paths change. Use always() so the job still runs
+    # when `python` is skipped (no .py changes but Containerfile / bundle assets
+    # changed). Any `python` failures will stop the run.
     # `lint-fmt-only`: audit-group deps not in the production image.
     if: >-
       ${{
@@ -230,7 +256,7 @@ jobs:
         needs.label-gate.result == 'success' &&
         needs.changes.result == 'success' &&
         (needs.python.result == 'success' || needs.python.result == 'skipped') &&
-        (needs.changes.outputs.python == 'true' || needs.changes.outputs.docker == 'true') &&
+        needs.changes.outputs.docker == 'true' &&
         !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
       }}
     runs-on: ubuntu-latest
@@ -273,7 +299,8 @@ jobs:
       - label-gate
       - changes
       - precommit-light
-      - precommit-heavy
+      - precommit-python
+      - precommit-frontend
       - python
       - frontend
       - build
