@@ -44,6 +44,7 @@ import myloginpath
 import pymysql
 from pymysql.cursors import DictCursor
 
+# Standalone payload: cannot import from app.* because it runs in an isolated executor venv.
 DEFAULT_MYSQL_PORT = 3306
 DEFAULT_CONNECT_TIMEOUT = 5
 DEFAULT_READ_TIMEOUT = 10
