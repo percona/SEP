@@ -34,6 +34,4 @@ export const detailSyntaxBlockSx: SxProps<Theme> = {
   border: 1,
   borderColor: 'divider',
   overflowX: 'auto',
-  maxHeight: 400,
-  overflowY: 'auto',
 };

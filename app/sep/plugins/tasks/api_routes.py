@@ -42,28 +42,10 @@ from app.sep.plugins.tasks.models import (
     TaskListResponse,
 )
 from app.sep.plugins.tasks.schema import TASKS_PLUGIN_SCHEMA
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskResponse
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=TASKS_PLUGIN_SCHEMA)
-
-
-def iso_or_none(value: Any) -> str | None:
-    """Return an ISO 8601 string for datetimes, or pass through strings unchanged.
-
-    :param value: A datetime, ISO string, or ``None``.
-    :type value: Any
-    :return: The serialized timestamp, or ``None``.
-    :rtype: str | None
-    """
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    return str(value)
-
 
 def resolve_user_display(
     user_id: str | None, user_id_to_username: dict[str, str]
@@ -97,8 +79,8 @@ def build_periodic_summary(item: dict[str, Any]) -> PeriodicTaskSummary:
         name=item["name"],
         enabled=item["enabled"],
         period=item.get("period"),
-        next_run_at=iso_or_none(item.get("next_run_at")),
-        last_run_at=iso_or_none(item.get("last_run_at")),
+        next_run_at=item.get("next_run_at"),
+        last_run_at=item.get("last_run_at"),
         total_run_count=item.get("total_run_count"),
         chain_task_names=chain_task_names,
     )
@@ -121,7 +103,7 @@ async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
         TaskListResponse(
             name=item["name"],
             backend=TaskBackendEnum(item["backend"]),
-            created_at=iso_or_none(item.get("created_at")),
+            created_at=item.get("created_at"),
             created_by=resolve_user_display(
                 item.get("created_by"), user_id_to_username
             ),
@@ -163,11 +145,11 @@ async def tasks_api_detail(
         periodic_response = await tasks_api.get(f"/{task.name}/periodic/")
         periodic_summary = [build_periodic_summary(item) for item in periodic_response]
         execution_history = await tasks_api.get(f"/{task.name}/history/")
-        running_response = await tasks_api.get(
-            f"/{task.name}/history/",
-            params={"status": TaskHistoryStatusEnum.RUNNING},
-        )
-        running_tasks = running_response["items"]
+        running_tasks = [
+            item
+            for item in execution_history["items"]
+            if item["status"] == TaskHistoryStatusEnum.RUNNING
+        ]
 
     executor_hosts = [
         ExecutorHostMetadata(value=host["value"], label=host["label"])
@@ -175,7 +157,7 @@ async def tasks_api_detail(
     ]
 
     return TaskDetailResponse(
-        task=task.model_dump(mode="json"),
+        task=TaskResponse.model_validate(task.model_dump(mode="json")),
         running_tasks=running_tasks,
         execution_history=execution_history,
         periodic_summary=periodic_summary,

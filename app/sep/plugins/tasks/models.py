@@ -20,7 +20,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils.fields import NonEmptyStr
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum, TaskOwner, TaskResponse
 
 
 class TaskCreateRequest(BaseModel):
@@ -67,6 +67,8 @@ class TaskListResponse(BaseModel):
     :type last_updated_by: str | None
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     backend: TaskBackendEnum
     created_at: str | None = None
@@ -84,6 +86,8 @@ class ExecutorHostMetadata(BaseModel):
         display name).
     :type label: str
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     value: str
     label: str
@@ -115,6 +119,8 @@ class PeriodicTaskSummary(BaseModel):
     :type chain_task_names: list[str]
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     id: int
     name: str
     enabled: bool
@@ -133,7 +139,7 @@ class TaskDetailResponse(BaseModel):
     the React detail page.
 
     :param task: The task definition as returned by the tasks API.
-    :type task: dict[str, Any]
+    :type task: TaskResponse
     :param running_tasks: Task history rows with status ``RUNNING``.
     :type running_tasks: list[dict[str, Any]]
     :param execution_history: Paginated task history from the tasks API
@@ -149,7 +155,7 @@ class TaskDetailResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    task: dict[str, Any]
+    task: TaskResponse
     running_tasks: list[dict[str, Any]] = Field(default_factory=list)
     execution_history: dict[str, Any] = Field(default_factory=lambda: {"items": []})
     periodic_summary: list[PeriodicTaskSummary] = Field(default_factory=list)

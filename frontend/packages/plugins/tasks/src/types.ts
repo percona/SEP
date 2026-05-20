@@ -15,13 +15,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import type { TasksComponents } from '@sep/api';
+import type { TaskHistoryEntry } from '@sep/framework';
+
 /** Plugin key used for ``/api/plugins/{name}/`` routes and schema fetching. */
 export const TASKS_PLUGIN_NAME = 'tasks';
 
 /** Base path for the tasks plugin JSON API under the SEP layer. */
 export const TASKS_PLUGINS_API_BASE = '/plugins/tasks';
-
-import type { TaskHistoryEntry } from '@sep/framework';
 
 /** One task row from ``GET /api/plugins/tasks/``. */
 export interface TaskListRow {
@@ -49,9 +50,11 @@ export interface ExecutorHostRow {
   label: string;
 }
 
+export type TaskDetailTask = TasksComponents['schemas']['TaskResponse'];
+
 /** Payload from ``GET /api/plugins/tasks/{task_name}``. */
 export interface TaskDetailBundle {
-  task: Record<string, unknown>;
+  task: TaskDetailTask;
   running_tasks: TaskHistoryEntry[];
   execution_history: {
     items: TaskHistoryEntry[];

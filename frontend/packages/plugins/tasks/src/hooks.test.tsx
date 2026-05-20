@@ -115,7 +115,21 @@ describe('useTaskDetail', () => {
       lastConfig = config;
       return Promise.resolve({
         data: {
-          task: { name: 'monitor-task', backend: 'nomad', is_template: false },
+          task: {
+            id: 1,
+            name: 'monitor-task',
+            data: {},
+            backend: 'nomad',
+            owner: 'sep',
+            is_template: false,
+            protected: false,
+            alert_on_fail: false,
+            deleted_at: null,
+            created_at: '2026-05-19T12:00:00Z',
+            updated_at: null,
+            created_by: null,
+            last_updated_by: null,
+          },
           running_tasks: [],
           execution_history: { items: [] },
           periodic_summary: [],

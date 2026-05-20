@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskHistoryEntry } from '@sep/framework';
 import { TaskDetailPage } from './TaskDetailPage';
 import { useTaskDetail } from './hooks';
-import type { TaskDetailBundle } from './types';
+import type { TaskDetailBundle, TaskDetailTask } from './types';
 
 const navigate = vi.fn();
 
@@ -38,7 +38,7 @@ vi.mock('./hooks', () => ({
 }));
 
 vi.mock('./TaskSpecificationSection', () => ({
-  TaskSpecificationSection: ({ task }: { task: Record<string, unknown> }) => (
+  TaskSpecificationSection: ({ task }: { task: TaskDetailTask }) => (
     <pre data-testid="task-spec-highlighter">{JSON.stringify(task, null, 2)}</pre>
   ),
 }));
@@ -103,15 +103,24 @@ const historyEntry = {
   },
 } as TaskHistoryEntry;
 
+const detailTask: TaskDetailTask = {
+  id: 1,
+  name: 'monitor-task',
+  data: {},
+  backend: 'nomad',
+  owner: 'sep',
+  is_template: false,
+  protected: false,
+  alert_on_fail: false,
+  deleted_at: null,
+  created_at: '2026-05-19T12:00:00Z',
+  updated_at: null,
+  created_by: 'SYSTEM',
+  last_updated_by: null,
+};
+
 const detailBundle: TaskDetailBundle = {
-  task: {
-    name: 'monitor-task',
-    backend: 'nomad',
-    owner: 'sep',
-    is_template: false,
-    created_at: '2026-05-19T12:00:00Z',
-    created_by: 'SYSTEM',
-  },
+  task: detailTask,
   running_tasks: [historyEntry],
   execution_history: {
     items: [

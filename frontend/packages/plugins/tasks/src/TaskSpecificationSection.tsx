@@ -24,17 +24,24 @@ import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
 import { detailSyntaxBlockSx } from '@sep/framework';
+import type { TaskDetailTask } from './types';
 
 const DetailSyntaxHighlighter = lazy(() =>
   import('@sep/framework').then((mod) => ({ default: mod.DetailSyntaxHighlighter })),
 );
 
 interface TaskSpecificationSectionProps {
-  task: Record<string, unknown>;
+  task: TaskDetailTask;
 }
 
+const taskSpecificationSyntaxSx = { maxHeight: 400, overflowY: 'auto' } as const;
+
 const syntaxFallback = (
-  <Skeleton variant="rectangular" height={120} sx={{ ...detailSyntaxBlockSx, mt: 0.5 }} />
+  <Skeleton
+    variant="rectangular"
+    height={120}
+    sx={{ ...detailSyntaxBlockSx, ...taskSpecificationSyntaxSx, mt: 0.5 }}
+  />
 );
 
 export function TaskSpecificationSection({ task }: TaskSpecificationSectionProps) {
@@ -56,7 +63,9 @@ export function TaskSpecificationSection({ task }: TaskSpecificationSectionProps
         </AccordionSummary>
         <AccordionDetails sx={{ px: 0, pl: 2, pr: 2, pt: 0, pb: 2 }}>
           <Suspense fallback={syntaxFallback}>
-            <DetailSyntaxHighlighter value={task} language="json" />
+            <Box sx={taskSpecificationSyntaxSx}>
+              <DetailSyntaxHighlighter value={task} language="json" />
+            </Box>
           </Suspense>
         </AccordionDetails>
       </Accordion>

@@ -81,6 +81,8 @@ function DetailField({ label, value }: { label: string; value: ReactNode }) {
 }
 
 function PeriodicSummaryTable({ rows }: { rows: PeriodicTaskSummaryRow[] }) {
+  // TODO(sep-frontend): Fold this read-only periodic schedule view into the framework
+  // when another plugin needs the same surface.
   if (rows.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -137,7 +139,7 @@ export function TaskDetailPage() {
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
   const task = data?.task;
-  const isTemplate = Boolean(task?.is_template);
+  const isTemplate = task?.is_template ?? false;
   const runningTasks = data?.running_tasks ?? [];
   const historyItems = data?.execution_history.items ?? [];
   const periodicSummary = data?.periodic_summary ?? [];
@@ -158,7 +160,7 @@ export function TaskDetailPage() {
     );
   }
 
-  const displayName = String(task.name ?? taskName);
+  const displayName = task.name || taskName;
 
   return (
     <Box>
@@ -180,18 +182,15 @@ export function TaskDetailPage() {
           Task information
         </Typography>
         <Box component="dl" sx={{ m: 0 }}>
-          <DetailField label="Engine" value={String(task.backend ?? '—')} />
-          <DetailField
-            label="Created"
-            value={formatTimestamp(task.created_at as string | undefined)}
-          />
+          <DetailField label="Engine" value={task.backend || '—'} />
+          <DetailField label="Created" value={formatTimestamp(task.created_at)} />
           {task.created_by ? (
-            <DetailField label="Created by" value={String(task.created_by)} />
+            <DetailField label="Created by" value={task.created_by} />
           ) : null}
           {task.last_updated_by ? (
-            <DetailField label="Last modified by" value={String(task.last_updated_by)} />
+            <DetailField label="Last modified by" value={task.last_updated_by} />
           ) : null}
-          <DetailField label="Owner" value={String(task.owner ?? '—')} />
+          <DetailField label="Owner" value={task.owner || '—'} />
           {task.is_template ? <DetailField label="Template" value="Yes" /> : null}
         </Box>
       </Paper>

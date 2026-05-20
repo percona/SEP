@@ -18,6 +18,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TaskSpecificationSection } from './TaskSpecificationSection';
+import type { TaskDetailTask } from './types';
 
 vi.mock('@sep/framework', () => ({
   detailSyntaxBlockSx: {},
@@ -28,10 +29,24 @@ vi.mock('@sep/framework', () => ({
 
 describe('TaskSpecificationSection', () => {
   it('renders an expanded accordion with syntax-highlighted task JSON', async () => {
+    const task: TaskDetailTask = {
+      id: 1,
+      name: 'monitor-task',
+      data: {},
+      backend: 'nomad',
+      owner: 'sep',
+      is_template: false,
+      protected: false,
+      alert_on_fail: false,
+      deleted_at: null,
+      created_at: '2026-05-19T12:00:00Z',
+      updated_at: null,
+      created_by: null,
+      last_updated_by: null,
+    };
+
     render(
-      <TaskSpecificationSection
-        task={{ name: 'monitor-task', backend: 'nomad', is_template: false }}
-      />,
+      <TaskSpecificationSection task={task} />,
     );
 
     expect(screen.getByRole('button', { name: 'Specification' })).toHaveAttribute(

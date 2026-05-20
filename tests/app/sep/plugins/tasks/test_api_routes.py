@@ -34,6 +34,7 @@ from app.tasks.models import (
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/plugins/tasks"
+EXPECTED_TEMPLATE_DETAIL_CALLS = 2
 
 
 def build_task_payload(**overrides: Any) -> dict:
@@ -188,14 +189,11 @@ class TestTasksPluginDetailEndpoint:
             }
         ]
         history = {
-            "items": [{"id": 10, "status": TaskHistoryStatusEnum.SUCCESS.value}],
-            "total": 1,
-            "offset": 0,
-            "limit": 50,
-        }
-        running = {
-            "items": [{"id": 11, "status": TaskHistoryStatusEnum.RUNNING.value}],
-            "total": 1,
+            "items": [
+                {"id": 10, "status": TaskHistoryStatusEnum.SUCCESS.value},
+                {"id": 11, "status": TaskHistoryStatusEnum.RUNNING.value},
+            ],
+            "total": 2,
             "offset": 0,
             "limit": 50,
         }
@@ -205,7 +203,6 @@ class TestTasksPluginDetailEndpoint:
                 {"nomad-1": "10.0.0.1"},
                 periodic,
                 history,
-                running,
             ]
         )
         mock_inventory_api_dep.get = AsyncMock(
@@ -217,7 +214,9 @@ class TestTasksPluginDetailEndpoint:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["task"]["name"] == "detail-task"
-        assert body["running_tasks"] == running["items"]
+        assert body["running_tasks"] == [
+            {"id": 11, "status": TaskHistoryStatusEnum.RUNNING.value}
+        ]
         assert body["execution_history"] == history
         assert body["periodic_summary"] == [
             {
@@ -236,10 +235,6 @@ class TestTasksPluginDetailEndpoint:
         ]
         mock_task_api_dep.get.assert_any_await("/detail-task/periodic/")
         mock_task_api_dep.get.assert_any_await("/detail-task/history/")
-        mock_task_api_dep.get.assert_any_await(
-            "/detail-task/history/",
-            params={"status": TaskHistoryStatusEnum.RUNNING},
-        )
 
     def test_detail_skips_periodic_and_history_for_templates(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep
@@ -263,7 +258,7 @@ class TestTasksPluginDetailEndpoint:
         assert body["execution_history"] == {"items": []}
         assert body["periodic_summary"] == []
         assert body["executor_hosts"] == [{"value": "nomad-1", "label": "nomad-1"}]
-        assert mock_task_api_dep.get.await_count == 2  # noqa: PLR2004
+        assert mock_task_api_dep.get.await_count == EXPECTED_TEMPLATE_DETAIL_CALLS
 
     def test_detail_returns_404_when_task_lookup_raises(
         self, test_client, mock_task_api_dep
