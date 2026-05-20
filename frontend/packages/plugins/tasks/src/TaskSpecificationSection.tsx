@@ -54,7 +54,7 @@ export function TaskSpecificationSection({ task }: TaskSpecificationSectionProps
             Specification
           </Typography>
         </AccordionSummary>
-        <AccordionDetails sx={{ px: 2, pt: 0, pb: 2 }}>
+        <AccordionDetails sx={{ px: 0, pl: 2, pr: 2, pt: 0, pb: 2 }}>
           <Suspense fallback={syntaxFallback}>
             <DetailSyntaxHighlighter value={task} language="json" />
           </Suspense>
