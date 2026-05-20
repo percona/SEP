@@ -34,7 +34,17 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
     components: {
       MuiButton: {
         variants: [
-          { props: { variant: 'outlined' }, style: { backgroundColor: '#fff' } },
+          ...(mode === 'light'
+            ? [
+                {
+                  props: { variant: 'outlined' as const },
+                  style: {
+                    backgroundColor:
+                      sepThemeOptionsOriginal(mode).palette?.background?.paper ?? '#fff',
+                  },
+                },
+              ]
+            : []),
           { props: { variant: 'contained', color: 'success' }, style: { color: '#fff' } },
           { props: { variant: 'contained', color: 'error' }, style: { color: '#fff' } },
           // Only override warning text color in light mode; dark mode keeps MUI's computed contrastText.
