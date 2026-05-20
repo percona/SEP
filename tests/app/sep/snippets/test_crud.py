@@ -27,56 +27,47 @@ class TestSnippetManagerGetOrCreate:
     """Test the get_or_create method override."""
 
     @pytest.mark.asyncio
-    async def test_creates_new_snippet_and_calls_update_meta(self):
+    async def test_creates_new_snippet_and_calls_update_meta(self, session):
         """Verify new snippet is created and update_meta is called."""
-        session = AsyncMock()
         snippet = Snippet(filename="new.sh", size=50, md5_digest="c" * 32)
 
-        with (
-            patch.object(
-                SnippetManager, "first", new_callable=AsyncMock, return_value=None
-            ),
-            patch.object(
-                SnippetManager,
-                "create",
-                new_callable=AsyncMock,
-                return_value=snippet,
-            ) as mock_create,
-            patch.object(
-                Snippet, "update_meta", new_callable=AsyncMock
-            ) as mock_update_meta,
-        ):
+        with patch.object(
+            Snippet, "update_meta", new_callable=AsyncMock
+        ) as mock_update_meta:
             result, created = await SnippetManager.get_or_create(
                 session, snippet, filter_include={"filename"}
             )
 
         assert created is True
-        assert result is snippet
+        assert result.filename == "new.sh"
+        assert result.md5_digest == "c" * 32
         mock_update_meta.assert_awaited_once()
-        mock_create.assert_awaited_once()
+
+        persisted = await SnippetManager.list(session, filename="new.sh")
+        assert len(persisted) == 1
+        assert persisted[0].md5_digest == "c" * 32
 
     @pytest.mark.asyncio
-    async def test_returns_existing_snippet(self):
-        """Verify existing snippet is returned without creating."""
-        session = AsyncMock()
-        existing = Snippet(filename="existing.sh", size=100, md5_digest="d" * 32)
-        new_snippet = Snippet(filename="existing.sh", size=100, md5_digest="d" * 32)
+    async def test_returns_existing_snippet(self, session):
+        """Verify existing snippet is returned without creating a duplicate."""
+        existing = await SnippetManager.create(
+            session,
+            Snippet(filename="existing.sh", size=100, md5_digest="d" * 32),
+        )
 
-        with (
-            patch.object(
-                SnippetManager,
-                "first",
-                new_callable=AsyncMock,
-                return_value=existing,
-            ),
-            patch.object(
-                SnippetManager, "create", new_callable=AsyncMock
-            ) as mock_create,
-        ):
+        new_snippet = Snippet(filename="existing.sh", size=200, md5_digest="e" * 32)
+
+        with patch.object(
+            Snippet, "update_meta", new_callable=AsyncMock
+        ) as mock_update_meta:
             result, created = await SnippetManager.get_or_create(
                 session, new_snippet, filter_include={"filename"}
             )
 
         assert created is False
-        assert result is existing
-        mock_create.assert_not_awaited()
+        assert result.id == existing.id
+        mock_update_meta.assert_not_awaited()
+
+        persisted = await SnippetManager.list(session, filename="existing.sh")
+        assert len(persisted) == 1
+        assert persisted[0].md5_digest == "d" * 32
