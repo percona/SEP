@@ -22,7 +22,10 @@ from unittest.mock import AsyncMock, call, patch
 import pytest
 from fastapi import status
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPNotFoundException,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     clear_connectivity_caches,
@@ -94,6 +97,25 @@ def build_checksum_write_body(
         "service_id": service_id,
         "recursion_method": "processlist",
         **kwargs,
+    }
+
+
+def build_execute_response(
+    task_id: int | None = 99, task_name: str = "my-task"
+) -> dict:
+    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests.
+
+    :param task_id: The task history id to embed. Defaults to ``99``.
+    :type task_id: int | None
+    :param task_name: The task name to embed in the nested task payload.
+    :type task_name: str
+    :return: A dict that validates against ``TaskHistoryResponse``.
+    :rtype: dict
+    """
+    return {
+        "id": task_id,
+        "execution_request": {"task": "pt-table-checksum", "target": "host1"},
+        "task": {**build_checksum_task(task_name), "deleted_at": None},
     }
 
 
@@ -839,3 +861,118 @@ class TestChecksumsDeleteEndpoint:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_task_api_dep.delete.assert_awaited_once_with(f"/{task['name']}")
+
+
+class TestChecksumsExecuteEndpoint:
+    """Tests for POST /api/plugins/checksums/{task_name}/execute."""
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_201_with_task_name_and_id(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure executing a checksum task returns 201 with task_name and task_id."""
+        expected_task_id = 99
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+        mock_task_api_dep.post.return_value = build_execute_response(expected_task_id)
+
+        response = test_client.post("/api/plugins/checksums/my-task/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["task_name"] == "my-task"
+        assert data["task_id"] == expected_task_id
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_404_for_unknown_task(self, test_client, mock_task_api_dep):
+        """Ensure executing an unknown task name returns 404."""
+        mock_task_api_dep.get.side_effect = HTTPNotFoundException()
+
+        response = test_client.post(
+            "/api/plugins/checksums/ghost-task/execute", json={}
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks_raises")
+    def test_execute_returns_409_when_task_already_running(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure executing a task that is already running returns 409."""
+        task = build_checksum_task("busy-task")
+        mock_task_api_dep.get.return_value = task
+
+        response = test_client.post("/api/plugins/checksums/busy-task/execute", json={})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_422_for_past_eta(self, test_client, mock_task_api_dep):
+        """Ensure a past-dated eta is rejected with 422 by Pydantic validation."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+
+        response = test_client.post(
+            "/api/plugins/checksums/my-task/execute",
+            json={"eta": "2000-01-01T00:00:00Z"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_forwards_only_provided_fields(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure only non-None fields are forwarded to the Tasks API execute call."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+        mock_task_api_dep.post.return_value = build_execute_response(1)
+
+        test_client.post(
+            "/api/plugins/checksums/my-task/execute",
+            json={"chain_on_failure": True},
+        )
+
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/execute/my-task",
+            json={"chain_on_failure": True},
+        )
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_propagates_tasks_api_error(self, test_client, mock_task_api_dep):
+        """Ensure errors raised by the Tasks API /execute call propagate to the caller."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+        mock_task_api_dep.post.side_effect = HTTPBadGatewayException()
+
+        response = test_client.post("/api/plugins/checksums/my-task/execute", json={})
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_raises_on_invalid_tasks_api_response(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure a non-TaskHistoryResponse Tasks API reply surfaces as 500, not null task_id."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+        mock_task_api_dep.post.return_value = {}
+
+        response = test_client.post("/api/plugins/checksums/my-task/execute", json={})
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_422_for_non_string_chain_task_names(
+        self, test_client, mock_task_api_dep
+    ):
+        """Ensure chain_task_names containing non-string elements is rejected with 422."""
+        task = build_checksum_task("my-task")
+        mock_task_api_dep.get.return_value = task
+
+        response = test_client.post(
+            "/api/plugins/checksums/my-task/execute",
+            json={"chain_task_names": [1, 2, 3]},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
