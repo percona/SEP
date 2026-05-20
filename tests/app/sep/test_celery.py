@@ -129,7 +129,10 @@ class TestUpdateSnippets:
         rows = await SnippetManager.list(session, filename="test.sh")
         assert len(rows) == 1
         assert rows[0].size == len(content)
-        assert rows[0].md5_digest == hashlib.md5(content, usedforsecurity=False).hexdigest()
+        assert (
+            rows[0].md5_digest
+            == hashlib.md5(content, usedforsecurity=False).hexdigest()
+        )
 
     @pytest.mark.asyncio
     async def test_updates_existing_snippet(self, session, mocker, tmp_path):
@@ -210,12 +213,14 @@ class TestUpdateSnippets:
 
         a_row = await SnippetManager.first(session, filename="a.sh")
         b_row = await SnippetManager.first(session, filename="b.sh")
-        assert a_row.md5_digest == hashlib.md5(
-            a_content, usedforsecurity=False
-        ).hexdigest()
-        assert b_row.md5_digest == hashlib.md5(
-            b_content, usedforsecurity=False
-        ).hexdigest()
+        assert (
+            a_row.md5_digest
+            == hashlib.md5(a_content, usedforsecurity=False).hexdigest()
+        )
+        assert (
+            b_row.md5_digest
+            == hashlib.md5(b_content, usedforsecurity=False).hexdigest()
+        )
 
 
 class TestSyncSnippets:
