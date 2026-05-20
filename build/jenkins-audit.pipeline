@@ -110,16 +110,22 @@ pipeline {
 					# tooling, but the React frontend (added in SEP-945) is gated
 					# by hooks that call `pnpm exec ...`. Install Node via the
 					# official tarball into build/node/ (no root needed), then
-					# activate pnpm via corepack at the same version GitHub Actions
-					# uses (.github/workflows/ci.yml: npm i -g pnpm@${PNPM_VERSION}).
+					# install pnpm globally into the same tree via npm, matching
+					# exactly what .github/workflows/ci.yml does
+					# (`npm install -g pnpm@${PNPM_VERSION}`).
+					#
+					# We deliberately don't use corepack here: corepack bundled
+					# with Node 22.13.0 has an outdated signing-key list and
+					# rejects recent pnpm releases ("Cannot find matching keyid").
+					# Using `npm i -g` sidesteps the signature check entirely and
+					# keeps parity with GitHub Actions.
 					NODE_TARBALL="node-v${NODE_VERSION}-linux-x64"
 					curl -fsSL -o "/tmp/${NODE_TARBALL}.tar.xz" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}.tar.xz"
 					tar -xJf "/tmp/${NODE_TARBALL}.tar.xz" -C /tmp
 					rm -rf build/node
 					mv "/tmp/${NODE_TARBALL}" build/node
 					build/node/bin/node --version
-					build/node/bin/corepack enable
-					build/node/bin/corepack prepare "pnpm@${PNPM_VERSION}" --activate
+					build/node/bin/npm install -g "pnpm@${PNPM_VERSION}"
 					(cd frontend && pnpm install --frozen-lockfile)
 				'''
 			}
