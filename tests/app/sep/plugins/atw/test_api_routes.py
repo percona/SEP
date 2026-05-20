@@ -20,21 +20,45 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.atw import api_routes as atw_api_routes
-from app.sep.plugins.atw.models import ParentCategory
+from app.sep.plugins.atw.models import ATWCategory, CATEGORY_ROOT_LABELS, ParentCategory
 from app.sep.snippets.models import Snippet
+
+_GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
+
+
+def _mock_atw_snippet(
+    *,
+    filename: str,
+    title: str = "Title",
+    description: str = "",
+    atw: list[str],
+    service_type: str | None = "mysql",
+) -> Mock:
+    snippet = Mock()
+    snippet.filename = filename
+    snippet.title = title
+    snippet.description = description
+    meta: dict = {"atw": atw}
+    if service_type is not None:
+        meta["service_type"] = service_type
+    snippet.meta = meta
+    return snippet
 
 
 class TestAtwListEndpoint:
     """Tests for GET /api/plugins/atw/."""
 
     def test_atw_list_returns_grouped_snippets(self, test_client: TestClient):
-        """Ensure the listing endpoint groups snippets by ATW category."""
-        snippet = Mock()
-        snippet.filename = "diag/slow-query.sh"
-        snippet.title = "Slow Query Diagnostics"
-        snippet.description = "Collects slow-query and processlist data."
-        snippet.meta = {"atw": ["OVERALL_SLOWNESS"]}
+        """Ensure the listing endpoint groups mysql-tagged snippets under the MySQL root."""
+        snippet = _mock_atw_snippet(
+            filename="diag/slow-query.sh",
+            title="Slow Query Diagnostics",
+            description="Collects slow-query and processlist data.",
+            atw=["OVERALL_SLOWNESS"],
+            service_type="mysql",
+        )
 
         with patch(
             "app.sep.plugins.atw.api_routes.SnippetManager.list",
@@ -52,7 +76,7 @@ class TestAtwListEndpoint:
         )
         assert overall is not None
         assert overall["snippet_count"] == 1
-        assert overall["category_root"] == "MySQL"
+        assert overall["category_root"] == CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
         assert overall["parent_category"] == "PERFORMANCE_ISSUES"
         summary = overall["snippets"][0]
         assert summary["name"] == "diag/slow-query.sh"
@@ -69,6 +93,7 @@ class TestAtwListEndpoint:
             meta={
                 "title": "Slow Query Diagnostics",
                 "description": "Collects slow-query and processlist data.",
+                "service_type": "mysql",
                 "atw": ["OVERALL_SLOWNESS"],
             },
         )
@@ -86,11 +111,139 @@ class TestAtwListEndpoint:
             entry for entry in payload if entry["category"] == "OVERALL_SLOWNESS"
         )
         assert overall["snippet_count"] == 1
+        assert overall["category_root"] == CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
         assert overall["snippets"][0]["name"] == "diag/slow-query.sh"
         assert overall["snippets"][0]["title"] == "Slow Query Diagnostics"
         assert overall["snippets"][0]["description"] == (
             "Collects slow-query and processlist data."
         )
+
+    def test_atw_list_multi_root_mysql_and_mongodb(
+        self, test_client: TestClient
+    ) -> None:
+        """Ensure mysql and mongodb snippets produce separate ``category_root`` rows."""
+        mysql_snippet = _mock_atw_snippet(
+            filename="mysql/slow.sh",
+            atw=["OVERALL_SLOWNESS"],
+            service_type="mysql",
+        )
+        mongo_snippet = _mock_atw_snippet(
+            filename="mongo/slow.sh",
+            atw=["OVERALL_SLOWNESS"],
+            service_type="mongodb",
+        )
+
+        with patch(
+            "app.sep.plugins.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[mysql_snippet, mongo_snippet]),
+        ):
+            response = test_client.get("/api/plugins/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        populated_types = (ServiceTypeEnum.MYSQL, ServiceTypeEnum.MONGODB)
+        expected_roots = [
+            CATEGORY_ROOT_LABELS[service_type]
+            for service_type in CATEGORY_ROOT_LABELS
+            if service_type in populated_types
+        ]
+        roots = [entry["category_root"] for entry in payload]
+        assert roots == expected_roots
+        for entry in payload:
+            assert entry["category"] == "OVERALL_SLOWNESS"
+            assert entry["snippet_count"] == 1
+
+    def test_atw_list_generic_service_type_bucket(
+        self, test_client: TestClient
+    ) -> None:
+        """Ensure ``service_type: generic`` snippets surface under the Generic root."""
+        snippet = _mock_atw_snippet(
+            filename="generic/disk.sh",
+            atw=["OVERALL_SLOWNESS"],
+            service_type="generic",
+        )
+
+        with patch(
+            "app.sep.plugins.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/plugins/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category_root"] == _GENERIC_ROOT
+
+    def test_atw_list_missing_service_type_falls_back_to_generic(
+        self, test_client: TestClient
+    ) -> None:
+        """Ensure missing ``service_type`` meta buckets under Generic, not MySQL."""
+        snippet = _mock_atw_snippet(
+            filename="no-service-type.sh",
+            atw=["OVERALL_SLOWNESS"],
+            service_type=None,
+        )
+
+        with patch(
+            "app.sep.plugins.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/plugins/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category_root"] == _GENERIC_ROOT
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippet_count"] == 1
+
+    def test_atw_list_unknown_service_type_falls_back_to_generic(
+        self, test_client: TestClient
+    ) -> None:
+        """Ensure unknown ``service_type`` values bucket under Generic, not MySQL."""
+        snippet = _mock_atw_snippet(
+            filename="unknown/engine.sh",
+            atw=["GALERA"],
+            service_type="clickhouse",
+        )
+
+        with patch(
+            "app.sep.plugins.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/plugins/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category_root"] == _GENERIC_ROOT
+        assert payload[0]["category"] == "GALERA"
+
+    def test_atw_list_omits_empty_root_category_cells(
+        self, test_client: TestClient
+    ) -> None:
+        """Ensure empty (root, category) cells are omitted from the listing."""
+        snippet = _mock_atw_snippet(
+            filename="mysql/only.sh",
+            atw=["OVERALL_SLOWNESS"],
+            service_type="mysql",
+        )
+
+        with patch(
+            "app.sep.plugins.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/plugins/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        populated = {(e["category_root"], e["category"]) for e in payload}
+        mysql_root = CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
+        assert populated == {(mysql_root, "OVERALL_SLOWNESS")}
+        for category in ATWCategory:
+            if category.name != "OVERALL_SLOWNESS":
+                assert (mysql_root, category.name) not in populated
 
     def test_atw_list_non_list_atw_meta_not_substring_matched(
         self, test_client: TestClient
