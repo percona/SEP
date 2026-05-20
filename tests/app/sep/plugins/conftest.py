@@ -17,6 +17,7 @@
 
 import pytest
 
+from app.core.exceptions import HTTPConflictException
 from app.sep.deps import check_for_conflicted_running_tasks
 from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskWrite
@@ -43,5 +44,17 @@ def generated_task() -> TaskWrite:
 def _mock_check_for_conflicted_running_tasks() -> None:
     """Mock check_for_conflicted_running_tasks."""
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = lambda: None
+    yield
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def _mock_check_for_conflicted_running_tasks_raises() -> None:
+    """Mock check_for_conflicted_running_tasks to raise HTTPConflictException."""
+
+    def raise_conflict() -> None:
+        raise HTTPConflictException("Task is already running or pending.")
+
+    sep_app.dependency_overrides[check_for_conflicted_running_tasks] = raise_conflict
     yield
     sep_app.dependency_overrides = {}
