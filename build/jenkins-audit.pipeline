@@ -44,6 +44,15 @@ pipeline {
 		PYTHON = "python${pyVersion}"
 		PYTHON_VERSION = "${pyVersion}"
 
+		// Pinned to match `.github/workflows/ci.yml` (setup-node + npm i -g pnpm).
+		NODE_VERSION = "22.13.0"
+		PNPM_VERSION = "11.1.2"
+
+		// Make Node/pnpm available to every stage. The directory is created in
+		// the Prepare environment stage below; PATH just needs to resolve at
+		// command-lookup time, not at pipeline-parse time.
+		PATH = "${env.WORKSPACE}/build/node/bin:${env.PATH}"
+
 		RELEASE_VER = "${releaseTag}"
 
 	}
@@ -95,6 +104,23 @@ pipeline {
 					# Mirrors `pipx inject` from .github/actions/setup-python-job.
 					build/venv/bin/${PYTHON} -m pip install --no-cache 'poetry-plugin-export>=1.9.0,<2.0.0'
 					build/venv/bin/poetry install --with audit
+
+					# Provision Node + pnpm for the frontend pre-commit hooks
+					# (oxfmt, oxlint). The stream9 Jenkins agent has no Node/pnpm
+					# tooling, but the React frontend (added in SEP-945) is gated
+					# by hooks that call `pnpm exec ...`. Install Node via the
+					# official tarball into build/node/ (no root needed), then
+					# activate pnpm via corepack at the same version GitHub Actions
+					# uses (.github/workflows/ci.yml: npm i -g pnpm@${PNPM_VERSION}).
+					NODE_TARBALL="node-v${NODE_VERSION}-linux-x64"
+					curl -fsSL -o "/tmp/${NODE_TARBALL}.tar.xz" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}.tar.xz"
+					tar -xJf "/tmp/${NODE_TARBALL}.tar.xz" -C /tmp
+					rm -rf build/node
+					mv "/tmp/${NODE_TARBALL}" build/node
+					build/node/bin/node --version
+					build/node/bin/corepack enable
+					build/node/bin/corepack prepare "pnpm@${PNPM_VERSION}" --activate
+					(cd frontend && pnpm install --frozen-lockfile)
 				'''
 			}
 		}
