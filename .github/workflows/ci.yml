@@ -83,10 +83,12 @@ jobs:
               - 'frontend/**'
               - 'pyproject.toml'
               - 'poetry.lock'
-              - 'Makefile'
-              - 'scripts/**'
-              - 'sep_installer.sh'
-              - 'sep_installer.sha256'
+              - 'snippets/**'
+              - 'static/**'
+              - 'templates/**'
+              - 'entrypoint.sh'
+              - 'entrypoint_celery.sh'
+              - 'alembic.ini'
 
   precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
@@ -219,9 +221,9 @@ jobs:
       - changes
 
   build:
-    # Run when Python or Docker-relevant paths change. Use always() so the job
-    # still runs when `python` is skipped (no .py changes but Containerfile /
-    # bundle assets changed). Any `python` failures will stop the run.
+    # Run when Docker-relevant paths change. Use always() so the job still runs
+    # when `python` is skipped (no .py changes but Containerfile / bundle assets
+    # changed). Any `python` failures will stop the run.
     # `lint-fmt-only`: audit-group deps not in the production image.
     if: >-
       ${{
@@ -230,7 +232,7 @@ jobs:
         needs.label-gate.result == 'success' &&
         needs.changes.result == 'success' &&
         (needs.python.result == 'success' || needs.python.result == 'skipped') &&
-        (needs.changes.outputs.python == 'true' || needs.changes.outputs.docker == 'true') &&
+        needs.changes.outputs.docker == 'true' &&
         !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
       }}
     runs-on: ubuntu-latest
