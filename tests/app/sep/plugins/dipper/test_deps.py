@@ -136,9 +136,9 @@ class TestResolveExecutorHostForService:
     def test_returns_executor_name_when_node_address_matches(self) -> None:
         """Resolve via address when inventory name differs from Nomad node name.
 
-        Reproduces the SEP-1108 mismatch: inventory records
-        ``mvc-lab-maria1`` while the Nomad agent registers ``mvc-lab-db3``.
-        The helper must return the Nomad-keyed name expected by Dipper.
+        Inventory records ``mvc-lab-maria1`` while the Nomad agent registers
+        ``mvc-lab-db3`` for the same host; the helper must return the
+        Nomad-keyed name expected by Dipper.
         """
         service = _make_service_with_node(
             node_name="mvc-lab-maria1", node_address="10.0.0.7"

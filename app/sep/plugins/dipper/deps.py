@@ -285,9 +285,9 @@ def resolve_executor_host_for_service(
     1. ``service.node.name`` -- direct match against Nomad node names
        (fast path).
     2. ``service.node.address`` -- address-based lookup via
-       :func:`resolve_executor_name_by_address` (covers the inventory-name
-       vs. Nomad-node-name mismatch fixed for the inventory route by
-       SEP-1108).
+       :func:`resolve_executor_name_by_address`, which covers the case
+       where the inventory display name differs from the Nomad client
+       node name but both refer to the same network address.
     3. ``service.name`` -- last-resort match against Nomad node names.
     4. ``None`` -- caller falls back to manual selection in the UI.
 
