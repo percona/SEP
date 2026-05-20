@@ -20,6 +20,7 @@ import time
 
 import pytest
 
+from app.sep.plugins.inventory.models import INVENTORY_SYNC_TASK_NAME
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
     NOMAD_EXEC_ARTIFACT,
@@ -72,6 +73,11 @@ class TestSystemTasks:
         """Assert inventory-sync task is protected."""
         task = next(t for t in SYSTEM_TASKS if t.name == "inventory-sync")
         assert task.protected is True
+
+    def test_inventory_sync_task_name_matches_constant(self) -> None:
+        """Assert seed task name matches INVENTORY_SYNC_TASK_NAME constant."""
+        task = next(t for t in SYSTEM_TASKS if t.name == INVENTORY_SYNC_TASK_NAME)
+        assert task.name == INVENTORY_SYNC_TASK_NAME
 
 
 class TestStalenessTemplateShape:
