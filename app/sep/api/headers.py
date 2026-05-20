@@ -13,6 +13,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared HTTP response-header constants for the SEP API."""
+"""Shared HTTP response header name constants for the SEP API."""
 
 UPSTREAM_ERROR_HEADER = "X-Sep-Upstream-Error"
