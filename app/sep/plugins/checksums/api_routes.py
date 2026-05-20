@@ -123,7 +123,11 @@ async def checksums_api_create(
     )
 
 
-@router.put("/{task_name}", response_model=ChecksumTaskResponse)
+@router.put(
+    "/{task_name}",
+    response_model=ChecksumTaskResponse,
+    dependencies=[HasNoConflictedRunningTasks],
+)
 async def checksums_api_update(
     task: ChecksumsTask,
     body: ChecksumTaskWrite,

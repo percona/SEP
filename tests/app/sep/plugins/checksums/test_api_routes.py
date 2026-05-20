@@ -24,6 +24,7 @@ from fastapi import status
 
 from app.core.exceptions import (
     HTTPBadGatewayException,
+    HTTPConflictException,
     HTTPNotFoundException,
 )
 from app.inventory.models import ServiceTypeEnum
@@ -31,6 +32,8 @@ from app.sep.connectivity import (
     clear_connectivity_caches,
     get_latest_connectivity_result,
 )
+from app.sep.deps import check_for_conflicted_running_tasks
+from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -978,6 +981,7 @@ class TestChecksumsExecuteEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
+@pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
 class TestChecksumsUpdateEndpoint:
     """Tests for PUT /api/plugins/checksums/{task_name}."""
 
@@ -1082,12 +1086,10 @@ class TestChecksumsUpdateEndpoint:
         self, test_client, mock_task_api_dep, mock_inventory_api_dep
     ):
         """Ensure PUT returns 404 when the task does not exist."""
-        with patch(
-            "app.sep.plugins.checksums.api_routes.get_checksums_task",
-            new=AsyncMock(side_effect=HTTPNotFoundException()),
-        ):
-            body = build_checksum_write_body()
-            response = test_client.put("/api/plugins/checksums/nonexistent", json=body)
+        mock_task_api_dep.get.side_effect = HTTPNotFoundException()
+
+        body = build_checksum_write_body()
+        response = test_client.put("/api/plugins/checksums/nonexistent", json=body)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_task_api_dep.put.assert_not_called()
@@ -1096,14 +1098,12 @@ class TestChecksumsUpdateEndpoint:
         self, test_client, mock_task_api_dep, mock_inventory_api_dep
     ):
         """Ensure PUT returns 404 when the task is not owned by checksums."""
-        with patch(
-            "app.sep.plugins.checksums.api_routes.get_checksums_task",
-            new=AsyncMock(side_effect=HTTPNotFoundException()),
-        ):
-            body = build_checksum_write_body()
-            response = test_client.put(
-                "/api/plugins/checksums/some-backup-task", json=body
-            )
+        task = build_checksum_task("some-backup-task")
+        task["owner"] = TaskOwner.BACKUPS
+        mock_task_api_dep.get.return_value = task
+
+        body = build_checksum_write_body()
+        response = test_client.put("/api/plugins/checksums/some-backup-task", json=body)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_task_api_dep.put.assert_not_called()
@@ -1131,6 +1131,29 @@ class TestChecksumsUpdateEndpoint:
         mock_task_api_dep.get = AsyncMock(return_value=task)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
+        )
+
+        body = build_checksum_write_body(service_id=created_service.id)
+        response = test_client.put(f"/api/plugins/checksums/{task['name']}", json=body)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_called()
+
+    def test_checksums_update_returns_409_when_task_running(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Ensure PUT returns 409 when the task is already running or pending."""
+
+        def raise_conflict() -> None:
+            raise HTTPConflictException("Task is already running or pending.")
+
+        task = build_checksum_task()
+        mock_task_api_dep.get.return_value = task
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        sep_app.dependency_overrides[check_for_conflicted_running_tasks] = (
+            raise_conflict
         )
 
         body = build_checksum_write_body(service_id=created_service.id)
