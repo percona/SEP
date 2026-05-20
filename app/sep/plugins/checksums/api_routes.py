@@ -27,7 +27,6 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
-from app.core.exceptions import HTTPConflictException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
@@ -42,6 +41,7 @@ from app.sep.plugins.checksums.deps import (
     get_checksums_api_task_responses,
     get_checksums_task,
     get_checksums_task_status,
+    UnprotectedChecksumsTask,
 )
 from app.sep.plugins.checksums.models import (
     ChecksumExecuteWrite,
@@ -129,7 +129,7 @@ async def checksums_api_create(
     dependencies=[HasNoConflictedRunningTasks],
 )
 async def checksums_api_update(
-    task: ChecksumsTask,
+    task: UnprotectedChecksumsTask,
     body: ChecksumTaskWrite,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
@@ -146,8 +146,6 @@ async def checksums_api_update(
     :type check_connectivity: bool
     """
     logger.debug("Update checksums task (JSON path): %s", task.name)
-    if task.protected:
-        raise HTTPConflictException("Cannot edit a protected task.")
     task_write = await build_checksum_task(body, inventory_api)
     updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
     updated_task = Task.model_validate(updated)
