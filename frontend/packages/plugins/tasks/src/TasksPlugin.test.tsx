@@ -26,6 +26,11 @@ import { useTasksList, useTasksPluginSchema } from './hooks';
 vi.mock('./hooks', () => ({
   useTasksPluginSchema: vi.fn(),
   useTasksList: vi.fn(),
+  useTaskDetail: vi.fn(),
+}));
+
+vi.mock('./TaskDetailPage', () => ({
+  TaskDetailPage: () => <div data-testid="task-detail-page">Task detail</div>,
 }));
 
 vi.mock('@sep/framework', () => ({
@@ -87,10 +92,9 @@ describe('TasksPlugin', () => {
     expect(screen.getByTestId('schema-list')).toBeInTheDocument();
   });
 
-  it('renders the detail shell for a task route', () => {
+  it('renders the detail page for a task route', () => {
     renderPlugin('/my-task');
 
-    expect(screen.getByRole('heading', { name: 'my-task' })).toBeInTheDocument();
-    expect(screen.getByText(/task detail view \(shell\)/i)).toBeInTheDocument();
+    expect(screen.getByTestId('task-detail-page')).toBeInTheDocument();
   });
 });

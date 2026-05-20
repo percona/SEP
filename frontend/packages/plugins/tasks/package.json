@@ -10,13 +10,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
     "@sep/api": "workspace:*",
     "@sep/framework": "workspace:*",
     "@tanstack/react-query": "^5.100.7"
   },
   "devDependencies": {
-    "@mui/icons-material": "^7.3.7",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.0",

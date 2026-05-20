@@ -20,7 +20,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { useTasksList } from './hooks';
+import { useTaskDetail, useTasksList } from './hooks';
 import { TASKS_PLUGINS_API_BASE } from './types';
 
 interface CapturedRequestConfig {
@@ -101,5 +101,61 @@ describe('useTasksList', () => {
 
     expect(lastConfig).toBeNull();
     expect(result.current.data).toBeUndefined();
+  });
+});
+
+describe('useTaskDetail', () => {
+  let lastConfig: CapturedRequestConfig | null = null;
+
+  beforeEach(() => {
+    lastConfig = null;
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = (
+      config: CapturedRequestConfig,
+    ) => {
+      lastConfig = config;
+      return Promise.resolve({
+        data: {
+          task: { name: 'monitor-task', backend: 'nomad', is_template: false },
+          running_tasks: [],
+          execution_history: { items: [] },
+          periodic_summary: [],
+          executor_hosts: [],
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+        request: {},
+      });
+    };
+  });
+
+  afterEach(() => {
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
+  });
+
+  it('fetches the task detail bundle for a task name', async () => {
+    const { result } = renderHook(() => useTaskDetail('monitor-task'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.url).toBe(`${TASKS_PLUGINS_API_BASE}/monitor-task`);
+    expect(result.current.data?.task.name).toBe('monitor-task');
+  });
+
+  it('does not fetch when task name is missing', async () => {
+    const { result } = renderHook(() => useTaskDetail(undefined), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.fetchStatus).toBe('idle');
+    });
+
+    expect(lastConfig).toBeNull();
   });
 });

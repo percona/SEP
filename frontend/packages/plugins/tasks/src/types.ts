@@ -21,6 +21,8 @@ export const TASKS_PLUGIN_NAME = 'tasks';
 /** Base path for the tasks plugin JSON API under the SEP layer. */
 export const TASKS_PLUGINS_API_BASE = '/plugins/tasks';
 
+import type { TaskHistoryEntry } from '@sep/framework';
+
 /** One task row from ``GET /api/plugins/tasks/``. */
 export interface TaskListRow {
   name: string;
@@ -28,4 +30,35 @@ export interface TaskListRow {
   created_at: string | null;
   created_by: string | null;
   last_updated_by: string | null;
+}
+
+/** Read-only periodic schedule row from the task detail bundle. */
+export interface PeriodicTaskSummaryRow {
+  id: number;
+  name: string;
+  enabled: boolean;
+  period: string | null;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  total_run_count: number | null;
+  chain_task_names: string[];
+}
+
+export interface ExecutorHostRow {
+  value: string;
+  label: string;
+}
+
+/** Payload from ``GET /api/plugins/tasks/{task_name}``. */
+export interface TaskDetailBundle {
+  task: Record<string, unknown>;
+  running_tasks: TaskHistoryEntry[];
+  execution_history: {
+    items: TaskHistoryEntry[];
+    total?: number;
+    offset?: number;
+    limit?: number;
+  };
+  periodic_summary: PeriodicTaskSummaryRow[];
+  executor_hosts: ExecutorHostRow[];
 }

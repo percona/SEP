@@ -15,30 +15,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Box, Typography } from '@mui/material';
-import { Route, Routes, useParams } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
+import { TaskDetailPage } from './TaskDetailPage';
 import { TasksListPage } from './TasksListPage';
-
-function TaskDetailShell() {
-  const { taskName } = useParams<{ taskName: string }>();
-
-  return (
-    <Box>
-      <Typography variant="h4" component="h1">
-        {taskName ?? 'Task'}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-        Task detail view (shell).
-      </Typography>
-    </Box>
-  );
-}
 
 export function TasksPlugin() {
   return (
     <Routes>
       <Route index element={<TasksListPage />} />
-      <Route path=":taskName" element={<TaskDetailShell />} />
+      <Route path=":taskName" element={<TaskDetailPage />} />
     </Routes>
   );
 }

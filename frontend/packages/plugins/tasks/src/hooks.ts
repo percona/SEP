@@ -17,7 +17,12 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, usePluginSchema } from '@sep/api';
-import { TASKS_PLUGIN_NAME, TASKS_PLUGINS_API_BASE, type TaskListRow } from './types';
+import {
+  TASKS_PLUGIN_NAME,
+  TASKS_PLUGINS_API_BASE,
+  type TaskDetailBundle,
+  type TaskListRow,
+} from './types';
 
 /** Fetch the read-only Task Manager plugin schema. */
 export function useTasksPluginSchema() {
@@ -32,6 +37,26 @@ export function useTasksList(options?: { enabled?: boolean }) {
     queryFn: async () => {
       const { data } = await apiClient.get<TaskListRow[]>(`${TASKS_PLUGINS_API_BASE}/`);
       return data;
+    },
+  });
+}
+
+const TASK_DETAIL_POLL_MS = 5000;
+
+/** Fetch the read-only task detail bundle for a single task definition. */
+export function useTaskDetail(taskName: string | undefined) {
+  return useQuery<TaskDetailBundle>({
+    queryKey: ['tasks', 'detail', taskName],
+    enabled: Boolean(taskName),
+    queryFn: async () => {
+      const { data } = await apiClient.get<TaskDetailBundle>(
+        `${TASKS_PLUGINS_API_BASE}/${encodeURIComponent(taskName!)}`,
+      );
+      return data;
+    },
+    refetchInterval: (query) => {
+      const running = query.state.data?.running_tasks ?? [];
+      return running.length > 0 ? TASK_DETAIL_POLL_MS : false;
     },
   });
 }
