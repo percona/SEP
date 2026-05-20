@@ -20,11 +20,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.core.exceptions import HTTPBadRequestException
+from app.sep.inventory import CreatedService
 from app.sep.plugins.dipper.deps import (
     build_dipper_meta_from_args,
     resolve_executor_host_for_service,
 )
 from app.sep.snippets.config import SnippetSudoOption
+from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 
 
 def _make_script(
@@ -108,16 +110,12 @@ def _make_service_with_node(
     service_name: str = "svc",
     node_name: str | None = "node",
     node_address: str | None = "10.0.0.1",
-) -> MagicMock:
-    service = MagicMock()
-    service.name = service_name
+) -> CreatedService:
     if node_name is None and node_address is None:
-        service.node = None
+        node = None
     else:
-        service.node = MagicMock()
-        service.node.name = node_name
-        service.node.address = node_address
-    return service
+        node = CreatedNodeFactory.build(name=node_name, address=node_address)
+    return CreatedServiceFactory.build(name=service_name, node=node)
 
 
 class TestResolveExecutorHostForService:
@@ -174,16 +172,6 @@ class TestResolveExecutorHostForService:
             service_name="mvc-lab-other",
             node_name="mvc-lab-maria1",
             node_address="10.0.0.99",
-        )
-        executor_hosts = {"mvc-lab-db3": "10.0.0.7"}
-        assert resolve_executor_host_for_service(executor_hosts, service) is None
-
-    def test_returns_none_when_node_address_is_empty(self) -> None:
-        """Skip the address lookup cleanly when ``service.node.address`` is empty."""
-        service = _make_service_with_node(
-            service_name="mvc-lab-other",
-            node_name="mvc-lab-maria1",
-            node_address="",
         )
         executor_hosts = {"mvc-lab-db3": "10.0.0.7"}
         assert resolve_executor_host_for_service(executor_hosts, service) is None

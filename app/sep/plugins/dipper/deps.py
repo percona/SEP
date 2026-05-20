@@ -278,7 +278,7 @@ async def get_dipper_execution_args(
 def resolve_executor_host_for_service(
     executor_hosts: ExecutorHosts, service: CreatedServiceDep
 ) -> str | None:
-    """Best-effort mapping between an inventory service and a Nomad client hostname.
+    """Resolve a Nomad client hostname for the given inventory service.
 
     Resolution order:
 
@@ -300,9 +300,8 @@ def resolve_executor_host_for_service(
         matches.
     :rtype: str | None
     """
-    hostnames = set(executor_hosts.keys())
     if service.node:
-        if service.node.name and service.node.name in hostnames:
+        if service.node.name and service.node.name in executor_hosts:
             return service.node.name
         if service.node.address:
             resolved = resolve_executor_name_by_address(
@@ -310,7 +309,7 @@ def resolve_executor_host_for_service(
             )
             if resolved is not None:
                 return resolved
-    if service.name and service.name in hostnames:
+    if service.name and service.name in executor_hosts:
         return service.name
     return None
 
