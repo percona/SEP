@@ -537,6 +537,57 @@ def test_cmd_rc_rc1_invokes_dev_version_bump(repo, monkeypatch):
     assert bump_calls == [("0.13.0", "v0.13.0")]
 
 
+def test_cmd_rc_rc1_patch_does_not_invoke_dev_version_bump(repo, monkeypatch):
+    """RC1 for a patch (Z>0) must NOT dev-bump main.
+
+    Main is already at X.(Y+1).0.dev0 from the prior minor release, so
+    recomputing the next .dev0 produces the value main already carries
+    and the bump commit would fail with "nothing to commit". cmd_rc must
+    skip the dev-bump call site entirely on patch RC1.
+    """
+
+    def fake_run(cmd, **kwargs):
+        wheel = Path("dist") / "sep-0.12.1rc1-py3-none-any.whl"
+        wheel.parent.mkdir(exist_ok=True)
+        wheel.write_text("", encoding="utf-8")
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+
+            class R:
+                stdout = "main\n"
+                returncode = 0
+
+            return R()
+        if cmd[:2] == ["git", "status"]:
+
+            class R:
+                stdout = ""
+                returncode = 0
+
+            return R()
+
+        class R:
+            stdout = ""
+            returncode = 0
+
+        return R()
+
+    bump_calls = []
+
+    def fake_dev_bump(version, stable_tag):
+        bump_calls.append((version, stable_tag))
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "_gh_available", lambda: False)
+    monkeypatch.setattr(release, "_local_branch_exists", lambda _b: False)
+    monkeypatch.setattr(release, "_remote_branch_exists", lambda _b: False)
+    monkeypatch.setattr(release, "_invoke_post_jira_webhook", lambda *_a, **_kw: True)
+    monkeypatch.setattr(release, "_create_dev_version_bump_pr", fake_dev_bump)
+
+    rc = release.cmd_rc("0.12.1", 1, sign_via_github_api=False)
+    assert rc == 0
+    assert bump_calls == []
+
+
 def test_cmd_rc_rc2_does_not_invoke_dev_version_bump(repo, monkeypatch):
     """RC2+ must NOT redo the dev-bump (it was done atomically with RC1)."""
 
