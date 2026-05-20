@@ -53,7 +53,7 @@ TOPOLOGY_PAYLOAD_REQUIREMENTS = "PyMySQL[rsa,ed25519]\nmyloginpath"
 
 
 def make_primary_hash(server_id: Any, server_uuid: Any, port: Any) -> str:
-    """Deterministic hash that lets a replica match a primary's identity.
+    """Compute the deterministic hash that lets a replica match a primary's identity.
 
     Mirrors ``GAS/tools/bin/db_tree.py::make_primary_hash`` so existing
     operator intuition transfers (replica's source_server_id+uuid+port hash
@@ -413,7 +413,7 @@ def _server_hashes_by_node(nodes: list[dict[str, Any]]) -> dict[str, Any]:
         node["id"]: (node.get("data") or {}).get("server", {}).get("server_hash")
         for node in nodes
         if node["type"] == NODE_TYPE_MYSQL
-        and node.get("data", {}).get("status") == "ok"
+        and (node.get("data") or {}).get("status") == "ok"
     }
 
 
