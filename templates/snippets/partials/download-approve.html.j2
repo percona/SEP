@@ -35,7 +35,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
           method="post"
           class="confirmable-form"
           data-confirm-message='Are you sure you want to {{ action_verb }} snippet "{{ snippet.filename }}"?'
-          action="{{ url_for(action_route, snippet_filename=snippet.filename) }}">
+          action="{{ url_for(action_route).include_query_params(snippet_filename=snippet.filename) | string }}">
         <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
         <button {% if download_before_approval %}disabled title="Please download and inspect the full snippet before approving it" data-next-title="{{ submit_title }}"{% else %}title="{{ submit_title }}"{% endif %}
                 type="submit"

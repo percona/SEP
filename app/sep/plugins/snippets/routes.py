@@ -22,6 +22,11 @@ carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
 hit; the routes remain mounted so users can fall back to the legacy UI
 for capabilities (chaining, scheduling, alerting) the React UI does not
 yet expose.
+
+Per-snippet HTML actions use fixed paths (``/detail``, ``/execute``,
+``/approve``, ``/remove-approval``) and pass ``snippet_filename`` as a
+query parameter so nested keys (e.g. ``diag/slow-query.sh``) never appear
+as a path segment: Starlette rejects slashes in ``url_for`` path params.
 """
 
 import logging
@@ -81,71 +86,22 @@ async def snippets_index(
     )
 
 
-@router.get(
-    "/{snippet_filename}", dependencies=[IsAuthenticated], response_class=HTMLResponse
-)
-async def snippets_detail(
-    snippet: ValidatedSnippet,
-    request: Request,
-    context: DefaultContext,
-    executor_hosts_ctx: ExecutorHostsCtx,
-    tasks_api: TaskAPI,
-) -> HTMLResponse:
-    """Retrieve and display information about a snippet."""
-    response = await tasks_api.get(
-        f"/{snippet.execution_task_name}/history/",
-        params={"snippet_filename": snippet.filename},
-    )
-    history_tasks = response["items"]
-    for history in history_tasks:
-        try:
-            history["available_files"] = await tasks_api.get(
-                f"/history/{history['id']}/files/"
-            )
-        except HTTPException:
-            logger.debug(
-                "Could not fetch available files for task history %s",
-                history["id"],
-                exc_info=True,
-            )
-            history["available_files"] = []
-    response = await tasks_api.get(
-        f"/{snippet.execution_task_name}/history/",
-        params={
-            "snippet_filename": snippet.filename,
-            "status": TaskHistoryStatusEnum.RUNNING,
-        },
-    )
-    context |= {
-        "snippet": snippet,
-        "executor_hosts": executor_hosts_ctx.as_form_hosts(),
-        "history_tasks": history_tasks,
-        "running_tasks": response["items"],
-    }
-    context["snippet"] = snippet
-    try:
-        context["snippet_preview"] = await snippet.get_preview()
-    except UnicodeDecodeError:
-        logger.debug("Could not decode snippet code", exc_info=True)
-    return templates.TemplateResponse(
-        request=request,
-        name="snippets/details.html.j2",
-        context=context,
-    )
-
-
 def _get_snippet_success_redirect(
     request: Request, user: AdminUser, snippet: Snippet, msg: str | None = None
 ) -> RedirectResponse:
     messages.success(request, msg)
     logger.info("%s by %s: %r", msg, user.username, snippet)
     return RedirectResponse(
-        request.url_for("snippets_detail", snippet_filename=snippet.filename),
+        str(
+            request.url_for("snippets_detail").include_query_params(
+                snippet_filename=snippet.filename
+            )
+        ),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
-@router.post("/{snippet_filename}/approve", dependencies=[IsCsrfValidated])
+@router.post("/approve", dependencies=[IsCsrfValidated])
 async def snippets_approve(
     request: Request, user: AdminUser, snippet: UnapprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
@@ -155,7 +111,7 @@ async def snippets_approve(
     return _get_snippet_success_redirect(request, user, snippet, "Snippet approved")
 
 
-@router.post("/{snippet_filename}/remove-approval", dependencies=[IsCsrfValidated])
+@router.post("/remove-approval", dependencies=[IsCsrfValidated])
 async def snippets_remove_approval(
     request: Request, user: AdminUser, snippet: ApprovedSnippet, session: SessionDep
 ) -> RedirectResponse:
@@ -262,7 +218,7 @@ async def snippets_approve_batch(
     return index_redirect
 
 
-@router.post("/{snippet_filename}", dependencies=[IsAuthenticated])
+@router.post("/execute", dependencies=[IsAuthenticated])
 async def snippets_execute(
     request: Request,
     tasks_api: TaskAPI,
@@ -286,6 +242,66 @@ async def snippets_execute(
         },
     )
     return RedirectResponse(
-        request.url_for("snippets_detail", snippet_filename=snippet.filename),
+        str(
+            request.url_for("snippets_detail").include_query_params(
+                snippet_filename=snippet.filename
+            )
+        ),
         status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.get("/detail", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def snippets_detail(
+    snippet: ValidatedSnippet,
+    request: Request,
+    context: DefaultContext,
+    executor_hosts_ctx: ExecutorHostsCtx,
+    tasks_api: TaskAPI,
+) -> HTMLResponse:
+    """Retrieve and display information about a snippet."""
+    response = await tasks_api.get(
+        f"/{snippet.execution_task_name}/history/",
+        params={"snippet_filename": snippet.filename},
+    )
+    history_tasks = response["items"]
+    for history in history_tasks:
+        try:
+            history["available_files"] = await tasks_api.get(
+                f"/history/{history['id']}/files/"
+            )
+        except HTTPException:
+            logger.debug(
+                "Could not fetch available files for task history %s",
+                history["id"],
+                exc_info=True,
+            )
+            history["available_files"] = []
+    response = await tasks_api.get(
+        f"/{snippet.execution_task_name}/history/",
+        params={
+            "snippet_filename": snippet.filename,
+            "status": TaskHistoryStatusEnum.RUNNING,
+        },
+    )
+    context |= {
+        "snippet": snippet,
+        "executor_hosts": executor_hosts_ctx.as_form_hosts(),
+        "history_tasks": history_tasks,
+        "running_tasks": response["items"],
+        "snippet_execute_action": str(
+            request.url_for("snippets_execute").include_query_params(
+                snippet_filename=snippet.filename
+            )
+        ),
+    }
+    context["snippet"] = snippet
+    try:
+        context["snippet_preview"] = await snippet.get_preview()
+    except UnicodeDecodeError:
+        logger.debug("Could not decode snippet code", exc_info=True)
+    return templates.TemplateResponse(
+        request=request,
+        name="snippets/details.html.j2",
+        context=context,
     )
