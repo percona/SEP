@@ -138,9 +138,7 @@ class PeriodicTaskSummary(BaseModel):
             return data
         normalized = dict(data)
         execute_request = normalized.get("execute_request") or {}
-        normalized["chain_task_names"] = (
-            execute_request.get("chain_task_names") or []
-        )
+        normalized["chain_task_names"] = execute_request.get("chain_task_names") or []
         return normalized
 
 

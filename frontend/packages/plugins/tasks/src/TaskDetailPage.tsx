@@ -244,7 +244,7 @@ export function TaskDetailPage() {
           <span>
             Task logs
             {logsEntry?.task?.name ? ` — ${logsEntry.task.name}` : ''}
-            {logsEntry?.id != null ? ` #${logsEntry.id}` : ''}
+            {logsEntry?.id !== null && logsEntry?.id !== undefined ? ` #${logsEntry.id}` : ''}
           </span>
           <IconButton
             aria-label="Close logs dialog"
@@ -255,7 +255,7 @@ export function TaskDetailPage() {
           </IconButton>
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0 }}>
-          {logsEntry?.id != null ? (
+          {logsEntry?.id !== null && logsEntry?.id !== undefined ? (
             <TaskLogViewer
               taskHistoryId={logsEntry.id}
               taskStatus={logsEntry.status}
