@@ -44,13 +44,9 @@ pipeline {
 		PYTHON = "python${pyVersion}"
 		PYTHON_VERSION = "${pyVersion}"
 
-		// Pinned to match `.github/workflows/ci.yml` (setup-node + npm i -g pnpm).
+		// Pinned to match .github/workflows/ci.yml.
 		NODE_VERSION = "22.13.0"
 		PNPM_VERSION = "11.1.2"
-
-		// Make Node/pnpm available to every stage. The directory is created in
-		// the Prepare environment stage below; PATH just needs to resolve at
-		// command-lookup time, not at pipeline-parse time.
 		PATH = "${env.WORKSPACE}/build/node/bin:${env.PATH}"
 
 		RELEASE_VER = "${releaseTag}"
@@ -95,30 +91,15 @@ pipeline {
 
 					${PYTHON} -m venv build/venv
 					build/venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel 'poetry==2.4.1'
-					# Pre-install poetry-plugin-export into Poetry's venv so Poetry
-					# skips its project-scoped plugin self-install. That self-install
-					# is a separate solver run whose transitive graph (keyring →
-					# importlib-metadata → zipp, etc.) is NOT pinned by poetry.lock
-					# and therefore hits PyPI live — where `[solver] min-release-age`
-					# in poetry.toml filters out fresh releases and breaks resolution.
-					# Mirrors `pipx inject` from .github/actions/setup-python-job.
+					# Pre-install so Poetry's project-scoped plugin self-install
+					# never runs — that solver hits PyPI live and trips
+					# `solver.min-release-age` in poetry.toml on fresh transitives.
 					build/venv/bin/${PYTHON} -m pip install --no-cache 'poetry-plugin-export>=1.9.0,<2.0.0'
 					build/venv/bin/poetry install --with audit
 
-					# Provision Node + pnpm for the frontend pre-commit hooks
-					# (oxfmt, oxlint). The stream9 Jenkins agent has no Node/pnpm
-					# tooling, but the React frontend (added in SEP-945) is gated
-					# by hooks that call `pnpm exec ...`. Install Node via the
-					# official tarball into build/node/ (no root needed), then
-					# install pnpm globally into the same tree via npm, matching
-					# exactly what .github/workflows/ci.yml does
-					# (`npm install -g pnpm@${PNPM_VERSION}`).
-					#
-					# We deliberately don't use corepack here: corepack bundled
-					# with Node 22.13.0 has an outdated signing-key list and
-					# rejects recent pnpm releases ("Cannot find matching keyid").
-					# Using `npm i -g` sidesteps the signature check entirely and
-					# keeps parity with GitHub Actions.
+					# Node + pnpm for the frontend pre-commit hooks (oxfmt, oxlint).
+					# `npm i -g pnpm` (not corepack) matches ci.yml and avoids
+					# corepack's outdated signing-key check in Node 22.13.0.
 					NODE_TARBALL="node-v${NODE_VERSION}-linux-x64"
 					curl -fsSL -o "/tmp/${NODE_TARBALL}.tar.xz" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}.tar.xz"
 					tar -xJf "/tmp/${NODE_TARBALL}.tar.xz" -C /tmp
