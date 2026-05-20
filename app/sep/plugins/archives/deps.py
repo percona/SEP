@@ -160,8 +160,7 @@ async def _resolve_destination_host_and_db(
         dest_data["dest_port"] = dest_service.port or DEFAULT_MYSQL_PORT
     elif dest_host := (form.dest_host or "").strip():
         dest_data["dest_host"] = dest_host
-        if form.dest_port is not None:
-            dest_data["dest_port"] = form.dest_port
+        dest_data["dest_port"] = form.dest_port or DEFAULT_MYSQL_PORT
 
     if form.dest_db_id is not None:
         dest_schema = await get_created_entity(
