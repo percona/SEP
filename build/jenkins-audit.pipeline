@@ -85,8 +85,32 @@ pipeline {
 					venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel
 
 					${PYTHON} -m venv build/venv
-					build/venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel poetry
+					build/venv/bin/${PYTHON} -m pip install --no-cache -U pip wheel 'poetry==2.4.1'
+					# Pre-install poetry-plugin-export into Poetry's venv so Poetry
+					# skips its project-scoped plugin self-install. That self-install
+					# is a separate solver run whose transitive graph (keyring →
+					# importlib-metadata → zipp, etc.) is NOT pinned by poetry.lock
+					# and therefore hits PyPI live — where `[solver] min-release-age`
+					# in poetry.toml filters out fresh releases and breaks resolution.
+					# Mirrors `pipx inject` from .github/actions/setup-python-job.
+					build/venv/bin/${PYTHON} -m pip install --no-cache 'poetry-plugin-export>=1.9.0,<2.0.0'
 					build/venv/bin/poetry install --with audit
+				'''
+			}
+		}
+
+		stage('Lockfile hygiene') {
+			options {
+				timeout(time: 5, unit: 'MINUTES')
+			}
+
+			steps {
+				echo 'Checking poetry.lock is in sync with pyproject.toml ..'
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					build/venv/bin/poetry check --lock --strict
 				'''
 			}
 		}
