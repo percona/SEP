@@ -34,6 +34,11 @@ import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type PluginSchema } from '@sep/api';
+import {
+  snippetPluginExecutePath,
+  snippetPluginHistoryPath,
+  snippetPluginSchemaPath,
+} from '../../snippetPluginPaths';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
 import {
   TaskHistoryTable,
@@ -72,10 +77,9 @@ function useSnippetAccordionSchema(filename: string, enabled: boolean) {
   return useQuery<PluginSchema>({
     queryKey: ['snippets', filename, 'schema', { execution_only: true }],
     queryFn: async () => {
-      const { data } = await apiClient.get<PluginSchema>(
-        `/plugins/snippets/${encodeURIComponent(filename)}/schema`,
-        { params: { execution_only: true } },
-      );
+      const { data } = await apiClient.get<PluginSchema>(snippetPluginSchemaPath(filename), {
+        params: { execution_only: true },
+      });
       return data;
     },
     enabled,
@@ -88,7 +92,7 @@ function useSnippetAccordionExecution(filename: string) {
   return useMutation<ExecuteResponse, Error, SnippetExecutionRequest>({
     mutationFn: async (body) => {
       const { data } = await apiClient.post<ExecuteResponse>(
-        `/plugins/snippets/${encodeURIComponent(filename)}/execute`,
+        snippetPluginExecutePath(filename),
         body,
       );
       return data;
@@ -106,7 +110,7 @@ function useSnippetAccordionHistory(filename: string, enabled: boolean) {
     queryKey: ['snippets', filename, 'history'],
     queryFn: async () => {
       const { data } = await apiClient.get<PaginatedTaskHistory>(
-        `/plugins/snippets/${encodeURIComponent(filename)}/history`,
+        snippetPluginHistoryPath(filename),
       );
       return data;
     },
