@@ -411,12 +411,13 @@ test.describe('Inventory plugin smoke', () => {
     // Click the Delete icon button rendered in the _actions column
     await page.getByRole('button', { name: 'Delete' }).first().click();
 
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('Delete from Inventory?')).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await expect(dialog.getByText('Delete from Inventory?')).toBeVisible();
 
     // Cancel — no DELETE request should have been sent
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 5_000 });
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
 
     expect(deleteRequests).toEqual([]);
   });
@@ -435,11 +436,13 @@ test.describe('Inventory plugin smoke', () => {
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
 
     await page.getByRole('button', { name: 'Delete' }).first().click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
 
-    // Confirm — DELETE request must be sent to the correct endpoint
-    await page.getByRole('button', { name: 'Delete' }).last().click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 5_000 });
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Confirm — scope to dialog so we click the confirm button, not the row action
+    await dialog.getByRole('button', { name: 'Delete' }).click();
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
 
     await expect
       .poll(() => deleteRequests, { timeout: 5_000 })
