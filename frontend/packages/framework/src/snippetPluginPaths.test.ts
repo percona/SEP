@@ -16,14 +16,67 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { snippetPluginExecutePath, snippetPluginSchemaPath } from './snippetPluginPaths';
+import {
+  SNIPPET_PLUGIN_PER_SNIPPET_BASE,
+  snippetPluginApprovalPath,
+  snippetPluginDownloadPath,
+  snippetPluginExecutePath,
+  snippetPluginHistoryPath,
+  snippetPluginPreviewPath,
+  snippetPluginSchemaPath,
+} from './snippetPluginPaths';
 
 describe('snippetPluginPaths', () => {
-  it('encodes path segments in filenames like backend quote(..., safe="")', () => {
-    const filename = 'diag/slow-query.sh';
-    expect(snippetPluginSchemaPath(filename)).toBe('/plugins/snippets/diag%2Fslow-query.sh/schema');
-    expect(snippetPluginExecutePath(filename)).toBe(
-      '/plugins/snippets/diag%2Fslow-query.sh/execute',
+  it('exposes the /snippet sub-prefix for per-snippet operations', () => {
+    expect(SNIPPET_PLUGIN_PER_SNIPPET_BASE).toBe('/plugins/snippets/snippet');
+  });
+
+  it('carries the filename in the snippet_filename query parameter', () => {
+    expect(snippetPluginSchemaPath('hello.sh')).toBe(
+      '/plugins/snippets/snippet/schema?snippet_filename=hello.sh',
     );
+    expect(snippetPluginExecutePath('hello.sh')).toBe(
+      '/plugins/snippets/snippet/execute?snippet_filename=hello.sh',
+    );
+    expect(snippetPluginPreviewPath('hello.sh')).toBe(
+      '/plugins/snippets/snippet/preview?snippet_filename=hello.sh',
+    );
+    expect(snippetPluginDownloadPath('hello.sh')).toBe(
+      '/plugins/snippets/snippet/download?snippet_filename=hello.sh',
+    );
+    expect(snippetPluginHistoryPath('hello.sh')).toBe(
+      '/plugins/snippets/snippet/history?snippet_filename=hello.sh',
+    );
+    expect(snippetPluginApprovalPath('hello.sh')).toBe(
+      '/plugins/snippets/snippet/approval?snippet_filename=hello.sh',
+    );
+  });
+
+  it('escapes nested filenames using URLSearchParams encoding', () => {
+    const filename = 'diag/slow-query.sh';
+    expect(snippetPluginSchemaPath(filename)).toBe(
+      '/plugins/snippets/snippet/schema?snippet_filename=diag%2Fslow-query.sh',
+    );
+    expect(snippetPluginExecutePath(filename)).toBe(
+      '/plugins/snippets/snippet/execute?snippet_filename=diag%2Fslow-query.sh',
+    );
+  });
+
+  it('never bakes nested filenames into the URL path itself', () => {
+    const filename = 'diag/slow-query.sh';
+    for (const builder of [
+      snippetPluginSchemaPath,
+      snippetPluginExecutePath,
+      snippetPluginPreviewPath,
+      snippetPluginDownloadPath,
+      snippetPluginHistoryPath,
+      snippetPluginApprovalPath,
+    ]) {
+      const url = builder(filename);
+      const [path] = url.split('?');
+      expect(path).not.toContain('diag');
+      expect(path).not.toContain('slow-query');
+      expect(path).not.toContain('%2F');
+    }
   });
 });

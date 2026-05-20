@@ -436,7 +436,9 @@ class TestSnippetsApprovalRouteDeprecationHeaders:
         snippet = await create_snippet("hello.sh", approved=False)
 
         response = admin_client.post(
-            f"/snippets/{snippet.filename}/approve", follow_redirects=False
+            "/snippets/approve",
+            params={"snippet_filename": snippet.filename},
+            follow_redirects=False,
         )
 
         assert response.headers.get("Deprecation") == "true"
@@ -449,7 +451,9 @@ class TestSnippetsApprovalRouteDeprecationHeaders:
         snippet = await create_snippet("hello.sh", approved=True)
 
         response = admin_client.post(
-            f"/snippets/{snippet.filename}/remove-approval", follow_redirects=False
+            "/snippets/remove-approval",
+            params={"snippet_filename": snippet.filename},
+            follow_redirects=False,
         )
 
         assert response.headers.get("Deprecation") == "true"
@@ -508,7 +512,8 @@ class TestSnippetsCsrfEnforcement:
         error = mocker.patch("app.sep.main.messages.error")
 
         response = admin_client_no_csrf.post(
-            f"/snippets/{snippet.filename}/approve",
+            "/snippets/approve",
+            params={"snippet_filename": snippet.filename},
             follow_redirects=False,
         )
 
@@ -532,7 +537,8 @@ class TestSnippetsCsrfEnforcement:
         error = mocker.patch("app.sep.main.messages.error")
 
         response = admin_client_no_csrf.post(
-            f"/snippets/{snippet.filename}/remove-approval",
+            "/snippets/remove-approval",
+            params={"snippet_filename": snippet.filename},
             follow_redirects=False,
         )
 
