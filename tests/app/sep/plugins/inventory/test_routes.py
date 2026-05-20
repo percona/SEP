@@ -1547,3 +1547,12 @@ def test_node_list_renders_per_row_chip_when_token_unset(
     body = _compact(response.text)
     assert "schedule-stale-warning" in body
     assert "will not run" in body
+
+
+def test_schedule_post_is_marked_deprecated(test_client):
+    """Ensure ``POST /inventory/schedule/`` carries ``deprecated: true`` in the OpenAPI schema."""
+    response = test_client.get("/openapi.json")
+    assert response.status_code == status.HTTP_200_OK
+    schema = response.json()
+    schedule_post = schema["paths"]["/inventory/schedule/"]["post"]
+    assert schedule_post.get("deprecated") is True
