@@ -6,3 +6,5 @@ minimumReleaseAgeIgnoreMissingTime: false
 allowBuilds:
   esbuild: true
   msw: true
+overrides:
+  ws: 8.20.1
