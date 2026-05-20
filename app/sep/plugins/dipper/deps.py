@@ -32,6 +32,7 @@ from app.core.exceptions import (
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.deps import (
     CreatedServiceDep,
     ExecutorHosts,
@@ -211,15 +212,39 @@ async def get_dipper_execution_args(
 def resolve_executor_host_for_service(
     executor_hosts: ExecutorHosts, service: CreatedServiceDep
 ) -> str | None:
-    """Best-effort mapping between an inventory service and a Nomad client hostname."""
-    hostnames = set(executor_hosts.keys())
-    candidates = []
+    """Resolve a Nomad client hostname for the given inventory service.
+
+    Resolution order:
+
+    1. ``service.node.name`` -- direct match against Nomad node names
+       (fast path).
+    2. ``service.node.address`` -- address-based lookup via
+       :func:`resolve_executor_name_by_address`, which covers the case
+       where the inventory display name differs from the Nomad client
+       node name but both refer to the same network address.
+    3. ``service.name`` -- last-resort match against Nomad node names.
+    4. ``None`` -- caller falls back to manual selection in the UI.
+
+    :param executor_hosts: Mapping of Nomad node name to network address as
+        returned by ``GET /api/tasks/hosts/``.
+    :type executor_hosts: ExecutorHosts
+    :param service: The selected inventory service.
+    :type service: CreatedServiceDep
+    :return: The resolved Nomad node name, or ``None`` when no candidate
+        matches.
+    :rtype: str | None
+    """
     if service.node:
-        candidates.extend([service.node.name, service.node.address])
-    candidates.append(service.name)
-    for candidate in candidates:
-        if candidate and candidate in hostnames:
-            return candidate
+        if service.node.name and service.node.name in executor_hosts:
+            return service.node.name
+        if service.node.address:
+            resolved = resolve_executor_name_by_address(
+                service.node.address, executor_hosts
+            )
+            if resolved is not None:
+                return resolved
+    if service.name and service.name in executor_hosts:
+        return service.name
     return None
 
 
