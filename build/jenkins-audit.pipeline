@@ -95,6 +95,7 @@ pipeline {
 					# never runs — that solver hits PyPI live and trips
 					# `solver.min-release-age` in poetry.toml on fresh transitives.
 					build/venv/bin/${PYTHON} -m pip install --no-cache 'poetry-plugin-export>=1.9.0,<2.0.0'
+					build/venv/bin/poetry check --lock --strict
 					build/venv/bin/poetry install --with audit
 
 					# Node + pnpm for the frontend pre-commit hooks (oxfmt, oxlint).
@@ -108,22 +109,6 @@ pipeline {
 					build/node/bin/node --version
 					build/node/bin/npm install -g "pnpm@${PNPM_VERSION}"
 					(cd frontend && pnpm install --frozen-lockfile)
-				'''
-			}
-		}
-
-		stage('Lockfile hygiene') {
-			options {
-				timeout(time: 5, unit: 'MINUTES')
-			}
-
-			steps {
-				echo 'Checking poetry.lock is in sync with pyproject.toml ..'
-				sh '''
-					set -o errexit
-					set -o pipefail
-
-					build/venv/bin/poetry check --lock --strict
 				'''
 			}
 		}
