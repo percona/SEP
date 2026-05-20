@@ -21,7 +21,8 @@ Hoisted from ``test_routes.py`` so the JSON API tests under
 ``run_*_sync`` patches without re-declaring them.
 """
 
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -82,6 +83,20 @@ EXPECTED_STUB_COUNT = 2
 def no_syncers() -> list:
     """Resolve ``SyncersDep`` to an empty list for the no-syncers test path."""
     return []
+
+
+class _InventorySyncer:
+    """Stub syncer that can sync inventory."""
+
+    def can_sync_inventory(self) -> bool:
+        return True
+
+
+class _NonInventorySyncer:
+    """Stub syncer that cannot sync inventory."""
+
+    def can_sync_inventory(self) -> bool:
+        return False
 
 
 @pytest.fixture
@@ -151,3 +166,17 @@ def mock_run_sync_funcs(mocker: MockerFixture) -> dict[str, AsyncMock]:
         "service": service_mock,
         "schema": schema_mock,
     }
+
+
+@pytest.fixture
+def mock_syncers_dep() -> Generator[list[Any], None, None]:
+    """Mock ``SyncersDep`` with one inventory-capable and one non-capable syncer.
+
+    ``build_available_syncers`` reads ``type(syncer).__module__`` and
+    ``type(syncer).__name__`` to build the qualified name, so real stub classes
+    are used instead of ``MagicMock`` to avoid fragile ``__class__`` patching.
+    """
+    syncers = [_InventorySyncer(), _NonInventorySyncer()]
+    sep_app.dependency_overrides[get_syncers] = lambda: syncers
+    yield syncers
+    sep_app.dependency_overrides.pop(get_syncers, None)
