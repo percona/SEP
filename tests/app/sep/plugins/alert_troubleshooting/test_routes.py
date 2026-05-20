@@ -199,14 +199,15 @@ class TestTroubleshootingExecute:
         )
 
     def test_execute_success(self, test_client: TestClient):
-        """Assert POST /execute/{filename} returns JSON with task ID."""
+        """Assert POST /execute?snippet_filename=... returns JSON with task ID."""
         mock_api = AsyncMock(spec=RemoteAPI)
         mock_api.post.return_value = {"id": MOCK_TASK_ID, "status": "running"}
         sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
         sep_app.dependency_overrides[get_ajax_executable_snippet] = self._mock_snippet
         sep_app.dependency_overrides[get_ajax_execution_request_meta] = self._mock_meta
         response = test_client.post(
-            "/alert-troubleshooting/execute/test.sh",
+            "/alert-troubleshooting/execute",
+            params={"snippet_filename": "test.sh"},
             data={"-hostname-": "node-1", "csrf-token": "fake"},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -222,11 +223,44 @@ class TestTroubleshootingExecute:
         sep_app.dependency_overrides[get_ajax_executable_snippet] = self._mock_snippet
         sep_app.dependency_overrides[get_ajax_execution_request_meta] = self._mock_meta
         response = test_client.post(
-            "/alert-troubleshooting/execute/test.sh",
+            "/alert-troubleshooting/execute",
+            params={"snippet_filename": "test.sh"},
             data={"-hostname-": "node-1", "csrf-token": "fake"},
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert "error" in response.json()
+
+    def test_execute_resolves_nested_filename_via_query(self, test_client: TestClient):
+        """Assert POST /execute with a nested snippet_filename query returns JSON with task ID."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        mock_api.post.return_value = {"id": MOCK_TASK_ID, "status": "running"}
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        sep_app.dependency_overrides[get_ajax_executable_snippet] = self._mock_snippet
+        sep_app.dependency_overrides[get_ajax_execution_request_meta] = self._mock_meta
+        response = test_client.post(
+            "/alert-troubleshooting/execute",
+            params={"snippet_filename": "diag/slow-query.sh"},
+            data={"-hostname-": "node-1", "csrf-token": "fake"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["task_id"] == MOCK_TASK_ID
+
+    def test_execute_legacy_path_shape_does_not_match(self, test_client: TestClient):
+        """Assert legacy POST /execute/<filename> returns 404 or 405 and does not call Tasks API."""
+        mock_api = AsyncMock(spec=RemoteAPI)
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock_api
+        sep_app.dependency_overrides[get_ajax_executable_snippet] = self._mock_snippet
+        sep_app.dependency_overrides[get_ajax_execution_request_meta] = self._mock_meta
+        response = test_client.post(
+            "/alert-troubleshooting/execute/test.sh",
+            data={"-hostname-": "node-1", "csrf-token": "fake"},
+        )
+        assert response.status_code in {
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_405_METHOD_NOT_ALLOWED,
+        }
+        mock_api.post.assert_not_called()
 
 
 class TestTroubleshootingOutput:
