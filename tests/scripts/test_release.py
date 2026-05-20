@@ -150,7 +150,7 @@ def _install_rc_probes(
     monkeypatch.setattr(release, "_remote_branch_exists", fake_remote_branch_exists)
 
     def fake_origin_main_version(_re):
-        parts = "0.12.0".split(".")
+        parts = ["0", "12", "0"]
         next_dev = f"{parts[0]}.{int(parts[1]) + 1}.0.dev0"
         return next_dev if main_at_next_dev else "0.12.0.dev0"
 
@@ -753,6 +753,19 @@ def test_prep_ordering(monkeypatch):
     assert (
         checkout_idx < push_idx < webhook_idx < build_idx < jenkins_idx < dev_bump_idx
     )
+
+
+def test_prep_patch_release_skips_dev_bump(monkeypatch):
+    """Skip the dev-bump PR during patch-release prep."""
+    dev_bump_calls = []
+    _, call_order = _patch_prep_ok(
+        monkeypatch,
+        dev_bump_calls=dev_bump_calls,
+    )
+    assert release.cmd_prep("0.13.1", sign_via_github_api=True) == 0
+
+    assert dev_bump_calls == []
+    assert not any(c[0] == "dev_bump" for c in call_order)
 
 
 def test_prep_rejects_non_main_branch(monkeypatch, capsys):

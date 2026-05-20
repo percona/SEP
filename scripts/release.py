@@ -866,10 +866,10 @@ def cmd_prep(version: str, *, sign_via_github_api: bool) -> int:
         ],
     )
 
-    # Scope-lock + dev-bump are atomic. Main runs at the next .dev0 for
-    # the entire QA window — fixes during QA land on the release branch
-    # (no main-first cherry-picks under the back-merge model).
-    _create_dev_version_bump_pr(version, f"v{version}")
+    # Scope-lock + dev-bump are atomic for minor releases. Patch releases
+    # already cut from a main branch that is on the next .dev0 version.
+    if version.split(".")[2] == "0":
+        _create_dev_version_bump_pr(version, f"v{version}")
 
     print()
     print(f"=== Prep for v{version} completed successfully ===")
