@@ -703,9 +703,7 @@ class TestTopologyResult:
     @pytest.mark.parametrize("route", ["result", "stream"])
     def test_rejects_too_many_ids(self, test_client, mock_task_api_dep, route: str):
         """Ensure result and stream endpoints cap task fan-out."""
-        ids = ",".join(
-            str(i) for i in range(1, MAX_TOPOLOGY_SHARDS + 2)
-        )
+        ids = ",".join(str(i) for i in range(1, MAX_TOPOLOGY_SHARDS + 2))
         response = test_client.get(
             f"/api/plugins/inventory/topology/{route}", params={"ids": ids}
         )

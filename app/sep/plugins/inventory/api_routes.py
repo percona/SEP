@@ -73,7 +73,6 @@ from app.sep.config import sep_settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
     ApiCurrentUser,
-    CurrentUser,
     InventoryAPI,
     IsApiAuthenticated,
     IsCsrfValidated,
@@ -296,7 +295,6 @@ async def topology_collect(
     body: TopologyCollectWrite,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
-    current_user: CurrentUser,  # noqa: ARG001
 ) -> TopologyCollectResponse:
     """Dispatch one or more topology collector tasks. Returns the task ids.
 
@@ -404,7 +402,7 @@ def _is_inventory_topology_history(
 
 
 def _require_inventory_topology_histories(
-    histories: list[dict[str, Any]], current_user: CurrentUser
+    histories: list[dict[str, Any]], current_user: ApiCurrentUser
 ) -> None:
     """Reject task histories not dispatched by this user for inventory topology."""
     current_user_id = str(current_user.id)
@@ -448,7 +446,7 @@ def _is_terminal_task_status(status_value: Any) -> bool:
 @router.get("/topology/result", response_model=TopologyResultResponse)
 async def topology_result(
     tasks_api: TaskAPI,
-    current_user: CurrentUser,
+    current_user: ApiCurrentUser,
     ids: str = Query(..., description="Comma-separated task history ids"),
 ) -> TopologyResultResponse:
     """Return the merged graph for the supplied task history ids.
@@ -635,10 +633,10 @@ async def _topology_event_stream(
 @router.get("/topology/stream")
 async def topology_stream(
     tasks_api: TaskAPI,
-    current_user: CurrentUser,
+    current_user: ApiCurrentUser,
     ids: str = Query(..., description="Comma-separated task history ids"),
 ) -> StreamingResponse:
-    """SSE stream of per-host topology events from the supplied tasks.
+    """Stream per-host topology events as SSE from the supplied tasks.
 
     Frontend hooks (``useTopologyStream``) consume this to render the
     React Flow graph progressively as each MySQL host finishes.
