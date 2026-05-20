@@ -87,7 +87,6 @@ export function useTopologyResult(taskHistoryIds: number[] | null) {
 
 export interface TopologyStreamState {
   isStreaming: boolean;
-  events: TopologyStreamEvent[];
   hostsCompleted: number;
   error: Error | null;
   /** Clear the current error. Used by the alert's dismiss button. */
@@ -100,7 +99,6 @@ const NOOP = () => {
 
 const INITIAL_STREAM_STATE: TopologyStreamState = {
   isStreaming: false,
-  events: [],
   hostsCompleted: 0,
   error: null,
   dismissError: NOOP,
@@ -175,20 +173,19 @@ export function useTopologyStream(
 
     const recordEvent = (event: TopologyStreamEvent) => {
       eventsReceived += 1;
+      let nextHostsCompleted: number | null = null;
       if (event.event === 'complete') {
         completed = true;
         ctrl.abort();
+      } else if (event.event === 'host_done' || event.event === 'host_error') {
+        hostsCompletedRef.current += 1;
+        nextHostsCompleted = hostsCompletedRef.current;
       }
-      setState((prev) => {
-        const events = [...prev.events, event];
-        let hostsCompleted = prev.hostsCompleted;
-        if (event.event === 'host_done' || event.event === 'host_error') {
-          hostsCompletedRef.current += 1;
-          hostsCompleted = hostsCompletedRef.current;
-        }
-        const isStreaming = event.event !== 'complete';
-        return { ...prev, events, hostsCompleted, isStreaming };
-      });
+      setState((prev) => ({
+        ...prev,
+        hostsCompleted: nextHostsCompleted ?? prev.hostsCompleted,
+        isStreaming: event.event !== 'complete',
+      }));
     };
 
     fetchEventSource(url, {
