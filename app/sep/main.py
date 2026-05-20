@@ -23,6 +23,8 @@ from traceback import format_exception
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
@@ -328,6 +330,45 @@ async def default_exception_handler(request: Request, exc: HTTPException) -> Res
 
     error_detail = exc.detail
     messages.error(request, str(error_detail))
+    return RedirectResponse(
+        request.headers.get("referer", "/"), status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@sep_app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> Response:
+    """Surface form-body validation errors as flash messages, not raw JSON.
+
+    FastAPI's default :class:`RequestValidationError` handler returns a
+    ``application/json`` 422 with a serialized error list, which the browser
+    renders as a raw JSON blob via its built-in JSON viewer. That's fine for
+    JSON API consumers but a poor UX for users submitting HTML forms — they
+    end up staring at structured error JSON instead of returning to the form
+    with an inline message.
+
+    For non-API paths and session-authenticated requests we convert each
+    validator failure into a flash message via :func:`messages.from_validation_error`
+    and redirect back to the referer (the form page). ``none_required`` is
+    excluded because every ``T | EmptyStrToNone``-shaped field produces a
+    redundant ``none_required`` alongside the real validator failure when a
+    non-empty value fails the ``T`` arm's constraint.
+    """
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES) or is_bearer_authenticated(
+        request
+    ):
+        return JSONResponse(
+            {"detail": jsonable_encoder(exc.errors())},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+
+    messages.from_validation_error(
+        request,
+        exc,
+        "Validation error",
+        exclude_types=("none_required",),
+    )
     return RedirectResponse(
         request.headers.get("referer", "/"), status_code=status.HTTP_303_SEE_OTHER
     )
