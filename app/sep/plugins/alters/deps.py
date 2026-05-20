@@ -408,10 +408,6 @@ def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
             ]
             form_values["dsn_table"] = ",".join(dsn_parts) if dsn_parts else dsn_value
         else:
-            # Legacy: pre-SEP-1232 stored args used the invalid singular `host`.
-            # Coerce so the edit-form dropdown pre-selects the corrected option.
-            if recursion_method == "host":
-                recursion_method = "hosts"
             form_values["recursion_method"] = recursion_method
         return
 

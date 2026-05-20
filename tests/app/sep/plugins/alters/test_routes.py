@@ -15,7 +15,6 @@
 
 """Define tests for the app.sep.plugins.alters.routes module."""
 
-import re
 from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, call
 
@@ -489,50 +488,6 @@ def test_alters_detail_when_hosts_api_fails(
     response = test_client.get(f"/alters/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
-
-
-@pytest.mark.usefixtures("_mock_get_alters_task_dep", "mock_get_username_mapping")
-def test_alters_edit_form_legacy_host_value_pre_selects_hosts(
-    test_client,
-    created_task,
-    mock_task_api_dep,
-    mock_inventory_api_dep,
-):
-    """Legacy stored ``--recursion-method=host`` renders edit form with ``hosts`` pre-selected."""
-    created_task.data = {
-        "task": "run-command",
-        "meta": {
-            "command": "pt-online-schema-change",
-            "args": ("'--alter=ADD COLUMN x INT' --recursion-method=host --execute"),
-            "target": "localhost",
-            "_schema_name": "public",
-            "_table_name": "t",
-        },
-    }
-
-    async def tasks_api_get(path: str, *args, **kwargs) -> object:
-        if path == "/hosts/":
-            return {}
-        if path.startswith("/stats/"):
-            return {}
-        if "/history/" in path or path == "/":
-            return {"items": [], "total": 0, "offset": 0, "limit": 50}
-        return []
-
-    mock_task_api_dep.get = AsyncMock(side_effect=tasks_api_get)
-    mock_inventory_api_dep.get = AsyncMock(
-        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
-    )
-
-    response = test_client.get(f"/alters/{created_task.name}")
-
-    assert response.status_code == status.HTTP_200_OK
-    assert 'value="hosts"' in response.text
-    assert 'value="host"' not in response.text
-    assert re.search(
-        r'<option\s+value="hosts"[^>]*\bselected\b[^>]*>\s*hosts\s*</option>',
-        response.text,
-    )
 
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep", "mock_get_username_mapping")

@@ -385,22 +385,6 @@ def test_parse_single_arg_recursion_dsn_only_host_port():
     assert fv["dsn_table"] == "h=1,P=2"
 
 
-@pytest.mark.parametrize(
-    ("raw_value", "expected"),
-    [
-        ("host", "hosts"),
-        ("hosts", "hosts"),
-        ("processlist", "processlist"),
-        ("none", "none"),
-    ],
-)
-def test_parse_single_arg_recursion_method_normalises_legacy_host(raw_value, expected):
-    """parse_single_arg coerces the legacy ``host`` value to ``hosts``."""
-    fv = parse_alters_task_args({"args": "--execute"})
-    parse_single_arg(f"--recursion-method={raw_value}", fv)
-    assert fv["recursion_method"] == expected
-
-
 @pytest.mark.asyncio
 async def test_get_alters_index_context(mocker):
     """Index view context is built via get_tasks_context."""
