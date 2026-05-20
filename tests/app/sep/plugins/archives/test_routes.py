@@ -175,6 +175,91 @@ def test_archives_create_full_form_dependency_chain_without_payload_override(
     assert posted["data"]["meta"]["_service_name"] == created_service.name
 
 
+def test_archives_create_accepts_empty_dest_port(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+    created_schema,
+    created_table,
+):
+    """POST /archives/ coerces empty-string optional ints to None.
+
+    Goes through the real form-parsing chain (no ``build_archives_task_payload``
+    override) so the ``EmptyStrToNone`` ``BeforeValidator`` is the only thing
+    stopping the previous 422 response.
+    """
+    created_archives = ArchivesCreate(
+        alias="arch_empty_port",
+        hostname="source_db",
+        service_id=created_service.id,
+        source_db_id=created_schema.id,
+        source_table_id=created_table.id,
+        swap_drop=SwapDropEnum.SWAP_DROP,
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    payload = created_archives.model_dump(exclude_none=True)
+    payload["dest_port"] = ""
+    payload["limit"] = ""
+
+    response = test_client.post("/archives/", data=payload, follow_redirects=False)
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    mock_task_api_dep.post.assert_awaited_once()
+
+
+def test_archives_update_accepts_empty_dest_port(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+    created_schema,
+    created_table,
+):
+    """POST /archives/{task_name}/update coerces empty-string optional ints to None.
+
+    Same real-form-binding pattern as the create test — the update route shares
+    the ``ArchivesGeneratedTask`` dep, so the empty-string fix has to cover it too.
+    """
+    created_archives = ArchivesCreate(
+        alias="arch_update_empty_port",
+        hostname="source_db",
+        service_id=created_service.id,
+        source_db_id=created_schema.id,
+        source_table_id=created_table.id,
+        swap_drop=SwapDropEnum.SWAP_DROP,
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    mock_task_api_dep.put.return_value = AsyncMock()
+
+    payload = created_archives.model_dump(exclude_none=True)
+    payload["dest_port"] = ""
+    payload["limit"] = ""
+
+    response = test_client.post(
+        f"/archives/{created_archives.alias}/update",
+        data=payload,
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    mock_task_api_dep.put.assert_awaited_once()
+
+
 def test_archives_create_skips_connectivity_check_when_opted_out(
     test_client, mock_task_api_dep, created_archives
 ):
