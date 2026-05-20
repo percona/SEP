@@ -164,9 +164,11 @@
 | app/sep/plugins/snippets/models.py                                                                          |       29 |        0 |    100% |           |
 | app/sep/plugins/snippets/routes.py                                                                          |       98 |       47 |     52% |80-82, 111, 121, 130, 168-178, 182-218, 229-244, 263-303 |
 | app/sep/plugins/snippets/schema.py                                                                          |       54 |        4 |     93% |136-138, 232 |
+| app/sep/plugins/tasks/api\_routes.py                                                                        |       25 |        0 |    100% |           |
 | app/sep/plugins/tasks/deps.py                                                                               |        5 |        0 |    100% |           |
-| app/sep/plugins/tasks/models.py                                                                             |        6 |        0 |    100% |           |
+| app/sep/plugins/tasks/models.py                                                                             |       30 |        1 |     97% |       138 |
 | app/sep/plugins/tasks/routes.py                                                                             |       56 |        0 |    100% |           |
+| app/sep/plugins/tasks/schema.py                                                                             |        2 |        0 |    100% |           |
 | app/sep/routes/artifacts.py                                                                                 |       29 |        1 |     97% |        67 |
 | app/sep/routes/download\_files.py                                                                           |       37 |        0 |    100% |           |
 | app/sep/routes/execution\_events.py                                                                         |       14 |        0 |    100% |           |
@@ -184,7 +186,7 @@
 | app/sep/sync/models.py                                                                                      |      348 |       49 |     86% |77-84, 98, 100, 119, 267-269, 330, 390-391, 537, 567, 583, 603, 708, 722, 742-743, 823, 837, 859-860, 954, 978-980, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py                                                                       |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                        |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       20 |     78% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       20 |     78% |83-87, 107-110, 121, 176-184, 236-252, 291-294, 344 |
 | app/sep/tasks.py                                                                                            |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                 |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                      |       20 |        0 |    100% |           |
@@ -219,7 +221,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      219 |       39 |     82% |125-129, 186, 207-214, 246, 295-303, 353-354, 381-382, 410-411, 430, 563, 587, 600-614, 635-648, 664-665 |
-| **TOTAL**                                                                                                   | **15690** | **2098** | **87%** |           |
+| **TOTAL**                                                                                                   | **15741** | **2099** | **87%** |           |
 
 
 ## Setup coverage badge
