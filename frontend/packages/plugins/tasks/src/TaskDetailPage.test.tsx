@@ -23,6 +23,16 @@ import { TaskDetailPage } from './TaskDetailPage';
 import { useTaskDetail } from './hooks';
 import type { TaskDetailBundle } from './types';
 
+const navigate = vi.fn();
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => navigate,
+  };
+});
+
 vi.mock('./hooks', () => ({
   useTaskDetail: vi.fn(),
 }));
@@ -177,6 +187,14 @@ describe('TaskDetailPage', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByTestId('task-log-viewer')).toHaveTextContent('logs for 11');
+  });
+
+  it('navigates to a sibling task detail route when a chain item is clicked', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open chain task' }));
+
+    expect(navigate).toHaveBeenCalledWith('../chained-task');
   });
 
   it('hides execution sections for template tasks', () => {

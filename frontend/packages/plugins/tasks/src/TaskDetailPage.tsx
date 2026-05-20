@@ -232,7 +232,7 @@ export function TaskDetailPage() {
             disablePolling
             onViewLogs={setLogsEntry}
             onChainItemClick={(chainTaskName) => {
-              navigate(encodeURIComponent(chainTaskName));
+              navigate(`../${encodeURIComponent(chainTaskName)}`);
             }}
           />
         </>
