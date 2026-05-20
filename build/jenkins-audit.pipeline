@@ -102,10 +102,15 @@ pipeline {
 					# `npm i -g pnpm` (not corepack) matches ci.yml and avoids
 					# corepack's outdated signing-key check in Node 22.13.0.
 					NODE_TARBALL="node-v${NODE_VERSION}-linux-x64"
-					curl -fsSL -o "/tmp/${NODE_TARBALL}.tar.xz" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}.tar.xz"
-					tar -xJf "/tmp/${NODE_TARBALL}.tar.xz" -C /tmp
+					NODE_TMP="$(mktemp -d)"
+					curl -fsSL -o "${NODE_TMP}/${NODE_TARBALL}.tar.xz" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}.tar.xz"
+					curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+						| grep " ${NODE_TARBALL}.tar.xz$" \
+						| (cd "${NODE_TMP}" && sha256sum --check --status)
+					tar -xJf "${NODE_TMP}/${NODE_TARBALL}.tar.xz" -C "${NODE_TMP}"
 					rm -rf build/node
-					mv "/tmp/${NODE_TARBALL}" build/node
+					mv "${NODE_TMP}/${NODE_TARBALL}" build/node
+					rm -rf "${NODE_TMP}"
 					build/node/bin/node --version
 					build/node/bin/npm install -g "pnpm@${PNPM_VERSION}"
 					(cd frontend && pnpm install --frozen-lockfile)
