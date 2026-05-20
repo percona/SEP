@@ -538,7 +538,7 @@ def test_cmd_rc_rc1_invokes_dev_version_bump(repo, monkeypatch):
 
 
 def test_cmd_rc_rc1_patch_does_not_invoke_dev_version_bump(repo, monkeypatch):
-    """RC1 for a patch (Z>0) must NOT dev-bump main.
+    """Skip the dev-bump step for patch RC1 releases.
 
     Main is already at X.(Y+1).0.dev0 from the prior minor release, so
     recomputing the next .dev0 produces the value main already carries
