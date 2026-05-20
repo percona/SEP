@@ -16,11 +16,13 @@
  */
 
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import Box from '@mui/material/Box';
 import type { PluginSchema } from '@sep/api';
 import { PluginDetailPage, PluginListPage } from '@sep/framework';
 import { renderInventoryDetailChildren } from './InventoryPluginNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
 import { InventoryTopology } from './topology';
+import { SyncControl } from './SyncControl';
 
 const INVENTORY_DETAIL_SUPPRESS_KEYS = [
   'services',
@@ -42,17 +44,22 @@ function InventoryNodesList({
 }) {
   const { pathname } = useLocation();
   return (
-    <PluginListPage
-      schema={schema}
-      pluginName="inventory"
-      mockEntityItems={mockEntityItems}
-      listOnly={false}
-      hideCreate
-      hideEntityTabs
-      entityNameOverride="nodes"
-      rowClickHref={(row) => `${pathname}/${String(row.id)}`}
-      allowListEntityDelete={allowListEntityDelete}
-    />
+    <>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+        <SyncControl />
+      </Box>
+      <PluginListPage
+        schema={schema}
+        pluginName="inventory"
+        mockEntityItems={mockEntityItems}
+        listOnly={false}
+        hideCreate
+        hideEntityTabs
+        entityNameOverride="nodes"
+        rowClickHref={(row) => `${pathname}/${String(row.id)}`}
+        allowListEntityDelete={allowListEntityDelete}
+      />
+    </>
   );
 }
 

@@ -29,6 +29,7 @@ import logging
 from collections import OrderedDict
 from collections.abc import Iterable
 
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from starlette.requests import Request
 
@@ -226,24 +227,25 @@ def error(
 
 def from_validation_error(
     request: Request,
-    exc: ValidationError,
+    exc: ValidationError | RequestValidationError,
     base_text: str = "Error",
     path_pattern: str | None = None,
     *,
     sticky: bool = False,
     exclude_types: Iterable[str] = (),
 ) -> None:
-    """Add error messages to the request from a Pydantic ValidationError.
+    """Add error messages to the request from a validation error.
 
-    This function iterates over the errors in the provided ValidationError and adds
-    error messages to the request's message queue. It allows for customization of the
-    base text of the message, an optional path pattern, and the ability to exclude
-    certain error types.
+    Accepts either Pydantic's :class:`ValidationError` (raised by manual
+    ``model_validate`` calls in dependencies) or FastAPI's
+    :class:`RequestValidationError` (raised by the framework when ``Form()``,
+    ``Body()``, or ``Query()`` parameters fail to bind). Both expose the same
+    ``.errors()`` shape, so the iteration below is identical.
 
     :param request: The HTTP request object.
     :type request: Request
-    :param exc: The Pydantic ValidationError instance.
-    :type exc: ValidationError
+    :param exc: The validation error instance.
+    :type exc: ValidationError | RequestValidationError
     :param base_text: The base text for the error messages, defaults to "Error".
     :type base_text: str
     :param path_pattern: An optional path regex pattern associated with the messages.
