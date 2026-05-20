@@ -168,9 +168,9 @@ export function useStopTaskHistory() {
  */
 export function useExecuteTask(pluginName: string) {
   const queryClient = useQueryClient();
-  return useMutation<TaskHistoryEntry, Error, { taskName: string }>({
+  return useMutation<unknown, Error, { taskName: string }>({
     mutationFn: async ({ taskName }) => {
-      const { data } = await apiClient.post<TaskHistoryEntry>(
+      const { data } = await apiClient.post<unknown>(
         `/plugins/${encodeURIComponent(pluginName)}/${encodeURIComponent(taskName)}/execute`,
         {},
       );
