@@ -29,6 +29,7 @@
     "@sep/plugin-atw": "workspace:*",
     "@sep/plugin-checksums": "workspace:*",
     "@sep/plugin-dipper": "workspace:*",
+    "@sep/plugin-mysql-backups": "workspace:*",
     "@sep/plugins-snippets": "workspace:*",
     "@sep/shared": "workspace:*",
     "@tanstack/react-query": "^5.100.7",

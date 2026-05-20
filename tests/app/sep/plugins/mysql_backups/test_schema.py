@@ -1,0 +1,108 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Tests for the mysql_backups plugin schema."""
+
+from app.sep.plugins.framework.schema import (
+    Capabilities,
+    ChoiceField,
+    ColumnFormat,
+    MultiChoiceField,
+    PluginSchema,
+)
+from app.sep.plugins.mysql_backups.models import BackupCreate
+from app.sep.plugins.mysql_backups.schema import mysql_backups_schema
+
+
+class TestMysqlBackupsSchema:
+    """Tests for the ``mysql_backups_schema`` PluginSchema definition."""
+
+    def test_schema_is_plugin_schema(self):
+        """The exported schema is a ``PluginSchema``."""
+        assert isinstance(mysql_backups_schema, PluginSchema)
+        assert mysql_backups_schema.name == "mysql_backups"
+
+    def test_capabilities(self):
+        """Capabilities mirror the Jinja2 backups (chaining, alerts, scheduling)."""
+        assert mysql_backups_schema.capabilities == Capabilities(
+            chaining=True, alert_on_fail=True, scheduling=True
+        )
+
+    def test_list_view_columns(self):
+        """List view exposes the per-ticket column set."""
+        columns = {col.key: col for col in mysql_backups_schema.list_view.columns}
+        assert {
+            "name",
+            "status",
+            "backup_type",
+            "hostname",
+            "created_at",
+            "created_by",
+        } <= set(columns)
+        assert columns["status"].format == ColumnFormat.STATUS
+        assert columns["backup_type"].format == ColumnFormat.CHIP
+        assert columns["created_at"].format == ColumnFormat.RELATIVE
+        # name is sortable for the standard "Name" header treatment
+        assert columns["name"].sortable is True
+
+    def test_form_sections_present(self):
+        """All five required form sections exist."""
+        titles = [section.title for section in mysql_backups_schema.forms]
+        expected = {"Task", "Mydumper", "XtraBackup", "Binlog", "Encryption", "Upload"}
+        assert expected <= set(titles), (
+            f"Missing form sections: {expected - set(titles)}"
+        )
+
+    def test_backup_type_is_choice_field(self):
+        """``backup_type`` is a ChoiceField with M/X/B values."""
+        fields = {
+            field.name: field
+            for section in mysql_backups_schema.forms
+            for field in section.fields
+        }
+        bt = fields["backup_type"]
+        assert isinstance(bt, ChoiceField)
+        assert {choice.value for choice in bt.choices} == {"M", "X", "B"}
+        assert bt.required is True
+
+    def test_upload_is_multi_choice_field(self):
+        """``upload`` is a MultiChoiceField with the three upload providers."""
+        fields = {
+            field.name: field
+            for section in mysql_backups_schema.forms
+            for field in section.fields
+        }
+        upload = fields["upload"]
+        assert isinstance(upload, MultiChoiceField)
+        assert {choice.value for choice in upload.choices} == {"RSYNC", "S3", "GSUTIL"}
+
+    def test_schema_field_names_match_backup_create_attrs(self):
+        """Every schema field name must resolve to a ``BackupCreate`` attribute.
+
+        ``apply_conditional_rules`` validates this at decoration time, but
+        keep the assertion in tests so a drift between schema and model
+        surfaces immediately.
+        """
+        model_fields = set(BackupCreate.model_fields)
+        schema_field_names = {
+            field.name
+            for section in mysql_backups_schema.forms
+            for field in section.fields
+        }
+        # ``upload`` is the only new attribute introduced by the schema.
+        assert schema_field_names - model_fields <= {"upload"}, (
+            f"Schema fields missing on BackupCreate: "
+            f"{schema_field_names - model_fields}"
+        )

@@ -31,6 +31,9 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const ChecksumsPlugin = lazy(() =>
   import('@sep/plugin-checksums').then((m) => ({ default: m.ChecksumsPlugin })),
 );
+const MysqlBackupsPlugin = lazy(() =>
+  import('@sep/plugin-mysql-backups').then((m) => ({ default: m.MysqlBackupsPlugin })),
+);
 const AtwPlugin = lazy(() => import('@sep/plugin-atw').then((m) => ({ default: m.AtwPlugin })));
 const DipperPlugin = lazy(() =>
   import('@sep/plugin-dipper').then((m) => ({ default: m.DipperPlugin })),
@@ -80,6 +83,7 @@ export const router = createBrowserRouter([
           // Checksums — schema-driven plugin (handles its own sub-routes)
           { path: 'plugins/checksums/*', element: <ChecksumsPlugin /> },
           { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
+          { path: 'plugins/mysql_backups/*', element: <MysqlBackupsPlugin /> },
           { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
           { path: 'backups/mysql', element: <PlaceholderPage /> },
           { path: 'backups/mongodb', element: <PlaceholderPage /> },

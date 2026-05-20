@@ -85,6 +85,7 @@ async def test_build_backup_task_payload(
         "hostname": "test_host",
         "s3_bucket": "my-test-bucket",
         "rsync_path": "/rsync",
+        "encrypt": True,
         "encryption_recipient": faker.email(),
     }
     backup_create = BackupCreate(**form_data)

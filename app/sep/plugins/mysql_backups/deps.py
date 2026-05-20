@@ -45,12 +45,14 @@ from app.sep.plugins.mysql_backups.models import (
     BackupConfigAll,
     BackupConfigServer,
     BackupCreate,
+    BackupResponse,
     BackupType,
     UploadProvider,
 )
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -58,21 +60,15 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 
-async def build_backup_task_payload(
-    form: Annotated[BackupCreate, Form()],
+async def _build_backup_task_payload_core(
+    form: BackupCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the backup task payload from form.
+    """Build a ``TaskWrite`` from a validated ``BackupCreate`` instance.
 
-    Build the payload for a Backups task to be executed.
-
-    :param form: The form data for the Backups creation.
-    :type form: BackupCreate
-    :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object containing all the necessary
-        configuration to create the Backup task.
-    :rtype: TaskWrite
+    Shared core used by both the form-bound dependency
+    :func:`build_backup_task_payload` and the JSON-path helper
+    :func:`build_backup_task_payload_from_json`.
     """
     service = await get_created_entity(
         inventory_api,
@@ -93,13 +89,17 @@ async def build_backup_task_payload(
         by_alias=True,
     )
 
-    upload_providers = []
-    if form.s3_bucket:
-        upload_providers.append(UploadProvider.S3)
-    if form.gs_bucket:
-        upload_providers.append(UploadProvider.GSUTIL)
-    if form.rsync_path:
-        upload_providers.append(UploadProvider.RSYNC)
+    if form.upload is not None:
+        upload_providers = list(form.upload)
+    else:
+        # Legacy form path: providers are inferred from bucket/path presence.
+        upload_providers = []
+        if form.s3_bucket:
+            upload_providers.append(UploadProvider.S3)
+        if form.gs_bucket:
+            upload_providers.append(UploadProvider.GSUTIL)
+        if form.rsync_path:
+            upload_providers.append(UploadProvider.RSYNC)
 
     server_config = {
         "alias": form.alias or service.node.address,
@@ -160,6 +160,40 @@ async def build_backup_task_payload(
         },
         alert_on_fail=form.alert_on_fail,
     )
+
+
+async def build_backup_task_payload(
+    form: Annotated[BackupCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the backup task payload from form.
+
+    :param form: The form data for the Backups creation.
+    :type form: BackupCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed ``TaskWrite`` object.
+    :rtype: TaskWrite
+    """
+    return await _build_backup_task_payload_core(form, inventory_api)
+
+
+async def build_backup_task_payload_from_json(
+    body: BackupCreate,
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the backup task payload from a JSON request body.
+
+    JSON-path counterpart to :func:`build_backup_task_payload`.
+
+    :param body: The validated JSON request body.
+    :type body: BackupCreate
+    :param inventory_api: The Inventory API client.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed ``TaskWrite`` object.
+    :rtype: TaskWrite
+    """
+    return await _build_backup_task_payload_core(body, inventory_api)
 
 
 def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
@@ -237,6 +271,106 @@ async def get_backups_task(
 
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
+
+
+def _extract_backup_type_from_task(task: Task) -> BackupType | None:
+    """Read ``BACKUP_TYPE`` out of the task's YAML config, if present."""
+    meta = task.data.get("meta") if task.data else None
+    raw_config = meta.get("config") if meta else None
+    if not raw_config:
+        return None
+    try:
+        config = yaml.safe_load(raw_config)
+    except yaml.YAMLError:
+        return None
+    server_list = (config or {}).get("SERVER_LIST") or []
+    if not server_list:
+        return None
+    raw_type = server_list[0].get("BACKUP_TYPE")
+    if raw_type is None:
+        return None
+    try:
+        return BackupType(raw_type)
+    except ValueError:
+        return None
+
+
+def build_mysql_backups_api_task_response(
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+) -> BackupResponse:
+    """Build a ``BackupResponse`` for the JSON API.
+
+    :param task: The backups task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A validated backup task API response object.
+    :rtype: BackupResponse
+    """
+    hostname = None
+    if task.data:
+        meta = task.data.get("meta") or {}
+        hostname = meta.get("target")
+    return BackupResponse(
+        **task.model_dump(),
+        backup_type=_extract_backup_type_from_task(task),
+        hostname=hostname,
+        status=status,
+    )
+
+
+def _extract_latest_task_status(
+    histories: Any,
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload."""
+    for history in histories:
+        if (raw_status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(raw_status)
+    return None
+
+
+async def get_backups_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for a backups task.
+
+    :param task_name: The task name.
+    :type task_name: str
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :return: The latest known status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    response = await tasks_api.get(f"/{task_name}/history/")
+    return _extract_latest_task_status(response["items"])
+
+
+async def get_mysql_backups_api_task_responses(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[BackupResponse]:
+    """Retrieve backup task responses for the JSON API.
+
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :param status: Optional latest-history status filter.
+    :type status: TaskHistoryStatusEnum | None
+    :return: Backup task responses matching the filter.
+    :rtype: list[BackupResponse]
+    """
+    params = {"owner": TaskOwner.BACKUPS.value}
+    response = await tasks_api.get("/", params=params)
+    tasks = [Task.model_validate(task) for task in response["items"]]
+    task_status_pairs = [
+        (task, await get_backups_task_status(task.name, tasks_api)) for task in tasks
+    ]
+    return [
+        build_mysql_backups_api_task_response(task, status=task_status)
+        for task, task_status in task_status_pairs
+        if status is None or task_status == status
+    ]
 
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:

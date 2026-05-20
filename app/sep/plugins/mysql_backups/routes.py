@@ -37,6 +37,7 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.mysql_backups.deps import (
     BackupGeneratedTask,
     BackupsTask,
@@ -49,7 +50,12 @@ from app.tasks.models import TaskHistoryStatusEnum
 from .restore.routes import router as restore_router
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+# Routes registered directly on this router serve the deprecated Jinja2
+# backup UI. The React + JSON API replacement lives under
+# /api/plugins/mysql_backups/ and /plugins/mysql_backups (FE). The
+# restore subroute keeps its own route_class — it is not part of the
+# Wave-1 migration.
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 router.include_router(restore_router, prefix="/restores", tags=["restores"])
