@@ -27,7 +27,7 @@ import {
   DialogTitle,
   Divider,
   IconButton,
-  Link,
+  Link as MuiLink,
   Paper,
   Table,
   TableBody,
@@ -37,7 +37,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   ChainDisplay,
   SEP_TABLE_CLASS,
@@ -162,11 +162,14 @@ export function TaskDetailPage() {
 
   return (
     <Box>
-      <Typography variant="body2" sx={{ mb: 2 }}>
-        <Link component={RouterLink} to="..">
-          Task Manager
-        </Link>
-      </Typography>
+      <MuiLink
+        component="button"
+        type="button"
+        onClick={() => navigate('..')}
+        sx={{ mb: 2, display: 'inline-block' }}
+      >
+        ← Back to Task Manager
+      </MuiLink>
 
       <Typography variant="h4" component="h1" sx={{ mb: 3 }}>
         {displayName}
