@@ -22,6 +22,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.schema import (
     BoolField,
     Capabilities,
+    ChainedPredecessor,
     Choice,
     ChoiceField,
     Column,
@@ -1169,3 +1170,213 @@ class TestPluginSchemaDerivedField:
                     DerivedTask(name_suffix="-x"),
                 ],
             )
+
+
+# ── ChainedPredecessor primitive and PluginSchema.predecessors (SEP-1123) ──
+
+
+class TestChainedPredecessor:
+    """Cover the ``ChainedPredecessor`` declarative primitive."""
+
+    def test_chained_predecessor_minimal(self) -> None:
+        """Construct a ``ChainedPredecessor`` with only ``name_suffix`` and check defaults."""
+        spec = ChainedPredecessor(name_suffix="-pre-checks")
+
+        assert spec.name_suffix == "-pre-checks"
+        assert spec.on_failure == "halt"
+        assert spec.parent_link is True
+
+    def test_chained_predecessor_empty_suffix_rejected(self) -> None:
+        """Reject an empty ``name_suffix`` via the ``NonEmptyStr`` type."""
+        with pytest.raises(ValidationError):
+            ChainedPredecessor(name_suffix="")
+
+    def test_chained_predecessor_extra_forbidden(self) -> None:
+        """Reject an unknown field on ``ChainedPredecessor`` (``extra="forbid"``)."""
+        with pytest.raises(ValidationError):
+            ChainedPredecessor.model_validate(
+                {"name_suffix": "-x", "unknown": "v"},
+            )
+
+    def test_chained_predecessor_on_failure_invalid(self) -> None:
+        """Reject a non-Literal ``on_failure`` value."""
+        with pytest.raises(ValidationError):
+            ChainedPredecessor.model_validate(
+                {"name_suffix": "-x", "on_failure": "abort"},
+            )
+
+    def test_chained_predecessor_round_trip(self) -> None:
+        """Round-trip a ``ChainedPredecessor`` losslessly through JSON."""
+        spec = ChainedPredecessor(
+            name_suffix="-pre-checks",
+            on_failure="continue",
+            parent_link=False,
+        )
+        dumped = spec.model_dump(mode="json")
+
+        assert dumped == {
+            "name_suffix": "-pre-checks",
+            "on_failure": "continue",
+            "parent_link": False,
+        }
+        reparsed = ChainedPredecessor.model_validate(dumped)
+        assert reparsed == spec
+
+
+class TestPluginSchemaPredecessorsField:
+    """Cover the new ``predecessors`` field on ``PluginSchema``."""
+
+    def test_defaults_to_none(self) -> None:
+        """Confirm ``predecessors`` is ``None`` by default (BC regression guard)."""
+        schema = PluginSchema(
+            name="minimal",
+            display_name="Minimal",
+            forms=[],
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.predecessors is None
+
+    def test_empty_list_collapses_to_none(self) -> None:
+        """Collapse ``predecessors=[]`` to ``None`` so the contract is single-valued.
+
+        ``cascade_create_predecessors`` rejects an empty input as a
+        programmer error; the schema validator preempts that by collapsing
+        empty lists at construction time, so plugins can pass either form
+        without surprising consumers.
+        """
+        schema = PluginSchema(
+            name="chain-demo",
+            display_name="Chain Demo",
+            forms=[],
+            list_view=_minimal_list_view(),
+            predecessors=[],
+        )
+
+        assert schema.predecessors is None
+
+    def test_with_predecessors_round_trips_through_json(self) -> None:
+        """Round-trip a schema carrying ``predecessors`` losslessly via JSON."""
+        schema = PluginSchema(
+            name="chain-demo",
+            display_name="Chain Demo",
+            forms=[],
+            list_view=_minimal_list_view(),
+            predecessors=[
+                ChainedPredecessor(name_suffix="-pre-checks", on_failure="halt"),
+            ],
+        )
+        reparsed = PluginSchema.model_validate(schema.model_dump(mode="json"))
+
+        assert reparsed == schema
+
+    def test_existing_unique_field_check_ignores_predecessors(self) -> None:
+        """Verify ``_validate_unique_field_names`` still passes when a predecessor name_suffix mirrors a field name.
+
+        ``predecessors[*].name_suffix`` lives outside the form-field
+        namespace, so sharing a literal value with a form field name must
+        not trigger the duplicate-name check.
+        """
+        schema = PluginSchema(
+            name="chain-demo",
+            display_name="Chain Demo",
+            forms=[
+                FormSection(
+                    title="T",
+                    fields=[StringField(name="foo", label="Foo")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+            predecessors=[ChainedPredecessor(name_suffix="-foo")],
+        )
+
+        assert schema.predecessors is not None
+
+    def test_duplicate_suffixes_rejected(self) -> None:
+        """Reject a schema with two ``ChainedPredecessor`` specs sharing a ``name_suffix``."""
+        with pytest.raises(
+            ValidationError,
+            match="Duplicate predecessors name_suffix values",
+        ):
+            PluginSchema(
+                name="chain-demo",
+                display_name="Chain Demo",
+                forms=[],
+                list_view=_minimal_list_view(),
+                predecessors=[
+                    ChainedPredecessor(name_suffix="-x"),
+                    ChainedPredecessor(name_suffix="-x"),
+                ],
+            )
+
+    def test_mixed_on_failure_rejected(self) -> None:
+        """Reject a predecessors list with mixed ``on_failure`` values."""
+        with pytest.raises(ValidationError, match="Mixed on_failure policies"):
+            PluginSchema(
+                name="chain-demo",
+                display_name="Chain Demo",
+                forms=[],
+                list_view=_minimal_list_view(),
+                predecessors=[
+                    ChainedPredecessor(name_suffix="-a", on_failure="halt"),
+                    ChainedPredecessor(name_suffix="-b", on_failure="continue"),
+                ],
+            )
+
+    def test_consistent_on_failure_accepted(self) -> None:
+        """Accept a predecessors list whose entries share an ``on_failure`` value."""
+        schema = PluginSchema(
+            name="chain-demo",
+            display_name="Chain Demo",
+            forms=[],
+            list_view=_minimal_list_view(),
+            predecessors=[
+                ChainedPredecessor(name_suffix="-a", on_failure="continue"),
+                ChainedPredecessor(name_suffix="-b", on_failure="continue"),
+            ],
+        )
+
+        assert schema.predecessors is not None
+        assert [p.on_failure for p in schema.predecessors] == ["continue", "continue"]
+
+    def test_single_entry_does_not_trigger_duplicate_error(self) -> None:
+        """Pass a single-entry predecessors list through without false-positive duplicate."""
+        schema = PluginSchema(
+            name="chain-demo",
+            display_name="Chain Demo",
+            forms=[],
+            list_view=_minimal_list_view(),
+            predecessors=[ChainedPredecessor(name_suffix="-x")],
+        )
+
+        assert schema.predecessors is not None
+        assert len(schema.predecessors) == 1
+
+    def test_shared_suffix_with_derived_is_rejected(self) -> None:
+        """Reject ``name_suffix`` shared between ``derived`` and ``predecessors``."""
+        with pytest.raises(
+            ValidationError,
+            match="name_suffix values shared between derived and predecessors",
+        ):
+            PluginSchema(
+                name="chain-demo",
+                display_name="Chain Demo",
+                forms=[],
+                list_view=_minimal_list_view(),
+                derived=[DerivedTask(name_suffix="-x")],
+                predecessors=[ChainedPredecessor(name_suffix="-x")],
+            )
+
+    def test_disjoint_suffixes_with_derived_accepted(self) -> None:
+        """Accept ``derived`` and ``predecessors`` when their suffixes do not overlap."""
+        schema = PluginSchema(
+            name="chain-demo",
+            display_name="Chain Demo",
+            forms=[],
+            list_view=_minimal_list_view(),
+            derived=[DerivedTask(name_suffix="-dry-run")],
+            predecessors=[ChainedPredecessor(name_suffix="-pre-checks")],
+        )
+
+        assert schema.derived is not None
+        assert schema.predecessors is not None
