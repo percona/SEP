@@ -112,14 +112,9 @@ async def test_get_executable_snippet_for_api_raises_403_for_uninterpretable(
     assert "cannot be executed" in str(exc_info.value.detail)
 
 
-def test_validate_snippet_parameters_scopes_messages_to_snippet_detail_url():
-    """Validation messages are scoped to the snippet detail URL including query params."""
+def test_validate_snippet_parameters_adds_non_sticky_messages():
+    """Validation messages are non-sticky flash messages with no path scoping."""
     request = MagicMock()
-    detail_url = MagicMock()
-    detail_url.include_query_params.return_value = (
-        "/snippets/detail?snippet_filename=hello.sh"
-    )
-    request.url_for.return_value = detail_url
     snippet = MagicMock()
     snippet.is_approved = True
     snippet.filename = "hello.sh"
@@ -132,16 +127,9 @@ def test_validate_snippet_parameters_scopes_messages_to_snippet_detail_url():
         monkeypatch.setattr(snippets_deps.messages, "error", error_mock)
         validate_snippet_parameters(request=request, snippet=snippet)
 
-    request.url_for.assert_called_once_with("snippets_detail")
-    detail_url.include_query_params.assert_called_once_with(snippet_filename="hello.sh")
     assert warning_mock.call_count + error_mock.call_count == 1
     called_mock = warning_mock if warning_mock.call_count else error_mock
-    called_mock.assert_called_once_with(
-        request,
-        "Bad parameter",
-        "/snippets/detail?snippet_filename=hello.sh",
-        sticky=True,
-    )
+    called_mock.assert_called_once_with(request, "Bad parameter")
 
 
 class TestCheckSnippetBatchExistence:
