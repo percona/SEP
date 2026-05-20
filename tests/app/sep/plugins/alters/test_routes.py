@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.plugins.alters.routes module."""
 
+import re
 from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, call
 
@@ -528,7 +529,10 @@ def test_alters_edit_form_legacy_host_value_pre_selects_hosts(
     assert response.status_code == status.HTTP_200_OK
     assert 'value="hosts"' in response.text
     assert 'value="host"' not in response.text
-    assert "selected>hosts</option>" in response.text
+    assert re.search(
+        r'<option\s+value="hosts"[^>]*\bselected\b[^>]*>\s*hosts\s*</option>',
+        response.text,
+    )
 
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep", "mock_get_username_mapping")
