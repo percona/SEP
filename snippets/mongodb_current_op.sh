@@ -62,7 +62,7 @@
 # entry per connection). Narrow it with --min-secs (keep only operations
 # running at least N seconds) and --active-only (drop idle operations).
 #
-# Authentication is performed with db.auth() over the shell's stdin, so the
+# Authentication is performed with db.auth() in a piped script, so the
 # password is not passed to mongosh/mongo on the process command line.
 #
 # Usage:
