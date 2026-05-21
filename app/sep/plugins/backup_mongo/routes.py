@@ -13,13 +13,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the backups plugin."""
+"""Define legacy Jinja routes for the backups plugin.
 
-import json
+Deprecated: use the React UI at ``/backups/mongodb`` and the JSON API at
+``/api/plugins/backup_mongo/``. These handlers remain for Wave 1 cutover and
+will be removed in Wave 3.
+"""
+
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
-from aiohttp import ClientResponseError
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
@@ -35,15 +38,19 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.deps import (
+    _fetch_latest_pbm_status,
     BackupGeneratedTask,
     BackupsIndexContextDep,
     BackupsTask,
 )
-from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
+from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
 
-PBM_LATEST_STATUS_TAIL_BYTES = 4096
+_LEGACY_ROUTE_WARNING = (
+    "Legacy Jinja backup_mongo route %s is deprecated; use /backups/mongodb "
+    "and /api/plugins/backup_mongo/ instead."
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -52,57 +59,13 @@ templates = sep_settings.TEMPLATES
 router.include_router(restore_router, prefix="/restores", tags=["restores"])
 
 
-async def _fetch_latest_pbm_status(tasks_api: Any, pbm_status_tasks: Any) -> str | None:
-    """Return the tail of the latest PBM status task's stdout.
-
-    Streams the ``run-script`` logs for the most recent PBM status history
-    record through the tasks API and returns at most
-    ``PBM_LATEST_STATUS_TAIL_BYTES`` characters of the concatenated stdout
-    content. The rolling buffer is truncated to that window on every append
-    so long-running PBM status tasks do not materialize their full log in
-    memory for this best-effort UI panel.
-
-    :param tasks_api: The tasks API client instance.
-    :type tasks_api: Any
-    :param pbm_status_tasks: The list of PBM status history records returned by
-        the tasks API, or an empty list when no history exists.
-    :type pbm_status_tasks: Any
-    :return: The tail of the latest PBM status stdout, or ``None`` when no
-        history exists or the stream cannot be read.
-    :rtype: str | None
-    """
-    try:
-        pbm_status_id = pbm_status_tasks[0]["id"]
-    except (IndexError, KeyError, TypeError):
-        return None
-    tail = ""
-    try:
-        async for log_entry in tasks_api.stream(
-            f"/history/{pbm_status_id}/logs/",
-            params={"step": "run-script"},
-        ):
-            if not log_entry:
-                continue
-            log_data = json.loads(log_entry)
-            if log_data.get("type") == TaskLogType.STDOUT and log_data.get("msg"):
-                tail = (tail + log_data["msg"])[-PBM_LATEST_STATUS_TAIL_BYTES:]
-    except (ClientResponseError, ValueError, KeyError):
-        logger.exception(
-            "Failed to fetch latest_status for backup_mongo task %s",
-            pbm_status_id,
-        )
-        return None
-    if not tail:
-        return None
-    return tail
-
-
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def pbm_backups_index(
     request: Request,
     context: BackupsIndexContextDep,
 ) -> HTMLResponse:
     """Homepage of PBM backup mongo plugin."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_index")
     return templates.TemplateResponse(
         request=request,
         name="backup_mongo/backup/index.html.j2",
@@ -119,6 +82,7 @@ async def pbm_backups_create(
     task_api: TaskAPI,
 ) -> RedirectResponse:
     """Create new backups task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_create")
     logger.debug("Create backups task: %s", task)
 
     # Create the config task
@@ -184,6 +148,7 @@ async def pbm_backups_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve backups task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_detail")
     data = task.data
 
     # If the task has a parent, redirect to the parent task detail page
@@ -266,6 +231,7 @@ async def pbm_backups_execute(
     chain_on_failure: Annotated[bool | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute backups task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_execute")
     await tasks_api.post(
         f"/execute/{task.name}",
         json={
@@ -289,6 +255,7 @@ async def pbm_backups_delete(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete backups task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_delete")
     await tasks_api.delete(f"/{task.name}")
     await tasks_api.delete(f"/{task.name}-logical")
     task_path = request.url_for("pbm_backups_index")
