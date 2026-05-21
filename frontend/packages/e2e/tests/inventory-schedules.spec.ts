@@ -18,7 +18,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const SCHEDULE_ROUTE = '/inventory/schedule';
-const TASK_NAME = 'run_scheduled_inventory_sync';
+const TASK_NAME = 'inventory-sync';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 

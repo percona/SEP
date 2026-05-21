@@ -43,7 +43,7 @@ import type { TasksComponents } from '@sep/api';
 
 type PeriodicTaskResponse = TasksComponents['schemas']['PeriodicTaskResponse'];
 
-const TASK_NAME = 'run_scheduled_inventory_sync';
+const TASK_NAME = 'inventory-sync';
 
 const MOCK_SYNCERS = [
   { name: 'myapp.SyncerA', display_name: 'Syncer A' },

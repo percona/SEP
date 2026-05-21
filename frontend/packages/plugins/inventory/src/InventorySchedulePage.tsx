@@ -210,8 +210,8 @@ function SyncScheduleForm({
 
     if (scheduleMode === 'interval') {
       const n = Number(intervalEvery);
-      if (!Number.isFinite(n) || n < 1) {
-        setLocalError('Interval must be at least 1');
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+        setLocalError('Interval must be a whole number of at least 1');
         return;
       }
     } else {
@@ -311,7 +311,9 @@ function SyncScheduleForm({
             required
             value={intervalEvery}
             onChange={(e) => setIntervalEvery(e.target.value)}
-            slotProps={{ htmlInput: { min: 1, 'data-testid': 'inv-sched-interval-every' } }}
+            slotProps={{
+              htmlInput: { min: 1, step: 1, 'data-testid': 'inv-sched-interval-every' },
+            }}
             sx={{ width: 100 }}
           />
           <TextField
@@ -400,7 +402,7 @@ function SyncScheduleForm({
 
 // ─── Row ────────────────────────────────────────────────────────────────────
 
-const ROW_COLUMNS = 8;
+const ROW_COLUMNS = 7;
 
 interface ScheduleRowProps {
   task: PeriodicTaskResponse;
