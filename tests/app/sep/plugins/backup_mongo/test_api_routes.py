@@ -1,0 +1,338 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Tests for the backup_mongo plugin JSON API routes under /api/plugins/backup_mongo/."""
+
+from typing import Any
+from unittest.mock import AsyncMock, call
+
+from fastapi import HTTPException, status
+
+from app.sep.inventory import CreatedService
+from app.sep.plugins.backup_mongo.models import BackupType
+from app.tasks.models import TaskBackendEnum, TaskOwner
+from tests.app.factories import TaskFactory
+
+API_BASE = "/api/plugins/backup_mongo"
+EXPECTED_CASCADE_POSTS = 4
+
+
+def build_backup_task(name: str = "mongo-backup-task", **overrides: Any) -> dict:
+    """Build a fake backup_mongo task payload for route tests.
+
+    :param name: The task name to embed in the payload.
+    :type name: str
+    :param overrides: Field overrides passed to ``TaskFactory.build``.
+    :type overrides: Any
+    :return: A task payload shaped like the Tasks API response.
+    :rtype: dict
+    """
+    data_overrides = overrides.pop("data", {})
+    backup_type = data_overrides.pop("backup_type", BackupType.PBM_CONFIG.value)
+    parent = data_overrides.pop("parent", None)
+    task = TaskFactory.build(
+        name=name,
+        owner=TaskOwner.BACKUP_MONGO,
+        backend=TaskBackendEnum.PROXY,
+        **overrides,
+    )
+    payload = task.model_dump(mode="json")
+    payload["data"] = {
+        "task": "run-python",
+        "meta": {
+            "target": "mongo-host",
+            "config": "storage:\n  type: filesystem\n",
+            "requirements": "packaging\nPyYAML",
+        },
+        "payload": f"file:///plugins/backup_mongo/{backup_type}_payload",
+        "backup_type": backup_type,
+        **data_overrides,
+    }
+    if parent is not None:
+        payload["data"]["parent"] = parent
+    return payload
+
+
+def build_backup_write_body(
+    task_name: str = "mongo-backup-task",
+    hostname: str = "mongo-host",
+    service_id: int = 1,
+    **kwargs: Any,
+) -> dict:
+    """Build a valid BackupTaskWrite-compatible request body."""
+    return {
+        "task_name": task_name,
+        "hostname": hostname,
+        "service_id": service_id,
+        "storage_type": "filesystem",
+        "storage_filesystem_path": "/var/backups/mongo",
+        "pitr_compression": "snappy",
+        **kwargs,
+    }
+
+
+class TestBackupMongoPluginSchemaEndpoint:
+    """Tests for GET /api/plugins/backup_mongo/schema."""
+
+    def test_schema_returns_200(self, test_client):
+        """Ensure the schema endpoint returns HTTP 200 with JSON content."""
+        response = test_client.get(f"{API_BASE}/schema")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "application/json" in response.headers["content-type"]
+
+    def test_schema_declares_derived_cascade(self, test_client):
+        """Ensure the schema exposes the three derived backup legs."""
+        response = test_client.get(f"{API_BASE}/schema")
+
+        derived = response.json()["derived"]
+        assert [item["name_suffix"] for item in derived] == [
+            "-logical",
+            "-physical",
+            "-status",
+        ]
+
+
+class TestBackupMongoApiList:
+    """Tests for GET /api/plugins/backup_mongo/."""
+
+    def test_list_returns_parent_tasks_only(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """List only parent config tasks, not derived siblings."""
+        parent = build_backup_task("parent-backup")
+        child = build_backup_task(
+            "parent-backup-logical",
+            data={
+                "backup_type": BackupType.PBM_LOGICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        mock_task_api_dep.get = AsyncMock(
+            return_value={"items": [parent, child], "total": 2}
+        )
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.json()) == 1
+        assert response.json()[0]["name"] == "parent-backup"
+
+
+class TestBackupMongoApiCreate:
+    """Tests for POST /api/plugins/backup_mongo/."""
+
+    def test_create_posts_parent_and_derived_tasks(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """POST creates the parent and three derived tasks via cascade."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.post = AsyncMock(
+            side_effect=[
+                build_backup_task("mongo-backup-task"),
+                build_backup_task(
+                    "mongo-backup-task-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                build_backup_task(
+                    "mongo-backup-task-physical",
+                    data={
+                        "backup_type": BackupType.PBM_PHYSICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                build_backup_task(
+                    "mongo-backup-task-status",
+                    data={
+                        "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+            ]
+        )
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                build_backup_task("mongo-backup-task"),
+                {"items": []},
+                build_backup_task(
+                    "mongo-backup-task-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                {"items": []},
+                build_backup_task(
+                    "mongo-backup-task-physical",
+                    data={
+                        "backup_type": BackupType.PBM_PHYSICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                {"items": []},
+                build_backup_task(
+                    "mongo-backup-task-status",
+                    data={
+                        "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                {"items": []},
+            ]
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_POSTS
+        first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
+        assert first_post["owner"] == TaskOwner.BACKUP_MONGO.value
+        assert first_post["data"]["backup_type"] == BackupType.PBM_CONFIG.value
+        logical_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
+        assert logical_post["data"]["payload"].endswith("pbm_logical_payload")
+        assert logical_post["data"]["parent"] == "mongo-backup-task"
+
+    def test_create_rolls_back_on_mid_chain_failure(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Rollback DELETEs created tasks when a derived POST fails."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.post = AsyncMock(
+            side_effect=[
+                build_backup_task("mongo-backup-task"),
+                build_backup_task(
+                    "mongo-backup-task-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR),
+            ]
+        )
+        mock_task_api_dep.delete = AsyncMock(return_value=None)
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert mock_task_api_dep.delete.await_args_list == [
+            call("/mongo-backup-task-logical"),
+            call("/mongo-backup-task"),
+        ]
+
+
+class TestBackupMongoApiDetail:
+    """Tests for GET /api/plugins/backup_mongo/{task_name}."""
+
+    def test_detail_includes_derived_tasks(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Detail aggregates derived sibling statuses."""
+        parent = build_backup_task("parent-backup")
+        logical = build_backup_task(
+            "parent-backup-logical",
+            data={
+                "backup_type": BackupType.PBM_LOGICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        physical = build_backup_task(
+            "parent-backup-physical",
+            data={
+                "backup_type": BackupType.PBM_PHYSICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        status_task = build_backup_task(
+            "parent-backup-status",
+            data={
+                "backup_type": BackupType.PBM_STATUS.value,
+                "parent": "parent-backup",
+            },
+        )
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                parent,
+                parent,
+                {"items": []},
+                logical,
+                {"items": []},
+                physical,
+                {"items": []},
+                status_task,
+                {"items": []},
+            ]
+        )
+
+        response = test_client.get(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["name"] == "parent-backup"
+        derived_names = {item["name"] for item in body["derived_tasks"]}
+        assert derived_names == {
+            "parent-backup-logical",
+            "parent-backup-physical",
+            "parent-backup-status",
+        }
+
+
+class TestBackupMongoApiDelete:
+    """Tests for DELETE /api/plugins/backup_mongo/{task_name}."""
+
+    def test_delete_removes_parent_and_all_derived_tasks(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """DELETE cascades to every derived sibling before the parent."""
+        parent = build_backup_task("parent-backup")
+        mock_task_api_dep.get = AsyncMock(return_value=parent)
+        mock_task_api_dep.delete = AsyncMock(return_value=None)
+
+        response = test_client.delete(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert mock_task_api_dep.delete.await_args_list == [
+            call("/parent-backup-logical"),
+            call("/parent-backup-physical"),
+            call("/parent-backup-status"),
+            call("/parent-backup"),
+        ]
+
+
+class TestBackupMongoApiAuth:
+    """Tests for API authentication."""
+
+    def test_unauthenticated_list_returns_401(self, unauthenticated_client) -> None:
+        """Reject unauthenticated access to the backup_mongo API."""
+        response = unauthenticated_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
