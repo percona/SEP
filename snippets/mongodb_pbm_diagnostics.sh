@@ -4,7 +4,7 @@
 # title: MongoDB PBM Backup Diagnostics
 # description: Collects Percona Backup for MongoDB (PBM) diagnostics from a node — pbm configuration, backup list, event logs, status, and the pbm-agent service unit. Run it on every node involved in the backup and/or restore. Optionally appends the tail of the local MongoDB server log for troubleshooting a node after a restore.
 # allow_extra_args: false
-# sudo: optional
+# sudo: always
 # service_type: mongodb
 # parameters:
 #  - name: mongodb-uri
