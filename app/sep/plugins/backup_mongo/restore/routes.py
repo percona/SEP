@@ -13,7 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the restores plugin."""
+"""Define legacy Jinja routes for the restores plugin.
+
+Deprecated: use the React UI at ``/backups/mongodb`` (restores tab) and the JSON
+API at ``/api/plugins/backup_mongo/restores/``. These handlers remain for Wave 1
+cutover and will be removed in Wave 3.
+"""
 
 import logging
 from typing import Annotated, Any
@@ -44,6 +49,11 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     RestoreTasks,
 )
 from app.tasks.models import TaskHistoryStatusEnum
+
+_LEGACY_ROUTE_WARNING = (
+    "Legacy Jinja backup_mongo restore route %s is deprecated; use /backups/mongodb "
+    "and /api/plugins/backup_mongo/restores/ instead."
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -152,6 +162,7 @@ async def restores_index(
     context: Annotated[dict[str, Any], Depends(get_restores_index_context)],
 ) -> HTMLResponse:
     """Homepage of restores plugin."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "restores_index")
     return templates.TemplateResponse(
         request=request,
         name="backup_mongo/restore/index.html.j2",
@@ -171,6 +182,7 @@ async def restores_create(
     task_api: TaskAPI,
 ) -> RedirectResponse:
     """Create new restores task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "restores_create")
     config_task, restore_task, pbm_list_task, force_resync_task = tasks
     logger.debug("Create restores config task: %s", config_task)
     logger.debug("Create restores task: %s", restore_task)
@@ -221,6 +233,7 @@ async def restores_detail(
     executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
     """Retrieve restores task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "restores_detail")
     data = task.data
 
     # If the task has a parent, redirect to the parent task detail page
@@ -327,6 +340,7 @@ async def restores_execute(
     chain_on_failure: Annotated[bool | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute restores task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "restores_execute")
     await tasks_api.post(
         f"/execute/{task.name}",
         json={
@@ -352,6 +366,7 @@ async def restores_update(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Update restores task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "restores_update")
     logger.debug("Updating restores task: %s", updated_task)
     await tasks_api.put(
         f"/{task_name}",
@@ -375,6 +390,7 @@ async def restores_delete(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete restores task."""
+    logger.warning(_LEGACY_ROUTE_WARNING, "restores_delete")
     await tasks_api.delete(f"/{task.name}")
     task_path = request.url_for("pbm_restores_index")
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)

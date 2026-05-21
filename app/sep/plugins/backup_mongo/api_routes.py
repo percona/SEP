@@ -49,6 +49,9 @@ from app.sep.plugins.backup_mongo.models import (
     BackupTaskWrite,
     BackupType,
 )
+from app.sep.plugins.backup_mongo.restore.api_routes import (
+    router as restore_api_router,
+)
 from app.sep.plugins.backup_mongo.schema import backup_mongo_schema
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.framework.cascade import cascade_create_tasks, cascade_delete_tasks
@@ -58,6 +61,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=backup_mongo_schema)
+router.include_router(restore_api_router, prefix="/restores")
 
 
 @router.get("/", response_model=list[BackupTaskResponse])

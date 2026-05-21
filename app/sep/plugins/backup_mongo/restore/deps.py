@@ -16,12 +16,14 @@
 """Define dependencies for the Restores plugin."""
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, HTTPException, status
 
+from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -38,10 +40,23 @@ from app.sep.plugins.backup_mongo.restore.models import (
     RestoreConfig,
     RestoreConfigRestore,
     RestoreCreate,
+    RestoreDerivedTaskSummary,
+    RestoreTaskDetailResponse,
+    RestoreTaskResponse,
+    RestoreTaskWrite,
 )
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.plugins.framework.cascade import cascade_delete_tasks
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 logger = logging.getLogger(__name__)
+
+RESTORE_CONFIG_PAYLOAD_MARKER = "pbm_restore_config_payload"
 
 
 def _parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
@@ -373,28 +388,303 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-async def build_restore_tasks(
-    form: Annotated[RestoreCreate, Form()],
+def restore_create_from_write(body: RestoreTaskWrite) -> RestoreCreate:
+    """Convert a :class:`RestoreTaskWrite` body into a :class:`RestoreCreate` model.
+
+    :param body: The JSON request body for restore task creation.
+    :type body: RestoreTaskWrite
+    :return: A :class:`RestoreCreate` instance for payload construction.
+    :rtype: RestoreCreate
+    """
+    data = body.model_dump(mode="json")
+    service_id = data.pop("service_id", None)
+    if service_id is not None:
+        data["service_id"] = str(service_id)
+    else:
+        data["service_id"] = None
+    return RestoreCreate.model_validate(data, from_attributes=False)
+
+
+async def build_restore_task_group(
+    form: RestoreCreate,
     inventory_api: InventoryAPI,
 ) -> tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]:
-    """Build restore config, restore task, pbm list task, and optionally force-resync task payloads.
+    """Build restore config, restore, list, and optional force-resync task payloads.
 
-    Force-resync task is only created for physical restores.
+    Force-resync is only included for physical restores. The service name is
+    resolved once and reused across the sub-tasks.
 
-    The service name is resolved once and reused across the sub-tasks to avoid
-    redundant Inventory API lookups for the same ``service_id``.
+    :param form: The restore creation input.
+    :type form: RestoreCreate
+    :param inventory_api: The Inventory API to look up services.
+    :type inventory_api: InventoryAPI
+    :return: Config, restore, pbm-list, and optional force-resync ``TaskWrite`` payloads.
+    :rtype: tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]
     """
     service_name = await _resolve_service_name(form, inventory_api)
     config_task = _build_restore_config_task(form, service_name)
     restore_task = _build_restore_task(form, service_name)
     pbm_list_task = _build_pbm_list_task(form, service_name)
-
-    # Only create force-resync task for physical restores
     force_resync_task = None
     if form.backup_type == BackupType.PBM_PHYSICAL:
         force_resync_task = _build_pbm_force_resync_task(form, service_name)
-
     return config_task, restore_task, pbm_list_task, force_resync_task
+
+
+async def build_restore_tasks(
+    form: Annotated[RestoreCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]:
+    """Build restore task group payloads from an HTML form submission.
+
+    Delegates to :func:`build_restore_task_group` after FastAPI form parsing.
+
+    :param form: The restore creation form.
+    :type form: RestoreCreate
+    :param inventory_api: The Inventory API to look up services.
+    :type inventory_api: InventoryAPI
+    :return: Config, restore, pbm-list, and optional force-resync payloads.
+    :rtype: tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]
+    """
+    return await build_restore_task_group(form, inventory_api)
+
+
+def restore_child_task_names(parent_name: str, backup_type: BackupType) -> list[str]:
+    """Return child task names for a parent restore config task.
+
+    :param parent_name: The parent config task name.
+    :type parent_name: str
+    :param backup_type: The restore backup type from the parent config.
+    :type backup_type: BackupType
+    :return: Child task names in deletion order (restore leg, list, force-resync).
+    :rtype: list[str]
+    """
+    names = [
+        f"{parent_name}-{backup_type.value}",
+        f"{parent_name}-pbm-list",
+    ]
+    if backup_type == BackupType.PBM_PHYSICAL:
+        names.append(f"{parent_name}-pbm-force-resync")
+    return names
+
+
+async def create_restore_task_group(
+    tasks_api: TaskAPI,
+    config_task: TaskWrite,
+    restore_task: TaskWrite,
+    pbm_list_task: TaskWrite,
+    force_resync_task: TaskWrite | None,
+) -> None:
+    """POST the restore task group; roll back on any failure.
+
+    :param tasks_api: The TaskAPI instance used to create tasks.
+    :type tasks_api: TaskAPI
+    :param config_task: The parent restore-config task payload.
+    :type config_task: TaskWrite
+    :param restore_task: The restore-leg task payload.
+    :type restore_task: TaskWrite
+    :param pbm_list_task: The pbm-list helper task payload.
+    :type pbm_list_task: TaskWrite
+    :param force_resync_task: Optional force-resync task for physical restores.
+    :type force_resync_task: TaskWrite | None
+    :raises Exception: Re-raises the failing POST after rollback DELETEs complete.
+    """
+    tasks = [config_task, restore_task, pbm_list_task]
+    if force_resync_task is not None:
+        tasks.append(force_resync_task)
+    created_names: list[str] = []
+    try:
+        for task in tasks:
+            await tasks_api.post("/", json=task.model_dump())
+            created_names.append(task.name)
+    except Exception:
+        for task_name in reversed(created_names):
+            try:
+                await tasks_api.delete(f"/{task_name}")
+            except Exception as rollback_exc:  # noqa: BLE001
+                logger.warning(
+                    "Rollback DELETE failed for %r during restore create rollback: %s",
+                    task_name,
+                    rollback_exc,
+                )
+        raise
+
+
+def _extract_latest_task_status(
+    histories: Iterable[dict[str, Any]],
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload."""
+    for history in histories:
+        if (status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(status)
+    return None
+
+
+def _parse_restore_task_config(task: Task) -> dict[str, Any]:
+    """Return the YAML config dict embedded in a restore task's meta."""
+    meta = task.data.get("meta") or {}
+    return yaml.safe_load(meta.get("config") or "") or {}
+
+
+def _backup_type_from_parent(task: Task) -> BackupType:
+    """Read ``backupType`` from a parent restore config task."""
+    return BackupType(_parse_restore_task_config(task)["backupType"])
+
+
+def _is_restore_parent_task(task: Task) -> bool:
+    """Return whether ``task`` is a parent restore-config row for the list view."""
+    data = task.data
+    payload = str(data.get("payload", ""))
+    return not data.get("parent") and RESTORE_CONFIG_PAYLOAD_MARKER in payload
+
+
+async def get_restore_mongo_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for a restore task.
+
+    :param task_name: The name of the restore task.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to query task history.
+    :type tasks_api: TaskAPI
+    :return: The latest known task status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    response = await tasks_api.get(f"/{task_name}/history/")
+    return _extract_latest_task_status(response["items"])
+
+
+def build_restore_mongo_api_task_response(
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+) -> RestoreTaskResponse:
+    """Build a restore task response object for the JSON API.
+
+    :param task: The restore task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A validated restore task API response object.
+    :rtype: RestoreTaskResponse
+    """
+    config = _parse_restore_task_config(task)
+    meta = task.data.get("meta") or {}
+    backup_type = config.get("backupType")
+    return RestoreTaskResponse(
+        **task.model_dump(),
+        hostname=meta.get("target"),
+        status=status,
+        backup_type=str(backup_type) if backup_type is not None else "",
+        backup_source=str(config.get("backupSource", "")),
+    )
+
+
+async def get_restore_mongo_api_task_responses(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[RestoreTaskResponse]:
+    """Retrieve restore task responses for the JSON API.
+
+    :param tasks_api: The TaskAPI instance used to query restore tasks.
+    :type tasks_api: TaskAPI
+    :param status: Optional latest-history status filter for the list.
+    :type status: TaskHistoryStatusEnum | None
+    :return: The restore task responses matching the requested filters.
+    :rtype: list[RestoreTaskResponse]
+    """
+    response = await tasks_api.get("/", params={"owner": TaskOwner.RESTORE_MONGO.value})
+    tasks = [Task.model_validate(item) for item in response["items"]]
+    parents = [task for task in tasks if _is_restore_parent_task(task)]
+    task_status_pairs = [
+        (task, await get_restore_mongo_task_status(task.name, tasks_api))
+        for task in parents
+    ]
+    return [
+        build_restore_mongo_api_task_response(task, status=task_status)
+        for task, task_status in task_status_pairs
+        if status is None or task_status == status
+    ]
+
+
+async def build_restore_mongo_api_detail_response(
+    task: Task,
+    tasks_api: TaskAPI,
+) -> RestoreTaskDetailResponse:
+    """Build a restore task detail response for the JSON API.
+
+    Aggregates latest execution status for the parent config task and each
+    restore, pbm-list, and optional force-resync child.
+
+    :param task: The parent restore config task.
+    :type task: Task
+    :param tasks_api: The TaskAPI instance used to query tasks and history.
+    :type tasks_api: TaskAPI
+    :return: A validated restore task detail API response object.
+    :rtype: RestoreTaskDetailResponse
+    """
+    backup_type = _backup_type_from_parent(task)
+    parent_status = await get_restore_mongo_task_status(task.name, tasks_api)
+    derived_tasks: list[RestoreDerivedTaskSummary] = []
+
+    for child_name in restore_child_task_names(task.name, backup_type):
+        try:
+            child = await get_restores_task(child_name, tasks_api)
+        except HTTPNotFoundException:
+            continue
+        history_response = await tasks_api.get(f"/{child.name}/history/")
+        derived_tasks.append(
+            RestoreDerivedTaskSummary(
+                name=child.name,
+                status=_extract_latest_task_status(history_response["items"]),
+            )
+        )
+
+    base = build_restore_mongo_api_task_response(task, status=parent_status)
+    return RestoreTaskDetailResponse(
+        **base.model_dump(),
+        derived_tasks=derived_tasks,
+    )
+
+
+async def resolve_restore_parent_task_name(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> str:
+    """Resolve a task name to its parent restore config task when linked.
+
+    :param task_name: The name of the task to resolve.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :return: The parent restore config task name.
+    :rtype: str
+    """
+    task = await get_restores_task(task_name, tasks_api)
+    parent = task.data.get("parent")
+    if parent:
+        return str(parent)
+    return task.name
+
+
+async def delete_restore_task_group(
+    tasks_api: TaskAPI,
+    parent_task: Task,
+) -> None:
+    """DELETE every restore child task, then the parent config task.
+
+    :param tasks_api: The TaskAPI instance used to delete tasks.
+    :type tasks_api: TaskAPI
+    :param parent_task: The parent restore config task.
+    :type parent_task: Task
+    """
+    backup_type = _backup_type_from_parent(parent_task)
+    await cascade_delete_tasks(
+        tasks_api,
+        parent_task.name,
+        restore_child_task_names(parent_task.name, backup_type),
+    )
 
 
 RestoreTasks = Annotated[
@@ -426,6 +716,32 @@ async def get_restores_task(
 
 
 RestoresTask = Annotated[Task, Depends(get_restores_task)]
+
+
+async def get_unprotected_restores_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Return the parent restore config task or raise 409 when protected.
+
+    :param task_name: A parent or child restore task name.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to fetch tasks.
+    :type tasks_api: TaskAPI
+    :return: The unprotected parent restore config task.
+    :rtype: Task
+    :raises HTTPConflictException: If the parent task is marked as protected.
+    """
+    parent_name = await resolve_restore_parent_task_name(task_name, tasks_api)
+    task = await get_restores_task(parent_name, tasks_api)
+    if task.protected:
+        raise HTTPConflictException("Cannot edit a protected task.")
+    return task
+
+
+UnprotectedRestoresParentTask = Annotated[
+    Task, Depends(get_unprotected_restores_parent_task)
+]
 
 
 def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
