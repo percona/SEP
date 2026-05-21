@@ -49,7 +49,8 @@
 #
 # sh.status() is only meaningful against a mongos; run this on the router.
 # Host-level diagnostics for the config server and shard primaries are
-# collected separately with mongodb_replica_set_collect.sh.
+# collected separately using the appropriate replica-set diagnostic
+# collection for those hosts.
 #
 # Usage:
 #   ./mongodb_sharding_status.sh [--host=HOST] [--port=PORT] [--user=USER] \
