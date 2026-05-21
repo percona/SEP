@@ -15,8 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Mirrors field-by-field check from app/sep/utils/forms.py::parse_crontab_form_fields
-// and static/js/cron-validation.js so the React form enforces the same rules as the backend.
+// Mirrors the character-class + zero-step check from static/js/cron-validation.js.
+// Final semantic validation (range checks) is server-side via croniter.
 
 const CRON_FIELD_COUNT = 5;
 const CRON_FIELD_PATTERNS = [

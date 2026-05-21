@@ -229,6 +229,7 @@ function SyncScheduleForm({
     }
 
     const execute_request: PeriodicTaskExecuteRequest = {
+      // codegen types meta as empty-only; runtime accepts arbitrary keys, cast to match
       meta: (syncerName ? { syncer: syncerName } : {}) as Record<string, never>,
       chain_task_names: initialTask?.execute_request?.chain_task_names ?? [],
       chain_on_failure: initialTask?.execute_request?.chain_on_failure ?? false,

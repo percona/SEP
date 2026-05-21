@@ -16,7 +16,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -293,6 +293,25 @@ describe('InventorySchedulePage', () => {
       await user.click(within(form).getByRole('button', { name: /Attach schedule/i }));
 
       expect(apiMock.post).not.toHaveBeenCalled();
+    });
+
+    it('rejects decimal interval without POST', async () => {
+      setupHooks([]);
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByTestId('inv-sched-attach'));
+      const form = await screen.findByTestId('inv-sched-form');
+
+      const everyInput = within(form).getByTestId('inv-sched-interval-every');
+      await user.clear(everyInput);
+      await user.type(everyInput, '1.5');
+      // fireEvent.submit bypasses HTML5 step-constraint validation so the JS
+      // Number.isInteger guard is exercised directly.
+      fireEvent.submit(form);
+
+      expect(apiMock.post).not.toHaveBeenCalled();
+      expect(await screen.findByRole('alert')).toHaveTextContent(/whole number/i);
     });
   });
 
