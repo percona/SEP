@@ -158,9 +158,9 @@ esac
 PMS_ARGS=(--output-format="$OUTPUT_FORMAT")
 if [ -n "$USER" ]; then
     PMS_ARGS+=(--username="$USER" --authenticationDatabase="$AUTH_DB")
-fi
-if [ -n "$PASSWORD" ]; then
-    PMS_ARGS+=(--password="$PASSWORD")
+    if [ -n "$PASSWORD" ]; then
+        PMS_ARGS+=(--password="$PASSWORD")
+    fi
 fi
 
 echo "=== pt-mongodb-summary ==="
