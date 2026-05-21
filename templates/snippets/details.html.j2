@@ -165,7 +165,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     {%- endif -%}
                 </span>
             {% endif %}
-            {{ snippet.to_form(executor_hosts) | safe }}
+            {{ snippet.to_form(executor_hosts, snippet_execute_action) | safe }}
             <script nonce="{{ request.state.csp_nonce }}">
                 if (window.initInfoTooltips) {
                     window.initInfoTooltips(document.getElementById('snippetExecuteForm'));
