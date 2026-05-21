@@ -44,7 +44,7 @@
 # mongodb_replica_set_collect.sh
 #
 # One-shot data collection for a MongoDB replica set node, matching the
-# "MongoDB replica Set" data-collection checklist used by Percona Support.
+# "MongoDB replica set" data-collection checklist used by Percona Support.
 #
 # It writes one file per command into the destination directory and then
 # packs the directory into a tar.gz alongside it:
