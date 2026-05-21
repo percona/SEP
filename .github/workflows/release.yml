@@ -72,6 +72,36 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Checkout release branch if it exists
+        if: inputs.release_type == 'rc'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if git ls-remote --exit-code --heads origin "release/v${VERSION}" >/dev/null 2>&1; then
+            git fetch origin "release/v${VERSION}:release/v${VERSION}"
+            git checkout "release/v${VERSION}"
+            echo "Gates will run against release/v${VERSION} (cherries included)."
+          else
+            echo "release/v${VERSION} does not exist yet (rc1-fresh path); gates run against main."
+          fi
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: "3.11"
+
+      - name: Pre-tag lint gate (all-files pre-commit)
+        run: make run-pre-commit
+
+      - name: Pre-tag security audit (bandit + pip-audit)
+        run: make audit
+
+      - name: Pre-tag migration check
+        env:
+          CASDOOR__CLIENT_SECRET: notatoken
+          CASDOOR__CLIENT_ID: notatoken
+        run: make checkmigrations
+
       - name: Run release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
