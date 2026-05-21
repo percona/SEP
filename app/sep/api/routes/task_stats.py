@@ -31,7 +31,7 @@ UPSTREAM_ERROR_HEADER = "X-Sep-Upstream-Error"
 
 
 class TaskStatsDuration(BaseModel):
-    """Aggregated duration metrics for a task.
+    """Represent aggregated duration metrics for a task.
 
     :param average_seconds: Mean duration across recorded executions, or
         ``None`` if no executions have completed.
@@ -48,7 +48,7 @@ class TaskStatsDuration(BaseModel):
 
 
 class TaskStatsStatus(BaseModel):
-    """Pass/fail counts for a task across its history.
+    """Represent pass/fail counts for a task across its history.
 
     :param pass_: Number of successful executions. Serialized as ``pass``.
     :type pass_: int
@@ -63,7 +63,7 @@ class TaskStatsStatus(BaseModel):
 
 
 class TaskStatsResponse(BaseModel):
-    """Wire-shape mirror of ``app.tasks.models.TaskStats`` for the SEP proxy.
+    """Represent the wire-shape mirror of ``app.tasks.models.TaskStats`` for the SEP proxy.
 
     Mirror only the JSON surface (computed fields plus ``engine``) so the
     OpenAPI schema can be tightened independently of the upstream model.

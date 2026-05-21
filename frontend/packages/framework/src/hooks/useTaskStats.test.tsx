@@ -100,7 +100,12 @@ describe('useTaskStats', () => {
     mockSepGet.mockResolvedValue({
       data: undefined,
       error: { detail: 'nope' },
-      response: { ok: false, status: 401, statusText: 'Unauthorized' } as Response,
+      response: {
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        url: 'http://localhost/api/sep/task-stats/foo',
+      } as Response,
     });
     const { result } = renderHook(() => useTaskStats('foo'), { wrapper: wrapper() });
     await waitFor(() => {
@@ -108,7 +113,9 @@ describe('useTaskStats', () => {
     });
     const { ApiError } = await import('@sep/api');
     expect(result.current.error).toBeInstanceOf(ApiError);
-    expect((result.current.error as InstanceType<typeof ApiError>).status).toBe(401);
+    const err = result.current.error as InstanceType<typeof ApiError>;
+    expect(err.status).toBe(401);
+    expect(err.message).toBe('nope');
     expect(mockSepGet).toHaveBeenCalledTimes(1);
   });
 });

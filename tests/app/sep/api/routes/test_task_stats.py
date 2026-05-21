@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP task-stats JSON API route at ``/api/sep/task-stats/``."""
+"""Tests for the SEP task-stats JSON API route at ``/api/sep/task-stats/{task_name}``."""
 
 import pytest
 from fastapi import status
@@ -106,7 +106,7 @@ class TestSepTaskStatsEndpoint:
 
 
 class TestSepTaskStatsAuth:
-    """Tests for ``/api/sep/task-stats/`` authentication enforcement."""
+    """Tests for ``/api/sep/task-stats/{task_name}`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> TestClient:

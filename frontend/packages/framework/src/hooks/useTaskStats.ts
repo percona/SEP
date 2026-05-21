@@ -16,7 +16,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { ApiError, sepApi, type SepComponents } from '@sep/api';
+import { ApiError, sepApi, throwOnApiError, type SepComponents } from '@sep/api';
 
 type GeneratedTaskStats = SepComponents['schemas']['TaskStatsResponse'];
 
@@ -48,24 +48,11 @@ export function useTaskStats(taskName: string | undefined, enabled = true) {
     queryKey: ['task-stats', trimmed],
     enabled: enabled && Boolean(trimmed),
     queryFn: async () => {
-      const { data, error, response } = await sepApi.GET('/api/sep/task-stats/{task_name}', {
-        params: { path: { task_name: trimmed as string } },
-      });
-      if (!response.ok) {
-        throw new ApiError({
-          kind: 'http',
-          status: response.status,
-          message: response.statusText || `HTTP ${response.status}`,
-          data: error,
-        });
-      }
-      if (data === undefined) {
-        throw new ApiError({
-          kind: 'http',
-          status: response.status,
-          message: 'Empty stats response',
-        });
-      }
+      const data = await throwOnApiError(
+        sepApi.GET('/api/sep/task-stats/{task_name}', {
+          params: { path: { task_name: trimmed as string } },
+        }),
+      );
       return data as unknown as TaskStatsView;
     },
     refetchOnWindowFocus: false,

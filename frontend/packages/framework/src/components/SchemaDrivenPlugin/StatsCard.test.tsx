@@ -19,9 +19,8 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { mockUseTaskStats, mockTasksGet } = vi.hoisted(() => ({
+const { mockUseTaskStats } = vi.hoisted(() => ({
   mockUseTaskStats: vi.fn(),
-  mockTasksGet: vi.fn(),
 }));
 
 vi.mock('../../hooks/useTaskStats', async () => {
@@ -31,14 +30,6 @@ vi.mock('../../hooks/useTaskStats', async () => {
   return {
     ...actual,
     useTaskStats: (...args: unknown[]) => mockUseTaskStats(...args),
-  };
-});
-
-vi.mock('@sep/api', async () => {
-  const actual = await vi.importActual<typeof import('@sep/api')>('@sep/api');
-  return {
-    ...actual,
-    tasksApi: { GET: mockTasksGet },
   };
 });
 
@@ -64,7 +55,6 @@ const POPULATED = {
 
 beforeEach(() => {
   mockUseTaskStats.mockReset();
-  mockTasksGet.mockReset();
 });
 
 describe('StatsCard — render states', () => {
