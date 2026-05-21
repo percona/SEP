@@ -148,7 +148,9 @@ def create_snippet(
         filename: str, *, approved: bool = False, create_file: bool = True
     ) -> Snippet:
         if create_file:
-            (snippets_dir / filename).write_text("#!/bin/sh\necho hi\n")
+            target = snippets_dir / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("#!/bin/sh\necho hi\n")
         snippet = Snippet(filename=filename, size=20, md5_digest="a" * 32)
         if approved:
             snippet.approve("Seeded as approved", "seed-user")

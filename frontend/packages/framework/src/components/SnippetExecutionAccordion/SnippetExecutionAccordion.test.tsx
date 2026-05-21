@@ -239,7 +239,9 @@ describe('SnippetExecutionAccordion', () => {
     await waitFor(() => {
       expect(screen.getByTestId('task-history-table')).toBeInTheDocument();
     });
-    expect(mockedApi.get).toHaveBeenCalledWith('/plugins/snippets/check.sh/history');
+    expect(mockedApi.get).toHaveBeenCalledWith(
+      '/plugins/snippets/snippet/history?snippet_filename=check.sh',
+    );
   });
 
   it('does not render TaskHistoryTable when showHistory is false', async () => {
@@ -304,9 +306,12 @@ describe('SnippetExecutionAccordion', () => {
     renderWithProviders(<SnippetExecutionAccordion snippetFilename="check.sh" defaultExpanded />);
 
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/plugins/snippets/check.sh/schema', {
-        params: { execution_only: true },
-      }),
+      expect(mockedApi.get).toHaveBeenCalledWith(
+        '/plugins/snippets/snippet/schema?snippet_filename=check.sh',
+        {
+          params: { execution_only: true },
+        },
+      ),
     );
   });
 

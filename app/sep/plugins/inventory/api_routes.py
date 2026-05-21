@@ -31,12 +31,13 @@ HTTP 422.
 
 In addition to CRUD, this router mounts the ad-hoc inventory-sync trigger
 (``POST /sync/``) and the running-state polling endpoint
-(``GET /sync/status/``) consumed by the React inventory sync control. Periodic
-``/schedule/`` and node/service/schema-scoped sync routes remain on the Jinja2
-router for now and are owned by SEP-1141 / a Wave 3 follow-up; do not mount
-them here without coordinating with those tickets. The inventory service
-remains the canonical CRUD surface at ``/api/inventory/*``; this router is the
-typed entry point for the React plugin.
+(``GET /sync/status/``) consumed by the React inventory sync control. Schedule
+discovery (``GET /``) and available-syncers (``GET /available-syncers/``) are
+also mounted here so the React schedule UI (SEP-1058) can fetch its data
+through the plugin API gateway. Periodic-task CRUD remains delegated to
+``/api/tasks/periodic/*`` as the single source of truth; this router does not
+duplicate that surface. The inventory service remains the canonical CRUD
+surface at ``/api/inventory/*``.
 """
 
 from __future__ import annotations
@@ -83,11 +84,13 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.schema import Capabilities, PluginSchema
 from app.sep.plugins.inventory import payloads
 from app.sep.plugins.inventory.deps import (
+    AvailableSyncer,
     filter_syncers_by_name,
     inventory_plugin_query_params,
     inventory_service_create_path,
     inventory_service_detail_path,
     inventory_service_list_path,
+    InventoryAvailableSyncersDep,
     InventoryPluginJsonObjectBody,
     InventorySyncStatusResponse,
     InventorySyncTriggerWrite,
@@ -96,7 +99,9 @@ from app.sep.plugins.inventory.deps import (
     unwrap_inventory_plugin_list_payload,
 )
 from app.sep.plugins.inventory.models import (
+    INVENTORY_SYNC_TASK_NAME,
     MAX_TOPOLOGY_SHARDS,
+    PluginTaskResponse,
     TopologyCollectResponse,
     TopologyCollectWrite,
     TopologyResultResponse,
@@ -655,6 +660,34 @@ async def topology_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/")
+async def inventory_plugin_tasks() -> list[PluginTaskResponse]:
+    """Return the list of periodic task names for the Inventory plugin.
+
+    Hard-coded because the Inventory plugin has exactly one periodic task
+    (``inventory-sync``). The shape matches what the React
+    ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+    minimum a ``name`` key.
+    """
+    return [
+        PluginTaskResponse(name=INVENTORY_SYNC_TASK_NAME, display_name="Inventory Sync")
+    ]
+
+
+@router.get("/available-syncers/")
+async def inventory_available_syncers(
+    available_syncers: InventoryAvailableSyncersDep,
+) -> list[AvailableSyncer]:
+    """Return syncers capable of syncing inventory.
+
+    :param available_syncers: Filtered syncer list from ``InventoryAvailableSyncersDep``.
+    :type available_syncers: list[AvailableSyncer]
+    :return: Filtered list of syncers that can sync inventory.
+    :rtype: list[AvailableSyncer]
+    """
+    return available_syncers
 
 
 @router.get("/{entity}/")

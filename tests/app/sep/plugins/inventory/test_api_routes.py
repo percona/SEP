@@ -46,6 +46,48 @@ _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
 _CREATE_SERVICE_TEST_NODE_ID = 7
 
 
+class TestInventoryResponseModelsInOpenAPI:
+    """Ensure new endpoints expose typed Pydantic models in the OpenAPI schema."""
+
+    def test_plugin_tasks_response_schema_is_defined(self, test_client):
+        """Ensure PluginTaskResponse appears as a named schema in the OpenAPI spec."""
+        response = test_client.get("/openapi.json")
+        assert response.status_code == status.HTTP_200_OK
+        schemas = response.json().get("components", {}).get("schemas", {})
+        assert "PluginTaskResponse" in schemas
+
+    def test_available_syncers_response_schema_is_defined(self, test_client):
+        """Ensure AvailableSyncer appears as a named schema in the OpenAPI spec."""
+        response = test_client.get("/openapi.json")
+        assert response.status_code == status.HTTP_200_OK
+        schemas = response.json().get("components", {}).get("schemas", {})
+        assert "AvailableSyncer" in schemas
+
+    def test_plugin_tasks_openapi_response_references_model(self, test_client):
+        """Ensure GET /api/plugins/inventory/ response body references PluginTaskResponse."""
+        response = test_client.get("/openapi.json")
+        spec = response.json()
+        get_op = spec["paths"]["/api/plugins/inventory/"]["get"]
+        response_schema = get_op["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        assert response_schema.get("type") == "array"
+        ref = response_schema.get("items", {}).get("$ref", "")
+        assert "PluginTaskResponse" in ref
+
+    def test_available_syncers_openapi_response_references_model(self, test_client):
+        """Ensure GET /api/plugins/inventory/available-syncers/ response references AvailableSyncer."""
+        response = test_client.get("/openapi.json")
+        spec = response.json()
+        get_op = spec["paths"]["/api/plugins/inventory/available-syncers/"]["get"]
+        response_schema = get_op["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        assert response_schema.get("type") == "array"
+        ref = response_schema.get("items", {}).get("$ref", "")
+        assert "AvailableSyncer" in ref
+
+
 class TestInventorySchemaEndpoint:
     """Tests for GET /api/plugins/inventory/schema."""
 
@@ -249,6 +291,125 @@ class TestInventoryGateway:
         mock_inventory_api_dep.get.assert_not_called()
 
 
+class TestInventorySchemaCapabilities:
+    """Tests for capabilities flags on the inventory plugin schema."""
+
+    def test_schema_has_scheduling_capability(self, test_client):
+        """Ensure the inventory schema advertises ``scheduling=True``."""
+        response = test_client.get("/api/plugins/inventory/schema")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["capabilities"]["scheduling"] is True
+
+
+class TestInventoryPluginTasksEndpoint:
+    """Tests for GET /api/plugins/inventory/ (plugin task discovery)."""
+
+    def test_returns_200_with_inventory_sync_task(self, test_client):
+        """Ensure endpoint returns 200 and includes the inventory-sync task."""
+        response = test_client.get("/api/plugins/inventory/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert isinstance(body, list)
+        assert any(t["name"] == "inventory-sync" for t in body)
+
+    def test_response_shape_matches_use_plugin_tasks_contract(self, test_client):
+        """Ensure every item has at minimum a ``name`` key for the React hook."""
+        response = test_client.get("/api/plugins/inventory/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        for task in body:
+            assert "name" in task
+
+    def test_does_not_clash_with_entity_wildcard(self, test_client):
+        """Ensure ``GET /`` resolves to the tasks handler, not the ``/{entity}/`` wildcard."""
+        response = test_client.get("/api/plugins/inventory/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert isinstance(body, list)
+
+
+class TestInventoryAvailableSyncersEndpoint:
+    """Tests for GET /api/plugins/inventory/available-syncers/."""
+
+    def test_returns_200_with_syncers_list(self, test_client, mock_syncers_dep):
+        """Ensure endpoint returns 200 and a list."""
+        response = test_client.get("/api/plugins/inventory/available-syncers/")
+        assert response.status_code == status.HTTP_200_OK
+        assert isinstance(response.json(), list)
+
+    def test_filters_to_can_sync_inventory_only(self, test_client, mock_syncers_dep):
+        """Ensure only syncers where ``can_sync_inventory()`` is True are returned."""
+        response = test_client.get("/api/plugins/inventory/available-syncers/")
+        body = response.json()
+        assert len(body) == 1
+
+    def test_response_items_have_name_and_display_name(
+        self, test_client, mock_syncers_dep
+    ):
+        """Ensure each syncer item carries ``name`` and ``display_name``."""
+        response = test_client.get("/api/plugins/inventory/available-syncers/")
+        for item in response.json():
+            assert "name" in item
+            assert "display_name" in item
+
+    def test_display_name_and_name_are_strings(self, test_client, mock_syncers_dep):
+        """Ensure ``name`` and ``display_name`` are plain strings, not callables or objects."""
+        response = test_client.get("/api/plugins/inventory/available-syncers/")
+        for item in response.json():
+            assert isinstance(item["name"], str)
+            assert isinstance(item["display_name"], str)
+
+    def test_no_matching_syncers_returns_empty_list(self, test_client):
+        """When all syncers return ``can_sync_inventory=False``, endpoint returns ``[]``."""
+
+        class _NoSync:
+            def can_sync_inventory(self) -> bool:
+                return False
+
+        sep_app.dependency_overrides[get_syncers] = lambda: [_NoSync()]
+        try:
+            response = test_client.get("/api/plugins/inventory/available-syncers/")
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json() == []
+        finally:
+            sep_app.dependency_overrides.pop(get_syncers, None)
+
+    def test_syncers_dep_error_surfaces_500(self, test_client):
+        """If ``get_syncers`` raises (e.g. bad config), the endpoint returns 500."""
+
+        def _broken():
+            raise RuntimeError("broken syncer import")
+
+        sep_app.dependency_overrides[get_syncers] = _broken
+        try:
+            response = test_client.get("/api/plugins/inventory/available-syncers/")
+            assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        finally:
+            sep_app.dependency_overrides.pop(get_syncers, None)
+
+    def test_does_not_clash_with_entity_wildcard(self, test_client, mock_syncers_dep):
+        """Ensure ``GET /available-syncers/`` does not fall through to ``/{entity}/`` wildcard."""
+        response = test_client.get("/api/plugins/inventory/available-syncers/")
+        assert response.status_code == status.HTTP_200_OK
+
+
+class TestInventoryNewRoutesAuthentication:
+    """Ensure new plugin discovery routes enforce API authentication."""
+
+    def test_plugin_tasks_rejects_unauthenticated(self, unauthenticated_client):
+        """``GET /api/plugins/inventory/`` must return 401 without a valid token."""
+        response = unauthenticated_client.get("/api/plugins/inventory/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_available_syncers_rejects_unauthenticated(self, unauthenticated_client):
+        """``GET /api/plugins/inventory/available-syncers/`` must return 401 without a valid token."""
+        response = unauthenticated_client.get(
+            "/api/plugins/inventory/available-syncers/"
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
 class TestInventorySyncTrigger:
     """Tests for POST ``/api/plugins/inventory/sync/``.
 
@@ -440,7 +601,7 @@ class TestInventorySyncStatus:
         assert response.json() == {"is_running": True}
 
     def test_requires_authentication(self, unauthenticated_client):
-        """Without API auth the gateway returns 401."""
+        """Without API auth the status endpoint returns 401."""
         response = unauthenticated_client.get("/api/plugins/inventory/sync/status/")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
