@@ -1,0 +1,186 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define the JSON API router for the backup_mongo restores plugin.
+
+Mounted at ``/api/plugins/backup_mongo/restores/`` via
+``include_router`` on the backup_mongo ``api_routes`` router. Authentication is
+enforced at the ``api_router`` level; ``schema_endpoint`` pins
+``IsApiAuthenticated`` per route for safety.
+"""
+
+import logging
+
+from fastapi import APIRouter
+from fastapi import status as http_status
+
+from app.core.exceptions import HTTPConflictException
+from app.sep.deps import (
+    HasNoConflictedRunningTasks,
+    InventoryAPI,
+    IsApiAuthenticated,
+    TaskAPI,
+)
+from app.sep.plugins.backup_mongo.restore.deps import (
+    _build_restore_task,
+    _resolve_service_name,
+    build_restore_mongo_api_detail_response,
+    build_restore_mongo_api_task_response,
+    build_restore_task_group,
+    create_restore_task_group,
+    delete_restore_task_group,
+    get_restore_mongo_api_task_responses,
+    get_restore_mongo_task_status,
+    get_restores_task,
+    resolve_restore_parent_task_name,
+    restore_create_from_write,
+)
+from app.sep.plugins.backup_mongo.restore.models import (
+    RestoreExecuteWrite,
+    RestoreExecutionResponse,
+    RestoreTaskDetailResponse,
+    RestoreTaskResponse,
+    RestoreTaskWrite,
+)
+from app.sep.plugins.backup_mongo.restore.schema import restore_mongo_schema
+from app.sep.plugins.framework.api import schema_endpoint
+from app.tasks.models import Task, TaskHistoryResponse, TaskHistoryStatusEnum
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+schema_endpoint(router=router, plugin_schema=restore_mongo_schema)
+
+
+@router.get("/", response_model=list[RestoreTaskResponse])
+async def restore_mongo_api_list(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum | None = None,
+) -> list[RestoreTaskResponse]:
+    """List parent PBM restore config tasks."""
+    return await get_restore_mongo_api_task_responses(tasks_api, status=status)
+
+
+@router.get("/{task_name}", response_model=RestoreTaskDetailResponse)
+async def restore_mongo_api_detail(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> RestoreTaskDetailResponse:
+    """Retrieve a single parent restore task with child task status."""
+    parent_name = await resolve_restore_parent_task_name(task_name, tasks_api)
+    task = await get_restores_task(parent_name, tasks_api)
+    return await build_restore_mongo_api_detail_response(task, tasks_api)
+
+
+@router.post(
+    "/",
+    response_model=RestoreTaskDetailResponse,
+    status_code=http_status.HTTP_201_CREATED,
+)
+async def restore_mongo_api_create(
+    body: RestoreTaskWrite,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+) -> RestoreTaskDetailResponse:
+    """Create a restore task group from a JSON payload request body.
+
+    POSTs the parent config task, restore leg, pbm-list helper, and optional
+    force-resync child for physical restores. Rolls back on any failure.
+    """
+    logger.debug(
+        "Create backup_mongo restore task group (JSON path): %s", body.task_name
+    )
+    form = restore_create_from_write(body)
+    (
+        config_task,
+        restore_task,
+        pbm_list_task,
+        force_resync_task,
+    ) = await build_restore_task_group(form, inventory_api)
+    await create_restore_task_group(
+        tasks_api,
+        config_task,
+        restore_task,
+        pbm_list_task,
+        force_resync_task,
+    )
+    task = await get_restores_task(config_task.name, tasks_api)
+    return await build_restore_mongo_api_detail_response(task, tasks_api)
+
+
+@router.put(
+    "/{task_name}",
+    response_model=RestoreTaskResponse,
+    dependencies=[HasNoConflictedRunningTasks],
+)
+async def restore_mongo_api_update(
+    task_name: str,
+    body: RestoreTaskWrite,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+) -> RestoreTaskResponse:
+    """Update a restore task from a JSON payload request body.
+
+    Matches the legacy Jinja flow: PUTs the restore-leg payload to the parent
+    config task name.
+    """
+    parent_name = await resolve_restore_parent_task_name(task_name, tasks_api)
+    parent_task = await get_restores_task(parent_name, tasks_api)
+    if parent_task.protected:
+        raise HTTPConflictException("Cannot edit a protected task.")
+    logger.debug("Update backup_mongo restore task (JSON path): %s", parent_name)
+    form = restore_create_from_write(body)
+    service_name = await _resolve_service_name(form, inventory_api)
+    task_write = _build_restore_task(form, service_name)
+    updated = await tasks_api.put(f"/{parent_name}", json=task_write.model_dump())
+    updated_task = Task.model_validate(updated)
+    task_status = await get_restore_mongo_task_status(updated_task.name, tasks_api)
+    return build_restore_mongo_api_task_response(updated_task, status=task_status)
+
+
+@router.post(
+    "/{task_name}/execute",
+    response_model=RestoreExecutionResponse,
+    status_code=http_status.HTTP_201_CREATED,
+    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
+)
+async def restore_mongo_api_execute(
+    task_name: str,
+    body: RestoreExecuteWrite,
+    tasks_api: TaskAPI,
+) -> RestoreExecutionResponse:
+    """Execute a restore task."""
+    task = await get_restores_task(task_name, tasks_api)
+    logger.info("Executing backup_mongo restore task %r", task.name)
+    created = await tasks_api.post(
+        f"/execute/{task.name}",
+        json=body.model_dump(exclude_none=True),
+    )
+    task_history = TaskHistoryResponse.model_validate(created)
+    return RestoreExecutionResponse(
+        task_name=task.name,
+        task_id=task_history.id,
+    )
+
+
+@router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
+async def restore_mongo_api_delete(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> None:
+    """Delete a restore task group."""
+    parent_name = await resolve_restore_parent_task_name(task_name, tasks_api)
+    parent_task = await get_restores_task(parent_name, tasks_api)
+    await delete_restore_task_group(tasks_api, parent_task)
