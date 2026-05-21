@@ -127,6 +127,177 @@ class TestBuildDerivedPayload:
         assert parent["data"]["meta"]["args"] == before["args"]
         assert "parent" not in parent["data"]
 
+    def test_applies_payload_substitutions(self) -> None:
+        """Apply ``payload_substitutions`` to ``data.payload`` literally."""
+        parent = {
+            "name": "my-backup",
+            "data": {
+                "backup_type": "pbm_config",
+                "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+            },
+        }
+        result = build_derived_payload(
+            parent,
+            DerivedTask(
+                name_suffix="-logical",
+                payload_substitutions={"pbm_config": "pbm_logical"},
+                backup_type="pbm_logical",
+            ),
+        )
+
+        assert result["name"] == "my-backup-logical"
+        assert result["data"]["parent"] == "my-backup"
+        assert result["data"]["backup_type"] == "pbm_logical"
+        assert (
+            result["data"]["payload"]
+            == "file:///plugins/backup_mongo/pbm_logical_payload"
+        )
+
+    def test_applies_payload_substitutions_in_dict_order(self) -> None:
+        """Apply ``payload_substitutions`` in dict insertion order."""
+        parent = {
+            "name": "my-backup",
+            "data": {
+                "backup_type": "pbm_config",
+                "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+            },
+        }
+        result = build_derived_payload(
+            parent,
+            DerivedTask(
+                name_suffix="-physical",
+                payload_substitutions={
+                    "pbm_config": "pbm_logical",
+                    "pbm_logical": "pbm_physical",
+                },
+                backup_type="pbm_physical",
+            ),
+        )
+
+        assert result["data"]["backup_type"] == "pbm_physical"
+        assert (
+            result["data"]["payload"]
+            == "file:///plugins/backup_mongo/pbm_physical_payload"
+        )
+
+    def test_no_payload_is_noop_for_payload_substitutions(self) -> None:
+        """Skip payload substitution silently when ``data.payload`` is absent."""
+        parent = {"name": "t1", "data": {"backup_type": "pbm_config"}}
+        result = build_derived_payload(
+            parent,
+            DerivedTask(
+                name_suffix="-logical",
+                payload_substitutions={"pbm_config": "pbm_logical"},
+                backup_type="pbm_logical",
+            ),
+        )
+
+        assert result["data"]["backup_type"] == "pbm_logical"
+        assert "payload" not in result["data"]
+
+    def test_status_payload_substitution_leaves_logical_path_when_physical_absent(
+        self,
+    ) -> None:
+        """Apply ``payload_substitutions`` without matching ``pbm_physical`` in the path."""
+        parent = {
+            "name": "my-backup",
+            "data": {
+                "backup_type": "pbm_config",
+                "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+            },
+        }
+        result = build_derived_payload(
+            parent,
+            DerivedTask(
+                name_suffix="-status",
+                payload_substitutions={
+                    "pbm_config": "pbm_logical",
+                    "pbm_physical": "pbm_status",
+                },
+                backup_type="pbm_status",
+            ),
+        )
+
+        assert result["name"] == "my-backup-status"
+        assert result["data"]["backup_type"] == "pbm_status"
+        assert (
+            result["data"]["payload"]
+            == "file:///plugins/backup_mongo/pbm_logical_payload"
+        )
+
+
+def _backup_mongo_parent_payload() -> dict[str, Any]:
+    """Return a minimal backup_mongo-shaped parent task payload for testing."""
+    return {
+        "name": "my-backup",
+        "data": {
+            "backup_type": "pbm_config",
+            "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+        },
+    }
+
+
+def _backup_mongo_derived_specs() -> list[DerivedTask]:
+    """Return derived specs for the backup_mongo logical/physical/status cascade."""
+    return [
+        DerivedTask(
+            name_suffix="-logical",
+            payload_substitutions={"pbm_config": "pbm_logical"},
+            backup_type="pbm_logical",
+        ),
+        DerivedTask(
+            name_suffix="-physical",
+            payload_substitutions={
+                "pbm_config": "pbm_logical",
+                "pbm_logical": "pbm_physical",
+            },
+            backup_type="pbm_physical",
+        ),
+        DerivedTask(
+            name_suffix="-status",
+            payload_substitutions={
+                "pbm_config": "pbm_logical",
+                "pbm_physical": "pbm_status",
+            },
+            backup_type="pbm_status",
+        ),
+    ]
+
+
+class TestBackupMongoDerivedCascade:
+    """Cover ``build_derived_payload`` with backup_mongo-shaped substitution maps."""
+
+    def test_logical_physical_status_payloads(self) -> None:
+        """Suffix names and rewrite payload paths for each derived leg."""
+        parent = _backup_mongo_parent_payload()
+        logical, physical, status = [
+            build_derived_payload(parent, spec)
+            for spec in _backup_mongo_derived_specs()
+        ]
+
+        assert logical["data"]["payload"].endswith("pbm_logical_payload")
+        assert physical["data"]["payload"].endswith("pbm_physical_payload")
+        assert status["data"]["payload"].endswith("pbm_logical_payload")
+
+    @pytest.mark.asyncio
+    async def test_cascade_create_posts_parent_and_three_derived(self) -> None:
+        """POST the parent first, then each derived spec in declaration order."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        parent = _backup_mongo_parent_payload()
+        derived_specs = _backup_mongo_derived_specs()
+
+        await cascade_create_tasks(tasks_api, parent, derived_specs)
+
+        expected_calls = [
+            call("/", json=parent),
+            *(
+                call("/", json=build_derived_payload(parent, spec))
+                for spec in derived_specs
+            ),
+        ]
+        assert tasks_api.post.await_args_list == expected_calls
+        tasks_api.delete.assert_not_awaited()
+
 
 # ── cascade_create_tasks ─────────────────────────────────────────────────
 

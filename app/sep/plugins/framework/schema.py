@@ -616,8 +616,11 @@ class DerivedTask(SchemaBaseModel):
     is created first, then for each ``DerivedTask`` the parent payload is
     deep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``
     are applied to ``data["meta"]["args"]`` as literal :meth:`str.replace`
-    calls in dict insertion order, and ``data["parent"]`` is set to the
-    parent's name when ``parent_link`` is true.
+    calls in dict insertion order, ``payload_substitutions`` are applied to
+    ``data["payload"]`` as literal :meth:`str.replace` calls in dict insertion
+    order, ``data["backup_type"]`` is set when ``backup_type`` is set on the
+    spec, and ``data["parent"]`` is set to the parent's name when ``parent_link``
+    is true.
 
     :param name_suffix: String appended to the parent's ``name`` to form the
         derived task's name (for example ``"-dry-run"``).
@@ -627,6 +630,14 @@ class DerivedTask(SchemaBaseModel):
         pair is applied once via :meth:`str.replace` in dict insertion order.
         Defaults to ``None`` (no substitutions).
     :type arg_substitutions: dict[str, str] | None
+    :param payload_substitutions: Optional ordered mapping of literal substring
+        replacements applied to ``data["payload"]``. Each ``(old, new)``
+        pair is applied once via :meth:`str.replace` in dict insertion order.
+        Defaults to ``None`` (no substitutions).
+    :type payload_substitutions: dict[str, str] | None
+    :param backup_type: When set, the value assigned to ``data["backup_type"]``
+        on the derived payload. Defaults to ``None``.
+    :type backup_type: str | None
     :param parent_link: When true, set ``data["parent"]`` on the derived
         payload to the parent's ``name``. Defaults to ``True``.
     :type parent_link: bool
@@ -634,6 +645,8 @@ class DerivedTask(SchemaBaseModel):
 
     name_suffix: NonEmptyStr
     arg_substitutions: dict[str, str] | None = None
+    payload_substitutions: dict[str, str] | None = None
+    backup_type: str | None = None
     parent_link: bool = True
 
 

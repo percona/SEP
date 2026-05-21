@@ -90,9 +90,11 @@ def build_derived_payload(
 
     Deep-copies ``parent_payload``, suffixes ``name`` with
     ``derived_spec.name_suffix``, applies ``arg_substitutions`` literally to
-    ``data["meta"]["args"]`` (when present and string-typed), and sets
-    ``data["parent"]`` when ``parent_link`` is true. The caller's
-    ``parent_payload`` is never mutated.
+    ``data["meta"]["args"]`` (when present and string-typed), applies
+    ``payload_substitutions`` literally to ``data["payload"]`` (when present
+    and string-typed), sets ``data["backup_type"]`` when ``backup_type`` is
+    set on the spec, and sets ``data["parent"]`` when ``parent_link`` is true.
+    The caller's ``parent_payload`` is never mutated.
 
     :param parent_payload: The parent task's serialised payload (typically
         ``parent.model_dump()``).
@@ -105,7 +107,12 @@ def build_derived_payload(
     payload = copy.deepcopy(parent_payload)
     parent_name = payload["name"]
     payload["name"] = f"{parent_name}{derived_spec.name_suffix}"
-    if derived_spec.arg_substitutions or derived_spec.parent_link:
+    if (
+        derived_spec.arg_substitutions
+        or derived_spec.payload_substitutions
+        or derived_spec.backup_type is not None
+        or derived_spec.parent_link
+    ):
         data = payload.setdefault("data", {})
         if derived_spec.arg_substitutions:
             meta = data.get("meta")
@@ -114,6 +121,14 @@ def build_derived_payload(
                 for old, new in derived_spec.arg_substitutions.items():
                     args = args.replace(old, new)
                 meta["args"] = args
+        if derived_spec.payload_substitutions:
+            payload_path = data.get("payload")
+            if isinstance(payload_path, str):
+                for old, new in derived_spec.payload_substitutions.items():
+                    payload_path = payload_path.replace(old, new)
+                data["payload"] = payload_path
+        if derived_spec.backup_type is not None:
+            data["backup_type"] = derived_spec.backup_type
         if derived_spec.parent_link:
             data["parent"] = parent_name
     return payload
