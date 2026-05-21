@@ -213,7 +213,7 @@ def test_alters_create_pre_checks_filesystem_skip_flag(
     nomad_hosts,
     expect_skip_in_pre_checks_yaml,
 ):
-    """SEP-764: pre-checks YAML skip_filesystem_checks follows executor vs DB host (Nomad /hosts/)."""
+    """pre-checks YAML skip_filesystem_checks follows executor vs DB host (Nomad /hosts/)."""
     task = GeneratedTaskFactory.build(
         name="sep764-alter",
         data={
@@ -414,7 +414,9 @@ def test_get_table_details_inventory_error(
 ):
     """Inventory failure returns JSON 500."""
     mock_inventory_api_dep.get = AsyncMock(
-        side_effect=HTTPException(status_code=404, detail="missing")
+        side_effect=HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="missing"
+        )
     )
     response = test_client.get("/alters/table/999/details")
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -471,7 +473,7 @@ def test_alters_detail_when_hosts_api_fails(
     async def tasks_api_get(path: str, *args, **kwargs) -> object:
         # Do not rely on call order of FastAPI deps — match by path.
         if path == "/hosts/":
-            raise HTTPException(status_code=503)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
         if path.startswith("/stats/"):
             return {}
         if "/history/" in path or path == "/":
@@ -520,7 +522,7 @@ def test_alters_detail_when_services_api_fails(
         if path == "/":
             return []
         if path.startswith("/services"):
-            raise HTTPException(status_code=500)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return []
 
     mock_task_api_dep.get = AsyncMock(side_effect=tasks_api_get_ok)
