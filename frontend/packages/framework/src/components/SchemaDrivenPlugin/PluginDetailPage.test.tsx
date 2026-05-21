@@ -17,7 +17,7 @@
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
@@ -27,6 +27,17 @@ import { PluginDetailPage, pickExecutionData, resolveTabFromSplat } from './Plug
 const mockDeleteMutate = vi.fn();
 const mockExecuteMutate = vi.fn();
 const mockUsePluginTask = vi.fn();
+interface MockStatsResult {
+  data: unknown;
+  isLoading: boolean;
+  isError: boolean;
+  error?: unknown;
+}
+const mockUseTaskStats = vi.fn<(...args: unknown[]) => MockStatsResult>(() => ({
+  data: undefined,
+  isLoading: false,
+  isError: false,
+}));
 
 // Manual factory keeps axios out of the resolution graph.
 vi.mock('@sep/api', () => ({
@@ -43,6 +54,13 @@ vi.mock('@sep/api', () => ({
   emitUnauthorized: vi.fn(),
   apiClient: { get: vi.fn(), post: vi.fn(), defaults: {} },
   setTokenProvider: vi.fn(),
+  ApiError: class ApiError extends Error {
+    status?: number;
+    constructor(details: { status?: number; message: string }) {
+      super(details.message);
+      this.status = details.status;
+    }
+  },
 }));
 
 vi.mock('../../hooks', () => ({
@@ -51,6 +69,11 @@ vi.mock('../../hooks', () => ({
     mutateAsync: mockExecuteMutate,
     isPending: false,
   }),
+  useTaskStats: (...args: unknown[]) => mockUseTaskStats(...(args as [unknown])),
+}));
+
+vi.mock('../../hooks/useTaskStats', () => ({
+  useTaskStats: (...args: unknown[]) => mockUseTaskStats(...(args as [unknown])),
 }));
 
 const schema: PluginSchema = {
@@ -208,6 +231,159 @@ describe('PluginDetailPage execute flow', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(mockExecuteMutate).not.toHaveBeenCalled();
+  });
+});
+
+function renderWithSchema(customSchema: PluginSchema, path = '/plugins/checksums/task/FECHK') {
+  return render(
+    <QueryClientProvider client={makeClient()}>
+      <SnackbarProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route
+              path="/plugins/:plugin/task/:id/*"
+              element={<PluginDetailPage schema={customSchema} pluginName="checksums" />}
+            />
+            <Route path="/plugins/:plugin" element={<div>list page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </SnackbarProvider>
+    </QueryClientProvider>,
+  );
+}
+
+function makeSchema(capabilities: Record<string, boolean> | undefined): PluginSchema {
+  return {
+    pluginName: 'checksums',
+    display_name: 'Checksum',
+    description: 'Test',
+    capabilities,
+    list_view: {
+      columns: [
+        { key: 'name', label: 'Name' },
+        { key: 'status', label: 'Status', format: 'status' },
+      ],
+      default_sort: '-id',
+    },
+    formSchema: { sections: [] },
+  } as unknown as PluginSchema;
+}
+
+const POPULATED_STATS = {
+  engine: 'nomad',
+  total: 5,
+  status: { pass: 4, fail: 1 },
+  duration: { average_seconds: 1.234, last_seconds: 0.987, total_seconds: 6.17 },
+  last_finished_at: new Date(Date.now() - 60_000).toISOString(),
+};
+
+describe('PluginDetailPage — StatsCard integration', () => {
+  beforeEach(() => {
+    mockUseTaskStats.mockReset();
+    mockUseTaskStats.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+  });
+
+  it('renders the StatsCard when capabilities.stats is true', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    mockUseTaskStats.mockReturnValue({
+      data: POPULATED_STATS,
+      isLoading: false,
+      isError: false,
+    });
+    renderWithSchema(makeSchema({ stats: true }));
+    expect(screen.getByText('Executions')).toBeInTheDocument();
+  });
+
+  it('does not render the StatsCard when capabilities.stats is false', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    renderWithSchema(makeSchema({ stats: false }));
+    expect(screen.queryByText('Executions')).toBeNull();
+    expect(mockUseTaskStats).not.toHaveBeenCalled();
+  });
+
+  it('does not render the StatsCard when capabilities.stats is absent', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    renderWithSchema(makeSchema({}));
+    expect(screen.queryByText('Executions')).toBeNull();
+    expect(mockUseTaskStats).not.toHaveBeenCalled();
+  });
+
+  it('does not render the StatsCard when capabilities is undefined', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    renderWithSchema(makeSchema(undefined));
+    expect(screen.queryByText('Executions')).toBeNull();
+    expect(mockUseTaskStats).not.toHaveBeenCalled();
+  });
+
+  it('does not render the StatsCard when task.name is missing', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, status: 'completed' },
+      isLoading: false,
+    });
+    renderWithSchema(makeSchema({ stats: true }));
+    // Hook is invoked but with undefined name, so it disables itself; the card
+    // returns null before rendering the section header.
+    expect(screen.queryByText('Executions')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Stats' })).toBeNull();
+  });
+
+  it('does not render the StatsCard when task.name is numeric', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 42, status: 'completed' },
+      isLoading: false,
+    });
+    renderWithSchema(makeSchema({ stats: true }));
+    expect(screen.queryByText('Executions')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Stats' })).toBeNull();
+  });
+
+  it('renders empty state when stats.total === 0', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    mockUseTaskStats.mockReturnValue({
+      data: {
+        engine: 'nomad',
+        total: 0,
+        status: { pass: 0, fail: 0 },
+        duration: { average_seconds: null, last_seconds: null, total_seconds: null },
+        last_finished_at: null,
+      },
+      isLoading: false,
+      isError: false,
+    });
+    renderWithSchema(makeSchema({ stats: true }));
+    expect(screen.getByText('No execution history yet')).toBeInTheDocument();
+    expect(screen.queryByText('Executions')).toBeNull();
+  });
+
+  it('keeps the Task information section when stats query errors', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    mockUseTaskStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('boom'),
+    });
+    renderWithSchema(makeSchema({ stats: true }));
+    expect(screen.getByText('Task information')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load execution stats');
   });
 });
 
