@@ -240,7 +240,7 @@ function SyncScheduleForm({
       enabled,
       description: initialTask?.description ?? '',
       kwargs: '{}',
-      start_time: null,
+      start_time: initialTask?.start_time ?? null,
       interval:
         scheduleMode === 'interval'
           ? { every: Number(intervalEvery), period: intervalPeriod }

@@ -55,7 +55,7 @@ function InventoryNodesList({
           <Button
             variant="outlined"
             startIcon={<ScheduleIcon />}
-            onClick={() => navigate('schedule', { relative: 'path' })}
+            onClick={() => navigate('../schedule', { relative: 'path' })}
             data-testid="inv-schedule-link"
           >
             Schedules
