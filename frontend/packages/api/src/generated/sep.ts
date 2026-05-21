@@ -3037,9 +3037,9 @@ export interface paths {
      *     :type response: Response
      *     :param tasks_api: The Tasks API client used to fetch the upstream stats.
      *     :type tasks_api: TaskAPI
-     *     :return: The aggregated stats payload, or an empty default when the
-     *         upstream call fails.
-     *     :rtype: TaskStatsResponse
+     *     :return: The raw upstream stats payload, or ``{}`` when the upstream
+     *         call fails.
+     *     :rtype: dict[str, Any]
      */
     get: operations['sep_get_task_stats_api_sep_task_stats__task_name__get'];
     put?: never;
@@ -6374,84 +6374,6 @@ export interface components {
       created_by: string | null;
       /** Last Updated By */
       last_updated_by: string | null;
-    };
-    /**
-     * TaskStatsDuration
-     * @description Aggregated duration metrics for a task.
-     *
-     *     :param average_seconds: Mean duration across recorded executions, or
-     *         ``None`` if no executions have completed.
-     *     :type average_seconds: float | None
-     *     :param last_seconds: Duration of the most recent finished execution.
-     *     :type last_seconds: float | None
-     *     :param total_seconds: Sum of all recorded execution durations.
-     *     :type total_seconds: float | None
-     */
-    TaskStatsDuration: {
-      /** Average Seconds */
-      average_seconds?: number | null;
-      /** Last Seconds */
-      last_seconds?: number | null;
-      /** Total Seconds */
-      total_seconds?: number | null;
-    };
-    /**
-     * TaskStatsResponse
-     * @description Wire-shape mirror of ``app.tasks.models.TaskStats`` for the SEP proxy.
-     *
-     *     Mirror only the JSON surface (computed fields plus ``engine``) so the
-     *     OpenAPI schema can be tightened independently of the upstream model.
-     *     The upstream ``tasks`` list is excluded from serialization on the Tasks
-     *     side and is not part of this contract.
-     *
-     *     :param engine: Execution backend identifier (e.g. ``nomad``).
-     *     :type engine: str
-     *     :param total: Total number of recorded executions for the task.
-     *     :type total: int
-     *     :param status: Pass/fail summary across executions.
-     *     :type status: TaskStatsStatus
-     *     :param duration: Aggregated duration metrics.
-     *     :type duration: TaskStatsDuration
-     *     :param last_finished_at: ISO timestamp of the most recent finished
-     *         execution, or ``None`` when no execution has completed.
-     *     :type last_finished_at: str | None
-     */
-    TaskStatsResponse: {
-      /**
-       * Engine
-       * @default nomad
-       */
-      engine: string;
-      /**
-       * Total
-       * @default 0
-       */
-      total: number;
-      status?: components['schemas']['TaskStatsStatus'];
-      duration?: components['schemas']['TaskStatsDuration'];
-      /** Last Finished At */
-      last_finished_at?: string | null;
-    };
-    /**
-     * TaskStatsStatus
-     * @description Pass/fail counts for a task across its history.
-     *
-     *     :param pass_: Number of successful executions. Serialized as ``pass``.
-     *     :type pass_: int
-     *     :param fail: Number of failed executions.
-     *     :type fail: int
-     */
-    TaskStatsStatus: {
-      /**
-       * Pass
-       * @default 0
-       */
-      pass: number;
-      /**
-       * Fail
-       * @default 0
-       */
-      fail: number;
     };
     /**
      * TextAreaField
@@ -11511,7 +11433,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['TaskStatsResponse'];
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

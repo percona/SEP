@@ -117,7 +117,7 @@ export function StatsCard({ taskName }: StatsCardProps) {
     );
   }
 
-  if (!data || data.total === 0) {
+  if (!data || !data.total) {
     return (
       <SectionShell>
         <Typography color="text.secondary">No execution history yet</Typography>

@@ -22,18 +22,6 @@ from fastapi.testclient import TestClient
 from app.core.exceptions import HTTPBadGatewayException
 from app.sep.main import sep_app
 
-EMPTY_STATS = {
-    "engine": "nomad",
-    "total": 0,
-    "status": {"pass": 0, "fail": 0},
-    "duration": {
-        "average_seconds": None,
-        "last_seconds": None,
-        "total_seconds": None,
-    },
-    "last_finished_at": None,
-}
-
 
 class TestSepTaskStatsEndpoint:
     """Tests for ``GET /api/sep/task-stats/{task_name}`` proxy behavior."""
@@ -66,42 +54,32 @@ class TestSepTaskStatsEndpoint:
         mock_task_api_dep,
     ) -> None:
         """Call ``tasks_api.get('/stats/{task_name}')`` with the URL path param."""
-        mock_task_api_dep.get.return_value = {
-            "engine": "nomad",
-            "total": 0,
-            "status": {"pass": 0, "fail": 0},
-            "duration": {
-                "average_seconds": None,
-                "last_seconds": None,
-                "total_seconds": None,
-            },
-            "last_finished_at": None,
-        }
+        mock_task_api_dep.get.return_value = {}
         test_client.get("/api/sep/task-stats/some-task-name")
         mock_task_api_dep.get.assert_called_once_with("/stats/some-task-name")
 
-    def test_tasks_failure_returns_empty_stats(
+    def test_tasks_failure_returns_empty_dict(
         self,
         test_client: TestClient,
         mock_task_api_dep,
     ) -> None:
-        """Return ``200`` empty stats + ``X-Sep-Upstream-Error`` on upstream HTTP failure."""
+        """Return ``200`` ``{}`` + ``X-Sep-Upstream-Error`` on upstream HTTP failure."""
         mock_task_api_dep.get.side_effect = HTTPBadGatewayException("tasks unreachable")
         response = test_client.get("/api/sep/task-stats/my-task")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == EMPTY_STATS
+        assert response.json() == {}
         assert response.headers["X-Sep-Upstream-Error"] == "tasks unreachable"
 
-    def test_tasks_oserror_returns_empty_stats(
+    def test_tasks_oserror_returns_empty_dict(
         self,
         test_client: TestClient,
         mock_task_api_dep,
     ) -> None:
-        """Return empty stats when the Tasks API raises an OSError."""
+        """Return ``{}`` when the Tasks API raises an OSError."""
         mock_task_api_dep.get.side_effect = OSError("connection refused")
         response = test_client.get("/api/sep/task-stats/my-task")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == EMPTY_STATS
+        assert response.json() == {}
         assert response.headers["X-Sep-Upstream-Error"] == "connection refused"
 
 

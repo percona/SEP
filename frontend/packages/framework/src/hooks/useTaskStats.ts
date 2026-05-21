@@ -16,24 +16,26 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { ApiError, sepApi, throwOnApiError, type SepComponents } from '@sep/api';
-
-type GeneratedTaskStats = SepComponents['schemas']['TaskStatsResponse'];
+import { ApiError, sepApi, throwOnApiError } from '@sep/api';
 
 /**
- * Locally re-asserted view of ``TaskStatsResponse``. The generated schema
- * already narrows ``status`` and ``duration`` (the SEP proxy at
- * ``app/sep/api/routes/task_stats.py`` defines them as typed pydantic
- * sub-models), but downstream consumers historically tolerated optional
- * fields — keep the shape relaxed here to avoid churn at call sites.
+ * Consumer-side view of the task-stats payload.
+ *
+ * The SEP proxy at ``app/sep/api/routes/task_stats.py`` returns the raw
+ * upstream payload (``dict[str, Any]``) and ``{}`` on upstream failure, so
+ * every field is optional. Components guard on ``total`` to detect the
+ * empty/degraded state.
  */
-export interface TaskStatsView extends Omit<GeneratedTaskStats, 'status' | 'duration'> {
-  status: { pass?: number; fail?: number };
-  duration: {
+export interface TaskStatsView {
+  engine?: string;
+  total?: number;
+  status?: { pass?: number; fail?: number };
+  duration?: {
     average_seconds?: number | null;
     last_seconds?: number | null;
     total_seconds?: number | null;
   };
+  last_finished_at?: string | null;
 }
 
 /**
