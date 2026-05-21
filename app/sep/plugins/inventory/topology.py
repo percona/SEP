@@ -413,7 +413,9 @@ def _add_dual_primary_edges(
     :return: ``None``.
     :rtype: None
     """
-    node_to_hash = {node_id: server_hash for server_hash, node_id in hash_to_node.items()}
+    node_to_hash = {
+        node_id: server_hash for server_hash, node_id in hash_to_node.items()
+    }
     pair_seen: set[str] = set()
     for replica_id, primary_hash in primary_hashes_seen.items():
         primary_id = hash_to_node.get(primary_hash)
