@@ -47,7 +47,7 @@ const NODE_TYPES = {
   mysql: MySQLNode,
   cluster: ClusterGroup,
   unknown_source: UnknownSourceNode,
-} as unknown as NodeTypes;
+} satisfies NodeTypes;
 
 /**
  * Persist the dispatched task ids in `sessionStorage` so navigating

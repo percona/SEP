@@ -192,7 +192,7 @@ def _index_ok_host(
     host_entry: str,
     record: Mapping[str, Any],
     nodes: list[dict[str, Any]],
-    cluster_members: dict[tuple[Any, Any], list[str]],
+    cluster_members: dict[str, list[str]],
     hash_to_node: dict[str, str],
     addr_to_node: dict[tuple[str, int], str],
 ) -> None:
@@ -205,7 +205,7 @@ def _index_ok_host(
     :param nodes: Mutable React Flow node list.
     :type nodes: list[dict[str, Any]]
     :param cluster_members: Mutable cluster key to member node ids map.
-    :type cluster_members: dict[tuple[Any, Any], list[str]]
+    :type cluster_members: dict[str, list[str]]
     :param hash_to_node: Mutable server hash to node id index.
     :type hash_to_node: dict[str, str]
     :param addr_to_node: Mutable address+port to node id index.
@@ -225,18 +225,14 @@ def _index_ok_host(
     if port is not None and (addr := data.get("address")):
         addr_to_node[(addr, port)] = node_id
     if cluster and cluster.get("cluster_name"):
-        cluster_key = (
-            cluster["cluster_name"],
-            cluster.get("cluster_status"),
-        )
-        cluster_members[cluster_key].append(node_id)
+        cluster_members[cluster["cluster_name"]].append(node_id)
 
 
 def _build_mysql_nodes(
     host_records: Mapping[str, dict[str, Any]],
 ) -> tuple[
     list[dict[str, Any]],
-    dict[tuple[Any, Any], list[str]],
+    dict[str, list[str]],
     dict[str, str],
     dict[tuple[str, int], str],
 ]:
@@ -245,10 +241,10 @@ def _build_mysql_nodes(
     :param host_records: Merged topology host records.
     :type host_records: Mapping[str, dict[str, Any]]
     :return: Nodes, cluster membership index, server hash index, and address index.
-    :rtype: tuple[list[dict[str, Any]], dict[tuple[Any, Any], list[str]], dict[str, str], dict[tuple[str, int], str]]
+    :rtype: tuple[list[dict[str, Any]], dict[str, list[str]], dict[str, str], dict[tuple[str, int], str]]
     """
     nodes: list[dict[str, Any]] = []
-    cluster_members: dict[tuple[Any, Any], list[str]] = defaultdict(list)
+    cluster_members: dict[str, list[str]] = defaultdict(list)
     hash_to_node: dict[str, str] = {}
     addr_to_node: dict[tuple[str, int], str] = {}
 
@@ -291,18 +287,18 @@ def _first_cluster_data(
 
 def _add_cluster_nodes(
     nodes: list[dict[str, Any]],
-    cluster_members: Mapping[tuple[Any, Any], list[str]],
+    cluster_members: Mapping[str, list[str]],
 ) -> None:
     """Add synthetic PXC cluster nodes to the graph.
 
     :param nodes: Mutable React Flow node list.
     :type nodes: list[dict[str, Any]]
     :param cluster_members: Cluster key to member node ids map.
-    :type cluster_members: Mapping[tuple[Any, Any], list[str]]
+    :type cluster_members: Mapping[str, list[str]]
     :return: ``None``.
     :rtype: None
     """
-    for (cluster_name, _cluster_status), members in cluster_members.items():
+    for cluster_name, members in cluster_members.items():
         first_data = _first_cluster_data(nodes, members)
         nodes.append(
             {
@@ -401,26 +397,10 @@ def _add_replication_edges(
     return primary_hashes_seen
 
 
-def _server_hashes_by_node(nodes: list[dict[str, Any]]) -> dict[str, Any]:
-    """Return server hashes keyed by MySQL node id.
-
-    :param nodes: React Flow node list.
-    :type nodes: list[dict[str, Any]]
-    :return: MySQL node id to server hash map for successful hosts.
-    :rtype: dict[str, Any]
-    """
-    return {
-        node["id"]: (node.get("data") or {}).get("server", {}).get("server_hash")
-        for node in nodes
-        if node["type"] == NODE_TYPE_MYSQL
-        and (node.get("data") or {}).get("status") == "ok"
-    }
-
-
 def _add_dual_primary_edges(
     edges: list[dict[str, Any]],
     primary_hashes_seen: Mapping[str, str],
-    server_hashes: Mapping[str, Any],
+    hash_to_node: Mapping[str, str],
 ) -> None:
     """Add dual-primary edges for mutually replicating MySQL nodes.
 
@@ -428,23 +408,21 @@ def _add_dual_primary_edges(
     :type edges: list[dict[str, Any]]
     :param primary_hashes_seen: Replica node id to computed primary hash map.
     :type primary_hashes_seen: Mapping[str, str]
-    :param server_hashes: MySQL node id to server hash map.
-    :type server_hashes: Mapping[str, Any]
+    :param hash_to_node: Server hash to MySQL node id index.
+    :type hash_to_node: Mapping[str, str]
     :return: ``None``.
     :rtype: None
     """
+    node_to_hash = {node_id: server_hash for server_hash, node_id in hash_to_node.items()}
     pair_seen: set[str] = set()
     for replica_id, primary_hash in primary_hashes_seen.items():
-        primary_id = next(
-            (nid for nid, h in server_hashes.items() if h == primary_hash and h),
-            None,
-        )
+        primary_id = hash_to_node.get(primary_hash)
         if not primary_id or primary_id == replica_id:
             continue
         reverse_primary_hash = primary_hashes_seen.get(primary_id)
         if reverse_primary_hash is None:
             continue
-        if reverse_primary_hash != server_hashes.get(replica_id):
+        if reverse_primary_hash != node_to_hash.get(replica_id):
             continue
         edge_id = _build_dual_edge_id(replica_id, primary_id)
         if edge_id in pair_seen:
@@ -464,7 +442,7 @@ def _add_dual_primary_edges(
 def _build_graph_summary(
     nodes: list[dict[str, Any]],
     edges: list[dict[str, Any]],
-    cluster_members: Mapping[tuple[Any, Any], list[str]],
+    cluster_members: Mapping[str, list[str]],
 ) -> dict[str, int]:
     """Build aggregate graph counts for the topology response.
 
@@ -473,7 +451,7 @@ def _build_graph_summary(
     :param edges: React Flow edge list.
     :type edges: list[dict[str, Any]]
     :param cluster_members: Cluster key to member node ids map.
-    :type cluster_members: Mapping[tuple[Any, Any], list[str]]
+    :type cluster_members: Mapping[str, list[str]]
     :return: Host, status, cluster, and edge counts.
     :rtype: dict[str, int]
     """
@@ -514,7 +492,7 @@ def build_topology_graph(
     primary_hashes_seen = _add_replication_edges(
         host_records, nodes, edges, hash_to_node, addr_to_node
     )
-    _add_dual_primary_edges(edges, primary_hashes_seen, _server_hashes_by_node(nodes))
+    _add_dual_primary_edges(edges, primary_hashes_seen, hash_to_node)
     return {
         "nodes": nodes,
         "edges": edges,

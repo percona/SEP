@@ -214,7 +214,6 @@ async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusRespo
 _TOPOLOGY_PAYLOAD_PATH = Path(payloads.__file__).parent / "topology.py"
 _TOPOLOGY_TASK = "run-python"
 _TOPOLOGY_STDOUT_STEP = "run-script"
-_MAX_TOPOLOGY_SHARDS = MAX_TOPOLOGY_SHARDS
 _TOPOLOGY_HEARTBEAT_SECONDS = 15.0
 _TOPOLOGY_POLL_INTERVAL_SECONDS = 0.5
 
