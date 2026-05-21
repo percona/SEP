@@ -330,7 +330,7 @@ if [[ $INCLUDE_MONGO_LOGS -eq 1 ]]; then
     if [[ -r $MONGO_LOG_FILE ]]; then
         echo "Log file: $MONGO_LOG_FILE"
         echo
-        tail -n "$MONGO_LOG_LINES" "$MONGO_LOG_FILE"
+        tail -n "$MONGO_LOG_LINES" "$MONGO_LOG_FILE" | redact_uri
     elif [[ -f $MONGO_LOG_FILE ]]; then
         echo "MongoDB log file '$MONGO_LOG_FILE' exists but is not readable; re-run this snippet with sudo."
     else
