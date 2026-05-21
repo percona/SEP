@@ -140,8 +140,10 @@ async def get_schema() -> PluginSchema:
     """Return the inventory plugin schema with deployment-time capabilities."""
     return inventory_schema.model_copy(
         update={
-            "capabilities": Capabilities(
-                topology=sep_settings.INVENTORY_TOPOLOGY_ENABLED,
+            "capabilities": (
+                inventory_schema.capabilities or Capabilities()
+            ).model_copy(
+                update={"topology": sep_settings.INVENTORY_TOPOLOGY_ENABLED},
             )
         },
     )
