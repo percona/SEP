@@ -20,6 +20,10 @@ import pytest
 from app.sep.inventory import CreatedService
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import RestoreCreate
+from tests.app.sep.conftest import (  # noqa: F401
+    mock_inventory_api_dep,
+    mock_task_api_dep,
+)
 
 
 @pytest.fixture
