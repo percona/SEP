@@ -20,13 +20,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 
-const { mockTasksGet } = vi.hoisted(() => ({ mockTasksGet: vi.fn() }));
+const { mockSepGet } = vi.hoisted(() => ({ mockSepGet: vi.fn() }));
 
 vi.mock('@sep/api', async () => {
   const actual = await vi.importActual<typeof import('@sep/api')>('@sep/api');
   return {
     ...actual,
-    tasksApi: { GET: mockTasksGet },
+    sepApi: { GET: mockSepGet },
   };
 });
 
@@ -54,50 +54,50 @@ function wrapper() {
 }
 
 beforeEach(() => {
-  mockTasksGet.mockReset();
+  mockSepGet.mockReset();
 });
 
 describe('useTaskStats', () => {
   it('does not call the API when taskName is undefined', () => {
-    mockTasksGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats(undefined), { wrapper: wrapper() });
-    expect(mockTasksGet).not.toHaveBeenCalled();
+    expect(mockSepGet).not.toHaveBeenCalled();
   });
 
   it('does not call the API for whitespace-only taskName', () => {
-    mockTasksGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('   '), { wrapper: wrapper() });
-    expect(mockTasksGet).not.toHaveBeenCalled();
+    expect(mockSepGet).not.toHaveBeenCalled();
   });
 
   it('does not call the API when enabled=false', () => {
-    mockTasksGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('foo', false), { wrapper: wrapper() });
-    expect(mockTasksGet).not.toHaveBeenCalled();
+    expect(mockSepGet).not.toHaveBeenCalled();
   });
 
-  it('calls /stats/{task} with the trimmed name in path params', async () => {
-    mockTasksGet.mockResolvedValue(SUCCESS_RESPONSE);
+  it('calls /api/sep/task-stats/{task_name} with the trimmed name in path params', async () => {
+    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('  my-task  '), { wrapper: wrapper() });
     await waitFor(() => {
-      expect(mockTasksGet).toHaveBeenCalledWith('/stats/{task}', {
-        params: { path: { task: 'my-task' } },
+      expect(mockSepGet).toHaveBeenCalledWith('/api/sep/task-stats/{task_name}', {
+        params: { path: { task_name: 'my-task' } },
       });
     });
   });
 
   it('passes URL-special characters through to the openapi-fetch client', async () => {
-    mockTasksGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('weird/name with spaces&q=?'), { wrapper: wrapper() });
     await waitFor(() => {
-      expect(mockTasksGet).toHaveBeenCalledWith('/stats/{task}', {
-        params: { path: { task: 'weird/name with spaces&q=?' } },
+      expect(mockSepGet).toHaveBeenCalledWith('/api/sep/task-stats/{task_name}', {
+        params: { path: { task_name: 'weird/name with spaces&q=?' } },
       });
     });
   });
 
   it('throws an ApiError with the response status (no retry on 401)', async () => {
-    mockTasksGet.mockResolvedValue({
+    mockSepGet.mockResolvedValue({
       data: undefined,
       error: { detail: 'nope' },
       response: { ok: false, status: 401, statusText: 'Unauthorized' } as Response,
@@ -109,6 +109,6 @@ describe('useTaskStats', () => {
     const { ApiError } = await import('@sep/api');
     expect(result.current.error).toBeInstanceOf(ApiError);
     expect((result.current.error as InstanceType<typeof ApiError>).status).toBe(401);
-    expect(mockTasksGet).toHaveBeenCalledTimes(1);
+    expect(mockSepGet).toHaveBeenCalledTimes(1);
   });
 });

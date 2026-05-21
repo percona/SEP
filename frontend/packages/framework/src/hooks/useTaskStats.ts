@@ -16,17 +16,16 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { ApiError, tasksApi, type TasksComponents } from '@sep/api';
+import { ApiError, sepApi, type SepComponents } from '@sep/api';
 
-type GeneratedTaskStats = TasksComponents['schemas']['TaskStats'];
+type GeneratedTaskStats = SepComponents['schemas']['TaskStatsResponse'];
 
 /**
- * Locally widened view of ``TaskStats``. The generated client types ``status``
- * and ``duration`` as ``Record<string, never>`` because the backend computed
- * properties expose ``dict[str, Any]`` to the OpenAPI surface. The actual
- * runtime shape — defined in ``app/tasks/models.py::TaskStats._process`` — is
- * narrower. Until the backend annotations are tightened (follow-up), this
- * shape is asserted at the consumer boundary.
+ * Locally re-asserted view of ``TaskStatsResponse``. The generated schema
+ * already narrows ``status`` and ``duration`` (the SEP proxy at
+ * ``app/sep/api/routes/task_stats.py`` defines them as typed pydantic
+ * sub-models), but downstream consumers historically tolerated optional
+ * fields — keep the shape relaxed here to avoid churn at call sites.
  */
 export interface TaskStatsView extends Omit<GeneratedTaskStats, 'status' | 'duration'> {
   status: { pass?: number; fail?: number };
@@ -49,8 +48,8 @@ export function useTaskStats(taskName: string | undefined, enabled = true) {
     queryKey: ['task-stats', trimmed],
     enabled: enabled && Boolean(trimmed),
     queryFn: async () => {
-      const { data, error, response } = await tasksApi.GET('/stats/{task}', {
-        params: { path: { task: trimmed as string } },
+      const { data, error, response } = await sepApi.GET('/api/sep/task-stats/{task_name}', {
+        params: { path: { task_name: trimmed as string } },
       });
       if (!response.ok) {
         throw new ApiError({

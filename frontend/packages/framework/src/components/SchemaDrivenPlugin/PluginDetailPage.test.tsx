@@ -69,11 +69,10 @@ vi.mock('../../hooks', () => ({
     mutateAsync: mockExecuteMutate,
     isPending: false,
   }),
-  useTaskStats: (...args: unknown[]) => mockUseTaskStats(...(args as [unknown])),
 }));
 
 vi.mock('../../hooks/useTaskStats', () => ({
-  useTaskStats: (...args: unknown[]) => mockUseTaskStats(...(args as [unknown])),
+  useTaskStats: (taskName?: string, enabled?: boolean) => mockUseTaskStats(taskName, enabled),
 }));
 
 const schema: PluginSchema = {
@@ -295,6 +294,20 @@ describe('PluginDetailPage — StatsCard integration', () => {
     });
     renderWithSchema(makeSchema({ stats: true }));
     expect(screen.getByText('Executions')).toBeInTheDocument();
+  });
+
+  it('forwards both taskName and enabled to useTaskStats', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    renderWithSchema(makeSchema({ stats: true }));
+    expect(mockUseTaskStats).toHaveBeenCalled();
+    const lastCall = mockUseTaskStats.mock.calls.at(-1) ?? [];
+    // Guard against the prior mock that dropped every arg after the first,
+    // which hid regressions around the ``enabled`` flag.
+    expect(lastCall[0]).toBe('FECHK');
+    expect(lastCall[1]).toBe(true);
   });
 
   it('does not render the StatsCard when capabilities.stats is false', () => {
