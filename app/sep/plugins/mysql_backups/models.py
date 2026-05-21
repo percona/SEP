@@ -23,7 +23,11 @@ from pydantic import BaseModel, Field, field_validator, FutureDatetime, model_va
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
-from app.sep.plugins.framework.rules import ConditionalRulesModel
+from app.sep.plugins.framework.rules import (
+    apply_conditional_rules,
+    ConditionalRulesModel,
+)
+from app.sep.plugins.mysql_backups.schema import mysql_backups_schema
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -167,6 +171,7 @@ _MODE_BOOL_FIELDS: dict[BackupType, tuple[str, ...]] = {
 }
 
 
+@apply_conditional_rules(mysql_backups_schema)
 class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     """Represent a Backup creation form with proper case-insensitive fields.
 
@@ -300,14 +305,23 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     @field_validator("upload", mode="before")
     @classmethod
     def _coerce_empty_upload_to_none(cls, value: Any) -> Any:
-        """Treat empty form submissions for ``upload`` as ``None``.
+        """Normalise the legacy empty-string ``upload`` to ``None``.
 
         The Jinja2 form path serialises an unset ``upload`` MultiChoice as
         an empty string; the JSON API path sends ``null`` or omits the
-        field entirely. Normalise both to ``None`` so downstream parsing
-        receives a clean ``list[UploadProvider] | None``.
+        field entirely. Coerce ``""`` and ``None`` to ``None`` so downstream
+        parsing receives a clean ``list[UploadProvider] | None``.
+
+        An explicit empty list (``upload=[]``) is rejected: ``None`` means
+        "infer providers from bucket presence" (legacy semantics) while
+        ``[]`` would mean "explicitly no providers selected" — distinct
+        intents that must not collapse silently.
         """
-        if value in ("", [], None):
+        if value == []:
+            raise ValueError(
+                "'upload' cannot be an empty list; omit the field or send null."
+            )
+        if value in ("", None):
             return None
         if isinstance(value, str):
             return [value]
@@ -462,7 +476,7 @@ class BackupExecuteWrite(BaseModel):
 
 
 class BackupExecutionResponse(BaseModel):
-    """Response from ``POST /api/plugins/mysql_backups/{task_name}/execute``.
+    """Carry the response payload from ``POST /api/plugins/mysql_backups/{task_name}/execute``.
 
     :param task_name: The name of the task that was executed.
     :type task_name: str
@@ -475,7 +489,7 @@ class BackupExecutionResponse(BaseModel):
 
 
 class BackupTaskBase(BaseModel):
-    """Common fields shared by backup task API responses.
+    """Carry the fields common to every backup-task API response.
 
     :param name: The name of the backup task.
     :type name: str
@@ -528,16 +542,3 @@ class BackupResponse(BackupTaskBase):
     updated_at: datetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
-
-
-# Wire the schema's conditional rules onto BackupCreate.
-# Imported here (bottom of module) so the schema module — which does not
-# import models — can be imported safely from elsewhere without a cycle.
-from app.sep.plugins.framework.rules import (  # noqa: E402
-    apply_conditional_rules,
-)
-from app.sep.plugins.mysql_backups.schema import (  # noqa: E402
-    mysql_backups_schema,
-)
-
-BackupCreate = apply_conditional_rules(mysql_backups_schema)(BackupCreate)

@@ -118,10 +118,7 @@ class TestSchemaEndpoint:
     def test_schema_anonymous_returns_401(self, unauthenticated_client):
         """Anonymous schema fetch is rejected by IsApiAuthenticated."""
         response = unauthenticated_client.get("/api/plugins/mysql_backups/schema")
-        assert response.status_code in (
-            status.HTTP_401_UNAUTHORIZED,
-            status.HTTP_403_FORBIDDEN,
-        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class TestListEndpoint:
@@ -143,14 +140,18 @@ class TestListEndpoint:
         )
         response = test_client.get("/api/plugins/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert len(data) == 1
-        assert data[0]["name"] == task["name"]
-        assert data[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
-        assert data[0]["backup_type"] == BackupType.MYDUMPER.value
+        body = response.json()
+        assert body["total"] == 1
+        assert body["offset"] == 0
+        assert body["limit"] == 50  # noqa: PLR2004
+        items = body["items"]
+        assert len(items) == 1
+        assert items[0]["name"] == task["name"]
+        assert items[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        assert items[0]["backup_type"] == BackupType.MYDUMPER.value
 
     def test_list_returns_empty(self, test_client, mock_task_api_dep):
-        """Empty backup list returns an empty array."""
+        """Empty backup list returns an empty paginated envelope."""
         mock_task_api_dep.get.return_value = {
             "items": [],
             "total": 0,
@@ -159,7 +160,25 @@ class TestListEndpoint:
         }
         response = test_client.get("/api/plugins/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        body = response.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+
+    def test_list_paginates(self, test_client, mock_task_api_dep):
+        """offset/limit query params propagate to the underlying Tasks API call."""
+        mock_get = AsyncMock(
+            return_value={"items": [], "total": 0, "offset": 25, "limit": 10}
+        )
+        mock_task_api_dep.get = mock_get
+        response = test_client.get("/api/plugins/mysql_backups/?offset=25&limit=10")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["offset"] == 25  # noqa: PLR2004
+        assert body["limit"] == 10  # noqa: PLR2004
+        # First (and only) Tasks API call carries the pagination params.
+        _, kwargs = mock_get.call_args_list[0]
+        assert kwargs["params"]["offset"] == 25  # noqa: PLR2004
+        assert kwargs["params"]["limit"] == 10  # noqa: PLR2004
 
 
 class TestDetailEndpoint:
@@ -309,10 +328,7 @@ class TestCreateEndpoint:
         """Anonymous create is rejected by IsApiAuthenticated."""
         body = build_backup_write_body()
         response = unauthenticated_client.post("/api/plugins/mysql_backups/", json=body)
-        assert response.status_code in (
-            status.HTTP_401_UNAUTHORIZED,
-            status.HTTP_403_FORBIDDEN,
-        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class TestDeleteEndpoint:

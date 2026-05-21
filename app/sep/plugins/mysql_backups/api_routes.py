@@ -24,6 +24,7 @@ import logging
 from fastapi import APIRouter
 from fastapi import status as http_status
 
+from app.core.models import PaginatedResponse
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -55,13 +56,17 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=mysql_backups_schema)
 
 
-@router.get("/", response_model=list[BackupResponse])
+@router.get("/", response_model=PaginatedResponse[BackupResponse])
 async def mysql_backups_api_list(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
-) -> list[BackupResponse]:
+    offset: int = 0,
+    limit: int = 50,
+) -> PaginatedResponse[BackupResponse]:
     """List MySQL backup tasks."""
-    return await get_mysql_backups_api_task_responses(tasks_api, status=status)
+    return await get_mysql_backups_api_task_responses(
+        tasks_api, status=status, offset=offset, limit=limit
+    )
 
 
 @router.get("/{task_name}", response_model=BackupResponse)

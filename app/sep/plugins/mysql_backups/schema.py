@@ -13,7 +13,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the PluginSchema for the MySQL Backups plugin."""
+"""Define the PluginSchema for the MySQL Backups plugin.
+
+Per-mode field gating is split across two mechanisms:
+
+- ``forbidden=`` :class:`FieldGate` for string/int/choice fields, declared
+  here on each field.
+- :func:`BackupCreate.validate_mode_bool_fields` model validator for
+  booleans (see ``app/sep/plugins/mysql_backups/models.py``).
+
+The split exists because the framework's ``_field_is_present`` helper
+treats ``False`` as "present", which would cause ``forbidden=`` on a bool
+field to reject the legitimate default value. Until that helper is
+generalised, do NOT add ``forbidden=`` / ``requires=`` to a :class:`BoolField`
+here — extend ``_MODE_BOOL_FIELDS`` in ``models.py`` instead.
+"""
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.rules import F, falsy, FieldGate, truthy

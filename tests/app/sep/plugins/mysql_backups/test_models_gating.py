@@ -225,6 +225,11 @@ class TestUploadProviderGate:
             )
         )
 
+    def test_empty_upload_list_rejected(self):
+        """``upload=[]`` is distinct from ``None`` and must 422."""
+        with pytest.raises(ValidationError, match="empty list"):
+            BackupCreate(**_base_payload(BackupType.MYDUMPER, upload=[]))
+
 
 class TestCompressionAlgorithmValidator:
     """The existing per-mode compression-algorithm validator stays."""

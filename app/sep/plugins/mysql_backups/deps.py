@@ -24,6 +24,7 @@ import yaml
 from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
+from app.core.models import PaginatedResponse
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -322,9 +323,13 @@ def build_mysql_backups_api_task_response(
 
 
 def _extract_latest_task_status(
-    histories: Any,
+    histories: list[dict[str, Any]],
 ) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
+    """Return the latest known status from a task history payload.
+
+    Relies on ``get_backups_task_status`` requesting the history endpoint
+    with ``order_by=created_at:desc`` so the first item is the newest run.
+    """
     for history in histories:
         if (raw_status := history.get("status")) is not None:
             return TaskHistoryStatusEnum(raw_status)
@@ -337,6 +342,12 @@ async def get_backups_task_status(
 ) -> TaskHistoryStatusEnum | None:
     """Fetch the latest execution status for a backups task.
 
+    Relies on the Tasks API ordering history records by ``created_at DESC``
+    by default (see ``TaskHistoryManager._get_ordering`` /
+    ``BaseSQLModelManager._get_ordering`` in ``app/core/db/crud.py``).
+    Requests a single row so the payload stays minimal and the "latest"
+    contract is explicit at the call site.
+
     :param task_name: The task name.
     :type task_name: str
     :param tasks_api: The Tasks API client.
@@ -344,34 +355,64 @@ async def get_backups_task_status(
     :return: The latest known status, or ``None`` if no history exists.
     :rtype: TaskHistoryStatusEnum | None
     """
-    response = await tasks_api.get(f"/{task_name}/history/")
+    response = await tasks_api.get(
+        f"/{task_name}/history/",
+        params={"limit": 1, "offset": 0},
+    )
     return _extract_latest_task_status(response["items"])
+
+
+_STATUS_FETCH_CONCURRENCY = 10
 
 
 async def get_mysql_backups_api_task_responses(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
-) -> list[BackupResponse]:
-    """Retrieve backup task responses for the JSON API.
+    offset: int = 0,
+    limit: int = 50,
+) -> PaginatedResponse[BackupResponse]:
+    """Retrieve a paginated page of backup task responses for the JSON API.
+
+    Concurrency for per-task history fetches is bounded by
+    :data:`_STATUS_FETCH_CONCURRENCY` so a large page cannot fan-out into
+    an unbounded burst of HTTPS calls to the Tasks API.
 
     :param tasks_api: The Tasks API client.
     :type tasks_api: TaskAPI
     :param status: Optional latest-history status filter.
     :type status: TaskHistoryStatusEnum | None
-    :return: Backup task responses matching the filter.
-    :rtype: list[BackupResponse]
+    :param offset: Zero-based start offset for the underlying Tasks listing.
+    :type offset: int
+    :param limit: Maximum rows to fetch from the Tasks API for this page.
+    :type limit: int
+    :return: Paginated backup task responses matching the filter.
+    :rtype: PaginatedResponse[BackupResponse]
     """
-    params = {"owner": TaskOwner.BACKUPS.value}
+    params = {
+        "owner": TaskOwner.BACKUPS.value,
+        "offset": offset,
+        "limit": limit,
+    }
     response = await tasks_api.get("/", params=params)
     tasks = [Task.model_validate(task) for task in response["items"]]
-    task_statuses = await asyncio.gather(
-        *(get_backups_task_status(task.name, tasks_api) for task in tasks)
-    )
-    return [
+    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
+
+    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
+        async with sem:
+            return await get_backups_task_status(task.name, tasks_api)
+
+    task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
+    items = [
         build_mysql_backups_api_task_response(task, status=task_status)
         for task, task_status in zip(tasks, task_statuses, strict=True)
         if status is None or task_status == status
     ]
+    return PaginatedResponse(
+        items=items,
+        total=response.get("total", len(items)),
+        offset=offset,
+        limit=limit,
+    )
 
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
