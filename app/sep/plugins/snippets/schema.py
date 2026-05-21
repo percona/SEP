@@ -20,13 +20,13 @@ schema describes the snippet list view but declares no forms (snippets are
 discovered by ``update_snippets()`` rather than created via this API). The
 per-snippet schema is synthesised at request time from the snippet's YAML
 frontmatter and served at
-``GET /api/plugins/snippets/{filename}/schema``.
+``GET /api/plugins/snippets/snippet/schema?snippet_filename=...``.
 """
 
 __all__ = ["SNIPPETS_PLUGIN_SCHEMA", "build_snippet_schema"]
 
 from typing import cast
-from urllib.parse import quote
+from urllib.parse import urlencode
 
 from app.sep.plugins.framework.schema import (
     AnyField,
@@ -251,7 +251,8 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
                         name=_SCRIPT_PREVIEW_FIELD_NAME,
                         label="Snippet file",
                         endpoint_url=(
-                            f"/plugins/snippets/{quote(snippet.filename, safe='')}/preview"
+                            "/plugins/snippets/snippet/preview?"
+                            + urlencode({"snippet_filename": snippet.filename})
                         ),
                     ),
                 )

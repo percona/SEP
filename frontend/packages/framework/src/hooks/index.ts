@@ -44,6 +44,7 @@ export {
   useTaskHistory,
   useTaskHistoryByName,
   useStopTaskHistory,
+  useExecuteTask,
   isRunningStatus,
   RUNNING_STATUSES,
 } from './useTaskHistory';

@@ -866,10 +866,10 @@ def cmd_prep(version: str, *, sign_via_github_api: bool) -> int:
         ],
     )
 
-    # Scope-lock + dev-bump are atomic. Main runs at the next .dev0 for
-    # the entire QA window — fixes during QA land on the release branch
-    # (no main-first cherry-picks under the back-merge model).
-    _create_dev_version_bump_pr(version, f"v{version}")
+    # Scope-lock + dev-bump are atomic for minor releases. Patch releases
+    # already cut from a main branch that is on the next .dev0 version.
+    if version.split(".")[2] == "0":
+        _create_dev_version_bump_pr(version, f"v{version}")
 
     print()
     print(f"=== Prep for v{version} completed successfully ===")
@@ -988,10 +988,9 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
     _run(["make", "trigger-jenkins", f"TAG={rc_tag}"])
 
     dev_bump_exit_code = 0
-    if rc == 1:
-        # The release artifacts have already been published. A non-zero
-        # exit here is informational — the operator must merge an open
-        # dev-bump PR by hand before the next release cycle.
+    # Only minor RC1 opens the next dev-bump PR. Patch releases already cut
+    # from a main branch that is on that next .dev0 version.
+    if rc == 1 and version.split(".")[2] == "0":
         dev_bump_exit_code = _maybe_open_dev_bump_pr(version)
 
     _print_rc_next_steps(
