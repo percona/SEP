@@ -77,12 +77,18 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          if git ls-remote --exit-code --heads origin "release/v${VERSION}" >/dev/null 2>&1; then
+          set -euo pipefail
+          ls_remote_status=0
+          git ls-remote --exit-code --heads origin "release/v${VERSION}" >/dev/null 2>&1 || ls_remote_status=$?
+          if [ "$ls_remote_status" -eq 0 ]; then
             git fetch origin "release/v${VERSION}:release/v${VERSION}"
             git checkout "release/v${VERSION}"
             echo "Gates will run against release/v${VERSION} (cherries included)."
-          else
+          elif [ "$ls_remote_status" -eq 2 ]; then
             echo "release/v${VERSION} does not exist yet (rc1-fresh path); gates run against main."
+          else
+            echo "::error::git ls-remote failed (exit ${ls_remote_status}); cannot determine whether release/v${VERSION} exists. Aborting so gates don't silently run against the wrong target."
+            exit 1
           fi
 
       - name: Setup Python
