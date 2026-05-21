@@ -23,12 +23,11 @@ the Tasks and Inventory APIs directly.
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
+from app.sep.api.constants import UPSTREAM_ERROR_HEADER
 from app.sep.api.host_resolution import address_to_name_index
 from app.sep.deps import InventoryAPI, TaskAPI
 
 router = APIRouter()
-
-UPSTREAM_ERROR_HEADER = "X-Sep-Upstream-Error"
 
 
 class HostResponse(BaseModel):
