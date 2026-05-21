@@ -63,7 +63,7 @@
 # running at least N seconds) and --active-only (drop idle operations).
 #
 # Authentication is performed with db.auth() over the shell's stdin, so the
-# password is never placed on the process command line.
+# password is not passed to mongosh/mongo on the process command line.
 #
 # Usage:
 #   ./mongodb_current_op.sh [--host=HOST] [--port=PORT] [--user=USER] \
@@ -174,8 +174,8 @@ if [ -z "$MONGO_BIN" ]; then
     exit 2
 fi
 
-# The credentials are never passed on the command line; only the connection
-# endpoint is. Authentication happens via db.auth() in the piped script below.
+# The credentials are not passed to mongosh/mongo on the command line; only the
+# connection endpoint is. Authentication happens via db.auth() in the piped script below.
 MONGO_ARGS=(--host "$HOST" --port "$PORT")
 
 js_escape() {
