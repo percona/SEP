@@ -342,11 +342,13 @@ async def get_backups_task_status(
 ) -> TaskHistoryStatusEnum | None:
     """Fetch the latest execution status for a backups task.
 
-    Relies on the Tasks API ordering history records by ``created_at DESC``
-    by default (see ``TaskHistoryManager._get_ordering`` /
-    ``BaseSQLModelManager._get_ordering`` in ``app/core/db/crud.py``).
-    Requests a single row so the payload stays minimal and the "latest"
-    contract is explicit at the call site.
+    The Tasks history endpoint does not accept a query-string ``order_by``
+    override, so this call relies on
+    ``BaseSQLModelManager._get_ordering`` (``app/core/db/crud.py``) returning
+    rows by ``created_at DESC`` for ``BaseSQLModel`` subclasses. Only
+    ``limit=1`` and ``offset=0`` are passed; if the manager default ever
+    flips, this call site silently returns the wrong status — covered
+    indirectly by the existing ``get_backups_task_status`` tests.
 
     :param task_name: The task name.
     :type task_name: str
@@ -377,9 +379,17 @@ async def get_mysql_backups_api_task_responses(
     :data:`_STATUS_FETCH_CONCURRENCY` so a large page cannot fan-out into
     an unbounded burst of HTTPS calls to the Tasks API.
 
+    The ``status`` filter is applied client-side after the page is fetched
+    (the Tasks API does not yet expose a server-side latest-status filter).
+    When a filter is active, ``total`` reflects the count of items on the
+    *current page* after filtering — not the global count of matching
+    records — so pagination metadata stays consistent with the returned
+    ``items``. When no filter is active, ``total`` reflects the unfiltered
+    total reported by the Tasks API.
+
     :param tasks_api: The Tasks API client.
     :type tasks_api: TaskAPI
-    :param status: Optional latest-history status filter.
+    :param status: Optional latest-history status filter (client-side).
     :type status: TaskHistoryStatusEnum | None
     :param offset: Zero-based start offset for the underlying Tasks listing.
     :type offset: int
@@ -407,9 +417,10 @@ async def get_mysql_backups_api_task_responses(
         for task, task_status in zip(tasks, task_statuses, strict=True)
         if status is None or task_status == status
     ]
+    total = len(items) if status is not None else response.get("total", len(items))
     return PaginatedResponse(
         items=items,
-        total=response.get("total", len(items)),
+        total=total,
         offset=offset,
         limit=limit,
     )

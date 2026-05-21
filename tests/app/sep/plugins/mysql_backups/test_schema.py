@@ -58,7 +58,7 @@ class TestMysqlBackupsSchema:
         assert columns["name"].sortable is True
 
     def test_form_sections_present(self):
-        """All five required form sections exist."""
+        """All six required form sections exist."""
         titles = [section.title for section in mysql_backups_schema.forms]
         expected = {"Task", "Mydumper", "XtraBackup", "Binlog", "Encryption", "Upload"}
         assert expected <= set(titles), (

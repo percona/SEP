@@ -43,6 +43,19 @@ function isBackendUnavailable(error: unknown): boolean {
  * preview target). Real production bundles never use the fallback.
  */
 
+/**
+ * Plugin task list endpoint shape during the multi-plugin migration:
+ * - Legacy plugins return `T[]` directly.
+ * - Migrated plugins (e.g. mysql_backups) return `PaginatedResponse<T>`.
+ *
+ * The hook unwraps both shapes to `T[]` so call sites stay stable.
+ */
+type PluginTasksResponse<T> = T[] | { items: T[] };
+
+export function unwrapTasks<T>(data: PluginTasksResponse<T>): T[] {
+  return Array.isArray(data) ? data : data.items;
+}
+
 export function usePluginTasks<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
@@ -53,8 +66,8 @@ export function usePluginTasks<T extends Record<string, unknown>>(
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<T[]>(`/plugins/${pluginName}/`);
-        return data;
+        const { data } = await apiClient.get<PluginTasksResponse<T>>(`/plugins/${pluginName}/`);
+        return unwrapTasks(data);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           return mockTasks;
