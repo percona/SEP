@@ -46,6 +46,9 @@ const AlertTroubleshootingPlugin = lazy(() =>
     default: m.AlertTroubleshootingPlugin,
   })),
 );
+const TasksPlugin = lazy(() =>
+  import('@sep/plugin-tasks').then((m) => ({ default: m.TasksPlugin })),
+);
 
 function SnippetsPlugin() {
   const { isAdmin } = useAuth();
@@ -70,7 +73,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'inventory/*', element: <InventoryPlugin /> },
-          { path: 'tasks/*', element: <PlaceholderPage /> },
+          { path: 'tasks/*', element: <TasksPlugin /> },
           { path: 'snippets/*', element: <SnippetsPlugin /> },
           { path: 'atw/*', element: <AtwPlugin /> },
           { path: 'dipper/*', element: <DipperPlugin /> },
