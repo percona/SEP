@@ -155,3 +155,32 @@ export function useStopTaskHistory() {
     },
   });
 }
+
+/**
+ * Dispatch a saved task for immediate execution.
+ *
+ * The request is routed through the SEP-level plugin gateway
+ * (``POST /api/plugins/{pluginName}/{taskName}/execute``) — the FE must not
+ * call ``/api/tasks/*`` directly, as the Tasks sub-app is not exposed to the
+ * browser in a production deployment. The plugin-task detail query is also
+ * refreshed so the status chip on the detail page updates immediately after
+ * execution.
+ */
+export function useExecuteTask(pluginName: string) {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, Error, { taskName: string }>({
+    mutationFn: async ({ taskName }) => {
+      const { data } = await apiClient.post<unknown>(
+        `/plugins/${encodeURIComponent(pluginName)}/${encodeURIComponent(taskName)}/execute`,
+        {},
+      );
+      return data;
+    },
+    onSuccess: (_data, { taskName }) => {
+      queryClient.invalidateQueries({ queryKey: ['task-history'] });
+      queryClient.invalidateQueries({ queryKey: ['task-history', taskName] });
+      queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks'] });
+      queryClient.removeQueries({ queryKey: ['plugins', pluginName, 'tasks', taskName] });
+    },
+  });
+}
