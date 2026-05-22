@@ -166,7 +166,9 @@ checksums_schema = PluginSchema(
             ],
         ),
     ],
-    capabilities=Capabilities(chaining=True, alert_on_fail=True, scheduling=True),
+    capabilities=Capabilities(
+        chaining=True, alert_on_fail=True, scheduling=True, stats=True
+    ),
     list_view=ListView(
         columns=[
             Column(key="name", label="Name", sortable=True),

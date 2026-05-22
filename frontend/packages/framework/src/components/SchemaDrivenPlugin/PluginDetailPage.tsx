@@ -53,6 +53,7 @@ import { TaskLogViewer } from '../TaskLogViewer';
 import { useExecuteTask, useTaskHistoryByName } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
+import { StatsCard } from './StatsCard';
 
 const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
 
@@ -289,6 +290,14 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
           <TaskOverviewDetailField key={key} label={formatLabel(key)} value={value} />
         ))}
       </SectionCard>
+
+      {schema.capabilities?.stats && (
+        <StatsCard
+          taskName={
+            typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined
+          }
+        />
+      )}
 
       {execution && (
         <SectionCard title="Execution">
