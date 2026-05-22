@@ -48,7 +48,7 @@
 #  - name: sections
 #    type: str
 #    label: Sections
-#    description: Comma-separated top-level serverStatus sections to include (e.g. connections,opcounters,globalLock,wiredTiger). Leave empty for the full document.
+#    description: Comma-separated top-level serverStatus sections to include (e.g. connections,opcounters,globalLock,wiredTiger). Names are case-sensitive; an unknown name is reported as a warning. Leave empty for the full document.
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable
@@ -105,7 +105,7 @@ Command line options:
    --auth-database    Authentication database (default: admin)
    --iterations       Number of snapshots to capture (default: 1)
    --interval         Seconds between snapshots (default: 1)
-   --sections         Comma-separated serverStatus sections to include,
+   --sections         Comma-separated serverStatus sections, case-sensitive,
                       e.g. connections,opcounters,wiredTiger (default: all)
    -h, --help         Show this help message
 EOS
@@ -232,6 +232,10 @@ mongo_eval() {
 # Build the serverStatus expression: the full document, or only the requested
 # top-level sections (plus a few identity fields) when --sections is given.
 # SECTIONS is validated above as [A-Za-z0-9_,] so it is safe to inline here.
+# serverStatus section names are case-sensitive; any requested name the server
+# does not return is reported as a warning rather than being dropped silently.
+# The warning goes to stderr on mongosh (console.error) and to stdout on the
+# legacy mongo shell, which has no console object.
 STATUS_SCRIPT="JSON.stringify(db.serverStatus(), null, 2)"
 if [ -n "$SECTIONS" ]; then
     STATUS_SCRIPT="
@@ -241,9 +245,22 @@ var out = {};
 ['host', 'version', 'process', 'uptime', 'localTime', 'ok'].forEach(function (k) {
     if (s[k] !== undefined) { out[k] = s[k]; }
 });
+var missing = [];
 keep.forEach(function (k) {
-    if (s[k] !== undefined) { out[k] = s[k]; }
+    if (s[k] !== undefined) {
+        out[k] = s[k];
+    } else {
+        missing.push(k);
+    }
 });
+if (missing.length > 0) {
+    var warn = 'WARNING: serverStatus section(s) not found (names are case-sensitive): ' + missing.join(', ');
+    if (typeof console !== 'undefined' && console.error) {
+        console.error(warn);
+    } else {
+        print(warn);
+    }
+}
 JSON.stringify(out, null, 2)
 "
 fi
