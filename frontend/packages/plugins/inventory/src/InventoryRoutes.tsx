@@ -15,13 +15,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import ScheduleIcon from '@mui/icons-material/Schedule';
 import type { PluginSchema } from '@sep/api';
 import { PluginDetailPage, PluginListPage } from '@sep/framework';
 import { renderInventoryDetailChildren } from './InventoryPluginNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
 import { SyncControl } from './SyncControl';
+import { InventorySchedulePage } from './InventorySchedulePage';
 
 const INVENTORY_DETAIL_SUPPRESS_KEYS = [
   'services',
@@ -36,15 +39,28 @@ function InventoryNodesList({
   schema,
   mockEntityItems,
   allowListEntityDelete,
+  schedulingEnabled,
 }: {
   schema: PluginSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
   allowListEntityDelete: boolean;
+  schedulingEnabled: boolean;
 }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   return (
     <>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 1 }}>
+        {schedulingEnabled && (
+          <Button
+            variant="outlined"
+            startIcon={<ScheduleIcon />}
+            onClick={() => navigate('../schedule', { relative: 'path' })}
+            data-testid="inv-schedule-link"
+          >
+            Schedules
+          </Button>
+        )}
         <SyncControl />
       </Box>
       <PluginListPage
@@ -74,6 +90,7 @@ export function InventoryRoutes({
   schema: PluginSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
 }) {
+  const schedulingEnabled = !!schema.capabilities?.scheduling;
   const detailProps = {
     schema,
     pluginName: 'inventory',
@@ -95,8 +112,13 @@ export function InventoryRoutes({
             schema={schema}
             mockEntityItems={mockEntityItems}
             allowListEntityDelete
+            schedulingEnabled={schedulingEnabled}
           />
         }
+      />
+      <Route
+        path="schedule"
+        element={<InventorySchedulePage schedulingEnabled={schedulingEnabled} />}
       />
       <Route
         path="nodes/:nodeId"
