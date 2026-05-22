@@ -2980,18 +2980,14 @@ export interface paths {
      * @description Return executor hosts merged with inventory display names.
      *
      *     Call ``tasks_api.get('/hosts/')`` for executor targets and the Inventory
-     *     API for display-name enrichment. Both upstream calls degrade gracefully
-     *     — Inventory failures cause hosts without a match to keep the raw
-     *     executor node name, and Tasks-API failures cause an empty list to be
-     *     returned rather than a hard error. Tasks-API failures (HTTP and
-     *     connection errors alike) additionally set the ``X-Sep-Upstream-Error``
-     *     response header so the frontend can surface the failure detail through
-     *     its notification system without breaking the ``200 []`` response contract
-     *     that lets the dropdown render "No hosts available".
+     *     API for display-name enrichment. The two upstream calls degrade
+     *     differently: Inventory failures cause hosts without a match to keep the
+     *     raw executor node name (the response still returns ``200``), but a
+     *     Tasks-API failure (HTTP or connection error) is re-raised as
+     *     :class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception
+     *     handler emits a ``502`` JSON body ``{"detail": "<upstream detail>"}`` that
+     *     the React frontend surfaces through its React Query error slot.
      *
-     *     :param response: The outgoing response, used to attach the upstream
-     *         error header on Tasks-API failure.
-     *     :type response: Response
      *     :param tasks_api: The Tasks API client used to fetch executor hosts.
      *     :type tasks_api: TaskAPI
      *     :param inventory_api: The Inventory API client used to enrich the hosts
@@ -3023,22 +3019,17 @@ export interface paths {
      *
      *     Proxy to the Tasks-service ``GET /stats/{task_name}`` aggregation so the
      *     React frontend reaches the data through SEP rather than calling the Tasks
-     *     sub-app directly. Degrade gracefully on upstream failure: catch
-     *     ``HTTPException`` / ``OSError``, attach the ``X-Sep-Upstream-Error``
-     *     response header so the React shell can surface a notification, and return
-     *     a default-shaped empty payload so the stats card can render an empty
-     *     state without a hard error.
+     *     sub-app directly. On upstream failure, re-raise as
+     *     :class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception
+     *     handler emits a ``502`` JSON body ``{"detail": "<upstream detail>"}`` that
+     *     the React frontend surfaces through React Query's error state.
      *
      *     :param task_name: The task name (not the database id) whose stats are
      *         being requested.
      *     :type task_name: str
-     *     :param response: The outgoing response, used to attach the upstream
-     *         error header on Tasks-API failure.
-     *     :type response: Response
      *     :param tasks_api: The Tasks API client used to fetch the upstream stats.
      *     :type tasks_api: TaskAPI
-     *     :return: The raw upstream stats payload, or ``{}`` when the upstream
-     *         call fails.
+     *     :return: The raw upstream stats payload.
      *     :rtype: dict[str, Any]
      */
     get: operations['sep_get_task_stats_api_sep_task_stats__task_name__get'];
@@ -11414,6 +11405,13 @@ export interface operations {
           'application/json': components['schemas']['HostResponse'][];
         };
       };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
     };
   };
   sep_get_task_stats_api_sep_task_stats__task_name__get: {
@@ -11446,6 +11444,13 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

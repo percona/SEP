@@ -22,45 +22,43 @@ gateway so the React frontend (``useTaskStats``) does not bypass the SEP
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, status
 
-from app.sep.api.constants import UPSTREAM_ERROR_HEADER
+from app.core.exceptions import HTTPBadGatewayException
 from app.sep.deps import TaskAPI
 
 router = APIRouter()
 
 
-@router.get("/{task_name}")
+@router.get(
+    "/{task_name}",
+    responses={
+        status.HTTP_502_BAD_GATEWAY: {"description": "Upstream Tasks API failure."},
+    },
+)
 async def get_task_stats(
     task_name: str,
-    response: Response,
     tasks_api: TaskAPI,
 ) -> dict[str, Any]:
     """Return aggregated execution statistics for ``task_name``.
 
     Proxy to the Tasks-service ``GET /stats/{task_name}`` aggregation so the
     React frontend reaches the data through SEP rather than calling the Tasks
-    sub-app directly. Degrade gracefully on upstream failure: catch
-    ``HTTPException`` / ``OSError``, attach the ``X-Sep-Upstream-Error``
-    response header so the React shell can surface a notification, and return
-    an empty dict so the stats card can render its empty state without a hard
-    error.
+    sub-app directly. On upstream failure, re-raise as
+    :class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception
+    handler emits a ``502`` JSON body ``{"detail": "<upstream detail>"}`` that
+    the React frontend surfaces through React Query's error state.
 
     :param task_name: The task name (not the database id) whose stats are
         being requested.
     :type task_name: str
-    :param response: The outgoing response, used to attach the upstream
-        error header on Tasks-API failure.
-    :type response: Response
     :param tasks_api: The Tasks API client used to fetch the upstream stats.
     :type tasks_api: TaskAPI
-    :return: The raw upstream stats payload, or ``{}`` when the upstream call
-        fails.
+    :return: The raw upstream stats payload.
     :rtype: dict[str, Any]
     """
     try:
         return await tasks_api.get(f"/stats/{task_name}")
     except (HTTPException, OSError) as exc:
         detail = getattr(exc, "detail", str(exc))
-        response.headers[UPSTREAM_ERROR_HEADER] = str(detail)
-        return {}
+        raise HTTPBadGatewayException(detail=str(detail)) from exc
