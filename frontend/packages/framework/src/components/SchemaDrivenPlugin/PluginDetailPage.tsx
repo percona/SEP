@@ -45,9 +45,11 @@ import {
   useDeletePluginTask,
   usePluginEntityDetail,
   usePluginTask,
+  type DetailSection,
   type PluginEntitySchema,
   type PluginSchema,
 } from '@sep/api';
+import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { useExecuteTask, useTaskHistoryByName } from '../../hooks';
@@ -164,7 +166,7 @@ function EntityDetailField({
 // Fields hidden from the auto-rendered "extras" loop on the Overview tab.
 // Numeric `id`, internal worker plumbing (`backend`, `protected`), and
 // timestamps already shown in the list_view columns. The `data` payload is
-// rendered as the structured "Execution" section.
+// rendered via the schema-declared ``detail_view`` sections.
 const OVERVIEW_HIDDEN_FIELDS = new Set([
   'id',
   'backend',
@@ -188,32 +190,6 @@ function SectionCard({ title, children }: { title: string; children: React.React
       {children}
     </Paper>
   );
-}
-
-interface ExecutionData {
-  command?: unknown;
-  args?: unknown;
-  target?: unknown;
-}
-
-export function pickExecutionData(task: Record<string, unknown>): ExecutionData | null {
-  // Backend task model nests the executed command under `data.meta` (see
-  // e.g. `app/sep/plugins/checksums/deps.py`). Older flows may put the
-  // same keys at `data.*` directly, so check both for forward-compat.
-  const data = task.data;
-  if (!data || typeof data !== 'object') {
-    return null;
-  }
-  const dataObj = data as { meta?: unknown } & ExecutionData;
-  const meta =
-    dataObj.meta && typeof dataObj.meta === 'object' ? (dataObj.meta as ExecutionData) : null;
-  const command = meta?.command ?? dataObj.command;
-  const args = meta?.args ?? dataObj.args;
-  const target = meta?.target ?? dataObj.target;
-  if (command === undefined && args === undefined && target === undefined) {
-    return null;
-  }
-  return { command, args, target };
 }
 
 export function resolveTabFromSplat(splat: string | undefined): 'overview' | 'logs' {
@@ -257,8 +233,37 @@ interface OverviewTabProps {
   task: Record<string, unknown>;
 }
 
+function DetailViewSectionCard({
+  section,
+  task,
+}: {
+  section: DetailSection;
+  task: Record<string, unknown>;
+}) {
+  // Match EntityDetailField's own empty-value rule (undefined / null / '')
+  // so a section hides entirely when every field would have rendered blank,
+  // and so 0 / false still render as legitimate values.
+  const resolved = section.fields
+    .map((field) => ({ field, value: resolvePath(task, field.path) }))
+    .filter(({ value }) => value !== undefined && value !== null && value !== '');
+  if (resolved.length === 0) {
+    return null;
+  }
+  return (
+    <SectionCard title={section.title}>
+      {resolved.map(({ field, value }) => (
+        <EntityDetailField
+          key={field.path}
+          label={field.label}
+          value={value}
+          highlightLanguage={field.highlight}
+        />
+      ))}
+    </SectionCard>
+  );
+}
+
 function OverviewTab({ schema, task }: OverviewTabProps) {
-  const execution = pickExecutionData(task);
   const connectivityWarning = task.connectivity_warning;
   const columns = schema.list_view!.columns;
 
@@ -299,19 +304,9 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
         />
       )}
 
-      {execution && (
-        <SectionCard title="Execution">
-          {execution.command !== undefined && (
-            <TaskOverviewDetailField label="Command" value={execution.command} />
-          )}
-          {execution.args !== undefined && (
-            <TaskOverviewDetailField label="Args" value={execution.args} />
-          )}
-          {execution.target !== undefined && (
-            <TaskOverviewDetailField label="Target" value={execution.target} />
-          )}
-        </SectionCard>
-      )}
+      {schema.detail_view?.sections.map((section) => (
+        <DetailViewSectionCard key={section.title} section={section} task={task} />
+      ))}
     </>
   );
 }
