@@ -26,8 +26,7 @@ from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import ReloadClassification
-from app.core.utils.pydantic import field_with_metadata
+from app.core.settings_override.registry import hot_field
 from app.tasks.execution.executors.nomad import NomadExecutor
 
 
@@ -84,12 +83,10 @@ class TasksSettings(BaseYamlAppSettings):
         content_security_policy_strict=False
     )
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
-    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = field_with_metadata(
-        PreExecutionCheckMode.WARN, metadata={"reload": ReloadClassification.HOT}
+    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
+        PreExecutionCheckMode.WARN
     )
-    STALENESS_THRESHOLD_SECONDS: PositiveInt = field_with_metadata(
-        3600, metadata={"reload": ReloadClassification.HOT}
-    )
+    STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600)
 
 
 tasks_settings: TasksSettings = OverridableSettingsProxy(

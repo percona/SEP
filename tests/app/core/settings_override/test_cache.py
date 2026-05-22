@@ -35,7 +35,7 @@ async def _insert(session: AsyncSession, **kwargs: object) -> None:
 @pytest.mark.asyncio
 async def test_empty_table_yields_empty_snapshot(session: AsyncSession) -> None:
     """An empty override table produces an empty snapshot."""
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert dict(snapshot) == {}
 
 
@@ -49,7 +49,7 @@ async def test_active_hot_row_appears_in_snapshot(session: AsyncSession) -> None
         value=False,
         is_active=True,
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert snapshot["CONNECTIVITY_CHECK_DEFAULT"] is False
 
 
@@ -63,7 +63,7 @@ async def test_inactive_rows_skipped(session: AsyncSession) -> None:
         value=False,
         is_active=False,
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert "CONNECTIVITY_CHECK_DEFAULT" not in snapshot
 
 
@@ -80,7 +80,7 @@ async def test_non_hot_field_skipped_with_warning(
         value="https://example.org/api",
         is_active=True,
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert "INVENTORY_ENDPOINT" not in snapshot
     assert any("non-HOT" in r.getMessage() for r in caplog.records)
 
@@ -98,7 +98,7 @@ async def test_unknown_field_skipped_with_warning(
         value=True,
         is_active=True,
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert "DOES_NOT_EXIST" not in snapshot
     assert any("unknown field" in r.getMessage() for r in caplog.records)
 
@@ -113,7 +113,7 @@ async def test_coerces_int_for_positive_int_field(session: AsyncSession) -> None
         key="ARTIFACT_DOWNLOAD_TTL",
         value=override_ttl,
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert snapshot["ARTIFACT_DOWNLOAD_TTL"] == override_ttl
 
 
@@ -128,9 +128,7 @@ async def test_coerces_strenum_for_pre_execution_check(
         key="PRE_EXECUTION_CONNECTIVITY_CHECK",
         value="block",
     )
-    snapshot = await build_snapshot(
-        session, TasksSettings, SettingClassEnum.TASKS_SETTINGS
-    )
+    snapshot = await build_snapshot(session, TasksSettings)
     assert snapshot["PRE_EXECUTION_CONNECTIVITY_CHECK"] is PreExecutionCheckMode.BLOCK
 
 
@@ -146,7 +144,7 @@ async def test_coercion_failure_skipped_and_logged(
         key="ARTIFACT_DOWNLOAD_TTL",
         value="not-a-number",
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert "ARTIFACT_DOWNLOAD_TTL" not in snapshot
     assert any("coercion" in r.getMessage() for r in caplog.records)
 
@@ -163,7 +161,7 @@ async def test_dict_for_scalar_field_skipped(
         key="CONNECTIVITY_CHECK_DEFAULT",
         value={"nested": True},
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert "CONNECTIVITY_CHECK_DEFAULT" not in snapshot
     assert any("coercion" in r.getMessage() for r in caplog.records)
 
@@ -186,7 +184,7 @@ async def test_positive_int_constraint_rejects_zero(
         key="ARTIFACT_DOWNLOAD_TTL",
         value=0,
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert "ARTIFACT_DOWNLOAD_TTL" not in snapshot
     assert any("coercion" in r.getMessage() for r in caplog.records)
 
@@ -203,9 +201,7 @@ async def test_positive_int_constraint_rejects_negative(
         key="STALENESS_THRESHOLD_SECONDS",
         value=-1,
     )
-    snapshot = await build_snapshot(
-        session, TasksSettings, SettingClassEnum.TASKS_SETTINGS
-    )
+    snapshot = await build_snapshot(session, TasksSettings)
     assert "STALENESS_THRESHOLD_SECONDS" not in snapshot
     assert any("coercion" in r.getMessage() for r in caplog.records)
 
@@ -225,5 +221,5 @@ async def test_other_entries_remain_after_failure(session: AsyncSession) -> None
         key="CONNECTIVITY_CHECK_DEFAULT",
         value=False,
     )
-    snapshot = await build_snapshot(session, SEPSettings, SettingClassEnum.SEP_SETTINGS)
+    snapshot = await build_snapshot(session, SEPSettings)
     assert snapshot == {"CONNECTIVITY_CHECK_DEFAULT": False}

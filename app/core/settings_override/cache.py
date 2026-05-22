@@ -21,10 +21,11 @@ import logging
 from types import MappingProxyType
 from typing import Annotated, Any
 
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import BaseYamlSettings
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import is_hot_reloadable
@@ -35,8 +36,7 @@ logger = logging.getLogger(__name__)
 
 async def build_snapshot(
     session: AsyncSession,
-    settings_cls: type[BaseModel],
-    setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
 ) -> MappingProxyType[str, Any]:
     """Build a frozen snapshot of active HOT overrides for a settings class.
 
@@ -46,13 +46,15 @@ async def build_snapshot(
     snapshot is unaffected. Rows for unknown or NOT_OVERRIDABLE fields are
     also logged and skipped.
 
+    The :class:`SettingClassEnum` member used to filter override rows is
+    derived from ``settings_cls`` -- each member's value equals the Pydantic
+    class ``__name__``, so the pair is recoverable from the class alone.
+
     :param session: The async SQLModel session used to query overrides. Must
         be bound to the engine of the service that owns ``settings_cls``.
     :type session: AsyncSession
     :param settings_cls: The Pydantic settings class being snapshotted.
-    :type settings_cls: type[BaseModel]
-    :param setting_class: The enum identifier used to filter override rows.
-    :type setting_class: SettingClassEnum
+    :type settings_cls: type[BaseYamlSettings]
     :return: An immutable mapping of field name to coerced typed value.
     :rtype: MappingProxyType[str, Any]
     :raises sqlalchemy.exc.SQLAlchemyError: If the database query fails
@@ -61,6 +63,7 @@ async def build_snapshot(
         or swallow at a higher level (e.g. the background refresher's
         per-cycle ``except``).
     """
+    setting_class = SettingClassEnum(settings_cls.__name__)
     rows = await SettingsOverrideManager.list(
         session, setting_class=setting_class, is_active=True
     )
@@ -70,14 +73,14 @@ async def build_snapshot(
         if field_info is None:
             logger.warning(
                 "Override for unknown field ignored: %s.%s",
-                setting_class.value,
+                setting_class.name,
                 row.key,
             )
             continue
         if not is_hot_reloadable(settings_cls, row.key):
             logger.warning(
                 "Override for non-HOT field ignored: %s.%s",
-                setting_class.value,
+                setting_class.name,
                 row.key,
             )
             continue
@@ -86,15 +89,15 @@ async def build_snapshot(
         except ValidationError as exc:
             logger.warning(
                 "Override for %s.%s failed type coercion: %s",
-                setting_class.value,
+                setting_class.name,
                 row.key,
                 exc,
             )
     return MappingProxyType(snapshot)
 
 
-def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
-    """Coerce a raw JSON-decoded value to the field's declared Python type.
+def _annotated_type(field_info: FieldInfo) -> Any:
+    """Reassemble the constraint-preserving annotated type for a field.
 
     Constraint metadata attached to the field's annotation (e.g. ``Gt(0)`` from
     ``PositiveInt``) is preserved by re-assembling an ``Annotated`` type from
@@ -102,6 +105,25 @@ def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
     in ``field_info.metadata``. Without this, ``TypeAdapter(field_info.annotation)``
     would accept values the original settings model rejects -- e.g. a negative
     integer override for a ``PositiveInt`` field would silently load.
+
+    :param field_info: The Pydantic field metadata for the target attribute.
+    :type field_info: FieldInfo
+    :return: The field's annotation, wrapped in ``Annotated`` together with its
+        preserved constraint metadata when any constraints are present.
+    :rtype: Any
+    """
+    constraints = tuple(
+        item
+        for item in field_info.metadata
+        if not isinstance(item, CustomFieldMetadata)
+    )
+    if constraints:
+        return Annotated[(field_info.annotation, *constraints)]
+    return field_info.annotation
+
+
+def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
+    """Coerce a raw JSON-decoded value to the field's declared Python type.
 
     :param field_info: The Pydantic field metadata for the target attribute.
     :type field_info: FieldInfo
@@ -113,14 +135,4 @@ def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
     :raises ValidationError: If ``raw`` cannot be coerced to the declared
         type or violates a preserved constraint. Callers handle and log.
     """
-    constraints = tuple(
-        item
-        for item in field_info.metadata
-        if not isinstance(item, CustomFieldMetadata)
-    )
-    annotated_type: Any
-    if constraints:
-        annotated_type = Annotated[(field_info.annotation, *constraints)]
-    else:
-        annotated_type = field_info.annotation
-    return TypeAdapter(annotated_type).validate_python(raw)
+    return TypeAdapter(_annotated_type(field_info)).validate_python(raw)

@@ -46,7 +46,7 @@ from app.core.celery.models import IntervalSchedule
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import ReloadClassification
+from app.core.settings_override.registry import hot_field
 from app.core.utils import run_pydantic_type_validator, validate_module_is_importable
 from app.core.utils.dict import merge_dict_at_start, transform_dict_keys
 from app.core.utils.fields import (
@@ -57,7 +57,6 @@ from app.core.utils.fields import (
     RelativeDirectoryPathField,
     URL,
 )
-from app.core.utils.pydantic import field_with_metadata
 
 DEFAULT_SNIPPETS_TASK = "exec-artifact"
 
@@ -407,16 +406,10 @@ class SnippetsSettings(BaseYamlSettings):
     )
     USE_MAGIC: bool = False
     SYNC_INTERVAL: IntervalSchedule = IntervalSchedule(every=1, period=Period.HOURS)
-    ENABLE_MANUAL_SYNC: bool = field_with_metadata(
-        default=False, metadata={"reload": ReloadClassification.HOT}
-    )
+    ENABLE_MANUAL_SYNC: bool = hot_field(default=False)
     SYNC_ON_STARTUP: bool = True
-    PREVIEW_MAX_CHARS: PositiveInt = field_with_metadata(
-        10000, metadata={"reload": ReloadClassification.HOT}
-    )
-    PREVIEW_MAX_LINES: PositiveInt = field_with_metadata(
-        500, metadata={"reload": ReloadClassification.HOT}
-    )
+    PREVIEW_MAX_CHARS: PositiveInt = hot_field(10000)
+    PREVIEW_MAX_LINES: PositiveInt = hot_field(500)
 
     @model_validator(mode="before")
     @classmethod

@@ -28,7 +28,6 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db.models import BaseUUIDSQLModel
-from app.core.settings_override.models import SettingOverride  # noqa: F401
 from app.core.utils.fields import NonEmptyStr
 
 

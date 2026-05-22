@@ -22,8 +22,7 @@ from pydantic import NonNegativeInt
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import ReloadClassification
-from app.core.utils.pydantic import field_with_metadata
+from app.core.settings_override.registry import hot_field
 from app.sep.middleware.messages.models import MessageLevel
 
 MESSAGE_NOTSET_LEVEL = 0
@@ -50,9 +49,7 @@ class MessagesSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "MESSAGES"]
-    LEVEL: MessageLevel | NonNegativeInt = field_with_metadata(
-        MESSAGE_NOTSET_LEVEL, metadata={"reload": ReloadClassification.HOT}
-    )
+    LEVEL: MessageLevel | NonNegativeInt = hot_field(MESSAGE_NOTSET_LEVEL)
 
 
 messages_settings: MessagesSettings = OverridableSettingsProxy(

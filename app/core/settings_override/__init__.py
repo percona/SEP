@@ -22,18 +22,25 @@ __all__ = [
     "SettingOverride",
     "SettingsOverrideManager",
     "build_snapshot",
+    "hot_field",
     "hot_field_names",
     "is_hot_reloadable",
     "refresh_all",
+    "settings_override_refresher",
     "start_refresh_task",
 ]
 
 from app.core.settings_override.cache import build_snapshot
-from app.core.settings_override.lifecycle import refresh_all, start_refresh_task
+from app.core.settings_override.lifecycle import (
+    refresh_all,
+    settings_override_refresher,
+    start_refresh_task,
+)
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
+    hot_field,
     hot_field_names,
     is_hot_reloadable,
     ReloadClassification,

@@ -15,13 +15,20 @@
 
 """Classification registry for DB-backed setting overrides."""
 
-__all__ = ["ReloadClassification", "hot_field_names", "is_hot_reloadable"]
+__all__ = [
+    "ReloadClassification",
+    "hot_field",
+    "hot_field_names",
+    "is_hot_reloadable",
+]
 
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic.fields import FieldInfo
 
-from app.core.utils.pydantic import CustomFieldMetadata
+from app.core.config import BaseYamlSettings
+from app.core.utils.pydantic import CustomFieldMetadata, field_with_metadata
 
 
 class ReloadClassification(StrEnum):
@@ -39,11 +46,30 @@ class ReloadClassification(StrEnum):
     NOT_OVERRIDABLE = "not_overridable"
 
 
-def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
+def hot_field(default: Any, **kwargs: Any) -> FieldInfo:
+    """Declare a settings field as HOT-reloadable from a DB override.
+
+    Thin wrapper over :func:`app.core.utils.pydantic.field_with_metadata` that
+    attaches ``{"reload": ReloadClassification.HOT}`` so the field is picked up
+    by :func:`is_hot_reloadable` and snapshot building.
+
+    :param default: The field's default value, passed positionally to ``Field``.
+    :type default: Any
+    :param kwargs: Additional keyword arguments forwarded to ``Field``.
+    :type kwargs: Any
+    :return: A Pydantic field marked with the HOT reload classification.
+    :rtype: FieldInfo
+    """
+    return field_with_metadata(
+        default, metadata={"reload": ReloadClassification.HOT}, **kwargs
+    )
+
+
+def is_hot_reloadable(settings_cls: type[BaseYamlSettings], field_name: str) -> bool:
     """Return whether the given field is marked HOT on the given settings class.
 
     :param settings_cls: The Pydantic settings class to inspect.
-    :type settings_cls: type[BaseModel]
+    :type settings_cls: type[BaseYamlSettings]
     :param field_name: The name of the field to check.
     :type field_name: str
     :return: ``True`` when ``field_name`` exists on ``settings_cls`` and is
@@ -58,11 +84,11 @@ def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
     return metadata.get("reload") == ReloadClassification.HOT
 
 
-def hot_field_names(settings_cls: type[BaseModel]) -> frozenset[str]:
+def hot_field_names(settings_cls: type[BaseYamlSettings]) -> frozenset[str]:
     """Return the set of field names on ``settings_cls`` marked HOT.
 
     :param settings_cls: The Pydantic settings class to inspect.
-    :type settings_cls: type[BaseModel]
+    :type settings_cls: type[BaseYamlSettings]
     :return: A frozenset of field names declared HOT via
         :func:`app.core.utils.pydantic.field_with_metadata`.
     :rtype: frozenset[str]

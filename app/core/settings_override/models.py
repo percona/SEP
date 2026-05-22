@@ -15,6 +15,8 @@
 
 """Define the persistent ``SettingOverride`` model and class identifier enum."""
 
+__all__ = ["SettingClassEnum", "SettingOverride"]
+
 from enum import StrEnum
 
 from pydantic import JsonValue
@@ -42,17 +44,11 @@ class SettingClassEnum(StrEnum):
        ``CHECK`` constraint on ``settingoverride.setting_class``. The column
        uses ``native_enum=False`` so the value list lives in a constraint,
        not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
+       Note that the column and ``CHECK`` constraint persist the enum member
+       *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member
+       *value* (the Pydantic class name, e.g. ``SEPSettings``).
     3. Wire a ``ProxyEntry`` for the new class in the relevant service's
        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
-
-    :cvar SEP_SETTINGS: ``SEPSettings`` class identifier.
-    :vartype SEP_SETTINGS: str
-    :cvar TASKS_SETTINGS: ``TasksSettings`` class identifier.
-    :vartype TASKS_SETTINGS: str
-    :cvar SNIPPETS_SETTINGS: ``SnippetsSettings`` class identifier.
-    :vartype SNIPPETS_SETTINGS: str
-    :cvar MESSAGES_SETTINGS: ``MessagesSettings`` class identifier.
-    :vartype MESSAGES_SETTINGS: str
     """
 
     SEP_SETTINGS = "SEPSettings"
@@ -65,11 +61,12 @@ class SettingOverride(BaseSQLModel, table=True):
     """Represent an admin-managed runtime override of a single settings field.
 
     The same concrete class is shared across services. Each service's Alembic
-    env re-imports the class via ``from app.<svc>.models import *`` (the
-    service ``models.py`` re-exports it) and creates the same DDL in its own
-    logical database. Rows live in whichever service writes them and are
-    never accessed cross-service -- each service queries its own engine for
-    its own snapshot.
+    ``migrations/env.py`` imports the model directly (via
+    ``from app.core.settings_override.models import *``) so it is registered
+    on the shared metadata, and creates the same DDL in its own logical
+    database. Rows live in whichever service writes them and are never
+    accessed cross-service -- each service queries its own engine for its own
+    snapshot.
 
     :param setting_class: The class identifier of the wrapped settings class
         whose field is being overridden.

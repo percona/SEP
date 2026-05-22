@@ -15,10 +15,9 @@
 
 """Define SEP routes."""
 
-import asyncio
 import logging.config
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from traceback import format_exception
 from typing import Annotated, Any
 
@@ -37,7 +36,10 @@ from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
-from app.core.settings_override.lifecycle import ProxyEntry, start_refresh_task
+from app.core.settings_override.lifecycle import (
+    ProxyEntry,
+    settings_override_refresher,
+)
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
@@ -114,11 +116,10 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ssl_keyfile=tasks_settings.SSL_KEYFILE,
         ssl_certfile=tasks_settings.SSL_CERTFILE,
     )
-    refresher: asyncio.Task | None = None
-    if settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED:
-        refresher = await start_refresh_task(
+    async with (
+        settings_override_refresher(
             get_async_session_maker,
-            proxies={
+            {
                 SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
                 SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
                     snippets_settings, SnippetsSettings
@@ -127,16 +128,14 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     messages_settings, MessagesSettings
                 ),
             },
-            interval=settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-        )
-    try:
-        async with app.state.inventory_api, app.state.tasks_api, default_lifespan(app):
-            yield
-    finally:
-        if refresher is not None:
-            refresher.cancel()
-            with suppress(asyncio.CancelledError):
-                await refresher
+            settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
+            enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+        ),
+        app.state.inventory_api,
+        app.state.tasks_api,
+        default_lifespan(app),
+    ):
+        yield
 
 
 lifespan = sep_lifespan

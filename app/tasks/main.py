@@ -15,11 +15,10 @@
 
 """Define routes for the Tasks API."""
 
-import asyncio
 import json
 import logging.config
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from typing import Any
 
 from celery.utils.log import get_task_logger
@@ -28,7 +27,10 @@ from nomad.api.exceptions import BaseNomadException
 
 from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
-from app.core.settings_override.lifecycle import ProxyEntry, start_refresh_task
+from app.core.settings_override.lifecycle import (
+    ProxyEntry,
+    settings_override_refresher,
+)
 from app.core.settings_override.models import SettingClassEnum
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.connectivity.routes import router as connectivity_router
@@ -60,25 +62,21 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     await init_tasks_db()
     await verify_taskhistory_execution_request_is_jsonb()
-    refresher: asyncio.Task | None = None
-    if settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED:
-        refresher = await start_refresh_task(
+    async with (
+        settings_override_refresher(
             get_async_session_maker,
-            proxies={
+            {
                 SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
                     tasks_settings, TasksSettings
-                ),
+                )
             },
-            interval=settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-        )
-    try:
-        async with default_lifespan(app), tasks_settings.NOMAD:
-            yield
-    finally:
-        if refresher is not None:
-            refresher.cancel()
-            with suppress(asyncio.CancelledError):
-                await refresher
+            settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
+            enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+        ),
+        default_lifespan(app),
+        tasks_settings.NOMAD,
+    ):
+        yield
 
 
 lifespan = tasks_lifespan
