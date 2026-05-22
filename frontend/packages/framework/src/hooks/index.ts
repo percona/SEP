@@ -64,3 +64,6 @@ export type { TaskFileDownloadParams } from './useTaskFileDownload';
 export { useSnippetPluginSchema } from './useSnippetPluginSchema';
 export { useSnippetPluginExecution } from './useSnippetPluginExecution';
 export type { UseSnippetPluginExecutionOptions } from './useSnippetPluginExecution';
+
+export { useTaskStats } from './useTaskStats';
+export type { TaskStatsView } from './useTaskStats';
