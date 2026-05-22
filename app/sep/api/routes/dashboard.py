@@ -29,7 +29,7 @@ from typing import Any, cast
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
-from app.sep.api.headers import UPSTREAM_ERROR_HEADER
+from app.sep.api.constants import UPSTREAM_ERROR_HEADER
 from app.sep.deps import InventoryAPI, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 

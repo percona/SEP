@@ -56,7 +56,7 @@ export type { paths as TasksPaths, components as TasksComponents } from './gener
 export type { paths as SepPaths, components as SepComponents } from './generated/sep';
 
 // Typed request clients (openapi-fetch wrappers sharing interceptors with apiClient)
-export { mainApi, inventoryApi, tasksApi, sepApi } from './typed-client';
+export { mainApi, inventoryApi, tasksApi, sepApi, throwOnApiError } from './typed-client';
 
 export type {
   PluginSchema,

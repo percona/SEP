@@ -22,7 +22,7 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.sep.api.headers import UPSTREAM_ERROR_HEADER
+from app.sep.api.constants import UPSTREAM_ERROR_HEADER
 from app.sep.deps import get_session
 from app.sep.main import sep_app
 
