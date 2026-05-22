@@ -37,8 +37,8 @@ from app.sep.plugins.framework.schema import (
     TextAreaField,
 )
 
-_S3_STORAGE = F("storage_type") == StorageType.S3.value
-_FILESYSTEM_STORAGE = F("storage_type") == StorageType.FILESYSTEM.value
+_NOT_S3_STORAGE = F("storage_type") != StorageType.S3.value
+_NOT_FILESYSTEM_STORAGE = F("storage_type") != StorageType.FILESYSTEM.value
 
 BACKUP_MONGO_DERIVED = [
     DerivedTask(
@@ -116,6 +116,7 @@ backup_mongo_schema = PluginSchema(
                 ChoiceField(
                     name="storage_type",
                     label="Storage Type",
+                    default=StorageType.S3.value,
                     choices=[
                         Choice(label="S3-compatible", value=StorageType.S3.value),
                         Choice(
@@ -127,27 +128,28 @@ backup_mongo_schema = PluginSchema(
                 StringField(
                     name="storage_s3_region",
                     label="S3 Region",
-                    requires=[FieldGate(when=_S3_STORAGE)],
+                    forbidden=[FieldGate(when=_NOT_S3_STORAGE)],
                 ),
                 StringField(
                     name="storage_s3_bucket",
                     label="S3 Bucket",
-                    requires=[FieldGate(when=_S3_STORAGE)],
+                    forbidden=[FieldGate(when=_NOT_S3_STORAGE)],
                 ),
                 StringField(
                     name="storage_s3_prefix",
                     label="S3 Prefix",
-                    requires=[FieldGate(when=_S3_STORAGE)],
+                    forbidden=[FieldGate(when=_NOT_S3_STORAGE)],
                 ),
                 StringField(
                     name="storage_s3_endpoint_url",
                     label="S3 Endpoint URL",
-                    requires=[FieldGate(when=_S3_STORAGE)],
+                    forbidden=[FieldGate(when=_NOT_S3_STORAGE)],
                 ),
                 StringField(
                     name="storage_filesystem_path",
                     label="Filesystem Path",
-                    requires=[FieldGate(when=_FILESYSTEM_STORAGE)],
+                    required=True,
+                    forbidden=[FieldGate(when=_NOT_FILESYSTEM_STORAGE)],
                 ),
             ],
         ),

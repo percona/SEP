@@ -666,6 +666,54 @@ describe('SchemaFormRenderer — conditional visibility', () => {
   });
 });
 
+describe('SchemaFormRenderer — storage type visibility', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Storage',
+      fields: [
+        {
+          type: 'choice',
+          name: 'storage_type',
+          label: 'Storage Type',
+          default: 's3',
+          choices: [
+            { label: 'S3-compatible', value: 's3' },
+            { label: 'Filesystem', value: 'filesystem' },
+          ],
+        },
+        {
+          type: 'string',
+          name: 'storage_s3_bucket',
+          label: 'S3 Bucket',
+          forbidden: [{ when: { not_equals: { storage_type: 's3' } } }],
+        },
+        {
+          type: 'string',
+          name: 'storage_filesystem_path',
+          label: 'Filesystem Path',
+          required: true,
+          forbidden: [{ when: { not_equals: { storage_type: 'filesystem' } } }],
+        },
+      ],
+    },
+  ];
+
+  it('shows S3 fields and hides filesystem when storage_type defaults to s3', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.getByTestId('text-input-storage_s3_bucket')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-storage_filesystem_path')).toBeNull();
+  });
+
+  it('shows filesystem and hides S3 when storage_type is filesystem', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    await user.click(screen.getByTestId('radio-option-filesystem'));
+    expect(await screen.findByTestId('text-input-storage_filesystem_path')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-storage_s3_bucket')).toBeNull();
+  });
+});
+
 // ── isPresent unit tests ───────────────────────────────────────────────────
 
 describe('isPresent', () => {

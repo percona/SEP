@@ -18,8 +18,10 @@
 from typing import Any
 from unittest.mock import AsyncMock, call
 
+import pytest
 from fastapi import HTTPException, status
 
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.inventory import CreatedService
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.tasks.models import TaskBackendEnum, TaskOwner
@@ -103,6 +105,35 @@ class TestBackupMongoPluginSchemaEndpoint:
             "-physical",
             "-status",
         ]
+
+    def test_schema_storage_fields_use_forbidden_gates(self, test_client):
+        """Storage sub-fields hide via forbidden gates keyed on storage_type."""
+        response = test_client.get(f"{API_BASE}/schema")
+        storage = next(
+            section
+            for section in response.json()["forms"]
+            if section["title"] == "Storage"
+        )
+        fields = {field["name"]: field for field in storage["fields"]}
+
+        assert fields["storage_type"]["default"] == "s3"
+        assert fields["storage_s3_bucket"]["forbidden"] == [
+            {"when": {"not_equals": {"storage_type": "s3"}}}
+        ]
+        assert fields["storage_filesystem_path"]["forbidden"] == [
+            {"when": {"not_equals": {"storage_type": "filesystem"}}}
+        ]
+
+
+def build_execute_response(
+    task_id: int | None = 99, task_name: str = "mongo-backup-task"
+) -> dict:
+    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests."""
+    return {
+        "id": task_id,
+        "execution_request": {"task": task_name, "target": "mongo-host"},
+        "task": {**build_backup_task(task_name), "deleted_at": None},
+    }
 
 
 class TestBackupMongoApiList:
@@ -326,6 +357,43 @@ class TestBackupMongoApiDelete:
             call("/parent-backup-status"),
             call("/parent-backup"),
         ]
+
+
+class TestBackupMongoApiExecute:
+    """Tests for POST /api/plugins/backup_mongo/{task_name}/execute."""
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_201_with_task_name_and_id(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Executing a backup task returns 201 with task_name and task_id."""
+        expected_task_id = 42
+        task = build_backup_task("mongo-backup-task")
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.post = AsyncMock(
+            return_value=build_execute_response(expected_task_id)
+        )
+
+        response = test_client.post(f"{API_BASE}/mongo-backup-task/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["task_name"] == "mongo-backup-task"
+        assert data["task_id"] == expected_task_id
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/execute/mongo-backup-task", json={}
+        )
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_404_for_unknown_task(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Executing an unknown task name returns 404."""
+        mock_task_api_dep.get = AsyncMock(side_effect=HTTPNotFoundException())
+
+        response = test_client.post(f"{API_BASE}/ghost-task/execute", json={})
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestBackupMongoApiAuth:

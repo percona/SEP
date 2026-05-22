@@ -18,9 +18,11 @@
 from typing import Any
 from unittest.mock import AsyncMock, call
 
+import pytest
 import yaml
 from fastapi import HTTPException, status
 
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.inventory import CreatedService
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.deps import RESTORE_CONFIG_PAYLOAD_MARKER
@@ -355,6 +357,54 @@ class TestRestoreMongoApiDelete:
             call("/parent-restore-pbm-list"),
             call("/parent-restore"),
         ]
+
+
+def build_restore_execute_response(
+    task_id: int | None = 99, task_name: str = "mongo-restore-task"
+) -> dict:
+    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests."""
+    return {
+        "id": task_id,
+        "execution_request": {"task": task_name, "target": "mongo-restore-host"},
+        "task": {**build_restore_task(task_name), "deleted_at": None},
+    }
+
+
+class TestRestoreMongoApiExecute:
+    """Tests for POST /api/plugins/backup_mongo/restores/{task_name}/execute."""
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_201_with_task_name_and_id(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Executing a restore task returns 201 with task_name and task_id."""
+        expected_task_id = 7
+        task = build_restore_task("mongo-restore-task")
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.post = AsyncMock(
+            return_value=build_restore_execute_response(expected_task_id)
+        )
+
+        response = test_client.post(f"{API_BASE}/mongo-restore-task/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["task_name"] == "mongo-restore-task"
+        assert data["task_id"] == expected_task_id
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/execute/mongo-restore-task", json={}
+        )
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_404_for_unknown_task(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Executing an unknown restore task name returns 404."""
+        mock_task_api_dep.get = AsyncMock(side_effect=HTTPNotFoundException())
+
+        response = test_client.post(f"{API_BASE}/ghost-task/execute", json={})
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestRestoreMongoApiAuth:
