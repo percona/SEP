@@ -59,9 +59,9 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
     field_validator,
     model_validator,
+    StringConstraints,
 )
 
 from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
