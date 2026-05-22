@@ -20,11 +20,12 @@ React frontend can populate its host selector through SEP rather than calling
 the Tasks and Inventory APIs directly.
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.exceptions import HTTPBadGatewayException
 from app.sep.api.host_resolution import address_to_name_index
+from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.deps import InventoryAPI, TaskAPI
 
 router = APIRouter()
@@ -51,20 +52,7 @@ class HostResponse(BaseModel):
 @router.get(
     "/",
     response_model=list[HostResponse],
-    responses={
-        status.HTTP_502_BAD_GATEWAY: {
-            "description": "Upstream Tasks API failure.",
-            "content": {
-                "application/json": {
-                    "schema": {
-                        "type": "object",
-                        "properties": {"detail": {"type": "string"}},
-                        "required": ["detail"],
-                    },
-                },
-            },
-        },
-    },
+    responses=UPSTREAM_TASKS_502_RESPONSE,
 )
 async def list_hosts(
     tasks_api: TaskAPI,

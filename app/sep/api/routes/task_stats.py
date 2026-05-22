@@ -22,9 +22,10 @@ gateway so the React frontend (``useTaskStats``) does not bypass the SEP
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 
 from app.core.exceptions import HTTPBadGatewayException
+from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.deps import TaskAPI
 
 router = APIRouter()
@@ -32,20 +33,7 @@ router = APIRouter()
 
 @router.get(
     "/{task_name}",
-    responses={
-        status.HTTP_502_BAD_GATEWAY: {
-            "description": "Upstream Tasks API failure.",
-            "content": {
-                "application/json": {
-                    "schema": {
-                        "type": "object",
-                        "properties": {"detail": {"type": "string"}},
-                        "required": ["detail"],
-                    },
-                },
-            },
-        },
-    },
+    responses=UPSTREAM_TASKS_502_RESPONSE,
 )
 async def get_task_stats(
     task_name: str,
