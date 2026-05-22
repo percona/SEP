@@ -251,9 +251,9 @@ function DetailViewSectionCard({
   }
   return (
     <SectionCard title={section.title}>
-      {resolved.map(({ field, value }) => (
+      {resolved.map(({ field, value }, idx) => (
         <EntityDetailField
-          key={field.path}
+          key={`${field.path}:${field.label}:${idx}`}
           label={field.label}
           value={value}
           highlightLanguage={field.highlight}
@@ -304,8 +304,8 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
         />
       )}
 
-      {schema.detail_view?.sections.map((section) => (
-        <DetailViewSectionCard key={section.title} section={section} task={task} />
+      {schema.detail_view?.sections.map((section, idx) => (
+        <DetailViewSectionCard key={`${section.title}:${idx}`} section={section} task={task} />
       ))}
     </>
   );

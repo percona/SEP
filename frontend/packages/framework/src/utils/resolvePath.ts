@@ -16,7 +16,7 @@ const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype', '__clas
  * Supports dotted property access and `[N]` array indices (e.g.
  * `"data.items[0].name"`). Prototype-walking keys (`__proto__`, `constructor`,
  * `prototype`, `__class__`) are refused. Inherited properties are not
- * resolved — only own enumerable string-keyed properties.
+ * resolved — only own string-keyed properties.
  *
  * Returns the resolved value verbatim, including `null`, `false`, `0`, and
  * empty strings — callers must apply their own empty-value guard.
