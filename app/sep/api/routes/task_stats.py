@@ -67,6 +67,9 @@ async def get_task_stats(
     :type tasks_api: TaskAPI
     :return: The raw upstream stats payload.
     :rtype: dict[str, Any]
+    :raises HTTPBadGatewayException: If the Tasks API call fails with an
+        ``HTTPException`` (e.g. an upstream non-2xx response) or an
+        ``OSError`` (e.g. a connection failure).
     """
     try:
         return await tasks_api.get(f"/stats/{task_name}")

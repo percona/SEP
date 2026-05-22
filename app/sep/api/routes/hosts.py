@@ -89,6 +89,9 @@ async def list_hosts(
     :return: Sorted list of hosts, each with executor id, friendly name,
         and network address.
     :rtype: list[HostResponse]
+    :raises HTTPBadGatewayException: If the Tasks API call fails with an
+        ``HTTPException`` (e.g. an upstream non-2xx response) or an
+        ``OSError`` (e.g. a connection failure).
     """
     try:
         executor_hosts = await tasks_api.get("/hosts/")
