@@ -27,7 +27,10 @@ __all__ = [
     "ColumnFormat",
     "DateTimeField",
     "DerivedTask",
+    "DetailField",
     "DetailHighlightLanguage",
+    "DetailSection",
+    "DetailView",
     "FileField",
     "FloatField",
     "FormSection",
@@ -52,7 +55,14 @@ from collections import Counter
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+    StringConstraints,
+)
 
 from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
@@ -608,6 +618,88 @@ class ListView(SchemaBaseModel):
         return self
 
 
+DetailPath = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        pattern=(
+            r"^[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])*"
+            r"(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])*)*$"
+        ),
+    ),
+]
+
+
+class DetailField(SchemaBaseModel):
+    """Declare one labelled field rendered inside a :class:`DetailSection`.
+
+    :param path: Dotted path into the task record (for example
+        ``"data.meta.command"``). Each segment must be a Python identifier,
+        optionally followed by one or more ``[N]`` array indices.
+    :type path: DetailPath
+    :param label: Human-readable label rendered alongside the resolved value.
+    :type label: NonEmptyStr
+    :param highlight: Optional syntax-highlighter hint. Defaults to ``None``.
+    :type highlight: DetailHighlightLanguage | None
+    """
+
+    path: DetailPath
+    label: NonEmptyStr
+    highlight: DetailHighlightLanguage | None = None
+
+
+class DetailSection(SchemaBaseModel):
+    """Declare one titled section inside a :class:`DetailView`.
+
+    :param title: Heading rendered above the section's fields.
+    :type title: NonEmptyStr
+    :param fields: Ordered list of fields rendered inside the section. An
+        empty list is valid; the frontend hides the section when every
+        field resolves to an empty value.
+    :type fields: list[DetailField]
+    """
+
+    title: NonEmptyStr
+    fields: list[DetailField]
+
+
+class DetailView(SchemaBaseModel):
+    """Declare the per-section detail-page layout for a task-style plugin.
+
+    Mirrors the role of :attr:`PluginSchema.list_view` for the list table:
+    the React framework reads ``detail_view`` to render the task detail
+    page's section cards instead of inferring structure from the runtime
+    ``task.data`` shape.
+
+    :param sections: Ordered list of sections rendered on the detail page.
+        An empty list is valid; the frontend renders no section cards.
+        Section titles must be unique within a view so the React key can
+        be derived from the title without positional disambiguation.
+    :type sections: list[DetailSection]
+    """
+
+    sections: list[DetailSection]
+
+    @field_validator("sections", mode="after")
+    @classmethod
+    def _validate_unique_section_titles(
+        cls, value: list[DetailSection]
+    ) -> list[DetailSection]:
+        """Reject duplicate ``DetailSection.title`` values within a view.
+
+        :param value: The validated ``sections`` list.
+        :type value: list[DetailSection]
+        :return: The input ``value`` unchanged when all titles are unique.
+        :rtype: list[DetailSection]
+        :raises ValueError: When two or more sections share a title.
+        """
+        counts = Counter(section.title for section in value)
+        duplicates = sorted(title for title, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(f"Duplicate DetailSection title values: {duplicates}")
+        return value
+
+
 class DerivedTask(SchemaBaseModel):
     """Represent a sibling task derived from a parent during cascade operations.
 
@@ -890,6 +982,12 @@ class PluginSchema(SchemaBaseModel):
     :param list_view: List-view configuration when ``entities`` is unset
         (single-entity / task plugins). Ignored when ``entities`` is set.
     :type list_view: ListView | None
+    :param detail_view: Optional declarative layout for the task detail page's
+        section cards (task-style plugins only; ignored when ``entities`` is
+        set). Optional at the model layer for backwards compatibility. A
+        forward-looking guard refuses to load a plugin that sets
+        ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
+    :type detail_view: DetailView | None
     :param entities: Optional list of CRUD entities for multi-resource plugins.
         When non-empty, the React shell renders one list/create/detail flow
         per entity. Defaults to ``None`` (legacy single-entity mode).
@@ -921,11 +1019,36 @@ class PluginSchema(SchemaBaseModel):
     forms: list[FormSection] = Field(default_factory=list)
     capabilities: Capabilities | None = None
     list_view: ListView | None = None
+    detail_view: DetailView | None = None
     entities: list[PluginEntitySchema] | None = None
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
     derived: list[DerivedTask] | None = None
     predecessors: list[ChainedPredecessor] | None = None
+
+    @model_validator(mode="after")
+    def _validate_detail_view_required_for_task_type(self) -> Self:
+        """Refuse to load a task-style plugin that omits ``detail_view``.
+
+        The field is optional at the model layer for backwards compatibility
+        with legacy plugin schemas that do not yet declare a ``task_type``.
+        Once a plugin opts into the shared task API by setting ``task_type``,
+        the React framework can no longer infer the detail-page section
+        layout from the runtime ``task.data`` shape, so the schema must
+        declare it. Use ``DetailView(sections=[])`` to opt out of rendering
+        any section cards.
+
+        :return: The validated plugin schema instance.
+        :rtype: PluginSchema
+        :raises ValueError: When ``task_type`` is set and ``detail_view``
+            is unset.
+        """
+        if self.task_type is not None and self.detail_view is None:
+            raise ValueError(
+                "PluginSchema.detail_view is required when task_type is set "
+                "(declare DetailView(sections=[]) to render no section cards)"
+            )
+        return self
 
     @field_validator("derived", mode="after")
     @classmethod

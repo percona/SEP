@@ -27,6 +27,9 @@ from app.sep.plugins.framework.schema import (
     ChoiceField,
     Column,
     ColumnFormat,
+    DetailField,
+    DetailSection,
+    DetailView,
     FormSection,
     HostField,
     ListView,
@@ -88,6 +91,18 @@ dipper_schema = PluginSchema(
             Column(key="task_name", label="Task"),
             Column(key="task_id", label="Task ID"),
             Column(key="status", label="Status", format=ColumnFormat.STATUS),
+        ],
+    ),
+    detail_view=DetailView(
+        sections=[
+            DetailSection(
+                title="Execution",
+                fields=[
+                    DetailField(path="data.meta.command", label="Command"),
+                    DetailField(path="data.meta.args", label="Args"),
+                    DetailField(path="data.meta.target", label="Target"),
+                ],
+            ),
         ],
     ),
 )
@@ -169,4 +184,5 @@ def build_dipper_form_schema(
         forms=forms,
         capabilities=dipper_schema.capabilities,
         list_view=dipper_schema.list_view,
+        detail_view=dipper_schema.detail_view,
     )
