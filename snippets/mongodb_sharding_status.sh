@@ -21,11 +21,11 @@
 #  - name: user
 #    type: str
 #    label: MongoDB user
-#    description: Username for MongoDB authentication. Leave empty if auth is disabled.
+#    description: Username for MongoDB authentication. Provide together with the password, or leave both empty if auth is disabled.
 #  - name: password
 #    type: str
 #    label: MongoDB password
-#    description: Password for MongoDB authentication. Leave empty if auth is disabled.
+#    description: Password for MongoDB authentication. Provide together with the user, or leave both empty if auth is disabled.
 #  - name: auth-database
 #    type: str
 #    label: Authentication database
@@ -74,8 +74,8 @@ Command line options:
 
    --host             mongos host (default: localhost)
    --port             mongos port (default: 27017)
-   --user             MongoDB user
-   --password         MongoDB password
+   --user             MongoDB user (provide together with --password)
+   --password         MongoDB password (provide together with --user)
    --auth-database    Authentication database (default: admin)
    -h, --help         Show this help message
 EOS
@@ -122,6 +122,14 @@ while [[ -n $* ]]; do
             ;;
     esac
 done
+
+# A password with no username (or vice versa) cannot authenticate; reject the
+# partial combination instead of silently connecting unauthenticated, which
+# would later surface only as a generic "Could not retrieve sh.status()."
+if { [ -n "$USER" ] && [ -z "$PASSWORD" ]; } || { [ -z "$USER" ] && [ -n "$PASSWORD" ]; }; then
+    echo "Error: --user and --password must be provided together, or both omitted." >&2
+    usage 1
+fi
 
 # Pick the MongoDB shell binary, preferring mongosh.
 MONGO_BIN=""
