@@ -51,7 +51,6 @@ class HostResponse(BaseModel):
 
 @router.get(
     "/",
-    response_model=list[HostResponse],
     responses=UPSTREAM_TASKS_502_RESPONSE,
 )
 async def list_hosts(
