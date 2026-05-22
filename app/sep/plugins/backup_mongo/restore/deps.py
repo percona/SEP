@@ -15,6 +15,7 @@
 
 """Define dependencies for the Restores plugin."""
 
+import asyncio
 import logging
 from collections.abc import Iterable
 from pathlib import Path
@@ -405,6 +406,24 @@ def restore_create_from_write(body: RestoreTaskWrite) -> RestoreCreate:
     return RestoreCreate.model_validate(data, from_attributes=False)
 
 
+async def build_restore_update_task_payload(
+    form: RestoreCreate,
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the restore-leg payload for a JSON API update request.
+
+    :param form: The restore update input with ``task_name`` pinned to the
+        parent config task from the URL path.
+    :type form: RestoreCreate
+    :param inventory_api: The Inventory API to look up services.
+    :type inventory_api: InventoryAPI
+    :return: A ``TaskWrite`` payload for the restore leg.
+    :rtype: TaskWrite
+    """
+    service_name = await _resolve_service_name(form, inventory_api)
+    return _build_restore_task(form, service_name)
+
+
 async def build_restore_task_group(
     form: RestoreCreate,
     inventory_api: InventoryAPI,
@@ -597,15 +616,28 @@ async def get_restore_mongo_api_task_responses(
     response = await tasks_api.get("/", params={"owner": TaskOwner.RESTORE_MONGO.value})
     tasks = [Task.model_validate(item) for item in response["items"]]
     parents = [task for task in tasks if _is_restore_parent_task(task)]
-    task_status_pairs = [
-        (task, await get_restore_mongo_task_status(task.name, tasks_api))
-        for task in parents
-    ]
+    statuses = await asyncio.gather(
+        *(get_restore_mongo_task_status(task.name, tasks_api) for task in parents)
+    )
+    task_status_pairs = list(zip(parents, statuses, strict=True))
     return [
         build_restore_mongo_api_task_response(task, status=task_status)
         for task, task_status in task_status_pairs
         if status is None or task_status == status
     ]
+
+
+async def _fetch_restore_child_detail(
+    child_name: str,
+    tasks_api: TaskAPI,
+) -> tuple[Task, list[dict[str, Any]]] | None:
+    """Fetch a restore child task and its history, or ``None`` when missing."""
+    try:
+        child = await get_restores_task(child_name, tasks_api)
+    except HTTPNotFoundException:
+        return None
+    history_response = await tasks_api.get(f"/{child.name}/history/")
+    return child, history_response["items"]
 
 
 async def build_restore_mongo_api_detail_response(
@@ -625,19 +657,23 @@ async def build_restore_mongo_api_detail_response(
     :rtype: RestoreTaskDetailResponse
     """
     backup_type = _backup_type_from_parent(task)
-    parent_status = await get_restore_mongo_task_status(task.name, tasks_api)
+    child_names = restore_child_task_names(task.name, backup_type)
+    gather_results = await asyncio.gather(
+        get_restore_mongo_task_status(task.name, tasks_api),
+        *(_fetch_restore_child_detail(name, tasks_api) for name in child_names),
+    )
+    parent_status = gather_results[0]
+    child_results = gather_results[1:]
     derived_tasks: list[RestoreDerivedTaskSummary] = []
 
-    for child_name in restore_child_task_names(task.name, backup_type):
-        try:
-            child = await get_restores_task(child_name, tasks_api)
-        except HTTPNotFoundException:
+    for child_detail in child_results:
+        if child_detail is None:
             continue
-        history_response = await tasks_api.get(f"/{child.name}/history/")
+        child, history_items = child_detail
         derived_tasks.append(
             RestoreDerivedTaskSummary(
                 name=child.name,
-                status=_extract_latest_task_status(history_response["items"]),
+                status=_extract_latest_task_status(history_items),
             )
         )
 

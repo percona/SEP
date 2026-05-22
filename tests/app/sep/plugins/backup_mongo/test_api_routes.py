@@ -85,6 +85,19 @@ def build_backup_write_body(
     }
 
 
+def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
+    """Return a path-keyed ``tasks_api.get`` mock safe for parallel fetches."""
+
+    async def _mock_get(path: str, **kwargs: Any) -> Any:
+        if path.endswith("/history/"):
+            return {"items": []}
+        if path in tasks_by_path:
+            return tasks_by_path[path]
+        raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+    return AsyncMock(side_effect=_mock_get)
+
+
 class TestBackupMongoPluginSchemaEndpoint:
     """Tests for GET /api/plugins/backup_mongo/schema."""
 
@@ -200,35 +213,31 @@ class TestBackupMongoApiCreate:
                 ),
             ]
         )
-        mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                build_backup_task("mongo-backup-task"),
-                {"items": []},
-                build_backup_task(
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/mongo-backup-task": build_backup_task("mongo-backup-task"),
+                "/mongo-backup-task-logical": build_backup_task(
                     "mongo-backup-task-logical",
                     data={
                         "backup_type": BackupType.PBM_LOGICAL.value,
                         "parent": "mongo-backup-task",
                     },
                 ),
-                {"items": []},
-                build_backup_task(
+                "/mongo-backup-task-physical": build_backup_task(
                     "mongo-backup-task-physical",
                     data={
                         "backup_type": BackupType.PBM_PHYSICAL.value,
                         "parent": "mongo-backup-task",
                     },
                 ),
-                {"items": []},
-                build_backup_task(
+                "/mongo-backup-task-status": build_backup_task(
                     "mongo-backup-task-status",
                     data={
                         "backup_type": BackupType.PBM_STATUS.value,
                         "parent": "mongo-backup-task",
                     },
                 ),
-                {"items": []},
-            ]
+            }
         )
 
         response = test_client.post(
@@ -310,18 +319,13 @@ class TestBackupMongoApiDetail:
                 "parent": "parent-backup",
             },
         )
-        mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                parent,
-                parent,
-                {"items": []},
-                logical,
-                {"items": []},
-                physical,
-                {"items": []},
-                status_task,
-                {"items": []},
-            ]
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-backup": parent,
+                "/parent-backup-logical": logical,
+                "/parent-backup-physical": physical,
+                "/parent-backup-status": status_task,
+            }
         )
 
         response = test_client.get(f"{API_BASE}/parent-backup")

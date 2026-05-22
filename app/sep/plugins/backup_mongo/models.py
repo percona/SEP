@@ -289,8 +289,9 @@ class BackupCreate(BaseCaseInsensitiveModel):
 class BackupTaskWrite(BaseModel):
     """Represent a JSON request body for creating a backup task group.
 
-    Mirrors :class:`BackupCreate`. POST always creates a parent ``pbm_config``
-    task plus derived logical, physical, and status siblings.
+    Mirrors :class:`BackupCreate` except ``backup_type``, which is always
+    ``pbm_config`` on create. POST creates the parent config task plus derived
+    logical, physical, and status siblings.
 
     :param task_name: The name of the task to be created.
     :type task_name: NonEmptyStr
@@ -298,9 +299,6 @@ class BackupTaskWrite(BaseModel):
     :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the MongoDB service to connect to.
     :type service_id: int
-    :param backup_type: The backup type for the parent task. Defaults to
-        ``pbm_config``.
-    :type backup_type: BackupType
     :param alert_on_fail: If True, send an alert if the task fails.
     :type alert_on_fail: bool
     :param pitr_oplog_span_min: PITR oplog span in minutes.
@@ -341,7 +339,6 @@ class BackupTaskWrite(BaseModel):
     task_name: NonEmptyStr
     hostname: NonEmptyStr
     service_id: int
-    backup_type: BackupType = BackupType.PBM_CONFIG
     alert_on_fail: bool = False
     pitr_oplog_span_min: int | None = None
     pitr_enabled: bool = False

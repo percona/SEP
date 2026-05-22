@@ -15,6 +15,7 @@
 
 """Define dependencies for the Backups plugin."""
 
+import asyncio
 import json
 import logging
 from collections.abc import Iterable
@@ -184,13 +185,19 @@ def backup_derived_task_names(parent_name: str) -> list[str]:
 def backup_create_from_write(body: BackupTaskWrite) -> BackupCreate:
     """Convert a :class:`BackupTaskWrite` body into a :class:`BackupCreate` model.
 
+    Always sets ``backup_type`` to ``pbm_config``; POST creates the parent
+    config task and derived logical, physical, and status siblings.
+
     :param body: The JSON request body for backup task creation.
     :type body: BackupTaskWrite
     :return: A :class:`BackupCreate` instance for payload construction.
     :rtype: BackupCreate
     """
     return BackupCreate.model_validate(
-        body.model_dump(mode="json"),
+        {
+            **body.model_dump(mode="json"),
+            "backup_type": BackupType.PBM_CONFIG,
+        },
         from_attributes=False,
     )
 
@@ -367,10 +374,10 @@ async def get_backup_mongo_api_task_responses(
     response = await tasks_api.get("/", params={"owner": TaskOwner.BACKUP_MONGO.value})
     tasks = [Task.model_validate(item) for item in response["items"]]
     parents = [task for task in tasks if _is_backup_parent_task(task)]
-    task_status_pairs = [
-        (task, await get_backup_mongo_task_status(task.name, tasks_api))
-        for task in parents
-    ]
+    statuses = await asyncio.gather(
+        *(get_backup_mongo_task_status(task.name, tasks_api) for task in parents)
+    )
+    task_status_pairs = list(zip(parents, statuses, strict=True))
     return [
         build_backup_mongo_api_task_response(task, status=task_status)
         for task, task_status in task_status_pairs
@@ -425,6 +432,19 @@ async def _fetch_latest_pbm_status(
     return tail
 
 
+async def _fetch_backup_derived_detail(
+    derived_name: str,
+    tasks_api: TaskAPI,
+) -> tuple[Task, list[dict[str, Any]]] | None:
+    """Fetch a derived backup task and its history, or ``None`` when missing."""
+    try:
+        derived = await get_backups_task(derived_name, tasks_api)
+    except HTTPNotFoundException:
+        return None
+    history_response = await tasks_api.get(f"/{derived.name}/history/")
+    return derived, history_response["items"]
+
+
 async def build_backup_mongo_api_detail_response(
     task: Task,
     tasks_api: TaskAPI,
@@ -442,17 +462,21 @@ async def build_backup_mongo_api_detail_response(
     :return: A validated backup task detail API response object.
     :rtype: BackupTaskDetailResponse
     """
-    parent_status = await get_backup_mongo_task_status(task.name, tasks_api)
+    derived_names = backup_derived_task_names(task.name)
+    gather_results = await asyncio.gather(
+        get_backup_mongo_task_status(task.name, tasks_api),
+        *(_fetch_backup_derived_detail(name, tasks_api) for name in derived_names),
+    )
+    parent_status = gather_results[0]
+    derived_results = gather_results[1:]
     derived_tasks: list[BackupDerivedTaskSummary] = []
     latest_pbm_status: str | None = None
 
-    for derived_name in backup_derived_task_names(task.name):
-        try:
-            derived = await get_backups_task(derived_name, tasks_api)
-        except HTTPNotFoundException:
+    for derived_detail in derived_results:
+        if derived_detail is None:
             continue
-        history_response = await tasks_api.get(f"/{derived.name}/history/")
-        derived_status = _extract_latest_task_status(history_response["items"])
+        derived, history_items = derived_detail
+        derived_status = _extract_latest_task_status(history_items)
         derived_tasks.append(
             BackupDerivedTaskSummary(
                 name=derived.name,
@@ -461,9 +485,7 @@ async def build_backup_mongo_api_detail_response(
             )
         )
         if derived.data.get("backup_type") == BackupType.PBM_STATUS.value:
-            latest_pbm_status = await _fetch_latest_pbm_status(
-                tasks_api, history_response["items"]
-            )
+            latest_pbm_status = await _fetch_latest_pbm_status(tasks_api, history_items)
 
     base = build_backup_mongo_api_task_response(task, status=parent_status)
     return BackupTaskDetailResponse(

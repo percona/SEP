@@ -103,6 +103,19 @@ def build_restore_write_body(
     }
 
 
+def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
+    """Return a path-keyed ``tasks_api.get`` mock safe for parallel fetches."""
+
+    async def _mock_get(path: str, **kwargs: Any) -> Any:
+        if path.endswith("/history/"):
+            return {"items": []}
+        if path in tasks_by_path:
+            return tasks_by_path[path]
+        raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+    return AsyncMock(side_effect=_mock_get)
+
+
 class TestRestoreMongoPluginSchemaEndpoint:
     """Tests for GET /api/plugins/backup_mongo/restores/schema."""
 
@@ -168,21 +181,18 @@ class TestRestoreMongoApiCreate:
                 ),
             ]
         )
-        mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                build_restore_task("mongo-restore-task"),
-                {"items": []},
-                build_restore_task(
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/mongo-restore-task": build_restore_task("mongo-restore-task"),
+                "/mongo-restore-task-pbm_logical": build_restore_task(
                     "mongo-restore-task-pbm_logical",
                     data={"parent": "mongo-restore-task"},
                 ),
-                {"items": []},
-                build_restore_task(
+                "/mongo-restore-task-pbm-list": build_restore_task(
                     "mongo-restore-task-pbm-list",
                     data={"parent": "mongo-restore-task"},
                 ),
-                {"items": []},
-            ]
+            }
         )
 
         response = test_client.post(
@@ -228,32 +238,28 @@ class TestRestoreMongoApiCreate:
                 ),
             ]
         )
-        mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                build_restore_task(
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/mongo-restore-task": build_restore_task(
                     "mongo-restore-task",
                     data={"backup_type": BackupType.PBM_PHYSICAL.value},
                 ),
-                {"items": []},
-                build_restore_task(
+                "/mongo-restore-task-pbm_physical": build_restore_task(
                     "mongo-restore-task-pbm_physical",
                     data={
                         "parent": "mongo-restore-task",
                         "backup_type": BackupType.PBM_PHYSICAL.value,
                     },
                 ),
-                {"items": []},
-                build_restore_task(
+                "/mongo-restore-task-pbm-list": build_restore_task(
                     "mongo-restore-task-pbm-list",
                     data={"parent": "mongo-restore-task"},
                 ),
-                {"items": []},
-                build_restore_task(
+                "/mongo-restore-task-pbm-force-resync": build_restore_task(
                     "mongo-restore-task-pbm-force-resync",
                     data={"parent": "mongo-restore-task"},
                 ),
-                {"items": []},
-            ]
+            }
         )
 
         response = test_client.post(
@@ -314,16 +320,12 @@ class TestRestoreMongoApiDetail:
             "parent-restore-pbm-list",
             data={"parent": "parent-restore"},
         )
-        mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                parent,
-                parent,
-                {"items": []},
-                restore_leg,
-                {"items": []},
-                pbm_list,
-                {"items": []},
-            ]
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-restore": parent,
+                "/parent-restore-pbm_logical": restore_leg,
+                "/parent-restore-pbm-list": pbm_list,
+            }
         )
 
         response = test_client.get(f"{API_BASE}/parent-restore")
@@ -357,6 +359,46 @@ class TestRestoreMongoApiDelete:
             call("/parent-restore-pbm-list"),
             call("/parent-restore"),
         ]
+
+
+class TestRestoreMongoApiUpdate:
+    """Tests for PUT /api/plugins/backup_mongo/restores/{task_name}."""
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_update_pins_task_name_to_path_parent(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """PUT uses the path parent name for child task identity, not body.task_name."""
+        parent = build_restore_task("parent-restore")
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                parent,
+                parent,
+                {"items": []},
+            ]
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-restore",
+            json=build_restore_write_body(
+                task_name="wrong-name",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_task_api_dep.put.assert_awaited_once()
+        put_path, put_kwargs = mock_task_api_dep.put.call_args
+        assert put_path == ("/parent-restore",)
+        posted = put_kwargs["json"]
+        assert posted["name"] == "parent-restore-pbm_logical"
+        assert posted["data"]["parent"] == "parent-restore"
 
 
 def build_restore_execute_response(

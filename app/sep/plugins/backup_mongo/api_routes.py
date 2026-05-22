@@ -47,7 +47,6 @@ from app.sep.plugins.backup_mongo.models import (
     BackupTaskDetailResponse,
     BackupTaskResponse,
     BackupTaskWrite,
-    BackupType,
 )
 from app.sep.plugins.backup_mongo.restore.api_routes import (
     router as restore_api_router,
@@ -101,8 +100,7 @@ async def backup_mongo_api_create(
     :func:`~app.sep.plugins.framework.cascade.cascade_create_tasks`.
     """
     logger.debug("Create backup_mongo task group (JSON path): %s", body.task_name)
-    create_body = body.model_copy(update={"backup_type": BackupType.PBM_CONFIG})
-    form = backup_create_from_write(create_body)
+    form = backup_create_from_write(body)
     task_write = await build_backup_task_payload(form, inventory_api)
     parent_payload = task_write.model_dump()
     derived_specs = backup_mongo_schema.derived or []

@@ -34,11 +34,10 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.restore.deps import (
-    _build_restore_task,
-    _resolve_service_name,
     build_restore_mongo_api_detail_response,
     build_restore_mongo_api_task_response,
     build_restore_task_group,
+    build_restore_update_task_payload,
     create_restore_task_group,
     delete_restore_task_group,
     get_restore_mongo_api_task_responses,
@@ -141,9 +140,8 @@ async def restore_mongo_api_update(
     if parent_task.protected:
         raise HTTPConflictException("Cannot edit a protected task.")
     logger.debug("Update backup_mongo restore task (JSON path): %s", parent_name)
-    form = restore_create_from_write(body)
-    service_name = await _resolve_service_name(form, inventory_api)
-    task_write = _build_restore_task(form, service_name)
+    form = restore_create_from_write(body).model_copy(update={"task_name": parent_name})
+    task_write = await build_restore_update_task_payload(form, inventory_api)
     updated = await tasks_api.put(f"/{parent_name}", json=task_write.model_dump())
     updated_task = Task.model_validate(updated)
     task_status = await get_restore_mongo_task_status(updated_task.name, tasks_api)
