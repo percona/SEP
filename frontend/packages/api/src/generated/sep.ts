@@ -11410,7 +11410,11 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
       };
     };
   };
@@ -11450,7 +11454,11 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
       };
     };
   };

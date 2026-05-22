@@ -52,7 +52,18 @@ class HostResponse(BaseModel):
     "/",
     response_model=list[HostResponse],
     responses={
-        status.HTTP_502_BAD_GATEWAY: {"description": "Upstream Tasks API failure."},
+        status.HTTP_502_BAD_GATEWAY: {
+            "description": "Upstream Tasks API failure.",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {"detail": {"type": "string"}},
+                        "required": ["detail"],
+                    },
+                },
+            },
+        },
     },
 )
 async def list_hosts(
