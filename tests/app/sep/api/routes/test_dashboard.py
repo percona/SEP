@@ -20,8 +20,9 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.sep.api.routes.dashboard import UPSTREAM_ERROR_HEADER
+from app.sep.api.headers import UPSTREAM_ERROR_HEADER
 from app.sep.deps import get_session
 from app.sep.main import sep_app
 
@@ -29,7 +30,7 @@ from app.sep.main import sep_app
 @pytest.fixture
 def mock_session_dep() -> AsyncMock:
     """Override ``get_session`` with a bare AsyncMock for dashboard tests."""
-    mock = AsyncMock()
+    mock = AsyncMock(spec=AsyncSession)
     sep_app.dependency_overrides[get_session] = lambda: mock
     yield mock
     sep_app.dependency_overrides = {}

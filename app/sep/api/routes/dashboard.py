@@ -24,16 +24,16 @@ distinguish real zeroes from degraded counts.
 """
 
 import asyncio
+from typing import Any, cast
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
+from app.sep.api.headers import UPSTREAM_ERROR_HEADER
 from app.sep.deps import InventoryAPI, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 
 router = APIRouter()
-
-UPSTREAM_ERROR_HEADER = "X-Sep-Upstream-Error"
 
 
 class DashboardStatsResponse(BaseModel):
@@ -89,19 +89,19 @@ async def get_dashboard_stats(
     """
 
     async def _nodes() -> int:
-        summary = await inventory_api.get("/summary/")
-        return int(summary.get("nodes", 0))  # type: ignore[union-attr]
+        summary: dict[str, Any] = await inventory_api.get("/summary/")
+        return int(summary.get("nodes", 0))
 
     async def _tasks() -> int:
-        task_list = await tasks_api.get("/", params={"limit": 0})
-        return int(task_list.get("total", 0))  # type: ignore[union-attr]
+        task_list: dict[str, Any] = await tasks_api.get("/", params={"limit": 0})
+        return int(task_list.get("total", 0))
 
     async def _snippets() -> int:
         return await SnippetManager.count(session)
 
     async def _targets() -> int:
-        host_list = await tasks_api.get("/hosts/")
-        return len(host_list)  # type: ignore[arg-type]
+        host_list: list[Any] = await tasks_api.get("/hosts/")
+        return len(host_list)
 
     sources = ("nodes", "tasks", "snippets", "targets")
     results = await asyncio.gather(
@@ -119,7 +119,7 @@ async def get_dashboard_stats(
             failed.append(name)
             counts[name] = 0
         else:
-            counts[name] = result  # type: ignore[assignment]
+            counts[name] = cast(int, result)
 
     if failed:
         response.headers[UPSTREAM_ERROR_HEADER] = ",".join(failed)
