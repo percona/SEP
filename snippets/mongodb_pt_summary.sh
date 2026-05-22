@@ -39,6 +39,10 @@
 #    choices:
 #      - text
 #      - json
+#  - name: help
+#    type: bool
+#    label: Show help message
+#    description: Show help message
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable
