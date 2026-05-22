@@ -406,6 +406,30 @@ def restore_create_from_write(body: RestoreTaskWrite) -> RestoreCreate:
     return RestoreCreate.model_validate(data, from_attributes=False)
 
 
+def restore_update_form_from_write(
+    body: RestoreTaskWrite,
+    parent_task: Task,
+) -> RestoreCreate:
+    """Convert a restore update JSON body, pinning identity from the parent config.
+
+    The path parent task owns ``task_name`` and ``backup_type``; the request
+    body may only update restore parameters.
+
+    :param body: The JSON request body for restore task update.
+    :type body: RestoreTaskWrite
+    :param parent_task: The parent restore config task from the URL path.
+    :type parent_task: Task
+    :return: A :class:`RestoreCreate` instance for payload construction.
+    :rtype: RestoreCreate
+    """
+    return restore_create_from_write(body).model_copy(
+        update={
+            "task_name": parent_task.name,
+            "backup_type": _backup_type_from_parent(parent_task),
+        }
+    )
+
+
 async def build_restore_update_task_payload(
     form: RestoreCreate,
     inventory_api: InventoryAPI,
@@ -684,24 +708,51 @@ async def build_restore_mongo_api_detail_response(
     )
 
 
-async def resolve_restore_parent_task_name(
+async def resolve_restore_parent_task(
     task_name: str,
     tasks_api: TaskAPI,
-) -> str:
+) -> Task:
     """Resolve a task name to its parent restore config task when linked.
+
+    When ``task_name`` refers to a child task, fetches and returns the parent
+    config task. Otherwise returns the task unchanged.
 
     :param task_name: The name of the task to resolve.
     :type task_name: str
     :param tasks_api: The TaskAPI instance used to make requests to the task service.
     :type tasks_api: TaskAPI
-    :return: The parent restore config task name.
-    :rtype: str
+    :return: The parent restore config task.
+    :rtype: Task
     """
     task = await get_restores_task(task_name, tasks_api)
     parent = task.data.get("parent")
     if parent:
-        return str(parent)
-    return task.name
+        return await get_restores_task(str(parent), tasks_api)
+    return task
+
+
+async def get_restore_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Resolve the parent restore config task from a path parameter."""
+    return await resolve_restore_parent_task(task_name, tasks_api)
+
+
+RestoreParentTask = Annotated[Task, Depends(get_restore_parent_task)]
+
+
+async def get_unprotected_restore_parent_task(task: RestoreParentTask) -> Task:
+    """Return a restore parent task or raise 409 when the task is protected."""
+    if task.protected:
+        raise HTTPConflictException("Cannot edit a protected task.")
+    return task
+
+
+UnprotectedRestoreParentTask = Annotated[
+    Task,
+    Depends(get_unprotected_restore_parent_task),
+]
 
 
 async def delete_restore_task_group(
@@ -752,32 +803,6 @@ async def get_restores_task(
 
 
 RestoresTask = Annotated[Task, Depends(get_restores_task)]
-
-
-async def get_unprotected_restores_parent_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Return the parent restore config task or raise 409 when protected.
-
-    :param task_name: A parent or child restore task name.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to fetch tasks.
-    :type tasks_api: TaskAPI
-    :return: The unprotected parent restore config task.
-    :rtype: Task
-    :raises HTTPConflictException: If the parent task is marked as protected.
-    """
-    parent_name = await resolve_restore_parent_task_name(task_name, tasks_api)
-    task = await get_restores_task(parent_name, tasks_api)
-    if task.protected:
-        raise HTTPConflictException("Cannot edit a protected task.")
-    return task
-
-
-UnprotectedRestoresParentTask = Annotated[
-    Task, Depends(get_unprotected_restores_parent_task)
-]
 
 
 def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:

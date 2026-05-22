@@ -129,14 +129,14 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     has_backup_config = any(
-        [
+        (
             form.backup_priority,
             form.backup_compression,
             form.backup_compression_level is not None,
             form.backup_timeouts_starting_status is not None,
             form.backup_oplog_span_min is not None,
             form.backup_num_parallel_collections is not None,
-        ]
+        )
     )
 
     if not has_backup_config:
@@ -495,27 +495,27 @@ async def build_backup_mongo_api_detail_response(
     )
 
 
-async def resolve_backup_parent_task_name(
+async def resolve_backup_parent_task(
     task_name: str,
     tasks_api: TaskAPI,
-) -> str:
+) -> Task:
     """Resolve a task name to its parent ``pbm_config`` task when linked.
 
-    When ``task_name`` refers to a derived sibling, returns ``data["parent"]``.
-    Otherwise returns ``task_name`` unchanged.
+    When ``task_name`` refers to a derived sibling, fetches and returns the
+    parent config task. Otherwise returns the task unchanged.
 
     :param task_name: The name of the task to resolve.
     :type task_name: str
     :param tasks_api: The TaskAPI instance used to make requests to the task service.
     :type tasks_api: TaskAPI
-    :return: The parent backup config task name.
-    :rtype: str
+    :return: The parent backup config task.
+    :rtype: Task
     """
     task = await get_backups_task(task_name, tasks_api)
     parent = task.data.get("parent")
     if parent:
-        return str(parent)
-    return task.name
+        return await get_backups_task(str(parent), tasks_api)
+    return task
 
 
 async def get_backups_task(

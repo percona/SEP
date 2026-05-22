@@ -39,7 +39,7 @@ from app.sep.plugins.backup_mongo.deps import (
     build_backup_task_payload,
     get_backup_mongo_api_task_responses,
     get_backups_task,
-    resolve_backup_parent_task_name,
+    resolve_backup_parent_task,
 )
 from app.sep.plugins.backup_mongo.models import (
     BackupExecuteWrite,
@@ -78,9 +78,8 @@ async def backup_mongo_api_detail(
     tasks_api: TaskAPI,
 ) -> BackupTaskDetailResponse:
     """Retrieve a single parent backup task with derived sibling status."""
-    parent_name = await resolve_backup_parent_task_name(task_name, tasks_api)
-    task = await get_backups_task(parent_name, tasks_api)
-    return await build_backup_mongo_api_detail_response(task, tasks_api)
+    parent_task = await resolve_backup_parent_task(task_name, tasks_api)
+    return await build_backup_mongo_api_detail_response(parent_task, tasks_api)
 
 
 @router.post(
@@ -140,10 +139,9 @@ async def backup_mongo_api_delete(
     tasks_api: TaskAPI,
 ) -> None:
     """Delete a backup task group."""
-    parent_name = await resolve_backup_parent_task_name(task_name, tasks_api)
-    await get_backups_task(parent_name, tasks_api)
+    parent_task = await resolve_backup_parent_task(task_name, tasks_api)
     await cascade_delete_tasks(
         tasks_api,
-        parent_name,
-        backup_derived_task_names(parent_name),
+        parent_task.name,
+        backup_derived_task_names(parent_task.name),
     )

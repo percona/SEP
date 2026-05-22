@@ -26,7 +26,6 @@ import logging
 from fastapi import APIRouter
 from fastapi import status as http_status
 
-from app.core.exceptions import HTTPConflictException
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -43,8 +42,10 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     get_restore_mongo_api_task_responses,
     get_restore_mongo_task_status,
     get_restores_task,
-    resolve_restore_parent_task_name,
+    resolve_restore_parent_task,
     restore_create_from_write,
+    restore_update_form_from_write,
+    UnprotectedRestoreParentTask,
 )
 from app.sep.plugins.backup_mongo.restore.models import (
     RestoreExecuteWrite,
@@ -78,9 +79,8 @@ async def restore_mongo_api_detail(
     tasks_api: TaskAPI,
 ) -> RestoreTaskDetailResponse:
     """Retrieve a single parent restore task with child task status."""
-    parent_name = await resolve_restore_parent_task_name(task_name, tasks_api)
-    task = await get_restores_task(parent_name, tasks_api)
-    return await build_restore_mongo_api_detail_response(task, tasks_api)
+    parent_task = await resolve_restore_parent_task(task_name, tasks_api)
+    return await build_restore_mongo_api_detail_response(parent_task, tasks_api)
 
 
 @router.post(
@@ -125,7 +125,7 @@ async def restore_mongo_api_create(
     dependencies=[HasNoConflictedRunningTasks],
 )
 async def restore_mongo_api_update(
-    task_name: str,
+    parent_task: UnprotectedRestoreParentTask,
     body: RestoreTaskWrite,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
@@ -135,14 +135,10 @@ async def restore_mongo_api_update(
     Matches the legacy Jinja flow: PUTs the restore-leg payload to the parent
     config task name.
     """
-    parent_name = await resolve_restore_parent_task_name(task_name, tasks_api)
-    parent_task = await get_restores_task(parent_name, tasks_api)
-    if parent_task.protected:
-        raise HTTPConflictException("Cannot edit a protected task.")
-    logger.debug("Update backup_mongo restore task (JSON path): %s", parent_name)
-    form = restore_create_from_write(body).model_copy(update={"task_name": parent_name})
+    logger.debug("Update backup_mongo restore task (JSON path): %s", parent_task.name)
+    form = restore_update_form_from_write(body, parent_task)
     task_write = await build_restore_update_task_payload(form, inventory_api)
-    updated = await tasks_api.put(f"/{parent_name}", json=task_write.model_dump())
+    updated = await tasks_api.put(f"/{parent_task.name}", json=task_write.model_dump())
     updated_task = Task.model_validate(updated)
     task_status = await get_restore_mongo_task_status(updated_task.name, tasks_api)
     return build_restore_mongo_api_task_response(updated_task, status=task_status)
@@ -179,6 +175,5 @@ async def restore_mongo_api_delete(
     tasks_api: TaskAPI,
 ) -> None:
     """Delete a restore task group."""
-    parent_name = await resolve_restore_parent_task_name(task_name, tasks_api)
-    parent_task = await get_restores_task(parent_name, tasks_api)
+    parent_task = await resolve_restore_parent_task(task_name, tasks_api)
     await delete_restore_task_group(tasks_api, parent_task)

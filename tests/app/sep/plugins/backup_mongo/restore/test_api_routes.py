@@ -378,7 +378,6 @@ class TestRestoreMongoApiUpdate:
         mock_task_api_dep.get = AsyncMock(
             side_effect=[
                 parent,
-                parent,
                 {"items": []},
             ]
         )
@@ -399,6 +398,59 @@ class TestRestoreMongoApiUpdate:
         posted = put_kwargs["json"]
         assert posted["name"] == "parent-restore-pbm_logical"
         assert posted["data"]["parent"] == "parent-restore"
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_update_pins_backup_type_to_path_parent(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """PUT uses the parent config backup type for child task identity."""
+        parent = build_restore_task("parent-restore")
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                parent,
+                {"items": []},
+            ]
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-restore",
+            json=build_restore_write_body(
+                service_id=mongo_service.id,
+                backup_type=BackupType.PBM_PHYSICAL.value,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        put_path, put_kwargs = mock_task_api_dep.put.call_args
+        assert put_path == ("/parent-restore",)
+        posted = put_kwargs["json"]
+        assert posted["name"] == "parent-restore-pbm_logical"
+        assert posted["data"]["parent"] == "parent-restore"
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_update_protected_task_returns_409(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """PUT rejects updates to protected restore parent tasks."""
+        parent = build_restore_task("parent-restore", protected=True)
+        mock_task_api_dep.get = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-restore",
+            json=build_restore_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_awaited()
 
 
 def build_restore_execute_response(
