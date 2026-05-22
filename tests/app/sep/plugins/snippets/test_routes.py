@@ -180,13 +180,25 @@ class TestSnippetsApproveBatch:
         fresh = await SnippetManager.get(session, filename="fresh.sh")
         assert not fresh.is_approved
 
-    def test_empty_payload_rejected_by_validator(self, admin_client: TestClient):
-        """Assert missing ``filenames`` yields 422 before any DB mutation."""
+    def test_empty_payload_rejected_by_validator(
+        self, admin_client: TestClient, mocker: MockerFixture
+    ):
+        """Assert missing ``filenames`` is rejected before any DB mutation.
+
+        The sep_app's ``RequestValidationError`` handler converts the 422 into
+        a flash error + 303 redirect for non-API form submissions, so assert
+        on the side effects (flash error fired) rather than the raw 422.
+        """
+        from_validation_error = mocker.patch(
+            "app.sep.main.messages.from_validation_error"
+        )
+
         response = admin_client.post(
             _BATCH_APPROVE_URL, data={}, follow_redirects=False
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        from_validation_error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_non_admin_blocked_by_admin_dep(
@@ -366,8 +378,7 @@ class TestCompletedTasksPartialHasLogs:
     """Render the shared completed-tasks partial to verify the ``has_logs`` gating.
 
     Renders the template directly via the SEP Jinja environment instead of
-    spinning up the full snippets-detail HTTP flow. The template change is
-    the actual user-visible fix for SEP-1020 -- a Jinja typo on the gating
+    spinning up the full snippets-detail HTTP flow. A Jinja typo on the gating
     line would silently swallow the **View Logs** button across every
     plugin that includes the partial.
     """
@@ -425,7 +436,9 @@ class TestSnippetsApprovalRouteDeprecationHeaders:
         snippet = await create_snippet("hello.sh", approved=False)
 
         response = admin_client.post(
-            f"/snippets/{snippet.filename}/approve", follow_redirects=False
+            "/snippets/approve",
+            params={"snippet_filename": snippet.filename},
+            follow_redirects=False,
         )
 
         assert response.headers.get("Deprecation") == "true"
@@ -438,7 +451,9 @@ class TestSnippetsApprovalRouteDeprecationHeaders:
         snippet = await create_snippet("hello.sh", approved=True)
 
         response = admin_client.post(
-            f"/snippets/{snippet.filename}/remove-approval", follow_redirects=False
+            "/snippets/remove-approval",
+            params={"snippet_filename": snippet.filename},
+            follow_redirects=False,
         )
 
         assert response.headers.get("Deprecation") == "true"
@@ -497,7 +512,8 @@ class TestSnippetsCsrfEnforcement:
         error = mocker.patch("app.sep.main.messages.error")
 
         response = admin_client_no_csrf.post(
-            f"/snippets/{snippet.filename}/approve",
+            "/snippets/approve",
+            params={"snippet_filename": snippet.filename},
             follow_redirects=False,
         )
 
@@ -521,7 +537,8 @@ class TestSnippetsCsrfEnforcement:
         error = mocker.patch("app.sep.main.messages.error")
 
         response = admin_client_no_csrf.post(
-            f"/snippets/{snippet.filename}/remove-approval",
+            "/snippets/remove-approval",
+            params={"snippet_filename": snippet.filename},
             follow_redirects=False,
         )
 

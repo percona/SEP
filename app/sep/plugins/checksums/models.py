@@ -18,7 +18,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, FutureDatetime
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
@@ -218,3 +218,32 @@ class ChecksumTaskResponse(ChecksumTaskBase):
     created_by: str | None = None
     last_updated_by: str | None = None
     connectivity_warning: ConnectivityWarning | None = None
+
+
+class ChecksumExecuteWrite(BaseModel):
+    """Represent a JSON request body for executing a checksum task.
+
+    :param eta: Optional future datetime to schedule execution.
+    :type eta: FutureDatetime | None
+    :param chain_task_names: Optional list of task names to chain after this one.
+    :type chain_task_names: list[str] | None
+    :param chain_on_failure: Whether to run chained tasks even on failure.
+    :type chain_on_failure: bool | None
+    """
+
+    eta: FutureDatetime | None = None
+    chain_task_names: list[str] | None = None
+    chain_on_failure: bool | None = None
+
+
+class ChecksumExecutionResponse(BaseModel):
+    """Represent the response from POST /api/plugins/checksums/{task_name}/execute.
+
+    :param task_name: The name of the task that was executed.
+    :type task_name: str
+    :param task_id: The id of the task-history row created by the tasks API.
+    :type task_id: int | None
+    """
+
+    task_name: str
+    task_id: int | None = None

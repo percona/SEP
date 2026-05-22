@@ -50,9 +50,10 @@ import {
 } from '@sep/api';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
-import { useTaskHistoryByName } from '../../hooks';
+import { useExecuteTask, useTaskHistoryByName } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
+import { StatsCard } from './StatsCard';
 
 const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
 
@@ -290,6 +291,14 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
         ))}
       </SectionCard>
 
+      {schema.capabilities?.stats && (
+        <StatsCard
+          taskName={
+            typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined
+          }
+        />
+      )}
+
       {execution && (
         <SectionCard title="Execution">
           {execution.command !== undefined && (
@@ -354,18 +363,33 @@ function LogsTab({ taskName }: LogsTabProps) {
 interface ActionBarProps {
   schema: PluginSchema;
   pluginName: string;
-  taskId: string;
+  taskName: string;
 }
 
-function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
+function ActionBar({ schema, pluginName, taskName }: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeletePluginTask(pluginName);
+  const executeTask = useExecuteTask(pluginName);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [executeConfirmOpen, setExecuteConfirmOpen] = useState(false);
+
+  const handleExecute = async () => {
+    try {
+      await executeTask.mutateAsync({ taskName });
+      enqueueSnackbar(`${schema.display_name} task "${taskName}" started`, { variant: 'success' });
+    } catch (e) {
+      enqueueSnackbar(e instanceof Error ? e.message : 'Failed to execute task', {
+        variant: 'error',
+      });
+    } finally {
+      setExecuteConfirmOpen(false);
+    }
+  };
 
   const handleDelete = async () => {
     try {
-      await deleteTask.mutateAsync(taskId);
+      await deleteTask.mutateAsync(taskName);
       enqueueSnackbar(`${schema.display_name} task deleted`, { variant: 'success' });
       // Anchor to the plugin root explicitly. Relative `..` chains depend
       // on which tab the user is on (Overview vs. Logs renders a deeper
@@ -380,7 +404,7 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
     }
   };
 
-  const blocked = 'Backend support pending';
+  const editBlocked = 'Edit is not yet available in the new UI';
 
   return (
     <>
@@ -396,20 +420,17 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
           </Button>
         )}
 
-        <Tooltip title={blocked}>
-          <span>
-            <Button
-              variant="outlined"
-              startIcon={<PlayArrowIcon />}
-              disabled
-              data-testid="plugin-task-execute"
-            >
-              Execute
-            </Button>
-          </span>
-        </Tooltip>
+        <Button
+          variant="outlined"
+          startIcon={<PlayArrowIcon />}
+          onClick={() => setExecuteConfirmOpen(true)}
+          disabled={executeTask.isPending}
+          data-testid="plugin-task-execute"
+        >
+          Execute
+        </Button>
 
-        <Tooltip title={blocked}>
+        <Tooltip title={editBlocked}>
           <span>
             <Button
               variant="outlined"
@@ -435,6 +456,28 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
           Delete
         </Button>
       </Stack>
+
+      <Dialog open={executeConfirmOpen} onClose={() => setExecuteConfirmOpen(false)}>
+        <DialogTitle>Execute {schema.display_name} task?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to execute the task {taskName} now?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExecuteConfirmOpen(false)} disabled={executeTask.isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleExecute}
+            variant="contained"
+            disabled={executeTask.isPending}
+            data-testid="plugin-task-execute-confirm"
+          >
+            Execute
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>Delete {schema.display_name} task?</DialogTitle>
@@ -742,7 +785,7 @@ export function PluginDetailPage({
         )}
       </Box>
 
-      <ActionBar schema={schema} pluginName={pluginName} taskId={id} />
+      <ActionBar schema={schema} pluginName={pluginName} taskName={taskName} />
 
       <Tabs value={tabValue} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Overview" value="overview" component={Link} to={detailBase} replace />

@@ -99,7 +99,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     <td>{{ snippet.reason }}</td>
                     <td class="actions-cell">
                         <div class="info-delete-container flex">
-                            <a href="{{ snippet.filename }}" id="{{ snippet.filename }}-info">
+                            <a href="{{ url_for('snippets_detail').include_query_params(snippet_filename=snippet.filename) | string }}"
+                               id="{{ snippet.filename }}-info">
                                 <button title="Detail" class="material-symbols-outlined info-button">info</button>
                             </a>
                             {% include "snippets/partials/download-approve.html.j2" %}

@@ -106,9 +106,57 @@ export interface paths {
     put?: never;
     /**
      * Sync Inventory
+     * @deprecated
      * @description Start inventory sync as a background task.
+     *
+     *     Deprecated in favour of the React sync control at
+     *     ``POST /api/plugins/inventory/sync/``; functional until Wave 3.
      */
     post: operations['sync_inventory_inventory_sync__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/schedule/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Schedule Create
+     * @deprecated
+     * @description Attach a periodic schedule to the inventory-sync task.
+     *
+     *     Deprecated in favour of the React schedule UI (SEP-1058); functional until
+     *     Wave 3 when the Jinja2 path is retired.
+     *
+     *     Validate the optional ``syncer`` field and the interval/crontab shape at
+     *     form-submit time using ``filter_syncers_by_name`` and explicit checks so
+     *     invalid input fails fast with a friendly redirect rather than silently
+     *     misfiring inside the worker. When ``syncer`` is unset the schedule runs
+     *     every configured syncer; when set it targets only that syncer.
+     *
+     *     :param syncers: The configured syncers from ``SyncersDep``.
+     *     :type syncers: SyncersDep
+     *     :param tasks_api: The Tasks API client.
+     *     :type tasks_api: TaskAPI
+     *     :param schedule: The submitted attach form.
+     *     :type schedule: InventorySyncScheduleCreateForm
+     *     :param referer: The originating page used for the redirect on success.
+     *     :type referer: str
+     *     :return: A 303 redirect back to the originating page.
+     *     :rtype: RedirectResponse
+     *     :raises HTTPBadRequestException: If ``SEP_INTERNAL_TOKEN`` is not
+     *         configured, the syncer name is unknown, or both / neither schedule
+     *         mode is supplied.
+     */
+    post: operations['schedule_create_inventory_schedule__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -415,31 +463,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/snippets/{snippet_filename}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Detail
-     * @description Retrieve and display information about a snippet.
-     */
-    get: operations['snippets_detail_snippets__snippet_filename__get'];
-    put?: never;
-    /**
-     * Snippets Execute
-     * @description Execute a snippet.
-     */
-    post: operations['snippets_execute_snippets__snippet_filename__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/{snippet_filename}/approve': {
+  '/snippets/approve': {
     parameters: {
       query?: never;
       header?: never;
@@ -452,14 +476,14 @@ export interface paths {
      * Snippets Approve
      * @description Approve a snippet.
      */
-    post: operations['snippets_approve_snippets__snippet_filename__approve_post'];
+    post: operations['snippets_approve_snippets_approve_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/snippets/{snippet_filename}/remove-approval': {
+  '/snippets/remove-approval': {
     parameters: {
       query?: never;
       header?: never;
@@ -472,7 +496,7 @@ export interface paths {
      * Snippets Remove Approval
      * @description Remove the approval of a snippet.
      */
-    post: operations['snippets_remove_approval_snippets__snippet_filename__remove_approval_post'];
+    post: operations['snippets_remove_approval_snippets_remove_approval_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -528,6 +552,46 @@ export interface paths {
      *     :rtype: RedirectResponse
      */
     post: operations['snippets_approve_batch_snippets_approve_batch_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Execute
+     * @description Execute a snippet.
+     */
+    post: operations['snippets_execute_snippets_execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/detail': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Detail
+     * @description Retrieve and display information about a snippet.
+     */
+    get: operations['snippets_detail_snippets_detail_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -750,7 +814,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/backups/restores/': {
+  '/mysql_backups/restores/': {
     parameters: {
       query?: never;
       header?: never;
@@ -761,20 +825,20 @@ export interface paths {
      * Restores Index
      * @description Homepage of restores plugin.
      */
-    get: operations['restores_restores_index_backups_restores__get'];
+    get: operations['restores_restores_index_mysql_backups_restores__get'];
     put?: never;
     /**
      * Restores Create
      * @description Create new restores task.
      */
-    post: operations['restores_restores_create_backups_restores__post'];
+    post: operations['restores_restores_create_mysql_backups_restores__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/backups/restores/{task_name}': {
+  '/mysql_backups/restores/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -785,20 +849,20 @@ export interface paths {
      * Restores Detail
      * @description Retrieve restores task.
      */
-    get: operations['restores_restores_detail_backups_restores__task_name__get'];
+    get: operations['restores_restores_detail_mysql_backups_restores__task_name__get'];
     put?: never;
     /**
      * Restores Execute
      * @description Execute restores task.
      */
-    post: operations['restores_restores_execute_backups_restores__task_name__post'];
+    post: operations['restores_restores_execute_mysql_backups_restores__task_name__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/backups/restores/{task_name}/update': {
+  '/mysql_backups/restores/{task_name}/update': {
     parameters: {
       query?: never;
       header?: never;
@@ -811,14 +875,14 @@ export interface paths {
      * Restores Update
      * @description Update restores task.
      */
-    post: operations['restores_restores_update_backups_restores__task_name__update_post'];
+    post: operations['restores_restores_update_mysql_backups_restores__task_name__update_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/backups/restores/{task_name}/delete': {
+  '/mysql_backups/restores/{task_name}/delete': {
     parameters: {
       query?: never;
       header?: never;
@@ -831,14 +895,14 @@ export interface paths {
      * Restores Delete
      * @description Delete restores task.
      */
-    post: operations['restores_restores_delete_backups_restores__task_name__delete_post'];
+    post: operations['restores_restores_delete_mysql_backups_restores__task_name__delete_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/backups/': {
+  '/mysql_backups/': {
     parameters: {
       query?: never;
       header?: never;
@@ -846,23 +910,23 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Backups Index
+     * Mysql Backups Index
      * @description Homepage of backups plugin.
      */
-    get: operations['backups_index_backups__get'];
+    get: operations['mysql_backups_index_mysql_backups__get'];
     put?: never;
     /**
-     * Backups Create
+     * Mysql Backups Create
      * @description Create new backups task.
      */
-    post: operations['backups_create_backups__post'];
+    post: operations['mysql_backups_create_mysql_backups__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/backups/docs': {
+  '/mysql_backups/docs': {
     parameters: {
       query?: never;
       header?: never;
@@ -870,10 +934,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Backups Docs
+     * Mysql Backups Docs
      * @description Standalone documentation page for backup configuration.
      */
-    get: operations['backups_docs_backups_docs_get'];
+    get: operations['mysql_backups_docs_mysql_backups_docs_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -882,7 +946,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/backups/{task_name}': {
+  '/mysql_backups/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -890,23 +954,23 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Backups Detail
+     * Mysql Backups Detail
      * @description Retrieve backups task.
      */
-    get: operations['backups_detail_backups__task_name__get'];
+    get: operations['mysql_backups_detail_mysql_backups__task_name__get'];
     put?: never;
     /**
-     * Backups Execute
+     * Mysql Backups Execute
      * @description Execute backups task.
      */
-    post: operations['backups_execute_backups__task_name__post'];
+    post: operations['mysql_backups_execute_mysql_backups__task_name__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/backups/{task_name}/update': {
+  '/mysql_backups/{task_name}/update': {
     parameters: {
       query?: never;
       header?: never;
@@ -916,17 +980,17 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Backups Update
+     * Mysql Backups Update
      * @description Update backups task.
      */
-    post: operations['backups_update_backups__task_name__update_post'];
+    post: operations['mysql_backups_update_mysql_backups__task_name__update_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/backups/{task_name}/delete': {
+  '/mysql_backups/{task_name}/delete': {
     parameters: {
       query?: never;
       header?: never;
@@ -936,10 +1000,10 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Backups Delete
+     * Mysql Backups Delete
      * @description Delete backups task.
      */
-    post: operations['backups_delete_backups__task_name__delete_post'];
+    post: operations['mysql_backups_delete_mysql_backups__task_name__delete_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -964,46 +1028,6 @@ export interface paths {
      * @description Create an checksum task.
      */
     post: operations['checksums_create_checksums__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/api/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Checksums Api List
-     * @description List checksum tasks as JSON.
-     */
-    get: operations['checksums_api_list_checksums_api__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/api/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Checksums Api Detail
-     * @description Retrieve a checksum task as JSON.
-     */
-    get: operations['checksums_api_detail_checksums_api__task_name__get'];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1462,7 +1486,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/alert-troubleshooting/execute/{snippet_filename}': {
+  '/alert-troubleshooting/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -1476,7 +1500,8 @@ export interface paths {
      * @description Execute a snippet via AJAX and return the task ID as JSON.
      *
      *     Proxy the execution request to the Tasks API and return the task history
-     *     ID for subsequent output polling.
+     *     ID for subsequent output polling. The caller passes ``snippet_filename`` as
+     *     a query parameter so nested snippet keys do not occupy a routed path segment.
      *
      *     :param tasks_api: The authenticated Tasks API client.
      *     :type tasks_api: TaskAPI
@@ -1487,7 +1512,7 @@ export interface paths {
      *     :return: A JSON response with the task ID and submission status.
      *     :rtype: JSONResponse
      */
-    post: operations['troubleshooting_execute_alert_troubleshooting_execute__snippet_filename__post'];
+    post: operations['troubleshooting_execute_alert_troubleshooting_execute_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1855,6 +1880,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/stop-task/{task_history_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Stop Task Execution
+     * @description Stop a task history.
+     */
+    post: operations['sep_stop_task_execution_stop_task__task_history_id__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/periodic/': {
     parameters: {
       query?: never;
@@ -1915,26 +1960,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/stop-task/{task_history_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Stop Task Execution
-     * @description Stop a task history.
-     */
-    post: operations['sep_stop_task_execution_stop_task__task_history_id__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/artifacts/download/{token}': {
     parameters: {
       query?: never;
@@ -1963,7 +1988,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/_stub/': {
+  '/api/plugins/tasks/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -1971,13 +1996,1052 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Stub
-     * @description Return a trivial payload confirming router composition and auth.
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
      *
-     *     :return: A fixed success payload.
-     *     :rtype: dict[str, bool]
+     *     :return: The plugin schema instance.
+     *     :rtype: PluginSchema
      */
-    get: operations['stub_stub_api_plugins__stub__get'];
+    get: operations['tasks_get_schema_api_plugins_tasks_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/tasks/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Tasks Api List
+     * @description List task definitions for the read-only plugin UI.
+     *
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: TaskAPI
+     *     :return: Task rows for the schema-driven list view.
+     *     :rtype: list[TaskListResponse]
+     */
+    get: operations['tasks_tasks_api_list_api_plugins_tasks__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/tasks/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Tasks Api Detail
+     * @description Return the per-task detail bundle for the read-only plugin UI.
+     *
+     *     :param task: The task definition resolved by name.
+     *     :type task: Task
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: TaskAPI
+     *     :param executor_hosts_ctx: Executor hosts enriched with inventory labels.
+     *     :type executor_hosts_ctx: ExecutorHostsCtx
+     *     :return: Task definition, history, periodic schedules, and executor hosts.
+     *     :rtype: TaskDetailResponse
+     */
+    get: operations['tasks_tasks_api_detail_api_plugins_tasks__task_name__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     *     :rtype: PluginSchema
+     */
+    get: operations['inventory_get_schema_api_plugins_inventory_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/sync/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Inventory Sync Trigger
+     * @description Schedule an ad-hoc inventory sync as a background task.
+     *
+     *     Mirrors the Jinja2 ``POST /inventory/sync/`` handler but accepts an
+     *     optional JSON body ``{"syncer": "<qualified_name>"}``. When ``syncer``
+     *     is absent, ``None``, or empty, every configured syncer runs in
+     *     declaration order; otherwise only the named syncer is forwarded. An
+     *     unknown or inapplicable syncer raises HTTP 400 — never a silent no-op.
+     *
+     *     :param user: Current API-authenticated user; the access token is
+     *         forwarded to the background task.
+     *     :type user: ApiCurrentUser
+     *     :param syncers: Configured syncers from ``SyncersDep``.
+     *     :type syncers: SyncersDep
+     *     :param background_tasks: FastAPI's background task scheduler.
+     *     :type background_tasks: BackgroundTasks
+     *     :param body: Optional trigger body.
+     *     :type body: InventorySyncTriggerWrite | None
+     *     :return: Empty 202 Accepted response.
+     *     :rtype: Response
+     *     :raises HTTPBadRequestException: When ``body.syncer`` is set but does
+     *         not match any configured syncer that can sync inventory.
+     */
+    post: operations['inventory_inventory_sync_trigger_api_plugins_inventory_sync__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/sync/status/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Sync Status
+     * @description Return whether an inventory-wide sync is currently running.
+     *
+     *     Replaces the server-rendered ``sync_is_running`` template variable
+     *     used by the Jinja2 inventory page so the React control can poll the
+     *     same state without scraping HTML.
+     *
+     *     :param session: SQLModel async session.
+     *     :type session: SessionDep
+     *     :return: ``{"is_running": <bool>}``.
+     *     :rtype: InventorySyncStatusResponse
+     */
+    get: operations['inventory_inventory_sync_status_api_plugins_inventory_sync_status__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Plugin Tasks
+     * @description Return the list of periodic task names for the Inventory plugin.
+     *
+     *     Hard-coded because the Inventory plugin has exactly one periodic task
+     *     (``inventory-sync``). The shape matches what the React
+     *     ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+     *     minimum a ``name`` key.
+     */
+    get: operations['inventory_inventory_plugin_tasks_api_plugins_inventory__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/available-syncers/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Available Syncers
+     * @description Return syncers capable of syncing inventory.
+     *
+     *     :param available_syncers: Filtered syncer list from ``InventoryAvailableSyncersDep``.
+     *     :type available_syncers: list[AvailableSyncer]
+     *     :return: Filtered list of syncers that can sync inventory.
+     *     :rtype: list[AvailableSyncer]
+     */
+    get: operations['inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/{entity}/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory List Entity
+     * @description List inventory nodes, services, schemas, or tables.
+     */
+    get: operations['inventory_inventory_list_entity_api_plugins_inventory__entity___get'];
+    put?: never;
+    /**
+     * Inventory Create Entity
+     * @description Create an inventory node, service, schema, or table.
+     */
+    post: operations['inventory_inventory_create_entity_api_plugins_inventory__entity___post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/{entity}/{item_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Get Entity
+     * @description Retrieve a single inventory node, service, schema, or table.
+     */
+    get: operations['inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get'];
+    /**
+     * Inventory Update Entity
+     * @description Update an inventory node, service, schema, or table.
+     */
+    put: operations['inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put'];
+    post?: never;
+    /**
+     * Inventory Delete Entity
+     * @description Delete an inventory node, service, schema, or table.
+     */
+    delete: operations['inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     *     :rtype: PluginSchema
+     */
+    get: operations['snippets_get_schema_api_plugins_snippets_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/capabilities': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Capabilities Provider
+     * @description Return per-deployment capability flags for the snippets plugin.
+     *
+     *     Read live from ``snippets_settings`` so a deployment-config hot
+     *     reload between two requests is reflected on the next response.
+     *
+     *     :return: Capability flags reflecting the current deployment config.
+     *     :rtype: SnippetsCapabilitiesResponse
+     */
+    get: operations['snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/refresh': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Api Refresh
+     * @description Refresh the snippets cache from disk.
+     *
+     *     Admin-only and additionally gated by manual sync being enabled.
+     *     Mirrors the legacy Jinja2 ``POST /snippets/refresh`` route.
+     *
+     *     :param user: The authenticated admin performing the refresh.
+     *     :type user: User
+     *     :return: A response carrying the UTC timestamp of the refresh.
+     *     :rtype: RefreshResponse
+     */
+    post: operations['snippets_snippets_api_refresh_api_plugins_snippets_refresh_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api List
+     * @description List every currently-discovered snippet entity.
+     *
+     *     :return: One :class:`SnippetResponse` per snippet row in the database.
+     *     :rtype: list[SnippetResponse]
+     */
+    get: operations['snippets_snippets_api_list_api_plugins_snippets__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Per Snippet Schema
+     * @description Return the per-snippet form schema synthesised from snippet metadata.
+     *
+     *     :param snippet: The snippet whose schema is requested.
+     *     :type snippet: Snippet
+     *     :return: The validated per-snippet plugin schema.
+     *     :rtype: PluginSchema
+     */
+    get: operations['snippets_snippets_api_per_snippet_schema_api_plugins_snippets_snippet_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/preview': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Script Preview
+     * @description Return the snippet's preview content with a highlighter language hint.
+     *
+     *     :param snippet: The snippet whose preview is requested.
+     *     :type snippet: Snippet
+     *     :return: The preview content alongside metadata about it.
+     *     :rtype: ScriptPreviewResponse
+     *     :raises HTTPUnprocessableEntityException: When the snippet contains
+     *         bytes that cannot be decoded as UTF-8.
+     */
+    get: operations['snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/download': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Download
+     * @description Stream the raw snippet file as a download attachment.
+     *
+     *     Returns the on-disk source verbatim — full bash/Python body plus its
+     *     YAML frontmatter — so end users can save the file locally without
+     *     being capped by the preview truncation limits. The
+     *     ``SnippetDep`` dependency already validates both the DB row and the
+     *     on-disk file, so a missing snippet or missing file surfaces as 404.
+     *
+     *     :param snippet: The snippet whose raw file is requested.
+     *     :type snippet: Snippet
+     *     :return: The snippet file streamed as ``attachment; filename=...``
+     *         with a MIME type guessed from the on-disk path.
+     *     :rtype: FileResponse
+     */
+    get: operations['snippets_snippets_api_download_api_plugins_snippets_snippet_download_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/history': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api History
+     * @description Return the paginated execution history rows for a single snippet.
+     *
+     *     Filters the canonical task-history endpoint by ``snippet_filename`` so
+     *     the React detail page can pass the result straight into the shared
+     *     ``TaskHistoryTable`` component without re-projecting fields.
+     *
+     *     :param snippet: The snippet whose history is requested.
+     *     :type snippet: Snippet
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: RemoteAPI
+     *     :return: The upstream paginated task-history response (``items``,
+     *         ``total``, ``offset``, ``limit``).
+     *     :rtype: dict[str, Any]
+     */
+    get: operations['snippets_snippets_api_history_api_plugins_snippets_snippet_history_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Api Execute
+     * @description Execute a snippet against the tasks API.
+     *
+     *     Mirrors the legacy Jinja2 ``POST /snippets/execute?snippet_filename=...``
+     *     route, but accepts a JSON body and returns a structured response pointing at
+     *     the created task.
+     *
+     *     :param snippet: The snippet being executed.
+     *     :type snippet: Snippet
+     *     :param body: The validated JSON request body.
+     *     :type body: SnippetExecutionRequest
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: RemoteAPI
+     *     :param snippet_source: Signed URL the executor uses to download the
+     *         snippet artifact.
+     *     :type snippet_source: str
+     *     :return: The structured response describing the created task.
+     *     :rtype: SnippetExecutionResponse
+     *     :raises HTTPUnprocessableEntityException: When the per-snippet args
+     *         fail dynamic validation.
+     */
+    post: operations['snippets_snippets_api_execute_api_plugins_snippets_snippet_execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/approval': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Snippets Api Approve
+     * @description Approve a single snippet (idempotent).
+     *
+     *     Re-approving an already-approved snippet returns ``200`` with the
+     *     current state — ``approved_at`` is *not* overwritten so the audit
+     *     trail is preserved.
+     *
+     *     :param snippet: The snippet whose approval is being set.
+     *     :type snippet: Snippet
+     *     :param user: The authenticated admin performing the action.
+     *     :type user: User
+     *     :param session: The active database session.
+     *     :type session: AsyncSession
+     *     :return: The snippet entity after the call, including approval state.
+     *     :rtype: SnippetResponse
+     */
+    put: operations['snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put'];
+    post?: never;
+    /**
+     * Snippets Api Remove Approval
+     * @description Remove approval from a single snippet (idempotent).
+     *
+     *     Removing an approval that doesn't exist is a no-op ``204``. The
+     *     snippet missing → ``404`` (handled by ``SnippetDep``); approval
+     *     missing → ``204``.
+     *
+     *     :param snippet: The snippet whose approval is being cleared.
+     *     :type snippet: Snippet
+     *     :param user: The authenticated admin performing the action.
+     *     :type user: User
+     *     :param session: The active database session.
+     *     :type session: AsyncSession
+     *     :return: An empty 204 response.
+     *     :rtype: Response
+     */
+    delete: operations['snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/approvals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Snippets Api Batch Approve
+     * @description Approve a set of snippets atomically (idempotent partial-update).
+     *
+     *     Reject the whole batch with ``400`` and a
+     *     :class:`BatchApprovalErrorResponse` payload when any filename has no
+     *     DB row or its file is missing on disk. Filenames that are already
+     *     approved when the call starts are reported in
+     *     ``skipped_already_approved`` — not as errors. The atomic write uses
+     *     ``approved_at IS NULL`` as a CAS filter so two concurrent admins
+     *     cannot double-approve.
+     *
+     *     :param existence: Pre-validated batch existence result from the dependency.
+     *     :type existence: SnippetBatchExistenceResult
+     *     :param user: The authenticated admin performing the action.
+     *     :type user: User
+     *     :param session: The active database session.
+     *     :type session: AsyncSession
+     *     :return: The success payload listing approved + skipped filenames.
+     *     :rtype: BatchApprovalResponse
+     *     :raises HTTPBadRequestException: On hard-error precheck failures with
+     *         a :class:`BatchApprovalErrorResponse` body.
+     */
+    patch: operations['snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch'];
+    trace?: never;
+  };
+  '/api/plugins/atw/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     *     :rtype: PluginSchema
+     */
+    get: operations['atw_get_schema_api_plugins_atw_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/atw/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Api List
+     * @description List ATW-tagged snippets grouped by category.
+     *
+     *     Categories with no matching snippets are omitted to keep the payload small;
+     *     the ATW enum still defines the full taxonomy for validation (plugin schema).
+     */
+    get: operations['atw_atw_api_list_api_plugins_atw__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/checksums/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     *     :rtype: PluginSchema
+     */
+    get: operations['checksums_get_schema_api_plugins_checksums_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/checksums/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Checksums Api List
+     * @description List checksum tasks.
+     */
+    get: operations['checksums_checksums_api_list_api_plugins_checksums__get'];
+    put?: never;
+    /**
+     * Checksums Api Create
+     * @description Create a checksum task from a JSON payload request body.
+     *
+     *     :param check_connectivity: Whether to verify the target database is
+     *         reachable after task creation. Defaults to ``True`` so callers that
+     *         omit the parameter still get a connectivity round-trip; pass
+     *         ``check_connectivity=false`` to opt out. Note that the form flow
+     *         defaults to ``False`` (HTML checkbox semantics — an unchecked box
+     *         submits no field); this asymmetry is intentional.
+     *     :type check_connectivity: bool
+     */
+    post: operations['checksums_checksums_api_create_api_plugins_checksums__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/checksums/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Checksums Api Detail
+     * @description Retrieve a single checksum task.
+     */
+    get: operations['checksums_checksums_api_detail_api_plugins_checksums__task_name__get'];
+    /**
+     * Checksums Api Update
+     * @description Update a checksum task from a JSON payload request body.
+     *
+     *     :param check_connectivity: Whether to verify the target database is
+     *         reachable after the update. Defaults to ``True``; pass
+     *         ``check_connectivity=false`` to opt out. Note that the form flow
+     *         defaults to ``False`` (HTML checkbox semantics); this asymmetry is
+     *         intentional.
+     *     :type check_connectivity: bool
+     */
+    put: operations['checksums_checksums_api_update_api_plugins_checksums__task_name__put'];
+    post?: never;
+    /**
+     * Checksums Api Delete
+     * @description Delete a checksum task.
+     */
+    delete: operations['checksums_checksums_api_delete_api_plugins_checksums__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/checksums/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Checksums Api Execute
+     * @description Execute a checksum task.
+     */
+    post: operations['checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/dipper/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     *     :rtype: PluginSchema
+     */
+    get: operations['dipper_get_schema_api_plugins_dipper_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/dipper/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Dipper Api List
+     * @description Return Dipper execution history rows.
+     *
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: RemoteAPI
+     *     :return: Paginated task-history response filtered to Dipper runs.
+     *     :rtype: dict[str, Any]
+     */
+    get: operations['dipper_dipper_api_list_api_plugins_dipper__get'];
+    put?: never;
+    /**
+     * Dipper Api Execute
+     * @description Execute a Dipper collector script against a database service.
+     *
+     *     Delegates all script resolution, PMM defaults merging, argument
+     *     validation, and metadata assembly to ``build_dipper_execution_meta``.
+     *
+     *     :param request: The HTTP request (used to derive the artifact download URL).
+     *     :type request: Request
+     *     :param body: Validated JSON request body.
+     *     :type body: DipperExecuteWrite
+     *     :param inventory_api: Async client for the inventory sub-app.
+     *     :type inventory_api: RemoteAPI
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: RemoteAPI
+     *     :return: Execution response with the created task identifier.
+     *     :rtype: DipperExecutionResponse
+     *     :raises HTTPNotFoundException: When the service does not exist.
+     *     :raises HTTPUnprocessableEntityException: When the script/args are invalid.
+     */
+    post: operations['dipper_dipper_api_execute_api_plugins_dipper__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/dipper/form-schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Dipper Api Form Schema
+     * @description Return the selected Dipper payload's dynamic execution schema.
+     *
+     *     :param service_id: Inventory ID of the database service.
+     *     :type service_id: int
+     *     :param collector_type: Which collector variant to render.
+     *     :type collector_type: CollectorTypeEnum
+     *     :param inventory_api: Async client for the inventory sub-app.
+     *     :type inventory_api: RemoteAPI
+     *     :param executor_hosts: Available executor hosts keyed by hostname.
+     *     :type executor_hosts: dict
+     *     :return: Context-specific schema including payload parameters.
+     *     :rtype: PluginSchema
+     */
+    get: operations['dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/dipper/script-preview': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Dipper Api Script Preview
+     * @description Return a preview of the collector script for the given service.
+     *
+     *     :param service_id: Inventory ID of the database service.
+     *     :type service_id: int
+     *     :param collector_type: Which collector variant to preview.
+     *     :type collector_type: CollectorTypeEnum
+     *     :param inventory_api: Async client for the inventory sub-app.
+     *     :type inventory_api: RemoteAPI
+     *     :return: Preview content alongside language and truncation metadata.
+     *     :rtype: ScriptPreviewResponse
+     *     :raises HTTPNotFoundException: When the service does not exist.
+     *     :raises HTTPUnprocessableEntityException: When no script is available for
+     *         the service/collector combination, or when the script contains
+     *         non-UTF-8 bytes.
+     */
+    get: operations['dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/alert_troubleshooting/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     *     :rtype: PluginSchema
+     */
+    get: operations['alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/alert_troubleshooting/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alert Troubleshooting Api List
+     * @description Return alerts grouped by service type.
+     *
+     *     :param session: The database session.
+     *     :type session: SessionDep
+     *     :return: A list of alert groups, each containing alerts for a service type.
+     *     :rtype: list[AlertGroup]
+     */
+    get: operations['alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/alert_troubleshooting/{service_type}/{alert_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alert Troubleshooting Api Detail
+     * @description Return alert info and associated snippets for a specific alert.
+     *
+     *     :param service_type: The service type of the alert.
+     *     :type service_type: AlertServiceType
+     *     :param alert_name: The alert name identifier.
+     *     :type alert_name: str
+     *     :param session: The database session.
+     *     :type session: SessionDep
+     *     :return: Alert info and associated snippets.
+     *     :rtype: AlertDetailResponse
+     *     :raises HTTPNotFoundException: If no snippets match the alert.
+     */
+    get: operations['alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/hosts/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Hosts
+     * @description Return executor hosts merged with inventory display names.
+     *
+     *     Call ``tasks_api.get('/hosts/')`` for executor targets and the Inventory
+     *     API for display-name enrichment. Both upstream calls degrade gracefully
+     *     — Inventory failures cause hosts without a match to keep the raw
+     *     executor node name, and Tasks-API failures cause an empty list to be
+     *     returned rather than a hard error. Tasks-API failures (HTTP and
+     *     connection errors alike) additionally set the ``X-Sep-Upstream-Error``
+     *     response header so the frontend can surface the failure detail through
+     *     its notification system without breaking the ``200 []`` response contract
+     *     that lets the dropdown render "No hosts available".
+     *
+     *     :param response: The outgoing response, used to attach the upstream
+     *         error header on Tasks-API failure.
+     *     :type response: Response
+     *     :param tasks_api: The Tasks API client used to fetch executor hosts.
+     *     :type tasks_api: TaskAPI
+     *     :param inventory_api: The Inventory API client used to enrich the hosts
+     *         with their display names.
+     *     :type inventory_api: InventoryAPI
+     *     :return: Sorted list of hosts, each with executor id, friendly name,
+     *         and network address.
+     *     :rtype: list[HostResponse]
+     */
+    get: operations['sep_list_hosts_api_sep_hosts__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/task-stats/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Task Stats
+     * @description Return aggregated execution statistics for ``task_name``.
+     *
+     *     Proxy to the Tasks-service ``GET /stats/{task_name}`` aggregation so the
+     *     React frontend reaches the data through SEP rather than calling the Tasks
+     *     sub-app directly. Degrade gracefully on upstream failure: catch
+     *     ``HTTPException`` / ``OSError``, attach the ``X-Sep-Upstream-Error``
+     *     response header so the React shell can surface a notification, and return
+     *     a default-shaped empty payload so the stats card can render an empty
+     *     state without a hard error.
+     *
+     *     :param task_name: The task name (not the database id) whose stats are
+     *         being requested.
+     *     :type task_name: str
+     *     :param response: The outgoing response, used to attach the upstream
+     *         error header on Tasks-API failure.
+     *     :type response: Response
+     *     :param tasks_api: The Tasks API client used to fetch the upstream stats.
+     *     :type tasks_api: TaskAPI
+     *     :return: The raw upstream stats payload, or ``{}`` when the upstream
+     *         call fails.
+     *     :rtype: dict[str, Any]
+     */
+    get: operations['sep_get_task_stats_api_sep_task_stats__task_name__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2055,6 +3119,117 @@ export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
     /**
+     * ATWCategoryListing
+     * @description Represent one ATW category row and its snippet members.
+     *
+     *     :param category_root: The top-level product/category root.
+     *     :type category_root: str
+     *     :param parent_category: The parent category enum name.
+     *     :type parent_category: str
+     *     :param parent_category_label: The parent category display label.
+     *     :type parent_category_label: str
+     *     :param category: The ATW leaf category enum name.
+     *     :type category: str
+     *     :param category_label: The ATW leaf category display label.
+     *     :type category_label: str
+     *     :param snippet_count: Number of snippets in this category.
+     *     :type snippet_count: int
+     *     :param snippets: Snippet summaries belonging to this category.
+     *     :type snippets: list[ATWSnippetSummary]
+     */
+    ATWCategoryListing: {
+      /** Category Root */
+      category_root: string;
+      /** Parent Category */
+      parent_category: string;
+      /** Parent Category Label */
+      parent_category_label: string;
+      /** Category */
+      category: string;
+      /** Category Label */
+      category_label: string;
+      /** Snippet Count */
+      snippet_count: number;
+      /** Snippets */
+      snippets: components['schemas']['ATWSnippetSummary'][];
+    };
+    /**
+     * ATWSnippetSummary
+     * @description Represent one snippet entry under an ATW category.
+     *
+     *     :param name: The snippet filename, used as its API identifier.
+     *     :type name: str
+     *     :param title: The snippet display title.
+     *     :type title: str
+     *     :param description: The snippet free-text description.
+     *     :type description: str
+     */
+    ATWSnippetSummary: {
+      /** Name */
+      name: string;
+      /** Title */
+      title: string;
+      /** Description */
+      description: string;
+    };
+    /**
+     * AlertDetailResponse
+     * @description Wrap the response for the alert detail endpoint.
+     *
+     *     :param alert: The alert metadata.
+     *     :type alert: AlertInfo
+     *     :param snippets: Snippets associated with this alert.
+     *     :type snippets: list[SnippetResponse]
+     */
+    AlertDetailResponse: {
+      alert: components['schemas']['AlertInfo'];
+      /** Snippets */
+      snippets: components['schemas']['SnippetResponse'][];
+    };
+    /**
+     * AlertGroup
+     * @description Group alerts sharing a service type.
+     *
+     *     :param service_type: The service type enum value.
+     *     :type service_type: AlertServiceType
+     *     :param label: Human-readable label for the service type.
+     *     :type label: str
+     *     :param alerts: Alerts belonging to this group.
+     *     :type alerts: list[AlertSummary]
+     */
+    AlertGroup: {
+      service_type: components['schemas']['AlertServiceType'];
+      /** Label */
+      label: string;
+      /** Alerts */
+      alerts: components['schemas']['AlertSummary'][];
+    };
+    /**
+     * AlertInfo
+     * @description Represent a normalized alert entry with its identifier and display label.
+     *
+     *     Accept a plain string identifier, a dict with ``name`` (required) and
+     *     optional ``label`` and ``service_type``, or keyword arguments.  Invalid
+     *     inputs raise ``ValidationError``.  The ``service_type`` field is optional
+     *     and, when absent, callers fall back to the snippet-level ``service_type``.
+     *
+     *     :param name: The alert identifier as declared in snippet frontmatter.
+     *     :type name: NonEmptyStr
+     *     :param label: The human-readable display label for the alert.
+     *     :type label: str
+     *     :param service_type: The service type the alert applies to, overriding
+     *         the snippet-level ``service_type``.  ``None`` means "fall back to the
+     *         snippet-level value".
+     *     :type service_type: AlertServiceType | None
+     */
+    AlertInfo: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      service_type?: components['schemas']['AlertServiceType'] | null;
+    };
+    /**
      * AlertServiceType
      * @description Enumerate the supported service types for alert-related features.
      *
@@ -2069,6 +3244,21 @@ export interface components {
      * @enum {string}
      */
     AlertServiceType: 'generic' | 'mysql' | 'mongodb' | 'postgresql';
+    /**
+     * AlertSummary
+     * @description Represent a minimal alert for the listing endpoint.
+     *
+     *     :param name: The alert identifier.
+     *     :type name: str
+     *     :param label: The human-readable display label.
+     *     :type label: str
+     */
+    AlertSummary: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+    };
     /**
      * AltersCreate
      * @description Represent an Alters creation form.
@@ -2262,10 +3452,14 @@ export interface components {
      *     :type service_id: int
      *     :param source_db_id: The source database schema ID from which data will be purged.
      *         Must be None if source_query is set.
-     *     :type source_db_id: int | None
+     *     :type source_db_id: int | EmptyStrToNone
+     *     :param source_db_name: The name of the source database schema.
+     *     :type source_db_name: str
      *     :param source_table_id: The source table ID within the specified schema from which
      *         data will be purged. Must be None if source_query is set.
-     *     :type source_table_id: int | None
+     *     :type source_table_id: int | EmptyStrToNone
+     *     :param source_table_name: The name of the source table.
+     *     :type source_table_name: str
      *     :param source_query: Optional; a query defining the source data to be purged.
      *         Must be None if both source_db_id and source_table_id are set.
      *     :type source_query: NonEmptyStr | None
@@ -2274,7 +3468,9 @@ export interface components {
      *     :type where: NonEmptyStr | None
      *     :param dest_table_id: Optional; The destination table ID.
      *         Must be None if dest_file is set.
-     *     :type dest_table_id: int | None
+     *     :type dest_table_id: int | EmptyStrToNone
+     *     :param dest_table_name: The name of the destination table.
+     *     :type dest_table_name: str
      *     :param dest_file: Optional; The destination file path.
      *         Must be None if dest_table_id is set.
      *     :type dest_file: NonEmptyStr | None
@@ -2288,15 +3484,33 @@ export interface components {
      *     :param extra_args: Optional; Additional arguments for the archive task.
      *     :type extra_args: NonEmptyStr | None
      *     :param limit: Optional; The maximum number of records to be processed.
-     *     :type limit: int | None
+     *     :type limit: int | EmptyStrToNone
      *     :param sleep: Optional; Sleep duration between operations for rate limiting.
-     *     :type sleep: int | None
-     *     :param disable_binlog: Integer flag (0 or 1) to disable binary logging.
-     *         Default is 0 (binary logging enabled).
-     *     :type disable_binlog: int
+     *     :type sleep: int | EmptyStrToNone
+     *     :param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.
+     *         ``None`` means the checkbox was left unset (binary logging stays enabled).
+     *     :type disable_binlog: int | None
+     *     :param disable_bulk_insert: Optional integer flag (0 or 1) to disable bulk
+     *         insert. ``None`` means the checkbox was left unset / default behavior is
+     *         used; 0 means bulk insert remains enabled, and 1 means bulk insert is
+     *         disabled.
+     *     :type disable_bulk_insert: int | None
      *     :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
      *         If set, dest_table and dest_file must not be set, and vice versa.
      *     :type delete_data: int | None
+     *     :param dest_service_id: Optional; The Inventory ID of the destination database service.
+     *     :type dest_service_id: int | EmptyStrToNone
+     *     :param dest_host: Optional; The hostname of the destination database.
+     *     :type dest_host: str | None
+     *     :param dest_port: Optional; The port of the destination database (1-65535).
+     *         The ``ge``/``le`` range constraint is scoped to the ``int`` arm so it
+     *         does not run against ``None`` when ``EmptyStrToNone`` coerces an empty
+     *         form input.
+     *     :type dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone
+     *     :param dest_db_id: Optional; The destination database schema ID.
+     *     :type dest_db_id: int | EmptyStrToNone
+     *     :param dest_db_name: The name of the destination database schema.
+     *     :type dest_db_name: str
      *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
      *     :type alert_on_fail: bool
      */
@@ -2352,15 +3566,78 @@ export interface components {
        */
       DISABLE_BINLOG?: number | null;
       /**
+       * Disable Bulk Insert
+       * @description Optional flag to disable bulk insert.
+       */
+      DISABLE_BULK_INSERT?: number | null;
+      /**
        * Delete Data
        * @description Optional flag to delete data.
        */
       DELETE_DATA?: number | null;
+      /** Dest Service Id */
+      DEST_SERVICE_ID?: number | null;
+      /** Dest Host */
+      DEST_HOST?: string | null;
+      /** Dest Port */
+      DEST_PORT?: number | null;
+      /** Dest Db Id */
+      DEST_DB_ID?: number | null;
+      /**
+       * Dest Db Name
+       * @default
+       */
+      DEST_DB_NAME: string;
       /**
        * Alert On Fail
        * @default false
        */
       ALERT_ON_FAIL: boolean;
+    };
+    /**
+     * AvailableSyncer
+     * @description Provide template-facing metadata for an available syncer.
+     *
+     *     :param name: The fully qualified ``"module.ClassName"`` identifier matching
+     *         ``BaseSyncer.get_name()`` and the value persisted in
+     *         ``SyncInstance.syncer``. Used as the wire identifier in form payloads.
+     *     :type name: str
+     *     :param display_name: The human-readable label rendered in the dropdown
+     *         (the syncer class's short name with any trailing ``Syncer`` suffix
+     *         stripped).
+     *     :type display_name: str
+     */
+    AvailableSyncer: {
+      /** Name */
+      name: string;
+      /** Display Name */
+      display_name: string;
+    };
+    /**
+     * BatchApprovalResponse
+     * @description Successful response for the batch-approve endpoint.
+     *
+     *     :param approved: Filenames whose approval state was toggled by this
+     *         request (newly approved as a result of the call).
+     *     :type approved: list[str]
+     *     :param skipped_already_approved: Filenames that were already approved
+     *         when the call started; the request is treated as a soft-skip
+     *         (idempotent).
+     *     :type skipped_already_approved: list[str]
+     */
+    BatchApprovalResponse: {
+      /** Approved */
+      approved: string[];
+      /** Skipped Already Approved */
+      skipped_already_approved: string[];
+      /**
+       * Count
+       * @description Return the number of newly approved snippets.
+       *
+       *     :return: Length of ``approved``.
+       *     :rtype: int
+       */
+      readonly count: number;
     };
     /** Body_alerts_push_alerts_push_post */
     Body_alerts_push_alerts_push_post: {
@@ -2383,15 +3660,6 @@ export interface components {
     };
     /** Body_archives_execute_archives__task_name__post */
     Body_archives_execute_archives__task_name__post: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-    };
-    /** Body_backups_execute_backups__task_name__post */
-    Body_backups_execute_backups__task_name__post: {
       /** Eta */
       eta?: string | null;
       /** Chain Task Names */
@@ -2431,6 +3699,15 @@ export interface components {
        * Format: password
        */
       client_secret?: string | null;
+    };
+    /** Body_mysql_backups_execute_mysql_backups__task_name__post */
+    Body_mysql_backups_execute_mysql_backups__task_name__post: {
+      /** Eta */
+      eta?: string | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Chain On Failure */
+      chain_on_failure?: boolean | null;
     };
     /** Body_pagerduty_save_alerts_pagerduty_post */
     Body_pagerduty_save_alerts_pagerduty_post: {
@@ -2524,8 +3801,8 @@ export interface components {
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
     };
-    /** Body_restores_restores_execute_backups_restores__task_name__post */
-    Body_restores_restores_execute_backups_restores__task_name__post: {
+    /** Body_restores_restores_execute_mysql_backups_restores__task_name__post */
+    Body_restores_restores_execute_mysql_backups_restores__task_name__post: {
       /** Eta */
       eta?: string | null;
       /** Chain Task Names */
@@ -2554,6 +3831,193 @@ export interface components {
       syncer_name?: string | null;
     };
     /**
+     * BoolField
+     * @description Represent a boolean toggle field.
+     *
+     *     :param field_type: The discriminator literal; always ``"bool"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["bool"]
+     */
+    BoolField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default bool
+       * @constant
+       * @enum {string}
+       */
+      type: 'bool';
+    };
+    /**
+     * Capabilities
+     * @description Represent plugin-level feature flags.
+     *
+     *     :param chaining: Whether the plugin supports chaining tasks together.
+     *         Defaults to ``False``.
+     *     :type chaining: bool
+     *     :param alert_on_fail: Whether the plugin supports configuring a PMM
+     *         alert when a task fails. Defaults to ``False``.
+     *     :type alert_on_fail: bool
+     *     :param scheduling: Whether the plugin supports scheduling tasks on a
+     *         periodic interval. Defaults to ``False``.
+     *     :type scheduling: bool
+     *     :param stats: Whether the plugin supports rendering the aggregated
+     *         execution statistics card on its detail page. Defaults to
+     *         ``False``.
+     *     :type stats: bool
+     */
+    Capabilities: {
+      /**
+       * Chaining
+       * @default false
+       */
+      chaining: boolean;
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /**
+       * Scheduling
+       * @default false
+       */
+      scheduling: boolean;
+      /**
+       * Stats
+       * @default false
+       */
+      stats: boolean;
+    };
+    /**
+     * CardinalityRule
+     * @description Express a cardinality constraint over a list of fields.
+     *
+     *     When ``when`` matches (or unconditionally if ``when`` is ``None``), the
+     *     count of present fields in ``fields`` must lie in ``[min, max]`` with
+     *     ``None`` bounds treated as unbounded.
+     *
+     *     :param when: The predicate that gates the rule. ``None`` means
+     *         unconditional.
+     *     :type when: Predicate | None
+     *     :param fields: The non-empty list of target field names.
+     *     :type fields: list[str]
+     *     :param min: Optional lower bound on the count of present fields.
+     *         Defaults to ``None``.
+     *     :type min: int | None
+     *     :param max: Optional upper bound on the count of present fields.
+     *         Defaults to ``None``.
+     *     :type max: int | None
+     *     :param message: Optional failure message. Defaults to ``None``.
+     *     :type message: str | None
+     */
+    CardinalityRule: {
+      /** When */
+      when?: {
+        [key: string]: unknown;
+      } | null;
+      /** Fields */
+      fields: string[];
+      /** Min */
+      min?: number | null;
+      /** Max */
+      max?: number | null;
+      /** Message */
+      message?: string | null;
+    };
+    /**
+     * ChainedPredecessor
+     * @description Represent a chained predecessor task that runs before the parent.
+     *
+     *     The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes
+     *     this spec when POSTing, PUTting, or DELETEing a plugin's tasks: each
+     *     predecessor is created with ``data["parent"]`` linked to the parent's
+     *     name (when ``parent_link`` is true) and named
+     *     ``f"{parent_name}{name_suffix}"``. After every create succeeds, the
+     *     cascade fires ``POST /execute/{first_predecessor_name}`` with
+     *     ``chain_task_names`` spanning the remaining predecessors followed by
+     *     the parent; ``chain_on_failure`` is derived from ``on_failure``
+     *     (``"halt"`` maps to ``False``, ``"continue"`` maps to ``True``). The
+     *     chain inherits ``_chain_on_failure`` chain-wide via celery's
+     *     :func:`_dispatch_chained_task`.
+     *
+     *     :param name_suffix: String appended to the parent's ``name`` to form
+     *         the predecessor's name (for example ``"-pre-checks"``).
+     *     :type name_suffix: NonEmptyStr
+     *     :param on_failure: Chain semantics when the predecessor terminates
+     *         non-successfully. ``"halt"`` (default) stops the chain;
+     *         ``"continue"`` lets the chain continue regardless. Translates to
+     *         the boolean ``chain_on_failure`` flag at execute time.
+     *     :type on_failure: Literal["halt", "continue"]
+     *     :param parent_link: When true, set ``data["parent"]`` on the
+     *         predecessor payload to the parent's ``name``. Defaults to ``True``.
+     *     :type parent_link: bool
+     */
+    ChainedPredecessor: {
+      /** Name Suffix */
+      name_suffix: string;
+      /**
+       * On Failure
+       * @default halt
+       * @enum {string}
+       */
+      on_failure: 'halt' | 'continue';
+      /**
+       * Parent Link
+       * @default true
+       */
+      parent_link: boolean;
+    };
+    /**
+     * ChecksumExecuteWrite
+     * @description Represent a JSON request body for executing a checksum task.
+     *
+     *     :param eta: Optional future datetime to schedule execution.
+     *     :type eta: FutureDatetime | None
+     *     :param chain_task_names: Optional list of task names to chain after this one.
+     *     :type chain_task_names: list[str] | None
+     *     :param chain_on_failure: Whether to run chained tasks even on failure.
+     *     :type chain_on_failure: bool | None
+     */
+    ChecksumExecuteWrite: {
+      /** Eta */
+      eta?: string | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Chain On Failure */
+      chain_on_failure?: boolean | null;
+    };
+    /**
+     * ChecksumExecutionResponse
+     * @description Represent the response from POST /api/plugins/checksums/{task_name}/execute.
+     *
+     *     :param task_name: The name of the task that was executed.
+     *     :type task_name: str
+     *     :param task_id: The id of the task-history row created by the tasks API.
+     *     :type task_id: int | None
+     */
+    ChecksumExecutionResponse: {
+      /** Task Name */
+      task_name: string;
+      /** Task Id */
+      task_id?: number | null;
+    };
+    /**
      * ChecksumTaskResponse
      * @description Represent a checksum task API response.
      *
@@ -2575,6 +4039,10 @@ export interface components {
      *     :type created_by: str | None
      *     :param last_updated_by: The user who last modified the task record.
      *     :type last_updated_by: str | None
+     *     :param connectivity_warning: A warning surfaced when the post-creation
+     *         database connectivity check fails. ``None`` when the check passes,
+     *         is opted out, or the task meta lacks the connectivity keys.
+     *     :type connectivity_warning: ConnectivityWarning | None
      */
     ChecksumTaskResponse: {
       /** Name */
@@ -2599,6 +4067,135 @@ export interface components {
       created_by?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+    };
+    /**
+     * ChecksumTaskWrite
+     * @description Represent a JSON request body for creating a checksum task.
+     *
+     *     Mirrors :class:`ChecksumsCreate` minus the form-only resolution fields
+     *     (``schema_id``, ``table_id``, ``extra_args``). The caller is responsible
+     *     for pre-resolving database and table names before submitting.
+     *
+     *     :param task_name: The name of the task to be created.
+     *     :type task_name: NonEmptyStr
+     *     :param hostname: The target hostname for the task execution.
+     *     :type hostname: NonEmptyStr
+     *     :param service_id: The Inventory ID of the MySQL service to connect to.
+     *     :type service_id: int
+     *     :param databases: Comma-separated database names.
+     *     :type databases: str
+     *     :param tables: Comma-separated table names (``schema.table`` format).
+     *     :type tables: str
+     *     :param recursion_method: The method for handling replica discovery.
+     *     :type recursion_method: str
+     *     :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``.
+     *     :type dsn_table: str
+     *     :param pause_file: Execution pauses while this file exists.
+     *     :type pause_file: str
+     *     :param binary_index: Use BLOB type for replicate-table boundary columns.
+     *     :type binary_index: bool
+     *     :param explain_arg: Show but do not execute checksum queries.
+     *     :type explain_arg: bool
+     *     :param fail_on_stopped_replication: Fail if replication is stopped.
+     *     :type fail_on_stopped_replication: bool
+     *     :param truncate_replicate_table: Truncate the replicate table before starting.
+     *     :type truncate_replicate_table: bool
+     *     :param progress: Print progress reports to STDERR.
+     *     :type progress: str
+     *     :param set_vars: MySQL variables to set (comma-separated key=value pairs).
+     *     :type set_vars: str
+     *     :param max_load: Pause when any GLOBAL STATUS variable exceeds this threshold.
+     *     :type max_load: str
+     *     :param chunk_time: Target execution time per chunk.
+     *     :type chunk_time: str
+     *     :param max_lag: Pause until replica lag falls below this value.
+     *     :type max_lag: str
+     *     :param alert_on_fail: Send an alert if the task fails.
+     *     :type alert_on_fail: bool
+     */
+    ChecksumTaskWrite: {
+      /** Task Name */
+      task_name: string;
+      /** Hostname */
+      hostname: string;
+      /** Service Id */
+      service_id: number;
+      /**
+       * Databases
+       * @default
+       */
+      databases: string;
+      /**
+       * Tables
+       * @default
+       */
+      tables: string;
+      /**
+       * Recursion Method
+       * @default processlist
+       */
+      recursion_method: string;
+      /**
+       * Dsn Table
+       * @default
+       */
+      dsn_table: string;
+      /**
+       * Pause File
+       * @default
+       */
+      pause_file: string;
+      /**
+       * Binary Index
+       * @default false
+       */
+      binary_index: boolean;
+      /**
+       * Explain Arg
+       * @default false
+       */
+      explain_arg: boolean;
+      /**
+       * Fail On Stopped Replication
+       * @default false
+       */
+      fail_on_stopped_replication: boolean;
+      /**
+       * Truncate Replicate Table
+       * @default false
+       */
+      truncate_replicate_table: boolean;
+      /**
+       * Progress
+       * @default
+       */
+      progress: string;
+      /**
+       * Set Vars
+       * @default
+       */
+      set_vars: string;
+      /**
+       * Max Load
+       * @default
+       */
+      max_load: string;
+      /**
+       * Chunk Time
+       * @default
+       */
+      chunk_time: string;
+      /**
+       * Max Lag
+       * @default
+       */
+      max_lag: string;
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
     };
     /**
      * ChecksumsCreate
@@ -2738,11 +4335,134 @@ export interface components {
       alert_on_fail: boolean;
     };
     /**
+     * Choice
+     * @description Represent one option in a choice or multi-choice field.
+     *
+     *     :param label: The human-readable label displayed for the choice.
+     *     :type label: NonEmptyStr
+     *     :param value: The value submitted when the choice is selected.
+     *     :type value: NonEmptyStr
+     */
+    Choice: {
+      /** Label */
+      label: string;
+      /** Value */
+      value: string;
+    };
+    /**
+     * ChoiceField
+     * @description Represent a single-select dropdown field.
+     *
+     *     :param field_type: The discriminator literal; always ``"choice"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["choice"]
+     *     :param choices: The non-empty list of options the user can choose from.
+     *     :type choices: list[Choice]
+     */
+    ChoiceField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default choice
+       * @constant
+       * @enum {string}
+       */
+      type: 'choice';
+      /** Choices */
+      choices: components['schemas']['Choice'][];
+    };
+    /**
      * CollectorTypeEnum
      * @description Define enum for Dipper collector types.
      * @enum {string}
      */
     CollectorTypeEnum: 'environment' | 'pmm';
+    /**
+     * Column
+     * @description Represent one column in a plugin list view.
+     *
+     *     :param key: The task attribute path this column displays (for example,
+     *         ``"status"`` or ``"target.service"``).
+     *     :type key: NonEmptyStr
+     *     :param label: The human-readable column header.
+     *     :type label: NonEmptyStr
+     *     :param sortable: Whether the column can be used to sort the list.
+     *         Defaults to ``False``.
+     *     :type sortable: bool
+     *     :param format: Optional formatting hint applied when rendering the
+     *         column values. Defaults to ``None``.
+     *     :type format: ColumnFormat | None
+     */
+    Column: {
+      /** Key */
+      key: string;
+      /** Label */
+      label: string;
+      /**
+       * Sortable
+       * @default false
+       */
+      sortable: boolean;
+      format?: components['schemas']['ColumnFormat'] | null;
+    };
+    /**
+     * ColumnFormat
+     * @description Enumerate the supported list-view column formatting hints.
+     *
+     *     :cvar TEXT: Render the column value as plain text.
+     *     :vartype TEXT: str
+     *     :cvar CHIP: Render the column value as a Material UI chip.
+     *     :vartype CHIP: str
+     *     :cvar STATUS: Render the column value as a colour-coded status badge.
+     *     :vartype STATUS: str
+     *     :cvar DATE: Render the column value as an absolute date.
+     *     :vartype DATE: str
+     *     :cvar RELATIVE: Render the column value as a relative time (for example,
+     *         "2 hours ago").
+     *     :vartype RELATIVE: str
+     *     :cvar CODE: Render the column value in a monospaced code font.
+     *     :vartype CODE: str
+     *     :cvar ACTIONS: Row actions (for example delete); not bound to row data.
+     *         Use with a synthetic column key such as ``_actions``.
+     *     :vartype ACTIONS: str
+     * @enum {string}
+     */
+    ColumnFormat: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions';
+    /**
+     * ConnectivityWarning
+     * @description Represent a connectivity-check failure on a JSON API task-creation response.
+     *
+     *     :param target: The Nomad node the task targets.
+     *     :type target: str
+     *     :param service_type: The lowercase database service type (e.g. ``mysql``).
+     *     :type service_type: str
+     *     :param message: A human-readable description of the failure.
+     *     :type message: str
+     */
+    ConnectivityWarning: {
+      /** Target */
+      target: string;
+      /** Service Type */
+      service_type: string;
+      /** Message */
+      message: string;
+    };
     /**
      * CrontabSchedule
      * @description Representing a crontab schedule.
@@ -2795,6 +4515,152 @@ export interface components {
        * @default UTC
        */
       timezone: string;
+    };
+    /**
+     * DateTimeField
+     * @description Represent a datetime picker field.
+     *
+     *     :param field_type: The discriminator literal; always ``"datetime"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["datetime"]
+     */
+    DateTimeField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default datetime
+       * @constant
+       * @enum {string}
+       */
+      type: 'datetime';
+    };
+    /**
+     * DerivedTask
+     * @description Represent a sibling task derived from a parent during cascade operations.
+     *
+     *     The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes this
+     *     spec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task
+     *     is created first, then for each ``DerivedTask`` the parent payload is
+     *     deep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``
+     *     are applied to ``data["meta"]["args"]`` as literal :meth:`str.replace`
+     *     calls in dict insertion order, and ``data["parent"]`` is set to the
+     *     parent's name when ``parent_link`` is true.
+     *
+     *     :param name_suffix: String appended to the parent's ``name`` to form the
+     *         derived task's name (for example ``"-dry-run"``).
+     *     :type name_suffix: NonEmptyStr
+     *     :param arg_substitutions: Optional ordered mapping of literal substring
+     *         replacements applied to ``data["meta"]["args"]``. Each ``(old, new)``
+     *         pair is applied once via :meth:`str.replace` in dict insertion order.
+     *         Defaults to ``None`` (no substitutions).
+     *     :type arg_substitutions: dict[str, str] | None
+     *     :param parent_link: When true, set ``data["parent"]`` on the derived
+     *         payload to the parent's ``name``. Defaults to ``True``.
+     *     :type parent_link: bool
+     */
+    DerivedTask: {
+      /** Name Suffix */
+      name_suffix: string;
+      /** Arg Substitutions */
+      arg_substitutions?: {
+        [key: string]: string;
+      } | null;
+      /**
+       * Parent Link
+       * @default true
+       */
+      parent_link: boolean;
+    };
+    /**
+     * DetailHighlightLanguage
+     * @description Enumerate supported syntax highlighters for detail fields.
+     * @enum {string}
+     */
+    DetailHighlightLanguage: 'sql' | 'json';
+    /**
+     * DipperExecuteWrite
+     * @description Define the JSON body for ``POST /api/plugins/dipper/``.
+     *
+     *     :param service_id: Inventory ID of the database service to collect data from.
+     *     :type service_id: int
+     *     :param collector_type: Which collector script to run (environment or pmm).
+     *     :type collector_type: CollectorTypeEnum
+     *     :param executor_host: Nomad client hostname that will run the script.
+     *     :type executor_host: NonEmptyStr
+     *     :param sudo: Whether to invoke the script with ``sudo``. ``None`` defers
+     *         to the script's own sudo policy (the default).
+     *     :type sudo: bool | None
+     *     :param args: Per-parameter arguments keyed by script parameter name. Validated
+     *         server-side against the script's dynamic execution model.
+     *     :type args: dict[str, Any]
+     */
+    DipperExecuteWrite: {
+      /** Service Id */
+      service_id: number;
+      /** @default environment */
+      collector_type: components['schemas']['CollectorTypeEnum'];
+      /** Executor Host */
+      executor_host: string;
+      /** Sudo */
+      sudo?: boolean | null;
+      /** Args */
+      args?: Record<string, never>;
+    };
+    /**
+     * DipperExecutionResponse
+     * @description Represent the response from ``POST /api/plugins/dipper/``.
+     *
+     *     :param task_id: ID of the task-history row created by the tasks API.
+     *     :type task_id: int | None
+     *     :param task_name: The execution task name used to dispatch the script.
+     *     :type task_name: str
+     *     :param snippet_filename: Composite path used to correlate history rows.
+     *     :type snippet_filename: str
+     *     :param service_id: Inventory ID of the database service.
+     *     :type service_id: int
+     *     :param collector_type: Collector type that was executed.
+     *     :type collector_type: CollectorTypeEnum
+     */
+    DipperExecutionResponse: {
+      /** Task Id */
+      task_id?: number | null;
+      /** Task Name */
+      task_name: string;
+      /** Snippet Filename */
+      snippet_filename: string;
+      /** Service Id */
+      service_id: number;
+      collector_type: components['schemas']['CollectorTypeEnum'];
+    };
+    /**
+     * DipperScript
+     * @description Represent a Dipper payload script stored on the SEP server filesystem.
+     */
+    DipperScript: {
+      /** Filename */
+      filename: string;
+      /** Size */
+      size: number;
+      /** Md5 Digest */
+      md5_digest: string;
+      /** Meta */
+      meta?: Record<string, never>;
     };
     /**
      * EnhancedPeriodicTaskCreateRequest
@@ -2857,6 +4723,113 @@ export interface components {
       step?: string | null;
     };
     /**
+     * ExecutorHostMetadata
+     * @description Represent one executor host option for display on the task detail page.
+     *
+     *     :param value: The executor host value submitted with task execution
+     *         requests (Nomad node name).
+     *     :type value: str
+     *     :param label: The human-readable label for the host (often an inventory
+     *         display name).
+     *     :type label: str
+     */
+    ExecutorHostMetadata: {
+      /** Value */
+      value: string;
+      /** Label */
+      label: string;
+    };
+    /**
+     * FailRule
+     * @description Express a predicate-only invariant: rule fails iff predicate matches.
+     *
+     *     :param fail_when: The predicate whose match triggers a failure.
+     *     :type fail_when: Predicate
+     *     :param error_fields: The field names the FE renderer should attach the
+     *         error to (informational hint; the runtime evaluator ignores this
+     *         list). May be empty when no field is logically responsible.
+     *     :type error_fields: list[str]
+     *     :param message: Optional failure message. Defaults to ``None``.
+     *     :type message: str | None
+     */
+    FailRule: {
+      /**
+       * Fail When
+       * @description Predicate wire shape — a single-key object whose key is the operator name (equals, truthy, all, any, xor, not, etc.). See the plan for the full operator catalogue.
+       */
+      fail_when: {
+        [key: string]: unknown;
+      };
+      /** Error Fields */
+      error_fields: string[];
+      /** Message */
+      message?: string | null;
+    };
+    /**
+     * FieldGate
+     * @description Express a binary self-cardinality gate at :class:`BaseField` scope.
+     *
+     *     Used by :attr:`BaseField.requires` and :attr:`BaseField.forbidden`. The
+     *     target field is the field carrying the rule (implicit self).
+     *
+     *     :param when: The predicate that gates the rule.
+     *     :type when: Predicate
+     *     :param message: Optional failure message surfaced when the rule fires.
+     *         Defaults to ``None``.
+     *     :type message: str | None
+     */
+    FieldGate: {
+      /**
+       * When
+       * @description Predicate wire shape — a single-key object whose key is the operator name (equals, truthy, all, any, xor, not, etc.). See the plan for the full operator catalogue.
+       */
+      when: {
+        [key: string]: unknown;
+      };
+      /** Message */
+      message?: string | null;
+    };
+    /**
+     * FileField
+     * @description Represent a file upload field.
+     *
+     *     :param field_type: The discriminator literal; always ``"file"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["file"]
+     *     :param accept: Optional list of accepted file types, using the same
+     *         syntax as the HTML ``accept`` attribute (for example, ``[".sql",
+     *         ".csv"]`` or ``["image/png"]``). Defaults to ``None``.
+     *     :type accept: list[str] | None
+     */
+    FileField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default file
+       * @constant
+       * @enum {string}
+       */
+      type: 'file';
+      /** Accept */
+      accept?: string[] | null;
+    };
+    /**
      * FileMetadata
      * @description Represent file metadata for task artifacts.
      */
@@ -2872,10 +4845,240 @@ export interface components {
        */
       is_dir: boolean;
     };
+    /**
+     * FloatField
+     * @description Represent a float numeric input field.
+     *
+     *     :param field_type: The discriminator literal; always ``"float"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["float"]
+     *     :param ge: Optional lower bound (inclusive) for accepted values. Defaults
+     *         to ``None``.
+     *     :type ge: float | None
+     *     :param le: Optional upper bound (inclusive) for accepted values. Defaults
+     *         to ``None``.
+     *     :type le: float | None
+     *     :param step: Optional step size for the input control. Defaults to
+     *         ``None``.
+     *     :type step: float | None
+     */
+    FloatField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default float
+       * @constant
+       * @enum {string}
+       */
+      type: 'float';
+      /** Ge */
+      ge?: number | null;
+      /** Le */
+      le?: number | null;
+      /** Step */
+      step?: number | null;
+    };
+    /**
+     * FormSection
+     * @description Represent a labelled group of related fields rendered as one fieldset.
+     *
+     *     :param title: The section heading displayed above the grouped fields.
+     *     :type title: NonEmptyStr
+     *     :param description: Optional helper text rendered beneath the section
+     *         heading. Defaults to ``None``.
+     *     :type description: NonEmptyStr | None
+     *     :param fields: The list of fields belonging to this section.
+     *     :type fields: list[AnyField]
+     *     :param cardinality_rules: Optional cross-field cardinality constraints
+     *         scoped to the fields in this section. Defaults to ``None``.
+     *     :type cardinality_rules: list[CardinalityRule] | None
+     *     :param fail_when: Optional predicate-only invariants scoped to this
+     *         section. Defaults to ``None``.
+     *     :type fail_when: list[FailRule] | None
+     *     :param collapsible: Whether the renderer may collapse this section behind
+     *         a toggle. Defaults to ``False``.
+     *     :type collapsible: bool
+     *     :param collapsed_by_default: Whether a collapsible section should start
+     *         collapsed. Ignored when ``collapsible`` is ``False``. Defaults to
+     *         ``False``.
+     *     :type collapsed_by_default: bool
+     *     :param render_after_submit: Whether this section should render after the
+     *         submit button instead of before it. Defaults to ``False``.
+     *     :type render_after_submit: bool
+     */
+    FormSection: {
+      /** Title */
+      title: string;
+      /** Description */
+      description?: string | null;
+      /** Fields */
+      fields: (
+        | components['schemas']['BoolField']
+        | components['schemas']['ChoiceField']
+        | components['schemas']['DateTimeField']
+        | components['schemas']['FileField']
+        | components['schemas']['FloatField']
+        | components['schemas']['HostField']
+        | components['schemas']['IntegerField']
+        | components['schemas']['MultiChoiceField']
+        | components['schemas']['SchemaField']
+        | components['schemas']['ScriptPreviewField']
+        | components['schemas']['ServiceField']
+        | components['schemas']['StringField']
+        | components['schemas']['TableField']
+        | components['schemas']['TextAreaField']
+        | components['schemas']['YamlField']
+      )[];
+      /** Cardinality Rules */
+      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
+      /** Fail When */
+      fail_when?: components['schemas']['FailRule'][] | null;
+      /**
+       * Collapsible
+       * @default false
+       */
+      collapsible: boolean;
+      /**
+       * Collapsed By Default
+       * @default false
+       */
+      collapsed_by_default: boolean;
+      /**
+       * Render After Submit
+       * @default false
+       */
+      render_after_submit: boolean;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
       detail?: components['schemas']['ValidationError'][];
+    };
+    /**
+     * HostField
+     * @description Represent an executor-target (Nomad / Celery) selector field.
+     *
+     *     The React renderer loads options from ``GET /api/sep/hosts/`` (an SEP
+     *     proxy endpoint that internally calls Tasks ``/hosts/`` and merges
+     *     Inventory display names server-side). Host selection is not cascaded
+     *     from another field — every dispatch form lists every available executor
+     *     target.
+     *
+     *     :param field_type: The discriminator literal; always ``"host"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["host"]
+     */
+    HostField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default host
+       * @constant
+       * @enum {string}
+       */
+      type: 'host';
+    };
+    /**
+     * HostResponse
+     * @description Represent a single executor target enriched with an inventory display name.
+     *
+     *     :param id: The executor (Nomad / Celery) node name. This is the value
+     *         consumed by dispatch payloads as ``executor_host``.
+     *     :type id: str
+     *     :param name: Human-readable label sourced from inventory when available;
+     *         falls back to ``id`` if the host has no inventory match.
+     *     :type name: str
+     *     :param address: The network address reported by the executor.
+     *     :type address: str
+     */
+    HostResponse: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Address */
+      address: string;
+    };
+    /**
+     * IntegerField
+     * @description Represent an integer numeric input field.
+     *
+     *     :param field_type: The discriminator literal; always ``"integer"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["integer"]
+     *     :param ge: Optional lower bound (inclusive) for accepted values. Defaults
+     *         to ``None``.
+     *     :type ge: int | None
+     *     :param le: Optional upper bound (inclusive) for accepted values. Defaults
+     *         to ``None``.
+     *     :type le: int | None
+     *     :param step: Optional step size for the input control. Defaults to
+     *         ``None``.
+     *     :type step: int | None
+     */
+    IntegerField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default integer
+       * @constant
+       * @enum {string}
+       */
+      type: 'integer';
+      /** Ge */
+      ge?: number | null;
+      /** Le */
+      le?: number | null;
+      /** Step */
+      step?: number | null;
     };
     /**
      * IntervalSchedule
@@ -2890,6 +5093,129 @@ export interface components {
       /** Every */
       every: number;
       period: components['schemas']['Period'];
+    };
+    /**
+     * InventorySyncScheduleCreateForm
+     * @description Define the form-data shape for attaching an inventory-sync schedule.
+     *
+     *     Mirror the ``interval_every`` / ``interval_period`` / ``cron_expression``
+     *     / ``cron_timezone`` field names used by the schedule template
+     *     (``templates/inventory/partials/sync-schedule-edit-form.html.j2``) so the
+     *     existing template's input names continue to work, and add a ``syncer``
+     *     field that gets persisted into ``execute_request.meta`` as
+     *     ``{"syncer": <fully qualified name>}`` when set.
+     *
+     *     :param syncer: Optional fully qualified syncer name (e.g.
+     *         ``"app.sep.sync.syncers.pmm.PMMSyncer"``). When set, the schedule
+     *         targets that syncer only; when unset, the schedule runs every
+     *         configured syncer.
+     *     :type syncer: str | None
+     *     :param enabled: Whether the schedule is enabled.
+     *     :type enabled: bool | EmptyStrToNone
+     *     :param interval: Populated by the validator from ``interval_every`` and
+     *         ``interval_period`` form fields.
+     *     :type interval: IntervalSchedule | EmptyStrToNone
+     *     :param crontab: Populated by the validator from ``cron_expression`` and
+     *         ``cron_timezone`` form fields.
+     *     :type crontab: CrontabSchedule | EmptyStrToNone
+     *     :param start_time: Optional UTC start time.
+     *     :type start_time: UTCDatetime | EmptyStrToNone
+     */
+    InventorySyncScheduleCreateForm: {
+      /** Syncer */
+      syncer?: string | null;
+      /** Enabled */
+      enabled?: boolean | null;
+      /** Interval */
+      interval?: components['schemas']['IntervalSchedule'] | null;
+      /** Crontab */
+      crontab?: components['schemas']['CrontabSchedule'] | null;
+      /** Start Time */
+      start_time?: string | null;
+    };
+    /**
+     * InventorySyncStatusResponse
+     * @description Represent the inventory sync status response.
+     *
+     *     :param is_running: ``True`` when an inventory-wide sync is currently
+     *         in progress; ``False`` otherwise.
+     *     :type is_running: bool
+     */
+    InventorySyncStatusResponse: {
+      /** Is Running */
+      is_running: boolean;
+    };
+    /**
+     * InventorySyncTriggerWrite
+     * @description Carry the optional JSON body for the ad-hoc inventory sync trigger.
+     *
+     *     A ``None`` or empty ``syncer`` selects the sync-all path; a non-empty
+     *     string targets a single configured syncer by its fully qualified
+     *     ``"module.ClassName"`` identifier. Unknown fields are rejected with
+     *     HTTP 422 so a typo on the client never silently degrades to sync-all.
+     *
+     *     :param syncer: Fully qualified syncer name, or ``None`` for sync-all.
+     *     :type syncer: str | None
+     */
+    InventorySyncTriggerWrite: {
+      /** Syncer */
+      syncer?: string | null;
+    };
+    /**
+     * ListView
+     * @description Represent the list-view configuration for a plugin.
+     *
+     *     :param columns: The ordered list of columns displayed in the list view.
+     *     :type columns: list[Column]
+     *     :param default_sort: Optional key of the column to sort by on first
+     *         render. Prefix with ``-`` for descending order (for example,
+     *         ``"-lastRun"``). The unprefixed key must match one of the declared
+     *         column keys. Defaults to ``None``.
+     *     :type default_sort: NonEmptyStr | None
+     */
+    ListView: {
+      /** Columns */
+      columns: components['schemas']['Column'][];
+      /** Default Sort */
+      default_sort?: string | null;
+    };
+    /**
+     * MultiChoiceField
+     * @description Represent a multi-select dropdown field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_choice"``
+     *         for this class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["multi_choice"]
+     *     :param choices: The non-empty list of options the user can choose from.
+     *     :type choices: list[Choice]
+     */
+    MultiChoiceField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default multi_choice
+       * @constant
+       * @enum {string}
+       */
+      type: 'multi_choice';
+      /** Choices */
+      choices: components['schemas']['Choice'][];
     };
     /**
      * Node
@@ -3003,6 +5329,200 @@ export interface components {
       crontab?: components['schemas']['CrontabSchedule'] | null;
     };
     /**
+     * PeriodicTaskSummary
+     * @description Represent read-only periodic-schedule metadata for a single task.
+     *
+     *     :param id: The periodic task's database identifier.
+     *     :type id: int
+     *     :param name: The periodic task's display name.
+     *     :type name: str
+     *     :param enabled: Whether the periodic schedule is currently enabled.
+     *     :type enabled: bool
+     *     :param period: A human-readable schedule description (cron or interval),
+     *         or ``None`` when unavailable.
+     *     :type period: str | None
+     *     :param next_run_at: The next scheduled run time in ISO 8601 format, or
+     *         ``None`` when not scheduled.
+     *     :type next_run_at: UTCDatetime | None
+     *     :param last_run_at: The last run time in ISO 8601 format, or ``None`` if
+     *         the schedule has never run.
+     *     :type last_run_at: UTCDatetime | None
+     *     :param total_run_count: The total number of times the schedule has run,
+     *         or ``None`` when unavailable.
+     *     :type total_run_count: int | None
+     *     :param chain_task_names: Ordered task names in the periodic execution
+     *         chain, if any.
+     *     :type chain_task_names: list[str]
+     */
+    PeriodicTaskSummary: {
+      /** Id */
+      id: number;
+      /** Name */
+      name: string;
+      /** Enabled */
+      enabled: boolean;
+      /** Period */
+      period?: string | null;
+      /** Next Run At */
+      next_run_at?: string | null;
+      /** Last Run At */
+      last_run_at?: string | null;
+      /** Total Run Count */
+      total_run_count?: number | null;
+      /** Chain Task Names */
+      chain_task_names?: string[];
+    };
+    /**
+     * PluginEntitySchema
+     * @description Describe one CRUD entity for a multi-entity schema-driven plugin.
+     *
+     *     Used when a plugin exposes several independent resources (for example
+     *     inventory nodes, services, schemas, and tables), each with its own list
+     *     view and create/edit forms. Task-style plugins omit ``entities`` and use
+     *     the root ``forms`` / ``list_view`` instead.
+     *
+     *     :param name: URL segment and API key for the entity (for example ``nodes``).
+     *     :type name: NonEmptyStr
+     *     :param display_name: Human-readable title for this entity's screens.
+     *     :type display_name: NonEmptyStr
+     *     :param description: Optional helper text for this entity. Defaults to
+     *         ``None``.
+     *     :type description: NonEmptyStr | None
+     *     :param forms: Form sections for create (and edit when the UI supports it).
+     *     :type forms: list[FormSection]
+     *     :param list_view: Column configuration for this entity's list table.
+     *     :type list_view: ListView
+     *     :param detail_highlights: Optional per-field syntax highlighter hints for
+     *         detail pages. Keys are field names; values are highlighting languages.
+     *         Defaults to an empty mapping.
+     *     :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
+     *     :param cardinality_rules: Optional entity-wide cross-field cardinality
+     *         constraints. Defaults to ``None``.
+     *     :type cardinality_rules: list[CardinalityRule] | None
+     *     :param fail_when: Optional entity-wide predicate-only invariants.
+     *         Defaults to ``None``.
+     *     :type fail_when: list[FailRule] | None
+     */
+    PluginEntitySchema: {
+      /** Name */
+      name: string;
+      /** Display Name */
+      display_name: string;
+      /** Description */
+      description?: string | null;
+      /** Forms */
+      forms: components['schemas']['FormSection'][];
+      list_view: components['schemas']['ListView'];
+      /** Detail Highlights */
+      detail_highlights?: {
+        [key: string]: components['schemas']['DetailHighlightLanguage'];
+      };
+      /** Cardinality Rules */
+      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
+      /** Fail When */
+      fail_when?: components['schemas']['FailRule'][] | null;
+    };
+    /**
+     * PluginSchema
+     * @description Represent a plugin's complete schema: form sections, list view, capabilities.
+     *
+     *     :param name: The plugin identifier; must match Python identifier rules,
+     *         optionally with internal hyphens.
+     *     :type name: NonEmptyStr
+     *     :param display_name: The human-readable plugin title displayed in the UI.
+     *     :type display_name: NonEmptyStr
+     *     :param description: Optional helper text describing the plugin's
+     *         purpose. Defaults to ``None``.
+     *     :type description: NonEmptyStr | None
+     *     :param task_type: Optional task-type identifier used when creating tasks
+     *         via the shared task API. Defaults to ``None``.
+     *     :type task_type: NonEmptyStr | None
+     *     :param forms: Form sections for single-entity / task plugins. Defaults to
+     *         an empty list when ``entities`` is used instead.
+     *     :type forms: list[FormSection]
+     *     :param capabilities: Optional plugin-level feature flags. Defaults to
+     *         ``None``.
+     *     :type capabilities: Capabilities | None
+     *     :param list_view: List-view configuration when ``entities`` is unset
+     *         (single-entity / task plugins). Ignored when ``entities`` is set.
+     *     :type list_view: ListView | None
+     *     :param entities: Optional list of CRUD entities for multi-resource plugins.
+     *         When non-empty, the React shell renders one list/create/detail flow
+     *         per entity. Defaults to ``None`` (legacy single-entity mode).
+     *     :type entities: list[PluginEntitySchema] | None
+     *     :param cardinality_rules: Optional plugin-wide cross-field cardinality
+     *         constraints (task-style plugins only; ignored when ``entities`` is set).
+     *         Defaults to ``None``.
+     *     :type cardinality_rules: list[CardinalityRule] | None
+     *     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
+     *         plugins only; ignored when ``entities`` is set). Defaults to ``None``.
+     *     :type fail_when: list[FailRule] | None
+     *     :param derived: Optional declarative specs for sibling tasks derived from
+     *         the parent task on cascade. Consumed by
+     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+     *         across the parent and N derived siblings. Defaults to ``None``.
+     *     :type derived: list[DerivedTask] | None
+     *     :param predecessors: Optional declarative specs for tasks that must run
+     *         before the parent. Consumed by
+     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+     *         across the predecessors and the parent, including the chain wiring
+     *         applied at execute time. Defaults to ``None``.
+     *     :type predecessors: list[ChainedPredecessor] | None
+     */
+    PluginSchema: {
+      /** Name */
+      name: string;
+      /** Display Name */
+      display_name: string;
+      /** Description */
+      description?: string | null;
+      /** Task Type */
+      task_type?: string | null;
+      /** Forms */
+      forms?: components['schemas']['FormSection'][];
+      capabilities?: components['schemas']['Capabilities'] | null;
+      list_view?: components['schemas']['ListView'] | null;
+      /** Entities */
+      entities?: components['schemas']['PluginEntitySchema'][] | null;
+      /** Cardinality Rules */
+      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
+      /** Fail When */
+      fail_when?: components['schemas']['FailRule'][] | null;
+      /** Derived */
+      derived?: components['schemas']['DerivedTask'][] | null;
+      /** Predecessors */
+      predecessors?: components['schemas']['ChainedPredecessor'][] | null;
+    };
+    /**
+     * PluginTaskResponse
+     * @description Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.
+     *
+     *     :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
+     *     :type name: str
+     *     :param display_name: Human-readable label for the schedule UI.
+     *     :type display_name: str
+     */
+    PluginTaskResponse: {
+      /** Name */
+      name: string;
+      /** Display Name */
+      display_name: string;
+    };
+    /**
+     * RefreshResponse
+     * @description Represent the successful result of a manual snippets-refresh operation.
+     *
+     *     :param refreshed_at: UTC timestamp at which the refresh completed.
+     *     :type refreshed_at: datetime
+     */
+    RefreshResponse: {
+      /**
+       * Refreshed At
+       * Format: date-time
+       */
+      refreshed_at: string;
+    };
+    /**
      * S3Tool
      * @description Allowed tools to interact with S3-compatible services.
      * @enum {string}
@@ -3027,6 +5547,132 @@ export interface components {
        * @default []
        */
       tables: components['schemas']['Table'][];
+    };
+    /**
+     * SchemaField
+     * @description Represent an inventory database-schema selector field.
+     *
+     *     ``depends_on`` is a forward reference to another field's ``name`` in the
+     *     same plugin schema (typically a ``ServiceField``); the React renderer
+     *     cascades schema options from the selected service. The referenced field
+     *     is not validated at the schema level.
+     *
+     *     :param field_type: The discriminator literal; always ``"schema"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["schema"]
+     *     :param depends_on: The name of the field whose value drives the list of
+     *         available schemas.
+     *     :type depends_on: NonEmptyStr
+     */
+    SchemaField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default schema
+       * @constant
+       * @enum {string}
+       */
+      type: 'schema';
+      /** Depends On */
+      depends_on: string;
+    };
+    /**
+     * ScriptPreviewField
+     * @description Represent a read-only field that renders a backend-fetched script preview.
+     *
+     *     The renderer fetches ``endpoint_url`` on mount, and re-fetches whenever
+     *     any sibling field listed in ``depends_on`` changes value (debounced and
+     *     cancellation-safe). The response shape is
+     *     ``{content: str, language: str, is_truncated: bool}``.
+     *
+     *     :param field_type: The discriminator literal; always
+     *         ``"script_preview"`` for this class. Serialised as the JSON key
+     *         ``"type"``.
+     *     :type field_type: Literal["script_preview"]
+     *     :param endpoint_url: The fully-resolved URL the renderer fetches preview
+     *         content from, relative to the FE ``apiClient`` base (``/api``). Schema
+     *         synthesisers should bake any plugin-specific path segments (for
+     *         example, ``/plugins/snippets/{filename}/preview``) here at
+     *         schema build time rather than templating client-side.
+     *     :type endpoint_url: NonEmptyStr
+     *     :param depends_on: Names of sibling fields whose values trigger a
+     *         re-fetch when changed. Empty (the default) means fetch once on
+     *         mount.
+     *     :type depends_on: list[NonEmptyStr]
+     *     :param language: Optional default highlighter language hint used when
+     *         the backend response omits ``language``. Defaults to ``None``.
+     *     :type language: NonEmptyStr | None
+     */
+    ScriptPreviewField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default script_preview
+       * @constant
+       * @enum {string}
+       */
+      type: 'script_preview';
+      /** Endpoint Url */
+      endpoint_url: string;
+      /** Depends On */
+      depends_on?: string[];
+      /** Language */
+      language?: string | null;
+    };
+    /**
+     * ScriptPreviewResponse
+     * @description Represent the backend response for the preview endpoint.
+     *
+     *     :param content: The full text content of the snippet file (preamble,
+     *         frontmatter, and body concatenated).
+     *     :type content: str
+     *     :param language: A JS syntax-highlighter language identifier derived
+     *         from the snippet's MIME type (for example, ``"bash"`` or
+     *         ``"plaintext"``).
+     *     :type language: str
+     *     :param is_truncated: Whether the preview was truncated to fit
+     *         within the configured per-file character or line limit.
+     *     :type is_truncated: bool
+     */
+    ScriptPreviewResponse: {
+      /** Content */
+      content: string;
+      /** Language */
+      language: string;
+      /** Is Truncated */
+      is_truncated: boolean;
     };
     /**
      * Service
@@ -3080,6 +5726,45 @@ export interface components {
       schemas: components['schemas']['Schema'][];
     };
     /**
+     * ServiceField
+     * @description Represent an inventory service selector field.
+     *
+     *     :param field_type: The discriminator literal; always ``"service"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["service"]
+     *     :param service_types: The list of service types the selector should offer
+     *         (for example, ``[ServiceTypeEnum.MYSQL]``).
+     *     :type service_types: list[ServiceTypeEnum]
+     */
+    ServiceField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default service
+       * @constant
+       * @enum {string}
+       */
+      type: 'service';
+      /** Service Types */
+      service_types: components['schemas']['ServiceTypeEnum'][];
+    };
+    /**
      * ServiceTypeEnum
      * @description Enumeration of supported service types.
      *
@@ -3100,16 +5785,186 @@ export interface components {
     ServiceTypeEnum: 'mysql' | 'postgresql' | 'mongodb' | 'proxysql' | 'haproxy' | 'external';
     /**
      * SnippetBatchApproveForm
-     * @description Validate the body of the batch snippet-approval endpoint.
-     *
-     *     :param filenames: Unique, non-empty list of snippet filenames to approve in a
-     *         single atomic operation. Duplicates in the submitted form are silently
-     *         deduplicated by ``UniqueList``.
-     *     :type filenames: UniqueList[NonEmptyStr]
+     * @description Form-bound twin used by the legacy Jinja2 batch-approve route.
      */
     SnippetBatchApproveForm: {
       /** Filenames */
       filenames: string[];
+    };
+    /**
+     * SnippetBatchApproveRequest
+     * @description Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.
+     *
+     *     Unlike the Form-bound :class:`~app.sep.plugins.snippets.deps.SnippetBatchApproveForm`
+     *     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
+     *     parses it as JSON.
+     *
+     *     :param filenames: Unique, non-empty list of snippet filenames to approve in a
+     *         single atomic operation. Duplicates are silently deduplicated by
+     *         ``UniqueList``.
+     *     :type filenames: UniqueList[NonEmptyStr]
+     */
+    SnippetBatchApproveRequest: {
+      /** Filenames */
+      filenames: string[];
+    };
+    /**
+     * SnippetExecutionRequest
+     * @description Define the JSON body for ``POST /api/plugins/snippets/{filename}/execute``.
+     *
+     *     Per-parameter values defined in the snippet's YAML frontmatter go into
+     *     ``args`` and are validated server-side via the snippet's dynamic
+     *     execution model.
+     *
+     *     :param executor_host: The hostname of the executor that will run the
+     *         snippet.
+     *     :type executor_host: NonEmptyStr
+     *     :param sudo: Whether to invoke the snippet with sudo. Ignored unless
+     *         the snippet's sudo option is configured as optional.
+     *     :type sudo: bool
+     *     :param args: Per-parameter arguments keyed by parameter name. Validated
+     *         against the snippet's dynamic execution model.
+     *     :type args: dict[str, Any]
+     */
+    SnippetExecutionRequest: {
+      /** Executor Host */
+      executor_host: string;
+      /**
+       * Sudo
+       * @default false
+       */
+      sudo: boolean;
+      /**
+       * Args
+       * @default {}
+       */
+      args: Record<string, never>;
+    };
+    /**
+     * SnippetExecutionResponse
+     * @description Represent the response returned from the execute endpoint.
+     *
+     *     :param task_name: The task name the snippet was executed under (varies
+     *         based on the snippet's interpreter and pip requirements).
+     *     :type task_name: NonEmptyStr
+     *     :param task_id: The id of the task-history row created by the tasks
+     *         API, when the upstream response includes one.
+     *     :type task_id: int | None
+     *     :param snippet_filename: The filename of the snippet that was
+     *         executed.
+     *     :type snippet_filename: NonEmptyStr
+     */
+    SnippetExecutionResponse: {
+      /** Task Name */
+      task_name: string;
+      /** Task Id */
+      task_id?: number | null;
+      /** Snippet Filename */
+      snippet_filename: string;
+    };
+    /**
+     * SnippetResponse
+     * @description Represent a snippet entity as exposed by the JSON API.
+     *
+     *     :param filename: The snippet's filename on disk; doubles as its
+     *         identifier in the API.
+     *     :type filename: NonEmptyStr
+     *     :param title: The display title for the snippet (snippet metadata's
+     *         ``title`` field, falling back to ``filename`` when unset).
+     *     :type title: NonEmptyStr
+     *     :param description: The snippet's free-text description, or an empty
+     *         string when no description is set in metadata.
+     *     :type description: str
+     *     :param size: Snippet file size in bytes.
+     *     :type size: int
+     *     :param md5_digest: 32-character MD5 hex digest of the snippet file.
+     *     :type md5_digest: str
+     *     :param is_approved: Whether the snippet has been approved for execution.
+     *     :type is_approved: bool
+     *     :param approved_at: When the snippet was last approved, or ``None`` if
+     *         unapproved.
+     *     :type approved_at: datetime | None
+     *     :param updated_by: User id that last toggled the approval state, or
+     *         ``None`` if no toggle has occurred.
+     *     :type updated_by: str | None
+     *     :param reason: Free-form reason recorded the last time the snippet's
+     *         approval state changed.
+     *     :type reason: str
+     *     :param requires_sudo: Whether the snippet requires sudo for execution
+     *         (either always-sudo or sudo is user-toggleable).
+     *     :type requires_sudo: bool
+     *     :param sudo_optional: Whether the user can toggle sudo at execution
+     *         time.
+     *     :type sudo_optional: bool
+     *     :param sudo_default: Default value for the sudo toggle when
+     *         ``sudo_optional`` is ``True``.
+     *     :type sudo_default: bool
+     *     :param interpreter: The shell/interpreter command used to execute the
+     *         snippet (for example, ``"bash"`` or ``"python3"``); ``None`` when
+     *         no interpreter mapping resolves.
+     *     :type interpreter: str | None
+     *     :param created_at: When the snippet row was first inserted.
+     *     :type created_at: datetime
+     *     :param updated_at: When the snippet row was last updated, or ``None``
+     *         if never updated since insert.
+     *     :type updated_at: datetime | None
+     */
+    SnippetResponse: {
+      /** Filename */
+      filename: string;
+      /** Title */
+      title: string;
+      /** Description */
+      description: string;
+      /** Size */
+      size: number;
+      /** Md5 Digest */
+      md5_digest: string;
+      /** Is Approved */
+      is_approved: boolean;
+      /** Approved At */
+      approved_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
+      /** Reason */
+      reason: string;
+      /** Requires Sudo */
+      requires_sudo: boolean;
+      /** Sudo Optional */
+      sudo_optional: boolean;
+      /** Sudo Default */
+      sudo_default: boolean;
+      /** Interpreter */
+      interpreter?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * SnippetsCapabilitiesResponse
+     * @description Represent per-deployment capability flags for the Snippets plugin.
+     *
+     *     Exposes flags that gate the visibility of admin-only UI affordances
+     *     (currently the manual refresh button) so the React shell can decide
+     *     whether to render those controls without probing the gated endpoints.
+     *
+     *     Distinct from :class:`~app.sep.plugins.framework.schema.Capabilities`,
+     *     which describes static UI feature flags on
+     *     :attr:`~app.sep.plugins.framework.schema.PluginSchema.capabilities`
+     *     (chaining, scheduling, alert_on_fail). This model is the per-
+     *     deployment runtime counterpart returned by ``GET /capabilities``.
+     *
+     *     :param manual_sync_enabled: Whether manual snippet refresh is enabled
+     *         in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).
+     *     :type manual_sync_enabled: bool
+     */
+    SnippetsCapabilitiesResponse: {
+      /** Manual Sync Enabled */
+      manual_sync_enabled: boolean;
     };
     /**
      * SourceEnum
@@ -3121,6 +5976,60 @@ export interface components {
      * @enum {string}
      */
     SourceEnum: 'pmm';
+    /**
+     * StringField
+     * @description Represent a single-line string input field.
+     *
+     *     :param field_type: The discriminator literal; always ``"string"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["string"]
+     *     :param min_length: Optional minimum character length. Defaults to
+     *         ``None``.
+     *     :type min_length: int | None
+     *     :param max_length: Optional maximum character length. Defaults to
+     *         ``None``.
+     *     :type max_length: int | None
+     *     :param pattern: Optional regular expression the value must match.
+     *         Defaults to ``None``.
+     *     :type pattern: NonEmptyStr | None
+     *     :param placeholder: Optional placeholder text displayed when the field is
+     *         empty. Defaults to ``None``.
+     *     :type placeholder: NonEmptyStr | None
+     */
+    StringField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default string
+       * @constant
+       * @enum {string}
+       */
+      type: 'string';
+      /** Min Length */
+      min_length?: number | null;
+      /** Max Length */
+      max_length?: number | null;
+      /** Pattern */
+      pattern?: string | null;
+      /** Placeholder */
+      placeholder?: string | null;
+    };
     /**
      * Table
      * @description Represent an inventory table.
@@ -3142,6 +6051,50 @@ export interface components {
       create: string;
       /** Keys */
       keys?: Record<string, never>;
+    };
+    /**
+     * TableField
+     * @description Represent an inventory table selector field.
+     *
+     *     ``depends_on`` is a forward reference to another field's ``name`` in the
+     *     same plugin schema (typically a ``SchemaField``); the React renderer
+     *     cascades table options from the selected schema. The referenced field
+     *     is not validated at the schema level.
+     *
+     *     :param field_type: The discriminator literal; always ``"table"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["table"]
+     *     :param depends_on: The name of the field whose value drives the list of
+     *         available tables.
+     *     :type depends_on: NonEmptyStr
+     */
+    TableField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default table
+       * @constant
+       * @enum {string}
+       */
+      type: 'table';
+      /** Depends On */
+      depends_on: string;
     };
     /**
      * TaskBackendEnum
@@ -3191,6 +6144,34 @@ export interface components {
        * @default false
        */
       alert_on_fail: boolean;
+    };
+    /**
+     * TaskDetailResponse
+     * @description Represent the aggregate payload for ``GET /api/plugins/tasks/{task_name}``.
+     *
+     *     Bundle the task definition, execution history, periodic schedules, and
+     *     executor host metadata into a single response for the React detail page.
+     *
+     *     :param task: The task definition as returned by the tasks API.
+     *     :type task: TaskResponse
+     *     :param execution_history: Paginated task history from the tasks API
+     *         (``items``, ``total``, ``offset``, ``limit``).
+     *     :type execution_history: dict[str, Any]
+     *     :param periodic_summary: Read-only summaries of periodic schedules
+     *         attached to this task.
+     *     :type periodic_summary: list[PeriodicTaskSummary]
+     *     :param executor_hosts: Executor hosts available for display, with
+     *         inventory-resolved labels when possible.
+     *     :type executor_hosts: list[ExecutorHostMetadata]
+     */
+    TaskDetailResponse: {
+      task: components['schemas']['TaskResponse'];
+      /** Execution History */
+      execution_history?: Record<string, never>;
+      /** Periodic Summary */
+      periodic_summary?: components['schemas']['PeriodicTaskSummary'][];
+      /** Executor Hosts */
+      executor_hosts?: components['schemas']['ExecutorHostMetadata'][];
     };
     /**
      * TaskExecuteRequest
@@ -3264,6 +6245,35 @@ export interface components {
       | 'lost'
       | 'stale';
     /**
+     * TaskListResponse
+     * @description Represent one task row in the read-only tasks plugin list API.
+     *
+     *     :param name: The unique name of the task.
+     *     :type name: str
+     *     :param backend: The backend system used for task execution.
+     *     :type backend: TaskBackendEnum
+     *     :param created_at: When the task was created, or ``None`` if unavailable.
+     *     :type created_at: UTCDatetime | None
+     *     :param created_by: Display name for the task creator (Casdoor username when
+     *         resolvable, otherwise the stored user id), or ``None`` if unknown.
+     *     :type created_by: str | None
+     *     :param last_updated_by: Display name for the user who last updated the
+     *         task (Casdoor username when resolvable, otherwise the stored user id),
+     *         or ``None`` if unknown.
+     *     :type last_updated_by: str | None
+     */
+    TaskListResponse: {
+      /** Name */
+      name: string;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+    };
+    /**
      * TaskOwner
      * @description Control the choice of task owners.
      *
@@ -3291,6 +6301,123 @@ export interface components {
       | 'BACKUP_MONGO'
       | 'RESTORE_MONGO'
       | 'BACKUP_PG';
+    /**
+     * TaskResponse
+     * @description Represent a task API response.
+     *
+     *     :param name: The name of the task.
+     *     :type name: str
+     *     :param data: The task data stored in JSON format.
+     *     :type data: dict
+     *     :param backend: The backend used for task execution. Defaults to Nomad.
+     *     :type backend: TaskBackendEnum
+     *     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
+     *     :type owner: TaskOwner
+     *     :param is_template: Whether the task is a template. Defaults to False.
+     *     :type is_template: bool
+     *     :param protected: Whether the task is protected from deletion. Defaults to False.
+     *     :type protected: bool
+     *     :param alert_on_fail: Whether to trigger an alert on task failure and
+     *         auto-resolve it on subsequent success. Defaults to False.
+     *     :type alert_on_fail: bool
+     *     :param deleted_at: The deletion timestamp, if applicable.
+     *     :type deleted_at: UTCDatetime | None
+     *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
+     *         logs and files generated by the task. Defaults to 0 (no anonymization).
+     *     :type anonymize_mask: int | None
+     *     :param created_by: The user ID of the user who created the task.
+     *     :type created_by: str | None
+     *     :param last_updated_by: The user ID of the user who last modified the task.
+     *     :type last_updated_by: str | None
+     */
+    TaskResponse: {
+      /** Id */
+      id: number | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Updated At */
+      updated_at?: string | null;
+      /** Name */
+      name: string;
+      /** Data */
+      data: Record<string, never>;
+      /** @default nomad */
+      backend: components['schemas']['TaskBackendEnum'];
+      /**
+       * Owner
+       * @default ANY
+       */
+      owner: string;
+      /**
+       * Is Template
+       * @default false
+       */
+      is_template: boolean;
+      /**
+       * Protected
+       * @default false
+       */
+      protected: boolean;
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /** Deleted At */
+      deleted_at: string | null;
+      /** Created By */
+      created_by: string | null;
+      /** Last Updated By */
+      last_updated_by: string | null;
+    };
+    /**
+     * TextAreaField
+     * @description Represent a multi-line string input field.
+     *
+     *     :param field_type: The discriminator literal; always ``"textarea"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["textarea"]
+     *     :param rows: Optional number of visible text rows. Defaults to ``None``.
+     *     :type rows: int | None
+     *     :param placeholder: Optional placeholder text displayed when the field is
+     *         empty. Defaults to ``None``.
+     *     :type placeholder: NonEmptyStr | None
+     */
+    TextAreaField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /**
+       * Type
+       * @default textarea
+       * @constant
+       * @enum {string}
+       */
+      type: 'textarea';
+      /** Rows */
+      rows?: number | null;
+      /** Placeholder */
+      placeholder?: string | null;
+    };
     /** ValidationError */
     ValidationError: {
       /** Location */
@@ -3307,465 +6434,47 @@ export interface components {
      */
     XtraBackupTool: 'innobackupex' | 'xtrabackup' | 'mariadb-backup';
     /**
-     * BackupCreate
-     * @description Represent a Backup creation form with proper case-insensitive fields.
+     * YamlField
+     * @description Represent a YAML-syntax multi-line text input field.
      *
-     *     :param hardlink: Whether to use hardlinks for full backups to save space.
-     *     :type hardlink: bool
-     *     :param compress: Whether to enable compression for backup data.
-     *     :type compress: bool
-     *     :param check_disk_space: Whether to check disk space before starting the backup.
-     *     :type check_disk_space: bool
-     *     :param encrypt: Whether to enable encryption for backup data.
-     *     :type encrypt: bool
-     *     :param encrypt_using_tmpdir: Whether to use a temporary directory for encryption operations.
-     *     :type encrypt_using_tmpdir: bool
-     *     :param post_run_encrypt: Whether to encrypt backup right after completion.
-     *     :type post_run_encrypt: bool
-     *     :param only_if_running_replica: Only perform backup if the server is a replica.
-     *     :type only_if_running_replica: bool
-     *     :param only_if_read_only: Only perform backup if the server is in read-only mode.
-     *     :type only_if_read_only: bool
-     *     :param logging_dir: Directory where logs are stored.
-     *     :type logging_dir: NonEmptyStr | EmptyStrToNone
-     *     :param backup_dir: Directory where backups are stored.
-     *     :type backup_dir: NonEmptyStr | EmptyStrToNone
-     *     :param defaults_file: Path to the MySQL defaults file.
-     *     :type defaults_file: NonEmptyStr | EmptyStrToNone
-     *     :param compression_algorithm: Compression algorithm to use.
-     *     :type compression_algorithm: CompressionAlgorithm | EmptyStrToNone
-     *     :param mydumper_daily_purge: Number of days to keep daily mydumper backups.
-     *     :type mydumper_daily_purge: int | EmptyStrToNone
-     *     :param mydumper_weekly_purge: Number of weeks to keep weekly mydumper backups.
-     *     :type mydumper_weekly_purge: int | EmptyStrToNone
-     *     :param mydumper_dump_triggers: Whether to include database triggers with mydumper.
-     *     :type mydumper_dump_triggers: bool
-     *     :param mydumper_desync_pxc: Whether to desynchronize PXC node before mydumper backup.
-     *     :type mydumper_desync_pxc: bool
-     *     :param mydumper_use_numa: Whether to enable NUMA support during mydumper backup.
-     *     :type mydumper_use_numa: bool
-     *     :param mydumper_extra_args: Additional command-line arguments for mydumper.
-     *     :type mydumper_extra_args: str | EmptyStrToNone
-     *     :param use_ftwrl_guardian: Whether to use FTWRL guardian to manage locks during backup.
-     *     :type use_ftwrl_guardian: bool
-     *     :param xtrabackup_copies: Number of backup copies for xtrabackup.
-     *     :type xtrabackup_copies: int | EmptyStrToNone
-     *     :param xtrabackup_kill_queries: Whether to terminate long-running queries.
-     *     :type xtrabackup_kill_queries: bool
-     *     :param xtrabackup_kill_queries_timeout: Maximum time (in seconds) to wait before terminating queries.
-     *     :type xtrabackup_kill_queries_timeout: int | EmptyStrToNone
-     *     :param xtrabackup_kill_query_type: Type of queries to avoid backup interruptions (select or all).
-     *     :type xtrabackup_kill_query_type: Literal["select", "all"] | EmptyStrToNone
-     *     :param xtrabackup_verify: Whether to verify backup after creation.
-     *     :type xtrabackup_verify: bool
-     *     :param xtrabackup_prepare: Whether to prepare the backup for restore.
-     *     :type xtrabackup_prepare: bool
-     *     :param xtrabackup_prepare_memory: Amount of memory allocated during prepare phase.
-     *     :type xtrabackup_prepare_memory: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_desync_pxc: Whether to desynchronize PXC node during xtrabackup.
-     *     :type xtrabackup_desync_pxc: bool
-     *     :param xtrabackup_rsync: Whether to use rsync for file copying in xtrabackup.
-     *     :type xtrabackup_rsync: bool
-     *     :param xtrabackup_replica_info: Whether to include replica info in xtrabackup.
-     *     :type xtrabackup_replica_info: bool
-     *     :param xtrabackup_defaults_file: Path to the defaults file for xtrabackup.
-     *     :type xtrabackup_defaults_file: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_extra_args: Additional command-line arguments passed to xtrabackup.
-     *     :type xtrabackup_extra_args: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_incremental_method: Method used for incremental backup.
-     *     :type xtrabackup_incremental_method: Literal["less_space", "fast_restore"] | EmptyStrToNone
-     *     :param xtrabackup_incremental_cycle: Frequency of incremental backups.
-     *     :type xtrabackup_incremental_cycle: Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
-     *     :param xtrabackup_local_ssh_destination: SSH destination for storing backups remotely.
-     *     :type xtrabackup_local_ssh_destination: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.
-     *     :type xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_stop_replica: Whether to stop the replica before xtrabackup.
-     *     :type xtrabackup_stop_replica: bool
-     *     :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
-     *     :type xtrabackup_lock_ddl: bool
-     *     :param xtrabackup_bin_cmd: Backup tool to use.
-     *     :type xtrabackup_bin_cmd: Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
-     *     :param binlog_prefix: Prefix used in binlog backup naming.
-     *     :type binlog_prefix: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_purge_days: Number of days to retain binlogs before purging.
-     *     :type binlog_purge_days: int | EmptyStrToNone
-     *     :param binlog_extra_args: Extra arguments for binlog backup command.
-     *     :type binlog_extra_args: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_compress_cmd: Command used to compress binlog backups.
-     *     :type binlog_compress_cmd: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_cmd: Command used to create binlog backups.
-     *     :type binlog_cmd: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_run_all: Whether to run all binlog backup types.
-     *     :type binlog_run_all: bool
-     *     :param s3_bucket: S3 bucket where backups will be stored.
-     *     :type s3_bucket: NonEmptyStr | EmptyStrToNone
-     *     :param s3_storage_class: S3 storage class (e.g., STANDARD, GLACIER).
-     *     :type s3_storage_class: NonEmptyStr | EmptyStrToNone
-     *     :param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.
-     *     :type skip_s3_safety_check: bool
-     *     :param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).
-     *         Example: "ChecksumAlgorithm=CRC32C".
-     *     :type awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone
-     *     :param rsync_path: Remote destination path for Rsync transfers.
-     *     :type rsync_path: NonEmptyStr | EmptyStrToNone
-     *     :param task_name: The name of the backup task.
-     *     :type task_name: NonEmptyStr
-     *     :param hostname: The hostname of the machine to back up.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: The identifier of the related service.
-     *     :type service_id: int
-     *     :param backup_type: The type of backup to perform.
-     *     :type backup_type: BackupType
-     *     :param encryption_recipient: The recipient used for encryption.
-     *     :type encryption_recipient: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_alternative_host: Optional alternative host for binlog operations.
-     *     :type binlog_alternative_host: NonEmptyStr | EmptyStrToNone
-     *     :param alias: Optional alias for the server in the SERVERS_LIST section.
-     *     :type alias: NonEmptyStr | EmptyStrToNone
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
+     *     :param field_type: The discriminator literal; always ``"yaml"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :type field_type: Literal["yaml"]
+     *     :param rows: Optional number of visible text rows. Defaults to ``None``.
+     *     :type rows: int | None
+     *     :param placeholder: Optional placeholder text displayed when the field is
+     *         empty. Defaults to ``None``.
+     *     :type placeholder: NonEmptyStr | None
      */
-    app__sep__plugins__backup__models__BackupCreate: {
+    YamlField: {
+      /** Name */
+      name: string;
+      /** Label */
+      label: string;
       /**
-       * Hardlink
+       * Required
        * @default false
        */
-      HARDLINK: boolean;
+      required: boolean;
+      /** Description */
+      description?: string | null;
+      /** Default */
+      default?: unknown | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Compress
-       * @default false
+       * Type
+       * @default yaml
+       * @constant
+       * @enum {string}
        */
-      COMPRESS: boolean;
-      /**
-       * Check Disk Space
-       * @default false
-       */
-      CHECK_DISK_SPACE: boolean;
-      /**
-       * Encrypt
-       * @default false
-       */
-      ENCRYPT: boolean;
-      /**
-       * Encrypt Using Tmpdir
-       * @default false
-       */
-      ENCRYPT_USING_TMPDIR: boolean;
-      /**
-       * Post Run Encrypt
-       * @default false
-       */
-      POST_RUN_ENCRYPT: boolean;
-      /**
-       * Only If Running Replica
-       * @default false
-       */
-      ONLY_IF_RUNNING_REPLICA: boolean;
-      /**
-       * Only If Read Only
-       * @default false
-       */
-      ONLY_IF_READ_ONLY: boolean;
-      /** Logging Dir */
-      LOGGING_DIR?: string | null;
-      /** Backup Dir */
-      BACKUP_DIR?: string | null;
-      /** Defaults File */
-      DEFAULTS_FILE?: string | null;
-      /** Compression Algorithm */
-      COMPRESSION_ALGORITHM?:
-        | components['schemas']['app__sep__plugins__backup__models__CompressionAlgorithm']
-        | null;
-      /** Mydumper Daily Purge */
-      MYDUMPER_DAILY_PURGE?: number | null;
-      /** Mydumper Weekly Purge */
-      MYDUMPER_WEEKLY_PURGE?: number | null;
-      /**
-       * Mydumper Dump Triggers
-       * @default false
-       */
-      MYDUMPER_DUMP_TRIGGERS: boolean;
-      /**
-       * Mydumper Desync Pxc
-       * @default false
-       */
-      MYDUMPER_DESYNC_PXC: boolean;
-      /**
-       * Mydumper Use Numa
-       * @default false
-       */
-      MYDUMPER_USE_NUMA: boolean;
-      /** Mydumper Extra Args */
-      MYDUMPER_EXTRA_ARGS?: string | null;
-      /**
-       * Use Ftwrl Guardian
-       * @default false
-       */
-      USE_FTWRL_GUARDIAN: boolean;
-      /** Xtrabackup Copies */
-      XTRABACKUP_COPIES?: number | null;
-      /**
-       * Xtrabackup Kill Queries
-       * @default false
-       */
-      XTRABACKUP_KILL_QUERIES: boolean;
-      /** Xtrabackup Kill Queries Timeout */
-      XTRABACKUP_KILL_QUERIES_TIMEOUT?: number | null;
-      /** Xtrabackup Kill Query Type */
-      XTRABACKUP_KILL_QUERY_TYPE?: ('select' | 'all') | null;
-      /**
-       * Xtrabackup Verify
-       * @default false
-       */
-      XTRABACKUP_VERIFY: boolean;
-      /**
-       * Xtrabackup Prepare
-       * @default false
-       */
-      XTRABACKUP_PREPARE: boolean;
-      /** Xtrabackup Prepare Memory */
-      XTRABACKUP_PREPARE_MEMORY?: string | null;
-      /**
-       * Xtrabackup Desync Pxc
-       * @default false
-       */
-      XTRABACKUP_DESYNC_PXC: boolean;
-      /**
-       * Xtrabackup Rsync
-       * @default false
-       */
-      XTRABACKUP_RSYNC: boolean;
-      /**
-       * Xtrabackup Replica Info
-       * @default false
-       */
-      XTRABACKUP_REPLICA_INFO: boolean;
-      /** Xtrabackup Defaults File */
-      XTRABACKUP_DEFAULTS_FILE?: string | null;
-      /** Xtrabackup Extra Args */
-      XTRABACKUP_EXTRA_ARGS?: string | null;
-      /** Xtrabackup Incremental Method */
-      XTRABACKUP_INCREMENTAL_METHOD?: ('less_space' | 'fast_restore') | null;
-      /** Xtrabackup Incremental Cycle */
-      XTRABACKUP_INCREMENTAL_CYCLE?:
-        | ('daily' | 'weekly' | '2' | '3' | '4' | '5' | '6' | '7')
-        | null;
-      /** Xtrabackup Local Ssh Destination */
-      XTRABACKUP_LOCAL_SSH_DESTINATION?: string | null;
-      /** Xtrabackup Aes256 Keyfile */
-      XTRABACKUP_AES256_KEYFILE?: string | null;
-      /**
-       * Xtrabackup Stop Replica
-       * @default false
-       */
-      XTRABACKUP_STOP_REPLICA: boolean;
-      /**
-       * Xtrabackup Lock Ddl
-       * @default false
-       */
-      XTRABACKUP_LOCK_DDL: boolean;
-      /** Xtrabackup Bin Cmd */
-      XTRABACKUP_BIN_CMD?: ('xtrabackup' | 'mariadb-backup' | 'innobackupex') | null;
-      /** Binlog Prefix */
-      BINLOG_PREFIX?: string | null;
-      /** Binlog Purge Days */
-      BINLOG_PURGE_DAYS?: number | null;
-      /** Binlog Extra Args */
-      BINLOG_EXTRA_ARGS?: string | null;
-      /** Binlog Compress Cmd */
-      BINLOG_COMPRESS_CMD?: string | null;
-      /** Binlog Cmd */
-      BINLOG_CMD?: string | null;
-      /**
-       * Binlog Run All
-       * @default true
-       */
-      BINLOG_RUN_ALL: boolean;
-      /** S3 Bucket */
-      S3_BUCKET?: string | null;
-      /** S3 Storage Class */
-      S3_STORAGE_CLASS?: string | null;
-      /**
-       * Skip S3 Safety Check
-       * @default false
-       */
-      SKIP_S3_SAFETY_CHECK: boolean;
-      /** Awscli S3 Upload Extra Args */
-      AWSCLI_S3_UPLOAD_EXTRA_ARGS?: string | null;
-      /** Gs Bucket */
-      GS_BUCKET?: string | null;
-      /** Rsync Path */
-      RSYNC_PATH?: string | null;
-      /** Task Name */
-      TASK_NAME: string;
-      /** Hostname */
-      HOSTNAME: string;
-      /** Service Id */
-      SERVICE_ID: number;
-      BACKUP_TYPE: components['schemas']['app__sep__plugins__backup__models__BackupType'];
-      /** Encryption Recipient */
-      ENCRYPTION_RECIPIENT?: string | null;
-      /** Binlog Alternative Host */
-      BINLOG_ALTERNATIVE_HOST?: string | null;
-      /** Alias */
-      ALIAS?: string | null;
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      ALERT_ON_FAIL: boolean;
-    };
-    /**
-     * BackupType
-     * @description Backup types.
-     * @enum {string}
-     */
-    app__sep__plugins__backup__models__BackupType: 'M' | 'X' | 'B';
-    /**
-     * CompressionAlgorithm
-     * @description Enumeration for Compression Algorithms.
-     * @enum {string}
-     */
-    app__sep__plugins__backup__models__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
-    /**
-     * RestoreCreate
-     * @description Model for creating a restore task.
-     *
-     *     Inherits from RestoreConfigAll and BaseRestoreConfigServer, adding task and service identifiers.
-     *
-     *     :param hostname: The hostname of the machine to back up.
-     *     :type hostname: NonEmptyStr
-     *     :param task_name: Name of the restore task.
-     *     :type task_name: NonEmptyStr
-     *     :param service_id: Service identifier for the restore task.
-     *     :type service_id: NonEmptyStr | EmptyStrToNone = None
-     *     :param schema_id: Schema identifier for restore.
-     *     :type schema_id: NonEmptyStr | EmptyStrToNone
-     */
-    app__sep__plugins__backup__restore__models__RestoreCreate: {
-      BACKUP_TYPE: components['schemas']['app__sep__plugins__backup__models__BackupType'];
-      /** Backup Source */
-      BACKUP_SOURCE: string;
-      /** Local Path */
-      LOCAL_PATH?: string | null;
-      /**
-       * Overwrite Tables
-       * @default false
-       */
-      OVERWRITE_TABLES: boolean;
-      /**
-       * Myloader Threads
-       * @default 4
-       */
-      MYLOADER_THREADS: number | null;
-      /** Myloader Extra Args */
-      MYLOADER_EXTRA_ARGS?: string | null;
-      /** Skip Databases */
-      SKIP_DATABASES?: string | null;
-      /** Include Databases */
-      INCLUDE_DATABASES?: string | null;
-      /** Pre Script */
-      PRE_SCRIPT?: string | null;
-      /** Post Script */
-      POST_SCRIPT?: string | null;
-      /**
-       * Skip Incrementals
-       * @default false
-       */
-      SKIP_INCREMENTALS: boolean;
-      /** Datadir */
-      DATADIR?: string | null;
-      /**
-       * Kill Mysql
-       * @default false
-       */
-      KILL_MYSQL: boolean;
-      /** Xb Prepare Memory */
-      XB_PREPARE_MEMORY?: string | null;
-      /**
-       * Xb Parallel
-       * @default 4
-       */
-      XB_PARALLEL: number | null;
-      /** Xtrabackup Bin Cmd */
-      XTRABACKUP_BIN_CMD?: components['schemas']['XtraBackupTool'] | null;
-      /**
-       * Restore Mycnf
-       * @default false
-       */
-      RESTORE_MYCNF: boolean;
-      /** Incremental Dest Path */
-      INCREMENTAL_DEST_PATH?: string | null;
-      /** Xtrabackup Restore Args */
-      XTRABACKUP_RESTORE_ARGS?: string | null;
-      /** Keyring File Data */
-      KEYRING_FILE_DATA?: string | null;
-      /** Xtrabackup Aes256 Keyfile */
-      XTRABACKUP_AES256_KEYFILE?: string | null;
-      /**
-       * Slave From Master
-       * @default false
-       */
-      SLAVE_FROM_MASTER: boolean;
-      /**
-       * Wait For Catchup
-       * @default false
-       */
-      WAIT_FOR_CATCHUP: boolean;
-      /** Master Ip */
-      MASTER_IP?: string | null;
-      /**
-       * Master Port
-       * @default 3306
-       */
-      MASTER_PORT: number | null;
-      /** Master User */
-      MASTER_USER?: string | null;
-      /** Master Password */
-      MASTER_PASSWORD?: string | null;
-      /** Start File */
-      START_FILE?: string | null;
-      /** Start Position */
-      START_POSITION?: number | null;
-      /** Stop File */
-      STOP_FILE?: string | null;
-      /** Stop Position */
-      STOP_POSITION?: number | null;
-      /** Use Sql File */
-      USE_SQL_FILE?: string | null;
-      /** Binlog Restore Extra Args */
-      BINLOG_RESTORE_EXTRA_ARGS?: string | null;
-      /** Logging Dir */
-      LOGGING_DIR?: string | null;
-      /** Port */
-      PORT?: number | null;
-      /** Custom Mysql Init Command */
-      CUSTOM_MYSQL_INIT_COMMAND?: string | null;
-      /**
-       * Ssh User
-       * @default percona
-       */
-      SSH_USER: string | null;
-      /**
-       * Ssh Port
-       * @default 22
-       */
-      SSH_PORT: number | null;
-      /** Ssh Key */
-      SSH_KEY?: string | null;
-      /** @default s3cmd */
-      S3_TOOL: components['schemas']['S3Tool'];
-      /** Gpg Password File */
-      GPG_PASSWORD_FILE?: string | null;
-      /** Hostname */
-      HOSTNAME: string;
-      /** Task Name */
-      TASK_NAME: string;
-      /** Service Id */
-      SERVICE_ID?: string | null;
-      /** Schema Id */
-      SCHEMA_ID?: string | null;
+      type: 'yaml';
+      /** Rows */
+      rows?: number | null;
+      /** Placeholder */
+      placeholder?: string | null;
     };
     /**
      * BackupCreate
@@ -3917,6 +6626,471 @@ export interface components {
       RESTORE_MONGOD_LOCATION_MAP?: string | null;
       /** Credentials Path */
       CREDENTIALS_PATH?: string | null;
+    };
+    /**
+     * BackupCreate
+     * @description Represent a Backup creation form with proper case-insensitive fields.
+     *
+     *     :param hardlink: Whether to use hardlinks for full backups to save space.
+     *     :type hardlink: bool
+     *     :param compress: Whether to enable compression for backup data.
+     *     :type compress: bool
+     *     :param check_disk_space: Whether to check disk space before starting the backup.
+     *     :type check_disk_space: bool
+     *     :param encrypt: Whether to enable encryption for backup data.
+     *     :type encrypt: bool
+     *     :param encrypt_using_tmpdir: Whether to use a temporary directory for encryption operations.
+     *     :type encrypt_using_tmpdir: bool
+     *     :param post_run_encrypt: Whether to encrypt backup right after completion.
+     *     :type post_run_encrypt: bool
+     *     :param only_if_running_replica: Only perform backup if the server is a replica.
+     *     :type only_if_running_replica: bool
+     *     :param only_if_read_only: Only perform backup if the server is in read-only mode.
+     *     :type only_if_read_only: bool
+     *     :param logging_dir: Directory where logs are stored.
+     *     :type logging_dir: NonEmptyStr | EmptyStrToNone
+     *     :param backup_dir: Directory where backups are stored.
+     *     :type backup_dir: NonEmptyStr | EmptyStrToNone
+     *     :param defaults_file: Path to the MySQL defaults file.
+     *     :type defaults_file: NonEmptyStr | EmptyStrToNone
+     *     :param compression_algorithm: Compression algorithm to use.
+     *     :type compression_algorithm: CompressionAlgorithm | EmptyStrToNone
+     *     :param mydumper_daily_purge: Number of days to keep daily mydumper backups.
+     *     :type mydumper_daily_purge: int | EmptyStrToNone
+     *     :param mydumper_weekly_purge: Number of weeks to keep weekly mydumper backups.
+     *     :type mydumper_weekly_purge: int | EmptyStrToNone
+     *     :param mydumper_dump_triggers: Whether to include database triggers with mydumper.
+     *     :type mydumper_dump_triggers: bool
+     *     :param mydumper_desync_pxc: Whether to desynchronize PXC node before mydumper backup.
+     *     :type mydumper_desync_pxc: bool
+     *     :param mydumper_use_numa: Whether to enable NUMA support during mydumper backup.
+     *     :type mydumper_use_numa: bool
+     *     :param mydumper_extra_args: Additional command-line arguments for mydumper.
+     *     :type mydumper_extra_args: str | EmptyStrToNone
+     *     :param use_ftwrl_guardian: Whether to use FTWRL guardian to manage locks during backup.
+     *     :type use_ftwrl_guardian: bool
+     *     :param xtrabackup_copies: Number of backup copies for xtrabackup.
+     *     :type xtrabackup_copies: int | EmptyStrToNone
+     *     :param xtrabackup_kill_queries: Whether to terminate long-running queries.
+     *     :type xtrabackup_kill_queries: bool
+     *     :param xtrabackup_kill_queries_timeout: Maximum time (in seconds) to wait before terminating queries.
+     *     :type xtrabackup_kill_queries_timeout: int | EmptyStrToNone
+     *     :param xtrabackup_kill_query_type: Type of queries to avoid backup interruptions (select or all).
+     *     :type xtrabackup_kill_query_type: Literal["select", "all"] | EmptyStrToNone
+     *     :param xtrabackup_verify: Whether to verify backup after creation.
+     *     :type xtrabackup_verify: bool
+     *     :param xtrabackup_prepare: Whether to prepare the backup for restore.
+     *     :type xtrabackup_prepare: bool
+     *     :param xtrabackup_prepare_memory: Amount of memory allocated during prepare phase.
+     *     :type xtrabackup_prepare_memory: NonEmptyStr | EmptyStrToNone
+     *     :param xtrabackup_desync_pxc: Whether to desynchronize PXC node during xtrabackup.
+     *     :type xtrabackup_desync_pxc: bool
+     *     :param xtrabackup_rsync: Whether to use rsync for file copying in xtrabackup.
+     *     :type xtrabackup_rsync: bool
+     *     :param xtrabackup_replica_info: Whether to include replica info in xtrabackup.
+     *     :type xtrabackup_replica_info: bool
+     *     :param xtrabackup_defaults_file: Path to the defaults file for xtrabackup.
+     *     :type xtrabackup_defaults_file: NonEmptyStr | EmptyStrToNone
+     *     :param xtrabackup_extra_args: Additional command-line arguments passed to xtrabackup.
+     *     :type xtrabackup_extra_args: NonEmptyStr | EmptyStrToNone
+     *     :param xtrabackup_incremental_method: Method used for incremental backup.
+     *     :type xtrabackup_incremental_method: Literal["less_space", "fast_restore"] | EmptyStrToNone
+     *     :param xtrabackup_incremental_cycle: Frequency of incremental backups.
+     *     :type xtrabackup_incremental_cycle: Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
+     *     :param xtrabackup_local_ssh_destination: SSH destination for storing backups remotely.
+     *     :type xtrabackup_local_ssh_destination: NonEmptyStr | EmptyStrToNone
+     *     :param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.
+     *     :type xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone
+     *     :param xtrabackup_stop_replica: Whether to stop the replica before xtrabackup.
+     *     :type xtrabackup_stop_replica: bool
+     *     :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
+     *     :type xtrabackup_lock_ddl: bool
+     *     :param xtrabackup_bin_cmd: Backup tool to use.
+     *     :type xtrabackup_bin_cmd: Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
+     *     :param binlog_prefix: Prefix used in binlog backup naming.
+     *     :type binlog_prefix: NonEmptyStr | EmptyStrToNone
+     *     :param binlog_purge_days: Number of days to retain binlogs before purging.
+     *     :type binlog_purge_days: int | EmptyStrToNone
+     *     :param binlog_extra_args: Extra arguments for binlog backup command.
+     *     :type binlog_extra_args: NonEmptyStr | EmptyStrToNone
+     *     :param binlog_compress_cmd: Command used to compress binlog backups.
+     *     :type binlog_compress_cmd: NonEmptyStr | EmptyStrToNone
+     *     :param binlog_cmd: Command used to create binlog backups.
+     *     :type binlog_cmd: NonEmptyStr | EmptyStrToNone
+     *     :param binlog_run_all: Whether to run all binlog backup types.
+     *     :type binlog_run_all: bool
+     *     :param s3_bucket: S3 bucket where backups will be stored.
+     *     :type s3_bucket: NonEmptyStr | EmptyStrToNone
+     *     :param s3_storage_class: S3 storage class (e.g., STANDARD, GLACIER).
+     *     :type s3_storage_class: NonEmptyStr | EmptyStrToNone
+     *     :param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.
+     *     :type skip_s3_safety_check: bool
+     *     :param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).
+     *         Example: "ChecksumAlgorithm=CRC32C".
+     *     :type awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone
+     *     :param rsync_path: Remote destination path for Rsync transfers.
+     *     :type rsync_path: NonEmptyStr | EmptyStrToNone
+     *     :param task_name: The name of the backup task.
+     *     :type task_name: NonEmptyStr
+     *     :param hostname: The hostname of the machine to back up.
+     *     :type hostname: NonEmptyStr
+     *     :param service_id: The identifier of the related service.
+     *     :type service_id: int
+     *     :param backup_type: The type of backup to perform.
+     *     :type backup_type: BackupType
+     *     :param encryption_recipient: The recipient used for encryption.
+     *     :type encryption_recipient: NonEmptyStr | EmptyStrToNone
+     *     :param binlog_alternative_host: Optional alternative host for binlog operations.
+     *     :type binlog_alternative_host: NonEmptyStr | EmptyStrToNone
+     *     :param alias: Optional alias for the server in the SERVERS_LIST section.
+     *     :type alias: NonEmptyStr | EmptyStrToNone
+     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
+     *     :type alert_on_fail: bool
+     */
+    app__sep__plugins__mysql_backups__models__BackupCreate: {
+      /**
+       * Hardlink
+       * @default false
+       */
+      HARDLINK: boolean;
+      /**
+       * Compress
+       * @default false
+       */
+      COMPRESS: boolean;
+      /**
+       * Check Disk Space
+       * @default false
+       */
+      CHECK_DISK_SPACE: boolean;
+      /**
+       * Encrypt
+       * @default false
+       */
+      ENCRYPT: boolean;
+      /**
+       * Encrypt Using Tmpdir
+       * @default false
+       */
+      ENCRYPT_USING_TMPDIR: boolean;
+      /**
+       * Post Run Encrypt
+       * @default false
+       */
+      POST_RUN_ENCRYPT: boolean;
+      /**
+       * Only If Running Replica
+       * @default false
+       */
+      ONLY_IF_RUNNING_REPLICA: boolean;
+      /**
+       * Only If Read Only
+       * @default false
+       */
+      ONLY_IF_READ_ONLY: boolean;
+      /** Logging Dir */
+      LOGGING_DIR?: string | null;
+      /** Backup Dir */
+      BACKUP_DIR?: string | null;
+      /** Defaults File */
+      DEFAULTS_FILE?: string | null;
+      /** Compression Algorithm */
+      COMPRESSION_ALGORITHM?:
+        | components['schemas']['app__sep__plugins__mysql_backups__models__CompressionAlgorithm']
+        | null;
+      /** Mydumper Daily Purge */
+      MYDUMPER_DAILY_PURGE?: number | null;
+      /** Mydumper Weekly Purge */
+      MYDUMPER_WEEKLY_PURGE?: number | null;
+      /**
+       * Mydumper Dump Triggers
+       * @default false
+       */
+      MYDUMPER_DUMP_TRIGGERS: boolean;
+      /**
+       * Mydumper Desync Pxc
+       * @default false
+       */
+      MYDUMPER_DESYNC_PXC: boolean;
+      /**
+       * Mydumper Use Numa
+       * @default false
+       */
+      MYDUMPER_USE_NUMA: boolean;
+      /** Mydumper Extra Args */
+      MYDUMPER_EXTRA_ARGS?: string | null;
+      /**
+       * Use Ftwrl Guardian
+       * @default false
+       */
+      USE_FTWRL_GUARDIAN: boolean;
+      /** Xtrabackup Copies */
+      XTRABACKUP_COPIES?: number | null;
+      /**
+       * Xtrabackup Kill Queries
+       * @default false
+       */
+      XTRABACKUP_KILL_QUERIES: boolean;
+      /** Xtrabackup Kill Queries Timeout */
+      XTRABACKUP_KILL_QUERIES_TIMEOUT?: number | null;
+      /** Xtrabackup Kill Query Type */
+      XTRABACKUP_KILL_QUERY_TYPE?: ('select' | 'all') | null;
+      /**
+       * Xtrabackup Verify
+       * @default false
+       */
+      XTRABACKUP_VERIFY: boolean;
+      /**
+       * Xtrabackup Prepare
+       * @default false
+       */
+      XTRABACKUP_PREPARE: boolean;
+      /** Xtrabackup Prepare Memory */
+      XTRABACKUP_PREPARE_MEMORY?: string | null;
+      /**
+       * Xtrabackup Desync Pxc
+       * @default false
+       */
+      XTRABACKUP_DESYNC_PXC: boolean;
+      /**
+       * Xtrabackup Rsync
+       * @default false
+       */
+      XTRABACKUP_RSYNC: boolean;
+      /**
+       * Xtrabackup Replica Info
+       * @default false
+       */
+      XTRABACKUP_REPLICA_INFO: boolean;
+      /** Xtrabackup Defaults File */
+      XTRABACKUP_DEFAULTS_FILE?: string | null;
+      /** Xtrabackup Extra Args */
+      XTRABACKUP_EXTRA_ARGS?: string | null;
+      /** Xtrabackup Incremental Method */
+      XTRABACKUP_INCREMENTAL_METHOD?: ('less_space' | 'fast_restore') | null;
+      /** Xtrabackup Incremental Cycle */
+      XTRABACKUP_INCREMENTAL_CYCLE?:
+        | ('daily' | 'weekly' | '2' | '3' | '4' | '5' | '6' | '7')
+        | null;
+      /** Xtrabackup Local Ssh Destination */
+      XTRABACKUP_LOCAL_SSH_DESTINATION?: string | null;
+      /** Xtrabackup Aes256 Keyfile */
+      XTRABACKUP_AES256_KEYFILE?: string | null;
+      /**
+       * Xtrabackup Stop Replica
+       * @default false
+       */
+      XTRABACKUP_STOP_REPLICA: boolean;
+      /**
+       * Xtrabackup Lock Ddl
+       * @default false
+       */
+      XTRABACKUP_LOCK_DDL: boolean;
+      /** Xtrabackup Bin Cmd */
+      XTRABACKUP_BIN_CMD?: ('xtrabackup' | 'mariadb-backup' | 'innobackupex') | null;
+      /** Binlog Prefix */
+      BINLOG_PREFIX?: string | null;
+      /** Binlog Purge Days */
+      BINLOG_PURGE_DAYS?: number | null;
+      /** Binlog Extra Args */
+      BINLOG_EXTRA_ARGS?: string | null;
+      /** Binlog Compress Cmd */
+      BINLOG_COMPRESS_CMD?: string | null;
+      /** Binlog Cmd */
+      BINLOG_CMD?: string | null;
+      /**
+       * Binlog Run All
+       * @default true
+       */
+      BINLOG_RUN_ALL: boolean;
+      /** S3 Bucket */
+      S3_BUCKET?: string | null;
+      /** S3 Storage Class */
+      S3_STORAGE_CLASS?: string | null;
+      /**
+       * Skip S3 Safety Check
+       * @default false
+       */
+      SKIP_S3_SAFETY_CHECK: boolean;
+      /** Awscli S3 Upload Extra Args */
+      AWSCLI_S3_UPLOAD_EXTRA_ARGS?: string | null;
+      /** Gs Bucket */
+      GS_BUCKET?: string | null;
+      /** Rsync Path */
+      RSYNC_PATH?: string | null;
+      /** Task Name */
+      TASK_NAME: string;
+      /** Hostname */
+      HOSTNAME: string;
+      /** Service Id */
+      SERVICE_ID: number;
+      BACKUP_TYPE: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      /** Encryption Recipient */
+      ENCRYPTION_RECIPIENT?: string | null;
+      /** Binlog Alternative Host */
+      BINLOG_ALTERNATIVE_HOST?: string | null;
+      /** Alias */
+      ALIAS?: string | null;
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      ALERT_ON_FAIL: boolean;
+    };
+    /**
+     * BackupType
+     * @description Backup types.
+     * @enum {string}
+     */
+    app__sep__plugins__mysql_backups__models__BackupType: 'M' | 'X' | 'B';
+    /**
+     * CompressionAlgorithm
+     * @description Enumeration for Compression Algorithms.
+     * @enum {string}
+     */
+    app__sep__plugins__mysql_backups__models__CompressionAlgorithm:
+      | 'zstd'
+      | 'lz4'
+      | 'gzip'
+      | 'quicklz';
+    /**
+     * RestoreCreate
+     * @description Model for creating a restore task.
+     *
+     *     Inherits from RestoreConfigAll and BaseRestoreConfigServer, adding task and service identifiers.
+     *
+     *     :param hostname: The hostname of the machine to back up.
+     *     :type hostname: NonEmptyStr
+     *     :param task_name: Name of the restore task.
+     *     :type task_name: NonEmptyStr
+     *     :param service_id: Service identifier for the restore task.
+     *     :type service_id: NonEmptyStr | EmptyStrToNone = None
+     *     :param schema_id: Schema identifier for restore.
+     *     :type schema_id: NonEmptyStr | EmptyStrToNone
+     */
+    app__sep__plugins__mysql_backups__restore__models__RestoreCreate: {
+      BACKUP_TYPE: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      /** Backup Source */
+      BACKUP_SOURCE: string;
+      /** Local Path */
+      LOCAL_PATH?: string | null;
+      /**
+       * Overwrite Tables
+       * @default false
+       */
+      OVERWRITE_TABLES: boolean;
+      /**
+       * Myloader Threads
+       * @default 4
+       */
+      MYLOADER_THREADS: number | null;
+      /** Myloader Extra Args */
+      MYLOADER_EXTRA_ARGS?: string | null;
+      /** Skip Databases */
+      SKIP_DATABASES?: string | null;
+      /** Include Databases */
+      INCLUDE_DATABASES?: string | null;
+      /** Pre Script */
+      PRE_SCRIPT?: string | null;
+      /** Post Script */
+      POST_SCRIPT?: string | null;
+      /**
+       * Skip Incrementals
+       * @default false
+       */
+      SKIP_INCREMENTALS: boolean;
+      /** Datadir */
+      DATADIR?: string | null;
+      /**
+       * Kill Mysql
+       * @default false
+       */
+      KILL_MYSQL: boolean;
+      /** Xb Prepare Memory */
+      XB_PREPARE_MEMORY?: string | null;
+      /**
+       * Xb Parallel
+       * @default 4
+       */
+      XB_PARALLEL: number | null;
+      /** Xtrabackup Bin Cmd */
+      XTRABACKUP_BIN_CMD?: components['schemas']['XtraBackupTool'] | null;
+      /**
+       * Restore Mycnf
+       * @default false
+       */
+      RESTORE_MYCNF: boolean;
+      /** Incremental Dest Path */
+      INCREMENTAL_DEST_PATH?: string | null;
+      /** Xtrabackup Restore Args */
+      XTRABACKUP_RESTORE_ARGS?: string | null;
+      /** Keyring File Data */
+      KEYRING_FILE_DATA?: string | null;
+      /** Xtrabackup Aes256 Keyfile */
+      XTRABACKUP_AES256_KEYFILE?: string | null;
+      /**
+       * Slave From Master
+       * @default false
+       */
+      SLAVE_FROM_MASTER: boolean;
+      /**
+       * Wait For Catchup
+       * @default false
+       */
+      WAIT_FOR_CATCHUP: boolean;
+      /** Master Ip */
+      MASTER_IP?: string | null;
+      /**
+       * Master Port
+       * @default 3306
+       */
+      MASTER_PORT: number | null;
+      /** Master User */
+      MASTER_USER?: string | null;
+      /** Master Password */
+      MASTER_PASSWORD?: string | null;
+      /** Start File */
+      START_FILE?: string | null;
+      /** Start Position */
+      START_POSITION?: number | null;
+      /** Stop File */
+      STOP_FILE?: string | null;
+      /** Stop Position */
+      STOP_POSITION?: number | null;
+      /** Use Sql File */
+      USE_SQL_FILE?: string | null;
+      /** Binlog Restore Extra Args */
+      BINLOG_RESTORE_EXTRA_ARGS?: string | null;
+      /** Logging Dir */
+      LOGGING_DIR?: string | null;
+      /** Port */
+      PORT?: number | null;
+      /** Custom Mysql Init Command */
+      CUSTOM_MYSQL_INIT_COMMAND?: string | null;
+      /**
+       * Ssh User
+       * @default percona
+       */
+      SSH_USER: string | null;
+      /**
+       * Ssh Port
+       * @default 22
+       */
+      SSH_PORT: number | null;
+      /** Ssh Key */
+      SSH_KEY?: string | null;
+      /** @default s3cmd */
+      S3_TOOL: components['schemas']['S3Tool'];
+      /** Gpg Password File */
+      GPG_PASSWORD_FILE?: string | null;
+      /** Hostname */
+      HOSTNAME: string;
+      /** Task Name */
+      TASK_NAME: string;
+      /** Service Id */
+      SERVICE_ID?: string | null;
+      /** Schema Id */
+      SCHEMA_ID?: string | null;
     };
   };
   responses: never;
@@ -4146,6 +7320,41 @@ export interface operations {
     requestBody?: {
       content: {
         'application/x-www-form-urlencoded': components['schemas']['Body_sync_inventory_inventory_sync__post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schedule_create_inventory_schedule__post: {
+    parameters: {
+      query?: never;
+      header?: {
+        referer?: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['InventorySyncScheduleCreateForm'];
       };
     };
     responses: {
@@ -4647,46 +7856,16 @@ export interface operations {
       };
     };
   };
-  snippets_detail_snippets__snippet_filename__get: {
+  snippets_approve_snippets_approve_post: {
     parameters: {
-      query?: never;
-      header?: never;
-      path: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
         snippet_filename: string;
       };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_execute_snippets__snippet_filename__post: {
-    parameters: {
-      query?: never;
       header?: {
         referer?: string | null;
       };
-      path: {
-        snippet_filename: string;
-      };
+      path?: never;
       cookie?: never;
     };
     requestBody?: never;
@@ -4711,48 +7890,16 @@ export interface operations {
       };
     };
   };
-  snippets_approve_snippets__snippet_filename__approve_post: {
+  snippets_remove_approval_snippets_remove_approval_post: {
     parameters: {
-      query?: never;
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
       header?: {
         referer?: string | null;
       };
-      path: {
-        snippet_filename: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_remove_approval_snippets__snippet_filename__remove_approval_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string | null;
-      };
-      path: {
-        snippet_filename: string;
-      };
+      path?: never;
       cookie?: never;
     };
     requestBody?: never;
@@ -4817,6 +7964,72 @@ export interface operations {
         };
         content: {
           'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_execute_snippets_execute_post: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: {
+        referer?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_detail_snippets_detail_get: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
         };
       };
       /** @description Validation Error */
@@ -5241,7 +8454,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_index_backups_restores__get: {
+  restores_restores_index_mysql_backups_restores__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -5261,7 +8474,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_create_backups_restores__post: {
+  restores_restores_create_mysql_backups_restores__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -5270,7 +8483,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup__restore__models__RestoreCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
       };
     };
     responses: {
@@ -5294,7 +8507,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_detail_backups_restores__task_name__get: {
+  restores_restores_detail_mysql_backups_restores__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -5325,7 +8538,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_execute_backups_restores__task_name__post: {
+  restores_restores_execute_mysql_backups_restores__task_name__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -5336,7 +8549,7 @@ export interface operations {
     };
     requestBody?: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_restores_restores_execute_backups_restores__task_name__post'];
+        'application/x-www-form-urlencoded': components['schemas']['Body_restores_restores_execute_mysql_backups_restores__task_name__post'];
       };
     };
     responses: {
@@ -5358,7 +8571,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_update_backups_restores__task_name__update_post: {
+  restores_restores_update_mysql_backups_restores__task_name__update_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -5369,7 +8582,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup__restore__models__RestoreCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
       };
     };
     responses: {
@@ -5391,7 +8604,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_delete_backups_restores__task_name__delete_post: {
+  restores_restores_delete_mysql_backups_restores__task_name__delete_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -5420,7 +8633,7 @@ export interface operations {
       };
     };
   };
-  backups_index_backups__get: {
+  mysql_backups_index_mysql_backups__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -5440,7 +8653,7 @@ export interface operations {
       };
     };
   };
-  backups_create_backups__post: {
+  mysql_backups_create_mysql_backups__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -5449,7 +8662,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup__models__BackupCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
       };
     };
     responses: {
@@ -5473,7 +8686,7 @@ export interface operations {
       };
     };
   };
-  backups_docs_backups_docs_get: {
+  mysql_backups_docs_mysql_backups_docs_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -5493,7 +8706,7 @@ export interface operations {
       };
     };
   };
-  backups_detail_backups__task_name__get: {
+  mysql_backups_detail_mysql_backups__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -5524,7 +8737,7 @@ export interface operations {
       };
     };
   };
-  backups_execute_backups__task_name__post: {
+  mysql_backups_execute_mysql_backups__task_name__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -5535,7 +8748,7 @@ export interface operations {
     };
     requestBody?: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_backups_execute_backups__task_name__post'];
+        'application/x-www-form-urlencoded': components['schemas']['Body_mysql_backups_execute_mysql_backups__task_name__post'];
       };
     };
     responses: {
@@ -5557,7 +8770,7 @@ export interface operations {
       };
     };
   };
-  backups_update_backups__task_name__update_post: {
+  mysql_backups_update_mysql_backups__task_name__update_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -5568,7 +8781,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup__models__BackupCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
       };
     };
     responses: {
@@ -5590,7 +8803,7 @@ export interface operations {
       };
     };
   };
-  backups_delete_backups__task_name__delete_post: {
+  mysql_backups_delete_mysql_backups__task_name__delete_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -5659,69 +8872,6 @@ export interface operations {
         };
         content: {
           'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_api_list_checksums_api__get: {
-    parameters: {
-      query?: {
-        service_type?: components['schemas']['ServiceTypeEnum'] | null;
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ChecksumTaskResponse'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_api_detail_checksums_api__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ChecksumTaskResponse'];
         };
       };
       /** @description Validation Error */
@@ -6230,7 +9380,11 @@ export interface operations {
       path?: never;
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DipperScript'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       200: {
@@ -6442,13 +9596,14 @@ export interface operations {
       };
     };
   };
-  troubleshooting_execute_alert_troubleshooting_execute__snippet_filename__post: {
+  troubleshooting_execute_alert_troubleshooting_execute_post: {
     parameters: {
-      query?: never;
-      header?: never;
-      path: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
         snippet_filename: string;
       };
+      header?: never;
+      path?: never;
       cookie?: never;
     };
     requestBody?: never;
@@ -6923,6 +10078,41 @@ export interface operations {
       };
     };
   };
+  sep_stop_task_execution_stop_task__task_history_id__post: {
+    parameters: {
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
+      };
+      header?: {
+        referer?: string;
+      };
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   sep_periodic_task_create_periodic__post: {
     parameters: {
       query?: never;
@@ -7026,41 +10216,6 @@ export interface operations {
       };
     };
   };
-  sep_stop_task_execution_stop_task__task_history_id__post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: {
-        referer?: string;
-      };
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   sep_download_artifact_artifacts_download__token__get: {
     parameters: {
       query?: never;
@@ -7092,7 +10247,7 @@ export interface operations {
       };
     };
   };
-  stub_stub_api_plugins__stub__get: {
+  tasks_get_schema_api_plugins_tasks_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -7107,9 +10262,1189 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  tasks_tasks_api_list_api_plugins_tasks__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskListResponse'][];
+        };
+      };
+    };
+  };
+  tasks_tasks_api_detail_api_plugins_tasks__task_name__get: {
+    parameters: {
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_get_schema_api_plugins_inventory_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  inventory_inventory_sync_trigger_api_plugins_inventory_sync__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['InventorySyncTriggerWrite'] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_sync_status_api_plugins_inventory_sync_status__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InventorySyncStatusResponse'];
+        };
+      };
+    };
+  };
+  inventory_inventory_plugin_tasks_api_plugins_inventory__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginTaskResponse'][];
+        };
+      };
+    };
+  };
+  inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AvailableSyncer'][];
+        };
+      };
+    };
+  };
+  inventory_inventory_list_entity_api_plugins_inventory__entity___get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown[];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_create_entity_api_plugins_inventory__entity___post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+        item_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+        item_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+        item_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_get_schema_api_plugins_snippets_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SnippetsCapabilitiesResponse'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_refresh_api_plugins_snippets_refresh_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RefreshResponse'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_list_api_plugins_snippets__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SnippetResponse'][];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_per_snippet_schema_api_plugins_snippets_snippet_schema_get: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ScriptPreviewResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_download_api_plugins_snippets_snippet_download_get: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_history_api_plugins_snippets_snippet_history_get: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_execute_api_plugins_snippets_snippet_execute_post: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SnippetExecutionRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SnippetExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SnippetResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SnippetBatchApproveRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BatchApprovalResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_get_schema_api_plugins_atw_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  atw_atw_api_list_api_plugins_atw__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ATWCategoryListing'][];
+        };
+      };
+    };
+  };
+  checksums_get_schema_api_plugins_checksums_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  checksums_checksums_api_list_api_plugins_checksums__get: {
+    parameters: {
+      query?: {
+        service_type?: components['schemas']['ServiceTypeEnum'] | null;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChecksumTaskResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums_checksums_api_create_api_plugins_checksums__post: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChecksumTaskWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChecksumTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums_checksums_api_detail_api_plugins_checksums__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChecksumTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums_checksums_api_update_api_plugins_checksums__task_name__put: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChecksumTaskWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChecksumTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums_checksums_api_delete_api_plugins_checksums__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChecksumExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChecksumExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  dipper_get_schema_api_plugins_dipper_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  dipper_dipper_api_list_api_plugins_dipper__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+    };
+  };
+  dipper_dipper_api_execute_api_plugins_dipper__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DipperExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DipperExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get: {
+    parameters: {
+      query: {
+        service_id: number;
+        collector_type: components['schemas']['CollectorTypeEnum'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get: {
+    parameters: {
+      query: {
+        service_id: number;
+        collector_type: components['schemas']['CollectorTypeEnum'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ScriptPreviewResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AlertGroup'][];
+        };
+      };
+    };
+  };
+  alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_type: components['schemas']['AlertServiceType'];
+        alert_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AlertDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_list_hosts_api_sep_hosts__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HostResponse'][];
+        };
+      };
+    };
+  };
+  sep_get_task_stats_api_sep_task_stats__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
           'application/json': {
-            [key: string]: boolean;
+            [key: string]: unknown;
           };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
