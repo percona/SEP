@@ -15,7 +15,12 @@
 
 """Define the plugin schema for the Alert Troubleshooting plugin."""
 
-from app.sep.plugins.framework.schema import Column, ListView, PluginSchema
+from app.sep.plugins.framework.schema import (
+    Column,
+    DetailView,
+    ListView,
+    PluginSchema,
+)
 
 ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA = PluginSchema(
     name="alert_troubleshooting",
@@ -35,4 +40,5 @@ ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA = PluginSchema(
         ],
         default_sort="service_type",
     ),
+    detail_view=DetailView(sections=[]),
 )

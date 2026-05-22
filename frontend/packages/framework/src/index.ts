@@ -134,6 +134,8 @@ export type { SnippetExecutionFormPayload } from './utils/snippetFormSubmission'
 
 export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetPlugin';
 
+export { resolvePath } from './utils/resolvePath';
+
 export {
   SNIPPETS_PLUGINS_API_BASE,
   SNIPPET_PLUGIN_PER_SNIPPET_BASE,
