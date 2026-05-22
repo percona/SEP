@@ -18,6 +18,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const BACKUPS_ROUTE = '/backups/mongodb/backups';
+const RESTORES_ROUTE = '/backups/mongodb/restores';
 
 const BACKUPS_DISPLAY_NAME = 'MongoDB Backups';
 const RESTORES_DISPLAY_NAME = 'MongoDB Restores';
@@ -25,6 +26,11 @@ const RESTORES_DISPLAY_NAME = 'MongoDB Restores';
 const MOCK_BACKUP_TASK_NAME = 'pbm-config-task';
 const NEW_BACKUP_TASK_NAME = 'e2e-smoke-backup';
 const NEW_BACKUP_HOSTNAME = 'e2e-mongo-host';
+
+const MOCK_RESTORE_TASK_NAME = 'pbm-restore-task';
+const NEW_RESTORE_TASK_NAME = 'e2e-smoke-restore';
+const NEW_RESTORE_HOSTNAME = 'e2e-restore-host';
+const NEW_RESTORE_BACKUP_SOURCE = '2026-05-01T12:00:00Z';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -65,7 +71,31 @@ const MOCK_BACKUPS_SCHEMA = {
 const MOCK_RESTORES_SCHEMA = {
   name: 'backup_mongo_restores',
   display_name: RESTORES_DISPLAY_NAME,
-  forms: [],
+  forms: [
+    {
+      title: 'Task',
+      fields: [
+        { type: 'string', name: 'task_name', label: 'Task Name', required: true },
+        { type: 'string', name: 'hostname', label: 'Executor Host', required: true },
+        {
+          type: 'choice',
+          name: 'backup_type',
+          label: 'Backup Type',
+          required: true,
+          choices: [
+            { label: 'Logical', value: 'pbm_logical' },
+            { label: 'Physical', value: 'pbm_physical' },
+          ],
+        },
+        {
+          type: 'string',
+          name: 'backup_source',
+          label: 'Backup Source',
+          required: true,
+        },
+      ],
+    },
+  ],
   list_view: {
     columns: [
       { key: 'name', label: 'Name', sortable: true },
@@ -121,16 +151,47 @@ const MOCK_BACKUP_TASK_LIST: BackupTaskRow[] = [
   buildBackupTaskRow(MOCK_BACKUP_TASK_NAME, 'mongo-host'),
 ];
 
-const MOCK_RESTORE_TASK_LIST = [
-  {
-    name: 'pbm-restore-task',
-    hostname: 'mongo-host',
-    status: 'pending',
-    backup_type: 'pbm_logical',
-    backup_source: '2026-04-29T10:00:00Z',
-    created_at: '2026-05-19T12:00:00Z',
-    created_by: 'admin',
-  },
+type RestoreTaskRow = BackupTaskRow & { backup_source: string };
+
+function buildRestoreTaskRow(
+  name: string,
+  hostname: string,
+  backupSource: string,
+  backupType = 'pbm_logical',
+): RestoreTaskRow {
+  return {
+    ...buildBackupTaskRow(name, hostname),
+    backup_type: backupType,
+    backup_source: backupSource,
+  };
+}
+
+function buildRestoreCreateResponse(
+  name: string,
+  hostname: string,
+  backupSource: string,
+  backupType = 'pbm_logical',
+) {
+  const row = buildRestoreTaskRow(name, hostname, backupSource, backupType);
+  return {
+    ...row,
+    id: 43,
+    owner: 'RESTORE_MONGO',
+    backend: 'PROXY',
+    data: {
+      backup_type: backupType,
+      meta: { target: hostname },
+    },
+    protected: false,
+    alert_on_fail: false,
+    updated_at: row.created_at,
+    last_updated_by: row.created_by,
+    derived_tasks: [],
+  };
+}
+
+const MOCK_RESTORE_TASK_LIST: RestoreTaskRow[] = [
+  buildRestoreTaskRow(MOCK_RESTORE_TASK_NAME, 'mongo-host', '2026-04-29T10:00:00Z'),
 ];
 
 function isBenignConsoleError(msg: string): boolean {
@@ -144,6 +205,8 @@ function isBenignConsoleError(msg: string): boolean {
 }
 
 type BackupApiState = { tasks: BackupTaskRow[] };
+type RestoreApiState = { tasks: RestoreTaskRow[] };
+type PluginApiState = { backup: BackupApiState; restore: RestoreApiState };
 
 /** Task name segment from ``/api/plugins/backup_mongo/{task_name}`` (not list/schema/restores). */
 function backupTaskNameFromPath(pathname: string): string | null {
@@ -158,10 +221,24 @@ function backupTaskNameFromPath(pathname: string): string | null {
   return decodeURIComponent(segment);
 }
 
+/** Task name segment from ``/api/plugins/backup_mongo/restores/{task_name}``. */
+function restoreTaskNameFromPath(pathname: string): string | null {
+  const prefix = '/api/plugins/backup_mongo/restores/';
+  if (!pathname.startsWith(prefix)) {
+    return null;
+  }
+  const segment = pathname.slice(prefix.length);
+  if (!segment || segment === 'schema') {
+    return null;
+  }
+  return decodeURIComponent(segment);
+}
+
 /**
  * Authenticated session with backup_mongo and restores plugin routes mocked.
  */
-async function mockBackupMongoApis(page: Page, backupState: BackupApiState): Promise<void> {
+async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promise<void> {
+  const { backup: backupState, restore: restoreState } = apiState;
   await page.route('**/api/**', (route) => {
     const req = route.request();
     const { pathname } = new URL(req.url());
@@ -253,6 +330,63 @@ async function mockBackupMongoApis(page: Page, backupState: BackupApiState): Pro
     }
 
     if (
+      req.method() === 'POST' &&
+      (pathname === '/api/plugins/backup_mongo/restores/' ||
+        pathname === '/api/plugins/backup_mongo/restores')
+    ) {
+      const body = req.postDataJSON() as {
+        task_name?: string;
+        hostname?: string;
+        backup_type?: string;
+        backup_source?: string;
+      };
+      const taskName = String(body.task_name ?? NEW_RESTORE_TASK_NAME);
+      const hostname = String(body.hostname ?? NEW_RESTORE_HOSTNAME);
+      const backupType = String(body.backup_type ?? 'pbm_logical');
+      const backupSource = String(body.backup_source ?? NEW_RESTORE_BACKUP_SOURCE);
+      const created = buildRestoreCreateResponse(taskName, hostname, backupSource, backupType);
+      restoreState.tasks = [
+        buildRestoreTaskRow(taskName, hostname, backupSource, backupType),
+        ...restoreState.tasks,
+      ];
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+    }
+
+    const restoreTaskName = restoreTaskNameFromPath(pathname);
+
+    if (req.method() === 'DELETE' && restoreTaskName) {
+      restoreState.tasks = restoreState.tasks.filter((task) => task.name !== restoreTaskName);
+      return route.fulfill({ status: 204, body: '' });
+    }
+
+    if (req.method() === 'GET' && restoreTaskName) {
+      const task = restoreState.tasks.find((row) => row.name === restoreTaskName);
+      if (!task) {
+        return route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Not found' }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          buildRestoreCreateResponse(
+            task.name,
+            task.hostname,
+            task.backup_source,
+            task.backup_type,
+          ),
+        ),
+      });
+    }
+
+    if (
       req.method() === 'GET' &&
       (pathname === '/api/plugins/backup_mongo/restores/' ||
         pathname === '/api/plugins/backup_mongo/restores')
@@ -260,7 +394,7 @@ async function mockBackupMongoApis(page: Page, backupState: BackupApiState): Pro
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_RESTORE_TASK_LIST),
+        body: JSON.stringify(restoreState.tasks),
       });
     }
 
@@ -273,11 +407,14 @@ async function mockBackupMongoApis(page: Page, backupState: BackupApiState): Pro
 }
 
 test.describe('MongoDB backup_mongo plugin smoke', () => {
-  let backupState: BackupApiState;
+  let apiState: PluginApiState;
 
   test.beforeEach(async ({ page }) => {
-    backupState = { tasks: [...MOCK_BACKUP_TASK_LIST] };
-    await mockBackupMongoApis(page, backupState);
+    apiState = {
+      backup: { tasks: [...MOCK_BACKUP_TASK_LIST] },
+      restore: { tasks: [...MOCK_RESTORE_TASK_LIST] },
+    };
+    await mockBackupMongoApis(page, apiState);
   });
 
   test('backups list page mounts with task rows', async ({ page }) => {
@@ -335,7 +472,7 @@ test.describe('MongoDB backup_mongo plugin smoke', () => {
     });
     await expect(page.getByText(NEW_BACKUP_TASK_NAME)).toBeVisible();
     await expect(page.getByText(NEW_BACKUP_HOSTNAME)).toBeVisible();
-    expect(backupState.tasks.some((task) => task.name === NEW_BACKUP_TASK_NAME)).toBe(true);
+    expect(apiState.backup.tasks.some((task) => task.name === NEW_BACKUP_TASK_NAME)).toBe(true);
   });
 
   test('deletes a backup task', async ({ page }) => {
@@ -369,6 +506,63 @@ test.describe('MongoDB backup_mongo plugin smoke', () => {
     await expect
       .poll(() => deleteRequests, { timeout: 5_000 })
       .toContain(`/api/plugins/backup_mongo/${MOCK_BACKUP_TASK_NAME}`);
-    expect(backupState.tasks.some((task) => task.name === MOCK_BACKUP_TASK_NAME)).toBe(false);
+    expect(apiState.backup.tasks.some((task) => task.name === MOCK_BACKUP_TASK_NAME)).toBe(false);
+  });
+
+  test('creates a restore task', async ({ page }) => {
+    await page.goto(`${RESTORES_ROUTE}/new`);
+
+    await expect(page.getByRole('heading', { name: /new mongodb restores/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByRole('textbox', { name: /task name/i }).fill(NEW_RESTORE_TASK_NAME);
+    await page.getByRole('textbox', { name: /executor host/i }).fill(NEW_RESTORE_HOSTNAME);
+    await page.getByRole('textbox', { name: /backup source/i }).fill(NEW_RESTORE_BACKUP_SOURCE);
+    await page.getByRole('radio', { name: 'Logical' }).check();
+    await page.getByRole('button', { name: /create mongodb restores/i }).click();
+
+    await expect(page).toHaveURL(/\/backups\/mongodb\/restores\/?$/);
+    await expect(page.getByRole('heading', { name: RESTORES_DISPLAY_NAME })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText(NEW_RESTORE_TASK_NAME)).toBeVisible();
+    await expect(page.getByText(NEW_RESTORE_HOSTNAME)).toBeVisible();
+    await expect(page.getByText(NEW_RESTORE_BACKUP_SOURCE)).toBeVisible();
+    expect(apiState.restore.tasks.some((task) => task.name === NEW_RESTORE_TASK_NAME)).toBe(true);
+  });
+
+  test('deletes a restore task', async ({ page }) => {
+    const deleteRequests: string[] = [];
+    page.on('request', (req) => {
+      if (req.method() === 'DELETE') {
+        deleteRequests.push(new URL(req.url()).pathname);
+      }
+    });
+
+    await page.goto(RESTORES_ROUTE);
+
+    await expect(page.getByRole('heading', { name: RESTORES_DISPLAY_NAME })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText(MOCK_RESTORE_TASK_NAME)).toBeVisible({ timeout: 15_000 });
+
+    await page.getByText(MOCK_RESTORE_TASK_NAME).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/backups/mongodb/restores/task/${MOCK_RESTORE_TASK_NAME}`),
+    );
+
+    await page.getByTestId('plugin-task-delete').click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(/delete mongodb restores task/i)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Delete' }).click();
+
+    await expect(page).toHaveURL(/\/backups\/mongodb\/restores\/?$/);
+    await expect(page.getByText(MOCK_RESTORE_TASK_NAME)).toHaveCount(0);
+    await expect
+      .poll(() => deleteRequests, { timeout: 5_000 })
+      .toContain(`/api/plugins/backup_mongo/restores/${MOCK_RESTORE_TASK_NAME}`);
+    expect(apiState.restore.tasks.some((task) => task.name === MOCK_RESTORE_TASK_NAME)).toBe(false);
   });
 });
