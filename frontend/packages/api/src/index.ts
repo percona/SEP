@@ -105,5 +105,6 @@ export {
   useDeletePluginTask,
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
+  useDashboardStats,
 } from './hooks';
-export type { AlertConfig } from './hooks';
+export type { AlertConfig, DashboardStats } from './hooks';
