@@ -377,6 +377,9 @@ importers:
       '@sep/framework':
         specifier: workspace:*
         version: link:../../framework
+      cronstrue:
+        specifier: ^3.14.0
+        version: 3.14.0
       notistack:
         specifier: ^3.0.2
         version: 3.0.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
