@@ -45,8 +45,9 @@
 # the server actually applied it. This shows the effective runtime settings,
 # which can differ from the on-disk config file.
 #
-# Authentication is performed with db.auth() over the shell's stdin, so the
-# password is never placed on the process command line.
+# Authentication is performed with db.auth() in a piped script. If you pass
+# --password to this script, it will appear in this script's argv, but it is
+# not passed to mongosh/mongo on their command line.
 #
 # Usage:
 #   ./mongodb_cmdline_opts.sh [--host=HOST] [--port=PORT] [--user=USER] \
@@ -139,8 +140,9 @@ if [ -z "$MONGO_BIN" ]; then
     exit 2
 fi
 
-# The credentials are never passed on the command line; only the connection
-# endpoint is. Authentication happens via db.auth() in the piped script below.
+# If you pass --password, it appears in this script's argv. The credentials are
+# not passed to mongosh/mongo on the command line; only the connection endpoint
+# is. Authentication happens via db.auth() in the piped script below.
 MONGO_ARGS=(--host "$HOST" --port "$PORT")
 
 js_escape() {
