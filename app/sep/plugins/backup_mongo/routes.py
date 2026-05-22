@@ -15,9 +15,11 @@
 
 """Define legacy Jinja routes for the backups plugin.
 
-Deprecated: use the React UI at ``/backups/mongodb`` and the JSON API at
-``/api/plugins/backup_mongo/``. These handlers remain for Wave 1 cutover and
-will be removed in Wave 3.
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/plugins/backup_mongo/`` and the React UI at ``/backups/mongodb/backups``
+(``frontend/packages/plugins/backup_mongo``). Every response from this router
+carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on hit;
+the routes remain mounted for Wave 1 cutover and will be removed in Wave 3.
 """
 
 import logging
@@ -43,17 +45,13 @@ from app.sep.plugins.backup_mongo.deps import (
     BackupsIndexContextDep,
     BackupsTask,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
 
-_LEGACY_ROUTE_WARNING = (
-    "Legacy Jinja backup_mongo route %s is deprecated; use /backups/mongodb "
-    "and /api/plugins/backup_mongo/ instead."
-)
-
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 router.include_router(restore_router, prefix="/restores", tags=["restores"])
@@ -65,7 +63,6 @@ async def pbm_backups_index(
     context: BackupsIndexContextDep,
 ) -> HTMLResponse:
     """Homepage of PBM backup mongo plugin."""
-    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_index")
     return templates.TemplateResponse(
         request=request,
         name="backup_mongo/backup/index.html.j2",
@@ -82,7 +79,6 @@ async def pbm_backups_create(
     task_api: TaskAPI,
 ) -> RedirectResponse:
     """Create new backups task."""
-    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_create")
     logger.debug("Create backups task: %s", task)
 
     # Create the config task
@@ -148,7 +144,6 @@ async def pbm_backups_detail(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """Retrieve backups task."""
-    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_detail")
     data = task.data
 
     # If the task has a parent, redirect to the parent task detail page
@@ -231,7 +226,6 @@ async def pbm_backups_execute(
     chain_on_failure: Annotated[bool | None, Form()] = None,
 ) -> RedirectResponse:
     """Execute backups task."""
-    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_execute")
     await tasks_api.post(
         f"/execute/{task.name}",
         json={
@@ -255,7 +249,6 @@ async def pbm_backups_delete(
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete backups task."""
-    logger.warning(_LEGACY_ROUTE_WARNING, "pbm_backups_delete")
     await tasks_api.delete(f"/{task.name}")
     await tasks_api.delete(f"/{task.name}-logical")
     task_path = request.url_for("pbm_backups_index")
