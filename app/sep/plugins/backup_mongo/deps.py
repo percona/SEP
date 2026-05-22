@@ -298,7 +298,7 @@ async def build_backup_task_payload_from_form(
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload_from_form)]
 
 
-def _extract_latest_task_status(
+def extract_latest_task_status(
     histories: Iterable[dict[str, Any]],
 ) -> TaskHistoryStatusEnum | None:
     """Return the latest known status from a task history payload."""
@@ -322,7 +322,7 @@ async def get_backup_mongo_task_status(
     :rtype: TaskHistoryStatusEnum | None
     """
     response = await tasks_api.get(f"/{task_name}/history/")
-    return _extract_latest_task_status(response["items"])
+    return extract_latest_task_status(response["items"])
 
 
 def build_backup_mongo_api_task_response(
@@ -476,7 +476,7 @@ async def build_backup_mongo_api_detail_response(
         if derived_detail is None:
             continue
         derived, history_items = derived_detail
-        derived_status = _extract_latest_task_status(history_items)
+        derived_status = extract_latest_task_status(history_items)
         derived_tasks.append(
             BackupDerivedTaskSummary(
                 name=derived.name,

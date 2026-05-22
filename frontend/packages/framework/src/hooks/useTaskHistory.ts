@@ -157,7 +157,7 @@ export function useTaskHistoryByNames(
     limit,
     enabled = true,
   } = options;
-  const names = [...new Set((taskNames ?? []).filter(Boolean))];
+  const names = [...new Set((taskNames ?? []).filter(Boolean))].sort();
   return useQuery<PaginatedTaskHistory>({
     queryKey: ['task-history', 'merged', names, { status: status ?? null, offset, limit }],
     enabled: enabled && names.length > 0,
@@ -208,10 +208,11 @@ export function useStopTaskHistory() {
  */
 export function useExecuteTask(pluginName: string) {
   const queryClient = useQueryClient();
+  const pluginPath = pluginName.split('/').map(encodeURIComponent).join('/');
   return useMutation<unknown, Error, { taskName: string }>({
     mutationFn: async ({ taskName }) => {
       const { data } = await apiClient.post<unknown>(
-        `/plugins/${encodeURIComponent(pluginName)}/${encodeURIComponent(taskName)}/execute`,
+        `/plugins/${pluginPath}/${encodeURIComponent(taskName)}/execute`,
         {},
       );
       return data;

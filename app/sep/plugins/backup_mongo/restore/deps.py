@@ -17,7 +17,6 @@
 
 import asyncio
 import logging
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -36,6 +35,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.backup_mongo.deps import extract_latest_task_status
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
     RestoreConfig,
@@ -553,16 +553,6 @@ async def create_restore_task_group(
         raise
 
 
-def _extract_latest_task_status(
-    histories: Iterable[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
-    for history in histories:
-        if (status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(status)
-    return None
-
-
 def _parse_restore_task_config(task: Task) -> dict[str, Any]:
     """Return the YAML config dict embedded in a restore task's meta."""
     meta = task.data.get("meta") or {}
@@ -595,7 +585,7 @@ async def get_restore_mongo_task_status(
     :rtype: TaskHistoryStatusEnum | None
     """
     response = await tasks_api.get(f"/{task_name}/history/")
-    return _extract_latest_task_status(response["items"])
+    return extract_latest_task_status(response["items"])
 
 
 def build_restore_mongo_api_task_response(
@@ -697,7 +687,7 @@ async def build_restore_mongo_api_detail_response(
         derived_tasks.append(
             RestoreDerivedTaskSummary(
                 name=child.name,
-                status=_extract_latest_task_status(history_items),
+                status=extract_latest_task_status(history_items),
             )
         )
 

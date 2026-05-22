@@ -277,7 +277,7 @@ def test_capabilities_omitted_stats_in_payload_defaults_false():
 
 
 def test_dipper_schema_stats_capability_defaults_false():
-    """Dipper plugin schema must not opt into the stats card (SEP-1115 scope)."""
+    """Dipper plugin schema must not opt into the stats card."""
     from app.sep.plugins.dipper.schema import dipper_schema
 
     assert dipper_schema.capabilities is not None
@@ -561,7 +561,7 @@ def test_plugin_schema_accepts_snake_case_json_input():
 
 
 def test_plugin_schema_rejects_camel_case_json_input():
-    """Reject camelCase JSON input — alias generator was removed in SEP-1071."""
+    """Reject camelCase JSON input — alias generator is intentionally absent."""
     with pytest.raises(ValidationError):
         PluginSchema.model_validate(
             {
@@ -1076,7 +1076,7 @@ class TestSchemaTier2ReferenceResolution:
             )
 
     def test_hyphenated_basefield_self_target_rejected(self) -> None:
-        """Edge case #27 — implicit self target also enforces the rule."""
+        """Edge case — implicit self target also enforces the rule."""
         with pytest.raises(ValidationError, match="no hyphens"):
             PluginSchema(
                 name="t",

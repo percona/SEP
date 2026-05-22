@@ -16,7 +16,11 @@
 """Define the PluginSchema for the backup_mongo plugin."""
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.backup_mongo.models import CompressionAlgorithm, StorageType
+from app.sep.plugins.backup_mongo.models import (
+    BackupType,
+    CompressionAlgorithm,
+    StorageType,
+)
 from app.sep.plugins.framework.rules import F, FieldGate
 from app.sep.plugins.framework.schema import (
     BoolField,
@@ -43,24 +47,26 @@ _NOT_FILESYSTEM_STORAGE = F("storage_type") != StorageType.FILESYSTEM.value
 BACKUP_MONGO_DERIVED = [
     DerivedTask(
         name_suffix="-logical",
-        payload_substitutions={"pbm_config": "pbm_logical"},
-        backup_type="pbm_logical",
+        payload_substitutions={
+            BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
+        },
+        backup_type=BackupType.PBM_LOGICAL.value,
     ),
     DerivedTask(
         name_suffix="-physical",
         payload_substitutions={
-            "pbm_config": "pbm_logical",
-            "pbm_logical": "pbm_physical",
+            BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
+            BackupType.PBM_LOGICAL.value: BackupType.PBM_PHYSICAL.value,
         },
-        backup_type="pbm_physical",
+        backup_type=BackupType.PBM_PHYSICAL.value,
     ),
     DerivedTask(
         name_suffix="-status",
         payload_substitutions={
-            "pbm_config": "pbm_logical",
-            "pbm_physical": "pbm_status",
+            BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
+            BackupType.PBM_PHYSICAL.value: BackupType.PBM_STATUS.value,
         },
-        backup_type="pbm_status",
+        backup_type=BackupType.PBM_STATUS.value,
     ),
 ]
 

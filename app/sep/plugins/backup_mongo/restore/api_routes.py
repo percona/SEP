@@ -42,9 +42,9 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     get_restore_mongo_api_task_responses,
     get_restore_mongo_task_status,
     get_restores_task,
-    resolve_restore_parent_task,
     restore_create_from_write,
     restore_update_form_from_write,
+    RestoreParentTask,
     UnprotectedRestoreParentTask,
 )
 from app.sep.plugins.backup_mongo.restore.models import (
@@ -75,11 +75,10 @@ async def restore_mongo_api_list(
 
 @router.get("/{task_name}", response_model=RestoreTaskDetailResponse)
 async def restore_mongo_api_detail(
-    task_name: str,
+    parent_task: RestoreParentTask,
     tasks_api: TaskAPI,
 ) -> RestoreTaskDetailResponse:
     """Retrieve a single parent restore task with child task status."""
-    parent_task = await resolve_restore_parent_task(task_name, tasks_api)
     return await build_restore_mongo_api_detail_response(parent_task, tasks_api)
 
 
@@ -171,9 +170,8 @@ async def restore_mongo_api_execute(
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def restore_mongo_api_delete(
-    task_name: str,
+    parent_task: RestoreParentTask,
     tasks_api: TaskAPI,
 ) -> None:
     """Delete a restore task group."""
-    parent_task = await resolve_restore_parent_task(task_name, tasks_api)
     await delete_restore_task_group(tasks_api, parent_task)
