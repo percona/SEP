@@ -25,9 +25,10 @@ import { ApiError, sepApi, throwOnApiError } from '@sep/api';
  * upstream payload (``dict[str, Any]``) on success and a ``502`` with a
  * ``{"detail": ...}`` body on upstream failure (surfaced here as an
  * ``ApiError`` on the React Query error slot — not as ``{}``). Every field
- * is optional because the upstream success payload itself is untyped; the
- * empty/degraded state is signalled by ``isError`` plus a ``total === 0``
- * guard, not by a `{}` `data`.
+ * is optional because the upstream success payload itself is untyped.
+ * Consumers thus see two distinct empty-state signals: upstream failure as
+ * ``isError`` (no ``data`` to inspect), and a successful-but-empty stats
+ * payload as ``data`` present with ``total === 0``.
  */
 export interface TaskStatsView {
   engine?: string;
