@@ -39,6 +39,8 @@ import { PluginSchedulePage } from './PluginSchedulePage';
 
 interface SchemaDrivenPluginProps {
   pluginName: string;
+  /** Absolute list route prefix when the plugin is not mounted under ``/plugins/{name}``. */
+  routeBase?: string;
   mockSchema?: PluginSchema;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -177,6 +179,7 @@ function PluginEditPage({
 
 export function SchemaDrivenPlugin({
   pluginName,
+  routeBase,
   mockSchema,
   mockTasks,
   mockEntityItems,
@@ -311,6 +314,7 @@ export function SchemaDrivenPlugin({
             <PluginDetailPage
               schema={schema}
               pluginName={pluginName}
+              routeBase={routeBase}
               mockTasks={mockTasks}
               browseOnly={browseOnly}
               suppressDetailKeys={suppressDetailKeys}

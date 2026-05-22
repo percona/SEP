@@ -166,6 +166,7 @@ backup_mongo_schema = PluginSchema(
                 ChoiceField(
                     name="pitr_compression",
                     label="PITR Compression",
+                    default=CompressionAlgorithm.GZIP.value,
                     choices=_COMPRESSION_CHOICES,
                 ),
             ],
@@ -181,6 +182,8 @@ backup_mongo_schema = PluginSchema(
                 ChoiceField(
                     name="backup_compression",
                     label="Backup Compression",
+                    default=CompressionAlgorithm.S2.value,
+                    description="Compression method for backup snapshots. Default: s2",
                     choices=_COMPRESSION_CHOICES,
                 ),
                 IntegerField(

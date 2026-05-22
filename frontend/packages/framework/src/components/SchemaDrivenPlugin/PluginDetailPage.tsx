@@ -53,12 +53,15 @@ import { TaskLogViewer } from '../TaskLogViewer';
 import { useTaskHistoryByName } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
+import { resolvePluginRouteBase } from './routeBase';
 
 const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
 
 export interface PluginDetailPageProps {
   schema: PluginSchema;
   pluginName: string;
+  /** Absolute list route prefix when the plugin is not mounted under ``/plugins/{name}``. */
+  routeBase?: string;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
   /** Hide edit/delete (browse-only mode for multi-entity plugins). */
@@ -354,10 +357,11 @@ function LogsTab({ taskName }: LogsTabProps) {
 interface ActionBarProps {
   schema: PluginSchema;
   pluginName: string;
+  routeBase: string;
   taskId: string;
 }
 
-function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
+function ActionBar({ schema, pluginName, routeBase, taskId }: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeletePluginTask(pluginName);
@@ -370,7 +374,7 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
       // Anchor to the plugin root explicitly. Relative `..` chains depend
       // on which tab the user is on (Overview vs. Logs renders a deeper
       // sub-route via nested `<Routes>`), so use an absolute path.
-      navigate(`/plugins/${pluginName}`);
+      navigate(routeBase);
     } catch (e) {
       enqueueSnackbar(e instanceof Error ? e.message : 'Failed to delete task', {
         variant: 'error',
@@ -389,7 +393,7 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
           <Button
             variant="outlined"
             startIcon={<ScheduleIcon />}
-            onClick={() => navigate(`/plugins/${pluginName}/schedule`)}
+            onClick={() => navigate(`${routeBase}/schedule`)}
             data-testid="plugin-task-schedule"
           >
             Schedule
@@ -464,6 +468,7 @@ function ActionBar({ schema, pluginName, taskId }: ActionBarProps) {
 export function PluginDetailPage({
   schema,
   pluginName,
+  routeBase: routeBaseProp,
   mockTasks,
   mockEntityItems,
   browseOnly = false,
@@ -475,6 +480,7 @@ export function PluginDetailPage({
   hideDetailChrome = false,
   allowListEntityDelete = false,
 }: PluginDetailPageProps) {
+  const routeBase = resolvePluginRouteBase(pluginName, routeBaseProp);
   const params = useParams<Record<string, string | undefined>>();
   const id = (detailIdParam && params[detailIdParam]) ?? params.id;
   const entityName = detailEntityName ?? params.entityName;
@@ -713,12 +719,12 @@ export function PluginDetailPage({
   }
 
   const taskName = typeof task.name === 'string' ? task.name : id;
-  const detailBase = `/plugins/${pluginName}/task/${encodeURIComponent(id)}`;
+  const detailBase = `${routeBase}/task/${encodeURIComponent(id)}`;
 
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-        <IconButton onClick={() => navigate(`/plugins/${pluginName}`)} aria-label="Back to list">
+        <IconButton onClick={() => navigate(routeBase)} aria-label="Back to list">
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="overline" color="text.secondary">
@@ -742,7 +748,7 @@ export function PluginDetailPage({
         )}
       </Box>
 
-      <ActionBar schema={schema} pluginName={pluginName} taskId={id} />
+      <ActionBar schema={schema} pluginName={pluginName} routeBase={routeBase} taskId={id} />
 
       <Tabs value={tabValue} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Overview" value="overview" component={Link} to={detailBase} replace />
