@@ -29,6 +29,7 @@ from fastapi import status as http_status
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
+    get_username_mapping,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsApiAuthenticated,
@@ -67,10 +68,12 @@ async def checksums_api_list(
     status: TaskHistoryStatusEnum | None = None,
 ) -> list[ChecksumTaskResponse]:
     """List checksum tasks."""
+    username_mapping = await get_username_mapping()
     return await get_checksums_api_task_responses(
         tasks_api,
         service_type=service_type,
         status=status,
+        username_mapping=username_mapping,
     )
 
 
@@ -82,7 +85,10 @@ async def checksums_api_detail(
     """Retrieve a single checksum task."""
     task = await get_checksums_task(task_name, tasks_api)
     task_status = await get_checksums_task_status(task.name, tasks_api)
-    return build_checksums_api_task_response(task, status=task_status)
+    username_mapping = await get_username_mapping()
+    return build_checksums_api_task_response(
+        task, status=task_status, username_mapping=username_mapping
+    )
 
 
 @router.post(
@@ -116,10 +122,12 @@ async def checksums_api_create(
         task.data.get("meta", {}),
         check_connectivity=check_connectivity,
     )
+    username_mapping = await get_username_mapping()
     return build_checksums_api_task_response(
         task,
         status=None,
         connectivity_warning=connectivity_warning,
+        username_mapping=username_mapping,
     )
 
 
@@ -155,10 +163,12 @@ async def checksums_api_update(
         updated_task.data.get("meta", {}),
         check_connectivity=check_connectivity,
     )
+    username_mapping = await get_username_mapping()
     return build_checksums_api_task_response(
         updated_task,
         status=task_status,
         connectivity_warning=connectivity_warning,
+        username_mapping=username_mapping,
     )
 
 

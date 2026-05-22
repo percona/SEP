@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import status as http_status
 from starlette.responses import StreamingResponse
 
 from app.sep.deps import (
@@ -49,7 +50,12 @@ async def list_task_history_files(
     tasks_api: TaskAPI,
 ) -> dict[str, FileMetadata]:
     """Stream a task history's logs as server-sent events."""
-    return await tasks_api.get(f"/history/{task_history.id}/files/")
+    try:
+        return await tasks_api.get(f"/history/{task_history.id}/files/")
+    except HTTPException as exc:
+        if exc.status_code == http_status.HTTP_400_BAD_REQUEST:
+            return {}
+        raise
 
 
 @router.get("/{task_history_id}/download", dependencies=[IsAuthenticated])
