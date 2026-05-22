@@ -44,7 +44,9 @@
 # them; a level too low explains missing diagnostic detail.
 #
 # Authentication is performed with db.auth() over the shell's stdin, so the
-# password is never placed on the process command line.
+# password is not passed on the mongosh/mongo command line. If you provide it
+# via --password, it may still be visible in this script's argv (for example,
+# via ps).
 #
 # Usage:
 #   ./mongodb_log_components.sh [--host=HOST] [--port=PORT] [--user=USER] \
