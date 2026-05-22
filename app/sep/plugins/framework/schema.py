@@ -973,8 +973,7 @@ class PluginSchema(SchemaBaseModel):
         section cards (task-style plugins only; ignored when ``entities`` is
         set). Optional at the model layer for backwards compatibility. A
         forward-looking guard refuses to load a plugin that sets
-        ``task_type`` without declaring ``detail_view``; no current plugin
-        sets ``task_type``. Defaults to ``None``.
+        ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
     :type detail_view: DetailView | None
     :param entities: Optional list of CRUD entities for multi-resource plugins.
         When non-empty, the React shell renders one list/create/detail flow

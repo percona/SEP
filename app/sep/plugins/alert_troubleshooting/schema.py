@@ -40,6 +40,5 @@ ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA = PluginSchema(
         ],
         default_sort="service_type",
     ),
-    # Custom grouped page — no schema-driven detail card to render.
     detail_view=DetailView(sections=[]),
 )
