@@ -214,7 +214,12 @@ def test_plugin_schema_constructs_with_all_capabilities_on():
         name="caps",
         display_name="Caps",
         forms=[],
-        capabilities=Capabilities(chaining=True, alert_on_fail=True, scheduling=True),
+        capabilities=Capabilities(
+            chaining=True,
+            alert_on_fail=True,
+            scheduling=True,
+            stats=True,
+        ),
         list_view=_minimal_list_view(),
     )
 
@@ -222,6 +227,41 @@ def test_plugin_schema_constructs_with_all_capabilities_on():
     assert schema.capabilities.chaining is True
     assert schema.capabilities.alert_on_fail is True
     assert schema.capabilities.scheduling is True
+    assert schema.capabilities.stats is True
+
+
+def test_capabilities_stats_defaults_to_false():
+    """Default value of ``stats`` flag must be ``False`` for backward compat."""
+    caps = Capabilities()
+    assert caps.stats is False
+
+
+def test_capabilities_stats_accepts_true():
+    """``stats=True`` is a valid construction."""
+    caps = Capabilities(stats=True)
+    assert caps.stats is True
+
+
+def test_capabilities_serialization_round_trip_includes_stats():
+    """``stats`` survives ``model_dump`` / ``model_validate`` round trip."""
+    dumped = Capabilities(stats=True).model_dump()
+    assert dumped["stats"] is True
+    restored = Capabilities.model_validate({"stats": True})
+    assert restored.stats is True
+
+
+def test_capabilities_omitted_stats_in_payload_defaults_false():
+    """Payload missing the ``stats`` key validates to ``False``."""
+    caps = Capabilities.model_validate({})
+    assert caps.stats is False
+
+
+def test_dipper_schema_stats_capability_defaults_false():
+    """Dipper plugin schema must not opt into the stats card (SEP-1115 scope)."""
+    from app.sep.plugins.dipper.schema import dipper_schema
+
+    assert dipper_schema.capabilities is not None
+    assert dipper_schema.capabilities.stats is False
 
 
 @pytest.mark.parametrize(
