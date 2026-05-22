@@ -16,7 +16,8 @@
  */
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { ApiError, apiClient } from '@sep/api';
+import { apiClient } from '@sep/api';
+import { sepRetry } from './sepRetry';
 
 export interface HostOption {
   /** Executor node name — the value sent to the dispatch payload as `executor_host`. */
@@ -52,12 +53,6 @@ export function useHosts(options: UseHostsOptions = {}): UseQueryResult<HostOpti
       const response = await apiClient.get<HostOption[]>('/sep/hosts/');
       return response.data;
     },
-    retry: (count, err) => {
-      const status = err instanceof ApiError ? err.status : undefined;
-      if (status === 401 || status === 403 || status === 404 || status === 502) {
-        return false;
-      }
-      return count < 2;
-    },
+    retry: sepRetry,
   });
 }

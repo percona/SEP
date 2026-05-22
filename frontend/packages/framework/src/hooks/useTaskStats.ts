@@ -16,7 +16,8 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { ApiError, sepApi, throwOnApiError } from '@sep/api';
+import { sepApi, throwOnApiError } from '@sep/api';
+import { sepRetry } from './sepRetry';
 
 /**
  * Consumer-side view of the task-stats payload.
@@ -62,13 +63,7 @@ export function useTaskStats(taskName: string | undefined, enabled = true) {
       return data as unknown as TaskStatsView;
     },
     refetchOnWindowFocus: false,
-    retry: (count, err) => {
-      const status = err instanceof ApiError ? err.status : undefined;
-      if (status === 401 || status === 403 || status === 404 || status === 502) {
-        return false;
-      }
-      return count < 2;
-    },
+    retry: sepRetry,
     staleTime: 30_000,
   });
 }
