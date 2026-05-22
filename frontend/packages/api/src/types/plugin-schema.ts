@@ -245,6 +245,7 @@ export interface PluginCapabilities {
   chaining?: boolean;
   alert_on_fail?: boolean;
   scheduling?: boolean;
+  stats?: boolean;
 }
 
 // ── Multi-entity plugins (inventory) ────────────────────────────────────
