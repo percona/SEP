@@ -50,13 +50,21 @@ import {
 } from '@sep/api';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
-import { useExecuteTask, useTaskHistoryByName } from '../../hooks';
+import { useExecuteTask, useTaskHistoryByNames } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
 import { resolvePluginRouteBase } from './routeBase';
 import { StatsCard } from './StatsCard';
 
 const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
+
+/** One executable target on a plugin task detail action bar. */
+export interface TaskExecuteAction {
+  label: string;
+  taskName: string;
+  testId?: string;
+  confirmMessage?: string;
+}
 
 export interface PluginDetailPageProps {
   schema: PluginSchema;
@@ -69,6 +77,16 @@ export interface PluginDetailPageProps {
   browseOnly?: boolean;
   /** Omit these keys from the auto-rendered detail section (e.g. nested relations shown elsewhere). */
   suppressDetailKeys?: string[];
+  /** Replace the default single Execute button with plugin-specific execute targets. */
+  getTaskExecuteActions?: (task: Record<string, unknown>) => TaskExecuteAction[] | undefined;
+  /** Task names whose execution history should appear on the Logs tab. */
+  getTaskHistoryNames?: (task: Record<string, unknown>) => string[] | undefined;
+  /** Extra content below the overview cards on single-task detail pages. */
+  renderTaskDetailChildren?: (args: {
+    task: Record<string, unknown>;
+    pluginName: string;
+    schema: PluginSchema;
+  }) => ReactNode;
   /** Extra content under the main detail card (e.g. child entity tables). */
   renderEntityDetailChildren?: (args: {
     entityName: string;
@@ -258,18 +276,24 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
 interface OverviewTabProps {
   schema: PluginSchema;
   task: Record<string, unknown>;
+  hiddenFields?: string[];
+  children?: ReactNode;
 }
 
-function OverviewTab({ schema, task }: OverviewTabProps) {
+function OverviewTab({ schema, task, hiddenFields = [], children }: OverviewTabProps) {
   const execution = pickExecutionData(task);
   const connectivityWarning = task.connectivity_warning;
   const columns = schema.list_view!.columns;
+  const suppressedFields = useMemo(
+    () => new Set([...OVERVIEW_HIDDEN_FIELDS, ...hiddenFields]),
+    [hiddenFields],
+  );
 
   // Extra fields beyond the schema's list_view columns, excluding internal
   // noise. Lets future plugin schemas surface fields without listing them
   // in `list_view.columns` (which is meant for the table view).
   const extraEntries = Object.entries(task).filter(
-    ([key]) => !columns.some((c) => c.key === key) && !OVERVIEW_HIDDEN_FIELDS.has(key),
+    ([key]) => !columns.some((c) => c.key === key) && !suppressedFields.has(key),
   );
 
   return (
@@ -315,17 +339,20 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
           )}
         </SectionCard>
       )}
+
+      {children}
     </>
   );
 }
 
 interface LogsTabProps {
-  taskName: string;
+  taskNames: string[];
 }
 
-function LogsTab({ taskName }: LogsTabProps) {
-  const historyQuery = useTaskHistoryByName(taskName);
+function LogsTab({ taskNames }: LogsTabProps) {
+  const historyQuery = useTaskHistoryByNames(taskNames);
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
+  const logsTaskName = logsEntry?.task?.name ?? taskNames[0] ?? 'task';
 
   return (
     <>
@@ -338,7 +365,7 @@ function LogsTab({ taskName }: LogsTabProps) {
           <TaskHistoryTable
             data={historyQuery.data?.items ?? []}
             isLoading={historyQuery.isLoading}
-            hideTaskNameColumn
+            hideTaskNameColumn={taskNames.length <= 1}
             onViewLogs={setLogsEntry}
           />
         </Paper>
@@ -346,7 +373,7 @@ function LogsTab({ taskName }: LogsTabProps) {
 
       <Dialog open={logsEntry !== null} onClose={() => setLogsEntry(null)} fullWidth maxWidth="lg">
         <DialogTitle>
-          Logs — {taskName}
+          Logs — {logsTaskName}
           {logsEntry?.id !== null && logsEntry?.id !== undefined ? ` #${logsEntry.id}` : ''}
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0 }}>
@@ -368,26 +395,42 @@ interface ActionBarProps {
   pluginName: string;
   routeBase: string;
   taskName: string;
+  executeActions?: TaskExecuteAction[];
 }
 
-function ActionBar({ schema, pluginName, routeBase, taskName }: ActionBarProps) {
+function ActionBar({ schema, pluginName, routeBase, taskName, executeActions }: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeletePluginTask(pluginName);
   const executeTask = useExecuteTask(pluginName);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [executeConfirmOpen, setExecuteConfirmOpen] = useState(false);
+  const [pendingExecute, setPendingExecute] = useState<TaskExecuteAction | null>(null);
+
+  const resolvedExecuteActions =
+    executeActions ??
+    ([
+      {
+        label: 'Execute',
+        taskName,
+        testId: 'plugin-task-execute',
+      },
+    ] satisfies TaskExecuteAction[]);
 
   const handleExecute = async () => {
+    if (!pendingExecute) {
+      return;
+    }
     try {
-      await executeTask.mutateAsync({ taskName });
-      enqueueSnackbar(`${schema.display_name} task "${taskName}" started`, { variant: 'success' });
+      await executeTask.mutateAsync({ taskName: pendingExecute.taskName });
+      enqueueSnackbar(`${schema.display_name} task "${pendingExecute.taskName}" started`, {
+        variant: 'success',
+      });
     } catch (e) {
       enqueueSnackbar(e instanceof Error ? e.message : 'Failed to execute task', {
         variant: 'error',
       });
     } finally {
-      setExecuteConfirmOpen(false);
+      setPendingExecute(null);
     }
   };
 
@@ -424,15 +467,18 @@ function ActionBar({ schema, pluginName, routeBase, taskName }: ActionBarProps) 
           </Button>
         )}
 
-        <Button
-          variant="outlined"
-          startIcon={<PlayArrowIcon />}
-          onClick={() => setExecuteConfirmOpen(true)}
-          disabled={executeTask.isPending}
-          data-testid="plugin-task-execute"
-        >
-          Execute
-        </Button>
+        {resolvedExecuteActions.map((action) => (
+          <Button
+            key={`${action.taskName}-${action.label}`}
+            variant="outlined"
+            startIcon={<PlayArrowIcon />}
+            onClick={() => setPendingExecute(action)}
+            disabled={executeTask.isPending}
+            data-testid={action.testId ?? 'plugin-task-execute'}
+          >
+            {action.label}
+          </Button>
+        ))}
 
         <Tooltip title={editBlocked}>
           <span>
@@ -461,15 +507,18 @@ function ActionBar({ schema, pluginName, routeBase, taskName }: ActionBarProps) 
         </Button>
       </Stack>
 
-      <Dialog open={executeConfirmOpen} onClose={() => setExecuteConfirmOpen(false)}>
-        <DialogTitle>Execute {schema.display_name} task?</DialogTitle>
+      <Dialog open={pendingExecute !== null} onClose={() => setPendingExecute(null)}>
+        <DialogTitle>
+          {pendingExecute?.label ?? 'Execute'} {schema.display_name} task?
+        </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to execute the task {taskName} now?
+            {pendingExecute?.confirmMessage ??
+              `Are you sure you want to execute the task ${pendingExecute?.taskName ?? taskName} now?`}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setExecuteConfirmOpen(false)} disabled={executeTask.isPending}>
+          <Button onClick={() => setPendingExecute(null)} disabled={executeTask.isPending}>
             Cancel
           </Button>
           <Button
@@ -478,7 +527,7 @@ function ActionBar({ schema, pluginName, routeBase, taskName }: ActionBarProps) 
             disabled={executeTask.isPending}
             data-testid="plugin-task-execute-confirm"
           >
-            Execute
+            {pendingExecute?.label ?? 'Execute'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -516,6 +565,9 @@ export function PluginDetailPage({
   mockEntityItems,
   browseOnly = false,
   suppressDetailKeys = [],
+  getTaskExecuteActions,
+  getTaskHistoryNames,
+  renderTaskDetailChildren,
   renderEntityDetailChildren,
   detailEntityName,
   detailIdParam,
@@ -763,6 +815,9 @@ export function PluginDetailPage({
 
   const taskName = typeof task.name === 'string' ? task.name : id;
   const detailBase = `${routeBase}/task/${encodeURIComponent(id)}`;
+  const taskExecuteActions = getTaskExecuteActions?.(task as Record<string, unknown>);
+  const taskHistoryNames =
+    getTaskHistoryNames?.(task as Record<string, unknown>) ?? (taskName ? [taskName] : []);
 
   return (
     <Box>
@@ -796,6 +851,7 @@ export function PluginDetailPage({
         pluginName={pluginName}
         routeBase={routeBase}
         taskName={taskName}
+        executeActions={taskExecuteActions}
       />
 
       <Tabs value={tabValue} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
@@ -804,8 +860,19 @@ export function PluginDetailPage({
       </Tabs>
 
       <Routes>
-        <Route index element={<OverviewTab schema={schema} task={task} />} />
-        <Route path="logs" element={<LogsTab taskName={taskName} />} />
+        <Route
+          index
+          element={
+            <OverviewTab schema={schema} task={task} hiddenFields={suppressDetailKeys}>
+              {renderTaskDetailChildren?.({
+                task: task as Record<string, unknown>,
+                pluginName,
+                schema,
+              })}
+            </OverviewTab>
+          }
+        />
+        <Route path="logs" element={<LogsTab taskNames={taskHistoryNames} />} />
       </Routes>
     </Box>
   );

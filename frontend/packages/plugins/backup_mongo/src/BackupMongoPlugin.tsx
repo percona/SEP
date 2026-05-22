@@ -18,7 +18,14 @@
 import type { CSSProperties } from 'react';
 import { SchemaDrivenPlugin } from '@sep/framework';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  BackupMongoTaskDetailExtras,
+  getBackupMongoExecuteActions,
+  getBackupMongoHistoryTaskNames,
+} from './backupMongoTaskDetail';
 import { BACKUP_PLUGIN_NAME, MONGODB_BASE_PATH, RESTORE_PLUGIN_NAME } from './routes';
+
+const BACKUP_DETAIL_SUPPRESS_KEYS = ['derived_tasks', 'latest_pbm_status'];
 
 const tabNavStyle: CSSProperties = {
   display: 'flex',
@@ -76,6 +83,10 @@ export function BackupMongoPlugin() {
             <SchemaDrivenPlugin
               pluginName={BACKUP_PLUGIN_NAME}
               routeBase={`${MONGODB_BASE_PATH}/backups`}
+              getTaskExecuteActions={getBackupMongoExecuteActions}
+              getTaskHistoryNames={getBackupMongoHistoryTaskNames}
+              suppressDetailKeys={BACKUP_DETAIL_SUPPRESS_KEYS}
+              renderTaskDetailChildren={({ task }) => <BackupMongoTaskDetailExtras task={task} />}
             />
           }
         />

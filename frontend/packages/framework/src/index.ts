@@ -30,6 +30,7 @@ export {
   PluginSchedulePage,
 } from './components/SchemaDrivenPlugin';
 export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
+export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
@@ -91,6 +92,7 @@ export {
   useLogDownload,
   useTaskHistory,
   useTaskHistoryByName,
+  useTaskHistoryByNames,
   useStopTaskHistory,
   useSnippetPluginExecution,
   useSnippetPluginSchema,

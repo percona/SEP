@@ -115,6 +115,40 @@ export function useTaskHistoryByName(
   taskName: string | undefined,
   options: UseTaskHistoryOptions = {},
 ) {
+  return useTaskHistoryByNames(taskName ? [taskName] : undefined, options);
+}
+
+function historySortKey(entry: TaskHistoryEntry): number {
+  const timestamp = entry.started_at ?? entry.created_at;
+  if (!timestamp) {
+    return entry.id ?? 0;
+  }
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? (entry.id ?? 0) : parsed;
+}
+
+function mergeTaskHistoryPages(pages: PaginatedTaskHistory[]): PaginatedTaskHistory {
+  const items = pages
+    .flatMap((page) => page.items)
+    .sort((left, right) => historySortKey(right) - historySortKey(left));
+  return {
+    items,
+    total: items.length,
+    offset: 0,
+    limit: items.length,
+  };
+}
+
+/**
+ * List task history for one or more tasks, merged newest-first.
+ *
+ * Used by plugins whose detail page represents a task group (parent plus derived
+ * siblings) while executions are recorded on individual task names.
+ */
+export function useTaskHistoryByNames(
+  taskNames: string[] | undefined,
+  options: UseTaskHistoryOptions = {},
+) {
   const {
     status,
     pollingIntervalMs = 5000,
@@ -123,15 +157,21 @@ export function useTaskHistoryByName(
     limit,
     enabled = true,
   } = options;
+  const names = [...new Set((taskNames ?? []).filter(Boolean))];
   return useQuery<PaginatedTaskHistory>({
-    queryKey: ['task-history', taskName, { status: status ?? null, offset, limit }],
-    enabled: enabled && !!taskName,
+    queryKey: ['task-history', 'merged', names, { status: status ?? null, offset, limit }],
+    enabled: enabled && names.length > 0,
     queryFn: async () => {
-      const { data } = await apiClient.get<PaginatedTaskHistory>(
-        `/tasks/${encodeURIComponent(taskName!)}/history/`,
-        { params: buildParams({ status, offset, limit }) },
+      const pages = await Promise.all(
+        names.map(async (taskName) => {
+          const { data } = await apiClient.get<PaginatedTaskHistory>(
+            `/tasks/${encodeURIComponent(taskName)}/history/`,
+            { params: buildParams({ status, offset, limit }) },
+          );
+          return data;
+        }),
       );
-      return data;
+      return mergeTaskHistoryPages(pages);
     },
     refetchInterval: (query) =>
       refetchIntervalFor(query.state.data, pollingIntervalMs, disablePolling),

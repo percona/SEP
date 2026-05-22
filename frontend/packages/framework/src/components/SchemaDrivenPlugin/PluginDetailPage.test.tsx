@@ -65,6 +65,7 @@ vi.mock('@sep/api', () => ({
 
 vi.mock('../../hooks', () => ({
   useTaskHistoryByName: () => ({ data: { items: [] }, isLoading: false, error: null }),
+  useTaskHistoryByNames: () => ({ data: { items: [] }, isLoading: false, error: null }),
   useExecuteTask: () => ({
     mutateAsync: mockExecuteMutate,
     isPending: false,
@@ -230,6 +231,61 @@ describe('PluginDetailPage execute flow', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(mockExecuteMutate).not.toHaveBeenCalled();
+  });
+
+  it('executes a selected derived task when custom execute actions are provided', async () => {
+    mockExecuteMutate.mockReset();
+    mockExecuteMutate.mockResolvedValue({ id: 99 });
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'pbm-backup',
+        status: 'completed',
+        derived_tasks: [{ name: 'pbm-backup-logical', backup_type: 'pbm_logical', status: null }],
+      },
+      isLoading: false,
+    });
+
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter initialEntries={['/plugins/backup_mongo/task/pbm-backup']}>
+            <Routes>
+              <Route
+                path="/plugins/:plugin/task/:id/*"
+                element={
+                  <PluginDetailPage
+                    schema={schema}
+                    pluginName="backup_mongo"
+                    getTaskExecuteActions={(task) => [
+                      {
+                        label: 'Sync Config',
+                        taskName: String(task.name),
+                        testId: 'backup-mongo-sync-config',
+                      },
+                      {
+                        label: 'Run Logical Backup',
+                        taskName: 'pbm-backup-logical',
+                        testId: 'backup-mongo-logical-backup',
+                      },
+                    ]}
+                  />
+                }
+              />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByTestId('backup-mongo-logical-backup'));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
+
+    await waitFor(() =>
+      expect(mockExecuteMutate).toHaveBeenCalledWith({ taskName: 'pbm-backup-logical' }),
+    );
   });
 });
 
