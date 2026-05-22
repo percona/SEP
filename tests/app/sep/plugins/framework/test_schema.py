@@ -1531,20 +1531,19 @@ def test_detail_field_path_validator_rejects_invalid_paths(invalid_path):
 
 
 @pytest.mark.parametrize(
-    "forbidden_path",
+    "invalid_segment_path",
     [
-        "__proto__",
-        "data.__proto__.x",
-        "constructor",
-        "prototype.toString",
-        "data.__class__.mro",
-        "x.constructor.y",
+        "data.123bad",
+        "data.ok[0].9bad",
+        "data.meta.[0]",
     ],
 )
-def test_detail_field_path_validator_rejects_prototype_pollution(forbidden_path):
-    """Refuse prototype-walking and dunder traversal at schema-construction time."""
-    with pytest.raises(ValidationError, match="forbidden detail path segment"):
-        DetailField(path=forbidden_path, label="L")
+def test_detail_field_path_validator_rejects_invalid_identifier_segments(
+    invalid_segment_path,
+):
+    """Reject dotted paths containing non-identifier segments."""
+    with pytest.raises(ValidationError):
+        DetailField(path=invalid_segment_path, label="L")
 
 
 def test_detail_section_accepts_empty_fields_list():

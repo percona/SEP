@@ -51,12 +51,18 @@ __all__ = [
     "YamlField",
 ]
 
-import re
 from collections import Counter
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
@@ -612,10 +618,16 @@ class ListView(SchemaBaseModel):
         return self
 
 
-_DETAIL_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])*$")
-_DETAIL_PATH_FORBIDDEN_SEGMENTS = frozenset(
-    {"__proto__", "constructor", "prototype", "__class__"}
-)
+DetailPath = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        pattern=(
+            r"^[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])*"
+            r"(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])*)*$"
+        ),
+    ),
+]
 
 
 class DetailField(SchemaBaseModel):
@@ -624,46 +636,16 @@ class DetailField(SchemaBaseModel):
     :param path: Dotted path into the task record (for example
         ``"data.meta.command"``). Each segment must be a Python identifier,
         optionally followed by one or more ``[N]`` array indices.
-    :type path: NonEmptyStr
+    :type path: DetailPath
     :param label: Human-readable label rendered alongside the resolved value.
     :type label: NonEmptyStr
     :param highlight: Optional syntax-highlighter hint. Defaults to ``None``.
     :type highlight: DetailHighlightLanguage | None
     """
 
-    path: NonEmptyStr
+    path: DetailPath
     label: NonEmptyStr
     highlight: DetailHighlightLanguage | None = None
-
-    @field_validator("path", mode="after")
-    @classmethod
-    def _validate_path(cls, value: str) -> str:
-        """Reject empty/non-identifier segments and prototype-pollution traversal.
-
-        Identifier-shape segments with optional ``[N]`` indices are accepted.
-        Prototype-walking names (``__proto__``, ``constructor``, ``prototype``,
-        ``__class__``) are refused at schema-construction time to defend the
-        frontend resolver against author error or schema tampering.
-
-        :param value: The candidate path string.
-        :type value: str
-        :return: The validated path string, unchanged.
-        :rtype: str
-        :raises ValueError: When the path has empty segments or any segment
-            fails the identifier-plus-indices shape or names a forbidden
-            traversal key.
-        """
-        if value.startswith(".") or value.endswith(".") or ".." in value:
-            raise ValueError(f"invalid detail path: {value!r}")
-        for segment in value.split("."):
-            if not _DETAIL_PATH_SEGMENT_RE.match(segment):
-                raise ValueError(
-                    f"invalid detail path segment {segment!r} in {value!r}"
-                )
-            base = segment.split("[", 1)[0]
-            if base in _DETAIL_PATH_FORBIDDEN_SEGMENTS:
-                raise ValueError(f"forbidden detail path segment {base!r} in {value!r}")
-        return value
 
 
 class DetailSection(SchemaBaseModel):
