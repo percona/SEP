@@ -19,6 +19,13 @@
 #    default: 10000
 #    ge: 1
 #    le: 1000000
+#  - name: journal-lines
+#    type: int
+#    label: pbm-agent journal lines
+#    description: Trailing lines of the pbm-agent systemd journal to collect. Independent of "PBM log entries", which controls the PBM event log.
+#    default: 2000
+#    ge: 1
+#    le: 1000000
 #  - name: include-mongo-logs
 #    type: bool
 #    label: Include MongoDB server log
@@ -60,17 +67,17 @@
 #
 # Usage:
 #   ./mongodb_pbm_diagnostics.sh [--mongodb-uri <uri>] [--log-entries <N>] \
-#       [--include-mongo-logs] [--mongo-log-lines <N>] [--mongo-log-file <path>]
+#       [--journal-lines <N>] [--include-mongo-logs] [--mongo-log-lines <N>] \
+#       [--mongo-log-file <path>]
 
 set -euo pipefail
 
 MONGODB_URI=""
 LOG_ENTRIES=10000
+JOURNAL_LINES=2000
 INCLUDE_MONGO_LOGS=0
 MONGO_LOG_LINES=2000
 MONGO_LOG_FILE=""
-
-JOURNAL_LINES_CAP=2000
 
 usage() {
     local -i exit_code="${1:-0}"
@@ -83,6 +90,7 @@ Options:
   --mongodb-uri <uri>      MongoDB connection string PBM uses. Auto-detected
                            from the pbm-agent service environment when omitted.
   --log-entries <N>        Recent PBM event-log entries to collect (default: 10000).
+  --journal-lines <N>      Trailing pbm-agent journal lines to collect (default: 2000).
   --include-mongo-logs     Append the tail of the local MongoDB server log.
   --mongo-log-lines <N>    Trailing MongoDB log lines to include (default: 2000).
   --mongo-log-file <path>  MongoDB server log path. Auto-detected when omitted.
@@ -91,7 +99,7 @@ EOS
     exit "${exit_code}"
 }
 
-if ! OPTS=$(getopt --options h --longoptions 'mongodb-uri:,log-entries:,include-mongo-logs,mongo-log-lines:,mongo-log-file:,help' -- "$@"); then
+if ! OPTS=$(getopt --options h --longoptions 'mongodb-uri:,log-entries:,journal-lines:,include-mongo-logs,mongo-log-lines:,mongo-log-file:,help' -- "$@"); then
     echo "Error parsing options" >&2
     usage 1
 fi
@@ -106,6 +114,10 @@ while [[ -n $* ]]; do
             ;;
         --log-entries)
             LOG_ENTRIES="$2"
+            shift 2
+            ;;
+        --journal-lines)
+            JOURNAL_LINES="$2"
             shift 2
             ;;
         --include-mongo-logs)
@@ -134,6 +146,11 @@ done
 
 if ! [[ $LOG_ENTRIES =~ ^[0-9]+$ ]] || [[ $LOG_ENTRIES -le 0 ]]; then
     echo "Error: --log-entries must be a positive integer." >&2
+    usage 1
+fi
+
+if ! [[ $JOURNAL_LINES =~ ^[0-9]+$ ]] || [[ $JOURNAL_LINES -le 0 ]]; then
+    echo "Error: --journal-lines must be a positive integer." >&2
     usage 1
 fi
 
@@ -278,7 +295,12 @@ run_pbm() {
         echo "Skipped: no PBM MongoDB URI resolved."
         return
     fi
-    "$PBM_BIN" "$@" 2>&1 | redact_uri || true
+    # A non-zero pbm exit is reported with an explicit marker so a failure is
+    # not mistaken for a successful (but redacted) response in the artifact
+    # log — matching the inline "pbm version" block below.
+    if ! "$PBM_BIN" "$@" 2>&1 | redact_uri; then
+        echo "(pbm $* failed)"
+    fi
 }
 
 if [[ -n $PBM_BIN ]]; then
@@ -308,10 +330,6 @@ else
     echo "systemctl is not available on this host."
 fi
 
-JOURNAL_LINES=$LOG_ENTRIES
-if [[ $JOURNAL_LINES -gt $JOURNAL_LINES_CAP ]]; then
-    JOURNAL_LINES=$JOURNAL_LINES_CAP
-fi
 section "pbm-agent journal (last $JOURNAL_LINES lines)"
 if command -v journalctl > /dev/null 2>&1; then
     journalctl -u pbm-agent --no-pager -n "$JOURNAL_LINES" 2>&1 | redact_uri || true
