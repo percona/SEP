@@ -16,4 +16,4 @@
  */
 
 export { MysqlBackupsPlugin } from './MysqlBackupsPlugin';
-export { mysqlBackupsRoute, PLUGIN_NAME, PLUGIN_BASE_PATH } from './routes';
+export { PLUGIN_NAME, PLUGIN_BASE_PATH } from './routes';

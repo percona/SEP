@@ -32,4 +32,17 @@ describe('unwrapTasks', () => {
   it('returns an empty array for an empty envelope', () => {
     expect(unwrapTasks({ items: [], total: 0, offset: 0, limit: 50 })).toEqual([]);
   });
+
+  it('returns [] when items is null', () => {
+    expect(unwrapTasks({ items: null } as never)).toEqual([]);
+  });
+
+  it('returns [] when payload is an empty object', () => {
+    expect(unwrapTasks({} as never)).toEqual([]);
+  });
+
+  it('returns [] when payload is null or undefined', () => {
+    expect(unwrapTasks(null as never)).toEqual([]);
+    expect(unwrapTasks(undefined as never)).toEqual([]);
+  });
 });

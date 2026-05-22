@@ -15,13 +15,5 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { RouteObject } from 'react-router-dom';
-import { MysqlBackupsPlugin } from './MysqlBackupsPlugin';
-
 export const PLUGIN_NAME = 'mysql_backups';
 export const PLUGIN_BASE_PATH = '/plugins/mysql_backups';
-
-export const mysqlBackupsRoute: RouteObject = {
-  path: 'plugins/mysql_backups/*',
-  element: <MysqlBackupsPlugin />,
-};

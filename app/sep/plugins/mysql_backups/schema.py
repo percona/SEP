@@ -18,15 +18,21 @@
 Per-mode field gating is split across two mechanisms:
 
 - ``forbidden=`` :class:`FieldGate` for string/int/choice fields, declared
-  here on each field.
+  here on each field. We use ``forbidden=[when != mode]`` (not
+  ``requires=[when == mode]``) because the framework's ``requires=``
+  semantics (``rules.py:1442-1449``) mean "when predicate true, the field
+  MUST be present" — using it for mode gating would make every X-mode
+  field mandatory in X mode, which is incorrect: these fields are
+  optional within their mode and only forbidden outside it.
 - :func:`BackupCreate.validate_mode_bool_fields` model validator for
   booleans (see ``app/sep/plugins/mysql_backups/models.py``).
 
-The split exists because the framework's ``_field_is_present`` helper
-treats ``False`` as "present", which would cause ``forbidden=`` on a bool
-field to reject the legitimate default value. Until that helper is
-generalised, do NOT add ``forbidden=`` / ``requires=`` to a :class:`BoolField`
-here — extend ``_MODE_BOOL_FIELDS`` in ``models.py`` instead.
+The bool split exists because the framework's ``_field_is_present``
+helper treats ``False`` as "present", which would cause ``forbidden=``
+on a bool field to reject the legitimate default value. Until that
+helper is generalised, do NOT add ``forbidden=`` / ``requires=`` to a
+:class:`BoolField` here — extend ``_MODE_BOOL_FIELDS`` in ``models.py``
+instead.
 """
 
 from app.inventory.models import ServiceTypeEnum

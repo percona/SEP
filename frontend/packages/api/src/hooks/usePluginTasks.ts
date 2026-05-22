@@ -50,10 +50,13 @@ function isBackendUnavailable(error: unknown): boolean {
  *
  * The hook unwraps both shapes to `T[]` so call sites stay stable.
  */
-type PluginTasksResponse<T> = T[] | { items: T[] };
+type PluginTasksResponse<T> = T[] | { items: T[] | null };
 
-export function unwrapTasks<T>(data: PluginTasksResponse<T>): T[] {
-  return Array.isArray(data) ? data : data.items;
+export function unwrapTasks<T>(data: PluginTasksResponse<T> | null | undefined): T[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  return data?.items ?? [];
 }
 
 export function usePluginTasks<T extends Record<string, unknown>>(

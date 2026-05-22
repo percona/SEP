@@ -93,7 +93,9 @@ async function mockMysqlBackupsRoutes(page: Page) {
       return route.fulfill({ json: MOCK_SCHEMA });
     }
     if (pathname === '/api/plugins/mysql_backups/' && req.method() === 'GET') {
-      return route.fulfill({ json: tasks });
+      return route.fulfill({
+        json: { items: tasks, total: tasks.length, offset: 0, limit: 50 },
+      });
     }
     if (pathname === '/api/plugins/mysql_backups/' && req.method() === 'POST') {
       const auth = req.headers()['authorization'] ?? '';
@@ -140,13 +142,13 @@ async function mockMysqlBackupsRoutes(page: Page) {
 }
 
 test.describe('MySQL Backups smoke', () => {
-  test.beforeEach(() => {
+  test.beforeEach(async ({ page }) => {
     // Reset the in-memory task store so each test starts clean.
     tasks.length = 0;
+    await mockMysqlBackupsRoutes(page);
   });
 
   test('loads list page and renders schema-driven plugin', async ({ page }) => {
-    await mockMysqlBackupsRoutes(page);
     await page.goto('/plugins/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
@@ -161,7 +163,6 @@ test.describe('MySQL Backups smoke', () => {
     test(`creates a ${label} (${value}) task and surfaces it in the list view`, async ({
       page,
     }) => {
-      await mockMysqlBackupsRoutes(page);
       await page.goto('/plugins/mysql_backups');
       await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
         timeout: 30_000,
