@@ -396,18 +396,20 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
 def restore_create_from_write(body: RestoreTaskWrite) -> RestoreCreate:
     """Convert a :class:`RestoreTaskWrite` body into a :class:`RestoreCreate` model.
 
+    The ``service_id`` coercion (int from the JSON shape → str for the
+    form shape) is owned by ``RestoreCreate``'s
+    ``mode="before"`` model validator, so this helper is a single
+    ``model_validate`` call against the dumped body.
+
     :param body: The JSON request body for restore task creation.
     :type body: RestoreTaskWrite
     :return: A :class:`RestoreCreate` instance for payload construction.
     :rtype: RestoreCreate
     """
-    data = body.model_dump(mode="json")
-    service_id = data.pop("service_id", None)
-    if service_id is not None:
-        data["service_id"] = str(service_id)
-    else:
-        data["service_id"] = None
-    return RestoreCreate.model_validate(data, from_attributes=False)
+    return RestoreCreate.model_validate(
+        body.model_dump(mode="json"),
+        from_attributes=False,
+    )
 
 
 def restore_update_form_from_write(

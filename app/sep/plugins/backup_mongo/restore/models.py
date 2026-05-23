@@ -18,7 +18,14 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, FutureDatetime
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    FutureDatetime,
+    model_validator,
+)
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
@@ -196,6 +203,30 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     restore_mongod_location: NonEmptyStr | EmptyStrToNone = None
     restore_mongod_location_map: NonEmptyStr | EmptyStrToNone = None
     credentials_path: NonEmptyStr | EmptyStrToNone = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_int_service_id(cls, data: Any) -> Any:
+        """Coerce an int ``service_id`` (the JSON body shape) to str.
+
+        The form path receives ``service_id`` as ``NonEmptyStr |
+        EmptyStrToNone`` directly. The JSON path validates a
+        :class:`RestoreTaskWrite` first, where ``service_id`` is
+        ``int | None``, and then dumps it for re-validation here —
+        without this coercion the ``int`` would fail the str-typed
+        field. Form submissions arriving as strings are unaffected.
+
+        :param data: The raw input passed to ``model_validate``.
+        :type data: Any
+        :return: The input with ``service_id`` stringified when it was
+            an int, or ``data`` unchanged otherwise.
+        :rtype: Any
+        """
+        if isinstance(data, dict):
+            sid = data.get("service_id")
+            if isinstance(sid, int):
+                return {**data, "service_id": str(sid)}
+        return data
 
 
 class RestoreTaskWrite(BaseModel):
