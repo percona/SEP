@@ -131,9 +131,10 @@ function mergeTaskHistoryPages(pages: PaginatedTaskHistory[]): PaginatedTaskHist
   const items = pages
     .flatMap((page) => page.items)
     .sort((left, right) => historySortKey(right) - historySortKey(left));
+  const total = pages.reduce((acc, page) => acc + page.total, 0);
   return {
     items,
-    total: items.length,
+    total,
     offset: 0,
     limit: items.length,
   };
