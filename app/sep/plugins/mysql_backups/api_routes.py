@@ -37,7 +37,6 @@ from app.sep.plugins.mysql_backups.deps import (
     BackupsTask,
     build_backup_task_payload_from_json,
     build_mysql_backups_api_task_response,
-    get_backups_task,  # re-exported for test patching  # noqa: F401
     get_backups_task_status,
     get_mysql_backups_api_task_responses,
 )

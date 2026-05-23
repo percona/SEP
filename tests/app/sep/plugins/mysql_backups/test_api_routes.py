@@ -16,12 +16,14 @@
 """Tests for the mysql_backups plugin JSON API routes."""
 
 from datetime import datetime, UTC
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import yaml
 from fastapi import status
 
 from app.core.exceptions import HTTPNotFoundException
+from app.sep.main import sep_app
+from app.sep.plugins.mysql_backups.deps import get_backups_task
 from app.sep.plugins.mysql_backups.models import BackupType
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
@@ -201,20 +203,28 @@ class TestDetailEndpoint:
 
     def test_detail_returns_404_for_missing(self, test_client, mock_task_api_dep):
         """Missing task returns 404."""
-        with patch(
-            "app.sep.plugins.mysql_backups.api_routes.get_backups_task",
-            new=AsyncMock(side_effect=HTTPNotFoundException()),
-        ):
+
+        async def _raise_not_found() -> None:
+            raise HTTPNotFoundException
+
+        sep_app.dependency_overrides[get_backups_task] = _raise_not_found
+        try:
             response = test_client.get("/api/plugins/mysql_backups/nope")
+        finally:
+            sep_app.dependency_overrides.pop(get_backups_task, None)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_detail_returns_404_for_wrong_owner(self, test_client, mock_task_api_dep):
         """Task owned by another plugin returns 404 (no cross-plugin enumeration)."""
-        with patch(
-            "app.sep.plugins.mysql_backups.api_routes.get_backups_task",
-            new=AsyncMock(side_effect=HTTPNotFoundException()),
-        ):
+
+        async def _raise_not_found() -> None:
+            raise HTTPNotFoundException
+
+        sep_app.dependency_overrides[get_backups_task] = _raise_not_found
+        try:
             response = test_client.get("/api/plugins/mysql_backups/some-checksums-task")
+        finally:
+            sep_app.dependency_overrides.pop(get_backups_task, None)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
@@ -347,13 +357,17 @@ class TestDeleteEndpoint:
 
     def test_delete_returns_404_for_missing(self, test_client, mock_task_api_dep):
         """Delete of unknown task returns 404."""
-        with patch(
-            "app.sep.plugins.mysql_backups.api_routes.get_backups_task",
-            new=AsyncMock(side_effect=HTTPNotFoundException()),
-        ):
+
+        async def _raise_not_found() -> None:
+            raise HTTPNotFoundException
+
+        sep_app.dependency_overrides[get_backups_task] = _raise_not_found
+        try:
             response = test_client.delete(
                 "/api/plugins/mysql_backups/nope", headers=BEARER_HEADERS
             )
+        finally:
+            sep_app.dependency_overrides.pop(get_backups_task, None)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
