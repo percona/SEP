@@ -153,40 +153,37 @@ class TestSepHostsEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
-    def test_tasks_failure_returns_empty_list(
+    def test_tasks_failure_returns_502(
         self,
         test_client: TestClient,
         mock_task_api_dep,
         mock_inventory_api_dep,
     ) -> None:
-        """Return ``200 []`` when the Tasks API is unreachable.
+        """Return ``502`` + ``{"detail": ...}`` when the Tasks API is unreachable.
 
-        Catch the upstream ``HTTPException`` and degrade to an empty list so
-        the frontend can render "No hosts available" rather than a hard
-        error. Also attach the ``X-Sep-Upstream-Error`` header carrying
-        the upstream detail so the React shell can raise a notification
-        without breaking the ``200 []`` contract.
+        Catch the upstream ``HTTPException`` and re-raise as
+        :class:`~app.core.exceptions.HTTPBadGatewayException`; the SEP exception
+        handler turns it into a JSON ``502`` response that the React frontend
+        surfaces through React Query's error state.
         """
         mock_task_api_dep.get.side_effect = HTTPBadGatewayException("tasks unreachable")
         mock_inventory_api_dep.get.return_value = {"items": []}
         response = test_client.get("/api/sep/hosts/")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
-        assert response.headers["X-Sep-Upstream-Error"] == "tasks unreachable"
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "tasks unreachable"}
 
-    def test_tasks_oserror_returns_empty_list(
+    def test_tasks_oserror_returns_502(
         self,
         test_client: TestClient,
         mock_task_api_dep,
         mock_inventory_api_dep,
     ) -> None:
-        """Return ``200 []`` when the Tasks API raises an OSError (connector failure)."""
+        """Return ``502`` + ``{"detail": ...}`` when the Tasks API raises an OSError."""
         mock_task_api_dep.get.side_effect = OSError("connection refused")
         mock_inventory_api_dep.get.return_value = {"items": []}
         response = test_client.get("/api/sep/hosts/")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
-        assert response.headers["X-Sep-Upstream-Error"] == "connection refused"
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "connection refused"}
 
 
 class TestSepHostsAuth:
