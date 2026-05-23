@@ -92,9 +92,9 @@ def build_derived_payload(
     ``derived_spec.name_suffix``, applies ``arg_substitutions`` literally to
     ``data["meta"]["args"]`` (when present and string-typed), applies
     ``payload_substitutions`` literally to ``data["payload"]`` (when present
-    and string-typed), sets ``data["backup_type"]`` when ``backup_type`` is
-    set on the spec, and sets ``data["parent"]`` when ``parent_link`` is true.
-    The caller's ``parent_payload`` is never mutated.
+    and string-typed), assigns each ``data_overrides`` entry directly onto
+    ``data`` in iteration order, and sets ``data["parent"]`` when
+    ``parent_link`` is true. The caller's ``parent_payload`` is never mutated.
 
     :param parent_payload: The parent task's serialised payload (typically
         ``parent.model_dump()``).
@@ -110,28 +110,67 @@ def build_derived_payload(
     if (
         derived_spec.arg_substitutions
         or derived_spec.payload_substitutions
-        or derived_spec.backup_type is not None
+        or derived_spec.data_overrides
         or derived_spec.parent_link
     ):
         data = payload.setdefault("data", {})
-        if derived_spec.arg_substitutions:
-            meta = data.get("meta")
-            if isinstance(meta, dict) and isinstance(meta.get("args"), str):
-                args = meta["args"]
-                for old, new in derived_spec.arg_substitutions.items():
-                    args = args.replace(old, new)
-                meta["args"] = args
-        if derived_spec.payload_substitutions:
-            payload_path = data.get("payload")
-            if isinstance(payload_path, str):
-                for old, new in derived_spec.payload_substitutions.items():
-                    payload_path = payload_path.replace(old, new)
-                data["payload"] = payload_path
-        if derived_spec.backup_type is not None:
-            data["backup_type"] = derived_spec.backup_type
+        _apply_arg_substitutions(data, derived_spec.arg_substitutions)
+        _apply_payload_substitutions(data, derived_spec.payload_substitutions)
+        if derived_spec.data_overrides:
+            for key, value in derived_spec.data_overrides.items():
+                data[key] = value
         if derived_spec.parent_link:
             data["parent"] = parent_name
     return payload
+
+
+def _apply_arg_substitutions(
+    data: dict[str, Any], substitutions: dict[str, str] | None
+) -> None:
+    """Apply literal ``str.replace`` substitutions to ``data["meta"]["args"]`` in place.
+
+    No-op when ``substitutions`` is falsy, when ``data["meta"]`` is not a
+    dict, or when ``data["meta"]["args"]`` is not a string.
+
+    :param data: The derived payload's ``data`` mapping, mutated in place.
+    :type data: dict[str, Any]
+    :param substitutions: Ordered mapping of ``(old, new)`` literal
+        substring pairs, applied in dict insertion order.
+    :type substitutions: dict[str, str] | None
+    """
+    if not substitutions:
+        return
+    meta = data.get("meta")
+    if not isinstance(meta, dict) or not isinstance(meta.get("args"), str):
+        return
+    args = meta["args"]
+    for old, new in substitutions.items():
+        args = args.replace(old, new)
+    meta["args"] = args
+
+
+def _apply_payload_substitutions(
+    data: dict[str, Any], substitutions: dict[str, str] | None
+) -> None:
+    """Apply literal ``str.replace`` substitutions to ``data["payload"]`` in place.
+
+    No-op when ``substitutions`` is falsy or when ``data["payload"]`` is
+    not a string.
+
+    :param data: The derived payload's ``data`` mapping, mutated in place.
+    :type data: dict[str, Any]
+    :param substitutions: Ordered mapping of ``(old, new)`` literal
+        substring pairs, applied in dict insertion order.
+    :type substitutions: dict[str, str] | None
+    """
+    if not substitutions:
+        return
+    payload_path = data.get("payload")
+    if not isinstance(payload_path, str):
+        return
+    for old, new in substitutions.items():
+        payload_path = payload_path.replace(old, new)
+    data["payload"] = payload_path
 
 
 async def cascade_create_tasks(

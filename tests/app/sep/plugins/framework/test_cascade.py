@@ -141,7 +141,7 @@ class TestBuildDerivedPayload:
             DerivedTask(
                 name_suffix="-logical",
                 payload_substitutions={"pbm_config": "pbm_logical"},
-                backup_type="pbm_logical",
+                data_overrides={"backup_type": "pbm_logical"},
             ),
         )
 
@@ -170,7 +170,7 @@ class TestBuildDerivedPayload:
                     "pbm_config": "pbm_logical",
                     "pbm_logical": "pbm_physical",
                 },
-                backup_type="pbm_physical",
+                data_overrides={"backup_type": "pbm_physical"},
             ),
         )
 
@@ -188,7 +188,7 @@ class TestBuildDerivedPayload:
             DerivedTask(
                 name_suffix="-logical",
                 payload_substitutions={"pbm_config": "pbm_logical"},
-                backup_type="pbm_logical",
+                data_overrides={"backup_type": "pbm_logical"},
             ),
         )
 
@@ -214,7 +214,7 @@ class TestBuildDerivedPayload:
                     "pbm_config": "pbm_logical",
                     "pbm_physical": "pbm_status",
                 },
-                backup_type="pbm_status",
+                data_overrides={"backup_type": "pbm_status"},
             ),
         )
 
@@ -243,7 +243,7 @@ def _backup_mongo_derived_specs() -> list[DerivedTask]:
         DerivedTask(
             name_suffix="-logical",
             payload_substitutions={"pbm_config": "pbm_logical"},
-            backup_type="pbm_logical",
+            data_overrides={"backup_type": "pbm_logical"},
         ),
         DerivedTask(
             name_suffix="-physical",
@@ -251,7 +251,7 @@ def _backup_mongo_derived_specs() -> list[DerivedTask]:
                 "pbm_config": "pbm_logical",
                 "pbm_logical": "pbm_physical",
             },
-            backup_type="pbm_physical",
+            data_overrides={"backup_type": "pbm_physical"},
         ),
         DerivedTask(
             name_suffix="-status",
@@ -259,7 +259,7 @@ def _backup_mongo_derived_specs() -> list[DerivedTask]:
                 "pbm_config": "pbm_logical",
                 "pbm_physical": "pbm_status",
             },
-            backup_type="pbm_status",
+            data_overrides={"backup_type": "pbm_status"},
         ),
     ]
 

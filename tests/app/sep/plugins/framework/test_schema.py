@@ -1132,7 +1132,7 @@ class TestDerivedTask:
         assert spec.name_suffix == "-dry-run"
         assert spec.arg_substitutions is None
         assert spec.payload_substitutions is None
-        assert spec.backup_type is None
+        assert spec.data_overrides is None
         assert spec.parent_link is True
 
     def test_derived_task_empty_suffix_rejected(self) -> None:
@@ -1153,7 +1153,7 @@ class TestDerivedTask:
             name_suffix="-dry-run",
             arg_substitutions={"--execute": "--dry-run"},
             payload_substitutions={"pbm_config": "pbm_logical"},
-            backup_type="pbm_logical",
+            data_overrides={"backup_type": "pbm_logical"},
             parent_link=False,
         )
         dumped = spec.model_dump(mode="json")
@@ -1162,7 +1162,7 @@ class TestDerivedTask:
             "name_suffix": "-dry-run",
             "arg_substitutions": {"--execute": "--dry-run"},
             "payload_substitutions": {"pbm_config": "pbm_logical"},
-            "backup_type": "pbm_logical",
+            "data_overrides": {"backup_type": "pbm_logical"},
             "parent_link": False,
         }
         reparsed = DerivedTask.model_validate(dumped)

@@ -50,7 +50,7 @@ BACKUP_MONGO_DERIVED = [
         payload_substitutions={
             BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
         },
-        backup_type=BackupType.PBM_LOGICAL.value,
+        data_overrides={"backup_type": BackupType.PBM_LOGICAL.value},
     ),
     DerivedTask(
         name_suffix="-physical",
@@ -58,7 +58,7 @@ BACKUP_MONGO_DERIVED = [
             BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
             BackupType.PBM_LOGICAL.value: BackupType.PBM_PHYSICAL.value,
         },
-        backup_type=BackupType.PBM_PHYSICAL.value,
+        data_overrides={"backup_type": BackupType.PBM_PHYSICAL.value},
     ),
     DerivedTask(
         name_suffix="-status",
@@ -66,7 +66,7 @@ BACKUP_MONGO_DERIVED = [
             BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
             BackupType.PBM_PHYSICAL.value: BackupType.PBM_STATUS.value,
         },
-        backup_type=BackupType.PBM_STATUS.value,
+        data_overrides={"backup_type": BackupType.PBM_STATUS.value},
     ),
 ]
 
