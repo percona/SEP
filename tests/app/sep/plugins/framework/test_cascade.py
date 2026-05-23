@@ -27,6 +27,7 @@ from app.core.requests.remote_api import RemoteAPI
 from app.sep.plugins.framework.cascade import (
     build_derived_payload,
     build_predecessor_payload,
+    cascade_create_independent_tasks,
     cascade_create_predecessors,
     cascade_create_tasks,
     cascade_delete_predecessors,
@@ -403,6 +404,103 @@ class TestCascadeCreateTasks:
         with pytest.raises(HTTPException) as exc_info:
             await cascade_create_tasks(
                 tasks_api, _parent_payload(), [DerivedTask(name_suffix="-x")]
+            )
+
+        assert exc_info.value is original
+        logger_warning.assert_called_once()
+        assert "Rollback DELETE failed" in logger_warning.call_args.args[0]
+
+
+# ── cascade_create_independent_tasks ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+class TestCascadeCreateIndependentTasks:
+    """Cover the parent + N independent children POST cascade with rollback."""
+
+    async def test_posts_parent_then_each_child_in_order(self) -> None:
+        """POST the parent first, then each independent child in declaration order."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        parent = {"name": "p1", "data": {}}
+        children = [
+            {"name": "c1", "data": {"parent": "p1"}},
+            {"name": "c2", "data": {"parent": "p1"}},
+        ]
+
+        await cascade_create_independent_tasks(tasks_api, parent, children)
+
+        assert tasks_api.post.await_args_list == [
+            call("/", json=parent),
+            call("/", json=children[0]),
+            call("/", json=children[1]),
+        ]
+        tasks_api.delete.assert_not_awaited()
+
+    async def test_no_children_only_posts_parent(self) -> None:
+        """POST the parent and skip the children loop when the list is empty."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        parent = {"name": "p1", "data": {}}
+
+        await cascade_create_independent_tasks(tasks_api, parent, [])
+
+        tasks_api.post.assert_awaited_once_with("/", json=parent)
+        tasks_api.delete.assert_not_awaited()
+
+    async def test_parent_post_failure_re_raises_and_skips_rollback(self) -> None:
+        """Skip the rollback loop when the parent POST itself fails."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        tasks_api.post.side_effect = exc
+
+        with pytest.raises(HTTPException) as exc_info:
+            await cascade_create_independent_tasks(
+                tasks_api,
+                {"name": "p1", "data": {}},
+                [{"name": "c1", "data": {}}],
+            )
+
+        assert exc_info.value is exc
+        tasks_api.delete.assert_not_awaited()
+
+    async def test_child_post_failure_rolls_back_in_reverse_order(self) -> None:
+        """DELETE created tasks in reverse creation order (LIFO rollback)."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.post.side_effect = [
+            None,
+            None,
+            HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR),
+        ]
+        parent = {"name": "p1", "data": {}}
+        children = [
+            {"name": "c1", "data": {"parent": "p1"}},
+            {"name": "c2", "data": {"parent": "p1"}},
+        ]
+
+        with pytest.raises(HTTPException) as exc_info:
+            await cascade_create_independent_tasks(tasks_api, parent, children)
+
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert tasks_api.delete.await_args_list == [call("/c1"), call("/p1")]
+
+    async def test_rollback_delete_failure_is_logged_and_swallowed(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Log a rollback DELETE failure at WARNING and re-raise the original exception."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        original = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        tasks_api.post.side_effect = [None, original]
+        tasks_api.delete.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        logger_warning = mocker.patch(
+            "app.sep.plugins.framework.cascade.logger.warning"
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await cascade_create_independent_tasks(
+                tasks_api,
+                {"name": "p1", "data": {}},
+                [{"name": "c1", "data": {}}],
             )
 
         assert exc_info.value is original

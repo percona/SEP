@@ -46,7 +46,10 @@ from app.sep.plugins.backup_mongo.restore.models import (
     RestoreTaskResponse,
     RestoreTaskWrite,
 )
-from app.sep.plugins.framework.cascade import cascade_delete_tasks
+from app.sep.plugins.framework.cascade import (
+    cascade_create_independent_tasks,
+    cascade_delete_tasks,
+)
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -520,6 +523,12 @@ async def create_restore_task_group(
 ) -> None:
     """POST the restore task group; roll back on any failure.
 
+    Thin wrapper over :func:`cascade_create_independent_tasks` that
+    dumps each :class:`TaskWrite` to a payload dict and orders them
+    parent (config) → restore → pbm-list → optional force-resync. The
+    helper owns reverse-DELETE rollback and rollback-DELETE warning
+    logging.
+
     :param tasks_api: The TaskAPI instance used to create tasks.
     :type tasks_api: TaskAPI
     :param config_task: The parent restore-config task payload.
@@ -532,25 +541,11 @@ async def create_restore_task_group(
     :type force_resync_task: TaskWrite | None
     :raises Exception: Re-raises the failing POST after rollback DELETEs complete.
     """
-    tasks = [config_task, restore_task, pbm_list_task]
+    config_payload = config_task.model_dump()
+    children = [restore_task.model_dump(), pbm_list_task.model_dump()]
     if force_resync_task is not None:
-        tasks.append(force_resync_task)
-    created_names: list[str] = []
-    try:
-        for task in tasks:
-            await tasks_api.post("/", json=task.model_dump())
-            created_names.append(task.name)
-    except Exception:
-        for task_name in reversed(created_names):
-            try:
-                await tasks_api.delete(f"/{task_name}")
-            except Exception as rollback_exc:  # noqa: BLE001
-                logger.warning(
-                    "Rollback DELETE failed for %r during restore create rollback: %s",
-                    task_name,
-                    rollback_exc,
-                )
-        raise
+        children.append(force_resync_task.model_dump())
+    await cascade_create_independent_tasks(tasks_api, config_payload, children)
 
 
 def _parse_restore_task_config(task: Task) -> dict[str, Any]:
