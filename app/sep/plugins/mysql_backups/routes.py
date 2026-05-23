@@ -50,11 +50,7 @@ from app.tasks.models import TaskHistoryStatusEnum
 from .restore.routes import router as restore_router
 
 logger = logging.getLogger(__name__)
-# Routes registered directly on this router serve the deprecated Jinja2
-# backup UI. The React + JSON API replacement lives under
-# /api/plugins/mysql_backups/ and /plugins/mysql_backups (FE). The
-# restore subroute keeps its own route_class — it is not part of the
-# Wave-1 migration.
+# Jinja2 UI deprecated — React replacement at /plugins/mysql_backups.
 router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
