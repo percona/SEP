@@ -22,7 +22,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
 import type { PluginSchema } from '@sep/api';
-import { PluginDetailPage, pickExecutionData, resolveTabFromSplat } from './PluginDetailPage';
+import { PluginDetailPage, resolveTabFromSplat } from './PluginDetailPage';
 
 const mockDeleteMutate = vi.fn();
 const mockExecuteMutate = vi.fn();
@@ -75,6 +75,14 @@ vi.mock('../../hooks/useTaskStats', () => ({
   useTaskStats: (taskName?: string, enabled?: boolean) => mockUseTaskStats(taskName, enabled),
 }));
 
+vi.mock('./DetailSyntaxHighlighter', () => ({
+  default: ({ value, language }: { value: unknown; language: string }) => (
+    <pre data-testid="detail-syntax-highlighter" data-language={language}>
+      {String(value)}
+    </pre>
+  ),
+}));
+
 const schema: PluginSchema = {
   pluginName: 'checksums',
   display_name: 'Checksum',
@@ -114,38 +122,209 @@ function renderAt(path: string) {
   );
 }
 
-describe('pickExecutionData', () => {
-  it('returns null when no data field', () => {
-    expect(pickExecutionData({})).toBeNull();
-    expect(pickExecutionData({ data: null })).toBeNull();
-    expect(pickExecutionData({ data: 'string' })).toBeNull();
-  });
+describe('PluginDetailPage — detail_view sections', () => {
+  function executionSchema(overrides: Partial<PluginSchema> = {}): PluginSchema {
+    return {
+      pluginName: 'checksums',
+      display_name: 'Checksum',
+      description: 'Test',
+      capabilities: {},
+      list_view: {
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'status', label: 'Status', format: 'status' },
+        ],
+        default_sort: '-id',
+      },
+      formSchema: { sections: [] },
+      detail_view: {
+        sections: [
+          {
+            title: 'Execution',
+            fields: [
+              { path: 'data.meta.command', label: 'Command' },
+              { path: 'data.meta.args', label: 'Args' },
+              { path: 'data.meta.target', label: 'Target' },
+            ],
+          },
+        ],
+      },
+      ...overrides,
+    } as unknown as PluginSchema;
+  }
 
-  it('returns null when data has no command/args/target', () => {
-    expect(pickExecutionData({ data: {} })).toBeNull();
-    expect(pickExecutionData({ data: { meta: {} } })).toBeNull();
-    expect(pickExecutionData({ data: { foo: 'bar' } })).toBeNull();
-  });
-
-  it('reads from data.meta first', () => {
-    const result = pickExecutionData({
-      data: { meta: { command: 'pt-table-checksum', target: 'pmm' } },
+  it('renders a section with each labelled field resolved from the task', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: {
+          meta: {
+            command: 'pt-table-checksum',
+            args: '--foo',
+            target: 'pmm',
+          },
+        },
+      },
+      isLoading: false,
     });
-    expect(result).toEqual({ command: 'pt-table-checksum', args: undefined, target: 'pmm' });
+
+    renderWithSchema(executionSchema());
+
+    expect(screen.getByRole('heading', { name: 'Execution' })).toBeInTheDocument();
+    expect(screen.getByText('pt-table-checksum')).toBeInTheDocument();
+    expect(screen.getByText('--foo')).toBeInTheDocument();
+    expect(screen.getByText('pmm')).toBeInTheDocument();
   });
 
-  it('falls back to data.* when meta is missing', () => {
-    const result = pickExecutionData({
-      data: { command: 'legacy-cmd', args: '--foo', target: 'host' },
+  it('skips fields whose path resolves to undefined', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: { meta: { command: 'pt-table-checksum' } },
+      },
+      isLoading: false,
     });
-    expect(result).toEqual({ command: 'legacy-cmd', args: '--foo', target: 'host' });
+
+    renderWithSchema(executionSchema());
+
+    expect(screen.getByText('Command')).toBeInTheDocument();
+    expect(screen.queryByText('Args')).toBeNull();
+    expect(screen.queryByText('Target')).toBeNull();
   });
 
-  it('prefers meta over data.* when both present', () => {
-    const result = pickExecutionData({
-      data: { command: 'old', meta: { command: 'new' } },
+  it('skips fields whose path resolves to an empty string', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: {
+          meta: { command: '', args: '--foo', target: 'pmm' },
+        },
+      },
+      isLoading: false,
     });
-    expect(result?.command).toBe('new');
+
+    renderWithSchema(executionSchema());
+
+    expect(screen.queryByText('Command')).toBeNull();
+    expect(screen.getByText('Args')).toBeInTheDocument();
+  });
+
+  it('hides the whole section when every field resolves empty', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed', data: {} },
+      isLoading: false,
+    });
+
+    renderWithSchema(executionSchema());
+
+    expect(screen.queryByRole('heading', { name: 'Execution' })).toBeNull();
+  });
+
+  it('renders multiple sections in declared order', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: {
+          meta: { command: 'cmd', args: '--foo', target: 'pmm' },
+          parent: 'parent-task',
+        },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(
+      executionSchema({
+        detail_view: {
+          sections: [
+            {
+              title: 'Execution',
+              fields: [{ path: 'data.meta.command', label: 'Command' }],
+            },
+            {
+              title: 'Chain',
+              fields: [{ path: 'data.parent', label: 'Parent' }],
+            },
+          ],
+        },
+      } as unknown as PluginSchema),
+    );
+
+    const headings = screen.getAllByRole('heading', { level: 6 }).map((h) => h.textContent);
+    const execIdx = headings.indexOf('Execution');
+    const chainIdx = headings.indexOf('Chain');
+    expect(execIdx).toBeGreaterThanOrEqual(0);
+    expect(chainIdx).toBeGreaterThanOrEqual(0);
+    expect(execIdx).toBeLessThan(chainIdx);
+  });
+
+  it('does not render any section cards when detail_view is undefined', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: { meta: { command: 'cmd' } },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(executionSchema({ detail_view: undefined } as PluginSchema));
+
+    expect(screen.queryByRole('heading', { name: 'Execution' })).toBeNull();
+  });
+
+  it('passes DetailField.highlight through to the syntax highlighter', async () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: { meta: { command: 'SELECT 1' } },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(
+      executionSchema({
+        detail_view: {
+          sections: [
+            {
+              title: 'Execution',
+              fields: [{ path: 'data.meta.command', label: 'Command', highlight: 'sql' }],
+            },
+          ],
+        },
+      } as unknown as PluginSchema),
+    );
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('sql');
+    expect(hl.textContent).toBe('SELECT 1');
+  });
+
+  it('renders boolean false and numeric zero leaves', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: { meta: { command: false, args: 0 } },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(executionSchema());
+
+    expect(screen.getByText('No')).toBeInTheDocument();
+    expect(screen.getByText('0')).toBeInTheDocument();
   });
 });
 
