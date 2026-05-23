@@ -459,12 +459,11 @@ class NotEquals(Predicate):
 class Contains(Predicate):
     """Match when ``value`` is a member of the container at ``instance.<field>``.
 
-    The container is expected to be a sequence/set (``list`` / ``tuple`` /
-    ``set`` / ``frozenset``) — typically the value of a MultiChoice field.
-    Strings are treated as containers (substring match) only because Python
-    iterables already are; intentional substring tests should keep using
-    :class:`Equals` plus :func:`truthy` instead, since the wire op semantic
-    for ``contains`` is list-membership.
+    The container must be a list/tuple/set/frozenset (typically the value of
+    a MultiChoice field). Any other type — including ``str``, ``bytes``, and
+    mappings — evaluates to ``False``. This matches the frontend predicate
+    evaluator, which treats non-arrays as ``False``. For substring tests use
+    :class:`Equals` plus :func:`truthy` instead.
 
     Comparison is tolerant of enum members: when either side is an
     :class:`Enum`, both the underlying ``.value`` and the member ``.name``
@@ -495,14 +494,10 @@ class Contains(Predicate):
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
         container = getattr(instance, self.field, None)
-        if container is None:
-            return False
-        try:
-            items = list(container)
-        except TypeError:
+        if not isinstance(container, list | tuple | set | frozenset):
             return False
         target_keys = self._keys(self.value)
-        return any(target_keys & self._keys(item) for item in items)
+        return any(target_keys & self._keys(item) for item in container)
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON wire shape for this predicate."""

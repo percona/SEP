@@ -597,6 +597,15 @@ class TestPredicateEvaluation:
 
         assert predicate.evaluate(_Instance(upload=42)) is False
 
+    def test_contains_rejects_str_bytes_and_mapping(self) -> None:
+        """str/bytes/mapping containers return False — list-membership only, matching the frontend."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.evaluate(_Instance(upload="s3")) is False
+        assert predicate.evaluate(_Instance(upload="s3rsync")) is False
+        assert predicate.evaluate(_Instance(upload=b"s3")) is False
+        assert predicate.evaluate(_Instance(upload={"s3": True})) is False
+
     def test_contains_to_dict_and_referenced_fields(self) -> None:
         """Wire shape is ``{contains: {field: value}}`` and references the field."""
         predicate = contains("upload", "s3")
