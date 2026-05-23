@@ -52,7 +52,7 @@ async function fetchServicesPage(
   if (serviceType) {
     params.service_type = serviceType;
   }
-  const { data } = await apiClient.get<PaginatedServices>('/inventory/services/', { params });
+  const { data } = await apiClient.get<PaginatedServices>('/sep/services/', { params });
   return data;
 }
 
@@ -77,9 +77,11 @@ async function fetchServicesForType(
 }
 
 /**
- * Fetch services from the inventory API, optionally filtered to one or more
- * service types. Multiple types fan out to parallel paginated requests because
- * the upstream `/services/` endpoint accepts a single `service_type` only.
+ * Fetch services through the SEP gateway (`/api/sep/services/`), optionally
+ * filtered to one or more service types. Multiple types fan out to parallel
+ * paginated requests because the upstream `/services/` endpoint accepts a
+ * single `service_type` only. The frontend must not call `/api/inventory/`
+ * directly (see `app/sep/api/router.py`).
  */
 export function useServices(
   options: UseServicesOptions = {},
@@ -87,7 +89,7 @@ export function useServices(
   const { enabled = true } = options;
   const types = normaliseTypes(options.serviceTypes);
   return useQuery<ServiceOption[], Error>({
-    queryKey: ['inventory', 'services', { types }],
+    queryKey: ['sep', 'services', { types }],
     enabled,
     staleTime: 60_000,
     queryFn: async () => {

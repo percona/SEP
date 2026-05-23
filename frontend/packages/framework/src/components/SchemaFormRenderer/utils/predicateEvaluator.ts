@@ -147,6 +147,20 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
       return toNum(values[field]) <= toNum(resolveValue(raw, values));
     }
 
+    case 'contains': {
+      const entry = Object.entries(operand as Record<string, unknown>)[0];
+      if (!entry) {
+        return false;
+      }
+      const [field, raw] = entry;
+      const container = values[field];
+      if (!Array.isArray(container)) {
+        return false;
+      }
+      const needle = resolveValue(raw, values);
+      return container.includes(needle);
+    }
+
     case 'all_truthy': {
       const fs = operand as string[];
       return fs.length > 0 && fs.every((f) => isTruthy(values[f]));
@@ -220,7 +234,8 @@ function getPredicateFieldNames(predicate: Predicate): string[] {
     case 'gt':
     case 'gte':
     case 'lt':
-    case 'lte': {
+    case 'lte':
+    case 'contains': {
       const entry = Object.entries(operand as Record<string, unknown>)[0];
       if (!entry) {
         return [];

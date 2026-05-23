@@ -350,6 +350,38 @@ describe('SchemaFormRenderer — multichoice minItems', () => {
   });
 });
 
+describe('SchemaFormRenderer — multichoice required', () => {
+  it('blocks submission when a required multichoice has the default empty array', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            required: true,
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Fix the highlighted fields/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('select-input-upload')).toHaveAttribute('aria-invalid', 'true'),
+    );
+  });
+});
+
 describe('SchemaFormRenderer — file required', () => {
   it('blocks submission when a required file field is empty', async () => {
     const user = userEvent.setup();
@@ -376,7 +408,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
   it('clears downstream schema value when the upstream service changes', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url === '/inventory/services/') {
+      if (url === '/sep/services/') {
         return Promise.resolve({
           data: {
             items: [
@@ -421,7 +453,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
     // Wait for services to load.
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/inventory/services/', expect.anything()),
+      expect(mockedApi.get).toHaveBeenCalledWith('/sep/services/', expect.anything()),
     );
 
     // Pick first service.

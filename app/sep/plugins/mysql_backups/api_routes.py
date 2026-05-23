@@ -21,9 +21,10 @@ Mounted at ``/api/plugins/mysql_backups/`` via ``plugins_router`` in
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.models import PaginatedResponse
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
@@ -35,7 +36,7 @@ from app.sep.deps import (
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.mysql_backups.deps import (
     BackupsTask,
-    build_backup_task_payload_from_json,
+    build_backup_task_payload_from_model,
     build_mysql_backups_api_task_response,
     get_backups_task_status,
     get_mysql_backups_api_task_responses,
@@ -54,15 +55,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=mysql_backups_schema)
 
+MAX_PAGINATION_LIMIT = 50
+
 
 @router.get("/", response_model=PaginatedResponse[BackupResponse])
 async def mysql_backups_api_list(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = 0,
-    limit: int = 50,
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=1, le=MAX_PAGINATION_LIMIT),
 ) -> PaginatedResponse[BackupResponse]:
-    """List MySQL backup tasks."""
+    """List MySQL backup tasks.
+
+    ``limit`` is capped because each listed task triggers a follow-up history
+    fetch in ``get_mysql_backups_api_task_responses``; an unbounded ``limit``
+    would amplify fan-out to the Tasks API.
+    """
     return await get_mysql_backups_api_task_responses(
         tasks_api, status=status, offset=offset, limit=limit
     )
@@ -91,7 +99,7 @@ async def mysql_backups_api_create(
 ) -> BackupResponse:
     """Create a MySQL backup task from a JSON request body."""
     logger.debug("Create mysql_backups task (JSON path): %s", body.task_name)
-    task_write = await build_backup_task_payload_from_json(body, inventory_api)
+    task_write = await build_backup_task_payload_from_model(body, inventory_api)
     created = await tasks_api.post("/", json=task_write.model_dump())
     task = Task.model_validate(created)
     return build_mysql_backups_api_task_response(task, status=None)
@@ -101,8 +109,6 @@ async def mysql_backups_api_create(
     "/{task_name}/execute",
     response_model=BackupExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
-    # RequireBearerAuth first so anonymous/cookie-only callers short-circuit
-    # before any Tasks-API calls fire.
     dependencies=[RequireBearerAuth, IsApiAuthenticated, HasNoConflictedRunningTasks],
 )
 async def mysql_backups_api_execute(

@@ -39,6 +39,7 @@ class TestMysqlBackupsSchema:
         assert mysql_backups_schema.capabilities == Capabilities(
             chaining=True, alert_on_fail=True, scheduling=True
         )
+        assert mysql_backups_schema.capabilities.stats is False
 
     def test_list_view_columns(self):
         """List view exposes the per-ticket column set."""
@@ -78,7 +79,7 @@ class TestMysqlBackupsSchema:
         assert bt.required is True
 
     def test_upload_is_multi_choice_field(self):
-        """``upload`` is a MultiChoiceField with the three upload providers."""
+        """``upload`` is a required MultiChoiceField with the three upload providers."""
         fields = {
             field.name: field
             for section in mysql_backups_schema.forms
@@ -87,6 +88,36 @@ class TestMysqlBackupsSchema:
         upload = fields["upload"]
         assert isinstance(upload, MultiChoiceField)
         assert {choice.value for choice in upload.choices} == {"RSYNC", "S3", "GSUTIL"}
+        assert upload.required is True
+
+    def test_upload_destination_fields_gated_on_upload(self):
+        """``s3_bucket``/``gs_bucket``/``rsync_path`` are hidden when their provider is absent.
+
+        Each destination field declares a ``forbidden`` gate keyed off the
+        ``upload`` MultiChoice via the ``Contains`` predicate. This pins the
+        SEP-1061 explicit-MultiChoice contract: the React renderer hides the
+        field (and unregisters it from RHF) when the matching provider is
+        not selected, and the backend's conditional-rule plan rejects a
+        present value in the same case.
+        """
+        fields = {
+            field.name: field
+            for section in mysql_backups_schema.forms
+            for field in section.fields
+        }
+        cases = [
+            ("s3_bucket", "S3"),
+            ("s3_storage_class", "S3"),
+            ("awscli_s3_upload_extra_args", "S3"),
+            ("gs_bucket", "GSUTIL"),
+            ("rsync_path", "RSYNC"),
+        ]
+        for name, provider in cases:
+            gates = fields[name].forbidden or []
+            wire_shapes = [gate.when.to_dict() for gate in gates]
+            assert wire_shapes == [{"not": {"contains": {"upload": provider}}}], (
+                f"unexpected forbidden gate on {name}: {wire_shapes}"
+            )
 
     def test_schema_field_names_match_backup_create_attrs(self):
         """Every schema field name must resolve to a ``BackupCreate`` attribute.

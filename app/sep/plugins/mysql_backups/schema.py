@@ -32,7 +32,15 @@ Per-mode field gating is uniformly schema-declared:
 """
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.framework.rules import F, FailRule, falsy, FieldGate, truthy
+from app.sep.plugins.framework.rules import (
+    Contains,
+    F,
+    FailRule,
+    falsy,
+    FieldGate,
+    not_,
+    truthy,
+)
 from app.sep.plugins.framework.schema import (
     BoolField,
     Capabilities,
@@ -56,11 +64,38 @@ _BACKUP_TYPE_CHOICES = [
     Choice(label="Binlog", value="B"),
 ]
 
+# Upload-provider choice values. Re-used by the schema's ``Contains`` gates
+# (see the Upload section below) so the choice values, the gate operands,
+# and the ``UploadProvider`` enum names stay in sync. The frontend submits
+# these strings verbatim; the backend coerces them to ``UploadProvider``
+# via ``EnumFieldMixin``.
+_UPLOAD_S3 = "S3"
+_UPLOAD_RSYNC = "RSYNC"
+_UPLOAD_GSUTIL = "GSUTIL"
+
 _UPLOAD_CHOICES = [
-    Choice(label="Rsync", value="RSYNC"),
-    Choice(label="S3", value="S3"),
-    Choice(label="Google Cloud Storage", value="GSUTIL"),
+    Choice(label="Rsync", value=_UPLOAD_RSYNC),
+    Choice(label="S3", value=_UPLOAD_S3),
+    Choice(label="Google Cloud Storage", value=_UPLOAD_GSUTIL),
 ]
+
+
+def _upload_excludes(provider: str) -> list[FieldGate]:
+    """Hide / forbid a destination field unless ``provider`` is in ``upload``.
+
+    Used by :attr:`BaseField.forbidden` on string upload-destination fields.
+    On the frontend ``useConditionalField`` hides + unregisters the field
+    when the gate fires (provider missing from the user's selection); on
+    the backend ``_evaluate_field_gate_forbidden`` rejects a present value
+    in the same case, giving us "explicit MultiChoice contract" enforcement
+    without duplicating the bidirectional check from
+    :meth:`BackupCreate.validate_upload_provider_consistency`.
+
+    Bool fields (e.g. ``skip_s3_safety_check``) intentionally skip this
+    gate because ``_field_is_present(False)`` is ``True`` and would reject
+    the legitimate default — those remain covered by the model validator.
+    """
+    return [FieldGate(when=not_(Contains("upload", provider)))]
 
 
 def _other_modes_forbid(mode: str) -> list[FieldGate]:
@@ -407,9 +442,18 @@ mysql_backups_schema = PluginSchema(
                     name="upload",
                     label="Upload providers",
                     choices=_UPLOAD_CHOICES,
+                    required=True,
                 ),
-                StringField(name="s3_bucket", label="S3 bucket"),
-                StringField(name="s3_storage_class", label="S3 storage class"),
+                StringField(
+                    name="s3_bucket",
+                    label="S3 bucket",
+                    forbidden=_upload_excludes(_UPLOAD_S3),
+                ),
+                StringField(
+                    name="s3_storage_class",
+                    label="S3 storage class",
+                    forbidden=_upload_excludes(_UPLOAD_S3),
+                ),
                 BoolField(
                     name="skip_s3_safety_check",
                     label="Skip S3 safety check",
@@ -418,9 +462,18 @@ mysql_backups_schema = PluginSchema(
                 StringField(
                     name="awscli_s3_upload_extra_args",
                     label="AWS S3 upload extra args",
+                    forbidden=_upload_excludes(_UPLOAD_S3),
                 ),
-                StringField(name="gs_bucket", label="Google Cloud Storage bucket"),
-                StringField(name="rsync_path", label="Rsync destination path"),
+                StringField(
+                    name="gs_bucket",
+                    label="Google Cloud Storage bucket",
+                    forbidden=_upload_excludes(_UPLOAD_GSUTIL),
+                ),
+                StringField(
+                    name="rsync_path",
+                    label="Rsync destination path",
+                    forbidden=_upload_excludes(_UPLOAD_RSYNC),
+                ),
             ],
         ),
     ],

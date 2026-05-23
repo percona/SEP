@@ -73,7 +73,7 @@ describe('ServiceSelector', () => {
     );
 
     await waitFor(() =>
-      expect(mocked.get).toHaveBeenCalledWith('/inventory/services/', {
+      expect(mocked.get).toHaveBeenCalledWith('/sep/services/', {
         params: { offset: 0, limit: 200 },
       }),
     );
@@ -95,7 +95,7 @@ describe('ServiceSelector', () => {
     );
 
     await waitFor(() =>
-      expect(mocked.get).toHaveBeenCalledWith('/inventory/services/', {
+      expect(mocked.get).toHaveBeenCalledWith('/sep/services/', {
         params: { offset: 0, limit: 200, service_type: 'mysql' },
       }),
     );

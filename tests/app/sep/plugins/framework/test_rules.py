@@ -44,6 +44,8 @@ from app.sep.plugins.framework.rules import (
     apply_conditional_rules,
     CardinalityRule,
     ConditionalRulesModel,
+    Contains,
+    contains,
     Equals,
     F,
     FailRule,
@@ -561,6 +563,46 @@ class TestPredicateEvaluation:
         assert predicate.evaluate(_Instance(a=1, b=0, c=1)) is True
         assert predicate.evaluate(_Instance(a=1, b=0, c=0)) is False
         assert predicate.evaluate(_Instance(a=0, b=1, c=1)) is False
+
+    def test_contains_matches_list_member(self) -> None:
+        """Contains matches when value is in the list."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.evaluate(_Instance(upload=["s3", "rsync"])) is True
+        assert predicate.evaluate(_Instance(upload=["rsync"])) is False
+
+    def test_contains_with_empty_or_none_container(self) -> None:
+        """Empty list and ``None`` container both evaluate False."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.evaluate(_Instance(upload=[])) is False
+        assert predicate.evaluate(_Instance(upload=None)) is False
+
+    def test_contains_normalizes_enum_member(self) -> None:
+        """An enum literal matches its underlying value inside the list."""
+
+        class _Provider(IntEnum):
+            S3 = 1
+            RSYNC = 2
+
+        predicate = Contains("upload", _Provider.S3)
+
+        assert predicate.evaluate(_Instance(upload=[_Provider.S3])) is True
+        assert predicate.evaluate(_Instance(upload=[1])) is True
+        assert predicate.evaluate(_Instance(upload=[_Provider.RSYNC])) is False
+
+    def test_contains_handles_non_iterable_container(self) -> None:
+        """A non-iterable / scalar value at the field returns False rather than raising."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.evaluate(_Instance(upload=42)) is False
+
+    def test_contains_to_dict_and_referenced_fields(self) -> None:
+        """Wire shape is ``{contains: {field: value}}`` and references the field."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.to_dict() == {"contains": {"upload": "s3"}}
+        assert predicate.referenced_fields() == {"upload"}
 
 
 # ── Layer A: edge cases for field presence semantics ────────────────────

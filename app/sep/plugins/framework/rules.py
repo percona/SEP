@@ -63,6 +63,7 @@ __all__ = [
     "AnyTruthy",
     "CardinalityRule",
     "ConditionalRulesModel",
+    "Contains",
     "Equals",
     "F",
     "FailRule",
@@ -92,6 +93,7 @@ __all__ = [
     "any_present",
     "any_truthy",
     "apply_conditional_rules",
+    "contains",
     "evaluate_conditional_rules",
     "falsy",
     "none_present",
@@ -448,6 +450,63 @@ class NotEquals(Predicate):
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON wire shape for this predicate."""
         return {"not_equals": {self.field: _wire_value(self.value)}}
+
+    def referenced_fields(self) -> set[str]:
+        """Return the field names this predicate reads from."""
+        return {self.field}
+
+
+class Contains(Predicate):
+    """Match when ``value`` is a member of the container at ``instance.<field>``.
+
+    The container is expected to be a sequence/set (``list`` / ``tuple`` /
+    ``set`` / ``frozenset``) — typically the value of a MultiChoice field.
+    Strings are treated as containers (substring match) only because Python
+    iterables already are; intentional substring tests should keep using
+    :class:`Equals` plus :func:`truthy` instead, since the wire op semantic
+    for ``contains`` is list-membership.
+
+    Comparison is tolerant of enum members: when either side is an
+    :class:`Enum`, both the underlying ``.value`` and the member ``.name``
+    are checked. This lets a single :class:`Contains` declaration work
+    against both the post-Pydantic instance (where the container holds
+    enum members) and the frontend wire form (where it holds the choice's
+    ``value`` string).
+
+    :ivar field: The referenced field name.
+    :vartype field: str
+    :ivar value: The literal member checked for inclusion.
+    :vartype value: Any
+    """
+
+    __slots__ = ("field", "value")
+
+    def __init__(self, field: str, value: Any) -> None:
+        self.field = field
+        self.value = value
+
+    @staticmethod
+    def _keys(value: Any) -> set[Any]:
+        """Return the comparison keys for an enum or scalar value."""
+        if isinstance(value, Enum):
+            return {value, value.value, value.name}
+        return {value}
+
+    def evaluate(self, instance: Any) -> bool:
+        """Evaluate this predicate against ``instance``."""
+        container = getattr(instance, self.field, None)
+        if container is None:
+            return False
+        try:
+            items = list(container)
+        except TypeError:
+            return False
+        target_keys = self._keys(self.value)
+        return any(target_keys & self._keys(item) for item in items)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the JSON wire shape for this predicate."""
+        return {"contains": {self.field: _wire_value(self.value)}}
 
     def referenced_fields(self) -> set[str]:
         """Return the field names this predicate reads from."""
@@ -867,6 +926,19 @@ def absent(name: str) -> Predicate:
     :rtype: Predicate
     """
     return NonePresent([name])
+
+
+def contains(name: str, value: Any) -> Predicate:
+    """Return a predicate matching when ``value`` is a member of ``instance.<name>``.
+
+    :param name: The field name whose value is the container.
+    :type name: str
+    :param value: The literal member checked for inclusion.
+    :type value: Any
+    :return: A :class:`Contains` predicate.
+    :rtype: Predicate
+    """
+    return Contains(name, value)
 
 
 def all_truthy(*names: str) -> Predicate:

@@ -49,7 +49,6 @@ from app.sep.plugins.mysql_backups.models import (
     BackupCreate,
     BackupResponse,
     BackupType,
-    UploadProvider,
 )
 from app.tasks.models import (
     Task,
@@ -62,15 +61,14 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 
-async def _build_backup_task_payload_core(
+async def build_backup_task_payload_from_model(
     form: BackupCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build a ``TaskWrite`` from a validated ``BackupCreate`` instance.
 
-    Shared core used by both the form-bound dependency
-    :func:`build_backup_task_payload` and the JSON-path helper
-    :func:`build_backup_task_payload_from_json`.
+    Shared between the form-bound FastAPI dependency
+    :func:`build_backup_task_payload` and direct JSON-path callers.
     """
     service = await get_created_entity(
         inventory_api,
@@ -91,17 +89,7 @@ async def _build_backup_task_payload_core(
         by_alias=True,
     )
 
-    if form.upload is not None:
-        upload_providers = list(form.upload)
-    else:
-        # Legacy form path: providers are inferred from bucket/path presence.
-        upload_providers = []
-        if form.s3_bucket:
-            upload_providers.append(UploadProvider.S3)
-        if form.gs_bucket:
-            upload_providers.append(UploadProvider.GSUTIL)
-        if form.rsync_path:
-            upload_providers.append(UploadProvider.RSYNC)
+    upload_providers = list(form.upload)
 
     server_config = {
         "alias": form.alias or service.node.address,
@@ -177,25 +165,7 @@ async def build_backup_task_payload(
     :return: A fully constructed ``TaskWrite`` object.
     :rtype: TaskWrite
     """
-    return await _build_backup_task_payload_core(form, inventory_api)
-
-
-async def build_backup_task_payload_from_json(
-    body: BackupCreate,
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the backup task payload from a JSON request body.
-
-    JSON-path counterpart to :func:`build_backup_task_payload`.
-
-    :param body: The validated JSON request body.
-    :type body: BackupCreate
-    :param inventory_api: The Inventory API client.
-    :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object.
-    :rtype: TaskWrite
-    """
-    return await _build_backup_task_payload_core(body, inventory_api)
+    return await build_backup_task_payload_from_model(form, inventory_api)
 
 
 def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
@@ -275,7 +245,7 @@ async def get_backups_task(
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
 
-def _extract_backup_type_from_task(task: Task) -> BackupType | None:
+def _extract_backup_type_from_task(task: Task) -> BackupType | None:  # noqa: PLR0911
     """Read ``BACKUP_TYPE`` out of the task's YAML config, if present."""
     meta = task.data.get("meta") if task.data else None
     raw_config = meta.get("config") if meta else None
@@ -285,10 +255,15 @@ def _extract_backup_type_from_task(task: Task) -> BackupType | None:
         config = yaml.safe_load(raw_config)
     except yaml.YAMLError:
         return None
-    server_list = (config or {}).get("SERVER_LIST") or []
-    if not server_list:
+    if not isinstance(config, dict):
         return None
-    raw_type = server_list[0].get("BACKUP_TYPE")
+    server_list = config.get("SERVER_LIST")
+    if not isinstance(server_list, list) or not server_list:
+        return None
+    first = server_list[0]
+    if not isinstance(first, dict):
+        return None
+    raw_type = first.get("BACKUP_TYPE")
     if raw_type is None:
         return None
     try:
@@ -327,8 +302,11 @@ def _extract_latest_task_status(
 ) -> TaskHistoryStatusEnum | None:
     """Return the latest known status from a task history payload.
 
-    Relies on ``get_backups_task_status`` requesting the history endpoint
-    with ``order_by=created_at:desc`` so the first item is the newest run.
+    The Tasks history endpoint does not accept an ``order_by`` query-string
+    override; ``get_backups_task_status`` requests ``limit=1`` and relies on
+    ``BaseSQLModelManager``'s default ordering (``created_at DESC`` for
+    ``BaseSQLModel`` subclasses, see ``app/core/db/crud.py``) so the first
+    item is the newest run.
     """
     for history in histories:
         if (raw_status := history.get("status")) is not None:

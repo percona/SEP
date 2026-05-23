@@ -22,12 +22,24 @@ import yaml
 
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.mysql_backups.deps import (
+    _extract_backup_type_from_task,
     build_backup_task_payload,
     get_backups_task,
     get_backups_task_info,
+    get_backups_task_status,
 )
-from app.sep.plugins.mysql_backups.models import BackupCreate, BackupType
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.plugins.mysql_backups.models import (
+    BackupCreate,
+    BackupType,
+    UploadProvider,
+)
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 
 @pytest.mark.asyncio
@@ -83,6 +95,7 @@ async def test_build_backup_task_payload(
         "task_name": "test_task",
         "backup_type": backup_type,
         "hostname": "test_host",
+        "upload": [UploadProvider.S3, UploadProvider.RSYNC],
         "s3_bucket": "my-test-bucket",
         "rsync_path": "/rsync",
         "encrypt": True,
@@ -138,6 +151,8 @@ async def test_build_backup_task_payload_raises_for_invalid_backup_type(
         task_name="test_task",
         hostname="test_host",
         backup_type="invalid",
+        upload=[UploadProvider.S3],
+        s3_bucket="bkt",
     )
 
     with pytest.raises(ValueError, match="Invalid Backup Type"):
@@ -196,3 +211,58 @@ def test_get_backups_task_info():
     assert result["port"] == server_port
     assert result["upload"] == "S3, RSYNC"
     assert result["backup_type"] == BackupType.XTRABACKUP.name
+
+
+def _task_with_raw_config(raw_config: str) -> Task:
+    """Build a minimal Task whose YAML config is the given raw string."""
+    return Task(
+        name="t",
+        owner=TaskOwner.BACKUPS,
+        data={"meta": {"config": raw_config}},
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_config",
+    [
+        "- just\n- a\n- list\n",
+        "scalar",
+        "SERVER_LIST: not-a-list\n",
+        "SERVER_LIST:\n  - just-a-string\n",
+        "SERVER_LIST: []\n",
+        ": invalid : yaml :",
+    ],
+)
+def test_extract_backup_type_handles_non_dict_yaml(raw_config: str):
+    """Malformed/non-dict YAML must return ``None`` instead of raising."""
+    assert _extract_backup_type_from_task(_task_with_raw_config(raw_config)) is None
+
+
+@pytest.mark.asyncio
+async def test_get_backups_task_status_returns_first_history_row():
+    """Pin reliance on ``BaseSQLModelManager._get_ordering`` default ``created_at DESC``.
+
+    The Tasks history endpoint has no ``order_by`` query param. If the
+    default ordering ever flips, this test breaks loudly so we notice
+    instead of silently returning a stale status.
+    """
+    tasks_api = AsyncMock()
+    tasks_api.get.return_value = {
+        "items": [
+            {
+                "status": TaskHistoryStatusEnum.SUCCESS.value,
+                "created_at": "2026-05-22T10:00:00Z",
+            },
+            {
+                "status": TaskHistoryStatusEnum.FAILED.value,
+                "created_at": "2026-05-21T10:00:00Z",
+            },
+        ]
+    }
+
+    result = await get_backups_task_status("t", tasks_api)
+
+    assert result == TaskHistoryStatusEnum.SUCCESS
+    tasks_api.get.assert_awaited_once_with(
+        "/t/history/", params={"limit": 1, "offset": 0}
+    )

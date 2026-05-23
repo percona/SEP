@@ -277,28 +277,23 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     binlog_alternative_host: NonEmptyStr | EmptyStrToNone = None
     alias: NonEmptyStr | EmptyStrToNone = None
     alert_on_fail: bool = False
-    upload: list[UploadProvider] | EmptyStrToNone = None
+    upload: list[UploadProvider] = Field(min_length=1)
 
     @field_validator("upload", mode="before")
     @classmethod
-    def _coerce_empty_upload_to_none(cls, value: Any) -> Any:
-        """Reject ``upload=[]`` and wrap a bare string into a single-element list.
+    def _normalize_upload_input(cls, value: Any) -> Any:
+        """Normalise scalar ``upload`` input from legacy form callers.
 
-        ``""`` → ``None`` coercion is handled by the ``EmptyStrToNone``
-        type union on the field. The remaining cases:
-
-        * Explicit empty list (``upload=[]``) is rejected: ``None`` means
-          "infer providers from bucket presence" (legacy semantics) while
-          ``[]`` would mean "explicitly no providers selected" — distinct
-          intents that must not collapse silently.
-        * A bare string (e.g. ``upload="S3"``) is wrapped to ``["S3"]``
-          for legacy form callers.
+        A bare string (e.g. ``upload="S3"``) is wrapped to ``["S3"]`` for
+        legacy form callers that send the multichoice as a single value.
+        Empty / missing input falls through to Pydantic's ``min_length=1``
+        constraint, which surfaces 422 with the explicit MultiChoice
+        contract error rather than silently entering a legacy
+        bucket-inference path.
         """
-        if value == []:
-            raise ValueError(
-                "'upload' cannot be an empty list; omit the field or send null."
-            )
         if isinstance(value, str):
+            if not value:
+                return []
             return [value]
         return value
 
@@ -306,19 +301,15 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     def validate_upload_provider_consistency(self) -> Self:
         """Enforce bidirectional consistency between ``upload`` and provider fields.
 
-        Skipped when ``upload`` is ``None`` (legacy Jinja2 form path which
-        infers providers from bucket-presence in
-        :func:`app.sep.plugins.mysql_backups.deps._build_backup_task_payload_core`).
-        On JSON API calls ``upload`` is the authoritative list; mismatched
-        destination fields or missing destinations are rejected with 422.
-
-        Implemented as a model validator (rather than a schema-level
-        :class:`FailRule`) because the framework DSL has no list-membership
-        predicate today — ``truthy`` / ``falsy`` / ``present`` / ``absent``
-        / ``Equals`` / ordered comparisons (``framework/rules.py:824-949``)
-        cannot express ``"S3" in self.upload``. A follow-up will add a
-        ``contains(field, value)`` predicate to the DSL and migrate this
-        rule into the schema.
+        ``upload`` is guaranteed non-empty by ``min_length=1``; this validator
+        only needs to check the destination-field pairing. The schema's
+        ``forbidden=`` gates on the destination string fields (powered by
+        the ``Contains`` predicate) cover the "destination set without
+        matching provider" direction at both the FE renderer (visibility)
+        and the runtime rule plan. This validator still runs to cover the
+        reverse direction (provider selected but destination empty) and
+        the S3 auxiliary-fields case, which the schema cannot express
+        symmetrically because boolean defaults trip the ``forbidden`` rule.
 
         :return: The validated instance.
         :rtype: Self
@@ -326,8 +317,6 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
             with the ``upload`` list, or when S3 auxiliary fields are set
             without ``S3`` in ``upload``.
         """
-        if self.upload is None:
-            return self
         selected = set(self.upload)
         pairs = (
             (UploadProvider.S3, self.s3_bucket),
@@ -420,11 +409,17 @@ class BackupConfig(BaseCaseInsensitiveModel):
 class BackupExecuteWrite(BaseModel):
     """Represent a JSON request body for executing a backup task.
 
+    Fields default to ``None`` so the API route can serialize the body
+    with ``exclude_none=True`` and omit unset values when forwarding to
+    the Tasks API, which then applies its own defaults
+    (``chain_on_failure`` defaults to ``False`` in ``TaskExecutionRequest``).
+
     :param eta: Optional future datetime at which to schedule execution.
     :type eta: FutureDatetime | None
     :param chain_task_names: Optional list of task names to chain after this one.
     :type chain_task_names: list[str] | None
-    :param chain_on_failure: Whether chained tasks run even on failure.
+    :param chain_on_failure: Whether chained tasks run even on failure. ``None``
+        means "don't send"; the Tasks API treats an omitted value as ``False``.
     :type chain_on_failure: bool | None
     """
 

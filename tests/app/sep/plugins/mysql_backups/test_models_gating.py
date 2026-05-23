@@ -26,12 +26,20 @@ from app.sep.plugins.mysql_backups.models import (
 
 
 def _base_payload(backup_type: BackupType, **overrides) -> dict:
-    """Build a minimal valid ``BackupCreate`` kwargs dict."""
+    """Build a minimal valid ``BackupCreate`` kwargs dict.
+
+    ``upload`` is required and non-empty per the SEP-1061 explicit
+    MultiChoice contract; the default pair (S3 + ``s3_bucket``) keeps the
+    bidirectional validator happy so each test can override ``upload`` /
+    bucket fields only when that is the assertion under test.
+    """
     payload = {
         "task_name": "task1",
         "hostname": "host1",
         "service_id": 1,
         "backup_type": backup_type,
+        "upload": [UploadProvider.S3],
+        "s3_bucket": "default-bucket",
     }
     payload.update(overrides)
     return payload
@@ -161,8 +169,12 @@ class TestUploadProviderGate:
     """``upload`` MultiChoice must agree with provider-specific destination fields."""
 
     def test_s3_bucket_without_s3_in_upload_fails(self):
-        """``s3_bucket`` set with ``S3`` absent from ``upload`` → 422."""
-        with pytest.raises(ValidationError, match="S3"):
+        """``s3_bucket`` set with ``S3`` absent from ``upload`` → 422.
+
+        The schema-level ``forbidden`` gate (Contains predicate) fires first;
+        the bidirectional model validator covers the same case as a backstop.
+        """
+        with pytest.raises(ValidationError, match="s3_bucket"):
             BackupCreate(
                 **_base_payload(
                     BackupType.MYDUMPER,
@@ -176,31 +188,49 @@ class TestUploadProviderGate:
         """``S3`` in ``upload`` with empty ``s3_bucket`` → 422."""
         with pytest.raises(ValidationError, match="S3"):
             BackupCreate(
-                **_base_payload(BackupType.MYDUMPER, upload=[UploadProvider.S3])
+                **_base_payload(
+                    BackupType.MYDUMPER,
+                    upload=[UploadProvider.S3],
+                    s3_bucket=None,
+                )
             )
 
     def test_gcs_in_upload_without_bucket_fails(self):
         """``GSUTIL`` in ``upload`` with empty ``gs_bucket`` → 422."""
         with pytest.raises(ValidationError, match="GSUTIL"):
             BackupCreate(
-                **_base_payload(BackupType.MYDUMPER, upload=[UploadProvider.GSUTIL])
+                **_base_payload(
+                    BackupType.MYDUMPER,
+                    upload=[UploadProvider.GSUTIL],
+                    s3_bucket=None,
+                )
             )
 
     def test_rsync_in_upload_without_path_fails(self):
         """``RSYNC`` in ``upload`` with empty ``rsync_path`` → 422."""
         with pytest.raises(ValidationError, match="RSYNC"):
             BackupCreate(
-                **_base_payload(BackupType.MYDUMPER, upload=[UploadProvider.RSYNC])
+                **_base_payload(
+                    BackupType.MYDUMPER,
+                    upload=[UploadProvider.RSYNC],
+                    s3_bucket=None,
+                )
             )
 
     def test_s3_auxiliary_without_s3_fails(self):
-        """``s3_storage_class`` etc. without ``S3`` in upload → 422."""
-        with pytest.raises(ValidationError, match="auxiliary"):
+        """``s3_storage_class`` etc. without ``S3`` in upload → 422.
+
+        The schema-level ``forbidden`` gate on ``s3_storage_class`` fires
+        before the model validator's ``auxiliary`` check; either error is
+        a valid 422 surface for the same contract.
+        """
+        with pytest.raises(ValidationError, match="s3_storage_class"):
             BackupCreate(
                 **_base_payload(
                     BackupType.MYDUMPER,
                     upload=[UploadProvider.RSYNC],
                     rsync_path="/r",
+                    s3_bucket=None,
                     s3_storage_class="STANDARD",
                 )
             )
@@ -216,19 +246,24 @@ class TestUploadProviderGate:
             )
         )
 
-    def test_none_upload_preserves_legacy_behavior(self):
-        """``upload=None`` (legacy form path) does NOT enforce coupling."""
-        BackupCreate(
-            **_base_payload(
-                BackupType.MYDUMPER,
-                s3_bucket="bkt",
-            )
-        )
-
     def test_empty_upload_list_rejected(self):
-        """``upload=[]`` is distinct from ``None`` and must 422."""
-        with pytest.raises(ValidationError, match="empty list"):
+        """``upload=[]`` violates the explicit MultiChoice contract → 422.
+
+        Per SEP-1061 codex feedback: the React multichoice field initialises
+        to ``[]``; a missing or empty selection must surface 422 instead of
+        silently falling back to a legacy bucket-inference path. The
+        ``min_length=1`` constraint on ``BackupCreate.upload`` enforces this.
+        """
+        with pytest.raises(ValidationError, match="(?i)upload"):
             BackupCreate(**_base_payload(BackupType.MYDUMPER, upload=[]))
+
+    def test_missing_upload_rejected(self):
+        """``upload`` is required; a payload without it surfaces a 422."""
+        payload = _base_payload(BackupType.MYDUMPER)
+        payload.pop("upload")
+        payload.pop("s3_bucket")
+        with pytest.raises(ValidationError, match=r"(?i)upload"):
+            BackupCreate(**payload)
 
 
 class TestCompressionAlgorithmValidator:

@@ -60,8 +60,35 @@ const MOCK_SCHEMA = {
         },
       ],
     },
+    {
+      title: 'Upload',
+      fields: [
+        {
+          type: 'multichoice',
+          name: 'upload',
+          label: 'Upload providers',
+          required: true,
+          choices: [
+            { label: 'Rsync', value: 'RSYNC' },
+            { label: 'S3', value: 'S3' },
+            { label: 'Google Cloud Storage', value: 'GSUTIL' },
+          ],
+        },
+        {
+          type: 'string',
+          name: 's3_bucket',
+          label: 'S3 bucket',
+          forbidden: [{ when: { not: { contains: { upload: 'S3' } } } }],
+        },
+      ],
+    },
   ],
-  capabilities: { chaining: true, alert_on_fail: true, scheduling: true },
+  capabilities: {
+    chaining: true,
+    alert_on_fail: true,
+    scheduling: true,
+    stats: false,
+  },
   list_view: {
     columns: [
       { key: 'name', label: 'Name', sortable: true },
@@ -115,12 +142,23 @@ async function mockMysqlBackupsRoutes(page: Page) {
       });
       return route.fulfill({ status: 201, json: tasks[tasks.length - 1] });
     }
+    const historyMatch = pathname.match(/^\/api\/plugins\/mysql_backups\/[^/]+\/history\/?$/);
+    if (historyMatch) {
+      return route.fulfill({
+        json: {
+          items: [{ status: 'SUCCESS', created_at: '2026-05-22T10:00:00Z' }],
+          total: 1,
+          offset: 0,
+          limit: 1,
+        },
+      });
+    }
     if (pathname.endsWith('/sep/hosts/')) {
       return route.fulfill({
         json: [{ id: 'host1', name: 'host1', address: '127.0.0.1' }],
       });
     }
-    if (pathname.endsWith('/inventory/services/')) {
+    if (pathname.endsWith('/sep/services/')) {
       return route.fulfill({
         json: {
           items: [{ id: 1, name: 'svc1', type: 'mysql' }],
@@ -188,6 +226,15 @@ test.describe('MySQL Backups smoke', () => {
 
       // ChoiceField renders as a radiogroup, not an Autocomplete.
       await page.getByRole('radio', { name: label }).check();
+
+      // Upload providers MultiChoice is required (SEP-1061 explicit MultiChoice
+      // contract). Open the select, tick S3, fill the matching bucket — the
+      // s3_bucket field is gated by `Contains("upload", "S3")` so it only
+      // appears once S3 is selected.
+      await page.getByLabel('Upload providers').click();
+      await page.getByRole('option', { name: 'S3' }).click();
+      await page.keyboard.press('Escape');
+      await page.getByLabel('S3 bucket').fill('test-bucket');
 
       // Submit.
       await page

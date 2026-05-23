@@ -18,6 +18,7 @@
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock
 
+import pytest
 import yaml
 from fastapi import status
 
@@ -79,14 +80,23 @@ def build_backup_write_body(
     backup_type: BackupType = BackupType.MYDUMPER,
     **kwargs,
 ) -> dict:
-    """Build a valid backup-create JSON body."""
-    return {
+    """Build a valid backup-create JSON body.
+
+    ``upload`` is required and non-empty per the SEP-1061 explicit
+    MultiChoice contract; the default ``S3 + s3_bucket`` pair keeps the
+    bidirectional validator happy. Tests assert on the contract by
+    overriding ``upload`` and/or ``s3_bucket`` explicitly.
+    """
+    body = {
         "task_name": task_name,
         "hostname": hostname,
         "service_id": service_id,
         "backup_type": backup_type.value,
-        **kwargs,
+        "upload": ["S3"],
+        "s3_bucket": "bkt",
     }
+    body.update(kwargs)
+    return body
 
 
 class TestSchemaEndpoint:
@@ -104,11 +114,20 @@ class TestSchemaEndpoint:
         assert response.json()["name"] == "mysql_backups"
 
     def test_schema_capabilities(self, test_client):
-        """Capabilities mirror Jinja2: chaining + alerts + scheduling."""
+        """Capabilities mirror Jinja2: chaining + alerts + scheduling.
+
+        ``stats`` is the framework default (``False``); MySQL Backups does not
+        render an aggregated execution-stats card today.
+        """
         caps = test_client.get("/api/plugins/mysql_backups/schema").json()[
             "capabilities"
         ]
-        assert caps == {"chaining": True, "alert_on_fail": True, "scheduling": True}
+        assert caps == {
+            "chaining": True,
+            "alert_on_fail": True,
+            "scheduling": True,
+            "stats": False,
+        }
 
     def test_schema_includes_backup_type_field(self, test_client):
         """The mode-discriminator field is present."""
@@ -181,6 +200,19 @@ class TestListEndpoint:
         _, kwargs = mock_get.call_args_list[0]
         assert kwargs["params"]["offset"] == 25  # noqa: PLR2004
         assert kwargs["params"]["limit"] == 10  # noqa: PLR2004
+
+    @pytest.mark.parametrize(
+        "query",
+        ["offset=-1", "limit=0", "limit=-5", "limit=99999"],
+    )
+    def test_list_rejects_out_of_range_pagination(
+        self, test_client, mock_task_api_dep, query
+    ):
+        """Negative/zero/oversized pagination params are rejected with 422."""
+        mock_task_api_dep.get = AsyncMock()
+        response = test_client.get(f"/api/plugins/mysql_backups/?{query}")
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
 
 
 class TestDetailEndpoint:
@@ -328,6 +360,53 @@ class TestCreateEndpoint:
         """Empty body returns 422 (required fields missing)."""
         response = test_client.post(
             "/api/plugins/mysql_backups/", json={}, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_rejects_empty_upload_list(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """``upload=[]`` violates the explicit MultiChoice contract → 422.
+
+        Per the SEP-1061 codex review: the legacy bucket-inference path is
+        gone; submitting with no provider selected must surface 422 instead
+        of silently inferring S3 from ``s3_bucket``.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id, backup_type=BackupType.MYDUMPER
+        )
+        body["upload"] = []
+        response = test_client.post(
+            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_rejects_bucket_without_matching_provider(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """``s3_bucket`` set with ``S3`` absent from ``upload`` → 422.
+
+        Pins the cross-field contract from both the schema-level ``forbidden``
+        gate (Contains predicate) and the ``validate_upload_provider_consistency``
+        model validator.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            backup_type=BackupType.MYDUMPER,
+            upload=["RSYNC"],
+            rsync_path="/r",
+            s3_bucket="bkt",
+        )
+        response = test_client.post(
+            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
