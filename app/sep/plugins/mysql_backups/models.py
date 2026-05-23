@@ -312,6 +312,14 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
         On JSON API calls ``upload`` is the authoritative list; mismatched
         destination fields or missing destinations are rejected with 422.
 
+        Implemented as a model validator (rather than a schema-level
+        :class:`FailRule`) because the framework DSL has no list-membership
+        predicate today — ``truthy`` / ``falsy`` / ``present`` / ``absent``
+        / ``Equals`` / ordered comparisons (``framework/rules.py:824-949``)
+        cannot express ``"S3" in self.upload``. A follow-up will add a
+        ``contains(field, value)`` predicate to the DSL and migrate this
+        rule into the schema.
+
         :return: The validated instance.
         :rtype: Self
         :raises ValueError: When a provider's destination field disagrees
