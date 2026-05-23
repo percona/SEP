@@ -107,11 +107,10 @@ NOMAD_RUN_COMMAND = {
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
-                        "command": "xargs",
+                        "command": "sh",
                         "args": [
-                            "--arg-file",
-                            "args_file",
-                            "${NOMAD_META_command}",
+                            "-c",
+                            "xargs ${NOMAD_META_command} < args_file",
                         ],
                     },
                     "Meta": {},
@@ -258,14 +257,10 @@ NOMAD_EXEC_ARTIFACT = {
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
-                        "command": "xargs",
+                        "command": "sh",
                         "args": [
-                            "--arg-file",
-                            "${NOMAD_TASK_DIR}/args_file",
-                            "env",
-                            "-S",
-                            "${NOMAD_META_interpreter}",
-                            "${NOMAD_TASK_DIR}/script",
+                            "-c",
+                            "xargs env -S ${NOMAD_META_interpreter} ${NOMAD_TASK_DIR}/script < ${NOMAD_TASK_DIR}/args_file",
                         ],
                         "work_dir": "${NOMAD_TASK_DIR}/output_files",
                     },
@@ -362,8 +357,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                             "PYTHON_CMD=${NOMAD_ALLOC_DIR}/venv/bin/python3;"
                             'case "${NOMAD_META_interpreter}" in "sudo "*) '
                             'PYTHON_CMD="sudo ${NOMAD_ALLOC_DIR}/venv/bin/python3";; esac;'
-                            "xargs --arg-file ${NOMAD_TASK_DIR}/args_file -- "
-                            "$PYTHON_CMD -u ${NOMAD_TASK_DIR}/script",
+                            "xargs $PYTHON_CMD -u ${NOMAD_TASK_DIR}/script < ${NOMAD_TASK_DIR}/args_file",
                         ],
                         "work_dir": "${NOMAD_TASK_DIR}/output_files",
                     },

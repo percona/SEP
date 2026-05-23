@@ -16,6 +16,7 @@
 """Define tests for the app.sep.plugins.checksums.deps module."""
 
 import shlex
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock
 
 import pytest
@@ -23,11 +24,43 @@ import pytest
 from app.sep.plugins.checksums.deps import (
     _assemble_checksum_payload,
     build_checksum_task,
+    build_checksums_api_task_response,
     build_checksums_task_payload,
     DEFAULT_RECURSION_DSN_TABLE,
 )
 from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumTaskWrite
-from app.tasks.models import TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+
+
+def _make_checksums_task(
+    created_by: str | None = None, last_updated_by: str | None = None
+) -> Task:
+    return Task.model_validate(
+        {
+            "id": 1,
+            "name": "test-checksums",
+            "backend": TaskBackendEnum.PROXY,
+            "owner": TaskOwner.CHECKSUMS,
+            "is_template": False,
+            "protected": False,
+            "alert_on_fail": False,
+            "data": {
+                "task": "run-command",
+                "meta": {
+                    "command": "pt-table-checksum",
+                    "args": "--recursion-method=processlist",
+                    "target": "host1",
+                    "_service_name": "test-svc",
+                    "_service_host": "127.0.0.1",
+                    "_service_port": 3306,
+                },
+            },
+            "created_at": datetime.now(UTC),
+            "updated_at": None,
+            "created_by": created_by,
+            "last_updated_by": last_updated_by,
+        }
+    )
 
 
 class TestChecksumsJinjaFormDeps:
@@ -331,3 +364,46 @@ class TestChecksumsPayloadAssembly:
         ]
         for flag in bool_flags:
             assert flag in args, f"{flag} should appear when True"
+
+
+class TestBuildChecksumsApiTaskResponse:
+    """Tests for build_checksums_api_task_response username mapping."""
+
+    def test_created_by_resolved_to_display_name_when_mapping_provided(self):
+        """Assert created_by is resolved to display name when mapping contains the ID."""
+        task = _make_checksums_task(created_by="uid-abc", last_updated_by=None)
+
+        result = build_checksums_api_task_response(
+            task, username_mapping={"uid-abc": "Alice"}
+        )
+
+        assert result.created_by == "Alice"
+
+    def test_created_by_falls_back_to_raw_id_when_not_in_mapping(self):
+        """Assert created_by is preserved as-is when the ID is not in the mapping."""
+        task = _make_checksums_task(created_by="uid-unknown", last_updated_by=None)
+
+        result = build_checksums_api_task_response(
+            task, username_mapping={"uid-other": "Bob"}
+        )
+
+        assert result.created_by == "uid-unknown"
+
+    def test_last_updated_by_resolved_to_display_name(self):
+        """Assert last_updated_by is also resolved via the mapping."""
+        task = _make_checksums_task(created_by=None, last_updated_by="uid-xyz")
+
+        result = build_checksums_api_task_response(
+            task, username_mapping={"uid-xyz": "Carol"}
+        )
+
+        assert result.last_updated_by == "Carol"
+
+    def test_username_mapping_none_preserves_raw_ids(self):
+        """Assert created_by and last_updated_by are unchanged when mapping is None."""
+        task = _make_checksums_task(created_by="uid-123", last_updated_by="uid-456")
+
+        result = build_checksums_api_task_response(task, username_mapping=None)
+
+        assert result.created_by == "uid-123"
+        assert result.last_updated_by == "uid-456"

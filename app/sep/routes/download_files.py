@@ -49,7 +49,7 @@ async def list_task_history_files(
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_api: TaskAPI,
 ) -> dict[str, FileMetadata]:
-    """Stream a task history's logs as server-sent events."""
+    """Return files available for the given task history."""
     try:
         return await tasks_api.get(f"/history/{task_history.id}/files/")
     except HTTPException as exc:
