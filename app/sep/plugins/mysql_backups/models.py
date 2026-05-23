@@ -300,29 +300,27 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     binlog_alternative_host: NonEmptyStr | EmptyStrToNone = None
     alias: NonEmptyStr | EmptyStrToNone = None
     alert_on_fail: bool = False
-    upload: list[UploadProvider] | None = None
+    upload: list[UploadProvider] | EmptyStrToNone = None
 
     @field_validator("upload", mode="before")
     @classmethod
     def _coerce_empty_upload_to_none(cls, value: Any) -> Any:
-        """Normalise the legacy empty-string ``upload`` to ``None``.
+        """Reject ``upload=[]`` and wrap a bare string into a single-element list.
 
-        The Jinja2 form path serialises an unset ``upload`` MultiChoice as
-        an empty string; the JSON API path sends ``null`` or omits the
-        field entirely. Coerce ``""`` and ``None`` to ``None`` so downstream
-        parsing receives a clean ``list[UploadProvider] | None``.
+        ``""`` → ``None`` coercion is handled by the ``EmptyStrToNone``
+        type union on the field. The remaining cases:
 
-        An explicit empty list (``upload=[]``) is rejected: ``None`` means
-        "infer providers from bucket presence" (legacy semantics) while
-        ``[]`` would mean "explicitly no providers selected" — distinct
-        intents that must not collapse silently.
+        * Explicit empty list (``upload=[]``) is rejected: ``None`` means
+          "infer providers from bucket presence" (legacy semantics) while
+          ``[]`` would mean "explicitly no providers selected" — distinct
+          intents that must not collapse silently.
+        * A bare string (e.g. ``upload="S3"``) is wrapped to ``["S3"]``
+          for legacy form callers.
         """
         if value == []:
             raise ValueError(
                 "'upload' cannot be an empty list; omit the field or send null."
             )
-        if value in ("", None):
-            return None
         if isinstance(value, str):
             return [value]
         return value
