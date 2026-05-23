@@ -15,28 +15,24 @@
 
 """Define the PluginSchema for the MySQL Backups plugin.
 
-Per-mode field gating is split across two mechanisms:
+Per-mode field gating is uniformly schema-declared:
 
-- ``forbidden=`` :class:`FieldGate` for string/int/choice fields, declared
-  here on each field. We use ``forbidden=[when != mode]`` (not
-  ``requires=[when == mode]``) because the framework's ``requires=``
-  semantics (``rules.py:1442-1449``) mean "when predicate true, the field
-  MUST be present" — using it for mode gating would make every X-mode
-  field mandatory in X mode, which is incorrect: these fields are
-  optional within their mode and only forbidden outside it.
-- :func:`BackupCreate.validate_mode_bool_fields` model validator for
-  booleans (see ``app/sep/plugins/mysql_backups/models.py``).
-
-The bool split exists because the framework's ``_field_is_present``
-helper treats ``False`` as "present", which would cause ``forbidden=``
-on a bool field to reject the legitimate default value. Until that
-helper is generalised, do NOT add ``forbidden=`` / ``requires=`` to a
-:class:`BoolField` here — extend ``_MODE_BOOL_FIELDS`` in ``models.py``
-instead.
+- ``forbidden=`` :class:`FieldGate` for string/int/choice fields. We use
+  ``forbidden=[when != mode]`` (not ``requires=[when == mode]``) because
+  the framework's ``requires=`` semantics (``rules.py:1442-1449``) mean
+  "when predicate true, the field MUST be present" — using it for mode
+  gating would make every X-mode field mandatory in X mode, which is
+  incorrect: these fields are optional within their mode and only
+  forbidden outside it.
+- Schema-level :class:`FailRule` entries (``_MODE_BOOL_FAIL_RULES``) for
+  booleans. ``forbidden=`` on a bool field would reject the legitimate
+  default because ``_field_is_present`` treats ``False`` as "present";
+  ``FailRule(fail_when=truthy(name) & (F('backup_type') != owner))``
+  fires only on the explicit ``True`` case, which is what we want.
 """
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.framework.rules import F, falsy, FieldGate, truthy
+from app.sep.plugins.framework.rules import F, FailRule, falsy, FieldGate, truthy
 from app.sep.plugins.framework.schema import (
     BoolField,
     Capabilities,
@@ -75,6 +71,40 @@ def _other_modes_forbid(mode: str) -> list[FieldGate]:
 _mydumper_forbidden = _other_modes_forbid("M")
 _xtrabackup_forbidden = _other_modes_forbid("X")
 _binlog_forbidden = _other_modes_forbid("B")
+
+# Bool fields owned by a specific backup mode. A truthy value outside its
+# owning mode fails validation via the schema-level FailRules below.
+# ``binlog_run_all`` defaults to True and the legacy form always sends it,
+# so the BINLOG entry is intentionally empty until the form migrates off
+# that default.
+_MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
+    "M": (
+        "mydumper_dump_triggers",
+        "mydumper_desync_pxc",
+        "mydumper_use_numa",
+    ),
+    "X": (
+        "xtrabackup_kill_queries",
+        "xtrabackup_verify",
+        "xtrabackup_prepare",
+        "xtrabackup_desync_pxc",
+        "xtrabackup_rsync",
+        "xtrabackup_replica_info",
+        "xtrabackup_stop_replica",
+        "xtrabackup_lock_ddl",
+    ),
+    "B": (),
+}
+
+_MODE_BOOL_FAIL_RULES: list[FailRule] = [
+    FailRule(
+        fail_when=truthy(name) & (F("backup_type") != owner_mode),
+        error_fields=[name],
+        message=f"{name!r} must not be set when backup_type is not {owner_mode!r}.",
+    )
+    for owner_mode, names in _MODE_BOOL_FIELDS.items()
+    for name in names
+]
 
 
 mysql_backups_schema = PluginSchema(
@@ -394,6 +424,7 @@ mysql_backups_schema = PluginSchema(
             ],
         ),
     ],
+    fail_when=_MODE_BOOL_FAIL_RULES,
     capabilities=Capabilities(chaining=True, alert_on_fail=True, scheduling=True),
     list_view=ListView(
         columns=[

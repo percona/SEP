@@ -148,29 +148,6 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     rsync_path: NonEmptyStr | EmptyStrToNone = None
 
 
-_MODE_BOOL_FIELDS: dict[BackupType, tuple[str, ...]] = {
-    BackupType.MYDUMPER: (
-        "mydumper_dump_triggers",
-        "mydumper_desync_pxc",
-        "mydumper_use_numa",
-    ),
-    BackupType.XTRABACKUP: (
-        "xtrabackup_kill_queries",
-        "xtrabackup_verify",
-        "xtrabackup_prepare",
-        "xtrabackup_desync_pxc",
-        "xtrabackup_rsync",
-        "xtrabackup_replica_info",
-        "xtrabackup_stop_replica",
-        "xtrabackup_lock_ddl",
-    ),
-    # ``binlog_run_all`` defaults to True and the legacy form always sends
-    # it; gate-firing on it would break the existing form path. Leave the
-    # B entry empty until the form is migrated off the legacy default.
-    BackupType.BINLOG: (),
-}
-
-
 @apply_conditional_rules(mysql_backups_schema)
 class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     """Represent a Backup creation form with proper case-insensitive fields.
@@ -324,31 +301,6 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
         if isinstance(value, str):
             return [value]
         return value
-
-    @model_validator(mode="after")
-    def validate_mode_bool_fields(self) -> Self:
-        """Reject truthy boolean fields belonging to a different ``backup_type``.
-
-        The framework's ``forbidden`` :class:`FieldGate` cannot express this
-        constraint because ``_field_is_present`` treats ``False`` as
-        present and would reject the (legitimate) default value too. This
-        validator only fires for explicit ``True`` values.
-
-        :return: The validated instance.
-        :rtype: Self
-        :raises ValueError: When a boolean field owned by mode A is
-            ``True`` while ``backup_type`` is mode B (≠ A).
-        """
-        for owner_mode, names in _MODE_BOOL_FIELDS.items():
-            if owner_mode == self.backup_type:
-                continue
-            for name in names:
-                if getattr(self, name, False):
-                    raise ValueError(
-                        f"{name!r} must not be set when "
-                        f"backup_type={self.backup_type.value}"
-                    )
-        return self
 
     @model_validator(mode="after")
     def validate_upload_provider_consistency(self) -> Self:
