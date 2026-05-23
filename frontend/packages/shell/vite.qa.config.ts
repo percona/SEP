@@ -15,9 +15,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// QA-only Vite config — used by `/sep-e2e-qa` Mode B runs.
-// Parameterized via env vars so the skill can point each parallel QA
-// session at a different backend port without editing this file:
+// QA-only Vite config — used when running end-to-end QA against an
+// isolated SEP backend instance on a non-standard port.
+// Parameterized via env vars so each parallel QA session can point at
+// a different backend port without editing this file:
 //
 //   SEP_QA_BACKEND     URL of the running QA SEP instance
 //                      (default 'http://127.0.0.1:18002')
