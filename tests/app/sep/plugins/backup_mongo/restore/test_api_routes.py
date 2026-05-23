@@ -32,6 +32,8 @@ from tests.app.factories import TaskFactory
 API_BASE = "/api/plugins/backup_mongo/restores"
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
 EXPECTED_PHYSICAL_RESTORE_POSTS = 4
+DEFAULT_PAGE_LIMIT = 50
+THREE_PARENT_FIXTURE_TOTAL = 3
 
 
 def build_restore_task(name: str = "mongo-restore-task", **overrides: Any) -> dict:
@@ -152,8 +154,33 @@ class TestRestoreMongoApiList:
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.json()) == 1
-        assert response.json()[0]["name"] == "parent-restore"
+        body = response.json()
+        assert body["total"] == 1
+        assert body["offset"] == 0
+        assert body["limit"] == DEFAULT_PAGE_LIMIT
+        assert len(body["items"]) == 1
+        assert body["items"][0]["name"] == "parent-restore"
+
+    def test_list_paginates_with_offset_and_limit(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Slice ``[offset:offset+limit]`` after the parent + status filters."""
+        parents = [
+            build_restore_task("parent-restore-a"),
+            build_restore_task("parent-restore-b"),
+            build_restore_task("parent-restore-c"),
+        ]
+        mock_task_api_dep.get = AsyncMock(return_value={"items": parents, "total": 3})
+
+        response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == THREE_PARENT_FIXTURE_TOTAL
+        assert body["offset"] == 1
+        assert body["limit"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["name"] == "parent-restore-b"
 
 
 class TestRestoreMongoApiCreate:

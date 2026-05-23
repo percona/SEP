@@ -24,6 +24,7 @@ import yaml
 from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.models import PaginatedResponse
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -612,15 +613,28 @@ def build_restore_mongo_api_task_response(
 async def get_restore_mongo_api_task_responses(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
-) -> list[RestoreTaskResponse]:
-    """Retrieve restore task responses for the JSON API.
+    offset: int = 0,
+    limit: int = 50,
+) -> PaginatedResponse[RestoreTaskResponse]:
+    """Retrieve a page of restore task responses for the JSON API.
+
+    Fetches the full parent task list from the Tasks API (the
+    ``_is_restore_parent_task`` Python-side filter prevents pushing the
+    parent predicate upstream cleanly), applies the optional ``status``
+    filter, and slices ``[offset : offset + limit]`` to honour pagination.
+    ``total`` reflects the parent count *after* the status filter so
+    consumers' page math stays correct.
 
     :param tasks_api: The TaskAPI instance used to query restore tasks.
     :type tasks_api: TaskAPI
     :param status: Optional latest-history status filter for the list.
     :type status: TaskHistoryStatusEnum | None
-    :return: The restore task responses matching the requested filters.
-    :rtype: list[RestoreTaskResponse]
+    :param offset: Zero-based starting offset for the page slice.
+    :type offset: int
+    :param limit: Maximum items returned for the page.
+    :type limit: int
+    :return: The paginated restore task responses matching the requested filters.
+    :rtype: PaginatedResponse[RestoreTaskResponse]
     """
     response = await tasks_api.get("/", params={"owner": TaskOwner.RESTORE_MONGO.value})
     tasks = [Task.model_validate(item) for item in response["items"]]
@@ -628,12 +642,21 @@ async def get_restore_mongo_api_task_responses(
     statuses = await asyncio.gather(
         *(get_restore_mongo_task_status(task.name, tasks_api) for task in parents)
     )
-    task_status_pairs = list(zip(parents, statuses, strict=True))
-    return [
-        build_restore_mongo_api_task_response(task, status=task_status)
-        for task, task_status in task_status_pairs
+    task_status_pairs = [
+        (task, task_status)
+        for task, task_status in zip(parents, statuses, strict=True)
         if status is None or task_status == status
     ]
+    items = [
+        build_restore_mongo_api_task_response(task, status=task_status)
+        for task, task_status in task_status_pairs[offset : offset + limit]
+    ]
+    return PaginatedResponse[RestoreTaskResponse](
+        items=items,
+        total=len(task_status_pairs),
+        offset=offset,
+        limit=limit,
+    )
 
 
 async def _fetch_restore_child_detail(

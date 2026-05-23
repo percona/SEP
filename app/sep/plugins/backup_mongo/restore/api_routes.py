@@ -23,9 +23,10 @@ enforced at the ``api_router`` level; ``schema_endpoint`` pins
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
+from app.core.models import PaginatedResponse
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -64,13 +65,17 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=restore_mongo_schema)
 
 
-@router.get("/", response_model=list[RestoreTaskResponse])
+@router.get("/", response_model=PaginatedResponse[RestoreTaskResponse])
 async def restore_mongo_api_list(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
-) -> list[RestoreTaskResponse]:
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=0, le=200),
+) -> PaginatedResponse[RestoreTaskResponse]:
     """List parent PBM restore config tasks."""
-    return await get_restore_mongo_api_task_responses(tasks_api, status=status)
+    return await get_restore_mongo_api_task_responses(
+        tasks_api, status=status, offset=offset, limit=limit
+    )
 
 
 @router.get("/{task_name}", response_model=RestoreTaskDetailResponse)
