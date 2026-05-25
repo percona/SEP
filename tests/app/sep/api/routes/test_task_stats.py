@@ -58,29 +58,27 @@ class TestSepTaskStatsEndpoint:
         test_client.get("/api/sep/task-stats/some-task-name")
         mock_task_api_dep.get.assert_called_once_with("/stats/some-task-name")
 
-    def test_tasks_failure_returns_empty_dict(
+    def test_tasks_failure_returns_502(
         self,
         test_client: TestClient,
         mock_task_api_dep,
     ) -> None:
-        """Return ``200`` ``{}`` + ``X-Sep-Upstream-Error`` on upstream HTTP failure."""
+        """Return ``502`` + ``{"detail": ...}`` on upstream HTTP failure."""
         mock_task_api_dep.get.side_effect = HTTPBadGatewayException("tasks unreachable")
         response = test_client.get("/api/sep/task-stats/my-task")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {}
-        assert response.headers["X-Sep-Upstream-Error"] == "tasks unreachable"
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "tasks unreachable"}
 
-    def test_tasks_oserror_returns_empty_dict(
+    def test_tasks_oserror_returns_502(
         self,
         test_client: TestClient,
         mock_task_api_dep,
     ) -> None:
-        """Return ``{}`` when the Tasks API raises an OSError."""
+        """Return ``502`` + ``{"detail": ...}`` when the Tasks API raises an OSError."""
         mock_task_api_dep.get.side_effect = OSError("connection refused")
         response = test_client.get("/api/sep/task-stats/my-task")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {}
-        assert response.headers["X-Sep-Upstream-Error"] == "connection refused"
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "connection refused"}
 
 
 class TestSepTaskStatsAuth:
