@@ -15,22 +15,25 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 
-const { mockApiGet } = vi.hoisted(() => ({ mockApiGet: vi.fn() }));
+const { mockApiGet, mockApiPost } = vi.hoisted(() => ({
+  mockApiGet: vi.fn(),
+  mockApiPost: vi.fn(),
+}));
 
 vi.mock('@sep/api', async () => {
   const actual = await vi.importActual<typeof import('@sep/api')>('@sep/api');
   return {
     ...actual,
-    apiClient: { get: mockApiGet },
+    apiClient: { get: mockApiGet, post: mockApiPost },
   };
 });
 
-import { useTaskHistoryByNames } from './useTaskHistory';
+import { useExecuteTask, useTaskHistoryByNames } from './useTaskHistory';
 
 const EMPTY_PAGE = {
   items: [],
@@ -50,7 +53,9 @@ function wrapper() {
 
 beforeEach(() => {
   mockApiGet.mockReset();
+  mockApiPost.mockReset();
   mockApiGet.mockResolvedValue({ data: EMPTY_PAGE });
+  mockApiPost.mockResolvedValue({ data: {} });
 });
 
 describe('useTaskHistoryByNames', () => {
@@ -99,5 +104,50 @@ describe('useTaskHistoryByNames', () => {
         },
       });
     });
+  });
+});
+
+describe('useExecuteTask', () => {
+  it('encodes slash-containing plugin names per path segment', async () => {
+    const { result } = renderHook(() => useExecuteTask('backup_mongo/restores'), {
+      wrapper: wrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ taskName: 'my-restore-task' });
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/plugins/backup_mongo/restores/my-restore-task/execute',
+      {},
+    );
+  });
+
+  it('posts to a single-segment plugin path unchanged', async () => {
+    const { result } = renderHook(() => useExecuteTask('backup_mongo'), {
+      wrapper: wrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ taskName: 'my-backup-task' });
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith('/plugins/backup_mongo/my-backup-task/execute', {});
+  });
+
+  it('encodes special characters in task names', async () => {
+    const taskName = 'weird/name with spaces&q=?';
+    const { result } = renderHook(() => useExecuteTask('backup_mongo/restores'), {
+      wrapper: wrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ taskName });
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      `/plugins/backup_mongo/restores/${encodeURIComponent(taskName)}/execute`,
+      {},
+    );
   });
 });
