@@ -23,9 +23,15 @@ import {
   getBackupMongoExecuteActions,
   getBackupMongoHistoryTaskNames,
 } from './backupMongoTaskDetail';
+import {
+  getRestoreMongoExecuteActions,
+  getRestoreMongoHistoryTaskNames,
+  RestoreMongoTaskDetailExtras,
+} from './restoreMongoTaskDetail';
 import { BACKUP_PLUGIN_NAME, MONGODB_BASE_PATH, RESTORE_PLUGIN_NAME } from './routes';
 
 const BACKUP_DETAIL_SUPPRESS_KEYS = ['derived_tasks', 'latest_pbm_status'];
+const RESTORE_DETAIL_SUPPRESS_KEYS = ['derived_tasks'];
 
 const tabNavStyle: CSSProperties = {
   display: 'flex',
@@ -96,6 +102,10 @@ export function BackupMongoPlugin() {
             <SchemaDrivenPlugin
               pluginName={RESTORE_PLUGIN_NAME}
               routeBase={`${MONGODB_BASE_PATH}/restores`}
+              getTaskExecuteActions={getRestoreMongoExecuteActions}
+              getTaskHistoryNames={getRestoreMongoHistoryTaskNames}
+              suppressDetailKeys={RESTORE_DETAIL_SUPPRESS_KEYS}
+              renderTaskDetailChildren={({ task }) => <RestoreMongoTaskDetailExtras task={task} />}
             />
           }
         />
