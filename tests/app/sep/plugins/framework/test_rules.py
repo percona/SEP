@@ -512,6 +512,27 @@ class TestPredicateEvaluation:
         assert predicate.evaluate(_Instance(a=None, b="")) is True
         assert predicate.evaluate(_Instance(a="x", b="")) is False
 
+    def test_bool_false_is_treated_as_absent(self) -> None:
+        """``False`` does not count as present.
+
+        Bool defaults do not trip ``forbidden=`` :class:`FieldGate` entries on
+        :class:`BoolField`. Only an explicit ``True`` toggle is considered set,
+        matching the ``FailRule(fail_when=truthy(name))`` convention used for
+        mode bools.
+        """
+        assert any_present("a").evaluate(_Instance(a=False)) is False
+        assert any_present("a").evaluate(_Instance(a=True)) is True
+        assert none_present("a").evaluate(_Instance(a=False)) is True
+        assert none_present("a").evaluate(_Instance(a=True)) is False
+
+    def test_int_zero_remains_present(self) -> None:
+        """Numeric ``0`` stays present even though it is falsy.
+
+        Int fields with a meaningful zero value (e.g.
+        ``rsync_compression_level=0``) still satisfy presence-based gates.
+        """
+        assert any_present("a").evaluate(_Instance(a=0)) is True
+
     def test_all_truthy_evaluates_python_truthiness(self) -> None:
         """All truthy evaluates python truthiness."""
         predicate = all_truthy("a", "b")
@@ -650,13 +671,19 @@ class TestEdgeCases:
         assert (F("x") == 0).evaluate(zero) is True
         assert (F("x") == 0).evaluate(unset) is False
 
-    def test_false_bool_distinguished_from_unset(self) -> None:
-        """False bool distinguished from unset."""
+    def test_false_bool_treated_as_absent_like_unset(self) -> None:
+        """``False`` is the unset bool default and so registers as absent.
+
+        Pins the convention used by ``forbidden=`` :class:`FieldGate` entries
+        on :class:`BoolField`: the gate fires only on an explicit ``True``
+        toggle, never on the legitimate default. ``truthy`` already returned
+        ``False`` here; presence-based predicates now agree.
+        """
         false = _Instance(x=False)
         unset = _Instance(x=None)
 
         assert truthy("x").evaluate(false) is False
-        assert any_present("x").evaluate(false) is True
+        assert any_present("x").evaluate(false) is False
         assert any_present("x").evaluate(unset) is False
 
     def test_empty_collection_treated_as_absent(self) -> None:

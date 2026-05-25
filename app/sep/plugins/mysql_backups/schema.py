@@ -15,20 +15,22 @@
 
 """Define the PluginSchema for the MySQL Backups plugin.
 
-Per-mode field gating is uniformly schema-declared:
+Field gating is uniformly schema-declared:
 
-- ``forbidden=`` :class:`FieldGate` for string/int/choice fields. We use
-  ``forbidden=[when != mode]`` (not ``requires=[when == mode]``) because
-  the framework's ``requires=`` semantics (``rules.py:1442-1449``) mean
-  "when predicate true, the field MUST be present" — using it for mode
-  gating would make every X-mode field mandatory in X mode, which is
-  incorrect: these fields are optional within their mode and only
-  forbidden outside it.
-- Schema-level :class:`FailRule` entries (``_MODE_BOOL_FAIL_RULES``) for
-  booleans. ``forbidden=`` on a bool field would reject the legitimate
-  default because ``_field_is_present`` treats ``False`` as "present";
-  ``FailRule(fail_when=truthy(name) & (F('backup_type') != owner))``
-  fires only on the explicit ``True`` case, which is what we want.
+- ``forbidden=`` :class:`FieldGate` works for every field kind, including
+  :class:`BoolField`. ``_field_is_present`` treats ``False`` as absent, so
+  the gate fires only when the user explicitly toggles a bool ``True``
+  while the gating predicate matches — the default value never trips it.
+  We use ``forbidden=[when != mode]`` (not ``requires=[when == mode]``)
+  for per-mode gating because the framework's ``requires=`` semantics
+  (``rules.py:1442-1449``) mean "when predicate true, the field MUST be
+  present"; using it for mode gating would make every X-mode field
+  mandatory in X mode, which is incorrect: these fields are optional
+  within their mode and only forbidden outside it.
+- Schema-level :class:`FailRule` entries (``_MODE_BOOL_FAIL_RULES``) layer
+  on top for bool fields whose forbidden-outside-mode semantics need a
+  per-field error message; the FailRule and ``forbidden=`` are not
+  mutually exclusive — defence in depth.
 """
 
 from app.inventory.models import ServiceTypeEnum
@@ -458,6 +460,7 @@ mysql_backups_schema = PluginSchema(
                     name="skip_s3_safety_check",
                     label="Skip S3 safety check",
                     default=False,
+                    forbidden=_upload_excludes(_UPLOAD_S3),
                 ),
                 StringField(
                     name="awscli_s3_upload_extra_args",

@@ -226,8 +226,11 @@ def _wrap_rhs(value: object) -> object:
 def _field_is_present(instance: Any, name: str) -> bool:
     """Return ``True`` iff ``instance.<name>`` is set and non-empty.
 
-    Treats ``None`` and empty strings/bytes/lists/tuples/sets/dicts as
-    absent. ``0`` and ``False`` count as present (set, just falsy).
+    Treats ``None``, ``False``, and empty strings/bytes/lists/tuples/sets/dicts
+    as absent. ``0`` counts as present (numeric, just falsy). ``False`` is
+    treated as the unset bool default so ``forbidden=`` :class:`FieldGate`
+    entries on :class:`BoolField` fire only on an explicit ``True`` toggle,
+    matching the convention used by :class:`FailRule` ``truthy(name)`` checks.
 
     :param instance: The model instance being evaluated.
     :type instance: Any
@@ -237,7 +240,7 @@ def _field_is_present(instance: Any, name: str) -> bool:
     :rtype: bool
     """
     value = getattr(instance, name, None)
-    if value is None:
+    if value is None or value is False:
         return False
     return not (
         isinstance(value, str | bytes | list | tuple | set | frozenset | dict)

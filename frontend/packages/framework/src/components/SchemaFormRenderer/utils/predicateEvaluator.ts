@@ -19,6 +19,19 @@ import type { FieldGate, Predicate } from '../types';
 
 type FormValues = Record<string, unknown>;
 
+/**
+ * Read a field by name from form values, ignoring inherited members.
+ *
+ * Field names come from JSON schema and are not fully trusted: a schema that
+ * names a field ``constructor`` / ``toString`` / ``__proto__`` would otherwise
+ * resolve via the prototype chain to truthy built-ins (e.g. the ``Object``
+ * function), making gate predicates evaluate against engine internals instead
+ * of user-supplied state. Always go through this helper.
+ */
+function readField(values: FormValues, name: string): unknown {
+  return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined;
+}
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) {
     return false;
@@ -46,6 +59,13 @@ export function isPresent(value: unknown): boolean {
   if (isPlainObject(value)) {
     return Object.keys(value).length > 0;
   }
+  // ``false`` is the unset bool default and counts as absent so a
+  // BoolField's ``forbidden=`` gate only fires on an explicit ``true``
+  // toggle. Matches the Python convention introduced for ``BoolField``
+  // gating; ``0`` stays present because numeric zero is a real value.
+  if (value === false) {
+    return false;
+  }
   return value !== null && value !== undefined && value !== '';
 }
 
@@ -54,7 +74,7 @@ function isFieldRef(v: unknown): v is { $field: string } {
 }
 
 function resolveValue(raw: unknown, values: FormValues): unknown {
-  return isFieldRef(raw) ? values[(raw as { $field: string }).$field] : raw;
+  return isFieldRef(raw) ? readField(values, (raw as { $field: string }).$field) : raw;
 }
 
 /**
@@ -88,9 +108,9 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
 
   switch (op) {
     case 'truthy':
-      return isTruthy(values[operand as string]);
+      return isTruthy(readField(values, operand as string));
     case 'falsy':
-      return !isTruthy(values[operand as string]);
+      return !isTruthy(readField(values, operand as string));
 
     case 'equals': {
       const entry = Object.entries(operand as Record<string, unknown>)[0];
@@ -101,7 +121,8 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
       const rhs = resolveValue(raw, values);
       // Coerce field value when the literal is numeric: BE emits int/IntEnum
       // values as JSON numbers, but RHF stores text inputs as strings.
-      const lhs = typeof rhs === 'number' ? toNum(values[field]) : values[field];
+      const fieldValue = readField(values, field);
+      const lhs = typeof rhs === 'number' ? toNum(fieldValue) : fieldValue;
       return lhs === rhs;
     }
     case 'not_equals': {
@@ -111,7 +132,8 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
       }
       const [field, raw] = entry;
       const rhs = resolveValue(raw, values);
-      const lhs = typeof rhs === 'number' ? toNum(values[field]) : values[field];
+      const fieldValue = readField(values, field);
+      const lhs = typeof rhs === 'number' ? toNum(fieldValue) : fieldValue;
       return lhs !== rhs;
     }
     case 'gt': {
@@ -120,7 +142,7 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
         return false;
       }
       const [field, raw] = entry;
-      return toNum(values[field]) > toNum(resolveValue(raw, values));
+      return toNum(readField(values, field)) > toNum(resolveValue(raw, values));
     }
     case 'gte': {
       const entry = Object.entries(operand as Record<string, unknown>)[0];
@@ -128,7 +150,7 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
         return false;
       }
       const [field, raw] = entry;
-      return toNum(values[field]) >= toNum(resolveValue(raw, values));
+      return toNum(readField(values, field)) >= toNum(resolveValue(raw, values));
     }
     case 'lt': {
       const entry = Object.entries(operand as Record<string, unknown>)[0];
@@ -136,7 +158,7 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
         return false;
       }
       const [field, raw] = entry;
-      return toNum(values[field]) < toNum(resolveValue(raw, values));
+      return toNum(readField(values, field)) < toNum(resolveValue(raw, values));
     }
     case 'lte': {
       const entry = Object.entries(operand as Record<string, unknown>)[0];
@@ -144,7 +166,7 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
         return false;
       }
       const [field, raw] = entry;
-      return toNum(values[field]) <= toNum(resolveValue(raw, values));
+      return toNum(readField(values, field)) <= toNum(resolveValue(raw, values));
     }
 
     case 'contains': {
@@ -153,7 +175,7 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
         return false;
       }
       const [field, raw] = entry;
-      const container = values[field];
+      const container = readField(values, field);
       if (!Array.isArray(container)) {
         return false;
       }
@@ -163,33 +185,33 @@ export function evaluatePredicate(predicate: Predicate, values: FormValues): boo
 
     case 'all_truthy': {
       const fs = operand as string[];
-      return fs.length > 0 && fs.every((f) => isTruthy(values[f]));
+      return fs.length > 0 && fs.every((f) => isTruthy(readField(values, f)));
     }
     case 'all_falsy': {
       const fs = operand as string[];
-      return fs.length > 0 && fs.every((f) => !isTruthy(values[f]));
+      return fs.length > 0 && fs.every((f) => !isTruthy(readField(values, f)));
     }
     case 'any_truthy':
-      return (operand as string[]).some((f) => isTruthy(values[f]));
+      return (operand as string[]).some((f) => isTruthy(readField(values, f)));
     case 'any_falsy':
-      return (operand as string[]).some((f) => !isTruthy(values[f]));
+      return (operand as string[]).some((f) => !isTruthy(readField(values, f)));
     case 'any_present':
-      return (operand as string[]).some((f) => isPresent(values[f]));
+      return (operand as string[]).some((f) => isPresent(readField(values, f)));
     case 'all_present': {
       const fs = operand as string[];
-      return fs.length > 0 && fs.every((f) => isPresent(values[f]));
+      return fs.length > 0 && fs.every((f) => isPresent(readField(values, f)));
     }
     case 'none_present': {
       const fs = operand as string[];
-      return fs.length > 0 && fs.every((f) => !isPresent(values[f]));
+      return fs.length > 0 && fs.every((f) => !isPresent(readField(values, f)));
     }
     case 'all_equal': {
       const fields = operand as string[];
       if (fields.length < 2) {
         return false;
       }
-      const first = values[fields[0]];
-      return fields.slice(1).every((f) => values[f] === first);
+      const first = readField(values, fields[0]);
+      return fields.slice(1).every((f) => readField(values, f) === first);
     }
 
     case 'all': {

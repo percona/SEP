@@ -411,6 +411,58 @@ class TestCreateEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
+    def test_create_rejects_skip_s3_safety_check_without_s3_upload(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """``skip_s3_safety_check=True`` with ``S3`` absent from ``upload`` → 422.
+
+        Pins the per-field schema gate on the BoolField. With
+        ``_field_is_present`` treating ``False`` as absent, the gate now
+        fires only on an explicit ``True`` toggle, matching the
+        ``validate_upload_provider_consistency`` model-validator path.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            backup_type=BackupType.MYDUMPER,
+            upload=["RSYNC"],
+            rsync_path="/r",
+            skip_s3_safety_check=True,
+        )
+        response = test_client.post(
+            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_accepts_skip_s3_safety_check_default_with_non_s3_upload(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Regression guard: ``skip_s3_safety_check`` defaults to ``False``.
+
+        After the ``_field_is_present`` change, ``False`` is treated as absent
+        so a non-S3 upload with the default bool value must still be accepted.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.post = AsyncMock(return_value=build_backup_task())
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            backup_type=BackupType.MYDUMPER,
+            upload=["RSYNC"],
+            rsync_path="/r",
+            skip_s3_safety_check=False,
+        )
+        # Drop the S3 destination field carried by the default body.
+        body.pop("s3_bucket", None)
+        response = test_client.post(
+            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
     def test_create_anonymous_returns_401(
         self, unauthenticated_client, mock_task_api_dep
     ):

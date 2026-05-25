@@ -23,7 +23,11 @@ import { FormProvider, useForm } from 'react-hook-form';
 import type { PropsWithChildren } from 'react';
 import { ServiceSelector } from './ServiceSelector';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@sep/api', async (importOriginal) => ({
+  // Keep real exports (notably ``ApiError``) so ``sepRetry``'s
+  // ``err instanceof ApiError`` check inside ``useServices`` resolves
+  // when this test exercises the error path.
+  ...(await importOriginal<typeof import('@sep/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
 import { apiClient } from '@sep/api';
@@ -34,8 +38,12 @@ function makePage(items: Array<{ id: number; name: string; type: string }>) {
 }
 
 function makeClient() {
+  // ``useServices`` sets ``retry: sepRetry`` at the query level, which
+  // overrides the client-level ``retry: false`` default. ``retryDelay: 0``
+  // collapses the exponential backoff so error-path tests finish promptly
+  // regardless of the retry policy.
   return new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
+    defaultOptions: { queries: { retry: false, retryDelay: 0, gcTime: 0, staleTime: 0 } },
   });
 }
 
@@ -102,7 +110,8 @@ describe('ServiceSelector', () => {
   });
 
   it('renders error state', async () => {
-    mocked.get.mockRejectedValueOnce(new Error('boom'));
+    // Reject every attempt — sepRetry retries plain Errors up to 2 times.
+    mocked.get.mockRejectedValue(new Error('boom'));
     const client = makeClient();
     render(
       <Wrapper client={client}>
