@@ -358,10 +358,12 @@ async def get_username_mapping() -> dict[str, str]:
     :return: A dictionary mapping user IDs to usernames.
     :rtype: dict[str, str]
     """
+    if settings.CASDOOR is None:
+        return {}
     try:
         users = await settings.CASDOOR.get_users()
         return {str(user["id"]): user["name"] for user in users}
-    except (ValueError, KeyError, HTTPException, AttributeError):
+    except (ValueError, KeyError, HTTPException):
         logger.exception("Failed to get username mapping from Casdoor")
         return {}
 
