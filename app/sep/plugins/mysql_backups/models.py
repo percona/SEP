@@ -267,6 +267,8 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type alias: NonEmptyStr | EmptyStrToNone
     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
     :type alert_on_fail: bool
+    :param upload: Selected upload providers for backup artifacts.
+    :type upload: list[UploadProvider]
     """
 
     task_name: NonEmptyStr
