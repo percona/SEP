@@ -118,33 +118,13 @@ export function useTaskHistoryByName(
   return useTaskHistoryByNames(taskName ? [taskName] : undefined, options);
 }
 
-function historySortKey(entry: TaskHistoryEntry): number {
-  const timestamp = entry.started_at ?? entry.created_at;
-  if (!timestamp) {
-    return entry.id ?? 0;
-  }
-  const parsed = Date.parse(timestamp);
-  return Number.isNaN(parsed) ? (entry.id ?? 0) : parsed;
-}
-
-function mergeTaskHistoryPages(pages: PaginatedTaskHistory[]): PaginatedTaskHistory {
-  const items = pages
-    .flatMap((page) => page.items)
-    .sort((left, right) => historySortKey(right) - historySortKey(left));
-  const total = pages.reduce((acc, page) => acc + page.total, 0);
-  return {
-    items,
-    total,
-    offset: 0,
-    limit: items.length,
-  };
-}
-
 /**
  * List task history for one or more tasks, merged newest-first.
  *
  * Used by plugins whose detail page represents a task group (parent plus derived
- * siblings) while executions are recorded on individual task names.
+ * siblings) while executions are recorded on individual task names. Requests are
+ * routed through ``GET /api/sep/task-history/`` so the browser never calls the
+ * Tasks sub-app directly.
  */
 export function useTaskHistoryByNames(
   taskNames: string[] | undefined,
@@ -158,21 +138,18 @@ export function useTaskHistoryByNames(
     limit,
     enabled = true,
   } = options;
-  const names = [...new Set((taskNames ?? []).filter(Boolean))].sort();
+  const names = [...new Set((taskNames ?? []).map((name) => name.trim()).filter(Boolean))].sort();
   return useQuery<PaginatedTaskHistory>({
     queryKey: ['task-history', 'merged', names, { status: status ?? null, offset, limit }],
     enabled: enabled && names.length > 0,
     queryFn: async () => {
-      const pages = await Promise.all(
-        names.map(async (taskName) => {
-          const { data } = await apiClient.get<PaginatedTaskHistory>(
-            `/tasks/${encodeURIComponent(taskName)}/history/`,
-            { params: buildParams({ status, offset, limit }) },
-          );
-          return data;
-        }),
-      );
-      return mergeTaskHistoryPages(pages);
+      const { data } = await apiClient.get<PaginatedTaskHistory>('/sep/task-history/', {
+        params: {
+          ...buildParams({ status, offset, limit }),
+          task_names: names,
+        },
+      });
+      return data;
     },
     refetchInterval: (query) =>
       refetchIntervalFor(query.state.data, pollingIntervalMs, disablePolling),
