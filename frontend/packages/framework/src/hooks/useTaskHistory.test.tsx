@@ -80,6 +80,7 @@ describe('useTaskHistoryByNames', () => {
         params: {
           task_names: ['task-a', 'task-b'],
         },
+        paramsSerializer: { indexes: null },
       });
     });
   });
@@ -102,6 +103,7 @@ describe('useTaskHistoryByNames', () => {
           limit: 10,
           task_names: ['task-a'],
         },
+        paramsSerializer: { indexes: null },
       });
     });
   });

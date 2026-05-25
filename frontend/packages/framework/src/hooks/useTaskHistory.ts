@@ -148,6 +148,9 @@ export function useTaskHistoryByNames(
           ...buildParams({ status, offset, limit }),
           task_names: names,
         },
+        // FastAPI list query params use repeated keys (`task_names=a&task_names=b`),
+        // not axios' default bracket form (`task_names[]=a&task_names[]=b`).
+        paramsSerializer: { indexes: null },
       });
       return data;
     },
