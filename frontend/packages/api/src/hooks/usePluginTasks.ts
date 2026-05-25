@@ -33,6 +33,24 @@ function isBackendUnavailable(error: unknown): boolean {
   return false;
 }
 
+type PaginatedPluginList<T> = {
+  items: T[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+/** Accept legacy flat lists or paginated ``{ items, total, offset, limit }`` envelopes. */
+export function unwrapPluginListResponse<T>(data: T[] | PaginatedPluginList<T>): T[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (data && typeof data === 'object' && Array.isArray(data.items)) {
+    return data.items;
+  }
+  return [];
+}
+
 /**
  * Generic CRUD hooks for plugin tasks.
  *
@@ -53,8 +71,10 @@ export function usePluginTasks<T extends Record<string, unknown>>(
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<T[]>(`/plugins/${pluginName}/`);
-        return data;
+        const { data } = await apiClient.get<T[] | PaginatedPluginList<T>>(
+          `/plugins/${pluginName}/`,
+        );
+        return unwrapPluginListResponse(data);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           return mockTasks;
@@ -137,8 +157,10 @@ export function usePluginEntityList<T extends Record<string, unknown>>(
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<T[]>(`/plugins/${pluginName}/${entityName}/`);
-        return data;
+        const { data } = await apiClient.get<T[] | PaginatedPluginList<T>>(
+          `/plugins/${pluginName}/${entityName}/`,
+        );
+        return unwrapPluginListResponse(data);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return mockItems;
