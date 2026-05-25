@@ -118,4 +118,27 @@ describe('useTaskStats', () => {
     expect(err.message).toBe('nope');
     expect(mockSepGet).toHaveBeenCalledTimes(1);
   });
+
+  it('throws an ApiError with status 502 and does not retry on upstream failure', async () => {
+    mockSepGet.mockResolvedValue({
+      data: undefined,
+      error: { detail: 'tasks unreachable' },
+      response: {
+        ok: false,
+        status: 502,
+        statusText: 'Bad Gateway',
+        url: 'http://localhost/api/sep/task-stats/foo',
+      } as Response,
+    });
+    const { result } = renderHook(() => useTaskStats('foo'), { wrapper: wrapper() });
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+    const { ApiError } = await import('@sep/api');
+    expect(result.current.error).toBeInstanceOf(ApiError);
+    const err = result.current.error as InstanceType<typeof ApiError>;
+    expect(err.status).toBe(502);
+    expect(err.message).toBe('tasks unreachable');
+    expect(mockSepGet).toHaveBeenCalledTimes(1);
+  });
 });

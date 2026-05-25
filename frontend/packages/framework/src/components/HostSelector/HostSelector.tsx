@@ -44,27 +44,26 @@ export function HostSelector({ name, label, required, disabled, helperText }: Ho
   const { enqueueSnackbar } = useSnackbar();
 
   const { data, isLoading, isError, error } = useHosts();
-  const hosts = data?.hosts ?? EMPTY_OPTIONS;
-  const upstreamError = data?.upstreamError ?? null;
+  const hosts = data ?? EMPTY_OPTIONS;
 
   const empty = !isLoading && !isError && hosts.length === 0;
 
   const fieldError = errors[name]?.message as string | undefined;
 
-  // Surface upstream Tasks-API failures via the shell's snackbar system. The
-  // route returns `200 []` with the detail attached as a header so the
-  // dropdown can still render "No hosts available" while the user gets a
-  // visible explanation. Raise once per distinct upstream error message.
-  const lastSurfacedRef = useRef<string | null>(null);
+  // Surface a hosts-query failure (e.g. an upstream Tasks-API 502) via the
+  // shell's snackbar. React Query keeps the `error` object identity stable
+  // between renders until the next refetch, so de-dup on that identity to
+  // raise the snackbar once per failure rather than once per render.
+  const lastSurfacedRef = useRef<unknown>(null);
   useEffect(() => {
-    if (upstreamError && upstreamError !== lastSurfacedRef.current) {
-      enqueueSnackbar(`Failed to load executor hosts: ${upstreamError}`, {
+    if (isError && error && error !== lastSurfacedRef.current) {
+      enqueueSnackbar(`Failed to load executor hosts: ${error.message}`, {
         variant: 'error',
         autoHideDuration: 30_000,
       });
-      lastSurfacedRef.current = upstreamError;
+      lastSurfacedRef.current = error;
     }
-  }, [upstreamError, enqueueSnackbar]);
+  }, [isError, error, enqueueSnackbar]);
 
   let text = helperText;
   if (fieldError) {

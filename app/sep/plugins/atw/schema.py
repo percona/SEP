@@ -29,6 +29,7 @@ from app.sep.plugins.framework.schema import (
     Choice,
     ChoiceField,
     Column,
+    DetailView,
     FormSection,
     ListView,
     PluginSchema,
@@ -106,4 +107,5 @@ atw_schema = PluginSchema(
         ],
         default_sort="category_root",
     ),
+    detail_view=DetailView(sections=[]),
 )

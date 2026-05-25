@@ -23,6 +23,9 @@ from app.sep.plugins.framework.schema import (
     ChoiceField,
     Column,
     ColumnFormat,
+    DetailField,
+    DetailSection,
+    DetailView,
     FormSection,
     HostField,
     ListView,
@@ -176,6 +179,18 @@ checksums_schema = PluginSchema(
             Column(key="service_type", label="Service Type", format=ColumnFormat.CHIP),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
             Column(key="created_by", label="Created By"),
+        ],
+    ),
+    detail_view=DetailView(
+        sections=[
+            DetailSection(
+                title="Execution",
+                fields=[
+                    DetailField(path="data.meta.command", label="Command"),
+                    DetailField(path="data.meta.args", label="Args"),
+                    DetailField(path="data.meta.target", label="Target"),
+                ],
+            ),
         ],
     ),
 )
