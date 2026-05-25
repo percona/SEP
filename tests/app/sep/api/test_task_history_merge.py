@@ -15,10 +15,13 @@
 
 """Tests for merged task-history helpers."""
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.sep.api.task_history_merge import merge_task_history_pages
 
 TWO_MERGED_HISTORY_ROWS = 2
 SUMMED_UPSTREAM_TOTAL = 8
+PROPAGATED_TEST_OFFSET = 5
+PROPAGATED_TEST_LIMIT = 10
 
 
 class TestMergeTaskHistoryPages:
@@ -55,8 +58,32 @@ class TestMergeTaskHistoryPages:
         merged = merge_task_history_pages(pages)
         assert [item["id"] for item in merged["items"]] == [2, 1]
         assert merged["total"] == TWO_MERGED_HISTORY_ROWS
-        assert merged["offset"] == 0
-        assert merged["limit"] == TWO_MERGED_HISTORY_ROWS
+        assert merged["offset"] == DEFAULT_PAGINATION_OFFSET
+        assert merged["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_propagates_requested_offset_and_limit(self) -> None:
+        """Echo caller offset/limit on the merged envelope."""
+        pages = [
+            {
+                "items": [{"id": 1}],
+                "total": 1,
+                "offset": PROPAGATED_TEST_OFFSET,
+                "limit": PROPAGATED_TEST_LIMIT,
+            },
+            {
+                "items": [{"id": 2}],
+                "total": 1,
+                "offset": PROPAGATED_TEST_OFFSET,
+                "limit": PROPAGATED_TEST_LIMIT,
+            },
+        ]
+        merged = merge_task_history_pages(
+            pages,
+            offset=PROPAGATED_TEST_OFFSET,
+            limit=PROPAGATED_TEST_LIMIT,
+        )
+        assert merged["offset"] == PROPAGATED_TEST_OFFSET
+        assert merged["limit"] == PROPAGATED_TEST_LIMIT
 
     def test_sums_upstream_totals(self) -> None:
         """Expose the sum of upstream totals on the merged envelope."""

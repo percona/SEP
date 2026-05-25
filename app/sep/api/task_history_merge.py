@@ -58,7 +58,12 @@ def _history_sort_key(entry: dict[str, Any]) -> float | int:
         return entry.get("id") or 0
 
 
-def merge_task_history_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
+def merge_task_history_pages(
+    pages: list[dict[str, Any]],
+    *,
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> dict[str, Any]:
     """Merge upstream paginated history responses newest-first.
 
     Mirrors the frontend ``mergeTaskHistoryPages`` helper previously used by
@@ -66,10 +71,15 @@ def merge_task_history_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
     ``offset`` / ``limit`` / ``status`` filters, then items are concatenated,
     sorted by ``started_at`` (falling back to ``created_at`` then ``id``), and
     wrapped in a single paginated envelope whose ``total`` is the sum of the
-    upstream totals.
+    upstream totals. ``offset`` and ``limit`` on the envelope echo the request
+    parameters so consumers can compute the next page.
 
     :param pages: Raw paginated payloads from ``GET /{task}/history/``.
     :type pages: list[dict[str, Any]]
+    :param offset: Zero-based offset forwarded to each upstream history call.
+    :type offset: int
+    :param limit: Page size forwarded to each upstream history call.
+    :type limit: int
     :return: A paginated-response-shaped dict ready for validation.
     :rtype: dict[str, Any]
     """
@@ -82,8 +92,8 @@ def merge_task_history_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "items": items,
         "total": total,
-        "offset": 0,
-        "limit": len(items),
+        "offset": offset,
+        "limit": limit,
     }
 
 
@@ -117,7 +127,7 @@ async def fetch_merged_task_history(
     pages = await asyncio.gather(
         *(tasks_api.get(f"/{name}/history/", params=params) for name in unique_names)
     )
-    merged = merge_task_history_pages(pages)
+    merged = merge_task_history_pages(pages, offset=offset, limit=limit)
     return PaginatedResponse[TaskHistoryResponse](
         items=[TaskHistoryResponse.model_validate(item) for item in merged["items"]],
         total=merged["total"],

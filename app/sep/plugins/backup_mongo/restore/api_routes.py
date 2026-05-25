@@ -37,7 +37,6 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     build_restore_mongo_api_detail_response,
     build_restore_mongo_api_task_response,
     build_restore_task_group,
-    build_restore_update_task_payload,
     create_restore_task_group,
     delete_restore_task_group,
     get_restore_mongo_api_task_responses,
@@ -47,6 +46,7 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     restore_update_form_from_write,
     RestoreParentTask,
     UnprotectedRestoreParentTask,
+    update_restore_task_group,
 )
 from app.sep.plugins.backup_mongo.restore.models import (
     RestoreExecuteWrite,
@@ -57,7 +57,7 @@ from app.sep.plugins.backup_mongo.restore.models import (
 )
 from app.sep.plugins.backup_mongo.restore.schema import restore_mongo_schema
 from app.sep.plugins.framework.api import schema_endpoint
-from app.tasks.models import Task, TaskHistoryResponse, TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -134,14 +134,17 @@ async def restore_mongo_api_update(
 ) -> RestoreTaskResponse:
     """Update a restore task from a JSON payload request body.
 
-    Matches the legacy Jinja flow: PUTs the restore-leg payload to the parent
-    config task name.
+    PUTs the parent config payload to the config task name and refreshes each
+    child leg (restore, pbm-list, optional force-resync) in place.
     """
     logger.debug("Update backup_mongo restore task (JSON path): %s", parent_task.name)
     form = restore_update_form_from_write(body, parent_task)
-    task_write = await build_restore_update_task_payload(form, inventory_api)
-    updated = await tasks_api.put(f"/{parent_task.name}", json=task_write.model_dump())
-    updated_task = Task.model_validate(updated)
+    updated_task = await update_restore_task_group(
+        tasks_api,
+        parent_task,
+        form,
+        inventory_api,
+    )
     task_status = await get_restore_mongo_task_status(updated_task.name, tasks_api)
     return build_restore_mongo_api_task_response(updated_task, status=task_status)
 

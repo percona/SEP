@@ -33,6 +33,7 @@ API_BASE = "/api/plugins/backup_mongo/restores"
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
 EXPECTED_PHYSICAL_RESTORE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50
+EXPECTED_LOGICAL_RESTORE_PUTS = 3
 THREE_PARENT_FIXTURE_TOTAL = 3
 
 
@@ -392,18 +393,19 @@ class TestRestoreMongoApiUpdate:
     """Tests for PUT /api/plugins/backup_mongo/restores/{task_name}."""
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
-    def test_update_pins_task_name_to_path_parent(
+    def test_update_puts_config_payload_to_parent_and_refreshes_children(
         self,
         test_client,
         mock_task_api_dep,
         mock_inventory_api_dep,
         mongo_service: CreatedService,
     ) -> None:
-        """PUT uses the path parent name for child task identity, not body.task_name."""
+        """PUT keeps the parent as a config task and updates child legs in place."""
         parent = build_restore_task("parent-restore")
         mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
         mock_task_api_dep.get = AsyncMock(
             side_effect=[
+                parent,
                 parent,
                 {"items": []},
             ]
@@ -419,12 +421,19 @@ class TestRestoreMongoApiUpdate:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        mock_task_api_dep.put.assert_awaited_once()
-        put_path, put_kwargs = mock_task_api_dep.put.call_args
-        assert put_path == ("/parent-restore",)
-        posted = put_kwargs["json"]
-        assert posted["name"] == "parent-restore-pbm_logical"
-        assert posted["data"]["parent"] == "parent-restore"
+        assert mock_task_api_dep.put.await_count == EXPECTED_LOGICAL_RESTORE_PUTS
+        parent_put = mock_task_api_dep.put.await_args_list[0]
+        assert parent_put.args == ("/parent-restore",)
+        parent_payload = parent_put.kwargs["json"]
+        assert parent_payload["name"] == "parent-restore"
+        assert "parent" not in parent_payload["data"]
+        assert RESTORE_CONFIG_PAYLOAD_MARKER in parent_payload["data"]["payload"]
+
+        restore_put = mock_task_api_dep.put.await_args_list[1]
+        assert restore_put.args == ("/parent-restore-pbm_logical",)
+        restore_payload = restore_put.kwargs["json"]
+        assert restore_payload["name"] == "parent-restore-pbm_logical"
+        assert restore_payload["data"]["parent"] == "parent-restore"
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_update_pins_backup_type_to_path_parent(
@@ -440,6 +449,7 @@ class TestRestoreMongoApiUpdate:
         mock_task_api_dep.get = AsyncMock(
             side_effect=[
                 parent,
+                parent,
                 {"items": []},
             ]
         )
@@ -454,11 +464,13 @@ class TestRestoreMongoApiUpdate:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        put_path, put_kwargs = mock_task_api_dep.put.call_args
-        assert put_path == ("/parent-restore",)
-        posted = put_kwargs["json"]
-        assert posted["name"] == "parent-restore-pbm_logical"
-        assert posted["data"]["parent"] == "parent-restore"
+        assert mock_task_api_dep.put.await_count == EXPECTED_LOGICAL_RESTORE_PUTS
+        restore_put = mock_task_api_dep.put.await_args_list[1]
+        assert restore_put.args == ("/parent-restore-pbm_logical",)
+        assert (
+            mock_task_api_dep.put.await_args_list[2].args[0]
+            == "/parent-restore-pbm-list"
+        )
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_update_protected_task_returns_409(

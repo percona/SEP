@@ -64,7 +64,7 @@ BACKUP_MONGO_DERIVED = [
         name_suffix="-status",
         payload_substitutions={
             BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
-            BackupType.PBM_PHYSICAL.value: BackupType.PBM_STATUS.value,
+            BackupType.PBM_LOGICAL.value: BackupType.PBM_STATUS.value,
         },
         data_overrides={"backup_type": BackupType.PBM_STATUS.value},
     ),

@@ -22,12 +22,15 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import TaskFactory
 
 TWO_MERGED_HISTORY_ROWS = 2
 TWO_UNIQUE_TASK_NAMES = 2
+PROPAGATED_TEST_OFFSET = 5
+PROPAGATED_TEST_LIMIT = 10
 
 
 def _history_item(*, item_id: int, started_at: str, task_name: str) -> dict[str, Any]:
@@ -96,8 +99,8 @@ class TestSepTaskHistoryEndpoint:
         body = response.json()
         assert [item["id"] for item in body["items"]] == [2, 1]
         assert body["total"] == TWO_MERGED_HISTORY_ROWS
-        assert body["offset"] == 0
-        assert body["limit"] == TWO_MERGED_HISTORY_ROWS
+        assert body["offset"] == DEFAULT_PAGINATION_OFFSET
+        assert body["limit"] == DEFAULT_PAGINATION_LIMIT
 
     def test_forwards_status_offset_and_limit_to_upstream(
         self,
@@ -106,7 +109,12 @@ class TestSepTaskHistoryEndpoint:
     ) -> None:
         """Repeat the same query params on every upstream history call."""
         mock_task_api_dep.get = AsyncMock(
-            return_value={"items": [], "total": 0, "offset": 5, "limit": 10}
+            return_value={
+                "items": [],
+                "total": 0,
+                "offset": PROPAGATED_TEST_OFFSET,
+                "limit": PROPAGATED_TEST_LIMIT,
+            }
         )
         response = test_client.get(
             "/api/sep/task-history/",
@@ -114,19 +122,30 @@ class TestSepTaskHistoryEndpoint:
                 ("task_names", "task-a"),
                 ("task_names", "task-b"),
                 ("status", "running"),
-                ("offset", "5"),
-                ("limit", "10"),
+                ("offset", str(PROPAGATED_TEST_OFFSET)),
+                ("limit", str(PROPAGATED_TEST_LIMIT)),
             ],
         )
         assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["offset"] == PROPAGATED_TEST_OFFSET
+        assert body["limit"] == PROPAGATED_TEST_LIMIT
         assert mock_task_api_dep.get.await_count == TWO_UNIQUE_TASK_NAMES
         mock_task_api_dep.get.assert_any_await(
             "/task-a/history/",
-            params={"offset": 5, "limit": 10, "status": "running"},
+            params={
+                "offset": PROPAGATED_TEST_OFFSET,
+                "limit": PROPAGATED_TEST_LIMIT,
+                "status": "running",
+            },
         )
         mock_task_api_dep.get.assert_any_await(
             "/task-b/history/",
-            params={"offset": 5, "limit": 10, "status": "running"},
+            params={
+                "offset": PROPAGATED_TEST_OFFSET,
+                "limit": PROPAGATED_TEST_LIMIT,
+                "status": "running",
+            },
         )
 
     def test_deduplicates_repeated_task_names(

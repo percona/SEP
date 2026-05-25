@@ -440,18 +440,63 @@ async def build_restore_update_task_payload(
     form: RestoreCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the restore-leg payload for a JSON API update request.
+    """Build the parent restore-config payload for a JSON API update request.
 
     :param form: The restore update input with ``task_name`` pinned to the
         parent config task from the URL path.
     :type form: RestoreCreate
     :param inventory_api: The Inventory API to look up services.
     :type inventory_api: InventoryAPI
-    :return: A ``TaskWrite`` payload for the restore leg.
+    :return: A ``TaskWrite`` payload for the parent config task.
     :rtype: TaskWrite
     """
     service_name = await _resolve_service_name(form, inventory_api)
-    return _build_restore_task(form, service_name)
+    return _build_restore_config_task(form, service_name)
+
+
+async def update_restore_task_group(
+    tasks_api: TaskAPI,
+    parent_task: Task,
+    form: RestoreCreate,
+    inventory_api: InventoryAPI,
+) -> Task:
+    """PUT updated payloads for the parent config task and each child leg.
+
+    :param tasks_api: The TaskAPI instance used to update tasks.
+    :type tasks_api: TaskAPI
+    :param parent_task: The parent restore config task.
+    :type parent_task: Task
+    :param form: The restore update input with identity pinned to ``parent_task``.
+    :type form: RestoreCreate
+    :param inventory_api: The Inventory API to look up services.
+    :type inventory_api: InventoryAPI
+    :return: The refreshed parent restore config task.
+    :rtype: Task
+    """
+    service_name = await _resolve_service_name(form, inventory_api)
+    config_payload = _build_restore_config_task(form, service_name)
+    restore_payload = _build_restore_task(form, service_name)
+    pbm_list_payload = _build_pbm_list_task(form, service_name)
+
+    await tasks_api.put(
+        f"/{parent_task.name}",
+        json=config_payload.model_dump(),
+    )
+    await tasks_api.put(
+        f"/{restore_payload.name}",
+        json=restore_payload.model_dump(),
+    )
+    await tasks_api.put(
+        f"/{pbm_list_payload.name}",
+        json=pbm_list_payload.model_dump(),
+    )
+    if form.backup_type == BackupType.PBM_PHYSICAL:
+        force_resync_payload = _build_pbm_force_resync_task(form, service_name)
+        await tasks_api.put(
+            f"/{force_resync_payload.name}",
+            json=force_resync_payload.model_dump(),
+        )
+    return await get_restores_task(parent_task.name, tasks_api)
 
 
 async def build_restore_task_group(
@@ -559,14 +604,19 @@ def _parse_restore_task_config(task: Task) -> dict[str, Any]:
 
 def _backup_type_from_parent(task: Task) -> BackupType:
     """Read ``backupType`` from a parent restore config task."""
-    return BackupType(_parse_restore_task_config(task)["backupType"])
+    config = _parse_restore_task_config(task)
+    backup_type_str = config.get("backupType")
+    if backup_type_str is None:
+        raise HTTPNotFoundException(
+            detail=f"Task {task.name!r} has no backupType in config",
+        )
+    return BackupType(backup_type_str)
 
 
 def _is_restore_parent_task(task: Task) -> bool:
     """Return whether ``task`` is a parent restore-config row for the list view."""
-    data = task.data
-    payload = str(data.get("payload", ""))
-    return not data.get("parent") and RESTORE_CONFIG_PAYLOAD_MARKER in payload
+    parent = task.data.get("parent")
+    return not parent or parent == task.name
 
 
 async def get_restore_mongo_task_status(
@@ -638,7 +688,10 @@ async def get_restore_mongo_api_task_responses(
     :return: The paginated restore task responses matching the requested filters.
     :rtype: PaginatedResponse[RestoreTaskResponse]
     """
-    response = await tasks_api.get("/", params={"owner": TaskOwner.RESTORE_MONGO.value})
+    response = await tasks_api.get(
+        "/",
+        params={"owner": TaskOwner.RESTORE_MONGO.value, "limit": 0},
+    )
     tasks = [Task.model_validate(item) for item in response["items"]]
     parents = [task for task in tasks if _is_restore_parent_task(task)]
     statuses = await asyncio.gather(

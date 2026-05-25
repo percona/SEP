@@ -385,7 +385,10 @@ async def get_backup_mongo_api_task_responses(
     :return: The paginated backup task responses matching the requested filters.
     :rtype: PaginatedResponse[BackupTaskResponse]
     """
-    response = await tasks_api.get("/", params={"owner": TaskOwner.BACKUP_MONGO.value})
+    response = await tasks_api.get(
+        "/",
+        params={"owner": TaskOwner.BACKUP_MONGO.value, "limit": 0},
+    )
     tasks = [Task.model_validate(item) for item in response["items"]]
     parents = [task for task in tasks if _is_backup_parent_task(task)]
     statuses = await asyncio.gather(

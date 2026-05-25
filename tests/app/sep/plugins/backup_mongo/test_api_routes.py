@@ -179,6 +179,10 @@ class TestBackupMongoApiList:
         assert body["limit"] == DEFAULT_PAGE_LIMIT
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "parent-backup"
+        mock_task_api_dep.get.assert_any_await(
+            "/",
+            params={"owner": TaskOwner.BACKUP_MONGO.value, "limit": 0},
+        )
 
     def test_list_paginates_with_offset_and_limit(
         self, test_client, mock_task_api_dep

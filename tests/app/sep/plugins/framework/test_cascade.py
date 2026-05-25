@@ -196,10 +196,10 @@ class TestBuildDerivedPayload:
         assert result["data"]["backup_type"] == "pbm_logical"
         assert "payload" not in result["data"]
 
-    def test_status_payload_substitution_leaves_logical_path_when_physical_absent(
+    def test_status_payload_substitution_chains_through_logical(
         self,
     ) -> None:
-        """Apply ``payload_substitutions`` without matching ``pbm_physical`` in the path."""
+        """Chain ``pbm_config`` → ``pbm_logical`` → ``pbm_status`` in the payload path."""
         parent = {
             "name": "my-backup",
             "data": {
@@ -213,7 +213,7 @@ class TestBuildDerivedPayload:
                 name_suffix="-status",
                 payload_substitutions={
                     "pbm_config": "pbm_logical",
-                    "pbm_physical": "pbm_status",
+                    "pbm_logical": "pbm_status",
                 },
                 data_overrides={"backup_type": "pbm_status"},
             ),
@@ -223,7 +223,7 @@ class TestBuildDerivedPayload:
         assert result["data"]["backup_type"] == "pbm_status"
         assert (
             result["data"]["payload"]
-            == "file:///plugins/backup_mongo/pbm_logical_payload"
+            == "file:///plugins/backup_mongo/pbm_status_payload"
         )
 
 
@@ -258,7 +258,7 @@ def _backup_mongo_derived_specs() -> list[DerivedTask]:
             name_suffix="-status",
             payload_substitutions={
                 "pbm_config": "pbm_logical",
-                "pbm_physical": "pbm_status",
+                "pbm_logical": "pbm_status",
             },
             data_overrides={"backup_type": "pbm_status"},
         ),
@@ -278,7 +278,7 @@ class TestBackupMongoDerivedCascade:
 
         assert logical["data"]["payload"].endswith("pbm_logical_payload")
         assert physical["data"]["payload"].endswith("pbm_physical_payload")
-        assert status["data"]["payload"].endswith("pbm_logical_payload")
+        assert status["data"]["payload"].endswith("pbm_status_payload")
 
     @pytest.mark.asyncio
     async def test_cascade_create_posts_parent_and_three_derived(self) -> None:
