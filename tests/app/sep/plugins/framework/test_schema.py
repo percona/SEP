@@ -710,6 +710,47 @@ def test_list_view_rejects_double_dash_prefix():
         )
 
 
+# ── ListView.overview_hidden_fields ──────────────────────────────────────
+
+
+def test_list_view_overview_hidden_fields_defaults_to_empty():
+    """``overview_hidden_fields`` defaults to ``[]`` when omitted."""
+    view = ListView(columns=[Column(key="id", label="ID")])
+
+    assert view.overview_hidden_fields == []
+
+
+def test_list_view_overview_hidden_fields_accepts_non_empty_strings():
+    """``overview_hidden_fields`` accepts a list of non-empty strings."""
+    view = ListView(
+        columns=[Column(key="id", label="ID")],
+        overview_hidden_fields=["foo", "bar_baz"],
+    )
+
+    assert view.overview_hidden_fields == ["foo", "bar_baz"]
+
+
+def test_list_view_overview_hidden_fields_rejects_empty_string():
+    """``overview_hidden_fields`` rejects entries that are empty strings."""
+    with pytest.raises(ValidationError):
+        ListView(
+            columns=[Column(key="id", label="ID")],
+            overview_hidden_fields=[""],
+        )
+
+
+def test_list_view_overview_hidden_fields_round_trip():
+    """``overview_hidden_fields`` survives serialisation and ``model_validate``."""
+    original = ListView(
+        columns=[Column(key="id", label="ID")],
+        overview_hidden_fields=["internal_key"],
+    )
+    dumped = original.model_dump()
+    rehydrated = ListView.model_validate(dumped)
+
+    assert rehydrated.overview_hidden_fields == ["internal_key"]
+
+
 # ── Discriminated-union rejection ────────────────────────────────────────
 
 

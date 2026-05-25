@@ -579,6 +579,61 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 });
 
+describe('PluginDetailPage — overview_hidden_fields', () => {
+  function schemaWithHidden(overview_hidden_fields?: string[]): PluginSchema {
+    return {
+      pluginName: 'checksums',
+      display_name: 'Checksum',
+      description: 'Test',
+      capabilities: {},
+      list_view: {
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'status', label: 'Status', format: 'status' },
+        ],
+        default_sort: '-id',
+        ...(overview_hidden_fields !== undefined ? { overview_hidden_fields } : {}),
+      },
+      formSchema: { sections: [] },
+    } as unknown as PluginSchema;
+  }
+
+  it('hides baseline keys (id, backend, data, etc.) when overview_hidden_fields is absent', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        backend: 'nomad',
+        data: {},
+        extra_visible: 'hello',
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(schemaWithHidden());
+
+    expect(screen.queryByText('Id')).toBeNull();
+    expect(screen.queryByText('Backend')).toBeNull();
+    expect(screen.queryByText('Data')).toBeNull();
+    // A non-hidden extra still renders
+    expect(screen.getByText('Extra Visible')).toBeInTheDocument();
+  });
+
+  it('hides a schema-declared key in addition to the baseline', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed', foo: 'secret', extra_visible: 'hello' },
+      isLoading: false,
+    });
+
+    renderWithSchema(schemaWithHidden(['foo']));
+
+    expect(screen.queryByText('Foo')).toBeNull();
+    // Unrelated extra field still renders
+    expect(screen.getByText('Extra Visible')).toBeInTheDocument();
+  });
+});
+
 describe('PluginDetailPage delete flow', () => {
   it('confirms then calls delete mutation and navigates to list on success', async () => {
     mockDeleteMutate.mockReset();

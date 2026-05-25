@@ -586,10 +586,18 @@ class ListView(SchemaBaseModel):
         ``"-lastRun"``). The unprefixed key must match one of the declared
         column keys. Defaults to ``None``.
     :type default_sort: NonEmptyStr | None
+    :param overview_hidden_fields: Additional task-level keys to suppress
+        from the auto-rendered "extras" loop on the plugin detail Overview
+        tab. The framework always hides a baseline set of internal fields
+        (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,
+        ``last_updated_by``, ``connectivity_warning``); any keys listed here
+        are merged with that baseline. Defaults to ``[]``.
+    :type overview_hidden_fields: list[NonEmptyStr]
     """
 
     columns: list[Column]
     default_sort: NonEmptyStr | None = None
+    overview_hidden_fields: list[NonEmptyStr] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_default_sort_references_column(self) -> Self:
