@@ -218,11 +218,11 @@ if [[ -z $EXPLAIN_OPTS_ARG ]]; then
         echo "Error: unexpected server_version_num value: '$VER_NUM'." >&2
         exit 1
     fi
-    if (( VER_NUM >= 170000 )); then
+    if ((VER_NUM >= 170000)); then
         EXPLAIN_OPTS="ANALYZE, COSTS, VERBOSE, BUFFERS, SETTINGS, WAL, MEMORY, SERIALIZE"
-    elif (( VER_NUM >= 130000 )); then
+    elif ((VER_NUM >= 130000)); then
         EXPLAIN_OPTS="ANALYZE, COSTS, VERBOSE, BUFFERS, SETTINGS, WAL"
-    elif (( VER_NUM >= 120000 )); then
+    elif ((VER_NUM >= 120000)); then
         EXPLAIN_OPTS="ANALYZE, COSTS, VERBOSE, BUFFERS, SETTINGS"
     else
         EXPLAIN_OPTS="ANALYZE, COSTS, VERBOSE, BUFFERS"
@@ -285,9 +285,9 @@ fi
 mask_output() {
     local src="$1" dst="$2"
     sed -E \
-        -e "s/([0-9]{1,3}\\.){3}[0-9]{1,3}/<ipv4-redacted>/g" \
+        -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/<ipv4-redacted>/g' \
         -e "s/'[0-9a-fA-F]{0,4}(:[0-9a-fA-F]{0,4}){2,7}'/'<ipv6-redacted>'/g" \
-        -e "s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/<email-redacted>/g" \
+        -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email-redacted>/g' \
         "$src" > "$dst"
 }
 
