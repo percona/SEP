@@ -65,7 +65,7 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=restore_mongo_schema)
 
 
-@router.get("/", response_model=PaginatedResponse[RestoreTaskResponse])
+@router.get("/")
 async def restore_mongo_api_list(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
@@ -78,7 +78,7 @@ async def restore_mongo_api_list(
     )
 
 
-@router.get("/{task_name}", response_model=RestoreTaskDetailResponse)
+@router.get("/{task_name}")
 async def restore_mongo_api_detail(
     parent_task: RestoreParentTask,
     tasks_api: TaskAPI,
@@ -89,7 +89,6 @@ async def restore_mongo_api_detail(
 
 @router.post(
     "/",
-    response_model=RestoreTaskDetailResponse,
     status_code=http_status.HTTP_201_CREATED,
 )
 async def restore_mongo_api_create(
@@ -125,7 +124,6 @@ async def restore_mongo_api_create(
 
 @router.put(
     "/{task_name}",
-    response_model=RestoreTaskResponse,
     dependencies=[HasNoConflictedRunningTasks],
 )
 async def restore_mongo_api_update(
@@ -150,7 +148,6 @@ async def restore_mongo_api_update(
 
 @router.post(
     "/{task_name}/execute",
-    response_model=RestoreExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
 )
