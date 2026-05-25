@@ -38,7 +38,7 @@ export type { SchemaOption, UseSchemasOptions } from './useSchemas';
 export { useTables } from './useTables';
 export type { TableOption, UseTablesOptions } from './useTables';
 export { useHosts } from './useHosts';
-export type { HostOption, HostsResult, UseHostsOptions } from './useHosts';
+export type { HostOption, UseHostsOptions } from './useHosts';
 
 export {
   useTaskHistory,
@@ -68,3 +68,5 @@ export type { UseSnippetPluginExecutionOptions } from './useSnippetPluginExecuti
 
 export { useTaskStats } from './useTaskStats';
 export type { TaskStatsView } from './useTaskStats';
+
+export { sepRetry } from './sepRetry';

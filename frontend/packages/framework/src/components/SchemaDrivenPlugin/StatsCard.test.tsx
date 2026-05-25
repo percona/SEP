@@ -141,6 +141,18 @@ describe('StatsCard — render states', () => {
     renderWithClient(<StatsCard taskName="foo" />);
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load execution stats');
   });
+
+  it('renders inline error for 502 upstream Tasks-API failure', async () => {
+    const { ApiError } = await import('@sep/api');
+    mockUseTaskStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError({ kind: 'http', status: 502, message: 'tasks unreachable' }),
+    });
+    renderWithClient(<StatsCard taskName="foo" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load execution stats');
+  });
 });
 
 describe('StatsCard — taskName guards', () => {
