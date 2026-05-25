@@ -591,7 +591,7 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
           { key: 'name', label: 'Name' },
           { key: 'status', label: 'Status', format: 'status' },
         ],
-        default_sort: '-id',
+        default_sort: '-name',
         ...(overview_hidden_fields !== undefined ? { overview_hidden_fields } : {}),
       },
       formSchema: { sections: [] },
