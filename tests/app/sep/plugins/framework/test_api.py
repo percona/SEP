@@ -43,6 +43,9 @@ from app.sep.plugins.framework.schema import (
     ColumnFormat,
     DateTimeField,
     DerivedTask,
+    DetailField,
+    DetailSection,
+    DetailView,
     FileField,
     FloatField,
     FormSection,
@@ -123,6 +126,16 @@ _ALL_FIELDS_SCHEMA = PluginSchema(
         columns=[
             Column(key="id", label="ID"),
             Column(key="status", label="Status", format=ColumnFormat.STATUS),
+        ],
+    ),
+    detail_view=DetailView(
+        sections=[
+            DetailSection(
+                title="Execution",
+                fields=[
+                    DetailField(path="data.meta.command", label="Command"),
+                ],
+            ),
         ],
     ),
 )
@@ -368,6 +381,27 @@ class TestSchemaEndpointAuthenticated:
         property_keys = set(resolved["properties"].keys())
 
         assert {"display_name", "list_view", "forms"} <= property_keys
+
+    def test_openapi_documents_detail_view(self, authed_client: TestClient) -> None:
+        """Assert OpenAPI surfaces ``PluginSchema.detail_view`` + DetailView models.
+
+        Regression guard for SEP-1114: ``detail_view`` must remain visible to
+        the generated TypeScript client. If the field is renamed or dropped
+        without updating the frontend codegen, this test fails before the
+        generated types go stale.
+        """
+        openapi = authed_client.get("/openapi.json").json()
+
+        components = openapi["components"]["schemas"]
+        plugin_schema = next(
+            v for k, v in components.items() if k.endswith("PluginSchema")
+        )
+        assert "detail_view" in plugin_schema["properties"]
+
+        for name in ("DetailView", "DetailSection", "DetailField"):
+            assert any(k.endswith(name) for k in components), (
+                f"{name!r} not present in OpenAPI components"
+            )
 
     def test_empty_forms_serialises_as_empty_list(
         self, authed_empty_forms_client: TestClient

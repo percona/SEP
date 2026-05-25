@@ -65,6 +65,9 @@ export type {
   FormSection,
   ListColumn,
   ListView,
+  DetailField,
+  DetailSection,
+  DetailView,
   PluginCapabilities,
   StringField,
   IntegerField,
@@ -102,5 +105,6 @@ export {
   useDeletePluginTask,
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
+  useDashboardStats,
 } from './hooks';
-export type { AlertConfig } from './hooks';
+export type { AlertConfig, DashboardStats } from './hooks';
