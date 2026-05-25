@@ -15,43 +15,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { CSSProperties } from 'react';
 import type { TaskExecuteAction } from '@sep/framework';
+import {
+  cellStyle,
+  PbmConfigSection,
+  preStyle,
+  readPbmConfigYaml,
+  sectionHeadingStyle,
+  sectionStyle,
+  tableStyle,
+} from './pbmTaskDetailShared';
 
 interface DerivedTaskSummary {
   name: string;
   backup_type: string;
   status?: string | null;
 }
-
-const sectionStyle: CSSProperties = {
-  border: '1px solid rgba(0, 0, 0, 0.12)',
-  borderRadius: 4,
-  padding: '1.5rem',
-  marginBottom: '1.5rem',
-};
-
-const tableStyle: CSSProperties = {
-  width: '100%',
-  borderCollapse: 'collapse',
-};
-
-const cellStyle: CSSProperties = {
-  padding: '0.5rem 0.75rem',
-  borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
-  textAlign: 'left',
-};
-
-const preStyle: CSSProperties = {
-  margin: 0,
-  padding: '1rem',
-  background: '#fafafa',
-  borderRadius: 4,
-  overflow: 'auto',
-  fontFamily: "'Roboto Mono', monospace",
-  fontSize: '0.875rem',
-  whiteSpace: 'pre-wrap',
-};
 
 function readDerivedTasks(task: Record<string, unknown>): DerivedTaskSummary[] {
   if (!Array.isArray(task.derived_tasks)) {
@@ -130,22 +109,22 @@ export function getBackupMongoExecuteActions(task: Record<string, unknown>): Tas
 
 export function BackupMongoTaskDetailExtras({ task }: { task: Record<string, unknown> }) {
   const derived = readDerivedTasks(task);
+  const configYaml = readPbmConfigYaml(task);
   const latestStatus =
     typeof task.latest_pbm_status === 'string' && task.latest_pbm_status.trim()
       ? task.latest_pbm_status
       : null;
 
-  if (derived.length === 0 && !latestStatus) {
+  if (!configYaml && derived.length === 0 && !latestStatus) {
     return null;
   }
 
   return (
     <>
+      <PbmConfigSection task={task} />
       {derived.length > 0 && (
         <section style={sectionStyle}>
-          <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.125rem' }}>
-            Derived tasks
-          </h2>
+          <h2 style={sectionHeadingStyle}>Derived tasks</h2>
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -169,9 +148,7 @@ export function BackupMongoTaskDetailExtras({ task }: { task: Record<string, unk
 
       {latestStatus && (
         <section style={sectionStyle}>
-          <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.125rem' }}>
-            Latest PBM status
-          </h2>
+          <h2 style={sectionHeadingStyle}>Latest PBM status</h2>
           <pre style={preStyle}>{latestStatus}</pre>
         </section>
       )}

@@ -15,31 +15,20 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { CSSProperties } from 'react';
 import type { TaskExecuteAction } from '@sep/framework';
+import {
+  cellStyle,
+  PbmConfigSection,
+  readPbmConfigYaml,
+  sectionHeadingStyle,
+  sectionStyle,
+  tableStyle,
+} from './pbmTaskDetailShared';
 
 interface DerivedTaskSummary {
   name: string;
   status?: string | null;
 }
-
-const sectionStyle: CSSProperties = {
-  border: '1px solid rgba(0, 0, 0, 0.12)',
-  borderRadius: 4,
-  padding: '1.5rem',
-  marginBottom: '1.5rem',
-};
-
-const tableStyle: CSSProperties = {
-  width: '100%',
-  borderCollapse: 'collapse',
-};
-
-const cellStyle: CSSProperties = {
-  padding: '0.5rem 0.75rem',
-  borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
-  textAlign: 'left',
-};
 
 function readDerivedTasks(task: Record<string, unknown>): DerivedTaskSummary[] {
   if (!Array.isArray(task.derived_tasks)) {
@@ -153,32 +142,38 @@ export function getRestoreMongoExecuteActions(task: Record<string, unknown>): Ta
 export function RestoreMongoTaskDetailExtras({ task }: { task: Record<string, unknown> }) {
   const derived = readDerivedTasks(task);
   const backupType = typeof task.backup_type === 'string' ? task.backup_type : '';
+  const configYaml = readPbmConfigYaml(task);
 
-  if (derived.length === 0) {
+  if (!configYaml && derived.length === 0) {
     return null;
   }
 
   return (
-    <section style={sectionStyle}>
-      <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.125rem' }}>Child tasks</h2>
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Task</th>
-            <th style={cellStyle}>Role</th>
-            <th style={cellStyle}>Latest status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {derived.map((entry) => (
-            <tr key={entry.name}>
-              <td style={cellStyle}>{entry.name}</td>
-              <td style={cellStyle}>{childTaskLabel(entry.name, backupType)}</td>
-              <td style={cellStyle}>{entry.status ?? '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <>
+      <PbmConfigSection task={task} />
+      {derived.length > 0 && (
+        <section style={sectionStyle}>
+          <h2 style={sectionHeadingStyle}>Child tasks</h2>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={cellStyle}>Task</th>
+                <th style={cellStyle}>Role</th>
+                <th style={cellStyle}>Latest status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {derived.map((entry) => (
+                <tr key={entry.name}>
+                  <td style={cellStyle}>{entry.name}</td>
+                  <td style={cellStyle}>{childTaskLabel(entry.name, backupType)}</td>
+                  <td style={cellStyle}>{entry.status ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+    </>
   );
 }
