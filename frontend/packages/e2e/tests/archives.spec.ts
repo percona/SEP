@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 
 const PLUGIN_ROUTE = '/plugins/archives';
 
@@ -65,23 +65,23 @@ const MOCK_ARCHIVES_SCHEMA = {
           name: 'where',
           label: 'WHERE clause',
           required: false,
-          requires: [{ when: { not_equals: { field: 'swap_drop', value: '1' } } }],
-          forbidden: [{ when: { equals: { field: 'swap_drop', value: '1' } } }],
+          requires: [{ when: { not_equals: { swap_drop: '1' } } }],
+          forbidden: [{ when: { equals: { swap_drop: '1' } } }],
         },
         {
           type: 'string',
           name: 'swp_table_suffix',
           label: 'Swap table suffix',
           required: false,
-          requires: [{ when: { equals: { field: 'swap_drop', value: '2' } } }],
+          requires: [{ when: { equals: { swap_drop: '2' } } }],
         },
       ],
     },
   ],
   list_view: {
     columns: [
-      { name: 'name', label: 'Name' },
-      { name: 'status', label: 'Status' },
+      { key: 'name', label: 'Name' },
+      { key: 'status', label: 'Status' },
     ],
   },
 };
@@ -142,24 +142,24 @@ class ArchivesPage {
 
   constructor(private readonly page: Page) {}
 
-  async goto() {
+  async goto(): Promise<void> {
     await this.page.goto(PLUGIN_ROUTE);
   }
 
-  async openCreateForm() {
+  async openCreateForm(): Promise<void> {
     await this.newButton.click();
     await expect(this.page.getByRole('heading', { name: /new/i })).toBeVisible({
       timeout: 10_000,
     });
   }
 
-  /** Returns the locator for the swap_drop select/radio control. */
-  swapDropField() {
-    return this.page.getByLabel(/archive type/i);
+  /** Clicks the swap_drop radio option matching the given visible label. */
+  async selectSwapDrop(label: string | RegExp): Promise<void> {
+    await this.page.getByRole('radio', { name: label }).click();
   }
 
   /** Returns the locator for the WHERE field. */
-  whereField() {
+  whereField(): Locator {
     return this.page.getByLabel(/where clause/i);
   }
 }
@@ -189,7 +189,7 @@ test.describe(`${PLUGIN_DISPLAY_NAME} plugin smoke`, () => {
     await expect(whereField).toBeVisible({ timeout: 10_000 });
 
     // Switch to SWAP_DROP (1) — where must be hidden by the forbidden gate
-    await archivesPage.swapDropField().selectOption('1');
+    await archivesPage.selectSwapDrop('Swap Drop');
 
     await expect(whereField).not.toBeVisible({ timeout: 5_000 });
   });
@@ -202,11 +202,11 @@ test.describe(`${PLUGIN_DISPLAY_NAME} plugin smoke`, () => {
     await archivesPage.openCreateForm();
 
     // Hide it first
-    await archivesPage.swapDropField().selectOption('1');
+    await archivesPage.selectSwapDrop('Swap Drop');
     await expect(archivesPage.whereField()).not.toBeVisible({ timeout: 5_000 });
 
     // Switch to SWAP_ARCHIVE_DROP (2) — where becomes required again
-    await archivesPage.swapDropField().selectOption('2');
+    await archivesPage.selectSwapDrop('Swap Archive Drop');
     await expect(archivesPage.whereField()).toBeVisible({ timeout: 5_000 });
   });
 });
