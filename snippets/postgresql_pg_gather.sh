@@ -242,7 +242,7 @@ mask_output() {
     local src="$1" dst="$2"
     sed -E \
         -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/<ipv4-redacted>/g' \
-        -e 's/[0-9a-fA-F]*(:[0-9a-fA-F]+)*::([0-9a-fA-F]+:?)*[0-9a-fA-F]*/<ipv6-redacted>/g' \
+        -e 's/([0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4})*)?::([0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4})*)/<ipv6-redacted>/g' \
         -e 's/([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/<ipv6-redacted>/g' \
         -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email-redacted>/g' \
         "$src" > "$dst"
