@@ -16,19 +16,23 @@
 """Tests for the archives plugin JSON API routes under /api/plugins/archives/."""
 
 from datetime import datetime, UTC
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import status
 
+from app.core.exceptions import HTTPNotFoundException
+from app.core.requests import RemoteAPI
 from app.sep.deps import get_inventory_api, get_tasks_api
 from app.sep.main import sep_app
+from app.sep.plugins.archives.deps import build_archives_api_task_payload
 from app.tasks.models import TaskBackendEnum, TaskOwner
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def build_archive_task(name: str = "test-archive") -> dict:
+def build_archive_task(name: str = "test-archive") -> dict[str, Any]:
     """Return a minimal task dict shaped like the Tasks API response."""
     return {
         "id": 1,
@@ -53,7 +57,7 @@ def build_archive_task(name: str = "test-archive") -> dict:
     }
 
 
-def build_valid_create_body(**overrides) -> dict:
+def build_valid_create_body(**overrides: Any) -> dict[str, Any]:
     """Return a JSON body that passes all ArchivesCreate validators.
 
     Uses swap_drop=0 (PURGE_ONLY) which requires a ``where`` clause but
@@ -73,18 +77,18 @@ def build_valid_create_body(**overrides) -> dict:
 
 
 @pytest.fixture
-def mock_tasks_api_dep(mock_remote_api) -> AsyncMock:
+def mock_tasks_api_dep() -> AsyncMock:
     """Mock the TaskAPI dependency for archives API route tests."""
-    mock = AsyncMock(spec=mock_remote_api.__class__)
+    mock = AsyncMock(spec=RemoteAPI)
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides.pop(get_tasks_api, None)
 
 
 @pytest.fixture
-def mock_inventory_api_dep_archives(mock_remote_api) -> AsyncMock:
+def mock_inventory_api_dep_archives() -> AsyncMock:
     """Mock the InventoryAPI dependency for archives API route tests."""
-    mock = AsyncMock(spec=mock_remote_api.__class__)
+    mock = AsyncMock(spec=RemoteAPI)
     sep_app.dependency_overrides[get_inventory_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides.pop(get_inventory_api, None)
@@ -123,18 +127,18 @@ class TestArchivesApiList:
     def test_list_returns_ok(self, test_client, mock_tasks_api_dep):
         """GET /api/plugins/archives/ returns 200 JSON array."""
         task = build_archive_task()
-        mock_tasks_api_dep.get.return_value = {
-            "items": [task],
-            "total": 1,
-            "offset": 0,
-            "limit": 50,
-        }
+        mock_tasks_api_dep.get.side_effect = [
+            {"items": [task], "total": 1, "offset": 0, "limit": 50},
+            {"items": []},
+        ]
         response = test_client.get("/api/plugins/archives/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert isinstance(data, list)
         assert len(data) == 1
         assert data[0]["name"] == task["name"]
+        assert data[0]["service_type"] == "mysql"
+        assert data[0]["status"] is None
 
     def test_list_empty(self, test_client, mock_tasks_api_dep):
         """GET /api/plugins/archives/ returns empty list when no tasks."""
@@ -158,15 +162,16 @@ class TestArchivesApiDetail:
     def test_detail_returns_ok(self, test_client, mock_tasks_api_dep):
         """GET /api/plugins/archives/{name} returns 200 for existing task."""
         task = build_archive_task("my-archive")
-        mock_tasks_api_dep.get.return_value = task
+        mock_tasks_api_dep.get.side_effect = [task, {"items": []}]
         response = test_client.get("/api/plugins/archives/my-archive")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json()["name"] == "my-archive"
+        body = response.json()
+        assert body["name"] == "my-archive"
+        assert body["service_type"] == "mysql"
+        assert body["status"] is None
 
     def test_detail_returns_404_for_unknown_task(self, test_client, mock_tasks_api_dep):
         """GET /api/plugins/archives/{name} returns 404 for unknown task."""
-        from app.core.exceptions import HTTPNotFoundException
-
         mock_tasks_api_dep.get.side_effect = HTTPNotFoundException("not found")
         response = test_client.get("/api/plugins/archives/does-not-exist")
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -186,8 +191,6 @@ class TestArchivesApiCreate:
         Overrides the build_archives_api_task_payload dep to avoid wiring
         up real inventory mocks (verified separately in test_deps.py).
         """
-        from app.sep.plugins.archives.deps import build_archives_api_task_payload
-
         sep_app.dependency_overrides[build_archives_api_task_payload] = (
             lambda: generated_task
         )
@@ -221,8 +224,6 @@ class TestArchivesApiDelete:
 
     def test_delete_returns_404_for_unknown_task(self, test_client, mock_tasks_api_dep):
         """DELETE /api/plugins/archives/{name} → 404 for unknown task."""
-        from app.core.exceptions import HTTPNotFoundException
-
         mock_tasks_api_dep.get.side_effect = HTTPNotFoundException("not found")
         response = test_client.delete("/api/plugins/archives/does-not-exist")
         assert response.status_code == status.HTTP_404_NOT_FOUND
