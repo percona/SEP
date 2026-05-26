@@ -764,7 +764,8 @@ export function PluginDetailPage({
                 !listView.columns.some((c) => c.key === key) &&
                 key !== 'id' &&
                 key !== '_actions' &&
-                !suppressDetailKeys.includes(key),
+                !suppressDetailKeys.includes(key) &&
+                !(listView.overview_hidden_fields ?? []).includes(key),
             )
             .map(([key, value]) => (
               <EntityDetailField

@@ -592,12 +592,14 @@ class ListView(SchemaBaseModel):
         (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,
         ``last_updated_by``, ``connectivity_warning``); any keys listed here
         are merged with that baseline. Defaults to ``[]``.
-    :type overview_hidden_fields: list[NonEmptyStr]
+    :type overview_hidden_fields: list[str]
     """
 
     columns: list[Column]
     default_sort: NonEmptyStr | None = None
-    overview_hidden_fields: list[NonEmptyStr] = Field(default_factory=list)
+    overview_hidden_fields: list[
+        Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
+    ] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_default_sort_references_column(self) -> Self:
