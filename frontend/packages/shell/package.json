@@ -28,6 +28,7 @@
     "@sep/plugin-alert-troubleshooting": "workspace:*",
     "@sep/plugin-archives": "workspace:*",
     "@sep/plugin-atw": "workspace:*",
+    "@sep/plugin-backup-mongo": "workspace:*",
     "@sep/plugin-checksums": "workspace:*",
     "@sep/plugin-dipper": "workspace:*",
     "@sep/plugin-mysql-backups": "workspace:*",

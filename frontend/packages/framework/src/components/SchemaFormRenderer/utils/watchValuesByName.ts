@@ -15,11 +15,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import Prism from 'prismjs';
-import type { PrismLib } from 'prism-react-renderer';
-import 'prismjs/components/prism-sql.js';
-import 'prismjs/components/prism-json.js';
-import 'prismjs/components/prism-yaml.js';
-
-/** Prism instance with SQL, JSON, and YAML grammars for ``Highlight`` (``prism-react-renderer``). */
-export const detailPrism: PrismLib = Prism as unknown as PrismLib;
+/**
+ * Map react-hook-form `useWatch({ name: [...] })` output to field names.
+ *
+ * RHF returns an array when `name` is an array, but may return a bare scalar
+ * when exactly one name is watched depending on version/config.
+ */
+export function watchValuesByName(names: string[], raw: unknown): Record<string, unknown> {
+  if (names.length === 0) {
+    return {};
+  }
+  if (names.length === 1) {
+    const name = names[0];
+    if (Array.isArray(raw)) {
+      return { [name]: raw[0] };
+    }
+    return { [name]: raw };
+  }
+  const values = Array.isArray(raw) ? raw : [];
+  return Object.fromEntries(names.map((n, i) => [n, values[i]]));
+}
