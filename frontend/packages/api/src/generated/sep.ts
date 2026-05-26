@@ -4060,6 +4060,8 @@ export interface components {
       protected: boolean;
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
       /** Created At */
       created_at?: string | null;
       /** Updated At */
@@ -4069,6 +4071,8 @@ export interface components {
       /** Last Updated By */
       last_updated_by?: string | null;
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Anonymized Entities */
+      anonymized_entities: string[];
     };
     /**
      * ChecksumTaskWrite

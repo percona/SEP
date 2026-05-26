@@ -18,11 +18,13 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, FutureDatetime
+from pydantic import BaseModel, computed_field, FutureDatetime
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework import ConnectivityWarning
+from app.tasks.anonymizer.config import anonymizer_settings
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -194,6 +196,8 @@ class ChecksumTaskResponse(ChecksumTaskBase):
     :type protected: bool
     :param alert_on_fail: If True, notifications are sent upon task failure.
     :type alert_on_fail: bool
+    :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
+    :type anonymize_mask: int | None
     :param created_at: The timestamp when the task was first created.
     :type created_at: datetime | None
     :param updated_at: The timestamp of the last modification to the task.
@@ -208,6 +212,10 @@ class ChecksumTaskResponse(ChecksumTaskBase):
         database connectivity check fails. ``None`` when the check passes,
         is opted out, or the task meta lacks the connectivity keys.
     :type connectivity_warning: ConnectivityWarning | None
+    :param anonymized_entities: Sorted list of PII entity names derived from
+        ``anonymize_mask`` (or from the owner's configured defaults when the
+        mask is ``None``). Read-only; computed on serialisation.
+    :type anonymized_entities: list[str]
     """
 
     id: int | None = None
@@ -215,11 +223,23 @@ class ChecksumTaskResponse(ChecksumTaskBase):
     data: dict[str, Any]
     protected: bool
     alert_on_fail: bool
+    anonymize_mask: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
     connectivity_warning: ConnectivityWarning | None = None
+
+    @computed_field
+    @property
+    def anonymized_entities(self) -> list[str]:
+        """Return sorted PII entity names decoded from ``anonymize_mask``."""
+        entities = (
+            PIIEntity.decode_selection(self.anonymize_mask)
+            if self.anonymize_mask is not None
+            else anonymizer_settings.DEFAULT_ENTITIES[self.owner]
+        )
+        return sorted(entity.name for entity in entities)
 
 
 class ChecksumExecuteWrite(BaseModel):
