@@ -329,17 +329,17 @@ mkdir -p "$STAGE_DIR"
 copy_into_stage() {
     local src="$1"
     local src_abs
-    src_abs=$(readlink -f "$src" 2> /dev/null || true)
-    if [[ -z $src_abs ]]; then
-        echo "Warning: could not resolve '$src'; skipping." >&2
+    src_abs=$(readlink -f "$src" 2> /dev/null || echo "$src")
+    if [[ $src_abs != /* ]]; then
+        echo "Warning: refusing to stage non-absolute path '$src'" >&2
         return
     fi
     local rel
     # Preserve directory layout under the stage dir so multiple files with the
     # same basename (e.g. several included *.conf shards) don't collide.
     rel="${src_abs#/}"
-    if [[ $rel == .. || $rel == ../* || $rel == */../* ]]; then
-        echo "Warning: refusing to stage path outside root: '$src'" >&2
+    if [[ $rel == /* ]]; then
+        echo "Warning: refusing to stage path '$src_abs'" >&2
         return
     fi
     local dst="$STAGE_DIR/$rel"
