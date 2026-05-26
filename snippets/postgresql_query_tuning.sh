@@ -267,7 +267,7 @@ fi
 RAW_OUTPUT="$WORKDIR/explain.raw"
 
 echo "Running EXPLAIN ANALYZE against database '$DBNAME_ARG' ..." >&2
-if ! psql "${PSQL_CONN[@]}" -d "$DBNAME_ARG" -X -f "$ANALYZE_SQL" > "$RAW_OUTPUT" 2> "$WORKDIR/psql.err"; then
+if ! psql "${PSQL_CONN[@]}" -d "$DBNAME_ARG" -X -q -v ON_ERROR_STOP=1 -f "$ANALYZE_SQL" > "$RAW_OUTPUT" 2> "$WORKDIR/psql.err"; then
     echo "Error: psql failed running analyze.sql." >&2
     if [[ -s "$WORKDIR/psql.err" ]]; then
         echo "--- psql stderr ---" >&2
