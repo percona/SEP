@@ -25,7 +25,6 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -293,8 +292,8 @@ function SchemaFormBody({
           type="submit"
           variant="contained"
           size="large"
-          disabled={loading}
-          startIcon={loading ? <CircularProgress size={18} color="inherit" /> : undefined}
+          loading={loading}
+          loadingPosition="start"
           sx={{ mt: 1 }}
         >
           {submitLabel}

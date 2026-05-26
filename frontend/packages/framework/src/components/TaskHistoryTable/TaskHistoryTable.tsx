@@ -199,7 +199,7 @@ function TaskHistoryTableView({
         header: 'Actions',
         enableSorting: false,
         enableColumnFilter: false,
-        size: 100,
+        size: 120,
         Cell: ({ row }) => {
           const entry = row.original;
           const running = isRunningStatus(entry.status);

@@ -115,6 +115,7 @@ async def checksums_api_create(
     """
     logger.debug("Create checksums task (JSON path): %s", body.task_name)
     task_write = await build_checksum_task(body, inventory_api)
+    username_mapping = await get_username_mapping()
     created = await tasks_api.post("/", json=task_write.model_dump())
     task = Task.model_validate(created)
     connectivity_warning = await maybe_record_connectivity_warning(
@@ -122,7 +123,6 @@ async def checksums_api_create(
         task.data.get("meta", {}),
         check_connectivity=check_connectivity,
     )
-    username_mapping = await get_username_mapping()
     return build_checksums_api_task_response(
         task,
         status=None,
@@ -155,6 +155,7 @@ async def checksums_api_update(
     """
     logger.debug("Update checksums task (JSON path): %s", task.name)
     task_write = await build_checksum_task(body, inventory_api)
+    username_mapping = await get_username_mapping()
     updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
     updated_task = Task.model_validate(updated)
     task_status = await get_checksums_task_status(updated_task.name, tasks_api)
@@ -163,7 +164,6 @@ async def checksums_api_update(
         updated_task.data.get("meta", {}),
         check_connectivity=check_connectivity,
     )
-    username_mapping = await get_username_mapping()
     return build_checksums_api_task_response(
         updated_task,
         status=task_status,
