@@ -30,6 +30,7 @@
     "@sep/plugin-atw": "workspace:*",
     "@sep/plugin-checksums": "workspace:*",
     "@sep/plugin-dipper": "workspace:*",
+    "@sep/plugin-mysql-backups": "workspace:*",
     "@sep/plugin-tasks": "workspace:*",
     "@sep/plugins-snippets": "workspace:*",
     "@sep/shared": "workspace:*",

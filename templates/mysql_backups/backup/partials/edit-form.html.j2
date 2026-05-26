@@ -894,6 +894,24 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 <br>
                 <fieldset id="upload_container">
                     <legend>Additional Upload Options</legend>
+                    <input type="checkbox"
+                           id="upload_s3"
+                           name="upload"
+                           value="S3"
+                           {% if task.s3_bucket %}checked{% endif %}
+                           hidden />
+                    <input type="checkbox"
+                           id="upload_gsutil"
+                           name="upload"
+                           value="GSUTIL"
+                           {% if task.gs_bucket %}checked{% endif %}
+                           hidden />
+                    <input type="checkbox"
+                           id="upload_rsync"
+                           name="upload"
+                           value="RSYNC"
+                           {% if task.rsync_path %}checked{% endif %}
+                           hidden />
                     <button class="text large" type="button" id="toggle_s3_btn">+ Add S3 upload</button>
                     <br>
                     <div id="s3_container">
@@ -1183,6 +1201,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             document.getElementById('skip_s3_safety_check').checked = false;
             toggleS3Btn.textContent = "+ Add S3 upload";
         }
+        document.getElementById('upload_s3').checked = s3Visible;
     }
 
     function toggleGS() {
@@ -1197,6 +1216,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             gsBucketInput.value = '';
             toggleGsBtn.textContent = "+ Add GS upload";
         }
+        document.getElementById('upload_gsutil').checked = gsVisible;
     }
 
     function toggleRsync() {
@@ -1211,6 +1231,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             rsyncPathInput.value = '';
             toggleRsyncBtn.textContent = "+ Add Rsync upload";
         }
+        document.getElementById('upload_rsync').checked = rsyncVisible;
     }
 
     function updateEditButtonState() {
