@@ -15,13 +15,20 @@
 
 """Define models for the Backups plugin."""
 
+from datetime import datetime
 from enum import auto, IntEnum, StrEnum
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, FutureDatetime, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.sep.plugins.framework.rules import (
+    apply_conditional_rules,
+    ConditionalRulesModel,
+)
+from app.sep.plugins.mysql_backups.schema import mysql_backups_schema
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class SwapDropEnum(IntEnum):
@@ -141,7 +148,8 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     rsync_path: NonEmptyStr | EmptyStrToNone = None
 
 
-class BackupCreate(BackupConfigAll):
+@apply_conditional_rules(mysql_backups_schema)
+class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     """Represent a Backup creation form with proper case-insensitive fields.
 
     :param hardlink: Whether to use hardlinks for full backups to save space.
@@ -259,6 +267,8 @@ class BackupCreate(BackupConfigAll):
     :type alias: NonEmptyStr | EmptyStrToNone
     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
     :type alert_on_fail: bool
+    :param upload: Selected upload providers for backup artifacts.
+    :type upload: list[UploadProvider]
     """
 
     task_name: NonEmptyStr
@@ -269,6 +279,75 @@ class BackupCreate(BackupConfigAll):
     binlog_alternative_host: NonEmptyStr | EmptyStrToNone = None
     alias: NonEmptyStr | EmptyStrToNone = None
     alert_on_fail: bool = False
+    upload: list[UploadProvider] = Field(min_length=1)
+
+    @field_validator("upload", mode="before")
+    @classmethod
+    def _normalize_upload_input(cls, value: Any) -> Any:
+        """Normalise scalar ``upload`` input from legacy form callers.
+
+        A bare string (e.g. ``upload="S3"``) is wrapped to ``["S3"]`` for
+        legacy form callers that send the multichoice as a single value.
+        Empty / missing input falls through to Pydantic's ``min_length=1``
+        constraint, which surfaces 422 with the explicit MultiChoice
+        contract error rather than silently entering a legacy
+        bucket-inference path.
+        """
+        if isinstance(value, str):
+            if not value:
+                return []
+            return [value]
+        return value
+
+    @model_validator(mode="after")
+    def validate_upload_provider_consistency(self) -> Self:
+        """Enforce bidirectional consistency between ``upload`` and provider fields.
+
+        ``upload`` is guaranteed non-empty by ``min_length=1``; this validator
+        only needs to check the destination-field pairing. The schema's
+        ``forbidden=`` gates on the destination string fields (powered by
+        the ``Contains`` predicate) cover the "destination set without
+        matching provider" direction at both the FE renderer (visibility)
+        and the runtime rule plan. This validator still runs to cover the
+        reverse direction (provider selected but destination empty) and
+        the S3 auxiliary-fields case, which the schema cannot express
+        symmetrically because boolean defaults trip the ``forbidden`` rule.
+
+        :return: The validated instance.
+        :rtype: Self
+        :raises ValueError: When a provider's destination field disagrees
+            with the ``upload`` list, or when S3 auxiliary fields are set
+            without ``S3`` in ``upload``.
+        """
+        selected = set(self.upload)
+        pairs = (
+            (UploadProvider.S3, self.s3_bucket),
+            (UploadProvider.GSUTIL, self.gs_bucket),
+            (UploadProvider.RSYNC, self.rsync_path),
+        )
+        for provider, value in pairs:
+            present = bool(value)
+            in_list = provider in selected
+            if present and not in_list:
+                raise ValueError(
+                    f"{provider.name} destination field set but {provider.name!r} "
+                    "is not in the upload list."
+                )
+            if in_list and not present:
+                raise ValueError(
+                    f"{provider.name!r} selected in upload but its destination "
+                    "field is empty."
+                )
+        s3_aux = (
+            self.s3_storage_class
+            or self.skip_s3_safety_check
+            or self.awscli_s3_upload_extra_args
+        )
+        if s3_aux and UploadProvider.S3 not in selected:
+            raise ValueError(
+                "S3 auxiliary fields set but 'S3' is not in the upload list."
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_compression_algorithm(self) -> Self:
@@ -327,3 +406,94 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     all_servers: BackupConfigAll
     server_list: list[BackupConfigServer]
+
+
+class BackupExecuteWrite(BaseModel):
+    """Represent a JSON request body for executing a backup task.
+
+    Fields default to ``None`` so the API route can serialize the body
+    with ``exclude_none=True`` and omit unset values when forwarding to
+    the Tasks API, which then applies its own defaults
+    (``chain_on_failure`` defaults to ``False`` in ``TaskExecutionRequest``).
+
+    :param eta: Optional future datetime at which to schedule execution.
+    :type eta: FutureDatetime | None
+    :param chain_task_names: Optional list of task names to chain after this one.
+    :type chain_task_names: list[str] | None
+    :param chain_on_failure: Whether chained tasks run even on failure. ``None``
+        means "don't send"; the Tasks API treats an omitted value as ``False``.
+    :type chain_on_failure: bool | None
+    """
+
+    eta: FutureDatetime | None = None
+    chain_task_names: list[str] | None = None
+    chain_on_failure: bool | None = None
+
+
+class BackupExecutionResponse(BaseModel):
+    """Carry the response payload from ``POST /api/plugins/mysql_backups/{task_name}/execute``.
+
+    :param task_name: The name of the task that was executed.
+    :type task_name: str
+    :param task_id: The id of the task-history row created by the tasks API.
+    :type task_id: int | None
+    """
+
+    task_name: str
+    task_id: int | None = None
+
+
+class BackupTaskBase(BaseModel):
+    """Carry the fields common to every backup-task API response.
+
+    :param name: The name of the backup task.
+    :type name: str
+    :param owner: The entity or user that owns the task.
+    :type owner: TaskOwner
+    :param backup_type: The backup type recorded in task config.
+    :type backup_type: BackupType | None
+    :param status: The latest execution status of the task.
+    :type status: TaskHistoryStatusEnum | None
+    """
+
+    name: str
+    owner: TaskOwner
+    backup_type: BackupType | None = None
+    status: TaskHistoryStatusEnum | None = None
+
+
+class BackupResponse(BackupTaskBase):
+    """Represent a backup task API response.
+
+    :param id: The unique identifier for the backup task.
+    :type id: int | None
+    :param backend: The backend executing the task.
+    :type backend: TaskBackendEnum
+    :param data: The raw configuration and parameters for the task.
+    :type data: dict[str, Any]
+    :param hostname: The executor hostname target.
+    :type hostname: str | None
+    :param protected: Whether the task is protected from deletion or modification.
+    :type protected: bool
+    :param alert_on_fail: If True, notifications fire on task failure.
+    :type alert_on_fail: bool
+    :param created_at: When the task was created.
+    :type created_at: datetime | None
+    :param updated_at: When the task was last modified.
+    :type updated_at: datetime | None
+    :param created_by: The user who initiated the task.
+    :type created_by: str | None
+    :param last_updated_by: The user who last modified the task record.
+    :type last_updated_by: str | None
+    """
+
+    id: int | None = None
+    backend: TaskBackendEnum
+    data: dict[str, Any]
+    hostname: str | None = None
+    protected: bool
+    alert_on_fail: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None

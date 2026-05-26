@@ -32,7 +32,11 @@ from app.sep.plugins.mysql_backups.deps import (
     get_backups_index_context,
     get_backups_task,
 )
-from app.sep.plugins.mysql_backups.models import BackupCreate, BackupType
+from app.sep.plugins.mysql_backups.models import (
+    BackupCreate,
+    BackupType,
+    UploadProvider,
+)
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
@@ -60,6 +64,8 @@ def backup_create():
         hostname="localhost",
         service_id=1,
         backup_type=BackupType.MYDUMPER,
+        upload=[UploadProvider.S3],
+        s3_bucket="test-bucket",
     )
 
 
