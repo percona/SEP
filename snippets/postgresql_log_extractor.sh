@@ -145,13 +145,19 @@ detect_postgresql_log() {
     if [[ -n $log_dir && -n $log_filename ]]; then
         if [[ $log_dir != /* ]]; then
             data_dir=$($PSQL -tA -c "SELECT current_setting('data_directory');" 2> /dev/null | xargs 2> /dev/null || true)
-            log_dir="${data_dir}/${log_dir}"
+            if [[ -n $data_dir ]]; then
+                log_dir="${data_dir}/${log_dir}"
+            else
+                log_dir=""
+            fi
         fi
-        local candidate
-        candidate=$(find "$log_dir" -maxdepth 1 -type f -name '*.log' 2> /dev/null | sort | tail -n1 || true)
-        if [[ -n $candidate && -f $candidate ]]; then
-            echo "$candidate"
-            return
+        if [[ -n $log_dir ]]; then
+            local candidate
+            candidate=$(find "$log_dir" -maxdepth 1 -type f -name '*.log' 2> /dev/null | sort | tail -n1 || true)
+            if [[ -n $candidate && -f $candidate ]]; then
+                echo "$candidate"
+                return
+            fi
         fi
     fi
 
