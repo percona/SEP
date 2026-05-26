@@ -35,6 +35,7 @@ __all__ = [
     "CascadeResult",
     "build_derived_payload",
     "build_predecessor_payload",
+    "cascade_create_independent_tasks",
     "cascade_create_predecessors",
     "cascade_create_tasks",
     "cascade_delete_predecessors",
@@ -90,9 +91,11 @@ def build_derived_payload(
 
     Deep-copies ``parent_payload``, suffixes ``name`` with
     ``derived_spec.name_suffix``, applies ``arg_substitutions`` literally to
-    ``data["meta"]["args"]`` (when present and string-typed), and sets
-    ``data["parent"]`` when ``parent_link`` is true. The caller's
-    ``parent_payload`` is never mutated.
+    ``data["meta"]["args"]`` (when present and string-typed), applies
+    ``payload_substitutions`` literally to ``data["payload"]`` (when present
+    and string-typed), assigns each ``data_overrides`` entry directly onto
+    ``data`` in iteration order, and sets ``data["parent"]`` when
+    ``parent_link`` is true. The caller's ``parent_payload`` is never mutated.
 
     :param parent_payload: The parent task's serialised payload (typically
         ``parent.model_dump()``).
@@ -105,18 +108,70 @@ def build_derived_payload(
     payload = copy.deepcopy(parent_payload)
     parent_name = payload["name"]
     payload["name"] = f"{parent_name}{derived_spec.name_suffix}"
-    if derived_spec.arg_substitutions or derived_spec.parent_link:
+    if (
+        derived_spec.arg_substitutions
+        or derived_spec.payload_substitutions
+        or derived_spec.data_overrides
+        or derived_spec.parent_link
+    ):
         data = payload.setdefault("data", {})
-        if derived_spec.arg_substitutions:
-            meta = data.get("meta")
-            if isinstance(meta, dict) and isinstance(meta.get("args"), str):
-                args = meta["args"]
-                for old, new in derived_spec.arg_substitutions.items():
-                    args = args.replace(old, new)
-                meta["args"] = args
+        _apply_arg_substitutions(data, derived_spec.arg_substitutions)
+        _apply_payload_substitutions(data, derived_spec.payload_substitutions)
+        if derived_spec.data_overrides:
+            for key, value in derived_spec.data_overrides.items():
+                data[key] = value
         if derived_spec.parent_link:
             data["parent"] = parent_name
     return payload
+
+
+def _apply_arg_substitutions(
+    data: dict[str, Any], substitutions: dict[str, str] | None
+) -> None:
+    """Apply literal ``str.replace`` substitutions to ``data["meta"]["args"]`` in place.
+
+    No-op when ``substitutions`` is falsy, when ``data["meta"]`` is not a
+    dict, or when ``data["meta"]["args"]`` is not a string.
+
+    :param data: The derived payload's ``data`` mapping, mutated in place.
+    :type data: dict[str, Any]
+    :param substitutions: Ordered mapping of ``(old, new)`` literal
+        substring pairs, applied in dict insertion order.
+    :type substitutions: dict[str, str] | None
+    """
+    if not substitutions:
+        return
+    meta = data.get("meta")
+    if not isinstance(meta, dict) or not isinstance(meta.get("args"), str):
+        return
+    args = meta["args"]
+    for old, new in substitutions.items():
+        args = args.replace(old, new)
+    meta["args"] = args
+
+
+def _apply_payload_substitutions(
+    data: dict[str, Any], substitutions: dict[str, str] | None
+) -> None:
+    """Apply literal ``str.replace`` substitutions to ``data["payload"]`` in place.
+
+    No-op when ``substitutions`` is falsy or when ``data["payload"]`` is
+    not a string.
+
+    :param data: The derived payload's ``data`` mapping, mutated in place.
+    :type data: dict[str, Any]
+    :param substitutions: Ordered mapping of ``(old, new)`` literal
+        substring pairs, applied in dict insertion order.
+    :type substitutions: dict[str, str] | None
+    """
+    if not substitutions:
+        return
+    payload_path = data.get("payload")
+    if not isinstance(payload_path, str):
+        return
+    for old, new in substitutions.items():
+        payload_path = payload_path.replace(old, new)
+    data["payload"] = payload_path
 
 
 async def cascade_create_tasks(
@@ -428,6 +483,55 @@ async def cascade_create_predecessors(
                 logger.warning(
                     "Rollback DELETE failed for %r during "
                     "cascade_create_predecessors rollback: %s",
+                    task_name,
+                    rollback_exc,
+                )
+        raise
+
+
+async def cascade_create_independent_tasks(
+    tasks_api: RemoteAPI,
+    parent_payload: dict[str, Any],
+    child_payloads: Sequence[dict[str, Any]],
+) -> None:
+    """POST the parent then each independent child; roll back on any failure.
+
+    Unlike :func:`cascade_create_tasks`, the children are not derived from
+    the parent via substitutions — each ``child_payload`` is fully built
+    by the caller. Unlike :func:`cascade_create_predecessors`, no chain
+    execute is fired after creation.
+
+    Every task is POSTed to the Tasks API root (``/``). On any POST
+    failure, already-created tasks are DELETEd in reverse creation
+    order. A rollback DELETE that itself fails is logged at WARNING
+    and the rollback loop continues; the original POST exception is
+    what surfaces to the caller.
+
+    :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
+    :type tasks_api: RemoteAPI
+    :param parent_payload: The parent task's serialised payload.
+    :type parent_payload: dict[str, Any]
+    :param child_payloads: The list of independently-built child
+        payloads, POSTed in declared order.
+    :type child_payloads: Sequence[dict[str, Any]]
+    :raises Exception: Re-raises whatever exception ``tasks_api.post``
+        produced after the rollback DELETEs complete.
+    """
+    created_names: list[str] = []
+    try:
+        await tasks_api.post("/", json=parent_payload)
+        created_names.append(parent_payload["name"])
+        for child in child_payloads:
+            await tasks_api.post("/", json=child)
+            created_names.append(child["name"])
+    except Exception:
+        for task_name in reversed(created_names):
+            try:
+                await tasks_api.delete(f"/{task_name}")
+            except Exception as rollback_exc:  # noqa: BLE001
+                logger.warning(
+                    "Rollback DELETE failed for %r during "
+                    "cascade_create_independent rollback: %s",
                     task_name,
                     rollback_exc,
                 )

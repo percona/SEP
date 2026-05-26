@@ -54,4 +54,4 @@ class TestDipperRouterDeprecation:
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["Deprecation"] == "true"
         warning.assert_called_once()
-        assert warning.call_args.args[1] == "/dipper/"
+        assert "/dipper/" in warning.call_args.args[0]
