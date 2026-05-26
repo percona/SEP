@@ -23,13 +23,14 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
+from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.archives.schema import archives_schema
 from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.rules import (
     apply_conditional_rules,
     ConditionalRulesModel,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class SwapDropEnum(IntEnum):
@@ -318,6 +319,10 @@ class ArchivesTaskResponse(BaseModel):
     :type created_by: str | None
     :param last_updated_by: User that last updated the task.
     :type last_updated_by: str | None
+    :param service_type: The database service type the task targets.
+    :type service_type: ServiceTypeEnum | None
+    :param status: The latest known execution status from task history.
+    :type status: TaskHistoryStatusEnum | None
     """
 
     id: int | None = None
@@ -332,6 +337,8 @@ class ArchivesTaskResponse(BaseModel):
     updated_at: datetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
+    service_type: ServiceTypeEnum | None = None
+    status: TaskHistoryStatusEnum | None = None
 
 
 class ArchivesCreateResponse(ArchivesTaskResponse):
