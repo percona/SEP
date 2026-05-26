@@ -43,6 +43,7 @@ export type { HostOption, UseHostsOptions } from './useHosts';
 export {
   useTaskHistory,
   useTaskHistoryByName,
+  useTaskHistoryByNames,
   useStopTaskHistory,
   useExecuteTask,
   isRunningStatus,

@@ -15,11 +15,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import Prism from 'prismjs';
-import type { PrismLib } from 'prism-react-renderer';
-import 'prismjs/components/prism-sql.js';
-import 'prismjs/components/prism-json.js';
-import 'prismjs/components/prism-yaml.js';
+import type { RouteObject } from 'react-router-dom';
+import { BackupMongoPlugin } from './BackupMongoPlugin';
 
-/** Prism instance with SQL, JSON, and YAML grammars for ``Highlight`` (``prism-react-renderer``). */
-export const detailPrism: PrismLib = Prism as unknown as PrismLib;
+export const BACKUP_PLUGIN_NAME = 'backup_mongo';
+export const RESTORE_PLUGIN_NAME = 'backup_mongo/restores';
+export const MONGODB_BASE_PATH = '/backups/mongodb';
+
+export const backupMongoRoute: RouteObject = {
+  path: 'backups/mongodb/*',
+  element: <BackupMongoPlugin />,
+};
