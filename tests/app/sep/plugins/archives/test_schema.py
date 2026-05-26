@@ -71,9 +71,6 @@ class TestArchivesSchemaStructure:
         assert expected.issubset(all_names), f"Missing fields: {expected - all_names}"
 
 
-# ── Schema endpoint auth ──────────────────────────────────────────────────────
-
-
 class TestArchivesSchemaEndpoint:
     """HTTP-level checks for GET /api/plugins/archives/schema."""
 

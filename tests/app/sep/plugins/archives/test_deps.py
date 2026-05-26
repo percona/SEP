@@ -25,9 +25,11 @@ from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedTable
 from app.sep.plugins.archives.deps import (
+    _extract_latest_task_status,
     _resolve_destination_host_and_db,
     _resolve_destination_tables,
     _resolve_source_tables,
+    build_archives_api_task_payload,
     build_archives_task_payload,
     get_archives_task,
     get_archives_task_info,
@@ -37,7 +39,13 @@ from app.sep.plugins.archives.models import (
     PurgeConfigItem,
     SwapDropEnum,
 )
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 from tests.app.factories import (
     CreatedServiceFactory,
     CreatedTableFactory,
@@ -268,6 +276,74 @@ async def test_get_archives_task(created_task, mock_remote_api):
     mock_remote_api.get = AsyncMock(side_effect=[created_task.model_dump()])
     alters_task = await get_archives_task(created_task.name, mock_remote_api)
     assert isinstance(alters_task, Task)
+
+
+class TestBuildArchivesApiTaskPayload:
+    """Test build_archives_api_task_payload (JSON Body() path)."""
+
+    @pytest.mark.asyncio
+    async def test_delegates_to_shared_payload_builder(
+        self,
+        created_service,
+        created_schema,
+        created_table,
+        dest_table,
+        mock_remote_api,
+    ):
+        """JSON-body variant produces a valid TaskWrite via the shared builder."""
+        form = ArchivesCreate(
+            alias="PURGE",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 10",
+            dest_table_id=MOCK_DESTINATION_TABLE_ID,
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+                dest_table.model_dump(),
+            ]
+        )
+        result = await build_archives_api_task_payload(
+            form=form, inventory_api=mock_remote_api
+        )
+        assert isinstance(result, TaskWrite)
+        assert result.backend == TaskBackendEnum.PROXY
+        assert result.owner == TaskOwner.ARCHIVER
+
+
+class TestExtractLatestTaskStatus:
+    """Test _extract_latest_task_status across all history list shapes."""
+
+    def test_empty_list_returns_none(self):
+        """Empty history list yields None."""
+        assert _extract_latest_task_status([]) is None
+
+    def test_single_entry_with_status_returns_enum(self):
+        """Single entry with a valid status string returns the matching enum."""
+        result = _extract_latest_task_status([{"status": "success"}])
+        assert result == TaskHistoryStatusEnum.SUCCESS
+
+    def test_first_entry_with_status_is_returned(self):
+        """First entry's status wins when multiple entries are present."""
+        result = _extract_latest_task_status(
+            [{"status": "running"}, {"status": "success"}]
+        )
+        assert result == TaskHistoryStatusEnum.RUNNING
+
+    def test_first_entry_none_status_falls_through_to_second(self):
+        """Entry with status=None is skipped; next entry's status is returned."""
+        result = _extract_latest_task_status([{"status": None}, {"status": "failed"}])
+        assert result == TaskHistoryStatusEnum.FAILED
+
+    def test_all_none_statuses_returns_none(self):
+        """All entries lacking a non-None status yield None."""
+        assert _extract_latest_task_status([{"status": None}, {}]) is None
 
 
 class TestGetArchivesTaskInfo:
