@@ -35,6 +35,7 @@ EXPECTED_PHYSICAL_RESTORE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50
 EXPECTED_LOGICAL_RESTORE_PUTS = 3
 THREE_PARENT_FIXTURE_TOTAL = 3
+TWO_PARENT_FIXTURE_TOTAL = 2
 
 
 def build_restore_task(name: str = "mongo-restore-task", **overrides: Any) -> dict:
@@ -182,6 +183,34 @@ class TestRestoreMongoApiList:
         assert body["limit"] == 1
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "parent-restore-b"
+
+    def test_list_tolerates_history_fetch_failure_for_one_parent(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 200 when one parent history fetch fails after the task list."""
+        parent_a = build_restore_task("parent-restore-a")
+        parent_b = build_restore_task("parent-restore-b")
+
+        async def _mock_get(path: str, **kwargs: Any) -> Any:
+            if path == "/":
+                return {"items": [parent_a, parent_b], "total": 2}
+            if path == "/parent-restore-a/history/":
+                return {"items": [{"status": "success"}]}
+            if path == "/parent-restore-b/history/":
+                raise HTTPNotFoundException
+            raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == TWO_PARENT_FIXTURE_TOTAL
+        assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
+        by_name = {item["name"]: item for item in body["items"]}
+        assert by_name["parent-restore-a"]["status"] == "success"
+        assert by_name["parent-restore-b"]["status"] is None
 
 
 class TestRestoreMongoApiCreate:
@@ -366,6 +395,44 @@ class TestRestoreMongoApiDetail:
             "parent-restore-pbm_logical",
             "parent-restore-pbm-list",
         }
+
+    def test_detail_tolerates_history_fetch_failure_for_one_child(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 200 when one child history fetch fails."""
+        parent = build_restore_task("parent-restore")
+        restore_leg = build_restore_task(
+            "parent-restore-pbm_logical",
+            data={"parent": "parent-restore"},
+        )
+        pbm_list = build_restore_task(
+            "parent-restore-pbm-list",
+            data={"parent": "parent-restore"},
+        )
+        history_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        tasks_by_path = {
+            "/parent-restore": parent,
+            "/parent-restore-pbm_logical": restore_leg,
+            "/parent-restore-pbm-list": pbm_list,
+        }
+
+        async def _mock_get(path: str, **kwargs: Any) -> Any:
+            if path == "/parent-restore-pbm-list/history/":
+                raise history_exc
+            if path.endswith("/history/"):
+                return {"items": []}
+            if path in tasks_by_path:
+                return tasks_by_path[path]
+            raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+
+        response = test_client.get(f"{API_BASE}/parent-restore")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        child_names = {item["name"] for item in body["derived_tasks"]}
+        assert child_names == {"parent-restore-pbm_logical"}
 
 
 class TestRestoreMongoApiDelete:

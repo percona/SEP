@@ -36,7 +36,10 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.backup_mongo.deps import extract_latest_task_status
+from app.sep.plugins.backup_mongo.deps import (
+    _gathered_task_status,
+    extract_latest_task_status,
+)
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
     RestoreConfig,
@@ -695,11 +698,13 @@ async def get_restore_mongo_api_task_responses(
     tasks = [Task.model_validate(item) for item in response["items"]]
     parents = [task for task in tasks if _is_restore_parent_task(task)]
     statuses = await asyncio.gather(
-        *(get_restore_mongo_task_status(task.name, tasks_api) for task in parents)
+        *(get_restore_mongo_task_status(task.name, tasks_api) for task in parents),
+        return_exceptions=True,
     )
+    normalized_statuses = [_gathered_task_status(status) for status in statuses]
     task_status_pairs = [
         (task, task_status)
-        for task, task_status in zip(parents, statuses, strict=True)
+        for task, task_status in zip(parents, normalized_statuses, strict=True)
         if status is None or task_status == status
     ]
     items = [
@@ -748,13 +753,14 @@ async def build_restore_mongo_api_detail_response(
     gather_results = await asyncio.gather(
         get_restore_mongo_task_status(task.name, tasks_api),
         *(_fetch_restore_child_detail(name, tasks_api) for name in child_names),
+        return_exceptions=True,
     )
-    parent_status = gather_results[0]
+    parent_status = _gathered_task_status(gather_results[0])
     child_results = gather_results[1:]
     derived_tasks: list[RestoreDerivedTaskSummary] = []
 
     for child_detail in child_results:
-        if child_detail is None:
+        if isinstance(child_detail, BaseException) or child_detail is None:
             continue
         child, history_items = child_detail
         derived_tasks.append(
