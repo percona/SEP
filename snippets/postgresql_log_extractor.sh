@@ -152,8 +152,9 @@ detect_postgresql_log() {
             fi
         fi
         if [[ -n $log_dir ]]; then
-            local candidate
-            candidate=$(find "$log_dir" -maxdepth 1 -type f -name '*.log' 2> /dev/null | sort | tail -n1 || true)
+            local log_pattern candidate
+            log_pattern=$(printf '%s' "$log_filename" | sed 's/%[A-Za-z]/*/g')
+            candidate=$(find "$log_dir" -maxdepth 1 -type f -name "$log_pattern" 2> /dev/null | sort | tail -n1 || true)
             if [[ -n $candidate && -f $candidate ]]; then
                 echo "$candidate"
                 return
