@@ -62,7 +62,7 @@
 
 set -euo pipefail
 
-GATHER_URL="https://raw.githubusercontent.com/percona/support-snippets/master/postgresql/pg_gather/gather.sql"
+GATHER_URL="https://raw.githubusercontent.com/percona/support-snippets/63397af351803647362548ae80994c9e7dc1b8df/postgresql/pg_gather/gather.sql"
 
 DBNAME_ARG=""
 HOST_ARG=""
