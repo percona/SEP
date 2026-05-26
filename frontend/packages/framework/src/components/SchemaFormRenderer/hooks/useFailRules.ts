@@ -19,6 +19,7 @@ import { useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { FormSection } from '../types';
 import { evaluatePredicate, getGateFieldNames } from '../utils/predicateEvaluator';
+import { watchValuesByName } from '../utils/watchValuesByName';
 
 export interface FailViolation {
   message: string;
@@ -65,7 +66,7 @@ export function useFailRules(sections: FormSection[]): FailViolation[][] {
   }) as unknown[];
 
   return useMemo(() => {
-    const map = Object.fromEntries(watchedNames.map((n, i) => [n, rawValues?.[i]]));
+    const map = watchValuesByName(watchedNames, rawValues);
     return allRules.map((rules) => {
       const violations: FailViolation[] = [];
       for (const rule of rules) {
