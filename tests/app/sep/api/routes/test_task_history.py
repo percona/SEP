@@ -242,6 +242,45 @@ class TestSepTaskHistoryEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()
 
+    def test_rejects_negative_offset(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+    ) -> None:
+        """Return 422 when ``offset`` is negative."""
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", "task-a"), ("offset", "-1")],
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
+
+    def test_rejects_negative_limit(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+    ) -> None:
+        """Return 422 when ``limit`` is negative."""
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", "task-a"), ("limit", "-1")],
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
+
+    def test_rejects_limit_above_cap(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+    ) -> None:
+        """Return 422 when ``limit`` exceeds the upper cap of 200."""
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", "task-a"), ("limit", "201")],
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
+
 
 class TestSepTaskHistoryAuth:
     """Tests for ``/api/sep/task-history/`` authentication enforcement."""

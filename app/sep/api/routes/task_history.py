@@ -41,8 +41,8 @@ async def list_merged_task_history(
     tasks_api: TaskAPI,
     task_names: Annotated[list[str], Query(min_length=1)],
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0, le=200),
 ) -> PaginatedResponse[TaskHistoryResponse]:
     """Return merged execution history for one or more task names.
 
