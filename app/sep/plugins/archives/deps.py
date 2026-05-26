@@ -41,12 +41,14 @@ from app.sep.deps import (
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.archives.models import (
     ArchivesCreate,
+    ArchivesTaskResponse,
     PurgeConfig,
     PurgeConfigAll,
 )
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -313,6 +315,74 @@ async def get_archives_task(
 
 
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
+
+
+def _extract_latest_task_status(
+    histories: list[dict[str, Any]],
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload."""
+    for history in histories:
+        if (status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(status)
+    return None
+
+
+async def get_archives_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for an archive task.
+
+    :param task_name: The name of the archive task.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to query task history.
+    :type tasks_api: TaskAPI
+    :return: The latest known task status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    response = await tasks_api.get(f"/{task_name}/history/")
+    return _extract_latest_task_status(response["items"])
+
+
+def build_archives_api_task_response(
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+) -> ArchivesTaskResponse:
+    """Build an archive task response object for the JSON API.
+
+    :param task: The archive task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A validated archive task API response object.
+    :rtype: ArchivesTaskResponse
+    """
+    return ArchivesTaskResponse(
+        **task.model_dump(),
+        service_type=ServiceTypeEnum.MYSQL,
+        status=status,
+    )
+
+
+async def get_archives_api_task_responses(
+    tasks_api: TaskAPI,
+) -> list[ArchivesTaskResponse]:
+    """Retrieve archive task responses for the JSON API.
+
+    :param tasks_api: The TaskAPI instance used to query archive tasks.
+    :type tasks_api: TaskAPI
+    :return: The archive task responses enriched with service_type and status.
+    :rtype: list[ArchivesTaskResponse]
+    """
+    response = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
+    tasks = [Task.model_validate(task) for task in response.get("items", [])]
+    return [
+        build_archives_api_task_response(
+            task,
+            status=await get_archives_task_status(task.name, tasks_api),
+        )
+        for task in tasks
+    ]
 
 
 def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:

@@ -30,6 +30,9 @@ from app.sep.deps import TaskAPI
 from app.sep.plugins.archives.deps import (
     ArchivesApiGeneratedTask,
     ArchivesTask,
+    build_archives_api_task_response,
+    get_archives_api_task_responses,
+    get_archives_task_status,
 )
 from app.sep.plugins.archives.models import (
     ArchivesCreateResponse,
@@ -38,7 +41,7 @@ from app.sep.plugins.archives.models import (
 from app.sep.plugins.archives.schema import archives_schema
 from app.sep.plugins.framework import maybe_record_connectivity_warning
 from app.sep.plugins.framework.api import schema_endpoint
-from app.tasks.models import Task, TaskOwner
+from app.tasks.models import Task
 
 logger = logging.getLogger(__name__)
 
@@ -49,16 +52,17 @@ schema_endpoint(router=router, plugin_schema=archives_schema)
 @router.get("/", response_model=list[ArchivesTaskResponse])
 async def archives_api_list(tasks_api: TaskAPI) -> list[ArchivesTaskResponse]:
     """List archive tasks."""
-    result = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
-    return [
-        ArchivesTaskResponse.model_validate(item) for item in result.get("items", [])
-    ]
+    return await get_archives_api_task_responses(tasks_api)
 
 
 @router.get("/{task_name}", response_model=ArchivesTaskResponse)
-async def archives_api_detail(task: ArchivesTask) -> ArchivesTaskResponse:
+async def archives_api_detail(
+    task: ArchivesTask,
+    tasks_api: TaskAPI,
+) -> ArchivesTaskResponse:
     """Retrieve a single archive task."""
-    return ArchivesTaskResponse.model_validate(task.model_dump())
+    task_status = await get_archives_task_status(task.name, tasks_api)
+    return build_archives_api_task_response(task, status=task_status)
 
 
 @router.post(
@@ -90,8 +94,9 @@ async def archives_api_create(
         task.data.get("meta", {}),
         check_connectivity=check_connectivity,
     )
+    base = build_archives_api_task_response(task, status=None)
     return ArchivesCreateResponse(
-        **task.model_dump(),
+        **base.model_dump(),
         connectivity_warning=connectivity_warning,
     )
 
