@@ -252,9 +252,9 @@ trap 'rm -rf "$WORKDIR"' EXIT
 
 ANALYZE_SQL="$WORKDIR/analyze.sql"
 cat > "$ANALYZE_SQL" << EOF
+\set ON_ERROR_STOP on
+\pset pager off
 \x off
-\set AUTOCOMMIT off
-\echo :AUTOCOMMIT
 BEGIN;
 EXPLAIN (${EXPLAIN_OPTS}) ${QUERY_TEXT};
 ROLLBACK;
