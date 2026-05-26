@@ -23,6 +23,17 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
           href="{{ url_for('static', path='/css/mysql_backups-docs.css') }}">
 {% endblock style %}
 {% block main %}
+    <div class="doc-inline-callout doc-inline-callout--warning" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">warning</span>
+        <div>
+            <strong>This page is deprecated.</strong>
+            The MySQL Backups plugin has moved to the new React UI at
+            {# djlint:off J018 #}
+            <a href="/plugins/mysql_backups">/plugins/mysql_backups</a>.
+            {# djlint:on #}
+            The legacy view will be removed in a future release.
+        </div>
+    </div>
     <article class="backup-docs">
         <header class="backup-docs__header">
             <div>

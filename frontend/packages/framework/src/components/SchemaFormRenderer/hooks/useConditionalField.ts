@@ -19,6 +19,7 @@ import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { PluginField } from '../types';
 import { evaluatePredicate, getGateFieldNames } from '../utils/predicateEvaluator';
+import { watchValuesByName } from '../utils/watchValuesByName';
 
 export interface ConditionalFieldState {
   isHidden: boolean;
@@ -54,7 +55,7 @@ export function useConditionalField(field: PluginField): ConditionalFieldState {
     if (!field.forbidden?.length) {
       return false;
     }
-    const map = Object.fromEntries(watchedNames.map((n, i) => [n, rawValues?.[i]]));
+    const map = watchValuesByName(watchedNames, rawValues);
     return field.forbidden.some((gate) => evaluatePredicate(gate.when, map));
   }, [rawValues, field, watchedNames]);
 
@@ -65,7 +66,7 @@ export function useConditionalField(field: PluginField): ConditionalFieldState {
     if (!field.requires?.length) {
       return false;
     }
-    const map = Object.fromEntries(watchedNames.map((n, i) => [n, rawValues?.[i]]));
+    const map = watchValuesByName(watchedNames, rawValues);
     return field.requires.some((gate) => evaluatePredicate(gate.when, map));
   }, [rawValues, field, watchedNames]);
 

@@ -21,6 +21,10 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.backup_mongo.models import BackupCreate, BackupType
 from tests.app.factories import CreatedServiceFactory
+from tests.app.sep.conftest import (  # noqa: F401
+    mock_inventory_api_dep,
+    mock_task_api_dep,
+)
 
 
 @pytest.fixture

@@ -238,6 +238,30 @@ IsApiAuthenticated = Depends(get_api_authenticated_user)
 ApiCurrentUser = Annotated[User, IsApiAuthenticated]
 
 
+async def require_bearer_auth(request: Request) -> None:
+    """Reject JSON-API state-changing requests that lack a Bearer token.
+
+    Cookie-authenticated mutations would bypass CSRF protection because
+    :func:`validate_csrf` operates on form-body fields and JSON requests
+    carry no form body. Browsers never attach an ``Authorization`` header
+    automatically, so requiring a Bearer token on mutating routes blocks
+    cross-site JSON POSTs from a malicious origin while keeping read-only
+    routes (schema/list/detail) usable by cookie-authenticated SPA reads.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :raises HTTPUnauthorizedException: If the request lacks an
+        ``Authorization: Bearer`` header.
+    """
+    if not is_bearer_authenticated(request):
+        raise HTTPUnauthorizedException(
+            detail="Bearer authentication required for /api mutations.",
+        )
+
+
+RequireBearerAuth = Depends(require_bearer_auth)
+
+
 async def get_current_admin(current_user: CurrentUser) -> User:
     """Return the authenticated admin.
 

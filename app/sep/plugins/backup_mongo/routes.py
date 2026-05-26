@@ -13,13 +13,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the backups plugin."""
+"""Define legacy Jinja routes for the backups plugin.
 
-import json
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/plugins/backup_mongo/`` and the React UI at ``/backups/mongodb/backups``
+(``frontend/packages/plugins/backup_mongo``). Every response from this router
+carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on hit;
+the routes remain mounted for Wave 1 cutover and will be removed in Wave 3.
+"""
+
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
-from aiohttp import ClientResponseError
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
@@ -35,66 +40,21 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.deps import (
+    _fetch_latest_pbm_status,
     BackupGeneratedTask,
     BackupsIndexContextDep,
     BackupsTask,
 )
-from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
+from app.tasks.models import TaskHistoryStatusEnum
 
 from .restore.routes import router as restore_router
 
-PBM_LATEST_STATUS_TAIL_BYTES = 4096
-
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 router.include_router(restore_router, prefix="/restores", tags=["restores"])
-
-
-async def _fetch_latest_pbm_status(tasks_api: Any, pbm_status_tasks: Any) -> str | None:
-    """Return the tail of the latest PBM status task's stdout.
-
-    Streams the ``run-script`` logs for the most recent PBM status history
-    record through the tasks API and returns at most
-    ``PBM_LATEST_STATUS_TAIL_BYTES`` characters of the concatenated stdout
-    content. The rolling buffer is truncated to that window on every append
-    so long-running PBM status tasks do not materialize their full log in
-    memory for this best-effort UI panel.
-
-    :param tasks_api: The tasks API client instance.
-    :type tasks_api: Any
-    :param pbm_status_tasks: The list of PBM status history records returned by
-        the tasks API, or an empty list when no history exists.
-    :type pbm_status_tasks: Any
-    :return: The tail of the latest PBM status stdout, or ``None`` when no
-        history exists or the stream cannot be read.
-    :rtype: str | None
-    """
-    try:
-        pbm_status_id = pbm_status_tasks[0]["id"]
-    except (IndexError, KeyError, TypeError):
-        return None
-    tail = ""
-    try:
-        async for log_entry in tasks_api.stream(
-            f"/history/{pbm_status_id}/logs/",
-            params={"step": "run-script"},
-        ):
-            if not log_entry:
-                continue
-            log_data = json.loads(log_entry)
-            if log_data.get("type") == TaskLogType.STDOUT and log_data.get("msg"):
-                tail = (tail + log_data["msg"])[-PBM_LATEST_STATUS_TAIL_BYTES:]
-    except (ClientResponseError, ValueError, KeyError):
-        logger.exception(
-            "Failed to fetch latest_status for backup_mongo task %s",
-            pbm_status_id,
-        )
-        return None
-    if not tail:
-        return None
-    return tail
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
