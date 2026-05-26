@@ -192,7 +192,7 @@ else
             exit 1
         fi
     elif command -v wget > /dev/null 2>&1; then
-        if ! wget -q "$GATHER_URL" -O "$GATHER_SCRIPT"; then
+        if ! wget -q --timeout=10 --tries=3 "$GATHER_URL" -O "$GATHER_SCRIPT"; then
             echo "Error: failed to download gather.sql via wget." >&2
             exit 1
         fi
