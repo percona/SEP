@@ -76,9 +76,9 @@ default:
         URI_PATH: /archives
         CSS_CLASS: archive
       - NAME: MySQL Backups
-        MODULE_NAME: backup
-        URI_PATH: /backups
-        CSS_CLASS: backups
+        MODULE_NAME: mysql_backups
+        URI_PATH: /mysql_backups
+        CSS_CLASS: mysql_backups
       - NAME: Checksums
         MODULE_NAME: checksums
         URI_PATH: /checksums
@@ -213,6 +213,7 @@ development:
     TASKS_ENDPOINT: http://localhost:8000/api/tasks
     SECURITY_HEADERS:
       CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+        - /api/docs
         - /api/inventory/docs
         - /api/tasks/docs
     PLUGINS:
@@ -301,6 +302,7 @@ production_docker:
     SSL_KEYFILE: /data/certs/sep/localhost-cert-key.pem
     SECURITY_HEADERS:
       CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
+        - /api/docs
         - /api/inventory/docs
         - /api/tasks/docs
     SESSION:

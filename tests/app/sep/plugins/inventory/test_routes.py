@@ -16,22 +16,20 @@
 """Define tests for the app.sep.plugins.inventory.routes module."""
 
 import re
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException, status
+from fastapi import HTTPException, status
 from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum, SourceEnum
-from app.sep.crud import SyncItemManager
 from app.sep.deps import (
     AVAILABLE_TIMEZONES,
     get_created_node,
     get_created_schema,
     get_created_service,
-    get_inventory_api,
     get_tasks_api,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
@@ -46,114 +44,14 @@ from tests.app.factories import (
     MOCK_CREATED_SERVICE_ID,
     MOCK_CREATED_TABLE_ID,
 )
-
-
-class _StubPMMSyncer:
-    """Stand in for a PMM syncer; capability checks default to ``True``."""
-
-    def can_sync_inventory(self) -> bool:
-        return True
-
-    def can_sync_node(self, node: CreatedNode) -> bool:
-        return True
-
-    def can_sync_service(self, service: CreatedService) -> bool:
-        return True
-
-    def can_sync_schema(self, schema: CreatedSchema) -> bool:
-        return True
-
-
-class _StubMySQLSyncer:
-    """Stand in for a MySQL syncer; capability checks default to ``True``."""
-
-    def can_sync_inventory(self) -> bool:
-        return True
-
-    def can_sync_node(self, node: CreatedNode) -> bool:
-        return True
-
-    def can_sync_service(self, service: CreatedService) -> bool:
-        return True
-
-    def can_sync_schema(self, schema: CreatedSchema) -> bool:
-        return True
-
-
-_PMM_STUB_NAME = f"{_StubPMMSyncer.__module__}.{_StubPMMSyncer.__name__}"
-_MYSQL_STUB_NAME = f"{_StubMySQLSyncer.__module__}.{_StubMySQLSyncer.__name__}"
-_EXPECTED_STUB_COUNT = 2
-
-
-def _no_syncers() -> list:
-    """Resolve ``SyncersDep`` to an empty list for the no-syncers test path."""
-    return []
-
-
-@pytest.fixture
-def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
-    """Mock the InventoryAPI dependency."""
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_inventory_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_sync_item_manager(mocker) -> AsyncMock:
-    """Mock the SyncItemManager sync_is_running method."""
-    return mocker.patch.object(
-        SyncItemManager, "sync_is_running", new=AsyncMock(return_value=False)
-    )
-
-
-@pytest.fixture
-def mock_syncers() -> list:
-    """Override the SyncersDep with two stub syncers."""
-    stubs = [_StubPMMSyncer(), _StubMySQLSyncer()]
-    sep_app.dependency_overrides[get_syncers] = lambda: stubs
-    yield stubs
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_background_tasks():
-    """Mock the Background tasks dependency."""
-    mock = MagicMock(spec=BackgroundTasks)
-    sep_app.dependency_overrides[BackgroundTasks] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_run_sync_funcs(mocker):
-    """Replace the ``run_*_sync`` symbols on the routes module with AsyncMocks.
-
-    The real background-task callables open database sessions and invoke
-    ``syncer.api_auth(...)``, which the lightweight stub syncers cannot
-    satisfy. Patching them at the routes-module level lets the real
-    ``BackgroundTasks`` instance schedule and execute the mocks immediately
-    after the response, capturing the args originally passed to
-    ``add_task``.
-    """
-    return {
-        "inventory": mocker.patch(
-            "app.sep.plugins.inventory.routes.run_inventory_sync",
-            new=AsyncMock(),
-        ),
-        "node": mocker.patch(
-            "app.sep.plugins.inventory.routes.run_node_sync",
-            new=AsyncMock(),
-        ),
-        "service": mocker.patch(
-            "app.sep.plugins.inventory.routes.run_service_sync",
-            new=AsyncMock(),
-        ),
-        "schema": mocker.patch(
-            "app.sep.plugins.inventory.routes.run_schema_sync",
-            new=AsyncMock(),
-        ),
-    }
+from tests.app.sep.plugins.inventory.conftest import (
+    EXPECTED_STUB_COUNT,
+    MYSQL_STUB_NAME,
+    no_syncers,
+    PMM_STUB_NAME,
+    StubMySQLSyncer,
+    StubPMMSyncer,
+)
 
 
 @pytest.fixture
@@ -221,6 +119,19 @@ def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
     mock_task_api_dep.get.assert_any_await("/inventory-sync/periodic/")
 
 
+def test_jinja_sync_route_is_marked_deprecated_in_openapi():
+    """Lock in the deprecation flag for the legacy Jinja2 ``POST /inventory/sync/``.
+
+    The React control consumes the new JSON route at
+    ``POST /api/plugins/inventory/sync/``; the Jinja2 trigger remains
+    functional until Wave 3 but must advertise ``deprecated: true`` in
+    OpenAPI so downstream tooling can surface the warning.
+    """
+    openapi = sep_app.openapi()
+    operation = openapi["paths"]["/inventory/sync/"]["post"]
+    assert operation.get("deprecated") is True
+
+
 @pytest.mark.asyncio
 async def test_sync_inventory(async_test_client, mock_syncers, mock_run_sync_funcs):
     """Test syncing inventory without an explicit ``syncer`` form field."""
@@ -239,7 +150,7 @@ async def test_sync_inventory_with_valid_syncer_param(
     """Sync only the named syncer when a valid ``syncer`` form field is present."""
     response = await async_test_client.post(
         "/inventory/sync/",
-        data={"syncer": _PMM_STUB_NAME},
+        data={"syncer": PMM_STUB_NAME},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -290,13 +201,13 @@ async def test_sync_inventory_with_incapable_syncer_skips_run(
     async_test_client, mocker, mock_run_sync_funcs
 ):
     """Reject a POST whose syncer matches by name but cannot sync inventory."""
-    incapable = _StubPMMSyncer()
+    incapable = StubPMMSyncer()
     mocker.patch.object(incapable, "can_sync_inventory", return_value=False)
     sep_app.dependency_overrides[get_syncers] = lambda: [incapable]
     try:
         response = await async_test_client.post(
             "/inventory/sync/",
-            data={"syncer": _PMM_STUB_NAME},
+            data={"syncer": PMM_STUB_NAME},
             follow_redirects=False,
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -343,7 +254,7 @@ async def test_sync_node_with_valid_syncer_param(
     """Sync only the named syncer for a node when ``syncer`` is supplied."""
     response = await async_test_client.post(
         f"/inventory/{created_node.id}/sync/",
-        data={"syncer": _MYSQL_STUB_NAME},
+        data={"syncer": MYSQL_STUB_NAME},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -382,8 +293,8 @@ async def test_sync_node_without_syncer_param_passes_all_configured_syncers_even
     whose capability check is currently ``False`` may still become capable
     once an earlier syncer mutates the node.
     """
-    pmm_stub = _StubPMMSyncer()
-    mysql_stub = _StubMySQLSyncer()
+    pmm_stub = StubPMMSyncer()
+    mysql_stub = StubMySQLSyncer()
     mocker.patch.object(mysql_stub, "can_sync_node", return_value=False)
     sep_app.dependency_overrides[get_syncers] = lambda: [pmm_stub, mysql_stub]
     try:
@@ -460,7 +371,7 @@ async def test_sync_service_with_valid_syncer_param(
     """Sync only the named syncer for a service when ``syncer`` is supplied."""
     response = await async_test_client.post(
         f"/inventory/services/{created_service.id}/sync/",
-        data={"syncer": _PMM_STUB_NAME},
+        data={"syncer": PMM_STUB_NAME},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -552,7 +463,7 @@ async def test_sync_schema_with_valid_syncer_param(
     """Sync only the named syncer for a schema when ``syncer`` is supplied."""
     response = await async_test_client.post(
         f"/inventory/schemas/{created_schema.id}/sync/",
-        data={"syncer": _MYSQL_STUB_NAME},
+        data={"syncer": MYSQL_STUB_NAME},
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -972,10 +883,10 @@ def _assert_available_syncers_context(template_spy):
     template_spy.assert_called_once()
     _, kwargs = template_spy.call_args
     available = kwargs["context"]["available_syncers"]
-    assert len(available) == _EXPECTED_STUB_COUNT
+    assert len(available) == EXPECTED_STUB_COUNT
     assert all(isinstance(entry, AvailableSyncer) for entry in available)
-    assert {entry.name for entry in available} == {_PMM_STUB_NAME, _MYSQL_STUB_NAME}
-    assert {entry.display_name for entry in available} == {"_StubPMM", "_StubMySQL"}
+    assert {entry.name for entry in available} == {PMM_STUB_NAME, MYSQL_STUB_NAME}
+    assert {entry.display_name for entry in available} == {"StubPMM", "StubMySQL"}
     assert kwargs["context"]["can_sync"] is True
 
 
@@ -1036,7 +947,7 @@ def test_node_list_context_is_empty_when_no_syncers_configured(
 ):
     """Render the node list with zero configured syncers — sync UI is hidden."""
     mock_task_api_dep.get.return_value = []
-    sep_app.dependency_overrides[get_syncers] = _no_syncers
+    sep_app.dependency_overrides[get_syncers] = no_syncers
     template_spy = mocker.spy(templates, "TemplateResponse")
     try:
         response = test_client.get("/inventory/")
@@ -1332,11 +1243,11 @@ def test_node_list_renders_per_syncer_schedule_with_display_name(
     test_client, mock_inventory_api_dep, mock_task_api_dep
 ):
     """A schedule with a known syncer renders the syncer's display name."""
-    mock_task_api_dep.get.return_value = [_interval_periodic(syncer=_PMM_STUB_NAME)]
+    mock_task_api_dep.get.return_value = [_interval_periodic(syncer=PMM_STUB_NAME)]
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
     body = _compact(response.text)
-    assert "<strong>_StubPMM</strong>" in body
+    assert "<strong>StubPMM</strong>" in body
     assert "All syncers" not in body.split("Attach a schedule")[0]
 
 
@@ -1349,7 +1260,7 @@ def test_node_list_renders_two_schedules_with_distinct_actions(
     """Two schedules render as two rows whose update/delete URLs differ."""
     mock_task_api_dep.get.return_value = [
         _interval_periodic(task_id=11),
-        _interval_periodic(task_id=22, syncer=_PMM_STUB_NAME),
+        _interval_periodic(task_id=22, syncer=PMM_STUB_NAME),
     ]
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
@@ -1387,7 +1298,7 @@ def test_node_list_renders_per_row_disabled_marker(
     """The ``(disabled)`` marker appears only on the disabled row."""
     mock_task_api_dep.get.return_value = [
         _interval_periodic(task_id=11, enabled=True),
-        _interval_periodic(task_id=22, enabled=False, syncer=_PMM_STUB_NAME),
+        _interval_periodic(task_id=22, enabled=False, syncer=PMM_STUB_NAME),
     ]
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
@@ -1407,8 +1318,8 @@ def test_node_list_attach_form_includes_syncer_radio_options(
     assert response.status_code == status.HTTP_200_OK
     body = _compact(response.text)
     assert 'type="radio" name="syncer" value=""' in body
-    assert f'value="{_PMM_STUB_NAME}"' in body
-    assert f'value="{_MYSQL_STUB_NAME}"' in body
+    assert f'value="{PMM_STUB_NAME}"' in body
+    assert f'value="{MYSQL_STUB_NAME}"' in body
 
 
 @pytest.mark.asyncio
@@ -1419,7 +1330,7 @@ async def test_schedule_create_attach_with_syncer_succeeds(
     response = await async_test_client.post(
         "/inventory/schedule/",
         data={
-            "syncer": _PMM_STUB_NAME,
+            "syncer": PMM_STUB_NAME,
             "schedule_mode": "interval",
             "interval_every": "5",
             "interval_period": "minutes",
@@ -1432,7 +1343,7 @@ async def test_schedule_create_attach_with_syncer_succeeds(
         json={
             "task": "inventory-sync",
             "interval": {"every": 5, "period": "minutes"},
-            "execute_request": {"meta": {"syncer": _PMM_STUB_NAME}},
+            "execute_request": {"meta": {"syncer": PMM_STUB_NAME}},
         },
     )
 
@@ -1470,7 +1381,7 @@ async def test_schedule_create_attach_with_crontab_succeeds(
     response = await async_test_client.post(
         "/inventory/schedule/",
         data={
-            "syncer": _PMM_STUB_NAME,
+            "syncer": PMM_STUB_NAME,
             "schedule_mode": "crontab",
             "cron_expression": "0 0 * * *",
             "cron_timezone": "UTC",
@@ -1490,7 +1401,7 @@ async def test_schedule_create_attach_with_crontab_succeeds(
                 "month_of_year": "*",
                 "day_of_week": "*",
             },
-            "execute_request": {"meta": {"syncer": _PMM_STUB_NAME}},
+            "execute_request": {"meta": {"syncer": PMM_STUB_NAME}},
         },
     )
 
@@ -1636,3 +1547,12 @@ def test_node_list_renders_per_row_chip_when_token_unset(
     body = _compact(response.text)
     assert "schedule-stale-warning" in body
     assert "will not run" in body
+
+
+def test_schedule_post_is_marked_deprecated(test_client):
+    """Ensure ``POST /inventory/schedule/`` carries ``deprecated: true`` in the OpenAPI schema."""
+    response = test_client.get("/openapi.json")
+    assert response.status_code == status.HTTP_200_OK
+    schema = response.json()
+    schedule_post = schema["paths"]["/inventory/schedule/"]["post"]
+    assert schedule_post.get("deprecated") is True

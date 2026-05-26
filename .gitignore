@@ -363,9 +363,6 @@ ASALocalRun/
 # Visual Studio History (VSHistory) files
 .vshistory/
 
-# Ignore Visual Studio Code workspace settings
-.vscode/
-
 # BeatPulse healthcheck temp database
 healthchecksdb
 
@@ -408,3 +405,8 @@ celery_worker_state
 frontend/**/dist/
 frontend/packages/e2e/playwright-report/data/*
 frontend/packages/e2e/test-results/*
+
+# IA agents config, tools and cache
+.claude/
+.codex/
+graphify-out/

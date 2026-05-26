@@ -16,13 +16,13 @@
  */
 
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react-swc';
-import tsconfigPaths from 'vite-tsconfig-paths';
+import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react(), tsconfigPaths()],
+  plugins: [react()],
   resolve: {
+    tsconfigPaths: true,
     dedupe: [
       'react',
       'react-dom',
@@ -61,6 +61,19 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // Task log SSE and related routes live outside /api (see app/sep/main.py).
+      '/stream-logs': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/execution-events': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/files': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   optimizeDeps: {
@@ -71,6 +84,7 @@ export default defineConfig({
     noExternal: ['@percona/percona-ui'],
   },
   build: {
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: (id: string) => {

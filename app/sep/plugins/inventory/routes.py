@@ -126,14 +126,22 @@ async def node_list(
     )
 
 
-@router.post("/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/sync/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    deprecated=True,
+)
 async def sync_inventory(
     user: CurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
-    """Start inventory sync as a background task."""
+    """Start inventory sync as a background task.
+
+    Deprecated in favour of the React sync control at
+    ``POST /api/plugins/inventory/sync/``; functional until Wave 3.
+    """
     try:
         selected = filter_syncers_by_name(
             syncers,
@@ -146,7 +154,9 @@ async def sync_inventory(
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/schedule/", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/schedule/", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+)
 async def schedule_create(
     syncers: SyncersDep,
     tasks_api: TaskAPI,
@@ -154,6 +164,9 @@ async def schedule_create(
     referer: Annotated[str, Header()] = "/inventory/",
 ) -> RedirectResponse:
     """Attach a periodic schedule to the inventory-sync task.
+
+    Deprecated in favour of the React schedule UI (SEP-1058); functional until
+    Wave 3 when the Jinja2 path is retired.
 
     Validate the optional ``syncer`` field and the interval/crontab shape at
     form-submit time using ``filter_syncers_by_name`` and explicit checks so

@@ -28,7 +28,12 @@ from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.deps import InventoryAPI, TaskAPI
+from app.sep.deps import (
+    HasNoConflictedRunningTasks,
+    InventoryAPI,
+    IsApiAuthenticated,
+    TaskAPI,
+)
 from app.sep.plugins.checksums.deps import (
     build_checksum_task,
     build_checksums_api_task_response,
@@ -36,12 +41,18 @@ from app.sep.plugins.checksums.deps import (
     get_checksums_api_task_responses,
     get_checksums_task,
     get_checksums_task_status,
+    UnprotectedChecksumsTask,
 )
-from app.sep.plugins.checksums.models import ChecksumTaskResponse, ChecksumTaskWrite
+from app.sep.plugins.checksums.models import (
+    ChecksumExecuteWrite,
+    ChecksumExecutionResponse,
+    ChecksumTaskResponse,
+    ChecksumTaskWrite,
+)
 from app.sep.plugins.checksums.schema import checksums_schema
 from app.sep.plugins.framework import maybe_record_connectivity_warning
 from app.sep.plugins.framework.api import schema_endpoint
-from app.tasks.models import Task, TaskHistoryStatusEnum
+from app.tasks.models import Task, TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +120,69 @@ async def checksums_api_create(
         task,
         status=None,
         connectivity_warning=connectivity_warning,
+    )
+
+
+@router.put(
+    "/{task_name}",
+    response_model=ChecksumTaskResponse,
+    dependencies=[HasNoConflictedRunningTasks],
+)
+async def checksums_api_update(
+    task: UnprotectedChecksumsTask,
+    body: ChecksumTaskWrite,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+    *,
+    check_connectivity: Annotated[bool, Query()] = True,
+) -> ChecksumTaskResponse:
+    """Update a checksum task from a JSON payload request body.
+
+    :param check_connectivity: Whether to verify the target database is
+        reachable after the update. Defaults to ``True``; pass
+        ``check_connectivity=false`` to opt out. Note that the form flow
+        defaults to ``False`` (HTML checkbox semantics); this asymmetry is
+        intentional.
+    :type check_connectivity: bool
+    """
+    logger.debug("Update checksums task (JSON path): %s", task.name)
+    task_write = await build_checksum_task(body, inventory_api)
+    updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
+    updated_task = Task.model_validate(updated)
+    task_status = await get_checksums_task_status(updated_task.name, tasks_api)
+    connectivity_warning = await maybe_record_connectivity_warning(
+        tasks_api,
+        updated_task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
+    )
+    return build_checksums_api_task_response(
+        updated_task,
+        status=task_status,
+        connectivity_warning=connectivity_warning,
+    )
+
+
+@router.post(
+    "/{task_name}/execute",
+    response_model=ChecksumExecutionResponse,
+    status_code=http_status.HTTP_201_CREATED,
+    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
+)
+async def checksums_api_execute(
+    task: ChecksumsTask,
+    body: ChecksumExecuteWrite,
+    tasks_api: TaskAPI,
+) -> ChecksumExecutionResponse:
+    """Execute a checksum task."""
+    logger.info("Executing checksums task %r", task.name)
+    created = await tasks_api.post(
+        f"/execute/{task.name}",
+        json=body.model_dump(exclude_none=True),
+    )
+    task_history = TaskHistoryResponse.model_validate(created)
+    return ChecksumExecutionResponse(
+        task_name=task.name,
+        task_id=task_history.id,
     )
 
 

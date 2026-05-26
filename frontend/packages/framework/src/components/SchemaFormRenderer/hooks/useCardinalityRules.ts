@@ -19,6 +19,7 @@ import { useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { CardinalityRule, FormSection } from '../types';
 import { evaluatePredicate, getGateFieldNames, isPresent } from '../utils/predicateEvaluator';
+import { watchValuesByName } from '../utils/watchValuesByName';
 
 export interface CardinalityViolation {
   message: string;
@@ -90,7 +91,7 @@ export function useCardinalityRules(sections: FormSection[]): CardinalityViolati
   }) as unknown[];
 
   return useMemo(() => {
-    const map = Object.fromEntries(watchedNames.map((n, i) => [n, rawValues?.[i]]));
+    const map = watchValuesByName(watchedNames, rawValues);
     return allRules.map((rules) => {
       const violations: CardinalityViolation[] = [];
       for (const rule of rules) {

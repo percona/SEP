@@ -17,6 +17,7 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiClient, type InventoryComponents } from '@sep/api';
+import { sepRetry } from './sepRetry';
 
 export type ServiceType = InventoryComponents['schemas']['ServiceTypeEnum'];
 
@@ -34,6 +35,11 @@ export interface UseServicesOptions {
 }
 
 const DEFAULT_LIMIT = 200;
+// Upper bound on paginated fetch iterations. At DEFAULT_LIMIT=200 this caps
+// the response set at 10 000 services per type, well above any realistic
+// customer scale. The guard fires only when the backend reports `items` and
+// `total` in an inconsistent way that would otherwise spin forever.
+const MAX_PAGES = 50;
 
 const STABLE_EMPTY: readonly ServiceType[] = Object.freeze([] as ServiceType[]);
 
@@ -52,7 +58,7 @@ async function fetchServicesPage(
   if (serviceType) {
     params.service_type = serviceType;
   }
-  const { data } = await apiClient.get<PaginatedServices>('/inventory/services/', { params });
+  const { data } = await apiClient.get<PaginatedServices>('/sep/services/', { params });
   return data;
 }
 
@@ -61,7 +67,7 @@ async function fetchServicesForType(
 ): Promise<ServiceOption[]> {
   const out: ServiceOption[] = [];
   let offset = 0;
-  for (;;) {
+  for (let iter = 0; iter < MAX_PAGES; iter++) {
     const page = await fetchServicesPage(serviceType, offset);
     for (const svc of page.items) {
       if (svc.id !== null && svc.id !== undefined) {
@@ -70,16 +76,20 @@ async function fetchServicesForType(
     }
     offset += page.items.length;
     if (offset >= page.total || page.items.length === 0) {
-      break;
+      return out;
     }
   }
-  return out;
+  throw new Error(
+    `useServices: pagination exceeded ${MAX_PAGES} pages for service_type=${serviceType ?? 'all'}; backend likely reports an inconsistent total/items pair`,
+  );
 }
 
 /**
- * Fetch services from the inventory API, optionally filtered to one or more
- * service types. Multiple types fan out to parallel paginated requests because
- * the upstream `/services/` endpoint accepts a single `service_type` only.
+ * Fetch services through the SEP gateway (`/api/sep/services/`), optionally
+ * filtered to one or more service types. Multiple types fan out to parallel
+ * paginated requests because the upstream `/services/` endpoint accepts a
+ * single `service_type` only. The frontend must not call `/api/inventory/`
+ * directly (see `app/sep/api/router.py`).
  */
 export function useServices(
   options: UseServicesOptions = {},
@@ -87,9 +97,10 @@ export function useServices(
   const { enabled = true } = options;
   const types = normaliseTypes(options.serviceTypes);
   return useQuery<ServiceOption[], Error>({
-    queryKey: ['inventory', 'services', { types }],
+    queryKey: ['sep', 'services', { types }],
     enabled,
     staleTime: 60_000,
+    retry: sepRetry,
     queryFn: async () => {
       if (types.length === 0) {
         return fetchServicesForType(undefined);

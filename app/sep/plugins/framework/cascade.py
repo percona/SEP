@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cascade POST/PUT/DELETE across a parent task and N derived siblings."""
+"""Cascade POST/PUT/DELETE across a parent task and its derived/predecessor tasks."""
 
 from __future__ import annotations
 
@@ -28,14 +28,19 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from app.core.requests.remote_api import RemoteAPI
-    from app.sep.plugins.framework.schema import DerivedTask
+    from app.sep.plugins.framework.schema import ChainedPredecessor, DerivedTask
 
 __all__ = [
     "CascadeFailure",
     "CascadeResult",
     "build_derived_payload",
+    "build_predecessor_payload",
+    "cascade_create_independent_tasks",
+    "cascade_create_predecessors",
     "cascade_create_tasks",
+    "cascade_delete_predecessors",
     "cascade_delete_tasks",
+    "cascade_update_predecessors",
     "cascade_update_tasks",
 ]
 
@@ -86,9 +91,11 @@ def build_derived_payload(
 
     Deep-copies ``parent_payload``, suffixes ``name`` with
     ``derived_spec.name_suffix``, applies ``arg_substitutions`` literally to
-    ``data["meta"]["args"]`` (when present and string-typed), and sets
-    ``data["parent"]`` when ``parent_link`` is true. The caller's
-    ``parent_payload`` is never mutated.
+    ``data["meta"]["args"]`` (when present and string-typed), applies
+    ``payload_substitutions`` literally to ``data["payload"]`` (when present
+    and string-typed), assigns each ``data_overrides`` entry directly onto
+    ``data`` in iteration order, and sets ``data["parent"]`` when
+    ``parent_link`` is true. The caller's ``parent_payload`` is never mutated.
 
     :param parent_payload: The parent task's serialised payload (typically
         ``parent.model_dump()``).
@@ -101,18 +108,70 @@ def build_derived_payload(
     payload = copy.deepcopy(parent_payload)
     parent_name = payload["name"]
     payload["name"] = f"{parent_name}{derived_spec.name_suffix}"
-    if derived_spec.arg_substitutions or derived_spec.parent_link:
+    if (
+        derived_spec.arg_substitutions
+        or derived_spec.payload_substitutions
+        or derived_spec.data_overrides
+        or derived_spec.parent_link
+    ):
         data = payload.setdefault("data", {})
-        if derived_spec.arg_substitutions:
-            meta = data.get("meta")
-            if isinstance(meta, dict) and isinstance(meta.get("args"), str):
-                args = meta["args"]
-                for old, new in derived_spec.arg_substitutions.items():
-                    args = args.replace(old, new)
-                meta["args"] = args
+        _apply_arg_substitutions(data, derived_spec.arg_substitutions)
+        _apply_payload_substitutions(data, derived_spec.payload_substitutions)
+        if derived_spec.data_overrides:
+            for key, value in derived_spec.data_overrides.items():
+                data[key] = value
         if derived_spec.parent_link:
             data["parent"] = parent_name
     return payload
+
+
+def _apply_arg_substitutions(
+    data: dict[str, Any], substitutions: dict[str, str] | None
+) -> None:
+    """Apply literal ``str.replace`` substitutions to ``data["meta"]["args"]`` in place.
+
+    No-op when ``substitutions`` is falsy, when ``data["meta"]`` is not a
+    dict, or when ``data["meta"]["args"]`` is not a string.
+
+    :param data: The derived payload's ``data`` mapping, mutated in place.
+    :type data: dict[str, Any]
+    :param substitutions: Ordered mapping of ``(old, new)`` literal
+        substring pairs, applied in dict insertion order.
+    :type substitutions: dict[str, str] | None
+    """
+    if not substitutions:
+        return
+    meta = data.get("meta")
+    if not isinstance(meta, dict) or not isinstance(meta.get("args"), str):
+        return
+    args = meta["args"]
+    for old, new in substitutions.items():
+        args = args.replace(old, new)
+    meta["args"] = args
+
+
+def _apply_payload_substitutions(
+    data: dict[str, Any], substitutions: dict[str, str] | None
+) -> None:
+    """Apply literal ``str.replace`` substitutions to ``data["payload"]`` in place.
+
+    No-op when ``substitutions`` is falsy or when ``data["payload"]`` is
+    not a string.
+
+    :param data: The derived payload's ``data`` mapping, mutated in place.
+    :type data: dict[str, Any]
+    :param substitutions: Ordered mapping of ``(old, new)`` literal
+        substring pairs, applied in dict insertion order.
+    :type substitutions: dict[str, str] | None
+    """
+    if not substitutions:
+        return
+    payload_path = data.get("payload")
+    if not isinstance(payload_path, str):
+        return
+    for old, new in substitutions.items():
+        payload_path = payload_path.replace(old, new)
+    data["payload"] = payload_path
 
 
 async def cascade_create_tasks(
@@ -303,3 +362,309 @@ async def _delete_one(
             result.failures.append(CascadeFailure(task_name, exc))
     except Exception as exc:  # noqa: BLE001
         result.failures.append(CascadeFailure(task_name, exc))
+
+
+def build_predecessor_payload(
+    parent_payload: dict[str, Any],
+    predecessor_payload: dict[str, Any],
+    predecessor_spec: ChainedPredecessor,
+) -> dict[str, Any]:
+    """Build the cascade payload for one chained predecessor.
+
+    Deep-copies ``predecessor_payload``, overrides ``name`` with
+    ``f"{parent_name}{spec.name_suffix}"`` so the schema-declared suffix is
+    authoritative, and sets ``data["parent"]`` when ``parent_link`` is true.
+    The caller's payloads are never mutated.
+
+    :param parent_payload: The parent task's serialised payload (read-only
+        here; the parent's ``name`` is used to derive the predecessor name).
+    :type parent_payload: dict[str, Any]
+    :param predecessor_payload: The predecessor task's plugin-built payload.
+        The consuming plugin's POST handler constructs this imperatively.
+    :type predecessor_payload: dict[str, Any]
+    :param predecessor_spec: The declarative spec for this predecessor.
+    :type predecessor_spec: ChainedPredecessor
+    :return: A new dict ready to POST or PUT as a task payload.
+    :rtype: dict[str, Any]
+    """
+    payload = copy.deepcopy(predecessor_payload)
+    parent_name = parent_payload["name"]
+    payload["name"] = f"{parent_name}{predecessor_spec.name_suffix}"
+    if predecessor_spec.parent_link:
+        payload.setdefault("data", {})["parent"] = parent_name
+    return payload
+
+
+async def cascade_create_predecessors(
+    tasks_api: RemoteAPI,
+    parent_payload: dict[str, Any],
+    predecessor_specs_with_payloads: Sequence[
+        tuple[ChainedPredecessor, dict[str, Any]]
+    ],
+) -> None:
+    """POST the parent then every predecessor, then fire the chain via execute.
+
+    Cascade order (parent-first, matching :func:`cascade_create_tasks`):
+
+    1. POST the parent to ``/``.
+    2. POST each predecessor in declared order to ``/``. The payload is
+       built via :func:`build_predecessor_payload` (``parent_link``
+       applied, ``name`` suffixed from the parent's ``name``).
+    3. POST ``/execute/{first_predecessor_name}`` with the chain wiring:
+       ``chain_task_names`` lists the remaining predecessor names
+       followed by the parent name; ``chain_on_failure`` is derived from
+       the shared ``on_failure`` policy (``"continue"`` maps to ``True``,
+       ``"halt"`` maps to ``False``). The chain inherits
+       ``_chain_on_failure`` chain-wide via celery's
+       :func:`_dispatch_chained_task`.
+
+    On any failure (any POST or the final execute), every successfully
+    created task is DELETEd in reverse creation order. Rollback DELETEs
+    that themselves fail are logged at WARNING (matching
+    :func:`cascade_create_tasks`) and the rollback continues; the
+    original exception re-raises.
+
+    The empty-predecessor case is a programmer error: the consuming
+    plugin should call :func:`cascade_create_tasks` (or POST the parent
+    directly) instead. :class:`ValueError` is raised so the misuse
+    surfaces at test time rather than silently downgrading to a
+    single-task POST.
+
+    :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
+    :type tasks_api: RemoteAPI
+    :param parent_payload: The parent task's serialised payload. The
+        ``name`` key must be set before invocation — it is read to derive
+        the predecessor names in step 2.
+    :type parent_payload: dict[str, Any]
+    :param predecessor_specs_with_payloads: Ordered list of
+        ``(spec, predecessor_payload)`` tuples; the consuming plugin
+        builds each predecessor payload.
+    :type predecessor_specs_with_payloads:
+        Sequence[tuple[ChainedPredecessor, dict[str, Any]]]
+    :raises ValueError: When ``predecessor_specs_with_payloads`` is empty.
+    :raises Exception: Re-raises whatever ``tasks_api.post`` produced
+        (commonly :class:`fastapi.HTTPException`, but any transport-level
+        error such as :class:`asyncio.TimeoutError` can propagate) after
+        rollback DELETEs complete.
+    """
+    if not predecessor_specs_with_payloads:
+        raise ValueError(
+            "cascade_create_predecessors requires at least one predecessor; "
+            "callers must not invoke this helper for schemas without predecessors."
+        )
+    created_names = []
+    built_predecessor_payloads = []
+    try:
+        await tasks_api.post("/", json=parent_payload)
+        created_names.append(parent_payload["name"])
+        for spec, pred_payload in predecessor_specs_with_payloads:
+            built = build_predecessor_payload(parent_payload, pred_payload, spec)
+            await tasks_api.post("/", json=built)
+            created_names.append(built["name"])
+            built_predecessor_payloads.append(built)
+        first_spec, _ = predecessor_specs_with_payloads[0]
+        first_predecessor_name = built_predecessor_payloads[0]["name"]
+        remaining_predecessor_names = [
+            payload["name"] for payload in built_predecessor_payloads[1:]
+        ]
+        chain_task_names = [*remaining_predecessor_names, parent_payload["name"]]
+        await tasks_api.post(
+            f"/execute/{first_predecessor_name}",
+            json={
+                "chain_task_names": chain_task_names,
+                "chain_on_failure": first_spec.on_failure == "continue",
+            },
+        )
+    except Exception:
+        for task_name in reversed(created_names):
+            try:
+                await tasks_api.delete(f"/{task_name}")
+            except Exception as rollback_exc:  # noqa: BLE001
+                logger.warning(
+                    "Rollback DELETE failed for %r during "
+                    "cascade_create_predecessors rollback: %s",
+                    task_name,
+                    rollback_exc,
+                )
+        raise
+
+
+async def cascade_create_independent_tasks(
+    tasks_api: RemoteAPI,
+    parent_payload: dict[str, Any],
+    child_payloads: Sequence[dict[str, Any]],
+) -> None:
+    """POST the parent then each independent child; roll back on any failure.
+
+    Unlike :func:`cascade_create_tasks`, the children are not derived from
+    the parent via substitutions — each ``child_payload`` is fully built
+    by the caller. Unlike :func:`cascade_create_predecessors`, no chain
+    execute is fired after creation.
+
+    Every task is POSTed to the Tasks API root (``/``). On any POST
+    failure, already-created tasks are DELETEd in reverse creation
+    order. A rollback DELETE that itself fails is logged at WARNING
+    and the rollback loop continues; the original POST exception is
+    what surfaces to the caller.
+
+    :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
+    :type tasks_api: RemoteAPI
+    :param parent_payload: The parent task's serialised payload.
+    :type parent_payload: dict[str, Any]
+    :param child_payloads: The list of independently-built child
+        payloads, POSTed in declared order.
+    :type child_payloads: Sequence[dict[str, Any]]
+    :raises Exception: Re-raises whatever exception ``tasks_api.post``
+        produced after the rollback DELETEs complete.
+    """
+    created_names: list[str] = []
+    try:
+        await tasks_api.post("/", json=parent_payload)
+        created_names.append(parent_payload["name"])
+        for child in child_payloads:
+            await tasks_api.post("/", json=child)
+            created_names.append(child["name"])
+    except Exception:
+        for task_name in reversed(created_names):
+            try:
+                await tasks_api.delete(f"/{task_name}")
+            except Exception as rollback_exc:  # noqa: BLE001
+                logger.warning(
+                    "Rollback DELETE failed for %r during "
+                    "cascade_create_independent rollback: %s",
+                    task_name,
+                    rollback_exc,
+                )
+        raise
+
+
+async def cascade_update_predecessors(
+    tasks_api: RemoteAPI,
+    parent_existing_name: str,
+    parent_updated: dict[str, Any],
+    predecessor_existing_names: Sequence[str],
+    predecessor_specs_with_payloads: Sequence[
+        tuple[ChainedPredecessor, dict[str, Any]]
+    ],
+) -> CascadeResult:
+    """PUT the parent and each predecessor, best-effort.
+
+    Each leg is attempted independently — per-leg failures are collected
+    into the returned :class:`CascadeResult`. The PUT URL path uses the
+    *existing* task name; the updated payload goes in the body.
+
+    Renames are rejected upfront with :class:`ValueError`. The chain
+    wiring fired at create time stores the task names verbatim in celery's
+    execution request, and this helper does NOT re-fire ``POST /execute``.
+    Renaming the parent or any predecessor would leave the stored chain
+    referencing names that no longer resolve, so the next chained
+    execution would 404. Consumers that need to rename tasks in a chain
+    must tear down and rebuild it (delete-then-create cascade) rather
+    than relying on this helper.
+
+    :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
+    :type tasks_api: RemoteAPI
+    :param parent_existing_name: The current name of the parent task
+        (used in the PUT URL).
+    :type parent_existing_name: str
+    :param parent_updated: The updated parent payload. ``parent_updated["name"]``
+        MUST equal ``parent_existing_name``.
+    :type parent_updated: dict[str, Any]
+    :param predecessor_existing_names: Current predecessor task names,
+        aligned with ``predecessor_specs_with_payloads`` by index. Each
+        name MUST equal the name produced by
+        :func:`build_predecessor_payload` for the matching spec.
+    :type predecessor_existing_names: Sequence[str]
+    :param predecessor_specs_with_payloads: Ordered list of
+        ``(spec, predecessor_payload)`` tuples.
+    :type predecessor_specs_with_payloads:
+        Sequence[tuple[ChainedPredecessor, dict[str, Any]]]
+    :return: A :class:`CascadeResult` recording per-leg outcomes.
+    :rtype: CascadeResult
+    :raises ValueError: When
+        ``len(predecessor_existing_names) != len(predecessor_specs_with_payloads)``,
+        when ``parent_updated["name"] != parent_existing_name``, or when
+        any built predecessor name differs from the matching existing name.
+    """
+    if len(predecessor_existing_names) != len(predecessor_specs_with_payloads):
+        raise ValueError(
+            f"predecessor_existing_names length {len(predecessor_existing_names)} "
+            f"does not match predecessor_specs_with_payloads length "
+            f"{len(predecessor_specs_with_payloads)}"
+        )
+    if parent_updated["name"] != parent_existing_name:
+        raise ValueError(
+            "cascade_update_predecessors does not support renaming the parent: "
+            f"parent_updated['name']={parent_updated['name']!r} differs from "
+            f"parent_existing_name={parent_existing_name!r}. The chain wired at "
+            "create time stores task names verbatim and this helper does not "
+            "re-fire POST /execute; rename via delete-then-create cascade instead."
+        )
+    built_predecessors = [
+        (existing_name, build_predecessor_payload(parent_updated, pred_payload, spec))
+        for existing_name, (spec, pred_payload) in zip(
+            predecessor_existing_names,
+            predecessor_specs_with_payloads,
+            strict=True,
+        )
+    ]
+    renamed_predecessors = [
+        (existing_name, built["name"])
+        for existing_name, built in built_predecessors
+        if built["name"] != existing_name
+    ]
+    if renamed_predecessors:
+        raise ValueError(
+            "cascade_update_predecessors does not support renaming predecessors: "
+            f"{renamed_predecessors!r}. The chain wired at create time stores "
+            "task names verbatim and this helper does not re-fire POST /execute; "
+            "rename via delete-then-create cascade instead."
+        )
+    result = CascadeResult()
+    try:
+        await tasks_api.put(f"/{parent_existing_name}", json=parent_updated)
+        result.successes.append(parent_updated["name"])
+    except Exception as exc:  # noqa: BLE001
+        result.failures.append(CascadeFailure(parent_existing_name, exc))
+    for existing_name, built in built_predecessors:
+        try:
+            await tasks_api.put(f"/{existing_name}", json=built)
+            result.successes.append(built["name"])
+        except Exception as exc:  # noqa: BLE001
+            result.failures.append(CascadeFailure(existing_name, exc))
+    return result
+
+
+async def cascade_delete_predecessors(
+    tasks_api: RemoteAPI,
+    parent_name: str,
+    predecessor_names: Sequence[str],
+) -> CascadeResult:
+    """DELETE every predecessor first, then the parent, best-effort.
+
+    Identical contract to :func:`cascade_delete_tasks` (just named for
+    the predecessor schema field). The caller passes the *actual* stored
+    predecessor names — the cascade does not recompute names from
+    ``name_suffix`` because a previous partial rename could leave the
+    stored names out of sync with the schema-suffix convention, and
+    recomputing would silently 404 on orphaned children.
+
+    HTTP 404 on any leg is tolerated as success; all other failures
+    accumulate into the returned :class:`CascadeResult`. Uses the shared
+    :func:`_delete_one` helper.
+
+    :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
+    :type tasks_api: RemoteAPI
+    :param parent_name: The name of the parent task.
+    :type parent_name: str
+    :param predecessor_names: The actual stored names of the predecessor
+        tasks, fetched by the caller.
+    :type predecessor_names: Sequence[str]
+    :return: A :class:`CascadeResult` recording per-leg outcomes.
+    :rtype: CascadeResult
+    """
+    result = CascadeResult()
+    for predecessor_name in predecessor_names:
+        await _delete_one(tasks_api, predecessor_name, result)
+    await _delete_one(tasks_api, parent_name, result)
+    return result

@@ -83,7 +83,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <h2>Saved</h2>
             {% include "backup_pg/partials/saved-tasks.html.j2" %}
             <h2>Periodic Tasks</h2>
-            {%- set detail_route = "backups_detail" %}
+            {%- set detail_route = "pg_backups_detail" %}
             {% include "tasks/partials/scheduled-tasks.html.j2" %}
             <h3>Create a backup process</h3>
             {% if executor_hosts|length < 1 %}

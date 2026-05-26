@@ -16,17 +16,21 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { useState, type ReactNode } from 'react';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import { buildValidationRules, coerceFormValues } from './utils/validationMapper';
 import { evaluatePredicate, isPresent } from './utils/predicateEvaluator';
 import type { FormSection } from './types';
 
+const useAlertConfigMock = vi.fn();
+
 vi.mock('@sep/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
+  useAlertConfig: () => useAlertConfigMock(),
 }));
 import { apiClient } from '@sep/api';
 const mockedApi = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
@@ -101,6 +105,13 @@ describe('coerceFormValues', () => {
       { type: 'bool', name: 'flag', label: 'Flag' },
     ]);
     expect(out).toEqual({ title: 'hi', flag: true });
+  });
+
+  it('passes through extra keys absent from fields (capability-injected fields)', () => {
+    const out = coerceFormValues({ title: 'x', alert_on_fail: true }, [
+      { type: 'string', name: 'title', label: 'Title' },
+    ]);
+    expect(out.alert_on_fail).toBe(true);
   });
 
   it('unwraps option objects from service/schema/table/host fields to scalar ids', () => {
@@ -339,6 +350,38 @@ describe('SchemaFormRenderer — multichoice minItems', () => {
   });
 });
 
+describe('SchemaFormRenderer — multichoice required', () => {
+  it('blocks submission when a required multichoice has the default empty array', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            required: true,
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Fix the highlighted fields/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('select-input-upload')).toHaveAttribute('aria-invalid', 'true'),
+    );
+  });
+});
+
 describe('SchemaFormRenderer — file required', () => {
   it('blocks submission when a required file field is empty', async () => {
     const user = userEvent.setup();
@@ -365,7 +408,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
   it('clears downstream schema value when the upstream service changes', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url === '/inventory/services/') {
+      if (url === '/sep/services/') {
         return Promise.resolve({
           data: {
             items: [
@@ -410,7 +453,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
     // Wait for services to load.
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/inventory/services/', expect.anything()),
+      expect(mockedApi.get).toHaveBeenCalledWith('/sep/services/', expect.anything()),
     );
 
     // Pick first service.
@@ -653,6 +696,107 @@ describe('SchemaFormRenderer — conditional visibility', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ advancedOption: 'secret' }));
   });
+
+  // ── BoolField with a forbidden gate ──────────────────────────────────────
+  // Mirrors the SEP-1061 ``skip_s3_safety_check`` scenario: a bool field is
+  // visible only when the ``upload`` MultiChoice contains ``"S3"``. Locks in
+  // that ``isPresent(false) === false`` so the default does not trip the
+  // forbidden gate, and that the field is unregistered (omitted from the
+  // submit payload) when hidden.
+  const boolGateSections: FormSection[] = [
+    {
+      title: 'Upload',
+      fields: [
+        {
+          type: 'multichoice',
+          name: 'upload',
+          label: 'Upload providers',
+          choices: [
+            { label: 'Rsync', value: 'RSYNC' },
+            { label: 'S3', value: 'S3' },
+          ],
+        },
+        {
+          type: 'bool',
+          name: 'skip_s3_safety_check',
+          label: 'Skip S3 safety check',
+          forbidden: [{ when: { not: { contains: { upload: 'S3' } } } }],
+        },
+      ],
+    },
+  ];
+
+  it('hides a BoolField when its upload-membership gate fires', () => {
+    renderWithProviders(<SchemaFormRenderer sections={boolGateSections} onSubmit={() => {}} />);
+    // upload defaults to [] → not contains "S3" → gate fires → checkbox hidden
+    expect(screen.queryByLabelText('Skip S3 safety check')).toBeNull();
+  });
+
+  it('omits a hidden BoolField from the submit payload (RHF unregister)', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={boolGateSections}
+        onSubmit={onSubmit}
+        defaultValues={{ upload: ['RSYNC'], skip_s3_safety_check: true }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.not.objectContaining({ skip_s3_safety_check: expect.anything() }),
+    );
+  });
+});
+
+describe('SchemaFormRenderer — storage type visibility', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Storage',
+      fields: [
+        {
+          type: 'choice',
+          name: 'storage_type',
+          label: 'Storage Type',
+          default: 's3',
+          choices: [
+            { label: 'S3-compatible', value: 's3' },
+            { label: 'Filesystem', value: 'filesystem' },
+          ],
+        },
+        {
+          type: 'string',
+          name: 'storage_s3_bucket',
+          label: 'S3 Bucket',
+          forbidden: [{ when: { not_equals: { storage_type: 's3' } } }],
+        },
+        {
+          type: 'string',
+          name: 'storage_filesystem_path',
+          label: 'Filesystem Path',
+          required: true,
+          forbidden: [{ when: { not_equals: { storage_type: 'filesystem' } } }],
+        },
+      ],
+    },
+  ];
+
+  it('shows S3 fields and hides filesystem when storage_type defaults to s3', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.getByTestId('text-input-storage_s3_bucket')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-storage_filesystem_path')).toBeNull();
+  });
+
+  it('shows filesystem and hides S3 when storage_type is filesystem', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    await user.click(screen.getByTestId('radio-option-filesystem'));
+    expect(await screen.findByTestId('text-input-storage_filesystem_path')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-storage_s3_bucket')).toBeNull();
+  });
 });
 
 // ── isPresent unit tests ───────────────────────────────────────────────────
@@ -676,8 +820,14 @@ describe('isPresent', () => {
 
   it('treats non-empty scalars as present', () => {
     expect(isPresent(0)).toBe(true);
-    expect(isPresent(false)).toBe(true);
     expect(isPresent('x')).toBe(true);
+  });
+
+  it('treats false as absent so BoolField defaults do not trip forbidden gates', () => {
+    // Matches the backend convention: only an explicit `true` toggle counts
+    // as present. `0` stays present because numeric zero is a real value.
+    expect(isPresent(false)).toBe(false);
+    expect(isPresent(true)).toBe(true);
   });
 });
 
@@ -1081,5 +1231,272 @@ describe('SchemaFormRenderer — conditional required', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'because', needsReason: true }),
     );
+  });
+});
+
+// ── capabilities.alert_on_fail ────────────────────────────────────────────
+
+describe('SchemaFormRenderer — capabilities.alert_on_fail', () => {
+  const sections: FormSection[] = [
+    { title: 'Main', fields: [{ type: 'string', name: 'title', label: 'Title' }] },
+  ];
+
+  beforeEach(() => {
+    useAlertConfigMock.mockReset();
+  });
+
+  it('renders AlertOnFailField when capabilities.alert_on_fail is true', () => {
+    useAlertConfigMock.mockReturnValue({
+      data: { available: true },
+      isLoading: false,
+      isError: false,
+    });
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={() => {}}
+        capabilities={{ alert_on_fail: true }}
+      />,
+    );
+    expect(screen.getByRole('checkbox', { name: /Alert on failure/i })).toBeInTheDocument();
+  });
+
+  it('does not render AlertOnFailField when capabilities.alert_on_fail is false', () => {
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={() => {}}
+        capabilities={{ alert_on_fail: false }}
+      />,
+    );
+    expect(screen.queryByRole('checkbox', { name: /Alert on failure/i })).toBeNull();
+  });
+
+  it('does not render AlertOnFailField when capabilities is undefined', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.queryByRole('checkbox', { name: /Alert on failure/i })).toBeNull();
+  });
+
+  it('renders the field disabled when no alert provider is configured', () => {
+    useAlertConfigMock.mockReturnValue({
+      data: { available: false },
+      isLoading: false,
+      isError: false,
+    });
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={() => {}}
+        capabilities={{ alert_on_fail: true }}
+      />,
+    );
+    expect(screen.getByRole('checkbox', { name: /Alert on failure/i })).toBeDisabled();
+  });
+
+  it('submits alert_on_fail: false by default', async () => {
+    useAlertConfigMock.mockReturnValue({
+      data: { available: true },
+      isLoading: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        capabilities={{ alert_on_fail: true }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ alert_on_fail: false }));
+  });
+
+  it('submits alert_on_fail: true when user checks the field', async () => {
+    useAlertConfigMock.mockReturnValue({
+      data: { available: true },
+      isLoading: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        capabilities={{ alert_on_fail: true }}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: /Alert on failure/i }));
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ alert_on_fail: true }));
+  });
+});
+
+// ── Unsaved changes guard (integration) ──────────────────────────────────────
+
+const GUARD_SECTIONS: FormSection[] = [
+  { title: 'Main', fields: [{ type: 'string', name: 'title', label: 'Title' }] },
+];
+
+/**
+ * Renders SchemaFormRenderer inside a createMemoryRouter so that useBlocker
+ * (and therefore the in-app navigation guard) is active.
+ */
+function renderWithRouter(ui: ReactNode, { initialPath = '/form' }: { initialPath?: string } = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const router = createMemoryRouter(
+    [
+      { path: '/form', element: ui },
+      { path: '/other', element: <div>Other page</div> },
+    ],
+    { initialEntries: [initialPath] },
+  );
+  return {
+    router,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+  };
+}
+
+describe('SchemaFormRenderer — unsaved changes guard', () => {
+  beforeEach(() => {
+    useAlertConfigMock.mockReset();
+    useAlertConfigMock.mockReturnValue({ data: { available: false }, isLoading: false });
+  });
+
+  it('AC#6 — renders without crash outside a Data Router', () => {
+    // When SchemaFormRenderer is mounted without a router context (e.g. inside
+    // a unit test that uses renderWithProviders) the in-app blocker is skipped
+    // but the component should still mount and render normally.
+    renderWithProviders(<SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />);
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('AC#3 — does not block navigation when form is clean', async () => {
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />,
+    );
+
+    act(() => {
+      router.navigate('/other');
+    });
+
+    expect(await screen.findByText('Other page')).toBeInTheDocument();
+  });
+
+  it('AC#1 — shows confirmation dialog when dirty form navigates away', async () => {
+    const user = userEvent.setup();
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />,
+    );
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    act(() => {
+      router.navigate('/other');
+    });
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /unsaved changes/i })).toBeInTheDocument();
+    expect(screen.queryByText('Other page')).toBeNull();
+  });
+
+  it('AC#1 — Stay button cancels navigation and keeps form state intact', async () => {
+    const user = userEvent.setup();
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />,
+    );
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    act(() => {
+      router.navigate('/other');
+    });
+
+    await screen.findByRole('dialog');
+    await user.click(screen.getByRole('button', { name: /stay/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Other page')).toBeNull();
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('hello');
+  });
+
+  it('AC#1 — Discard changes button proceeds with navigation', async () => {
+    const user = userEvent.setup();
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={() => {}} />,
+    );
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    act(() => {
+      router.navigate('/other');
+    });
+
+    await screen.findByRole('dialog');
+    await user.click(screen.getByRole('button', { name: /discard/i }));
+
+    expect(await screen.findByText('Other page')).toBeInTheDocument();
+  });
+
+  it('AC#4 — does not block navigation after successful submit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const { router } = renderWithRouter(
+      <SchemaFormRenderer sections={GUARD_SECTIONS} onSubmit={onSubmit} submitLabel="Save" />,
+    );
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      router.navigate('/other');
+    });
+
+    expect(await screen.findByText('Other page')).toBeInTheDocument();
+  });
+
+  it('AC#5 — re-arms guard after failed async mutation (submitError set after submit)', async () => {
+    const user = userEvent.setup();
+
+    // FormWithMutationError simulates a parent that sets submitError after its
+    // async mutation rejects. onSubmit returns synchronously (no throw), so
+    // RHF marks isSubmitSuccessful=true — then submitError is set to re-arm.
+    function FormWithMutationError() {
+      const [submitError, setSubmitError] = useState<string | null>(null);
+      return (
+        <SchemaFormRenderer
+          sections={GUARD_SECTIONS}
+          onSubmit={() => {
+            setSubmitError('Mutation failed');
+          }}
+          submitError={submitError}
+          submitLabel="Save"
+        />
+      );
+    }
+
+    const { router } = renderWithRouter(<FormWithMutationError />);
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(screen.getByText('Mutation failed')).toBeInTheDocument());
+    // Flush effects from reset() so the blocker re-registers on the router
+    await act(async () => {});
+
+    // Guard must be re-armed: navigation should now prompt.
+    act(() => {
+      router.navigate('/other');
+    });
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 });

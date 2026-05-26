@@ -17,6 +17,7 @@
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.schema import (
+    Capabilities,
     Choice,
     ChoiceField,
     Column,
@@ -210,4 +211,5 @@ inventory_schema = PluginSchema(
     display_name="Inventory",
     description="Manage nodes, services, database schemas, and tables.",
     entities=[_nodes_entity, _services_entity, _schemas_entity, _tables_entity],
+    capabilities=Capabilities(scheduling=True),
 )

@@ -29,34 +29,146 @@ for the schema-driven React client. POST and PUT bodies are parsed with the
 ``inventory_plugin_json_object_body``) so non-object JSON consistently yields
 HTTP 422.
 
-Schedule and periodic sync routes are not mounted here so SEP-1058 can own the
-React schedule UI; do not add schedule or inventory-sync proxy routes without
-coordinating with that ticket. The inventory service remains the canonical CRUD
-surface at ``/api/inventory/*``; this router is the typed entry point for the
-React plugin.
+In addition to CRUD, this router mounts the ad-hoc inventory-sync trigger
+(``POST /sync/``) and the running-state polling endpoint
+(``GET /sync/status/``) consumed by the React inventory sync control. Schedule
+discovery (``GET /``) and available-syncers (``GET /available-syncers/``) are
+also mounted here so the React schedule UI (SEP-1058) can fetch its data
+through the plugin API gateway. Periodic-task CRUD remains delegated to
+``/api/tasks/periodic/*`` as the single source of truth; this router does not
+duplicate that surface. The inventory service remains the canonical CRUD
+surface at ``/api/inventory/*``.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
 
-from app.sep.deps import InventoryAPI
+from app.core.exceptions import HTTPBadRequestException
+from app.sep.crud import SyncItemManager
+from app.sep.deps import ApiCurrentUser, InventoryAPI, SessionDep
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory.deps import (
+    AvailableSyncer,
+    filter_syncers_by_name,
     inventory_plugin_query_params,
     inventory_service_create_path,
     inventory_service_detail_path,
     inventory_service_list_path,
+    InventoryAvailableSyncersDep,
     InventoryPluginJsonObjectBody,
+    InventorySyncStatusResponse,
+    InventorySyncTriggerWrite,
     require_inventory_plugin_entity,
+    SyncersDep,
     unwrap_inventory_plugin_list_payload,
 )
+from app.sep.plugins.inventory.models import (
+    INVENTORY_SYNC_TASK_NAME,
+    PluginTaskResponse,
+)
 from app.sep.plugins.inventory.schema import inventory_schema
+from app.sep.plugins.inventory.sync import run_inventory_sync
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
+
+# Module-level singleton avoids the B008 lint warning about function calls in
+# argument defaults; the optional-body semantics are unchanged.
+_OPTIONAL_TRIGGER_BODY = Body(default=None)
+
+
+@router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
+async def inventory_sync_trigger(
+    user: ApiCurrentUser,
+    syncers: SyncersDep,
+    background_tasks: BackgroundTasks,
+    body: InventorySyncTriggerWrite | None = _OPTIONAL_TRIGGER_BODY,
+) -> Response:
+    """Schedule an ad-hoc inventory sync as a background task.
+
+    Mirrors the Jinja2 ``POST /inventory/sync/`` handler but accepts an
+    optional JSON body ``{"syncer": "<qualified_name>"}``. When ``syncer``
+    is absent, ``None``, or empty, every configured syncer runs in
+    declaration order; otherwise only the named syncer is forwarded. An
+    unknown or inapplicable syncer raises HTTP 400 — never a silent no-op.
+
+    :param user: Current API-authenticated user; the access token is
+        forwarded to the background task.
+    :type user: ApiCurrentUser
+    :param syncers: Configured syncers from ``SyncersDep``.
+    :type syncers: SyncersDep
+    :param background_tasks: FastAPI's background task scheduler.
+    :type background_tasks: BackgroundTasks
+    :param body: Optional trigger body.
+    :type body: InventorySyncTriggerWrite | None
+    :return: Empty 202 Accepted response.
+    :rtype: Response
+    :raises HTTPBadRequestException: When ``body.syncer`` is set but does
+        not match any configured syncer that can sync inventory.
+    """
+    syncer_name = body.syncer if body is not None else None
+    try:
+        selected = filter_syncers_by_name(
+            syncers,
+            syncer_name,
+            lambda syncer: syncer.can_sync_inventory(),
+        )
+    except ValueError as exc:
+        raise HTTPBadRequestException(str(exc)) from exc
+    background_tasks.add_task(run_inventory_sync, user.access_token, *selected)
+    return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+@router.get("/sync/status/")
+async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusResponse:
+    """Return whether an inventory-wide sync is currently running.
+
+    Replaces the server-rendered ``sync_is_running`` template variable
+    used by the Jinja2 inventory page so the React control can poll the
+    same state without scraping HTML.
+
+    :param session: SQLModel async session.
+    :type session: SessionDep
+    :return: ``{"is_running": <bool>}``.
+    :rtype: InventorySyncStatusResponse
+    """
+    is_running = await SyncItemManager.sync_is_running(
+        session,
+        SyncInventoryEntityTypeEnum.INVENTORY,
+    )
+    return InventorySyncStatusResponse(is_running=is_running)
+
+
+@router.get("/")
+async def inventory_plugin_tasks() -> list[PluginTaskResponse]:
+    """Return the list of periodic task names for the Inventory plugin.
+
+    Hard-coded because the Inventory plugin has exactly one periodic task
+    (``inventory-sync``). The shape matches what the React
+    ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+    minimum a ``name`` key.
+    """
+    return [
+        PluginTaskResponse(name=INVENTORY_SYNC_TASK_NAME, display_name="Inventory Sync")
+    ]
+
+
+@router.get("/available-syncers/")
+async def inventory_available_syncers(
+    available_syncers: InventoryAvailableSyncersDep,
+) -> list[AvailableSyncer]:
+    """Return syncers capable of syncing inventory.
+
+    :param available_syncers: Filtered syncer list from ``InventoryAvailableSyncersDep``.
+    :type available_syncers: list[AvailableSyncer]
+    :return: Filtered list of syncers that can sync inventory.
+    :rtype: list[AvailableSyncer]
+    """
+    return available_syncers
 
 
 @router.get("/{entity}/")

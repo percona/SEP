@@ -4,6 +4,13 @@ SHELL=env bash
 
 PYTHON?=python3
 RELEASE_VER?=HEAD
+# Pin Poetry and pre-install the required plugin via pip. Without the plugin
+# pre-installed, `poetry install` runs an auto-resolve to add it, which racks
+# the bootstrap-fresh transitive deps (e.g. virtualenv) against the project's
+# solver.min-release-age=7 and fails ("virtualenv 21.3.3 doesn't match any
+# versions"). Pre-installing means Poetry sees the plugin in its env and skips
+# the resolve entirely.
+POETRY_VERSION?=2.4.0
 ifdef VIRTUAL_ENV
     VENV=${VIRTUAL_ENV}
 else
@@ -16,7 +23,7 @@ ifdef POETRY
 	VENV=${VIRTUAL_ENV}
 	VENV_BIN="${VENV}/bin"
 else
-	START_PKGS=pip wheel poetry
+	START_PKGS=pip wheel poetry==${POETRY_VERSION} poetry-plugin-export
 	POETRY="${VENV_BIN}/poetry"
 endif
 PIP?="${VENV_BIN}/pip"
@@ -91,6 +98,9 @@ dev-backend: venv
 # Local development only; production frontend startup stays outside Make.
 dev-frontend:
 	@cd frontend && pnpm dev
+
+build-frontend:
+	@cd frontend && pnpm --filter @sep/shell build
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
@@ -176,6 +186,13 @@ changelog-list:
 	@$(PYTHON) scripts/changelog.py list
 
 SIGN_FLAG := $(if $(SIGN_VIA_API),--sign-via-github-api,)
+PUSH_IMAGE_DOCKER ?= true
+
+release-prep:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release-prep VERSION=X.Y.Z)
+endif
+	@$(PYTHON) scripts/release.py prep --version "$(VERSION)" $(SIGN_FLAG)
 
 release-rc:
 ifndef VERSION
@@ -194,7 +211,7 @@ endif
 
 trigger-jenkins:
 ifndef TAG
-	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z [WEBHOOK_URL_ENV=... WEBHOOK_AUTH_ENV=...])
+	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z [PUSH_IMAGE_DOCKER=false] [WEBHOOK_URL_ENV=... WEBHOOK_AUTH_ENV=...])
 endif
 	@set -euo pipefail; \
 	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
@@ -204,7 +221,7 @@ endif
 			--data-urlencode "releaseTag=$(TAG)" \
 			--data-urlencode "notifySlack=true" \
 			--data-urlencode "pushImage=true" \
-			--data-urlencode "pushImageDocker=true" 2>&1; then \
+			--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \
 			if [ -n "$(WEBHOOK_URL_ENV)" ] && [ -n "$(WEBHOOK_AUTH_ENV)" ]; then \
 				$(PYTHON) scripts/post_jira_webhook.py \
@@ -219,4 +236,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit dev-backend dev-frontend build-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list

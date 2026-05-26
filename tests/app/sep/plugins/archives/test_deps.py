@@ -639,8 +639,16 @@ class TestResolveDestinationHostAndDb:
         mock_remote_api.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_manual_host_without_port(self, mock_remote_api):
-        """Manual dest_host, no dest_port: return host only, no dest_port key."""
+    async def test_manual_host_without_port_defaults_to_mysql_port(
+        self, mock_remote_api
+    ):
+        """Manual dest_host, no dest_port: dest_port defaults to ``DEFAULT_MYSQL_PORT``.
+
+        Without this default, an omitted ``DEST_PORT`` falls through to the
+        payload script's ``dst_port = src_port`` fallback, which would
+        silently route the archive to whatever port the source uses instead
+        of MySQL's default. See ``app/sep/plugins/archives/payload``.
+        """
         mock_remote_api.get = AsyncMock()
         form = _make_form_with_source_ids(
             dest_service_id=None, dest_host="archive.host", dest_port=None
@@ -648,8 +656,10 @@ class TestResolveDestinationHostAndDb:
 
         result = await _resolve_destination_host_and_db(form, mock_remote_api)
 
-        assert result == {"dest_host": "archive.host"}
-        assert "dest_port" not in result
+        assert result == {
+            "dest_host": "archive.host",
+            "dest_port": DEFAULT_MYSQL_PORT,
+        }
         mock_remote_api.get.assert_not_called()
 
     @pytest.mark.asyncio

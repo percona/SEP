@@ -115,6 +115,21 @@ export function useTaskHistoryByName(
   taskName: string | undefined,
   options: UseTaskHistoryOptions = {},
 ) {
+  return useTaskHistoryByNames(taskName ? [taskName] : undefined, options);
+}
+
+/**
+ * List task history for one or more tasks, merged newest-first.
+ *
+ * Used by plugins whose detail page represents a task group (parent plus derived
+ * siblings) while executions are recorded on individual task names. Requests are
+ * routed through ``GET /api/sep/task-history/`` so the browser never calls the
+ * Tasks sub-app directly.
+ */
+export function useTaskHistoryByNames(
+  taskNames: string[] | undefined,
+  options: UseTaskHistoryOptions = {},
+) {
   const {
     status,
     pollingIntervalMs = 5000,
@@ -123,14 +138,20 @@ export function useTaskHistoryByName(
     limit,
     enabled = true,
   } = options;
+  const names = [...new Set((taskNames ?? []).map((name) => name.trim()).filter(Boolean))].sort();
   return useQuery<PaginatedTaskHistory>({
-    queryKey: ['task-history', taskName, { status: status ?? null, offset, limit }],
-    enabled: enabled && !!taskName,
+    queryKey: ['task-history', 'merged', names, { status: status ?? null, offset, limit }],
+    enabled: enabled && names.length > 0,
     queryFn: async () => {
-      const { data } = await apiClient.get<PaginatedTaskHistory>(
-        `/tasks/${encodeURIComponent(taskName!)}/history/`,
-        { params: buildParams({ status, offset, limit }) },
-      );
+      const { data } = await apiClient.get<PaginatedTaskHistory>('/sep/task-history/', {
+        params: {
+          ...buildParams({ status, offset, limit }),
+          task_names: names,
+        },
+        // FastAPI list query params use repeated keys (`task_names=a&task_names=b`),
+        // not axios' default bracket form (`task_names[]=a&task_names[]=b`).
+        paramsSerializer: { indexes: null },
+      });
       return data;
     },
     refetchInterval: (query) =>
@@ -152,6 +173,36 @@ export function useStopTaskHistory() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['task-history'] });
+    },
+  });
+}
+
+/**
+ * Dispatch a saved task for immediate execution.
+ *
+ * The request is routed through the SEP-level plugin gateway
+ * (``POST /api/plugins/{pluginName}/{taskName}/execute``) — the FE must not
+ * call ``/api/tasks/*`` directly, as the Tasks sub-app is not exposed to the
+ * browser in a production deployment. The plugin-task detail query is also
+ * refreshed so the status chip on the detail page updates immediately after
+ * execution.
+ */
+export function useExecuteTask(pluginName: string) {
+  const queryClient = useQueryClient();
+  const pluginPath = pluginName.split('/').map(encodeURIComponent).join('/');
+  return useMutation<unknown, Error, { taskName: string }>({
+    mutationFn: async ({ taskName }) => {
+      const { data } = await apiClient.post<unknown>(
+        `/plugins/${pluginPath}/${encodeURIComponent(taskName)}/execute`,
+        {},
+      );
+      return data;
+    },
+    onSuccess: (_data, { taskName }) => {
+      queryClient.invalidateQueries({ queryKey: ['task-history'] });
+      queryClient.invalidateQueries({ queryKey: ['task-history', taskName] });
+      queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks'] });
+      queryClient.removeQueries({ queryKey: ['plugins', pluginName, 'tasks', taskName] });
     },
   });
 }

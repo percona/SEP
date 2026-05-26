@@ -108,7 +108,7 @@ describe('useSnippetDownload', () => {
     clickSpy.mockRestore();
   });
 
-  it('GETs /plugins/snippets/<filename>/download with Bearer auth and a blob responseType', async () => {
+  it('GETs /plugins/snippets/snippet/download?snippet_filename=... with Bearer auth and a blob responseType', async () => {
     const { result } = renderHook(() => useSnippetDownload('hello.sh'), {
       wrapper: makeWrapper(),
     });
@@ -123,7 +123,7 @@ describe('useSnippetDownload', () => {
 
     expect(lastConfig).not.toBeNull();
     const captured = lastConfig as CapturedRequestConfig;
-    expect(captured.url).toBe('/plugins/snippets/hello.sh/download');
+    expect(captured.url).toBe('/plugins/snippets/snippet/download?snippet_filename=hello.sh');
     expect(captured.method?.toLowerCase()).toBe('get');
     expect(captured.responseType).toBe('blob');
 
@@ -131,6 +131,29 @@ describe('useSnippetDownload', () => {
     const auth =
       typeof headers?.get === 'function' ? headers.get('Authorization') : headers?.Authorization;
     expect(auth).toBe('Bearer test-access-token');
+  });
+
+  it('encodes nested filenames in the query string', async () => {
+    const nested = 'diag/slow-query.sh';
+    const { result } = renderHook(() => useSnippetDownload(nested), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const captured = lastConfig as CapturedRequestConfig;
+    expect(captured.url).toBe(
+      '/plugins/snippets/snippet/download?snippet_filename=diag%2Fslow-query.sh',
+    );
+    const [path] = (captured.url ?? '').split('?');
+    expect(path).not.toContain('%2F');
+    expect(path).not.toContain('diag');
   });
 
   it('reads the response body as a Blob and triggers a download with the snippet filename', async () => {

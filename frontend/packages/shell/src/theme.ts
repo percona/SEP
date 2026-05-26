@@ -24,19 +24,77 @@
 // import { typographyClasses } from '@mui/material/Typography';
 import { sepThemeOptions as sepThemeOptionsOriginal } from '@percona/percona-ui';
 import type { PaletteMode, ThemeOptions } from '@mui/material';
+import { SEP_TABLE_CLASS } from '@sep/framework';
 
 import { deepmerge } from '@mui/utils';
 
+// TODO: remove temporary overrides below once percona-ui ships the upstream fix (percona-ui PR #20).
 const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
   const newOptions: ThemeOptions = {
     components: {
       MuiButton: {
         variants: [
+          ...(mode === 'light'
+            ? [
+                {
+                  props: { variant: 'outlined' as const },
+                  style: {
+                    backgroundColor:
+                      sepThemeOptionsOriginal(mode).palette?.background?.paper ?? '#fff',
+                  },
+                },
+              ]
+            : []),
           { props: { variant: 'contained', color: 'success' }, style: { color: '#fff' } },
           { props: { variant: 'contained', color: 'error' }, style: { color: '#fff' } },
-          { props: { variant: 'contained', color: 'warning' }, style: { color: '#fff' } },
+          // Only override warning text color in light mode; dark mode keeps MUI's computed contrastText.
+          ...(mode === 'light'
+            ? [
+                {
+                  props: { variant: 'contained' as const, color: 'warning' as const },
+                  style: { color: '#fff' },
+                },
+              ]
+            : []),
           { props: { variant: 'contained', color: 'info' }, style: { color: '#fff' } },
         ],
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            ...(theme.palette.mode === 'light' && {
+              [`&.${SEP_TABLE_CLASS} .MuiToolbar-root`]: {
+                backgroundColor: theme.palette.background.paper,
+              },
+              // Exclude running rows so action.hover highlight still applies.
+              [`&.${SEP_TABLE_CLASS} .MuiTableRow-root:not([data-running="true"])`]: {
+                backgroundColor: theme.palette.background.paper + ' !important',
+              },
+            }),
+          }),
+        },
+      },
+      // This is needed to fix the bg color on Input, Select, Autocomplete, etc. This is on purpose.
+      MuiInputBase: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            ...(theme.palette.mode === 'light' && {
+              backgroundColor: theme.palette.background.paper,
+            }),
+          }),
+        },
+      },
+      MuiChip: {
+        styleOverrides: {
+          root: ({ theme, ownerState }) => ({
+            ...(theme.palette.mode === 'light' &&
+              ownerState.variant === 'filled' &&
+              ownerState.color === 'default' && {
+                // Default filled chip blends into page bg — add visible surface.
+                backgroundColor: theme.palette.action.selected,
+              }),
+          }),
+        },
       },
     },
   };

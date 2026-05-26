@@ -22,6 +22,8 @@ from traceback import format_exception
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
@@ -37,7 +39,6 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils import import_var, run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
-from app.api.main import api_router as core_api_router
 from app.sep.api.router import api_router
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings
@@ -63,7 +64,7 @@ from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
-JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/", "/api/sep/", "/api/oauth/", "/api/users/", "/api/config/")
+JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/", "/api/sep/")
 
 
 async def sep_startup() -> None:
@@ -131,7 +132,16 @@ for plugin in sep_settings.PLUGINS:
     imported_plugins.add(plugin.module_name.split(".")[-1])
 
 _TASK_INFRA_PLUGINS = frozenset(
-    {"alters", "archives", "tasks", "backup", "backup_mongo", "backup_pg", "checksums", "mum"}
+    {
+        "alters",
+        "archives",
+        "tasks",
+        "mysql_backups",
+        "backup_mongo",
+        "backup_pg",
+        "checksums",
+        "mum",
+    }
 )
 
 if _TASK_INFRA_PLUGINS & imported_plugins:
@@ -157,7 +167,6 @@ if {"snippets", "dipper"} & imported_plugins:
 
     sep_app.include_router(artifacts_router, prefix="/artifacts")
 
-sep_app.include_router(core_api_router)
 sep_app.include_router(api_router)
 
 if "snippets" in imported_plugins:
@@ -186,10 +195,7 @@ async def internal_error_handler(
     """Load custom error page."""
     base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)
-    try:
-        user = await get_current_user(request)
-    except Exception:
-        user = None
+    user = await get_current_user(request)
     messages.error(
         request,
         "Internal Server Error. Please contact the administrators for help.",
@@ -239,17 +245,13 @@ async def custom_404_handler(
         },
     )
 
+
 @sep_app.exception_handler(BaseAuthProviderException)
 async def auth_provider_exception_handler(
     request: Request, exc: BaseAuthProviderException
-) -> Response:
+) -> RedirectResponse:
     """Handle exceptions raised by auth providers."""
     logger.exception("Error connecting to auth provider:", exc_info=exc)
-    if request.url.path.startswith(JSON_API_PATH_PREFIXES) or is_bearer_authenticated(request):
-        return JSONResponse(
-            {"detail": exc.detail},
-            status_code=exc.status_code,
-        )
     messages.error(request, exc.detail, sticky=True)
     next_path = request.query_params.get("next", request.url.path)
     redirect_location = request.url_for("login").path
@@ -298,6 +300,45 @@ async def default_exception_handler(request: Request, exc: HTTPException) -> Res
 
     error_detail = exc.detail
     messages.error(request, str(error_detail))
+    return RedirectResponse(
+        request.headers.get("referer", "/"), status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@sep_app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> Response:
+    """Surface form-body validation errors as flash messages, not raw JSON.
+
+    FastAPI's default :class:`RequestValidationError` handler returns a
+    ``application/json`` 422 with a serialized error list, which the browser
+    renders as a raw JSON blob via its built-in JSON viewer. That's fine for
+    JSON API consumers but a poor UX for users submitting HTML forms — they
+    end up staring at structured error JSON instead of returning to the form
+    with an inline message.
+
+    For non-API paths and session-authenticated requests we convert each
+    validator failure into a flash message via :func:`messages.from_validation_error`
+    and redirect back to the referer (the form page). ``none_required`` is
+    excluded because every ``T | EmptyStrToNone``-shaped field produces a
+    redundant ``none_required`` alongside the real validator failure when a
+    non-empty value fails the ``T`` arm's constraint.
+    """
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES) or is_bearer_authenticated(
+        request
+    ):
+        return JSONResponse(
+            {"detail": jsonable_encoder(exc.errors())},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+
+    messages.from_validation_error(
+        request,
+        exc,
+        "Validation error",
+        exclude_types=("none_required",),
+    )
     return RedirectResponse(
         request.headers.get("referer", "/"), status_code=status.HTTP_303_SEE_OTHER
     )

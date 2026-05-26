@@ -445,7 +445,7 @@ SYSTEM_TASKS = [
         created_by=SYSTEM_USER,
     ),
     Task(
-        name="inventory-sync",
+        name="inventory-sync",  # keep in sync with INVENTORY_SYNC_TASK_NAME in app.sep.plugins.inventory.models
         data={
             "callable": "app.sep.plugins.inventory.sync.run_scheduled_inventory_sync",
             "target": "local",

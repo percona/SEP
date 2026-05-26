@@ -31,6 +31,9 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const ChecksumsPlugin = lazy(() =>
   import('@sep/plugin-checksums').then((m) => ({ default: m.ChecksumsPlugin })),
 );
+const MysqlBackupsPlugin = lazy(() =>
+  import('@sep/plugin-mysql-backups').then((m) => ({ default: m.MysqlBackupsPlugin })),
+);
 const AtwPlugin = lazy(() => import('@sep/plugin-atw').then((m) => ({ default: m.AtwPlugin })));
 const DipperPlugin = lazy(() =>
   import('@sep/plugin-dipper').then((m) => ({ default: m.DipperPlugin })),
@@ -40,6 +43,17 @@ const InventoryPlugin = lazy(() =>
 );
 const SnippetsPluginLazy = lazy(() =>
   import('@sep/plugins-snippets').then((m) => ({ default: m.SnippetsPlugin })),
+);
+const AlertTroubleshootingPlugin = lazy(() =>
+  import('@sep/plugin-alert-troubleshooting').then((m) => ({
+    default: m.AlertTroubleshootingPlugin,
+  })),
+);
+const TasksPlugin = lazy(() =>
+  import('@sep/plugin-tasks').then((m) => ({ default: m.TasksPlugin })),
+);
+const BackupMongoPlugin = lazy(() =>
+  import('@sep/plugin-backup-mongo').then((m) => ({ default: m.BackupMongoPlugin })),
 );
 const MumPlugin = lazy(() =>
   import('@sep/plugin-mum').then((m) => ({ default: m.MumPlugin })),
@@ -68,24 +82,25 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'inventory/*', element: <InventoryPlugin /> },
-          { path: 'tasks/*', element: <PlaceholderPage /> },
+          { path: 'tasks/*', element: <TasksPlugin /> },
           { path: 'snippets/*', element: <SnippetsPlugin /> },
           { path: 'atw/*', element: <AtwPlugin /> },
-          { path: 'mum/*', element: <MumPlugin /> },
           { path: 'dipper/*', element: <DipperPlugin /> },
           { path: 'alerts/templates', element: <PlaceholderPage /> },
-          { path: 'alerts/troubleshooting', element: <PlaceholderPage /> },
+          { path: 'alerts/troubleshooting/*', element: <AlertTroubleshootingPlugin /> },
           { path: 'schema-change/alters', element: <PlaceholderPage /> },
           // Checksums — schema-driven plugin (handles its own sub-routes)
           { path: 'plugins/checksums/*', element: <ChecksumsPlugin /> },
           { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
+          { path: 'plugins/mysql_backups/*', element: <MysqlBackupsPlugin /> },
           { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
           { path: 'backups/mysql', element: <PlaceholderPage /> },
-          { path: 'backups/mongodb', element: <PlaceholderPage /> },
+          { path: 'backups/mongodb/*', element: <BackupMongoPlugin /> },
           { path: 'backups/postgresql', element: <PlaceholderPage /> },
           { path: 'archive', element: <PlaceholderPage /> },
           { path: 'reports', element: <PlaceholderPage /> },
           { path: 'settings', element: <PlaceholderPage /> },
+          { path: 'mum/*', element: <MumPlugin /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

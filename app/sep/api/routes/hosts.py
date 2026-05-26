@@ -20,15 +20,15 @@ React frontend can populate its host selector through SEP rather than calling
 the Tasks and Inventory APIs directly.
 """
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.core.exceptions import HTTPBadGatewayException
 from app.sep.api.host_resolution import address_to_name_index
+from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.deps import InventoryAPI, TaskAPI
 
 router = APIRouter()
-
-UPSTREAM_ERROR_HEADER = "X-Sep-Upstream-Error"
 
 
 class HostResponse(BaseModel):
@@ -49,27 +49,25 @@ class HostResponse(BaseModel):
     address: str
 
 
-@router.get("/", response_model=list[HostResponse])
+@router.get(
+    "/",
+    responses=UPSTREAM_TASKS_502_RESPONSE,
+)
 async def list_hosts(
-    response: Response,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
 ) -> list[HostResponse]:
     """Return executor hosts merged with inventory display names.
 
     Call ``tasks_api.get('/hosts/')`` for executor targets and the Inventory
-    API for display-name enrichment. Both upstream calls degrade gracefully
-    — Inventory failures cause hosts without a match to keep the raw
-    executor node name, and Tasks-API failures cause an empty list to be
-    returned rather than a hard error. Tasks-API failures (HTTP and
-    connection errors alike) additionally set the ``X-Sep-Upstream-Error``
-    response header so the frontend can surface the failure detail through
-    its notification system without breaking the ``200 []`` response contract
-    that lets the dropdown render "No hosts available".
+    API for display-name enrichment. The two upstream calls degrade
+    differently: Inventory failures cause hosts without a match to keep the
+    raw executor node name (the response still returns ``200``), but a
+    Tasks-API failure (HTTP or connection error) is re-raised as
+    :class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception
+    handler emits a ``502`` JSON body ``{"detail": "<upstream detail>"}`` that
+    the React frontend surfaces through its React Query error slot.
 
-    :param response: The outgoing response, used to attach the upstream
-        error header on Tasks-API failure.
-    :type response: Response
     :param tasks_api: The Tasks API client used to fetch executor hosts.
     :type tasks_api: TaskAPI
     :param inventory_api: The Inventory API client used to enrich the hosts
@@ -78,13 +76,15 @@ async def list_hosts(
     :return: Sorted list of hosts, each with executor id, friendly name,
         and network address.
     :rtype: list[HostResponse]
+    :raises HTTPBadGatewayException: If the Tasks API call fails with an
+        ``HTTPException`` (e.g. an upstream non-2xx response) or an
+        ``OSError`` (e.g. a connection failure).
     """
     try:
-        executor_hosts: dict[str, str] = await tasks_api.get("/hosts/")
+        executor_hosts = await tasks_api.get("/hosts/")
     except (HTTPException, OSError) as exc:
         detail = getattr(exc, "detail", str(exc))
-        response.headers[UPSTREAM_ERROR_HEADER] = str(detail)
-        return []
+        raise HTTPBadGatewayException(detail=str(detail)) from exc
 
     try:
         inventory_response = await inventory_api.get("/", params={"limit": 0})

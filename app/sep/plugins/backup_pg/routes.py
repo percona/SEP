@@ -16,17 +16,17 @@
 """Define routes for the backups plugin."""
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 import yaml
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
-from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
+from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -39,8 +39,9 @@ from app.sep.deps import (
 )
 from app.sep.plugins.backup_pg.deps import (
     BackupGeneratedTask,
+    BackupsIndexContext,
     BackupsTask,
-    get_backups_index_context,
+    CheckConnectivityFlag,
     parse_backup_task_data,
 )
 from app.sep.plugins.backup_pg.models import BackupType
@@ -54,7 +55,7 @@ templates = sep_settings.TEMPLATES
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def pg_backups_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
+    context: BackupsIndexContext,
 ) -> HTMLResponse:
     """Homepage of PG backups plugin."""
     return templates.TemplateResponse(
@@ -72,7 +73,7 @@ async def pg_backups_create(
     task: BackupGeneratedTask,
     task_api: TaskAPI,
     *,
-    check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
+    check_connectivity: CheckConnectivityFlag,
 ) -> RedirectResponse:
     """Create new backups task."""
     logger.debug("Create backups task: %s", task)
@@ -121,9 +122,10 @@ async def pg_backups_detail(
         "port": server_config.get("PORT") or 3306,
         "backup_type": BackupType(server_config["BACKUP_TYPE"]).name,
         "entities": {entity.name: entity.value for entity in decoded_entities},
-        "delete_url": request.url_for("backups_delete", task_name=task.name),
+        "delete_url": request.url_for("pg_backups_delete", task_name=task.name),
         "config": task_config.get("ALL_SERVERS", {}),
         "is_edit_enabled": not task.protected,
+        "is_edit_form_present": False,
         "alert_on_fail": task.alert_on_fail,
     }
 
@@ -188,3 +190,26 @@ async def pg_backups_execute(
     )
     task_path = request.url_for("pg_backups_detail", task_name=task.name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/{task_name}/delete",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=RedirectResponse,
+)
+async def pg_backups_delete(
+    task: BackupsTask,
+    tasks_api: TaskAPI,
+) -> RedirectResponse:
+    """Delete backups task.
+
+    :param task: The PG backups task to delete, resolved by the
+        ``BackupsTask`` dependency from the ``task_name`` path param.
+    :type task: BackupsTask
+    :param tasks_api: The tasks-API client used to issue the delete call.
+    :type tasks_api: TaskAPI
+    :return: HTTP 303 redirect to the plugin index.
+    :rtype: RedirectResponse
+    """
+    await tasks_api.delete(f"/{task.name}")
+    return RedirectResponse("/backup_pg", status_code=status.HTTP_303_SEE_OTHER)

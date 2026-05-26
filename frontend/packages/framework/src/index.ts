@@ -15,6 +15,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+// Constants
+export { SEP_TABLE_CLASS } from './constants';
+
 // Components
 export { SchemaFormRenderer } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
@@ -27,6 +30,7 @@ export {
   PluginSchedulePage,
 } from './components/SchemaDrivenPlugin';
 export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
+export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
@@ -34,7 +38,8 @@ export { SchemaSelector } from './components/SchemaSelector';
 export type { SchemaSelectorProps } from './components/SchemaSelector';
 export { TableSelector } from './components/TableSelector';
 export type { TableSelectorProps } from './components/TableSelector';
-export { HostSelector } from './components/HostSelector';
+export { HostSelector, StandaloneHostSelector } from './components/HostSelector';
+export type { StandaloneHostSelectorProps } from './components/HostSelector';
 export {
   TaskLogViewer,
   LogStepTabs,
@@ -55,11 +60,28 @@ export type {
   TaskHistoryStatus,
   PaginatedTaskHistory,
 } from './components/TaskHistoryTable';
+export { SnippetExecutionAccordion } from './components/SnippetExecutionAccordion';
+export type { SnippetExecutionAccordionProps } from './components/SnippetExecutionAccordion';
 export { ChainBuilder } from './components/ChainBuilder';
 
 export type { ChainBuilderProps, ChainValue, AvailableTask } from './components/ChainBuilder';
 export { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
+export {
+  useScheduledTasksForPlugin,
+  useCreateScheduledTask,
+  useUpdateScheduledTask,
+  useDeleteScheduledTask,
+  type PeriodicTaskResponse,
+  type PeriodicTaskCreate,
+  type PeriodicTaskUpdate,
+  type CrontabSchedule,
+  type IntervalSchedule,
+  type PeriodicTaskExecuteRequest,
+} from './components/ScheduledTasksPanel/hooks';
+export { default as DetailSyntaxHighlighter } from './components/SchemaDrivenPlugin/DetailSyntaxHighlighter';
+export { detailSyntaxBlockSx } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
+export type { DetailSyntaxLanguage } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
 
 // Hooks
 export { useServices, useSchemas, useTables, useHosts } from './hooks';
@@ -69,7 +91,6 @@ export type {
   SchemaOption,
   TableOption,
   HostOption,
-  HostsResult,
   UseServicesOptions,
   UseSchemasOptions,
   UseTablesOptions,
@@ -82,6 +103,7 @@ export {
   useLogDownload,
   useTaskHistory,
   useTaskHistoryByName,
+  useTaskHistoryByNames,
   useStopTaskHistory,
   useSnippetPluginExecution,
   useSnippetPluginSchema,
@@ -114,8 +136,15 @@ export type { SnippetExecutionFormPayload } from './utils/snippetFormSubmission'
 
 export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetPlugin';
 
+export { resolvePath } from './utils/resolvePath';
+
 export {
   SNIPPETS_PLUGINS_API_BASE,
+  SNIPPET_PLUGIN_PER_SNIPPET_BASE,
+  snippetPluginApprovalPath,
+  snippetPluginDownloadPath,
   snippetPluginExecutePath,
+  snippetPluginHistoryPath,
+  snippetPluginPreviewPath,
   snippetPluginSchemaPath,
 } from './snippetPluginPaths';

@@ -15,21 +15,31 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useContext, useMemo } from 'react';
 import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
+// UNSAFE_DataRouterContext is an unstable react-router API — pinned to react-router-dom ^7.6.0; review on version bumps.
+import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import type { PluginCapabilities } from '@sep/api';
+import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
 import { FieldRenderer } from './fields';
 import { useConditionalField } from './hooks/useConditionalField';
 import { useCardinalityRules } from './hooks/useCardinalityRules';
 import { useFailRules } from './hooks/useFailRules';
+import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard';
 import { coerceFormValues } from './utils/validationMapper';
 import type { FormSection, PluginField } from './types';
 
@@ -152,6 +162,49 @@ export interface SchemaFormRendererProps {
   defaultValues?: Record<string, unknown>;
   /** Server-side error to show above the form (e.g. API failure from the caller's mutation). */
   submitError?: string | null;
+  /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
+  capabilities?: PluginCapabilities;
+}
+
+/**
+ * Blocks in-app navigation while `isGuarded` is true.
+ * Rendered only when the component tree is inside a Data Router, so `useBlocker`
+ * never runs in contexts where it would throw (legacy MemoryRouter, test renders
+ * without createMemoryRouter, etc.).
+ */
+function UnsavedChangesBlocker({ isGuarded }: { isGuarded: boolean }) {
+  const shouldBlock = useCallback(
+    ({
+      currentLocation,
+      nextLocation,
+    }: {
+      currentLocation: { pathname: string };
+      nextLocation: { pathname: string };
+    }) => isGuarded && currentLocation.pathname !== nextLocation.pathname,
+    [isGuarded],
+  );
+  const blocker = useBlocker(shouldBlock);
+
+  return (
+    <Dialog
+      open={blocker.state === 'blocked'}
+      onClose={() => blocker.reset?.()}
+      aria-labelledby="unsaved-dialog-title"
+    >
+      <DialogTitle id="unsaved-dialog-title">Unsaved changes</DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          You have unsaved changes. If you leave this page your changes will be lost.
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => blocker.reset?.()}>Stay</Button>
+        <Button onClick={() => blocker.proceed?.()} color="error" variant="outlined">
+          Discard changes
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 }
 
 /** Inner form body — lives inside FormProvider so it can call useFormContext / useCardinalityRules. */
@@ -161,8 +214,11 @@ function SchemaFormBody({
   submitLabel = 'Run',
   loading = false,
   submitError,
+  capabilities,
 }: SchemaFormRendererProps) {
   const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
+  const isGuarded = useUnsavedChangesGuard(submitError);
+  const inDataRouter = Boolean(useContext(UNSAFE_DataRouterContext));
   const allFields = useMemo(() => flattenFields(sections), [sections]);
   const beforeSubmitSections = useMemo(
     () => sections.filter((section) => !section.render_after_submit),
@@ -198,64 +254,79 @@ function SchemaFormBody({
   };
 
   return (
-    <Box
-      component="form"
-      onSubmit={handleSubmit(handleFormSubmit)}
-      noValidate
-      sx={{ maxWidth: 640 }}
-    >
-      {submitError && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {submitError}
-        </Alert>
-      )}
-      {hasInlineErrors && formState.isSubmitted && !submitError && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Fix the highlighted fields before submitting.
-        </Alert>
-      )}
+    <>
+      {inDataRouter && <UnsavedChangesBlocker isGuarded={isGuarded} />}
+      <Box
+        component="form"
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        sx={{ maxWidth: 640 }}
+      >
+        {submitError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {submitError}
+          </Alert>
+        )}
+        {hasInlineErrors && formState.isSubmitted && !submitError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Fix the highlighted fields before submitting.
+          </Alert>
+        )}
 
-      {beforeSubmitSections.map((section, idx) => (
-        <SectionRenderer
-          key={`${section.title}-${idx}`}
-          section={section}
-          idx={idx}
-          violations={violationsBySection.get(section) ?? []}
-        />
-      ))}
+        {beforeSubmitSections.map((section, idx) => (
+          <SectionRenderer
+            key={`${section.title}-${idx}`}
+            section={section}
+            idx={idx}
+            violations={violationsBySection.get(section) ?? []}
+          />
+        ))}
 
-      <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
-        {submitLabel}
-      </Button>
+        {capabilities?.alert_on_fail && (
+          <Box sx={{ mb: 2 }}>
+            <AlertOnFailField />
+          </Box>
+        )}
 
-      {afterSubmitSections.length > 0 ? (
-        <Box sx={{ mt: 3 }}>
-          {afterSubmitSections.map((section, idx) => (
-            <SectionRenderer
-              key={`${section.title}-after-${idx}`}
-              section={section}
-              idx={idx}
-              violations={violationsBySection.get(section) ?? []}
-            />
-          ))}
-        </Box>
-      ) : null}
-    </Box>
+        <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
+          {submitLabel}
+        </Button>
+
+        {afterSubmitSections.length > 0 ? (
+          <Box sx={{ mt: 3 }}>
+            {afterSubmitSections.map((section, idx) => (
+              <SectionRenderer
+                key={`${section.title}-after-${idx}`}
+                section={section}
+                idx={idx}
+                violations={violationsBySection.get(section) ?? []}
+              />
+            ))}
+          </Box>
+        ) : null}
+      </Box>
+    </>
   );
 }
 
 export function SchemaFormRenderer(props: SchemaFormRendererProps) {
-  const { sections, defaultValues } = props;
+  const { sections, defaultValues, capabilities } = props;
   const allFields = useMemo(() => flattenFields(sections), [sections]);
 
-  const formDefaults = useMemo(
-    () =>
-      allFields.reduce<Record<string, unknown>>((acc, field) => {
-        acc[field.name] = defaultValues?.[field.name] ?? fieldDefault(field);
-        return acc;
-      }, {}),
-    [allFields, defaultValues],
-  );
+  const formDefaults = useMemo(() => {
+    const defaults = allFields.reduce<Record<string, unknown>>((acc, field) => {
+      acc[field.name] = defaultValues?.[field.name] ?? fieldDefault(field);
+      return acc;
+    }, {});
+    if (capabilities?.alert_on_fail) {
+      // Capability-injected fields are not in allFields, so coerceFormValues leaves them
+      // unchanged (extra keys pass through as-is via the initial spread). The value seeded
+      // here must therefore already be the correct submit type — boolean for alert_on_fail.
+      // If more capability fields are added, ensure they are pre-coerced at this point.
+      defaults[ALERT_ON_FAIL_FIELD_NAME] = defaultValues?.[ALERT_ON_FAIL_FIELD_NAME] ?? false;
+    }
+    return defaults;
+  }, [allFields, defaultValues, capabilities]);
 
   const methods = useForm<Record<string, unknown>>({ defaultValues: formDefaults });
 

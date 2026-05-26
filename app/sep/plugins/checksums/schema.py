@@ -23,6 +23,9 @@ from app.sep.plugins.framework.schema import (
     ChoiceField,
     Column,
     ColumnFormat,
+    DetailField,
+    DetailSection,
+    DetailView,
     FormSection,
     HostField,
     ListView,
@@ -163,16 +166,12 @@ checksums_schema = PluginSchema(
                     default="150",
                     description="Pause until replica lag falls below this value (seconds)",
                 ),
-                BoolField(
-                    name="alert_on_fail",
-                    label="Alert on Failure",
-                    description="Send an alert if the task fails",
-                    default=False,
-                ),
             ],
         ),
     ],
-    capabilities=Capabilities(chaining=True, alert_on_fail=True, scheduling=True),
+    capabilities=Capabilities(
+        chaining=True, alert_on_fail=True, scheduling=True, stats=True
+    ),
     list_view=ListView(
         columns=[
             Column(key="name", label="Name", sortable=True),
@@ -180,6 +179,18 @@ checksums_schema = PluginSchema(
             Column(key="service_type", label="Service Type", format=ColumnFormat.CHIP),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
             Column(key="created_by", label="Created By"),
+        ],
+    ),
+    detail_view=DetailView(
+        sections=[
+            DetailSection(
+                title="Execution",
+                fields=[
+                    DetailField(path="data.meta.command", label="Command"),
+                    DetailField(path="data.meta.args", label="Args"),
+                    DetailField(path="data.meta.target", label="Target"),
+                ],
+            ),
         ],
     ),
 )
