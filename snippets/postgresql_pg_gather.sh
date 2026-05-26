@@ -187,7 +187,7 @@ if [[ -n $SCRIPT_ARG ]]; then
 else
     echo "Downloading gather.sql from $GATHER_URL ..." >&2
     if command -v curl > /dev/null 2>&1; then
-        if ! curl -fsSL "$GATHER_URL" -o "$GATHER_SCRIPT"; then
+        if ! curl -fsSL --connect-timeout 10 --max-time 300 "$GATHER_URL" -o "$GATHER_SCRIPT"; then
             echo "Error: failed to download gather.sql via curl." >&2
             exit 1
         fi
