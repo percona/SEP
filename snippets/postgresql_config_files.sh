@@ -328,16 +328,26 @@ mkdir -p "$STAGE_DIR"
 
 copy_into_stage() {
     local src="$1"
+    local src_abs
+    src_abs=$(readlink -f "$src" 2> /dev/null || true)
+    if [[ -z $src_abs ]]; then
+        echo "Warning: could not resolve '$src'; skipping." >&2
+        return
+    fi
     local rel
     # Preserve directory layout under the stage dir so multiple files with the
     # same basename (e.g. several included *.conf shards) don't collide.
-    rel="${src#/}"
+    rel="${src_abs#/}"
+    if [[ $rel == .. || $rel == ../* || $rel == */../* ]]; then
+        echo "Warning: refusing to stage path outside root: '$src'" >&2
+        return
+    fi
     local dst="$STAGE_DIR/$rel"
     mkdir -p "$(dirname "$dst")"
     if [[ $MASK -eq 1 ]]; then
-        mask_file "$src" "$dst"
+        mask_file "$src_abs" "$dst"
     else
-        cp "$src" "$dst"
+        cp "$src_abs" "$dst"
     fi
 }
 
