@@ -535,14 +535,18 @@ class TestResolveDestinationTables:
         mock_remote_api.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_whitespace_table_name_falls_through_to_dest_file(
-        self, mock_remote_api
-    ):
-        """Whitespace dest_table_name rstrips to empty, falls to dest_file."""
+    async def test_empty_table_name_falls_through_to_dest_file(self, mock_remote_api):
+        """Empty dest_table_name (not set) falls through to dest_file.
+
+        Note: the DSL CardinalityRule treats whitespace-only strings as
+        "present" (unlike the old rstrip()-based validators), so this test
+        uses an empty string instead. Whitespace-only dest_table_name with
+        dest_file now raises ValidationError at form-construction time.
+        """
         mock_remote_api.get = AsyncMock()
         form = _make_form_with_source_ids(
             dest_table_id=None,
-            dest_table_name="   ",
+            dest_table_name="",
             dest_file="/tmp/archive.csv",
         )
 

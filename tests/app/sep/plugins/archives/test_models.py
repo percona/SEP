@@ -473,3 +473,8 @@ class TestArchivesCreateEmptyStringCoercion:
                 dest_port="abc",
             )
         assert "valid integer" in str(exc_info.value)
+
+
+def test_archives_create_has_conditional_rules_plan():
+    """ArchivesCreate must have a non-None __conditional_rules_plan__ after decoration."""
+    assert ArchivesCreate.__conditional_rules_plan__ is not None

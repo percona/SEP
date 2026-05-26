@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Body, Depends, Form
 
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
@@ -264,6 +264,99 @@ async def build_archives_task_payload(
 
 
 ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload)]
+
+
+async def build_archives_api_task_payload(
+    # SEP-1007: JSON POST uses Body(); keep separate dep to avoid mixing
+    # Form() and Body() parameter types in the same route signature.
+    form: Annotated[ArchivesCreate, Body()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the archive task payload from a JSON body.
+
+    Identical logic to :func:`build_archives_task_payload` but parses the
+    request as a JSON body (``Body()``) instead of a form (``Form()``).
+
+    :param form: The JSON body parsed as an ArchivesCreate model.
+    :type form: ArchivesCreate
+    :param inventory_api: The Inventory API to resolve entity IDs.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed ``TaskWrite`` object.
+    :rtype: TaskWrite
+    """
+    service = await get_created_entity(
+        inventory_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        form.service_id,
+        type=ServiceTypeEnum.MYSQL,
+    )
+
+    purge_item_data = {
+        **form.model_dump(
+            include={
+                "alias",
+                "source_query",
+                "where",
+                "swap_drop",
+                "swp_table_suffix",
+                "use_index",
+                "extra_args",
+                "limit",
+                "sleep",
+                "disable_binlog",
+                "disable_bulk_insert",
+                "delete_data",
+            },
+            by_alias=True,
+        ),
+    }
+
+    source_data, _ = await _resolve_source_tables(form, inventory_api, service.id)
+    purge_item_data.update(source_data)
+
+    dest_tables = await _resolve_destination_tables(form, inventory_api)
+    purge_item_data.update(dest_tables)
+
+    dest_host_db = await _resolve_destination_host_and_db(form, inventory_api)
+    purge_item_data.update(dest_host_db)
+
+    purge_config = PurgeConfig(
+        all=PurgeConfigAll(
+            source_host=service.node.address,
+            source_port=service.port or DEFAULT_MYSQL_PORT,
+        ),
+        purge_list=[purge_item_data],
+        alias=form.alias,
+    )
+    payload_path = Path(__file__).parent / "payload"
+    return TaskWrite(
+        name=form.alias,
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.ARCHIVER,
+        data={
+            "task": "run-python",
+            "meta": {
+                "config": yaml.dump(
+                    purge_config.model_dump(
+                        mode="json", by_alias=True, exclude_none=True
+                    )
+                ),
+                "target": form.hostname,
+                "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
+                "_service_name": service.name,
+                CONNECTIVITY_META_HOST_KEY: service.node.address,
+                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
+                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
+            },
+            "payload": f"file://{payload_path}",
+        },
+        alert_on_fail=form.alert_on_fail,
+    )
+
+
+ArchivesApiGeneratedTask = Annotated[
+    TaskWrite, Depends(build_archives_api_task_payload)
+]
 
 
 async def get_archives_task(

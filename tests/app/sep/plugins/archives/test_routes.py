@@ -109,6 +109,7 @@ def test_archives_index(
     response = test_client.get("/archives/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
+    assert response.headers.get("deprecation") == "true"
 
 
 @pytest.mark.usefixtures("_mock_archives_task_payload")

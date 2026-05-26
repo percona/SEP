@@ -49,6 +49,9 @@ const AlertTroubleshootingPlugin = lazy(() =>
 const TasksPlugin = lazy(() =>
   import('@sep/plugin-tasks').then((m) => ({ default: m.TasksPlugin })),
 );
+const ArchivesPlugin = lazy(() =>
+  import('@sep/plugin-archives').then((m) => ({ default: m.ArchivesPlugin })),
+);
 
 function SnippetsPlugin() {
   const { isAdmin } = useAuth();
@@ -87,7 +90,7 @@ export const router = createBrowserRouter([
           { path: 'backups/mysql', element: <PlaceholderPage /> },
           { path: 'backups/mongodb', element: <PlaceholderPage /> },
           { path: 'backups/postgresql', element: <PlaceholderPage /> },
-          { path: 'archive', element: <PlaceholderPage /> },
+          { path: 'archive/*', element: <ArchivesPlugin /> },
           { path: 'reports', element: <PlaceholderPage /> },
           { path: 'settings', element: <PlaceholderPage /> },
           { path: '*', element: <NotFoundPage /> },

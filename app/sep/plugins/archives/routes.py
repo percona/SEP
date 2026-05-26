@@ -43,10 +43,11 @@ from app.sep.plugins.archives.deps import (
     get_archives_index_context,
 )
 from app.sep.plugins.archives.models import PurgeConfigItem
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 
