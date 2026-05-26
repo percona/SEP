@@ -44,6 +44,8 @@ from app.sep.plugins.framework.rules import (
     apply_conditional_rules,
     CardinalityRule,
     ConditionalRulesModel,
+    Contains,
+    contains,
     Equals,
     F,
     FailRule,
@@ -510,6 +512,27 @@ class TestPredicateEvaluation:
         assert predicate.evaluate(_Instance(a=None, b="")) is True
         assert predicate.evaluate(_Instance(a="x", b="")) is False
 
+    def test_bool_false_is_treated_as_absent(self) -> None:
+        """``False`` does not count as present.
+
+        Bool defaults do not trip ``forbidden=`` :class:`FieldGate` entries on
+        :class:`BoolField`. Only an explicit ``True`` toggle is considered set,
+        matching the ``FailRule(fail_when=truthy(name))`` convention used for
+        mode bools.
+        """
+        assert any_present("a").evaluate(_Instance(a=False)) is False
+        assert any_present("a").evaluate(_Instance(a=True)) is True
+        assert none_present("a").evaluate(_Instance(a=False)) is True
+        assert none_present("a").evaluate(_Instance(a=True)) is False
+
+    def test_int_zero_remains_present(self) -> None:
+        """Numeric ``0`` stays present even though it is falsy.
+
+        Int fields with a meaningful zero value (e.g.
+        ``rsync_compression_level=0``) still satisfy presence-based gates.
+        """
+        assert any_present("a").evaluate(_Instance(a=0)) is True
+
     def test_all_truthy_evaluates_python_truthiness(self) -> None:
         """All truthy evaluates python truthiness."""
         predicate = all_truthy("a", "b")
@@ -562,6 +585,55 @@ class TestPredicateEvaluation:
         assert predicate.evaluate(_Instance(a=1, b=0, c=0)) is False
         assert predicate.evaluate(_Instance(a=0, b=1, c=1)) is False
 
+    def test_contains_matches_list_member(self) -> None:
+        """Contains matches when value is in the list."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.evaluate(_Instance(upload=["s3", "rsync"])) is True
+        assert predicate.evaluate(_Instance(upload=["rsync"])) is False
+
+    def test_contains_with_empty_or_none_container(self) -> None:
+        """Empty list and ``None`` container both evaluate False."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.evaluate(_Instance(upload=[])) is False
+        assert predicate.evaluate(_Instance(upload=None)) is False
+
+    def test_contains_normalizes_enum_member(self) -> None:
+        """An enum literal matches its underlying value inside the list."""
+
+        class _Provider(IntEnum):
+            S3 = 1
+            RSYNC = 2
+
+        predicate = Contains("upload", _Provider.S3)
+
+        assert predicate.evaluate(_Instance(upload=[_Provider.S3])) is True
+        assert predicate.evaluate(_Instance(upload=[1])) is True
+        assert predicate.evaluate(_Instance(upload=[_Provider.RSYNC])) is False
+
+    def test_contains_handles_non_iterable_container(self) -> None:
+        """A non-iterable / scalar value at the field returns False rather than raising."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.evaluate(_Instance(upload=42)) is False
+
+    def test_contains_rejects_str_bytes_and_mapping(self) -> None:
+        """str/bytes/mapping containers return False — list-membership only, matching the frontend."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.evaluate(_Instance(upload="s3")) is False
+        assert predicate.evaluate(_Instance(upload="s3rsync")) is False
+        assert predicate.evaluate(_Instance(upload=b"s3")) is False
+        assert predicate.evaluate(_Instance(upload={"s3": True})) is False
+
+    def test_contains_to_dict_and_referenced_fields(self) -> None:
+        """Wire shape is ``{contains: {field: value}}`` and references the field."""
+        predicate = contains("upload", "s3")
+
+        assert predicate.to_dict() == {"contains": {"upload": "s3"}}
+        assert predicate.referenced_fields() == {"upload"}
+
 
 # ── Layer A: edge cases for field presence semantics ────────────────────
 
@@ -599,13 +671,19 @@ class TestEdgeCases:
         assert (F("x") == 0).evaluate(zero) is True
         assert (F("x") == 0).evaluate(unset) is False
 
-    def test_false_bool_distinguished_from_unset(self) -> None:
-        """False bool distinguished from unset."""
+    def test_false_bool_treated_as_absent_like_unset(self) -> None:
+        """``False`` is the unset bool default and so registers as absent.
+
+        Pins the convention used by ``forbidden=`` :class:`FieldGate` entries
+        on :class:`BoolField`: the gate fires only on an explicit ``True``
+        toggle, never on the legitimate default. ``truthy`` already returned
+        ``False`` here; presence-based predicates now agree.
+        """
         false = _Instance(x=False)
         unset = _Instance(x=None)
 
         assert truthy("x").evaluate(false) is False
-        assert any_present("x").evaluate(false) is True
+        assert any_present("x").evaluate(false) is False
         assert any_present("x").evaluate(unset) is False
 
     def test_empty_collection_treated_as_absent(self) -> None:
