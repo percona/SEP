@@ -386,7 +386,14 @@ async def get_username_mapping() -> dict[str, str]:
     try:
         users = await settings.CASDOOR.get_users()
         return {str(user["id"]): user["name"] for user in users}
-    except (TimeoutError, ValueError, KeyError, HTTPException, aiohttp.ClientError):
+    except (
+        AttributeError,
+        TimeoutError,
+        ValueError,
+        KeyError,
+        HTTPException,
+        aiohttp.ClientError,
+    ):
         logger.exception("Failed to get username mapping from Casdoor")
         return {}
 
