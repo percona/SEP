@@ -795,12 +795,20 @@ class Capabilities(SchemaBaseModel):
         execution statistics card on its detail page. Defaults to
         ``False``.
     :type stats: bool
+    :param pii_anonymization: Whether the plugin wires ``anonymize_mask``
+        into task execution and the React detail page should surface which
+        PII entities are anonymized. This is a UI-rendering gate — the
+        anonymization always happens when configured; this flag controls
+        whether the detail view renders the "PII Anonymization" section.
+        Defaults to ``False``.
+    :type pii_anonymization: bool
     """
 
     chaining: bool = False
     alert_on_fail: bool = False
     scheduling: bool = False
     stats: bool = False
+    pii_anonymization: bool = False
 
 
 def _collect_reference_errors(

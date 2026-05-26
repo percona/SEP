@@ -284,6 +284,32 @@ def test_dipper_schema_stats_capability_defaults_false():
     assert dipper_schema.capabilities.stats is False
 
 
+def test_capabilities_pii_anonymization_defaults_to_false():
+    """Default value of ``pii_anonymization`` flag must be ``False`` for backward compat."""
+    caps = Capabilities()
+    assert caps.pii_anonymization is False
+
+
+def test_capabilities_pii_anonymization_accepts_true():
+    """``pii_anonymization=True`` is a valid construction."""
+    caps = Capabilities(pii_anonymization=True)
+    assert caps.pii_anonymization is True
+
+
+def test_capabilities_serialization_round_trip_includes_pii_anonymization():
+    """``pii_anonymization`` survives ``model_dump`` / ``model_validate`` round trip."""
+    dumped = Capabilities(pii_anonymization=True).model_dump()
+    assert dumped["pii_anonymization"] is True
+    restored = Capabilities.model_validate({"pii_anonymization": True})
+    assert restored.pii_anonymization is True
+
+
+def test_capabilities_omitted_pii_anonymization_in_payload_defaults_false():
+    """Payload missing the ``pii_anonymization`` key validates to ``False``."""
+    caps = Capabilities.model_validate({})
+    assert caps.pii_anonymization is False
+
+
 @pytest.mark.parametrize(
     ("field_cls", "field_type", "extra_kwargs"),
     [

@@ -3873,6 +3873,10 @@ export interface components {
      *         execution statistics card on its detail page. Defaults to
      *         ``False``.
      *     :type stats: bool
+     *     :param pii_anonymization: Whether the plugin wires anonymize_mask into
+     *         task execution and the React detail page should surface which PII
+     *         entities are anonymized. Defaults to ``False``.
+     *     :type pii_anonymization: bool
      */
     Capabilities: {
       /**
@@ -3895,6 +3899,11 @@ export interface components {
        * @default false
        */
       stats: boolean;
+      /**
+       * Pii Anonymization
+       * @default false
+       */
+      pii_anonymization: boolean;
     };
     /**
      * CardinalityRule
@@ -6427,6 +6436,8 @@ export interface components {
       created_by: string | null;
       /** Last Updated By */
       last_updated_by: string | null;
+      /** Anonymized Entities */
+      anonymized_entities: string[];
     };
     /**
      * TextAreaField
