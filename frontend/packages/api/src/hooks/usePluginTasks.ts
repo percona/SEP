@@ -26,7 +26,19 @@ import { ApiError } from '../errors';
 // so the fallback branches are dead-code-eliminated in real production.
 const MOCK_FALLBACKS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true';
 
-function isBackendUnavailable(error: unknown): boolean {
+/**
+ * Predicate used by the mock-fallback gate: returns ``true`` only when the
+ * failure looks like the backend is unreachable, never for deterministic 4xx
+ * responses. Exported for tests; not part of the public hook surface.
+ *
+ * 502 is intentionally treated as "backend unavailable" here even though
+ * ``sepRetry`` short-circuits on it — the two predicates serve different
+ * goals: ``sepRetry`` wants to stop hammering a known-bad gateway, while this
+ * gate decides whether to substitute mock data in dev builds. A 502 from
+ * ``/api/sep/*`` means the upstream Tasks-API is unreachable, which is
+ * exactly the dev-without-backend scenario the mock fallback targets.
+ */
+export function isBackendUnavailable(error: unknown): boolean {
   if (error instanceof ApiError) {
     return error.kind === 'network' || (error.kind === 'http' && (error.status ?? 0) >= 500);
   }
@@ -43,6 +55,22 @@ function isBackendUnavailable(error: unknown): boolean {
  * preview target). Real production bundles never use the fallback.
  */
 
+/**
+ * Plugin task list endpoint shape during the multi-plugin migration:
+ * - Legacy plugins return `T[]` directly.
+ * - Migrated plugins (e.g. mysql_backups) return `PaginatedResponse<T>`.
+ *
+ * The hook unwraps both shapes to `T[]` so call sites stay stable.
+ */
+type PluginTasksResponse<T> = T[] | { items: T[] | null };
+
+export function unwrapTasks<T>(data: PluginTasksResponse<T> | null | undefined): T[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  return data?.items ?? [];
+}
+
 export function usePluginTasks<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
@@ -53,8 +81,8 @@ export function usePluginTasks<T extends Record<string, unknown>>(
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<T[]>(`/plugins/${pluginName}/`);
-        return data;
+        const { data } = await apiClient.get<PluginTasksResponse<T>>(`/plugins/${pluginName}/`);
+        return unwrapTasks(data);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           return mockTasks;
@@ -125,6 +153,17 @@ function entityQueriesRootKey(pluginName: string) {
   return ['plugins', pluginName, 'entity'] as const;
 }
 
+/**
+ * Build a per-item URL path for a multi-entity plugin endpoint.
+ *
+ * ``id`` segments are always URL-encoded so callers cannot smuggle path
+ * traversal (``"../foo"``) or sub-paths (``"a/b"``) into the request via a
+ * misbehaving backend or attacker-controlled JSON.
+ */
+export function buildEntityItemPath(pluginName: string, entityName: string, id: string): string {
+  return `/plugins/${pluginName}/${entityName}/${encodeURIComponent(id)}`;
+}
+
 /** List rows for one entity of a multi-entity plugin (GET ``/plugins/{name}/{entity}/``). */
 export function usePluginEntityList<T extends Record<string, unknown>>(
   pluginName: string,
@@ -162,7 +201,9 @@ export function usePluginEntityDetail<T extends Record<string, unknown>>(
     enabled: options?.enabled !== false && !!itemId,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<T>(`/plugins/${pluginName}/${entityName}/${itemId}`);
+        const { data } = await apiClient.get<T>(
+          buildEntityItemPath(pluginName, entityName, itemId!),
+        );
         return data;
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
@@ -210,7 +251,7 @@ export function useUpdatePluginEntity<T extends Record<string, unknown>>(
     mutationFn: async ({ id, values }) => {
       try {
         const { data } = await apiClient.put<T>(
-          `/plugins/${pluginName}/${entityName}/${id}`,
+          buildEntityItemPath(pluginName, entityName, id),
           values,
         );
         return data;
@@ -237,7 +278,7 @@ export function useDeletePluginEntity(
   return useMutation<void, Error, string>({
     mutationFn: async (id) => {
       try {
-        await apiClient.delete(`/plugins/${pluginName}/${entityName}/${id}`);
+        await apiClient.delete(buildEntityItemPath(pluginName, entityName, id));
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return;
