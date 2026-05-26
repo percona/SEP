@@ -17,7 +17,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-const PLUGIN_ROUTE = '/archive';
+const PLUGIN_ROUTE = '/plugins/archives';
 
 const PLUGIN_DISPLAY_NAME = 'Archives';
 
@@ -50,9 +50,9 @@ const MOCK_ARCHIVES_SCHEMA = {
           label: 'Archive type',
           required: true,
           choices: [
-            { value: 0, label: 'Purge Only' },
-            { value: 1, label: 'Swap Drop' },
-            { value: 2, label: 'Swap Archive Drop' },
+            { value: '0', label: 'Purge Only' },
+            { value: '1', label: 'Swap Drop' },
+            { value: '2', label: 'Swap Archive Drop' },
           ],
         },
       ],
@@ -65,15 +65,15 @@ const MOCK_ARCHIVES_SCHEMA = {
           name: 'where',
           label: 'WHERE clause',
           required: false,
-          requires: [{ when: { not_equals: { field: 'swap_drop', value: 1 } } }],
-          forbidden: [{ when: { equals: { field: 'swap_drop', value: 1 } } }],
+          requires: [{ when: { not_equals: { field: 'swap_drop', value: '1' } } }],
+          forbidden: [{ when: { equals: { field: 'swap_drop', value: '1' } } }],
         },
         {
           type: 'string',
           name: 'swp_table_suffix',
           label: 'Swap table suffix',
           required: false,
-          requires: [{ when: { equals: { field: 'swap_drop', value: 2 } } }],
+          requires: [{ when: { equals: { field: 'swap_drop', value: '2' } } }],
         },
       ],
     },

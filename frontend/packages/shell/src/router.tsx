@@ -90,7 +90,7 @@ export const router = createBrowserRouter([
           { path: 'backups/mysql', element: <PlaceholderPage /> },
           { path: 'backups/mongodb', element: <PlaceholderPage /> },
           { path: 'backups/postgresql', element: <PlaceholderPage /> },
-          { path: 'archive/*', element: <ArchivesPlugin /> },
+          { path: 'plugins/archives/*', element: <ArchivesPlugin /> },
           { path: 'reports', element: <PlaceholderPage /> },
           { path: 'settings', element: <PlaceholderPage /> },
           { path: '*', element: <NotFoundPage /> },

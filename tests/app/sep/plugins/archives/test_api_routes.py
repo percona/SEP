@@ -333,3 +333,50 @@ class TestArchivesApiConditionalRules422:
         # source identifier → should get 422 (validator 5: missing source).
         response = test_client.post("/api/plugins/archives/", json=body)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        detail = str(response.json().get("detail", "")).lower()
+        assert "source" in detail, (
+            f"Expected 'source' in 422 detail, got: {detail[:300]}"
+        )
+
+    def test_same_source_dest_table_names_returns_422(self, test_client):
+        """Validator 1b: identical source_table_name and dest_table_name → 422."""
+        body = build_valid_create_body(
+            source_db_id=None,
+            source_table_id=None,
+            source_db_name="mydb",
+            source_table_name="users",
+            dest_table_id=None,
+            dest_table_name="users",
+        )
+        response = test_client.post("/api/plugins/archives/", json=body)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, (
+            f"Expected 422, got {response.status_code}: {response.text[:500]}"
+        )
+        detail = str(response.json()["detail"]).lower()
+        assert (
+            "same" in detail
+            or "source_table_name" in detail
+            or "dest_table_name" in detail
+        ), f"Expected 'same' or table-name field in 422 detail, got: {detail[:300]}"
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            pytest.param("dest_host", "evil,host", id="dest-host-comma"),
+            pytest.param("dest_host", "host=value", id="dest-host-equals"),
+            pytest.param("dest_db_name", "key=value", id="dest-db-name-equals"),
+            pytest.param("dest_db_name", "a,b", id="dest-db-name-comma"),
+        ],
+    )
+    def test_dsn_delimiters_rejected(self, test_client, field: str, value: str):
+        """validate_no_dsn_delimiters: ',' or '=' in dest_host/dest_db_name → 422."""
+        body = build_valid_create_body(**{field: value})
+        response = test_client.post("/api/plugins/archives/", json=body)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, (
+            f"Expected 422 for {field}={value!r}, got {response.status_code}: "
+            f"{response.text[:500]}"
+        )
+        detail = str(response.json()["detail"]).lower()
+        assert "delimiter" in detail or "dsn" in detail or field in detail, (
+            f"Expected DSN-delimiter rejection mention in 422 detail, got: {detail[:300]}"
+        )

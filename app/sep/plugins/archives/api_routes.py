@@ -17,23 +17,28 @@
 
 Mounted at ``/api/plugins/archives/`` via ``plugins_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level; the ``schema_endpoint`` helper also pins ``IsApiAuthenticated`` per
-route for safety.
+level; per-route ``IsApiAuthenticated`` declarations are not repeated here.
 """
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
-from app.sep.deps import IsApiAuthenticated, TaskAPI
+from app.sep.deps import TaskAPI
 from app.sep.plugins.archives.deps import (
     ArchivesApiGeneratedTask,
     ArchivesTask,
 )
+from app.sep.plugins.archives.models import (
+    ArchivesCreateResponse,
+    ArchivesTaskResponse,
+)
 from app.sep.plugins.archives.schema import archives_schema
+from app.sep.plugins.framework import maybe_record_connectivity_warning
 from app.sep.plugins.framework.api import schema_endpoint
-from app.tasks.models import Task
+from app.tasks.models import Task, TaskOwner
 
 logger = logging.getLogger(__name__)
 
@@ -41,41 +46,57 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=archives_schema)
 
 
-@router.get("/", response_model=list[dict], dependencies=[IsApiAuthenticated])
-async def archives_api_list(tasks_api: TaskAPI) -> list[dict]:
+@router.get("/", response_model=list[ArchivesTaskResponse])
+async def archives_api_list(tasks_api: TaskAPI) -> list[ArchivesTaskResponse]:
     """List archive tasks."""
-    result = await tasks_api.get("/", params={"owner": "archiver"})
-    return result.get("items", [])
+    result = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
+    return [
+        ArchivesTaskResponse.model_validate(item) for item in result.get("items", [])
+    ]
 
 
-@router.get("/{task_name}", response_model=dict, dependencies=[IsApiAuthenticated])
-async def archives_api_detail(task: ArchivesTask) -> dict:
+@router.get("/{task_name}", response_model=ArchivesTaskResponse)
+async def archives_api_detail(task: ArchivesTask) -> ArchivesTaskResponse:
     """Retrieve a single archive task."""
-    return task.model_dump(mode="json")
+    return ArchivesTaskResponse.model_validate(task.model_dump())
 
 
 @router.post(
     "/",
-    response_model=dict,
+    response_model=ArchivesCreateResponse,
     status_code=http_status.HTTP_201_CREATED,
-    dependencies=[IsApiAuthenticated],
 )
 async def archives_api_create(
     task_write: ArchivesApiGeneratedTask,
     tasks_api: TaskAPI,
-) -> dict:
-    """Create an archive task from a JSON payload request body."""
+    *,
+    check_connectivity: Annotated[bool, Query()] = True,
+) -> ArchivesCreateResponse:
+    """Create an archive task from a JSON payload request body.
+
+    :param check_connectivity: Whether to verify the target database is
+        reachable after task creation. Defaults to ``True`` so callers that
+        omit the parameter still get a connectivity round-trip; pass
+        ``check_connectivity=false`` to opt out. Mirrors the asymmetric
+        default used by the checksums create flow (the Form path defaults
+        to ``False`` because HTML checkboxes omit the field when unchecked).
+    :type check_connectivity: bool
+    """
     logger.debug("Create archives task (JSON path): %s", task_write.name)
     created = await tasks_api.post("/", json=task_write.model_dump())
     task = Task.model_validate(created)
-    return task.model_dump(mode="json")
+    connectivity_warning = await maybe_record_connectivity_warning(
+        tasks_api,
+        task.data.get("meta", {}),
+        check_connectivity=check_connectivity,
+    )
+    return ArchivesCreateResponse(
+        **task.model_dump(),
+        connectivity_warning=connectivity_warning,
+    )
 
 
-@router.delete(
-    "/{task_name}",
-    status_code=http_status.HTTP_204_NO_CONTENT,
-    dependencies=[IsApiAuthenticated],
-)
+@router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def archives_api_delete(task: ArchivesTask, tasks_api: TaskAPI) -> None:
     """Delete an archive task."""
     await tasks_api.delete(f"/{task.name}")

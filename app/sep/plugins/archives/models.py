@@ -15,19 +15,21 @@
 
 """Define models for the Archives plugin."""
 
-from datetime import date
+from datetime import date, datetime
 from enum import IntEnum
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.sep.plugins.archives.schema import archives_schema
+from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.rules import (
     apply_conditional_rules,
     ConditionalRulesModel,
 )
+from app.tasks.models import TaskBackendEnum, TaskOwner
 
 
 class SwapDropEnum(IntEnum):
@@ -282,3 +284,65 @@ class PurgeConfig(BaseCaseInsensitiveModel):
 
     all: PurgeConfigAll
     purge_list: list[PurgeConfigItem]
+
+
+class ArchivesTaskResponse(BaseModel):
+    """Represent an Archives task in API responses.
+
+    Lean Pydantic projection of ``app.tasks.models.Task`` carrying only the
+    fields the React frontend consumes. Defined locally (not inherited from
+    ``Task``) to keep relationship attributes (``history``) out of the
+    serialised payload.
+
+    :param id: The task primary key.
+    :type id: int | None
+    :param name: The task name.
+    :type name: str
+    :param backend: The execution backend.
+    :type backend: TaskBackendEnum
+    :param owner: The plugin that owns the task.
+    :type owner: TaskOwner
+    :param data: Raw task data (``task``/``meta``/``payload``).
+    :type data: dict[str, Any]
+    :param is_template: Whether the task is a template definition.
+    :type is_template: bool
+    :param protected: Whether the task is protected from deletion.
+    :type protected: bool
+    :param alert_on_fail: Whether the task triggers an alert on failure.
+    :type alert_on_fail: bool
+    :param created_at: Creation timestamp.
+    :type created_at: datetime | None
+    :param updated_at: Last update timestamp.
+    :type updated_at: datetime | None
+    :param created_by: User that created the task.
+    :type created_by: str | None
+    :param last_updated_by: User that last updated the task.
+    :type last_updated_by: str | None
+    """
+
+    id: int | None = None
+    name: str
+    backend: TaskBackendEnum
+    owner: TaskOwner
+    data: dict[str, Any]
+    is_template: bool = False
+    protected: bool = False
+    alert_on_fail: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None
+
+
+class ArchivesCreateResponse(ArchivesTaskResponse):
+    """Represent the response body for ``POST /api/plugins/archives/``.
+
+    Extends :class:`ArchivesTaskResponse` with a connectivity-warning field
+    surfaced when the post-creation database probe fails or is skipped.
+
+    :param connectivity_warning: ``None`` when the probe passes, was opted
+        out, or the task meta lacks connectivity keys; populated otherwise.
+    :type connectivity_warning: ConnectivityWarning | None
+    """
+
+    connectivity_warning: ConnectivityWarning | None = None

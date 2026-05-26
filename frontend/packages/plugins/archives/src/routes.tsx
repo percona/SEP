@@ -19,9 +19,9 @@ import type { RouteObject } from 'react-router-dom';
 import { ArchivesPlugin } from './ArchivesPlugin';
 
 export const PLUGIN_NAME = 'archives';
-export const PLUGIN_BASE_PATH = '/archive';
+export const PLUGIN_BASE_PATH = '/plugins/archives';
 
 export const archivesRoute: RouteObject = {
-  path: 'archive/*',
+  path: 'plugins/archives/*',
   element: <ArchivesPlugin />,
 };

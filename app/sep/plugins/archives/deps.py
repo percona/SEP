@@ -176,110 +176,21 @@ async def _resolve_destination_host_and_db(
     return dest_data
 
 
-async def build_archives_task_payload(
-    form: Annotated[ArchivesCreate, Form()],
+async def _build_archives_payload(
+    form: ArchivesCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the archive task payload from form.
+    """Build the ``TaskWrite`` payload from a validated ``ArchivesCreate``.
 
-    Build the payload for an Archives task to be executed, including the
-    necessary command arguments for performing archive.
+    Shared core for both the form-bodied (Jinja2) and JSON-bodied (REST API)
+    entry points. SEP-1007: the two FastAPI dependency wrappers below remain
+    separate because mixing ``Form()`` and ``Body()`` parameter types in a
+    single route signature silently breaks request parsing; this helper holds
+    the body so the wrappers stay thin.
 
-    :param form: The form data for the Archives creation.
+    :param form: The validated form/body model for the Archives creation.
     :type form: ArchivesCreate
     :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object containing all the necessary
-        configuration to create the Archives task.
-    :rtype: TaskWrite
-    """
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        form.service_id,
-        type=ServiceTypeEnum.MYSQL,
-    )
-
-    purge_item_data = {
-        **form.model_dump(
-            include={
-                "alias",
-                "source_query",
-                "where",
-                "swap_drop",
-                "swp_table_suffix",
-                "use_index",
-                "extra_args",
-                "limit",
-                "sleep",
-                "disable_binlog",
-                "disable_bulk_insert",
-                "delete_data",
-            },
-            by_alias=True,
-        ),
-    }
-
-    source_data, _ = await _resolve_source_tables(form, inventory_api, service.id)
-    purge_item_data.update(source_data)
-
-    dest_tables = await _resolve_destination_tables(form, inventory_api)
-    purge_item_data.update(dest_tables)
-
-    dest_host_db = await _resolve_destination_host_and_db(form, inventory_api)
-    purge_item_data.update(dest_host_db)
-
-    purge_config = PurgeConfig(
-        all=PurgeConfigAll(
-            source_host=service.node.address,
-            source_port=service.port or DEFAULT_MYSQL_PORT,
-        ),
-        purge_list=[purge_item_data],
-        alias=form.alias,
-    )
-    payload_path = Path(__file__).parent / "payload"
-    return TaskWrite(
-        name=form.alias,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.ARCHIVER,
-        data={
-            "task": "run-python",
-            "meta": {
-                "config": yaml.dump(
-                    purge_config.model_dump(
-                        mode="json", by_alias=True, exclude_none=True
-                    )
-                ),
-                "target": form.hostname,
-                "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
-                "_service_name": service.name,
-                CONNECTIVITY_META_HOST_KEY: service.node.address,
-                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
-                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
-            },
-            "payload": f"file://{payload_path}",
-        },
-        alert_on_fail=form.alert_on_fail,
-    )
-
-
-ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload)]
-
-
-async def build_archives_api_task_payload(
-    # SEP-1007: JSON POST uses Body(); keep separate dep to avoid mixing
-    # Form() and Body() parameter types in the same route signature.
-    form: Annotated[ArchivesCreate, Body()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the archive task payload from a JSON body.
-
-    Identical logic to :func:`build_archives_task_payload` but parses the
-    request as a JSON body (``Body()``) instead of a form (``Form()``).
-
-    :param form: The JSON body parsed as an ArchivesCreate model.
-    :type form: ArchivesCreate
-    :param inventory_api: The Inventory API to resolve entity IDs.
     :type inventory_api: InventoryAPI
     :return: A fully constructed ``TaskWrite`` object.
     :rtype: TaskWrite
@@ -352,6 +263,27 @@ async def build_archives_api_task_payload(
         },
         alert_on_fail=form.alert_on_fail,
     )
+
+
+async def build_archives_task_payload(
+    form: Annotated[ArchivesCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the archive task payload from an HTML form body (Jinja2 path)."""
+    return await _build_archives_payload(form, inventory_api)
+
+
+ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload)]
+
+
+async def build_archives_api_task_payload(
+    # SEP-1007: JSON POST uses Body(); keep separate dep to avoid mixing
+    # Form() and Body() parameter types in the same route signature.
+    form: Annotated[ArchivesCreate, Body()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the archive task payload from a JSON body (REST API path)."""
+    return await _build_archives_payload(form, inventory_api)
 
 
 ArchivesApiGeneratedTask = Annotated[
