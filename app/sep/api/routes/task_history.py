@@ -47,8 +47,9 @@ async def list_merged_task_history(
     """Return merged execution history for one or more task names.
 
     Each ``task_names`` value is queried independently against the Tasks API
-    with the same ``status``, ``offset``, and ``limit`` filters; the SEP layer
-    concatenates the rows and sorts them newest-first before responding.
+    with the same ``status`` filter and a widened upstream window starting at
+    ``offset=0``; the SEP layer merges, sorts newest-first, then applies the
+    client ``offset`` and ``limit`` globally before responding.
 
     :param tasks_api: The Tasks API client used to fetch upstream history.
     :type tasks_api: TaskAPI
@@ -56,9 +57,9 @@ async def list_merged_task_history(
     :type task_names: list[str]
     :param task_status: Optional exact status filter forwarded upstream.
     :type task_status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based offset forwarded to each upstream history call.
+    :param offset: Zero-based offset into the merged, sorted result.
     :type offset: int
-    :param limit: Page size forwarded to each upstream history call.
+    :param limit: Page size applied after the global merge sort.
     :type limit: int
     :return: Merged paginated task history across all requested names.
     :rtype: PaginatedResponse[TaskHistoryResponse]

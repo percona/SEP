@@ -58,6 +58,13 @@ def _history_sort_key(entry: dict[str, Any]) -> float | int:
         return entry.get("id") or 0
 
 
+def _upstream_history_fetch_limit(offset: int, limit: int) -> int:
+    """Return per-task upstream ``limit`` for a merged page window."""
+    if limit <= 0:
+        return 0
+    return offset + limit
+
+
 def merge_task_history_pages(
     pages: list[dict[str, Any]],
     *,
@@ -66,19 +73,19 @@ def merge_task_history_pages(
 ) -> dict[str, Any]:
     """Merge upstream paginated history responses newest-first.
 
-    Mirrors the frontend ``mergeTaskHistoryPages`` helper previously used by
-    ``useTaskHistoryByNames``: each upstream page is fetched with the same
-    ``offset`` / ``limit`` / ``status`` filters, then items are concatenated,
-    sorted by ``started_at`` (falling back to ``created_at`` then ``id``), and
-    wrapped in a single paginated envelope whose ``total`` is the sum of the
-    upstream totals. ``offset`` and ``limit`` on the envelope echo the request
-    parameters so consumers can compute the next page.
+    Upstream callers should fetch each task from ``offset=0`` with a window
+    large enough to cover the merged page (see
+    :func:`_upstream_history_fetch_limit`), then pass the client ``offset`` and
+    ``limit`` here so rows are sorted globally and sliced
+    ``[offset : offset + limit]``. ``total`` is the sum of upstream totals;
+    envelope ``offset`` / ``limit`` echo the client request.
 
     :param pages: Raw paginated payloads from ``GET /{task}/history/``.
     :type pages: list[dict[str, Any]]
-    :param offset: Zero-based offset forwarded to each upstream history call.
+    :param offset: Zero-based offset into the merged, sorted result.
     :type offset: int
-    :param limit: Page size forwarded to each upstream history call.
+    :param limit: Page size applied after the global offset (``0`` disables
+        the cap).
     :type limit: int
     :return: A paginated-response-shaped dict ready for validation.
     :rtype: dict[str, Any]
@@ -88,6 +95,8 @@ def merge_task_history_pages(
         key=_history_sort_key,
         reverse=True,
     )
+    end = None if limit <= 0 else offset + limit
+    items = items[offset:end]
     total = sum(page.get("total", 0) for page in pages)
     return {
         "items": items,
@@ -113,15 +122,18 @@ async def fetch_merged_task_history(
     :type task_names: list[str]
     :param status: Optional exact status filter forwarded upstream.
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based offset forwarded to each upstream history call.
+    :param offset: Zero-based offset into the merged, sorted result.
     :type offset: int
-    :param limit: Page size forwarded to each upstream history call.
+    :param limit: Page size applied after the global merge sort.
     :type limit: int
     :return: Merged paginated task history, newest-first across all names.
     :rtype: PaginatedResponse[TaskHistoryResponse]
     """
     unique_names = normalize_task_history_names(task_names)
-    params: dict[str, Any] = {"offset": offset, "limit": limit}
+    params: dict[str, Any] = {
+        "offset": DEFAULT_PAGINATION_OFFSET,
+        "limit": _upstream_history_fetch_limit(offset, limit),
+    }
     if status is not None:
         params["status"] = status.value
     pages = await asyncio.gather(

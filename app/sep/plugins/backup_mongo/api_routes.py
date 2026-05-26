@@ -23,7 +23,7 @@ route for safety.
 
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi import status as http_status
 
 from app.core.models import PaginatedResponse
@@ -143,8 +143,16 @@ async def backup_mongo_api_delete(
 ) -> None:
     """Delete a backup task group."""
     parent_task = await resolve_backup_parent_task(task_name, tasks_api)
-    await cascade_delete_tasks(
+    result = await cascade_delete_tasks(
         tasks_api,
         parent_task.name,
         backup_derived_task_names(parent_task.name),
     )
+    if not result.success:
+        failed = [
+            (failure.task_name, str(failure.exception)) for failure in result.failures
+        ]
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Partial delete failure; orphaned tasks: {failed}",
+        )

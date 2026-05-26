@@ -19,6 +19,7 @@ from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.sep.api.task_history_merge import merge_task_history_pages
 
 TWO_MERGED_HISTORY_ROWS = 2
+MERGED_PAGE_TEST_LIMIT = 2
 SUMMED_UPSTREAM_TOTAL = 8
 PROPAGATED_TEST_OFFSET = 5
 PROPAGATED_TEST_LIMIT = 10
@@ -84,6 +85,57 @@ class TestMergeTaskHistoryPages:
         )
         assert merged["offset"] == PROPAGATED_TEST_OFFSET
         assert merged["limit"] == PROPAGATED_TEST_LIMIT
+
+    def test_caps_merged_items_to_limit(self) -> None:
+        """Return at most ``limit`` rows after merging upstream pages."""
+        pages = [
+            {
+                "items": [
+                    {"id": 1, "started_at": "2026-01-01T10:00:00+00:00"},
+                    {"id": 2, "started_at": "2026-01-03T10:00:00+00:00"},
+                ],
+                "total": TWO_MERGED_HISTORY_ROWS,
+                "offset": 0,
+                "limit": MERGED_PAGE_TEST_LIMIT,
+            },
+            {
+                "items": [
+                    {"id": 3, "started_at": "2026-01-02T10:00:00+00:00"},
+                    {"id": 4, "started_at": "2026-01-04T10:00:00+00:00"},
+                ],
+                "total": TWO_MERGED_HISTORY_ROWS,
+                "offset": 0,
+                "limit": MERGED_PAGE_TEST_LIMIT,
+            },
+        ]
+        merged = merge_task_history_pages(pages, limit=MERGED_PAGE_TEST_LIMIT)
+        assert [item["id"] for item in merged["items"]] == [4, 2]
+        assert len(merged["items"]) == MERGED_PAGE_TEST_LIMIT
+
+    def test_applies_global_offset_after_sort(self) -> None:
+        """Slice the merged sort window with the client offset."""
+        pages = [
+            {
+                "items": [
+                    {"id": 1, "started_at": "2026-01-01T10:00:00+00:00"},
+                    {"id": 2, "started_at": "2026-01-03T10:00:00+00:00"},
+                ],
+                "total": 30,
+                "offset": 0,
+                "limit": 60,
+            },
+            {
+                "items": [
+                    {"id": 3, "started_at": "2026-01-02T10:00:00+00:00"},
+                    {"id": 4, "started_at": "2026-01-04T10:00:00+00:00"},
+                ],
+                "total": 30,
+                "offset": 0,
+                "limit": 60,
+            },
+        ]
+        merged = merge_task_history_pages(pages, offset=2, limit=2)
+        assert [item["id"] for item in merged["items"]] == [3, 1]
 
     def test_sums_upstream_totals(self) -> None:
         """Expose the sum of upstream totals on the merged envelope."""

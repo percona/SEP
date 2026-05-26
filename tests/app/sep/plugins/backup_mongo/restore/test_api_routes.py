@@ -388,6 +388,25 @@ class TestRestoreMongoApiDelete:
             call("/parent-restore"),
         ]
 
+    def test_delete_returns_500_when_cascade_delete_partially_fails(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 500 when a child DELETE fails with a non-404 error."""
+        parent = build_restore_task("parent-restore")
+        mock_task_api_dep.get = AsyncMock(return_value=parent)
+        derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        async def _delete(path: str) -> None:
+            if path == "/parent-restore-pbm-list":
+                raise derived_exc
+
+        mock_task_api_dep.delete = AsyncMock(side_effect=_delete)
+
+        response = test_client.delete(f"{API_BASE}/parent-restore")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "parent-restore-pbm-list" in response.json()["detail"]
+
 
 class TestRestoreMongoApiUpdate:
     """Tests for PUT /api/plugins/backup_mongo/restores/{task_name}."""

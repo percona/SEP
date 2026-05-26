@@ -102,18 +102,18 @@ class TestSepTaskHistoryEndpoint:
         assert body["offset"] == DEFAULT_PAGINATION_OFFSET
         assert body["limit"] == DEFAULT_PAGINATION_LIMIT
 
-    def test_forwards_status_offset_and_limit_to_upstream(
+    def test_fetches_widened_upstream_window_and_applies_global_pagination(
         self,
         test_client: TestClient,
         mock_task_api_dep,
     ) -> None:
-        """Repeat the same query params on every upstream history call."""
+        """Fetch each task from offset 0 and paginate after merge."""
         mock_task_api_dep.get = AsyncMock(
             return_value={
                 "items": [],
                 "total": 0,
-                "offset": PROPAGATED_TEST_OFFSET,
-                "limit": PROPAGATED_TEST_LIMIT,
+                "offset": 0,
+                "limit": PROPAGATED_TEST_OFFSET + PROPAGATED_TEST_LIMIT,
             }
         )
         response = test_client.get(
@@ -131,22 +131,83 @@ class TestSepTaskHistoryEndpoint:
         assert body["offset"] == PROPAGATED_TEST_OFFSET
         assert body["limit"] == PROPAGATED_TEST_LIMIT
         assert mock_task_api_dep.get.await_count == TWO_UNIQUE_TASK_NAMES
+        upstream_params = {
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": PROPAGATED_TEST_OFFSET + PROPAGATED_TEST_LIMIT,
+            "status": "running",
+        }
         mock_task_api_dep.get.assert_any_await(
-            "/task-a/history/",
-            params={
-                "offset": PROPAGATED_TEST_OFFSET,
-                "limit": PROPAGATED_TEST_LIMIT,
-                "status": "running",
-            },
+            "/task-a/history/", params=upstream_params
         )
         mock_task_api_dep.get.assert_any_await(
-            "/task-b/history/",
-            params={
-                "offset": PROPAGATED_TEST_OFFSET,
-                "limit": PROPAGATED_TEST_LIMIT,
-                "status": "running",
-            },
+            "/task-b/history/", params=upstream_params
         )
+
+    def test_returns_page_two_when_upstream_per_task_offset_would_be_empty(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+    ) -> None:
+        """Page 2 still returns rows when per-task offset would drop every task."""
+        page_two_offset = 30
+        page_two_limit = 30
+        merged_total = 120
+
+        def _page_items(task_index: int) -> list[dict[str, Any]]:
+            return [
+                _history_item(
+                    item_id=(task_index * 100) + index,
+                    started_at=(
+                        f"2026-06-{30 - index:02d}T{task_index:02d}:00:00+00:00"
+                    ),
+                    task_name=f"task-{task_index}",
+                )
+                for index in range(30)
+            ]
+
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                {
+                    "items": _page_items(1),
+                    "total": 30,
+                    "offset": 0,
+                    "limit": page_two_offset + page_two_limit,
+                },
+                {
+                    "items": _page_items(2),
+                    "total": 30,
+                    "offset": 0,
+                    "limit": page_two_offset + page_two_limit,
+                },
+                {
+                    "items": _page_items(3),
+                    "total": 30,
+                    "offset": 0,
+                    "limit": page_two_offset + page_two_limit,
+                },
+                {
+                    "items": _page_items(4),
+                    "total": 30,
+                    "offset": 0,
+                    "limit": page_two_offset + page_two_limit,
+                },
+            ]
+        )
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[
+                ("task_names", "task-1"),
+                ("task_names", "task-2"),
+                ("task_names", "task-3"),
+                ("task_names", "task-4"),
+                ("offset", str(page_two_offset)),
+                ("limit", str(page_two_limit)),
+            ],
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == merged_total
+        assert len(body["items"]) == page_two_limit
 
     def test_deduplicates_repeated_task_names(
         self,

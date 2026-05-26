@@ -828,13 +828,22 @@ async def delete_restore_task_group(
     :type tasks_api: TaskAPI
     :param parent_task: The parent restore config task.
     :type parent_task: Task
+    :raises HTTPException: When any child or parent DELETE fails with a non-404.
     """
     backup_type = _backup_type_from_parent(parent_task)
-    await cascade_delete_tasks(
+    result = await cascade_delete_tasks(
         tasks_api,
         parent_task.name,
         restore_child_task_names(parent_task.name, backup_type),
     )
+    if not result.success:
+        failed = [
+            (failure.task_name, str(failure.exception)) for failure in result.failures
+        ]
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Partial delete failure; orphaned tasks: {failed}",
+        )
 
 
 RestoreTasks = Annotated[

@@ -359,6 +359,13 @@ def _is_backup_parent_task(task: Task) -> bool:
     )
 
 
+def _gathered_task_status(
+    result: TaskHistoryStatusEnum | BaseException | None,
+) -> TaskHistoryStatusEnum | None:
+    """Map a ``gather`` result to a status, treating failures as unknown."""
+    return None if isinstance(result, BaseException) else result
+
+
 async def get_backup_mongo_api_task_responses(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
@@ -392,11 +399,13 @@ async def get_backup_mongo_api_task_responses(
     tasks = [Task.model_validate(item) for item in response["items"]]
     parents = [task for task in tasks if _is_backup_parent_task(task)]
     statuses = await asyncio.gather(
-        *(get_backup_mongo_task_status(task.name, tasks_api) for task in parents)
+        *(get_backup_mongo_task_status(task.name, tasks_api) for task in parents),
+        return_exceptions=True,
     )
+    normalized_statuses = [_gathered_task_status(status) for status in statuses]
     task_status_pairs = [
         (task, task_status)
-        for task, task_status in zip(parents, statuses, strict=True)
+        for task, task_status in zip(parents, normalized_statuses, strict=True)
         if status is None or task_status == status
     ]
     items = [
@@ -492,14 +501,15 @@ async def build_backup_mongo_api_detail_response(
     gather_results = await asyncio.gather(
         get_backup_mongo_task_status(task.name, tasks_api),
         *(_fetch_backup_derived_detail(name, tasks_api) for name in derived_names),
+        return_exceptions=True,
     )
-    parent_status = gather_results[0]
+    parent_status = _gathered_task_status(gather_results[0])
     derived_results = gather_results[1:]
     derived_tasks: list[BackupDerivedTaskSummary] = []
     latest_pbm_status: str | None = None
 
     for derived_detail in derived_results:
-        if derived_detail is None:
+        if isinstance(derived_detail, BaseException) or derived_detail is None:
             continue
         derived, history_items = derived_detail
         derived_status = extract_latest_task_status(history_items)

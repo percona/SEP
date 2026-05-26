@@ -31,6 +31,8 @@ API_BASE = "/api/plugins/backup_mongo"
 EXPECTED_CASCADE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50
 THREE_PARENT_FIXTURE_TOTAL = 3
+TWO_PARENT_FIXTURE_TOTAL = 2
+TWO_DERIVED_SIBLINGS = 2
 
 
 def build_backup_task(name: str = "mongo-backup-task", **overrides: Any) -> dict:
@@ -205,6 +207,34 @@ class TestBackupMongoApiList:
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "parent-backup-b"
 
+    def test_list_tolerates_history_fetch_failure_for_one_parent(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 200 when one parent history fetch fails after the task list."""
+        parent_a = build_backup_task("parent-backup-a")
+        parent_b = build_backup_task("parent-backup-b")
+
+        async def _mock_get(path: str, **kwargs: Any) -> Any:
+            if path == "/":
+                return {"items": [parent_a, parent_b], "total": 2}
+            if path == "/parent-backup-a/history/":
+                return {"items": [{"status": "success"}]}
+            if path == "/parent-backup-b/history/":
+                raise HTTPNotFoundException
+            raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == TWO_PARENT_FIXTURE_TOTAL
+        assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
+        by_name = {item["name"]: item for item in body["items"]}
+        assert by_name["parent-backup-a"]["status"] == "success"
+        assert by_name["parent-backup-b"]["status"] is None
+
 
 class TestBackupMongoApiCreate:
     """Tests for POST /api/plugins/backup_mongo/."""
@@ -371,6 +401,62 @@ class TestBackupMongoApiDetail:
             "parent-backup-status",
         }
 
+    def test_detail_tolerates_history_fetch_failure_for_one_derived(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 200 when one derived history fetch fails."""
+        parent = build_backup_task("parent-backup")
+        logical = build_backup_task(
+            "parent-backup-logical",
+            data={
+                "backup_type": BackupType.PBM_LOGICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        physical = build_backup_task(
+            "parent-backup-physical",
+            data={
+                "backup_type": BackupType.PBM_PHYSICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        status_task = build_backup_task(
+            "parent-backup-status",
+            data={
+                "backup_type": BackupType.PBM_STATUS.value,
+                "parent": "parent-backup",
+            },
+        )
+        history_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        tasks_by_path = {
+            "/parent-backup": parent,
+            "/parent-backup-logical": logical,
+            "/parent-backup-physical": physical,
+            "/parent-backup-status": status_task,
+        }
+
+        async def _mock_get(path: str, **kwargs: Any) -> Any:
+            if path == "/parent-backup-physical/history/":
+                raise history_exc
+            if path.endswith("/history/"):
+                return {"items": []}
+            if path in tasks_by_path:
+                return tasks_by_path[path]
+            raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+
+        response = test_client.get(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert len(body["derived_tasks"]) == TWO_DERIVED_SIBLINGS
+        derived_names = {item["name"] for item in body["derived_tasks"]}
+        assert derived_names == {
+            "parent-backup-logical",
+            "parent-backup-status",
+        }
+
 
 class TestBackupMongoApiDelete:
     """Tests for DELETE /api/plugins/backup_mongo/{task_name}."""
@@ -392,6 +478,25 @@ class TestBackupMongoApiDelete:
             call("/parent-backup-status"),
             call("/parent-backup"),
         ]
+
+    def test_delete_returns_500_when_cascade_delete_partially_fails(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 500 when a derived sibling DELETE fails with a non-404 error."""
+        parent = build_backup_task("parent-backup")
+        mock_task_api_dep.get = AsyncMock(return_value=parent)
+        derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        async def _delete(path: str) -> None:
+            if path == "/parent-backup-physical":
+                raise derived_exc
+
+        mock_task_api_dep.delete = AsyncMock(side_effect=_delete)
+
+        response = test_client.delete(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "parent-backup-physical" in response.json()["detail"]
 
 
 class TestBackupMongoApiExecute:
