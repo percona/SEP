@@ -15,17 +15,36 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Temporary QA override — proxies to SEP-1053 QA instance
+// QA-only Vite config — used when running end-to-end QA against an
+// isolated SEP backend instance on a non-standard port.
+// Parameterized via env vars so each parallel QA session can point at
+// a different backend port without editing this file:
+//
+//   SEP_QA_BACKEND     URL of the running QA SEP instance
+//                      (default 'http://127.0.0.1:18002')
+//   SEP_QA_VITE_PORT   Port for this Vite dev server  (default 15174)
+//
+// `cookieDomainRewrite: 'localhost'` rewrites Set-Cookie domains from
+// the backend's 127.0.0.1 to localhost so the browser persists the
+// auth cookie (otherwise it's silently dropped on every request and
+// the QA session expires after the access-token TTL).
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react-swc';
-import tsconfigPaths from 'vite-tsconfig-paths';
+import react from '@vitejs/plugin-react';
 import path from 'path';
 
-const BACKEND = 'http://127.0.0.1:18002';
+const BACKEND = process.env.SEP_QA_BACKEND ?? 'http://127.0.0.1:18002';
+const PORT = Number(process.env.SEP_QA_VITE_PORT || 15174);
+
+const proxyEntry = {
+  target: BACKEND,
+  changeOrigin: true,
+  cookieDomainRewrite: 'localhost',
+};
 
 export default defineConfig({
-  plugins: [react(), tsconfigPaths()],
+  plugins: [react()],
   resolve: {
+    tsconfigPaths: true,
     dedupe: [
       'react',
       'react-dom',
@@ -41,14 +60,15 @@ export default defineConfig({
     },
   },
   server: {
-    port: 15174,
+    port: PORT,
+    strictPort: true,
     proxy: {
-      '/api': { target: BACKEND, changeOrigin: true },
-      '/sep_app': { target: BACKEND, changeOrigin: true },
-      '/legacy': { target: BACKEND, changeOrigin: true },
-      '/stream-logs': { target: BACKEND, changeOrigin: true },
-      '/execution-events': { target: BACKEND, changeOrigin: true },
-      '/files': { target: BACKEND, changeOrigin: true },
+      '/api': proxyEntry,
+      '/sep_app': proxyEntry,
+      '/legacy': proxyEntry,
+      '/stream-logs': proxyEntry,
+      '/execution-events': proxyEntry,
+      '/files': proxyEntry,
     },
   },
   optimizeDeps: {

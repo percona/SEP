@@ -246,6 +246,29 @@ export interface PluginCapabilities {
   alert_on_fail?: boolean;
   scheduling?: boolean;
   topology?: boolean;
+  stats?: boolean;
+}
+
+// ── Detail view (task-style plugins) ────────────────────────────────────
+
+/** One labelled field rendered inside a DetailSection. */
+export interface DetailField {
+  /** Dotted path into the task record (e.g. ``"data.meta.command"``). */
+  path: string;
+  label: string;
+  /** Optional syntax-highlighter hint. */
+  highlight?: 'sql' | 'json';
+}
+
+/** One titled section rendered on the task detail page. */
+export interface DetailSection {
+  title: string;
+  fields: DetailField[];
+}
+
+/** Declarative layout for the task detail page's section cards. */
+export interface DetailView {
+  sections: DetailSection[];
 }
 
 // ── Multi-entity plugins (inventory) ────────────────────────────────────
@@ -272,6 +295,8 @@ export interface PluginSchema {
   forms?: FormSection[];
   capabilities?: PluginCapabilities;
   list_view?: ListView;
+  /** Declarative layout for the task detail page (task-style plugins). */
+  detail_view?: DetailView;
   /** When set, the shell renders one list/create/detail flow per entity. */
   entities?: PluginEntitySchema[];
   /** Schema-wide cross-field cardinality constraints (task-style plugins). */

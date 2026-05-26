@@ -26,17 +26,15 @@ import { HostSelector } from './HostSelector';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
 import type { FormSection } from '../SchemaFormRenderer/types';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@sep/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sep/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
-import { apiClient } from '@sep/api';
+import { ApiError, apiClient } from '@sep/api';
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
-function makeResponse(
-  items: Array<{ id: string; name: string; address: string }>,
-  headers: Record<string, string> = {},
-) {
-  return { data: items, headers };
+function makeResponse(items: Array<{ id: string; name: string; address: string }>) {
+  return { data: items };
 }
 
 function makeClient() {
@@ -106,7 +104,7 @@ describe('HostSelector', () => {
   });
 
   it('renders error state and disables the input when the endpoint rejects', async () => {
-    mocked.get.mockRejectedValueOnce(new Error('boom'));
+    mocked.get.mockRejectedValueOnce(new ApiError({ kind: 'http', status: 502, message: 'boom' }));
     const client = makeClient();
     render(
       <Wrapper client={client}>
@@ -177,9 +175,9 @@ describe('HostSelector', () => {
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ hostId: 'nomad-1' }));
   });
 
-  it('raises a snackbar when the route reports an upstream Tasks-API failure', async () => {
-    mocked.get.mockResolvedValueOnce(
-      makeResponse([], { 'x-sep-upstream-error': 'tasks unreachable' }),
+  it('raises a snackbar when the hosts query fails with an upstream error', async () => {
+    mocked.get.mockRejectedValueOnce(
+      new ApiError({ kind: 'http', status: 502, message: 'tasks unreachable' }),
     );
 
     const client = makeClient();

@@ -17,6 +17,7 @@
     "@sep/api": "workspace:*",
     "@sep/framework": "workspace:*",
     "@xyflow/react": "^12.10.2",
+    "cronstrue": "^3.14.0",
     "notistack": "^3.0.2"
   },
   "devDependencies": {
