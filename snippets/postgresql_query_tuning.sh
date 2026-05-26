@@ -181,13 +181,24 @@ else
     QUERY_TEXT="$QUERY_ARG"
 fi
 
+# Normalize the query so it stays a single statement when embedded into analyze.sql.
+# This avoids accidentally creating additional psql/script lines when the input
+# contains newlines.
+QUERY_TEXT=${QUERY_TEXT//$'\r'/ }
+QUERY_TEXT=${QUERY_TEXT//$'\n'/ }
+
 # Trim trailing whitespace / semicolons; we add the `;` after the EXPLAIN block
 # so the user's query slots in cleanly regardless of how they terminated it.
-QUERY_TEXT="${QUERY_TEXT%$'\n'}"
 while [[ $QUERY_TEXT == *[[:space:]] || $QUERY_TEXT == *';' ]]; do
     QUERY_TEXT="${QUERY_TEXT%[[:space:]]}"
     QUERY_TEXT="${QUERY_TEXT%;}"
 done
+
+# Require a single statement to keep BEGIN/ROLLBACK safety guarantees.
+if [[ $QUERY_TEXT == *';'* ]]; then
+    echo "Error: query must be a single statement (embedded ';' is not allowed)." >&2
+    exit 1
+fi
 
 if [[ -z $QUERY_TEXT ]]; then
     echo "Error: query is empty after trimming." >&2
