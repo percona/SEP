@@ -137,12 +137,24 @@ if [[ -z $DATA_DIR ]]; then
 fi
 
 if [[ -z $CONFIG_FILE || -z $DATA_DIR ]]; then
-    POSTGRES_PID=$(pgrep -x -f 'postgres' 2> /dev/null | head -1 || true)
+    POSTGRES_PID=""
+    POSTGRES_CMD=""
+    while IFS= read -r postgres_line; do
+        POSTGRES_PID="${postgres_line%% *}"
+        POSTGRES_CMD="${postgres_line#* }"
+        if [[ $POSTGRES_PID =~ ^[0-9]+$ && -n $POSTGRES_CMD ]]; then
+            break
+        fi
+        POSTGRES_PID=""
+        POSTGRES_CMD=""
+    done < <(pgrep -af 'postgres' 2> /dev/null || true)
     if [[ -z $POSTGRES_PID ]]; then
         POSTGRES_PID=$(pgrep -x postmaster 2> /dev/null | head -1 || true)
+        if [[ -n $POSTGRES_PID ]]; then
+            POSTGRES_CMD=$(ps -p "$POSTGRES_PID" -o args= 2> /dev/null || true)
+        fi
     fi
-    if [[ -n $POSTGRES_PID ]]; then
-        POSTGRES_CMD=$(ps -p "$POSTGRES_PID" -o args= 2> /dev/null || true)
+    if [[ -n $POSTGRES_PID && -n $POSTGRES_CMD ]]; then
         if [[ -z $DATA_DIR && $POSTGRES_CMD =~ -D[[:space:]]+([^[:space:]]+) ]]; then
             DATA_DIR="${BASH_REMATCH[1]}"
         fi
