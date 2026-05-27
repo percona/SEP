@@ -86,7 +86,9 @@ async def alerts_index(
     )
 
 
-@router.post("/restore", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/restore", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+)
 async def alerts_restore(
     pmm_api: PMMAPIDep,
     session: SessionDep,
@@ -126,7 +128,7 @@ async def alerts_restore(
     return JSONResponse({"status": "success", "details": results})
 
 
-@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated])
+@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated], deprecated=True)
 async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONResponse:
     """Return a summary of a single backup's contents.
 
@@ -165,7 +167,9 @@ async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONRespo
     )
 
 
-@router.post("/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+)
 async def pagerduty_save(
     pmm_api: RequiredPMMAPIDep,
     integration_key: Annotated[NonEmptyStr, Form()],
@@ -211,7 +215,11 @@ async def pagerduty_save(
         )
 
 
-@router.post("/pagerduty/delete", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/pagerduty/delete",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    deprecated=True,
+)
 async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
     """Delete the PagerDuty contact point and remove its notification route.
 
@@ -248,7 +256,7 @@ async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
         )
 
 
-@router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True)
 async def alerts_push(
     pmm_api: RequiredPMMAPIDep,
     alert_templates: AlertTemplatesDep,
