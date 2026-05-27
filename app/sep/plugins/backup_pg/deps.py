@@ -15,7 +15,9 @@
 
 """Define dependencies for the Backups plugin."""
 
+import asyncio
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -23,6 +25,7 @@ import yaml
 from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
+from app.core.models import PaginatedResponse
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -46,11 +49,15 @@ from app.sep.plugins.backup_pg.models import (
     BackupConfigAll,
     BackupConfigServer,
     BackupCreate,
+    BackupTaskDetailResponse,
+    BackupTaskResponse,
+    BackupTaskWrite,
     BackupType,
 )
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -59,12 +66,10 @@ logger = logging.getLogger(__name__)
 
 
 async def build_backup_task_payload(
-    form: Annotated[BackupCreate, Form()],
+    form: BackupCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the backup task payload from form.
-
-    Build the payload for a Backups task to be executed.
+    """Build the backup task payload from a parsed form.
 
     :param form: The form data for the Backups creation.
     :type form: BackupCreate
@@ -130,7 +135,185 @@ async def build_backup_task_payload(
     )
 
 
-BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
+async def build_backup_task_payload_from_form(
+    form: Annotated[BackupCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build a Backups task payload from an HTML form submission.
+
+    Delegates to :func:`build_backup_task_payload` after FastAPI form parsing.
+
+    :param form: The form data for the Backups creation.
+    :type form: BackupCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed ``TaskWrite`` object for the Tasks API.
+    :rtype: TaskWrite
+    """
+    return await build_backup_task_payload(form, inventory_api)
+
+
+BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload_from_form)]
+
+
+def backup_create_from_write(body: BackupTaskWrite) -> BackupCreate:
+    """Convert a :class:`BackupTaskWrite` body into a :class:`BackupCreate`.
+
+    Always sets ``backup_type`` to :attr:`BackupType.PGBACKREST`; the JSON API
+    only schedules pgBackRest tasks today.
+
+    :param body: The JSON request body for backup task creation.
+    :type body: BackupTaskWrite
+    :return: A :class:`BackupCreate` instance for payload construction.
+    :rtype: BackupCreate
+    """
+    return BackupCreate.model_validate(
+        {
+            **body.model_dump(mode="json"),
+            "backup_type": BackupType.PGBACKREST,
+        },
+        from_attributes=False,
+    )
+
+
+def extract_latest_task_status(
+    histories: Iterable[dict[str, Any]],
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload."""
+    for history in histories:
+        if (status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(status)
+    return None
+
+
+async def get_backup_pg_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for a backup_pg task.
+
+    :param task_name: The name of the task.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to query history.
+    :type tasks_api: TaskAPI
+    :return: The latest known task status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    response = await tasks_api.get(f"/{task_name}/history/")
+    return extract_latest_task_status(response["items"])
+
+
+def _gathered_task_status(
+    result: TaskHistoryStatusEnum | BaseException | None,
+) -> TaskHistoryStatusEnum | None:
+    """Map a ``gather`` result to a status, treating failures as unknown."""
+    return None if isinstance(result, BaseException) else result
+
+
+def build_backup_pg_api_task_response(
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+) -> BackupTaskResponse:
+    """Build a backup_pg task response for the JSON API.
+
+    :param task: The task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A validated backup_pg task API response.
+    :rtype: BackupTaskResponse
+    """
+    data = task.data
+    meta = data.get("meta") or {}
+    backup_type = ""
+    try:
+        config = yaml.safe_load(meta.get("config") or "") or {}
+        server_list = config.get("SERVER_LIST") or []
+        if server_list:
+            backup_type = str(server_list[0].get("BACKUP_TYPE", ""))
+    except yaml.YAMLError:
+        logger.warning("Failed to parse config for backup_pg task %s", task.name)
+    return BackupTaskResponse(
+        **task.model_dump(),
+        hostname=meta.get("target"),
+        status=status,
+        backup_type=backup_type,
+    )
+
+
+async def get_backup_pg_api_task_responses(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> PaginatedResponse[BackupTaskResponse]:
+    """Retrieve a page of backup_pg task responses for the JSON API.
+
+    Fetches the full task list (the Tasks API does not yet push status filtering
+    down for derived plugins), gathers latest statuses in parallel, and slices
+    ``[offset : offset + limit]`` after the optional status filter so the
+    response ``total`` reflects the filtered count.
+
+    :param tasks_api: The TaskAPI instance used to query backup tasks.
+    :type tasks_api: TaskAPI
+    :param status: Optional latest-history status filter.
+    :type status: TaskHistoryStatusEnum | None
+    :param offset: Zero-based starting offset for the page slice.
+    :type offset: int
+    :param limit: Maximum items returned for the page.
+    :type limit: int
+    :return: The paginated backup task responses matching the requested filters.
+    :rtype: PaginatedResponse[BackupTaskResponse]
+    """
+    response = await tasks_api.get(
+        "/",
+        params={"owner": TaskOwner.BACKUP_PG.value, "limit": 0},
+    )
+    tasks = [Task.model_validate(item) for item in response["items"]]
+    statuses = await asyncio.gather(
+        *(get_backup_pg_task_status(task.name, tasks_api) for task in tasks),
+        return_exceptions=True,
+    )
+    normalized = [_gathered_task_status(item) for item in statuses]
+    pairs = [
+        (task, task_status)
+        for task, task_status in zip(tasks, normalized, strict=True)
+        if status is None or task_status == status
+    ]
+    items = [
+        build_backup_pg_api_task_response(task, status=task_status)
+        for task, task_status in pairs[offset : offset + limit]
+    ]
+    return PaginatedResponse[BackupTaskResponse](
+        items=items,
+        total=len(pairs),
+        offset=offset,
+        limit=limit,
+    )
+
+
+async def build_backup_pg_api_detail_response(
+    task: Task,
+    tasks_api: TaskAPI,
+) -> BackupTaskDetailResponse:
+    """Build a backup_pg task detail response for the JSON API.
+
+    :param task: The task to render.
+    :type task: Task
+    :param tasks_api: The TaskAPI instance used to fetch history.
+    :type tasks_api: TaskAPI
+    :return: A validated backup_pg task detail API response.
+    :rtype: BackupTaskDetailResponse
+    """
+    status: TaskHistoryStatusEnum | None
+    try:
+        status = await get_backup_pg_task_status(task.name, tasks_api)
+    except Exception:
+        logger.exception("Failed to fetch history for backup_pg task %s", task.name)
+        status = None
+    base = build_backup_pg_api_task_response(task, status=status)
+    return BackupTaskDetailResponse(**base.model_dump())
 
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
