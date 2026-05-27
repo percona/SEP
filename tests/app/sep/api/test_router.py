@@ -225,6 +225,7 @@ class TestApiRouterConfigDrivenLoop:
     ) -> None:
         """Assert convention auto-derive sets ``api_router_path`` for built-ins."""
         for module, expected in (
+            ("archives", "app.sep.plugins.archives.api_routes.router"),
             ("checksums", "app.sep.plugins.checksums.api_routes.router"),
             ("dipper", "app.sep.plugins.dipper.api_routes.router"),
             ("snippets", "app.sep.plugins.snippets.api_routes.router"),
@@ -236,7 +237,7 @@ class TestApiRouterConfigDrivenLoop:
         self,
     ) -> None:
         """Assert convention is silent when the plugin ships no ``api_routes`` module."""
-        plugin = Plugin(name="Archive", module_name="archives")
+        plugin = Plugin(name="Alters", module_name="alters")
         assert plugin.api_router_path is None
 
     def test_explicit_null_api_router_path_opts_out(self) -> None:
