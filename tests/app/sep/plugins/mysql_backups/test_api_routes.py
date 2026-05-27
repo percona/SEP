@@ -127,6 +127,7 @@ class TestSchemaEndpoint:
             "alert_on_fail": True,
             "scheduling": True,
             "stats": False,
+            "topology": False,
         }
 
     def test_schema_includes_backup_type_field(self, test_client):
