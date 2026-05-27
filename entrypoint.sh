@@ -1,4 +1,10 @@
 #!/bin/sh
+set -eu
+
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <service> (one of: sep, inventory, tasks)" >&2
+    exit 1
+fi
 
 # Wait for Casdoor to be available
 echo "Waiting for Casdoor..."
@@ -15,7 +21,7 @@ done
 echo "PostgreSQL started"
 
 # Apply migrations
-alembic --name="$1" upgrade head
+alembic --name="$1" upgrade heads
 
 # Start the FastAPI app
 python -m "app.$1.main"

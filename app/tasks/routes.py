@@ -22,6 +22,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import timedelta
 from typing import Annotated
 
+import requests.exceptions
 from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
@@ -34,7 +35,11 @@ from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPBadRequestException,
+    HTTPConflictException,
+)
 from app.core.models import PaginatedResponse
 from app.core.utils import utc_now
 from app.core.utils.fields import NonEmptyStr
@@ -335,7 +340,7 @@ async def _populate_has_logs(
 
     Read the chunk store in one batched query so list endpoints avoid an
     N+1 :meth:`TaskHistoryLogManager.exists_for_task` call per row, then
-    OR the result with :func:`has_legacy_logs` so pre-SEP-817 rows keep
+    OR the result with :func:`has_legacy_logs` so legacy rows keep
     rendering the **View Logs** button until the backfill lands.
 
     :param session: The SQLAlchemy asynchronous session.
@@ -433,7 +438,6 @@ async def retrieve_task_history(
 @router.get(
     "/history/{task_history_id}/events",
     dependencies=[IsAuthenticatedDep],
-    response_model=list[ExecutionEvent],
 )
 async def list_task_history_events(
     executor: TaskExecutor,
@@ -484,7 +488,6 @@ async def stream_task_history_logs(
 @router.get(
     "/history/{task_history_id}/files/",
     dependencies=[IsAuthenticatedDep],
-    response_model=dict[str, FileMetadata],
 )
 async def list_task_history_files(
     executor: TaskExecutor,
@@ -680,14 +683,31 @@ async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
 
 @router.get("/hosts/", dependencies=[IsAuthenticatedDep])
 async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
-    """Return the executor hosts from the executor."""
-    return executor.get_hosts()
+    """Return the executor hosts from the executor.
+
+    Wrap the upstream executor call so connection failures or non-JSON
+    bodies surface as a 502 JSON response instead of leaking a default
+    500 + text/plain that masks the real failure on the dashboard banner.
+
+    :param executor: The task executor backend used to fetch host metadata.
+    :type executor: TaskExecutor
+    :return: A mapping of executor node name to network address.
+    :rtype: dict[str, str]
+    :raises HTTPBadGatewayException: If the executor backend raises a
+        ``requests.exceptions.RequestException`` (e.g. a non-JSON response
+        body or a connection failure outside the Nomad SDK's own wrapping).
+    """
+    try:
+        return executor.get_hosts()
+    except requests.exceptions.RequestException as exc:
+        raise HTTPBadGatewayException(
+            detail=f"Executor backend unreachable: {exc}"
+        ) from exc
 
 
 @router.post(
     "/transform/",
     dependencies=[IsAuthenticatedDep],
-    response_model=TransformPayloadResponse,
 )
 async def transform_payload(
     data: TransformPayloadRequest,
