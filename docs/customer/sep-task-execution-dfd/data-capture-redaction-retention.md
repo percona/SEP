@@ -65,7 +65,7 @@ The anonymization filter is best-effort detection, not a formal data loss preven
 - Values outside the configured entity list are not intentionally detected.
 - Binary files, encoded payloads, compressed data, screenshots, archives, and values split across chunks may not be redacted.
 - Some technical identifiers can be over-redacted or under-redacted depending on context.
-- The filter is applied only where the SEP log and file streaming paths invoke anonymization. It does not retroactively redact data already stored without anonymization.
+- The filter is applied only at log-capture time (for the Nomad `run-script` and `step1` execution steps) and at file-download time. It does not retroactively redact data already stored without anonymization. Prestart, poststart, and other Nomad step types are not anonymized.
 
 ## Secrets in Output
 
@@ -85,7 +85,7 @@ Captured stdout and stderr are stored in the `taskhistory_log` table as append-o
 - Start and end offsets.
 - The chunk content.
 
-SEP stores log chunk content as UTF-8 text in a binary database column using an internal raw-or-compressed representation. This is compression, not encryption.
+SEP stores log chunk content append-only in a binary database column. Each chunk is either raw UTF-8 bytes or deflate-compressed UTF-8 bytes, depending on size and compressibility. This is compression, not encryption.
 
 SEP also maintains `taskhistory_log_state` rows for per-stream staging buffers and offsets while logs are being collected. Legacy task history rows may still contain older compressed log blobs under the execution tracking data; SEP can read those during migration compatibility paths.
 
@@ -112,13 +112,13 @@ In the current implementation:
 
 SEP does distinguish admin users for some operations, such as snippet approval and certain administrative routes, but task log viewing is not currently restricted to admin users only.
 
-Customer access depends on deployment and identity configuration. If customer users are provisioned as authenticated SEP users in the same deployment, they can access task history and logs through the same authenticated API/UI surface unless additional deployment-level controls are added. If customers are not provisioned in SEP, they do not have direct SEP application access.
+Customer access depends on deployment and identity configuration. The current SEP application has no built-in customer-tenant identity model. If customer users are provisioned in Casdoor as authenticated SEP users, they can see all task history and logs that any other authenticated user can see — there is no per-customer or per-tenant row filter. The standard deployment pattern is that customers are not provisioned in SEP, and the SEP UI is reachable only by Percona personnel.
 
 Access is controlled by:
 
-- Casdoor OAuth/JWT authentication for human users.
+- Casdoor OAuth/JWT authentication for human users. The React SPA carries a Casdoor-issued access token as an `Authorization: Bearer` header; the refresh token is held by the browser as an `HttpOnly` cookie scoped to `/api/oauth`. Legacy Jinja2 routes (during the API-First migration window) carry a signed session cookie; those routes also require a CSRF token.
 - Optional internal bearer-token authentication through `SEP_INTERNAL_TOKEN` for service-to-service calls.
-- Transport security, including HTTPS and configured service-to-service TLS/mTLS.
+- Transport security, including HTTPS at the Nginx ingress and configured service-to-service TLS/mTLS for SEP↔Tasks/Inventory and Tasks↔Nomad.
 - Deployment-level controls around network access, database access, Nomad API access, and infrastructure log access.
 
 The current application does not implement customer-specific log tenancy or role-based filtering for task stdout/stderr logs.
