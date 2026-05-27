@@ -27,6 +27,7 @@ import { PluginDetailPage, resolveTabFromSplat } from './PluginDetailPage';
 const mockDeleteMutate = vi.fn();
 const mockExecuteMutate = vi.fn();
 const mockUsePluginTask = vi.fn();
+const mockUsePluginEntityDetail = vi.fn();
 interface MockStatsResult {
   data: unknown;
   isLoading: boolean;
@@ -47,7 +48,7 @@ vi.mock('@sep/api', () => ({
     isPending: false,
   }),
   useDeletePluginEntity: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePluginEntityDetail: () => ({ data: undefined, isLoading: false, error: null }),
+  usePluginEntityDetail: (...args: unknown[]) => mockUsePluginEntityDetail(...args),
   // Needed by useTaskLogs / useExecutionEvents in the component tree
   getToken: () => null,
   refreshAccessToken: vi.fn(),
@@ -687,6 +688,72 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
     expect(screen.queryByText('Foo')).toBeNull();
     // Unrelated extra field still renders
     expect(screen.getByText('Extra Visible')).toBeInTheDocument();
+  });
+
+  it('hides entity-level overview_hidden_fields in multi-entity detail page', () => {
+    function multiEntitySchemaWithHidden(overview_hidden_fields?: string[]): PluginSchema {
+      return {
+        pluginName: 'inventory',
+        display_name: 'Inventory',
+        description: 'Test',
+        capabilities: {},
+        entities: [
+          {
+            name: 'services',
+            display_name: 'Services',
+            description: 'Service entities',
+            forms: [],
+            list_view: {
+              columns: [
+                { key: 'name', label: 'Name' },
+                { key: 'status', label: 'Status', format: 'status' },
+              ],
+              default_sort: '-name',
+              ...(overview_hidden_fields !== undefined ? { overview_hidden_fields } : {}),
+            },
+          },
+        ],
+        list_view: {
+          columns: [{ key: 'name', label: 'Name' }],
+          default_sort: '-name',
+        },
+        formSchema: { sections: [] },
+      } as unknown as PluginSchema;
+    }
+
+    mockUsePluginEntityDetail.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'mysql-01',
+        status: 'active',
+        foo: 'secret',
+        extra_visible: 'hello',
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const customSchema = multiEntitySchemaWithHidden(['foo']);
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter initialEntries={['/plugins/inventory/services/1']}>
+            <Routes>
+              <Route
+                path="/plugins/:plugin/:entityName/:id/*"
+                element={<PluginDetailPage schema={customSchema} pluginName="inventory" />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByText('Foo')).toBeNull();
+    expect(screen.queryByText('foo')).toBeNull();
+    // Unrelated extra field still renders
+    expect(screen.getByText('extra_visible')).toBeInTheDocument();
+    expect(screen.getByText('hello')).toBeInTheDocument();
   });
 });
 
