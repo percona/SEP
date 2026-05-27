@@ -64,7 +64,7 @@ from pydantic import (
     StringConstraints,
 )
 
-from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
+from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, StrippedNonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.rules import (
     CardinalityRule,
@@ -597,9 +597,7 @@ class ListView(SchemaBaseModel):
 
     columns: list[Column]
     default_sort: NonEmptyStr | None = None
-    overview_hidden_fields: list[
-        Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
-    ] = Field(default_factory=list)
+    overview_hidden_fields: list[StrippedNonEmptyStr] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_default_sort_references_column(self) -> Self:

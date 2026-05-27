@@ -389,6 +389,9 @@ def database_url_normalized_scheme_field_factory(
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
+StrippedNonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+"""Define a string field that strips surrounding whitespace and must not be empty."""
+
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]
 """Convert empty strings to None."""
 

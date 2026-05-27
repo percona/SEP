@@ -739,6 +739,16 @@ def test_list_view_overview_hidden_fields_rejects_empty_string():
         )
 
 
+@pytest.mark.parametrize("bad_value", ["", " ", "  ", "\t", "\n"])
+def test_list_view_overview_hidden_fields_rejects_blank_entries(bad_value):
+    """``overview_hidden_fields`` rejects blank entries (empty, whitespace-only)."""
+    with pytest.raises(ValidationError):
+        ListView(
+            columns=[Column(key="id", label="ID")],
+            overview_hidden_fields=[bad_value],
+        )
+
+
 def test_list_view_overview_hidden_fields_round_trip():
     """``overview_hidden_fields`` survives serialisation and ``model_validate``."""
     original = ListView(
