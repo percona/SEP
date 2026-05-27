@@ -62,14 +62,6 @@ jobs:
       - name: Check migrations
         run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
 
-  # Testing Trophy lanes — see docs/qa-architecture.md and
-  # docs/testing-guidelines.md. The lanes are split by pytest marker (applied
-  # automatically by the per-directory conftests under tests/{unit,integration,contract}/).
-  #
-  # The integration lane is the coverage-gated one: it carries the bulk of
-  # the suite plus the dev-tooling tests under tests/scripts/ that fall
-  # outside the Trophy model.
-
   test-unit:
     name: test-unit (${{ matrix.python }})
     strategy:

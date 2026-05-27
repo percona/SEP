@@ -23,9 +23,6 @@ Demonstrates the canonical pattern for the contract layer in SEP:
   loop does not require the contract toolchain to run the unit and
   integration lanes. CI installs ``schemathesis`` and runs the contract
   lane on every PR (milestone M6).
-
-See ``docs/qa-architecture.md`` Section 4.1 and ``docs/testing-guidelines.md``
-for the full control contract.
 """
 
 import pytest

@@ -31,8 +31,6 @@
  * same shape. The skip-by-default `_template.spec.ts` is for the
  * copy-and-fill workflow when you need to add a new plugin smoke.
  *
- * See docs/qa-architecture.md Section 3.4 and docs/testing-guidelines.md
- * Section 3.3 for the full layer contract.
  */
 
 import { test, expect, type Page } from '@playwright/test';

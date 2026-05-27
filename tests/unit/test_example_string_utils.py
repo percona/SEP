@@ -26,8 +26,6 @@ Demonstrates the canonical pattern for unit tests in SEP:
 The ``unit`` marker is applied automatically by ``tests/unit/conftest.py``;
 no decoration on this file is required for ``pytest -m unit`` to pick it up.
 
-See ``docs/qa-architecture.md`` Section 3.2 and ``docs/testing-guidelines.md``
-for the full layer contract.
 """
 
 import pytest

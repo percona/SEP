@@ -245,8 +245,6 @@ jobs:
       - changes
 
   audit:
-    # M1 of the QA architecture adoption plan. See docs/qa-architecture.md
-    # Section 4.4. Runs whenever Python or frontend lockfiles can have moved.
     if: >-
       ${{
         github.event.pull_request.draft == false &&

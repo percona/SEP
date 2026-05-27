@@ -30,8 +30,6 @@ Demonstrates the canonical pattern for integration tests in SEP:
 The ``integration`` marker is applied automatically by
 ``tests/integration/conftest.py``.
 
-See ``docs/qa-architecture.md`` Section 3.3 and ``docs/testing-guidelines.md``
-for the full layer contract.
 """
 
 import pytest
