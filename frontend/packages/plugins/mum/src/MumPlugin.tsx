@@ -290,12 +290,19 @@ export function MumPlugin() {
   );
 
   const handleUserMutation = useCallback(
-    (meta?: { target?: string }) => { listUsers(meta?.target); },
+    (meta?: { target?: string }) => {
+      // Delay so any in-flight list-users task dispatched before the mutation
+      // has time to finish; otherwise the fresh dispatch gets a 409 and reuses
+      // a task that ran before the mutation, returning stale data.
+      setTimeout(() => listUsers(meta?.target), 4000);
+    },
     [listUsers],
   );
 
   const handleRoleMutation = useCallback(
-    (meta?: { target?: string }) => { listRoles(meta?.target); },
+    (meta?: { target?: string }) => {
+      setTimeout(() => listRoles(meta?.target), 4000);
+    },
     [listRoles],
   );
 

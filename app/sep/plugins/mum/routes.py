@@ -21,6 +21,7 @@
 # by the SEP live-request API.  When that API is available, remove the TaskAPI
 # dependency and the task/stream-log round-trip from every route below.
 
+import asyncio
 import json
 import logging
 import re
@@ -221,31 +222,42 @@ async def _execute_mum_task(
             target,
             _redact_config(config),
         )
-    try:
-        history = await tasks_api.post(
-            f"/execute/{task_name}", json={"meta": execution_meta}
-        )
-        logger.info(
-            "Successfully executed task '%s' (history ID: %s)",
-            task_name,
-            history.get("id"),
-        )
-        return default_task, history
-    except HTTPException as exc:  # type: ignore[name-defined]
-        if exc.status_code == status.HTTP_409_CONFLICT:
-            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-            m = re.search(r"\((\d+)\)", detail)
-            if m:
-                existing_id = int(m.group(1))
-                logger.info(
-                    "Task '%s' already running (history ID: %s); reusing stream",
-                    task_name,
-                    existing_id,
-                )
-                existing_history = await tasks_api.get(f"/history/{existing_id}")
-                return default_task, existing_history
-        logger.error("Failed to execute task '%s': %s (status: %s)", task_name, exc.detail, exc.status_code)
-        raise
+    dispatch_payload = {"meta": execution_meta}
+    for attempt in range(2):
+        try:
+            history = await tasks_api.post(
+                f"/execute/{task_name}", json=dispatch_payload
+            )
+            logger.info(
+                "Successfully executed task '%s' (history ID: %s)",
+                task_name,
+                history.get("id"),
+            )
+            return default_task, history
+        except HTTPException as exc:  # type: ignore[name-defined]
+            if exc.status_code == status.HTTP_409_CONFLICT:
+                detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+                m = re.search(r"\((\d+)\)", detail)
+                if m:
+                    existing_id = int(m.group(1))
+                    logger.info(
+                        "Task '%s' already running (history ID: %s); reusing stream",
+                        task_name,
+                        existing_id,
+                    )
+                    existing_history = await tasks_api.get(f"/history/{existing_id}")
+                    return default_task, existing_history
+                # "Identical dispatch in progress." — a concurrent dispatch holds the lock.
+                # Wait 1 s and retry once; by then the lock is released and either the task
+                # is running (next attempt gets the ID) or the slot is free.
+                if attempt == 0:
+                    logger.info(
+                        "Task '%s' dispatch lock collision; retrying in 1s", task_name
+                    )
+                    await asyncio.sleep(1)
+                    continue
+            logger.error("Failed to execute task '%s': %s (status: %s)", task_name, exc.detail, exc.status_code)
+            raise
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
