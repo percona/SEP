@@ -35,8 +35,8 @@ def test_alters_schema_declares_cascade_primitives():
     assert alters_schema.predecessors[0].on_failure == "halt"
 
 
-def test_alters_schema_dsn_table_requires_gate():
-    """Test dsn_table field declares a requires gate when recursion_method is dsn."""
+def test_alters_schema_dsn_table_conditional_gates():
+    """Test dsn_table declares requires + forbidden gates for recursion_method dsn."""
     recursion_section = next(
         section for section in alters_schema.forms if section.title == "Recursion"
     )
@@ -45,6 +45,8 @@ def test_alters_schema_dsn_table_requires_gate():
     )
     assert dsn_field.requires is not None
     assert len(dsn_field.requires) == 1
+    assert dsn_field.forbidden is not None
+    assert len(dsn_field.forbidden) == 1
 
 
 def test_alters_schema_serialises_snake_case():

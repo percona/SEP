@@ -138,6 +138,7 @@ alters_schema = PluginSchema(
                     default="D=percona,t=dsns",
                     description="Required when recursion method is 'dsn'",
                     requires=[FieldGate(when=F("recursion_method") == "dsn")],
+                    forbidden=[FieldGate(when=F("recursion_method") != "dsn")],
                 ),
             ],
         ),
