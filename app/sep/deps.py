@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator, Callable
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
+import aiohttp
 from fastapi import Depends, HTTPException, Request, status
 from itsdangerous import BadSignature
 from pydantic import ValidationError
@@ -385,7 +386,14 @@ async def get_username_mapping() -> dict[str, str]:
     try:
         users = await settings.CASDOOR.get_users()
         return {str(user["id"]): user["name"] for user in users}
-    except (ValueError, KeyError, HTTPException):
+    except (
+        AttributeError,
+        TimeoutError,
+        ValueError,
+        KeyError,
+        HTTPException,
+        aiohttp.ClientError,
+    ):
         logger.exception("Failed to get username mapping from Casdoor")
         return {}
 

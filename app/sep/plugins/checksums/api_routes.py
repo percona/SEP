@@ -29,6 +29,7 @@ from fastapi import status as http_status
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
+    get_username_mapping,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsApiAuthenticated,
@@ -67,10 +68,12 @@ async def checksums_api_list(
     status: TaskHistoryStatusEnum | None = None,
 ) -> list[ChecksumTaskResponse]:
     """List checksum tasks."""
+    username_mapping = await get_username_mapping()
     return await get_checksums_api_task_responses(
         tasks_api,
         service_type=service_type,
         status=status,
+        username_mapping=username_mapping,
     )
 
 
@@ -82,7 +85,10 @@ async def checksums_api_detail(
     """Retrieve a single checksum task."""
     task = await get_checksums_task(task_name, tasks_api)
     task_status = await get_checksums_task_status(task.name, tasks_api)
-    return build_checksums_api_task_response(task, status=task_status)
+    username_mapping = await get_username_mapping()
+    return build_checksums_api_task_response(
+        task, status=task_status, username_mapping=username_mapping
+    )
 
 
 @router.post(
@@ -109,6 +115,7 @@ async def checksums_api_create(
     """
     logger.debug("Create checksums task (JSON path): %s", body.task_name)
     task_write = await build_checksum_task(body, inventory_api)
+    username_mapping = await get_username_mapping()
     created = await tasks_api.post("/", json=task_write.model_dump())
     task = Task.model_validate(created)
     connectivity_warning = await maybe_record_connectivity_warning(
@@ -120,6 +127,7 @@ async def checksums_api_create(
         task,
         status=None,
         connectivity_warning=connectivity_warning,
+        username_mapping=username_mapping,
     )
 
 
@@ -147,6 +155,7 @@ async def checksums_api_update(
     """
     logger.debug("Update checksums task (JSON path): %s", task.name)
     task_write = await build_checksum_task(body, inventory_api)
+    username_mapping = await get_username_mapping()
     updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
     updated_task = Task.model_validate(updated)
     task_status = await get_checksums_task_status(updated_task.name, tasks_api)
@@ -159,6 +168,7 @@ async def checksums_api_update(
         updated_task,
         status=task_status,
         connectivity_warning=connectivity_warning,
+        username_mapping=username_mapping,
     )
 
 

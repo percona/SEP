@@ -27,8 +27,14 @@ from nomad.api.exceptions import BaseNomadException
 
 from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
-from app.tasks.config import tasks_settings
+from app.core.settings_override.lifecycle import (
+    ProxyEntry,
+    settings_override_refresher,
+)
+from app.core.settings_override.models import SettingClassEnum
+from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.connectivity.routes import router as connectivity_router
+from app.tasks.db import get_async_session_maker
 from app.tasks.db.seed import (
     init_tasks_db,
     verify_taskhistory_execution_request_is_jsonb,
@@ -56,7 +62,20 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     await init_tasks_db()
     await verify_taskhistory_execution_request_is_jsonb()
-    async with default_lifespan(app), tasks_settings.NOMAD:
+    async with (
+        settings_override_refresher(
+            get_async_session_maker,
+            {
+                SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
+                    tasks_settings, TasksSettings
+                )
+            },
+            settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
+            enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+        ),
+        default_lifespan(app),
+        tasks_settings.NOMAD,
+    ):
         yield
 
 

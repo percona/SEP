@@ -25,6 +25,7 @@ from alembic import context
 
 from app.core.db.utils import compare_type
 from app.tasks.config import tasks_settings
+from app.core.settings_override.models import *
 from app.tasks.models import *
 
 # this is the Alembic Config object, which provides
