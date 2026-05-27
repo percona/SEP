@@ -184,10 +184,13 @@ def build_settings_router(
 
     The factory generates LIST / DETAIL / PATCH / DELETE routes parameterised
     by the settings classes the sub-app wants to expose, its session
-    dependency, and its admin-auth dependency. The admin dependency is applied
-    at the router level so every endpoint inherits the gate; this is the
-    safest variant per :doc:`architecture-patterns` § "Explicit auth dependency
-    declaration".
+    dependency, and its admin-auth dependency. ``admin_dep`` is applied at
+    the router level so every endpoint inherits the admin gate. State-changing
+    endpoints (PATCH / DELETE) additionally take ``mutation_deps``, which the
+    SEP wiring uses to require Bearer authentication on mutations: a
+    cookie-authenticated admin can otherwise be CSRF'd into mutating settings
+    because :func:`app.sep.deps.validate_csrf` only inspects form bodies, and
+    JSON mutations carry no form body.
 
     :param classes: One ``(SettingClassEnum, settings_cls, proxy)`` triple per
         settings class to expose on this router.
@@ -199,8 +202,15 @@ def build_settings_router(
     :type session_dep: Any
     :param admin_dep: A FastAPI ``Depends(...)`` callable that gates access to
         admin users only (e.g. ``app.sep.deps.IsApiAdmin`` or
-        ``app.api.deps.IsAdminDep``).
+        ``app.api.deps.IsAdminDep``). Applied at the router level so every
+        endpoint inherits the admin gate.
     :type admin_dep: params.Depends
+    :param mutation_deps: Optional list of FastAPI ``Depends(...)`` callables
+        applied only to the state-changing endpoints (PATCH / DELETE). The
+        SEP wiring passes ``[RequireBearerAuth]`` so cookie sessions cannot
+        mutate settings; the Tasks wiring leaves this empty because its
+        admin dependency is bearer-only via ``OAuth2PasswordBearer``.
+    :type mutation_deps: list[params.Depends] | None
     :return: A configured :class:`APIRouter` ready to mount under a sub-app's
         ``/settings`` prefix.
     :rtype: APIRouter
