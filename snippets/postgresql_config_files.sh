@@ -139,6 +139,8 @@ fi
 if [[ -z $CONFIG_FILE || -z $DATA_DIR ]]; then
     POSTGRES_PID=""
     POSTGRES_CMD=""
+    # Filter out this script's own PID — pgrep -af matches against the full
+    # command line, and the script's filename contains "postgres".
     while IFS= read -r postgres_line; do
         POSTGRES_PID="${postgres_line%% *}"
         POSTGRES_CMD="${postgres_line#* }"
@@ -147,7 +149,7 @@ if [[ -z $CONFIG_FILE || -z $DATA_DIR ]]; then
         fi
         POSTGRES_PID=""
         POSTGRES_CMD=""
-    done < <(pgrep -af 'postgres' 2> /dev/null || true)
+    done < <(pgrep -af 'postgres' 2> /dev/null | grep -v "^$$ " || true)
     if [[ -z $POSTGRES_PID ]]; then
         POSTGRES_PID=$(pgrep -x postmaster 2> /dev/null | head -1 || true)
         if [[ -n $POSTGRES_PID ]]; then
@@ -155,7 +157,7 @@ if [[ -z $CONFIG_FILE || -z $DATA_DIR ]]; then
         fi
     fi
     if [[ -n $POSTGRES_PID && -n $POSTGRES_CMD ]]; then
-        if [[ -z $DATA_DIR && $POSTGRES_CMD =~ -D[[:space:]]+([^[:space:]]+) ]]; then
+        if [[ -z $DATA_DIR && $POSTGRES_CMD =~ -D[[:space:]]*([^[:space:]]+) ]]; then
             DATA_DIR="${BASH_REMATCH[1]}"
         fi
         if [[ -z $CONFIG_FILE && $POSTGRES_CMD =~ --config-file=([^[:space:]]+) ]]; then
@@ -338,12 +340,10 @@ copy_into_stage() {
     fi
     local rel
     # Preserve directory layout under the stage dir so multiple files with the
-    # same basename (e.g. several included *.conf shards) don't collide.
+    # same basename (e.g. several included *.conf shards) don't collide. The
+    # absolute-path guard above is what prevents traversal; readlink -f
+    # canonicalizes duplicate slashes so ${src_abs#/} can't re-introduce one.
     rel="${src_abs#/}"
-    if [[ $rel == /* ]]; then
-        echo "Warning: refusing to stage path '$src_abs'" >&2
-        return
-    fi
     local dst="$STAGE_DIR/$rel"
     mkdir -p "$(dirname "$dst")"
     if [[ $MASK -eq 1 ]]; then
