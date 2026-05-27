@@ -78,9 +78,11 @@ SUCCESS_HISTORY_ID = 12
 EXPECTED_NODE_COUNT = 5
 
 
-def _make_request(authorization: str | None = None) -> Request:
+def _make_request(method: str = "GET", authorization: str | None = None) -> Request:
     """Build a minimal Request with messages state for testing.
 
+    :param method: HTTP method to set on the request scope.
+    :type method: str
     :param authorization: Value for the ``Authorization`` header, if any.
     :type authorization: str | None
     """
@@ -90,6 +92,7 @@ def _make_request(authorization: str | None = None) -> Request:
     scope = {
         "type": "http",
         "headers": headers,
+        "method": method,
         "client": ("127.0.0.1", "80"),
         "path": "/",
         "app": MagicMock(),
@@ -1036,23 +1039,6 @@ class TestGetExecutorHostsContext:
         assert ctx.display_name("nomad-2") == "nomad-2"
 
 
-def _make_request_with_method(method: str, authorization: str | None = None) -> Request:
-    """Build a minimal Request with explicit HTTP method for dep tests."""
-    headers = []
-    if authorization is not None:
-        headers.append((b"authorization", authorization.encode()))
-    scope = {
-        "type": "http",
-        "headers": headers,
-        "method": method,
-        "client": ("127.0.0.1", "80"),
-        "path": "/",
-        "app": MagicMock(),
-        "router": MagicMock(),
-    }
-    return Request(scope)
-
-
 class TestRequireBearerForUnsafeMethods:
     """Tests for ``require_bearer_for_unsafe_methods`` dependency."""
 
@@ -1060,14 +1046,14 @@ class TestRequireBearerForUnsafeMethods:
     @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
     async def test_safe_methods_pass_without_bearer(self, method: str) -> None:
         """Safe HTTP methods do not require a Bearer header."""
-        request = _make_request_with_method(method)
+        request = _make_request(method=method)
         assert await require_bearer_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
     async def test_unsafe_methods_without_bearer_raise_401(self, method: str) -> None:
         """Mutating methods without an Authorization header raise 401."""
-        request = _make_request_with_method(method)
+        request = _make_request(method=method)
         with pytest.raises(HTTPUnauthorizedException) as exc_info:
             await require_bearer_for_unsafe_methods(request)
         assert "Bearer" in exc_info.value.detail
@@ -1076,32 +1062,97 @@ class TestRequireBearerForUnsafeMethods:
     @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
     async def test_unsafe_methods_with_bearer_pass(self, method: str) -> None:
         """Mutating methods with a Bearer header pass through."""
-        request = _make_request_with_method(method, authorization="Bearer abc")
+        request = _make_request(method=method, authorization="Bearer abc")
         assert await require_bearer_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     async def test_lowercase_bearer_scheme_passes(self) -> None:
         """Bearer detection is case-insensitive (existing helper contract)."""
-        request = _make_request_with_method("POST", authorization="bearer abc")
+        request = _make_request(method="POST", authorization="bearer abc")
         assert await require_bearer_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     async def test_basic_scheme_raises(self) -> None:
         """Non-Bearer Authorization schemes still raise 401 on mutating methods."""
-        request = _make_request_with_method("POST", authorization="Basic abc")
+        request = _make_request(method="POST", authorization="Basic abc")
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
     async def test_bearer_without_trailing_space_raises(self) -> None:
         """The helper requires ``Bearer `` (trailing space) to match."""
-        request = _make_request_with_method("POST", authorization="Bearer")
+        request = _make_request(method="POST", authorization="Bearer")
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
     async def test_empty_authorization_header_raises(self) -> None:
         """An empty Authorization header is not a valid Bearer credential."""
-        request = _make_request_with_method("POST", authorization="")
+        request = _make_request(method="POST", authorization="")
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_bearer_with_empty_token_passes_gate(self) -> None:
+        """``Bearer `` (trailing space, no token) passes the prefix-only gate.
+
+        Token validation happens downstream in ``get_current_user``; the gate
+        is intentionally a routing signal, not an auth check.
+        """
+        request = _make_request(method="POST", authorization="Bearer ")
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_safe_method_with_invalid_authorization_still_passes(self) -> None:
+        """Safe methods bypass the gate regardless of Authorization contents."""
+        request = _make_request(method="GET", authorization="garbage")
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_lowercase_method_treated_as_unsafe(self) -> None:
+        """Method matching is case-sensitive; ``post`` is not in the safe set."""
+        request = _make_request(method="post")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
+
+class TestMakeRequestHelper:
+    """Pin invariants of the ``_make_request`` helper so the merge refactor is safe."""
+
+    def test_default_method_is_get(self) -> None:
+        """Calls without ``method`` produce a GET request (existing call-site contract)."""
+        assert _make_request().method == "GET"
+
+    @pytest.mark.parametrize(
+        "method",
+        ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    )
+    def test_explicit_method_set(self, method: str) -> None:
+        """Explicit ``method`` flows through to ``request.method`` verbatim."""
+        assert _make_request(method=method).method == method
+
+    def test_authorization_header_omitted_when_none(self) -> None:
+        """``authorization=None`` produces a request without an Authorization header."""
+        assert "authorization" not in _make_request().headers
+
+    def test_authorization_header_set_when_provided(self) -> None:
+        """``authorization`` value is written verbatim into the header."""
+        assert (
+            _make_request(authorization="Bearer abc").headers["authorization"]
+            == "Bearer abc"
+        )
+
+    def test_empty_string_authorization_set_literally(self) -> None:
+        """``authorization=""`` produces a present-but-empty Authorization header.
+
+        Several existing call sites rely on this boundary to exercise the empty-token
+        rejection path; pin it explicitly.
+        """
+        assert _make_request(authorization="").headers["authorization"] == ""
+
+    def test_state_messages_initialized(self) -> None:
+        """``request.state.messages`` is initialized to an OrderedDict.
+
+        Many call sites consume this state; the refactor must preserve it.
+        """
+        assert isinstance(_make_request().state.messages, OrderedDict)
