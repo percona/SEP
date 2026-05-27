@@ -18,9 +18,11 @@
 import pytest
 import yaml
 
+from app.sep.deps import IsApiAuthenticated
 from app.sep.main import sep_app
+from app.sep.plugins.backup_pg.api_routes import router as backup_pg_api_router
 from app.sep.plugins.backup_pg.deps import (
-    build_backup_task_payload,
+    build_backup_task_payload_from_form,
     get_backups_index_context,
     get_backups_task,
 )
@@ -31,6 +33,14 @@ from tests.app.factories import TaskFactory
 
 if not any(route.path.startswith("/backup-pg") for route in sep_app.routes):
     sep_app.include_router(backup_pg_router, prefix="/backup-pg")
+
+if not any(route.path.startswith("/api/plugins/backup_pg") for route in sep_app.routes):
+    sep_app.include_router(
+        backup_pg_api_router,
+        prefix="/api/plugins/backup_pg",
+        tags=["backup_pg"],
+        dependencies=[IsApiAuthenticated],
+    )
 
 
 @pytest.fixture
@@ -103,6 +113,8 @@ def mock_build_backup_task_payload_dep() -> TaskWrite:
         owner=TaskOwner.BACKUP_PG,
         data={"task": "fake-task", "meta": {}, "payload": ""},
     )
-    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+    sep_app.dependency_overrides[build_backup_task_payload_from_form] = (
+        lambda: fake_task_write
+    )
     yield fake_task_write
     sep_app.dependency_overrides = {}
