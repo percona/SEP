@@ -16,7 +16,6 @@
 """Define test fixtures for checksum plugin route tests."""
 
 from tests.app.sep.conftest import (  # noqa: F401
-    api_admin_client_no_bearer,
     mock_inventory_api_dep,
     mock_task_api_dep,
 )

@@ -302,7 +302,7 @@ class TestDipperScriptPreviewEndpoint:
 
 
 class TestDipperBearerGate:
-    """Bearer-gate (SEP-1242) coverage on dipper JSON mutation."""
+    """Cover Bearer-gate behavior on dipper JSON mutation."""
 
     def test_cookie_only_execute_returns_401(
         self, api_admin_client_no_bearer, mock_task_api_dep, mock_inventory_api_dep

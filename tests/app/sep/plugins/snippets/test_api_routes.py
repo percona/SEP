@@ -1012,7 +1012,7 @@ class TestSnippetsApiRefresh:
     async def test_cookie_only_admin_mutation_rejected_by_bearer_gate(
         self, api_admin_client_no_bearer, enable_manual_sync, mocker
     ):
-        """Cookie-auth admin POST without Bearer header is rejected with 401 (SEP-1242).
+        """Cookie-auth admin POST without Bearer header is rejected with 401.
 
         The framework Bearer gate on ``/api/plugins/*`` must fire before the
         route's business logic, so the refresh helper is never invoked.

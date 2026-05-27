@@ -1043,7 +1043,7 @@ class TestGetExecutorHostsContext:
 
 
 class TestRequireBearerForUnsafeMethods:
-    """Tests for ``require_bearer_for_unsafe_methods`` dependency."""
+    """Exercise the ``require_bearer_for_unsafe_methods`` dependency."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
@@ -1187,7 +1187,7 @@ class TestMakeRequestHelper:
 
 
 class TestRequireBearerAuth:
-    """Tests for the method-agnostic ``require_bearer_auth`` dependency.
+    """Exercise the method-agnostic ``require_bearer_auth`` dependency.
 
     Mirrors :class:`TestRequireBearerForUnsafeMethods` but exercises the
     unconditional variant that does not short-circuit on safe methods.
@@ -1238,7 +1238,7 @@ class TestRequireBearerAuth:
 
 
 class TestBearerHeaderEdgeCases:
-    """Header-parsing edges for ``is_bearer_authenticated`` and the gates that wrap it.
+    """Cover header-parsing edges for ``is_bearer_authenticated`` and the gates that wrap it.
 
     These tests pin the *current* permissive-prefix contract: the gate is a
     routing signal, not a credential check. Any future tightening (token shape,

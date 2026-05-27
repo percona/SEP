@@ -392,7 +392,7 @@ class TestInventoryNewRoutesAuthentication:
 
 
 class TestInventoryBearerGate:
-    """Bearer-gate (SEP-1242) coverage on inventory JSON mutations."""
+    """Cover Bearer-gate behavior on inventory JSON mutations."""
 
     def test_cookie_only_sync_post_returns_401(
         self, api_admin_client_no_bearer, mock_run_sync_funcs

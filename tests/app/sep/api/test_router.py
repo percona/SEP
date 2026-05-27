@@ -162,7 +162,7 @@ def cookie_only_client(regular_user):
 
 
 class TestPluginBearerGate:
-    """Tests for the framework-level Bearer gate on /api/plugins/* mutations (SEP-1242)."""
+    """Exercise the framework-level Bearer gate on /api/plugins/* mutations."""
 
     @pytest.mark.parametrize(
         ("method", "path"),

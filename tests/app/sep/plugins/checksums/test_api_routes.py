@@ -416,7 +416,7 @@ class TestChecksumsSchemaEndpoint:
 
 
 class TestChecksumsBearerGate:
-    """Bearer-gate (SEP-1242) coverage on checksums JSON mutations."""
+    """Cover Bearer-gate behavior on checksums JSON mutations."""
 
     def test_cookie_only_create_returns_401(
         self,

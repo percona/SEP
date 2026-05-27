@@ -65,7 +65,7 @@ def test_client(regular_user: CasdoorUser) -> TestClient:
 
     Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
     mutations under ``/api/plugins/*`` are not blocked by the framework
-    Bearer gate (SEP-1242). Plugin-local ``test_client`` overrides MUST
+    Bearer gate. Plugin-local ``test_client`` overrides MUST
     mirror this override; see :func:`api_admin_client_no_bearer` for the
     negative-path fixture that leaves the gate intact.
     """
@@ -84,7 +84,7 @@ def api_admin_client_no_bearer(admin_user: CasdoorUser) -> TestClient:
     Mirrors :func:`test_client` but deliberately leaves
     ``require_bearer_for_unsafe_methods`` un-overridden, so cookie-only
     JSON mutations to ``/api/plugins/*`` are rejected by the framework
-    Bearer gate (SEP-1242). Use in tests that assert the 401 path.
+    Bearer gate. Use in tests that assert the 401 path.
     """
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
