@@ -251,7 +251,7 @@ def build_settings_router(
         groups = []
         for setting_class, settings_cls, proxy in classes:
             rows = await SettingsOverrideManager.list(
-                session, setting_class=setting_class
+                session, setting_class=setting_class, is_active=True
             )
             override_keys = {row.key for row in rows}
             settings_list = [
