@@ -86,6 +86,55 @@ async def sep_startup() -> None:
 
 
 @asynccontextmanager
+async def sep_overrides_lifespan(
+    app: FastAPI,  # noqa: ARG001
+) -> AsyncGenerator[None, None]:
+    """Wire the SEP-side settings override refresher into a lifespan.
+
+    Force-resolves ``messages_settings`` (fail-fast validation) and starts
+    the background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``
+    and ``MESSAGES_SETTINGS`` proxies for the duration of the wrapped block.
+
+    This is extracted from :func:`sep_lifespan` because ``sep_app`` is mounted
+    under the top-level ``app`` via Starlette's ``Mount``, which only forwards
+    ``http``/``websocket`` scopes -- never ``lifespan``. Without calling this
+    context manager from :func:`app.main.main_lifespan`, the SEP refresher
+    would never run when ``python -m app.main`` serves ``app.main:app``.
+
+    The two call sites are mutually exclusive at runtime: uvicorn serves
+    either ``app.main:app`` (in which case ``main_lifespan`` enters this
+    block) or ``app.sep.main:sep_app`` standalone (in which case
+    ``sep_lifespan`` enters it). The refresher therefore starts exactly once.
+
+    :param app: The FastAPI application instance. Unused -- accepted to
+        match the lifespan-context-manager signature.
+    :type app: FastAPI
+    :yield: None
+    :rtype: AsyncGenerator[None, None]
+    """
+    # Force-resolve ``messages_settings`` so the proxy's underlying Pydantic
+    # instance is constructed (and validated) before any lifespan side
+    # effects (DB init, snippet sync enqueue) can fire. Mirrors the previous
+    # eager ``MessagesSettings()`` fail-fast behavior at import time.
+    messages_settings._resolve()  # noqa: SLF001
+    async with settings_override_refresher(
+        get_async_session_maker,
+        {
+            SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+            SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
+                snippets_settings, SnippetsSettings
+            ),
+            SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
+                messages_settings, MessagesSettings
+            ),
+        },
+        settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
+        enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+    ):
+        yield
+
+
+@asynccontextmanager
 async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage SEP's lifespan.
 
@@ -98,11 +147,6 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
-    # Force-resolve ``messages_settings`` so the proxy's underlying Pydantic
-    # instance is constructed (and validated) before any lifespan side
-    # effects (DB init, snippet sync enqueue) can fire. Mirrors the previous
-    # eager ``MessagesSettings()`` fail-fast behavior at import time.
-    messages_settings._resolve()  # noqa: SLF001
     await sep_startup()
     app.state.inventory_api = RemoteAPI(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
@@ -117,20 +161,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ssl_certfile=tasks_settings.SSL_CERTFILE,
     )
     async with (
-        settings_override_refresher(
-            get_async_session_maker,
-            {
-                SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
-                SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
-                    snippets_settings, SnippetsSettings
-                ),
-                SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
-                    messages_settings, MessagesSettings
-                ),
-            },
-            settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-            enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
-        ),
+        sep_overrides_lifespan(app),
         app.state.inventory_api,
         app.state.tasks_api,
         default_lifespan(app),
