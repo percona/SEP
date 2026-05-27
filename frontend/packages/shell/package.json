@@ -26,6 +26,7 @@
     "@sep/framework": "workspace:*",
     "@sep/inventory": "workspace:*",
     "@sep/plugin-alert-troubleshooting": "workspace:*",
+    "@sep/plugin-alters": "workspace:*",
     "@sep/plugin-atw": "workspace:*",
     "@sep/plugin-backup-mongo": "workspace:*",
     "@sep/plugin-checksums": "workspace:*",
