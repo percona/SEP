@@ -184,6 +184,9 @@ async def task_history_logs_event_stream(
                 if pending_wait >= 120:
                     yield f"event: sep-error\ndata: {json.dumps({'detail': 'Timed out waiting for task to start'})}\n\n"
                     return
+                # Send an SSE comment to keep the connection alive while the task
+                # is PENDING (nginx and browsers drop silent SSE connections).
+                yield ": pending\n\n"
                 await asyncio.sleep(2)
                 pending_wait += 2
 

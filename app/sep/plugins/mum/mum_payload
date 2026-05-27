@@ -90,7 +90,6 @@ def _uri_from_mongo_alias() -> Optional[str]:
             return (
                 f"mongodb://{quote_plus(user.group(1))}:{quote_plus(pwd.group(1))}"
                 f"@{resolved_host}:{p}/admin"
-                f"?directConnection=true"
             )
     return None
 
