@@ -148,7 +148,7 @@ export function MumPlugin() {
           else setStreamError('Could not parse output JSON.');
         });
 
-        es.onerror = () => { if (esRef.current) { setStreamError('Stream failed.'); stopStreaming(); } };
+        es.onerror = () => { if (esRef.current === es) { setStreamError('Stream failed.'); stopStreaming(); } };
       } catch (e) {
         setStreamError(String((e as Error)?.message ?? e));
         setIsStreaming(false);
@@ -193,7 +193,7 @@ export function MumPlugin() {
         else setRolesStreamError('Could not parse output JSON.');
       });
 
-      es.onerror = () => { if (rolesEsRef.current) { setRolesStreamError('Stream failed.'); stopRoles(); } };
+      es.onerror = () => { if (rolesEsRef.current === es) { setRolesStreamError('Stream failed.'); stopRoles(); } };
     } catch (e) {
       setRolesStreamError(String((e as Error)?.message ?? e));
       setIsRolesStreaming(false);
@@ -213,7 +213,8 @@ export function MumPlugin() {
         const rolesHistoryData = (response.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
         streamListRoles(rolesHistoryData?.['id'] as string);
       } catch (err) {
-        const e = err as { response?: { data?: { detail?: string } }; message?: string };
+        const e = err as { response?: { data?: { detail?: string }; status?: number }; message?: string };
+        if (e?.response?.status === 409) return;
         setError(e?.response?.data?.detail ?? e?.message ?? 'Failed to list roles');
       } finally {
         setRolesBusy(false);
@@ -236,7 +237,8 @@ export function MumPlugin() {
         const historyData = (response.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
         streamListUsers(historyData?.['id'] as string);
       } catch (err) {
-        const e = err as { response?: { data?: { detail?: string } }; message?: string };
+        const e = err as { response?: { data?: { detail?: string }; status?: number }; message?: string };
+        if (e?.response?.status === 409) return;
         setError(e?.response?.data?.detail ?? e?.message ?? 'Failed to list users');
       } finally {
         setListBusyCount((c) => Math.max(c - 1, 0));

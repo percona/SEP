@@ -171,6 +171,22 @@ async def task_history_logs_event_stream(
     """
     try:
         with tasks_client.auth(access_token) as tasks_api:
+            # Poll until the task leaves PENDING so the log endpoint doesn't reject
+            # with 409 "Task history is pending." (the Tasks API raises that status
+            # before Nomad picks up the allocation).
+            pending_wait = 0
+            while True:
+                if await request.is_disconnected():
+                    return
+                th = await tasks_api.get(f"/history/{task_history_id}")
+                if th.get("status") != TaskHistoryStatusEnum.PENDING:
+                    break
+                if pending_wait >= 120:
+                    yield f"event: sep-error\ndata: {json.dumps({'detail': 'Timed out waiting for task to start'})}\n\n"
+                    return
+                await asyncio.sleep(2)
+                pending_wait += 2
+
             # No read timeout: log stream can stall under backpressure (e.g. ~26MB)
             # and must not be killed by the default sock_read=120.
             async for log_entry in tasks_api.stream(
