@@ -31,6 +31,7 @@ from app.sep.plugins.archives.deps import (
     _resolve_source_tables,
     build_archives_api_task_payload,
     build_archives_task_payload,
+    get_archives_api_task_responses,
     get_archives_task,
     get_archives_task_info,
 )
@@ -344,6 +345,34 @@ class TestExtractLatestTaskStatus:
     def test_all_none_statuses_returns_none(self):
         """All entries lacking a non-None status yield None."""
         assert _extract_latest_task_status([{"status": None}, {}]) is None
+
+
+@pytest.mark.asyncio
+async def test_get_archives_api_task_responses_fetches_task_statuses(mock_remote_api):
+    """List responses include per-task latest history statuses."""
+    task_one = TaskFactory.build(name="archive-1", owner=TaskOwner.ARCHIVER)
+    task_two = TaskFactory.build(name="archive-2", owner=TaskOwner.ARCHIVER)
+    mock_remote_api.get = AsyncMock(
+        side_effect=[
+            {"items": [task_one.model_dump(), task_two.model_dump()]},
+            {"items": [{"status": "success"}]},
+            {"items": [{"status": "failed"}]},
+        ]
+    )
+
+    responses = await get_archives_api_task_responses(mock_remote_api)
+
+    assert [response.name for response in responses] == ["archive-1", "archive-2"]
+    assert [response.status for response in responses] == [
+        TaskHistoryStatusEnum.SUCCESS,
+        TaskHistoryStatusEnum.FAILED,
+    ]
+    assert mock_remote_api.get.await_args_list[0].args == ("/",)
+    assert mock_remote_api.get.await_args_list[0].kwargs == {
+        "params": {"owner": TaskOwner.ARCHIVER.value}
+    }
+    history_paths = {call.args[0] for call in mock_remote_api.get.await_args_list[1:]}
+    assert history_paths == {"/archive-1/history/", "/archive-2/history/"}
 
 
 class TestGetArchivesTaskInfo:

@@ -15,6 +15,7 @@
 
 """Define dependencies for the Archives plugin."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -54,6 +55,7 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
+_STATUS_FETCH_CONCURRENCY = 10
 
 
 async def _resolve_source_tables(
@@ -376,12 +378,19 @@ async def get_archives_api_task_responses(
     """
     response = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
     tasks = [Task.model_validate(task) for task in response.get("items", [])]
+    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
+
+    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
+        async with sem:
+            return await get_archives_task_status(task.name, tasks_api)
+
+    task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
     return [
         build_archives_api_task_response(
             task,
-            status=await get_archives_task_status(task.name, tasks_api),
+            status=task_status,
         )
-        for task in tasks
+        for task, task_status in zip(tasks, task_statuses, strict=True)
     ]
 
 
