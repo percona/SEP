@@ -36,7 +36,7 @@ from app.core.settings_override.api.models import (
     SettingsListResponse,
     SettingsPatch,
 )
-from app.core.settings_override.cache import build_snapshot
+from app.core.settings_override.lifecycle import publish_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
@@ -334,7 +334,7 @@ def build_settings_router(
             setting_class=setting_class,
             to_apply=to_apply,
         )
-        proxy._set_snapshot(await build_snapshot(session, settings_cls))  # noqa: SLF001
+        await publish_snapshot(proxy, session, settings_cls)
         field_meta_by_key = {f.key: f for f in iter_class_fields(settings_cls)}
         return [
             _settings_response_from_field(
@@ -384,8 +384,7 @@ def build_settings_router(
         await SettingsOverrideManager.delete_where(
             session, setting_class=setting_class, key=key
         )
-        await session.commit()
-        proxy._set_snapshot(await build_snapshot(session, settings_cls))  # noqa: SLF001
+        await publish_snapshot(proxy, session, settings_cls)
 
     return router
 

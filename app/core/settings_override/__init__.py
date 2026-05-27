@@ -29,6 +29,7 @@ __all__ = [
     "hot_field_names",
     "is_hot_reloadable",
     "iter_class_fields",
+    "publish_snapshot",
     "refresh_all",
     "settings_override_refresher",
     "start_refresh_task",
@@ -36,6 +37,7 @@ __all__ = [
 
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
+    publish_snapshot,
     refresh_all,
     settings_override_refresher,
     start_refresh_task,
