@@ -184,11 +184,11 @@ function EntityDetailField({
   );
 }
 
-// Fields hidden from the auto-rendered "extras" loop on the Overview tab.
-// Numeric `id`, internal worker plumbing (`backend`, `protected`), and
-// timestamps already shown in the list_view columns. The `data` payload is
-// rendered via the schema-declared ``detail_view`` sections.
-const OVERVIEW_HIDDEN_FIELDS = new Set([
+// Framework baseline: numeric `id`, internal worker plumbing (`backend`, `protected`), and
+// timestamps already shown in list_view columns. The `data` payload is rendered via
+// schema-declared ``detail_view`` sections. Plugin schemas can extend this via
+// ``list_view.overview_hidden_fields``.
+const BASELINE_OVERVIEW_HIDDEN_FIELDS = [
   'id',
   'backend',
   'protected',
@@ -196,7 +196,7 @@ const OVERVIEW_HIDDEN_FIELDS = new Set([
   'updated_at',
   'last_updated_by',
   'connectivity_warning',
-]);
+] as const;
 
 function formatLabel(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -289,9 +289,12 @@ function DetailViewSectionCard({
 function OverviewTab({ schema, task, hiddenFields = [], children }: OverviewTabProps) {
   const connectivityWarning = task.connectivity_warning;
   const columns = schema.list_view!.columns;
+  const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
+
   const suppressedFields = useMemo(
-    () => new Set([...OVERVIEW_HIDDEN_FIELDS, ...hiddenFields]),
-    [hiddenFields],
+    () =>
+      new Set([...BASELINE_OVERVIEW_HIDDEN_FIELDS, ...(schemaHiddenFields ?? []), ...hiddenFields]),
+    [schemaHiddenFields, hiddenFields],
   );
 
   // Extra fields beyond the schema's list_view columns, excluding internal
@@ -761,7 +764,8 @@ export function PluginDetailPage({
                 !listView.columns.some((c) => c.key === key) &&
                 key !== 'id' &&
                 key !== '_actions' &&
-                !suppressDetailKeys.includes(key),
+                !suppressDetailKeys.includes(key) &&
+                !(listView.overview_hidden_fields ?? []).includes(key),
             )
             .map(([key, value]) => (
               <EntityDetailField
