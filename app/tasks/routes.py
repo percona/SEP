@@ -438,7 +438,6 @@ async def retrieve_task_history(
 @router.get(
     "/history/{task_history_id}/events",
     dependencies=[IsAuthenticatedDep],
-    response_model=list[ExecutionEvent],
 )
 async def list_task_history_events(
     executor: TaskExecutor,
@@ -489,7 +488,6 @@ async def stream_task_history_logs(
 @router.get(
     "/history/{task_history_id}/files/",
     dependencies=[IsAuthenticatedDep],
-    response_model=dict[str, FileMetadata],
 )
 async def list_task_history_files(
     executor: TaskExecutor,
@@ -702,7 +700,6 @@ async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
 @router.post(
     "/transform/",
     dependencies=[IsAuthenticatedDep],
-    response_model=TransformPayloadResponse,
 )
 async def transform_payload(
     data: TransformPayloadRequest,
