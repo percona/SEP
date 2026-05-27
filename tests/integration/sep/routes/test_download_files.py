@@ -21,7 +21,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from starlette.status import HTTP_200_OK
+from starlette.status import (
+    HTTP_200_OK,
+    HTTP_400_BAD_REQUEST,
+    HTTP_409_CONFLICT,
+    HTTP_500_INTERNAL_SERVER_ERROR,
+)
 
 from app.core.requests import RemoteAPI
 from app.sep.deps import (
@@ -129,6 +134,44 @@ class TestListTaskHistoryFiles:
         mock_tasks_api_dep.get.assert_awaited_once_with(
             f"/history/{task_history_response.id}/files/"
         )
+
+    def test_returns_empty_dict_when_tasks_api_returns_400(
+        self, test_client, mock_tasks_api_dep, task_history_response
+    ):
+        """Assert HTTP 400 from the Tasks API (no output_files_path) is returned as {}."""
+        mock_tasks_api_dep.get.side_effect = HTTPException(
+            status_code=HTTP_400_BAD_REQUEST
+        )
+
+        response = test_client.get(f"/files/{task_history_response.id}")
+
+        assert response.status_code == HTTP_200_OK
+        assert response.json() == {}
+
+    def test_returns_empty_dict_when_tasks_api_returns_409(
+        self, test_client, mock_tasks_api_dep, task_history_response
+    ):
+        """Assert HTTP 409 (task still running) is returned as {}."""
+        mock_tasks_api_dep.get.side_effect = HTTPException(
+            status_code=HTTP_409_CONFLICT
+        )
+
+        response = test_client.get(f"/files/{task_history_response.id}")
+
+        assert response.status_code == HTTP_200_OK
+        assert response.json() == {}
+
+    def test_propagates_other_http_exceptions(
+        self, test_client, mock_tasks_api_dep, task_history_response
+    ):
+        """Assert HTTP errors other than 400/409 are re-raised, not silently returned as {}."""
+        mock_tasks_api_dep.get.side_effect = HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+        response = test_client.get(f"/files/{task_history_response.id}")
+
+        assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR
 
 
 # ---------------------------------------------------------------------------

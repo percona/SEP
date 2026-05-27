@@ -14,50 +14,33 @@ Test data MUST come from factories under `tests/factories.py` (`SchemaWriteFacto
 
 Use mock ID constants from `tests/factories.py` (`MOCK_CREATED_NODE_ID`, etc.) — don't invent literals.
 
-## Mock subjects vs boundaries
+## Mock subjects vs boundaries — critical
 
-Every test has a **subject** (code under test + machinery it directly operates on: its session, model instances, loop state) and **boundaries** (HTTP clients to other services, subprocess/Nomad, file I/O, time, randomness). Mock only at the boundaries. Never mock the subject's primary dependency.
+Every test has a **subject** (SUT + its session, model instances, loop state) and **boundaries** (HTTP clients, subprocess/Nomad, file I/O, time, randomness). Mock only at the boundaries.
 
-## Never mock `AsyncSession` on a session-touching SUT — CRITICAL
+**Never mock `AsyncSession` on a session-touching SUT.** If the SUT receives `session: AsyncSession` and performs any session op directly or transitively (`add`, `commit`, `refresh`, `execute`, any `BaseSQLModelManager` method), use the real `session` fixture from `tests/app/tasks/conftest.py`. A mocked session silently accepts every attribute access — the test passes green while production fails on the first real call. Watch for `_session = (AsyncMock(...),)` (1-tuple typo) and `MagicMock(spec=<SQLModel>)` + `AsyncMock(spec=AsyncSession)` together.
 
 If the SUT receives `session: AsyncSession` and performs ANY session operation directly or transitively (`session.add`, `commit`, `refresh`, `execute`, or any `BaseSQLModelManager.save`/`get_or_404`/`create`/`update`), consider using the real `session` fixture from `tests/integration/tasks/conftest.py` (or the analogous inventory/sep fixture), not `AsyncMock(spec=AsyncSession)`.
 
-Mocking `AsyncSession` bypasses SQLAlchemy's entire lifecycle — commit/flush, `expire_on_commit`, relationship loading, deferred columns, identity-map caching, lazy loads. A mocked session silently accepts every attribute access, so a test passes green while production fails on the first real call. If a real-session sibling already covers the same SUT entrypoint and outcome, consider deleting the mock-based duplicate; otherwise consider rewriting it with the real `session` fixture in the same PR.
+## Body-dep override masks form/JSON parsing — critical
 
-Sub-cases: tuple-as-session typo (`_session = (AsyncMock(...),)` — trailing comma) silently makes every session call a tuple attribute access. `MagicMock(spec=<SQLModel>)` + `AsyncMock(spec=AsyncSession)` together on the same SUT is the most aggressive variant.
+When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()]`, the test MUST NOT override the dep that materialises that body model (`dependency_overrides[build_<plugin>_task_payload]`, `dependency_overrides[parse_<resource>_form]`, …). Such overrides remove the Pydantic model from FastAPI's body-field resolution, so body-parsing regressions (422 in production) pass green. At least one test per POST/PUT/PATCH route MUST issue a real `test_client.post(...)` with realistic data and no body-dep override. Overriding `validate_csrf`, `get_current_user`, `get_session`, `get_inventory_api`, `get_tasks_api` is fine.
 
-## Spec'd mocks required
+## Compile-only SQL ≠ engine coverage
 
-Always use `spec=ClassName`. Bare `AsyncMock()` / `MagicMock()` silently accept misspelled attribute access. For async: `AsyncMock(spec=SomeAsync)`; assert with `.assert_awaited_once_with()`, not `.assert_called_once*`.
-
-## Don't mock the subject
-
-Patches like `patch.object(<SUT class>, "<sibling_method>", …)` or `patch("app.<sut_module>.<sibling>", …)` turn the test into a self-assertion. Flag any patch targeting a function/method defined in the same module/class as the SUT. Acceptable: patching imported boundaries.
-
-## Three or more boundary mocks signal a missing seam
-
-A test with ≥3 distinct `patch(...)` calls is **Mockery** — the SUT has too many direct boundary dependencies and needs a seam. Consider splitting the SUT before splitting the test.
-
-## Don't reach into private module state
-
-Tests asserting against `_LATEST_RESULTS`, `_CACHE`, or any `_<priv>` module global are coupled to implementation. Expose a public getter.
+`.compile(dialect=postgresql.dialect(), ...)` + `assert "->>" in rendered` verifies the rendered shape, NOT that the engine accepts it. PostgreSQL's `->`/`->>` require `json`/`jsonb` — a compile-only test on a `Text` column passes while production rejects the SQL. Dialect-specific helpers MUST have a real-engine execution test per `(dialect × column type)`. SQLite is not a substitute for PostgreSQL.
 
 ## Don't ratify the implementation
 
-`assert "<token>" in compiled_sql` where `<token>` is copied verbatim from the SUT is a tautology. Drive the SUT with inputs and assert on observable outputs.
+`assert "<token>" in compiled_sql` with `<token>` copied verbatim from the SUT is a tautology. Same for HTML — substring matches against template output (`'selected>hosts</option>' in response.text`) ratify the template, not the route's contract. Drive the SUT with inputs and assert observable outputs (status, row count, parsed DOM nodes).
 
-## Loops must run at least twice
+## Loops, enums, settings, private state
 
-A polling/retry/loop SUT exercised with input that triggers exactly one iteration silently passes on off-by-one bugs. Pick input that drives ≥2 iterations.
+- **Loops:** a polling/retry SUT MUST have a test that drives ≥2 iterations.
+- **Enums:** derive from `TaskHistoryStatusEnum.SUCCESS.value`, not `"success"`.
+- **Settings:** capture from the live settings object; don't hardcode the YAML default. The override value MUST differ from the resolved default (`override = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT`) — otherwise the test passes whether the override fired or not.
+- **Private state:** `_LATEST_RESULTS`, `_CACHE`, any `_<priv>` module global — expose a public getter.
 
-## Enum-valued assertions
+## Cleanup & duplicates
 
-Derive from the enum (`TaskHistoryStatusEnum.SUCCESS.value`), don't hardcode (`"success"`).
-
-## Cleanup
-
-`TestClient` / `AsyncClient` fixtures MUST reset `dependency_overrides = {}` in teardown. Async tests: `@pytest.mark.asyncio`; async fixtures: `@pytest_asyncio.fixture`.
-
-## Coverage-padding duplicates
-
-Two tests differing only in one input → `@pytest.mark.parametrize`.
+`TestClient`/`AsyncClient` fixtures reset `dependency_overrides = {}` in teardown. Async: `@pytest.mark.asyncio`, `@pytest_asyncio.fixture`. Two tests differing only in one input → `@pytest.mark.parametrize`.
