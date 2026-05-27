@@ -29,6 +29,7 @@ from sqlmodel import SQLModel
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
 from app.sep.config import sep_settings
@@ -138,7 +139,11 @@ class TestSepSettingsList:
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         groups = {group["setting_class"] for group in payload["groups"]}
-        assert groups == {"SEPSettings", "SnippetsSettings", "MessagesSettings"}
+        assert groups == {
+            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.SNIPPETS_SETTINGS.value,
+            SettingClassEnum.MESSAGES_SETTINGS.value,
+        }
 
     async def test_lists_hot_and_not_overridable_entries(
         self, api_admin_client: TestClient
@@ -150,17 +155,22 @@ class TestSepSettingsList:
         sep_entry = next(
             group
             for group in payload["groups"]
-            if group["setting_class"] == "SEPSettings"
+            if group["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
         )
         reloads = {entry["reload"] for entry in sep_entry["settings"]}
-        assert reloads == {"hot", "not_overridable"}
+        assert reloads == {
+            ReloadClassification.HOT.value,
+            ReloadClassification.NOT_OVERRIDABLE.value,
+        }
 
     async def test_no_override_marks_has_override_false(
         self, api_admin_client: TestClient
     ) -> None:
         """A field with no override row reports ``has_override=False``."""
         response = api_admin_client.get("/api/sep/settings/")
-        sep_setting = _find_setting(response.json(), "SEPSettings", "SYNC_REFRESH_TIME")
+        sep_setting = _find_setting(
+            response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+        )
         assert sep_setting["has_override"] is False
 
 
@@ -178,8 +188,8 @@ class TestSepSettingsGet:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["key"] == "SYNC_REFRESH_TIME"
-        assert body["setting_class"] == "SEPSettings"
-        assert body["reload"] == "hot"
+        assert body["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+        assert body["reload"] == ReloadClassification.HOT.value
         assert body["has_override"] is False
 
     async def test_unknown_class_returns_422(
@@ -268,9 +278,17 @@ class TestSepSettingsPatch:
         assert len(response.json()) == expected_keys
 
         list_payload = api_admin_client.get("/api/sep/settings/").json()
-        sync = _find_setting(list_payload, "SEPSettings", "SYNC_REFRESH_TIME")
-        ttl = _find_setting(list_payload, "SEPSettings", "ARTIFACT_DOWNLOAD_TTL")
-        check = _find_setting(list_payload, "SEPSettings", "CONNECTIVITY_CHECK_DEFAULT")
+        sync = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+        )
+        ttl = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, "ARTIFACT_DOWNLOAD_TTL"
+        )
+        check = _find_setting(
+            list_payload,
+            SettingClassEnum.SEP_SETTINGS.value,
+            "CONNECTIVITY_CHECK_DEFAULT",
+        )
         expected_ttl = 1200
         expected_sync = 12
         assert sync["value"] == expected_sync
@@ -327,7 +345,10 @@ class TestSepSettingsPatch:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
-        assert any(entry["type"] == "not_overridable" for entry in detail)
+        assert any(
+            entry["type"] == ReloadClassification.NOT_OVERRIDABLE.value
+            for entry in detail
+        )
 
     async def test_constraint_violation_returns_422(
         self, api_admin_client: TestClient
@@ -357,7 +378,7 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         types = {entry["type"] for entry in response.json()["detail"]}
         assert "unknown_key" in types
-        assert "not_overridable" in types
+        assert ReloadClassification.NOT_OVERRIDABLE.value in types
         assert any("greater_than" in t for t in types)
 
         rows = await SettingsOverrideManager.list(

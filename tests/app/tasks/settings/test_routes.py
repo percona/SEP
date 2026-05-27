@@ -26,6 +26,7 @@ from starlette.testclient import TestClient
 from app.api.deps import get_current_user
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.registry import ReloadClassification
 from app.models import CasdoorUser
 from app.tasks.config import tasks_settings
 from app.tasks.deps import get_executor, get_session
@@ -85,7 +86,7 @@ class TestTasksSettingsApi:
         assert response.status_code == status.HTTP_200_OK
         groups = response.json()["groups"]
         assert len(groups) == 1
-        assert groups[0]["setting_class"] == "TasksSettings"
+        assert groups[0]["setting_class"] == SettingClassEnum.TASKS_SETTINGS.value
 
     async def test_get_single_setting(self, admin_test_client: TestClient) -> None:
         """A single Tasks HOT field returns its metadata."""
@@ -95,7 +96,7 @@ class TestTasksSettingsApi:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["key"] == "STALENESS_THRESHOLD_SECONDS"
-        assert body["reload"] == "hot"
+        assert body["reload"] == ReloadClassification.HOT.value
 
     async def test_patch_hot_field(
         self,
@@ -177,7 +178,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         types = {entry["type"] for entry in response.json()["detail"]}
-        assert "not_overridable" in types
+        assert ReloadClassification.NOT_OVERRIDABLE.value in types
 
     async def test_patch_type_mismatch(self, admin_test_client: TestClient) -> None:
         """An int field rejects a string value with a structured 422."""
