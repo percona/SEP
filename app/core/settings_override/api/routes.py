@@ -228,7 +228,7 @@ def build_settings_router(
             )
         return entry
 
-    @router.get("/", response_model=SettingsListResponse)
+    @router.get("/")
     async def list_settings(session: session_dep) -> SettingsListResponse:  # type: ignore[valid-type]
         """List every exposed settings class with current values and metadata.
 
@@ -258,7 +258,7 @@ def build_settings_router(
             )
         return SettingsListResponse(groups=groups)
 
-    @router.get("/{setting_class}/{key}", response_model=SettingResponse)
+    @router.get("/{setting_class}/{key}")
     async def get_setting(
         setting_class: SettingClassEnum,
         key: str,
@@ -290,7 +290,7 @@ def build_settings_router(
             has_override=existing is not None,
         )
 
-    @router.patch("/{setting_class}", response_model=list[SettingResponse])
+    @router.patch("/{setting_class}")
     async def patch_settings(
         setting_class: SettingClassEnum,
         body: SettingsPatch,
