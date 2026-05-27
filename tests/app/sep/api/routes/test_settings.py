@@ -17,16 +17,19 @@
 
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 from fastapi import status
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
@@ -390,6 +393,42 @@ class TestSepSettingsPatch:
         """An empty PATCH body fails the ``min_length=1`` root model constraint."""
         response = api_admin_client.patch("/api/sep/settings/SEPSettings", json={})
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    async def test_integrity_error_triggers_single_retry(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """A concurrent-PATCH IntegrityError causes one rollback + replay; the row lands."""
+        new_value = 17
+        original = settings_routes._stage_and_commit_overrides
+        raised = False
+
+        async def flaky(**kwargs: Any) -> None:
+            nonlocal raised
+            if not raised:
+                raised = True
+                raise IntegrityError("statement", "params", Exception("dup"))
+            await original(**kwargs)
+
+        with patch.object(
+            settings_routes, "_stage_and_commit_overrides", side_effect=flaky
+        ) as spy:
+            response = api_admin_client.patch(
+                "/api/sep/settings/SEPSettings",
+                json={"SYNC_REFRESH_TIME": new_value},
+            )
+        assert response.status_code == status.HTTP_200_OK
+
+        expected_call_count = 2
+        assert spy.call_count == expected_call_count
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert len(rows) == 1
+        assert rows[0].value == new_value
+        assert rows[0].is_active is True
 
 
 @pytest.mark.asyncio
