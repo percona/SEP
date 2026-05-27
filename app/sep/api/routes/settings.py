@@ -20,7 +20,7 @@ __all__ = ["router"]
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings, SEPSettings
-from app.sep.deps import IsApiAdmin, SessionDep
+from app.sep.deps import IsApiAdmin, RequireBearerAuth, SessionDep
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
@@ -32,4 +32,5 @@ router = build_settings_router(
     ],
     session_dep=SessionDep,
     admin_dep=IsApiAdmin,
+    mutation_deps=[RequireBearerAuth],
 )

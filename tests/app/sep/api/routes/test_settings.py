@@ -36,6 +36,7 @@ from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
     get_session,
+    require_bearer_auth,
     validate_csrf,
 )
 from app.sep.main import sep_app
@@ -68,6 +69,7 @@ def api_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
+    sep_app.dependency_overrides[require_bearer_auth] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -80,6 +82,24 @@ def api_non_admin_client_fixture(
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_session] = lambda: override_session
+    sep_app.dependency_overrides[require_bearer_auth] = lambda: None
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture(name="api_admin_cookie_client")
+def api_admin_cookie_client_fixture(
+    admin_user: CasdoorUser, override_session: AsyncSession
+) -> Iterator[TestClient]:
+    """Yield an admin authenticated by cookie session (no Bearer header).
+
+    The Bearer guard runs as in production; mutations should reject the
+    client with 401 while reads succeed.
+    """
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -433,6 +453,32 @@ class TestSepSettingsAuth:
             json={"SYNC_REFRESH_TIME": 10},
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    async def test_cookie_admin_patch_without_bearer_returns_401(
+        self, api_admin_cookie_client: TestClient
+    ) -> None:
+        """Cookie-authenticated admin cannot PATCH without a Bearer header (CSRF defense)."""
+        response = api_admin_cookie_client.patch(
+            "/api/sep/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_cookie_admin_delete_without_bearer_returns_401(
+        self, api_admin_cookie_client: TestClient
+    ) -> None:
+        """Cookie-authenticated admin cannot DELETE without a Bearer header (CSRF defense)."""
+        response = api_admin_cookie_client.delete(
+            "/api/sep/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_cookie_admin_can_still_read(
+        self, api_admin_cookie_client: TestClient
+    ) -> None:
+        """GET endpoints remain accessible via cookie auth — only mutations require Bearer."""
+        response = api_admin_cookie_client.get("/api/sep/settings/")
+        assert response.status_code == status.HTTP_200_OK
 
 
 @pytest.mark.asyncio

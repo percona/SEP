@@ -179,6 +179,7 @@ def build_settings_router(
     classes: list[ClassEntry],
     session_dep: Any,
     admin_dep: params.Depends,
+    mutation_deps: list[params.Depends] | None = None,
 ) -> APIRouter:
     """Build an :class:`APIRouter` exposing the settings CRUD endpoints.
 
@@ -300,7 +301,7 @@ def build_settings_router(
             has_override=existing is not None,
         )
 
-    @router.patch("/{setting_class}")
+    @router.patch("/{setting_class}", dependencies=mutation_deps or [])
     async def patch_settings(
         setting_class: SettingClassEnum,
         body: SettingsPatch,
@@ -346,7 +347,11 @@ def build_settings_router(
             for key, _ in to_apply
         ]
 
-    @router.delete("/{setting_class}/{key}", status_code=status.HTTP_204_NO_CONTENT)
+    @router.delete(
+        "/{setting_class}/{key}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        dependencies=mutation_deps or [],
+    )
     async def delete_setting(
         setting_class: SettingClassEnum,
         key: str,
