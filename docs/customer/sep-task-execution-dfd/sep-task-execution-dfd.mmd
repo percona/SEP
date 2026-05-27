@@ -2,7 +2,7 @@
 %% Path A: Snippets (one-shot). Path B: Proxy plugins e.g. checksums (create then execute).
 %% Auth: Casdoor OAuth/JWT; mTLS on inter-service links only.
 
-flowchart TB
+flowchart LR
     classDef entity fill:#e8f4fc,stroke:#1565c0,stroke-width:2px
     classDef process fill:#fff8e1,stroke:#f57f17,stroke-width:2px
     classDef store fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
@@ -105,11 +105,12 @@ flowchart TB
     Engineer -.->|"authenticated read by history ID"| TasksDB
 
     subgraph transportNote ["Transport security (not user identity)"]
-        T_HTTPS["Browser ↔ Nginx ingress: HTTPS<br/>Nginx terminates TLS and fronts SEP UI,<br/>/api/*, /legacy/*, and Casdoor /oauth/*"]
-        T_Internal["Nginx ↔ SEP FastAPI: in-stack HTTP loopback"]
+        direction LR
+        T_HTTPS["Browser ↔ Nginx: HTTPS<br/>fronts SEP UI, /api, /legacy, Casdoor /oauth"]
+        T_Internal["Nginx ↔ SEP FastAPI: HTTP loopback"]
         T_mTLS["SEP ↔ Tasks / Inventory: mTLS"]
-        T_NomadTLS["Tasks ↔ Nomad: mTLS<br/>Nomad CA + client cert customer-supplied<br/>for external-Nomad deployments"]
-        T_Casdoor["Stack-internal Nginx ↔ Casdoor container:<br/>HTTP loopback"]
+        T_NomadTLS["Tasks ↔ Nomad: mTLS<br/>Nomad PKI customer-supplied for external Nomad"]
+        T_Casdoor["Nginx ↔ Casdoor container: HTTP loopback"]
     end
 
     class Engineer,Casdoor,Inventory,NomadCluster,RemoteNode,PMM,InfraLogs entity
