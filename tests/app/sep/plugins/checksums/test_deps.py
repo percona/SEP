@@ -16,7 +16,6 @@
 """Define tests for the app.sep.plugins.checksums.deps module."""
 
 import shlex
-from datetime import datetime, UTC
 from unittest.mock import AsyncMock
 
 import pytest
@@ -30,36 +29,32 @@ from app.sep.plugins.checksums.deps import (
 )
 from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumTaskWrite
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from tests.app.factories import TaskFactory
 
 
 def _make_checksums_task(
     created_by: str | None = None, last_updated_by: str | None = None
 ) -> Task:
-    return Task.model_validate(
-        {
-            "id": 1,
-            "name": "test-checksums",
-            "backend": TaskBackendEnum.PROXY,
-            "owner": TaskOwner.CHECKSUMS,
-            "is_template": False,
-            "protected": False,
-            "alert_on_fail": False,
-            "data": {
-                "task": "run-command",
-                "meta": {
-                    "command": "pt-table-checksum",
-                    "args": "--recursion-method=processlist",
-                    "target": "host1",
-                    "_service_name": "test-svc",
-                    "_service_host": "127.0.0.1",
-                    "_service_port": 3306,
-                },
+    return TaskFactory.build(
+        name="test-checksums",
+        owner=TaskOwner.CHECKSUMS,
+        backend=TaskBackendEnum.PROXY,
+        is_template=False,
+        protected=False,
+        alert_on_fail=False,
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-table-checksum",
+                "args": "--recursion-method=processlist",
+                "target": "host1",
+                "_service_name": "test-svc",
+                "_service_host": "127.0.0.1",
+                "_service_port": 3306,
             },
-            "created_at": datetime.now(UTC),
-            "updated_at": None,
-            "created_by": created_by,
-            "last_updated_by": last_updated_by,
-        }
+        },
+        created_by=created_by,
+        last_updated_by=last_updated_by,
     )
 
 
