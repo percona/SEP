@@ -23,6 +23,7 @@ import yaml
 from fastapi import status
 
 from app.core.exceptions import HTTPNotFoundException
+from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.main import sep_app
 from app.sep.plugins.mysql_backups.deps import get_backups_task
 from app.sep.plugins.mysql_backups.models import BackupType
@@ -587,6 +588,7 @@ class TestExecuteEndpoint:
             "/api/plugins/mysql_backups/some-task/execute", json={}
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
         mock_task_api_dep.post.assert_not_called()
 
 
@@ -602,6 +604,7 @@ class TestBearerAuthGate:
             "/api/plugins/mysql_backups/", json=body
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
         mock_task_api_dep.post.assert_not_called()
 
     def test_delete_with_cookie_only_returns_401(
@@ -612,6 +615,7 @@ class TestBearerAuthGate:
             "/api/plugins/mysql_backups/some-task"
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
         mock_task_api_dep.delete.assert_not_called()
 
     def test_list_with_cookie_only_returns_200(self, test_client, mock_task_api_dep):

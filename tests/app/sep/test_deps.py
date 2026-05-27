@@ -35,6 +35,7 @@ from app.core.exceptions import (
 from app.models import CasdoorUser
 from app.sep.config import sep_settings
 from app.sep.deps import (
+    BEARER_REQUIRED_DETAIL,
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
     get_api_authenticated_admin,
@@ -54,6 +55,8 @@ from app.sep.deps import (
     get_tasks_context,
     get_tasks_index_context,
     get_username_mapping,
+    is_bearer_authenticated,
+    require_bearer_auth,
     require_bearer_for_unsafe_methods,
 )
 from app.sep.exceptions import LoginRedirectException
@@ -1115,6 +1118,31 @@ class TestRequireBearerForUnsafeMethods:
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["TRACE", "CONNECT"])
+    async def test_exotic_methods_are_unsafe(self, method: str) -> None:
+        """Exotic HTTP methods (``TRACE``, ``CONNECT``) are not in the safe whitelist.
+
+        Regression guard: the safe set is an explicit allow-list (GET/HEAD/OPTIONS).
+        ASGI servers can route obscure verbs and a permissive deny-list would
+        leak protocol-level metadata under cookie-only credentials.
+        """
+        request = _make_request(method=method)
+        with pytest.raises(HTTPUnauthorizedException) as exc_info:
+            await require_bearer_for_unsafe_methods(request)
+        assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
+
+    @pytest.mark.asyncio
+    async def test_empty_method_string_raises(self) -> None:
+        """An empty method string is treated as unsafe.
+
+        ASGI guarantees a non-empty method, but the gate must not silently
+        accept an empty string if a future helper path bypasses Starlette.
+        """
+        request = _make_request(method="")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
 
 class TestMakeRequestHelper:
     """Pin invariants of the ``_make_request`` helper so the merge refactor is safe."""
@@ -1156,3 +1184,136 @@ class TestMakeRequestHelper:
         Many call sites consume this state; the refactor must preserve it.
         """
         assert isinstance(_make_request().state.messages, OrderedDict)
+
+
+class TestRequireBearerAuth:
+    """Tests for the method-agnostic ``require_bearer_auth`` dependency.
+
+    Mirrors :class:`TestRequireBearerForUnsafeMethods` but exercises the
+    unconditional variant that does not short-circuit on safe methods.
+    """
+
+    @pytest.mark.asyncio
+    async def test_passes_when_bearer_present(self) -> None:
+        """A request carrying ``Bearer ...`` returns ``None`` without raising."""
+        request = _make_request(method="POST", authorization="Bearer abc")
+        assert await require_bearer_auth(request) is None
+
+    @pytest.mark.asyncio
+    async def test_raises_when_no_authorization_header(self) -> None:
+        """A missing Authorization header raises 401 with the shared detail string."""
+        request = _make_request(method="POST")
+        with pytest.raises(HTTPUnauthorizedException) as exc_info:
+            await require_bearer_auth(request)
+        assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
+
+    @pytest.mark.asyncio
+    async def test_raises_when_empty_authorization(self) -> None:
+        """An empty Authorization header is not a Bearer credential."""
+        request = _make_request(method="POST", authorization="")
+        with pytest.raises(HTTPUnauthorizedException) as exc_info:
+            await require_bearer_auth(request)
+        assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
+
+    @pytest.mark.asyncio
+    async def test_raises_when_basic_scheme(self) -> None:
+        """Non-Bearer schemes are rejected even when an Authorization header is set."""
+        request = _make_request(method="POST", authorization="Basic abc")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_auth(request)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS", "DELETE"])
+    async def test_raises_regardless_of_method(self, method: str) -> None:
+        """Unlike the unsafe-methods variant, this guard never short-circuits on method.
+
+        ``require_bearer_auth`` is method-agnostic; safe methods do **not**
+        bypass the gate. The method-aware sibling
+        ``require_bearer_for_unsafe_methods`` exists precisely so the framework
+        layer can whitelist GET/HEAD/OPTIONS.
+        """
+        request = _make_request(method=method)
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_auth(request)
+
+
+class TestBearerHeaderEdgeCases:
+    """Header-parsing edges for ``is_bearer_authenticated`` and the gates that wrap it.
+
+    These tests pin the *current* permissive-prefix contract: the gate is a
+    routing signal, not a credential check. Any future tightening (token shape,
+    DoS bounds) should fail these tests visibly so it can't slip in silently.
+    """
+
+    def test_tab_separator_does_not_match(self) -> None:
+        r"""``Bearer\ttoken`` does not match; the prefix requires a literal space."""
+        request = _make_request(authorization="Bearer\ttoken")
+        assert is_bearer_authenticated(request) is False
+
+    def test_double_space_after_bearer_matches(self) -> None:
+        """``Bearer  token`` (two spaces) still satisfies the prefix check.
+
+        Documents the lenient prefix contract: anything after ``Bearer `` is the
+        token payload — downstream validators (``oauth2_scheme``,
+        ``get_current_user_api``) are responsible for token shape.
+        """
+        request = _make_request(authorization="Bearer  token")
+        assert is_bearer_authenticated(request) is True
+
+    def test_leading_whitespace_in_header_does_not_match(self) -> None:
+        """`` Bearer token`` (leading space) is not a Bearer credential.
+
+        Starlette does not strip leading whitespace from header values; the
+        gate's ``startswith`` check is byte-faithful, so a leading space rejects.
+        """
+        request = _make_request(authorization=" Bearer token")
+        assert is_bearer_authenticated(request) is False
+
+    def test_mixed_case_scheme_matches(self) -> None:
+        """The scheme match is case-insensitive (``BeArEr token`` is valid)."""
+        request = _make_request(authorization="BeArEr token")
+        assert is_bearer_authenticated(request) is True
+
+    def test_very_long_header_does_not_crash(self) -> None:
+        """A 64 KiB Authorization header is parsed without raising or hanging.
+
+        DoS sanity check: the gate is a single ``str.startswith`` — adding token
+        length validation later would need a different shape, so a regression
+        introducing a quadratic scan would fail here.
+        """
+        long_token = "a" * (64 * 1024)
+        request = _make_request(authorization=f"Bearer {long_token}")
+        assert is_bearer_authenticated(request) is True
+
+    def test_null_byte_in_token_passes_gate(self) -> None:
+        r"""``Bearer \x00abc`` passes the gate; null-byte filtering is a downstream concern.
+
+        Pinning permissive behaviour: the routing-signal gate is intentionally
+        thin, so any future "block control characters" change is visible here
+        rather than a silent behaviour shift.
+        """
+        request = _make_request(authorization="Bearer \x00abc")
+        assert is_bearer_authenticated(request) is True
+
+    def test_unicode_nbsp_separator_does_not_match(self) -> None:
+        r"""``Bearer<NBSP>token`` does not match the ASCII prefix.
+
+        Prevents a unicode-confusable bypass: a client crafting
+        ``Bearer<NBSP>...`` cannot trick the gate into accepting a request that
+        Starlette will then route to the safe codepath.
+        """
+        request = _make_request(authorization="Bearer\u00a0token")
+        assert is_bearer_authenticated(request) is False
+
+    def test_only_scheme_no_separator_does_not_match(self) -> None:
+        """``Bearer`` alone (no trailing space) is not a Bearer credential."""
+        request = _make_request(authorization="Bearer")
+        assert is_bearer_authenticated(request) is False
+
+    @pytest.mark.asyncio
+    async def test_unsafe_methods_gate_propagates_nbsp_rejection(self) -> None:
+        """End-to-end: NBSP-spoofed header on POST still 401s through the gate."""
+        request = _make_request(method="POST", authorization="Bearer\u00a0token")
+        with pytest.raises(HTTPUnauthorizedException) as exc_info:
+            await require_bearer_for_unsafe_methods(request)
+        assert exc_info.value.detail == BEARER_REQUIRED_DETAIL

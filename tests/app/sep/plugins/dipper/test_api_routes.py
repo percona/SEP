@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.deps import BEARER_REQUIRED_DETAIL
 
 API_BASE = "/api/plugins/dipper"
 FAKE_TASK_ID = 99
@@ -316,7 +317,23 @@ class TestDipperBearerGate:
             },
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "Bearer" in response.json()["detail"]
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+        mock_task_api_dep.post.assert_not_called()
+        mock_inventory_api_dep.get.assert_not_called()
+
+    def test_cookie_only_post_with_empty_body_still_gate_rejected(
+        self, api_admin_client_no_bearer, mock_task_api_dep, mock_inventory_api_dep
+    ) -> None:
+        """An empty JSON body cannot trick the gate into 422 before 401.
+
+        Regression guard: the framework gate must run before request-body
+        validation, so the response is always the 401 detail (never a 422
+        Pydantic error). Otherwise a malformed body could probe authorization
+        ordering.
+        """
+        response = api_admin_client_no_bearer.post(f"{API_BASE}/", json={})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
         mock_task_api_dep.post.assert_not_called()
         mock_inventory_api_dep.get.assert_not_called()
 

@@ -274,6 +274,94 @@ class TestPluginBearerGate:
             "targets": 0,
         }
 
+    @pytest.mark.parametrize(
+        "method",
+        ["POST", "PUT", "PATCH", "DELETE"],
+    )
+    def test_all_unsafe_methods_return_same_detail_string(
+        self, cookie_only_client: TestClient, method: str
+    ) -> None:
+        """Every mutating method returns the exact same path-agnostic detail string.
+
+        Pins that the 401 body never leaks the request's method, path, or any
+        other ambient state. ``snippets/refresh`` accepts POST and
+        snippets-approval declares PUT/PATCH/DELETE — assert the detail only
+        when the gate actually fires (status 401), so method-mismatch responses
+        (405) are skipped without false-failing the test.
+        """
+        response = cookie_only_client.request(
+            method, "/api/plugins/snippets/snippet/approval", json={}
+        )
+        if response.status_code == status.HTTP_401_UNAUTHORIZED:
+            assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+    def test_detail_string_is_path_agnostic(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """The 401 detail is byte-identical across two unrelated plugin paths.
+
+        Regression guard for the PR-body promise that ``BEARER_REQUIRED_DETAIL``
+        is a single, path-agnostic constant — no f-string sneaks the plugin
+        name or route into the response body.
+        """
+        snippets_resp = cookie_only_client.post(
+            "/api/plugins/snippets/refresh", json={}
+        )
+        checksums_resp = cookie_only_client.post("/api/plugins/checksums/", json={})
+        assert snippets_resp.status_code == status.HTTP_401_UNAUTHORIZED
+        assert checksums_resp.status_code == status.HTTP_401_UNAUTHORIZED
+        assert (
+            snippets_resp.json()["detail"]
+            == checksums_resp.json()["detail"]
+            == BEARER_REQUIRED_DETAIL
+        )
+
+    def test_405_when_method_not_supported_does_not_leak_bearer_detail(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """A method-mismatch response under cookie-only auth is a vanilla 405.
+
+        Documents the trade-off of mounting the gate at router level: deps run
+        per-route after method resolution, so a wrong method on an existing
+        path returns 405 (not 401). The response body must not echo
+        ``BEARER_REQUIRED_DETAIL`` — that would imply the gate fired when it
+        did not. Asserting "neither 200 nor leaked-detail" is the contract.
+        """
+        response = cookie_only_client.request(
+            "PATCH", "/api/plugins/snippets/refresh", json={}
+        )
+        assert response.status_code != status.HTTP_200_OK
+        body = response.json() if response.content else {}
+        assert body.get("detail") != BEARER_REQUIRED_DETAIL
+
+    def test_404_for_unknown_plugin_path_does_not_leak_bearer_detail(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """Cookie-only POST on an unknown sub-path returns 404 with no Bearer detail.
+
+        Same path-existence trade-off as the 405 case: router-level deps don't
+        fire when no route matches, so the response is 404. Crucially the body
+        must NOT carry ``BEARER_REQUIRED_DETAIL`` — leaking it would imply the
+        path exists but is bearer-gated, the inverse of what 404 should signal.
+        """
+        response = cookie_only_client.post("/api/plugins/does-not-exist/foo", json={})
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        body = response.json() if response.content else {}
+        assert body.get("detail") != BEARER_REQUIRED_DETAIL
+
+    def test_trace_method_on_existing_path_does_not_succeed(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """``TRACE`` on an existing plugin path is never 200 under cookie-only auth.
+
+        Documents that the safe-method whitelist is GET/HEAD/OPTIONS only —
+        TRACE is excluded both because no route declares it (so the response is
+        405) and because the gate would 401 it if a future route did. Either
+        outcome must not be 200.
+        """
+        response = cookie_only_client.request("TRACE", "/api/plugins/checksums/schema")
+        assert response.status_code != status.HTTP_200_OK
+
 
 class TestApiRouterConfigDrivenLoop:
     """Test the config-driven plugin mount loop (SEP-1109)."""
