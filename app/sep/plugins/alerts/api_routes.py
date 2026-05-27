@@ -52,8 +52,7 @@ from app.sep.plugins.alerts.deps import (
     RequiredPMMAPIDep,
 )
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
-from app.sep.plugins.alerts.restore import restore_from_backup
-from app.sep.plugins.alerts.routes import _delete_conflicting_rules
+from app.sep.plugins.alerts.restore import delete_conflicting_rules, restore_from_backup
 from app.sep.plugins.alerts.schemas import (
     BackupDetail,
     BackupDetailContactPoint,
@@ -92,8 +91,8 @@ async def alerts_api_list_backups(
 
     :param session: The async database session.
     :type session: SessionDep
-    :param limit: Maximum number of backups to return. Clamped to
-        ``[1, 100]`` to bound the response size.
+    :param limit: Maximum number of backups to return. Validated to the
+        range ``[1, 100]``; out-of-range values are rejected with HTTP 422.
     :type limit: int
     :return: A list of backup summaries ordered by ``created_at`` descending.
     :rtype: BackupListResponse
@@ -302,7 +301,8 @@ async def alerts_api_push(
 
     Mirror :func:`app.sep.plugins.alerts.routes.alerts_push` over JSON.
     Preserve the conflict-retry path: on ``create_rule`` collision call
-    :func:`_delete_conflicting_rules` and retry once.
+    :func:`app.sep.plugins.alerts.restore.delete_conflicting_rules` and
+    retry once.
 
     :param payload: Push request body listing template names to push.
     :type payload: PushRequest
@@ -379,7 +379,7 @@ async def alerts_api_push(
                 )
                 continue
             try:
-                await _delete_conflicting_rules(pmm_api, template.name, folder.uid)
+                await delete_conflicting_rules(pmm_api, template.name, folder.uid)
                 await pmm_api.create_rule(
                     name=template.name,
                     template_name=template.name,

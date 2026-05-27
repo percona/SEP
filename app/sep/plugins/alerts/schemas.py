@@ -24,7 +24,7 @@ from app.core.utils.fields import NonEmptyStr
 
 
 class PushRequest(BaseModel):
-    """Request body for ``POST /api/plugins/alerts/push``.
+    """Describe the request body for ``POST /api/plugins/alerts/push``.
 
     :param selected_templates: Names of templates to push to PMM. Must be a
         non-empty list of non-empty strings.
@@ -35,7 +35,7 @@ class PushRequest(BaseModel):
 
 
 class PushItemResult(BaseModel):
-    """Per-template result row returned by the push endpoint.
+    """Represent a per-template result row returned by the push endpoint.
 
     :param name: The template name the result applies to.
     :type name: str
@@ -61,7 +61,7 @@ class PushResponse(BaseModel):
 
 
 class RestoreRequest(BaseModel):
-    """Request body for ``POST /api/plugins/alerts/restore``.
+    """Describe the request body for ``POST /api/plugins/alerts/restore``.
 
     :param backup_id: Primary key of the :class:`~app.sep.plugins.alerts.models.AlertBackup`
         row to restore from. Must be a positive integer.
@@ -86,7 +86,7 @@ class RestoreResponse(BaseModel):
 
 
 class BackupSummary(BaseModel):
-    """Compact backup row used by the list endpoint.
+    """Represent a compact backup row used by the list endpoint.
 
     :param id: Primary key of the backup row.
     :type id: int
@@ -112,7 +112,7 @@ class BackupListResponse(BaseModel):
 
 
 class BackupDetailTemplate(BaseModel):
-    """Template entry inside a backup snapshot.
+    """Represent a template entry inside a backup snapshot.
 
     :param name: The template name.
     :type name: str
@@ -125,7 +125,7 @@ class BackupDetailTemplate(BaseModel):
 
 
 class BackupDetailRule(BaseModel):
-    """Rule entry inside a backup snapshot.
+    """Represent a rule entry inside a backup snapshot.
 
     :param title: The rule title.
     :type title: str
@@ -135,7 +135,7 @@ class BackupDetailRule(BaseModel):
 
 
 class BackupDetailContactPoint(BaseModel):
-    """Contact-point entry inside a backup snapshot.
+    """Represent a contact-point entry inside a backup snapshot.
 
     :param name: The contact point name.
     :type name: str
@@ -148,7 +148,7 @@ class BackupDetailContactPoint(BaseModel):
 
 
 class BackupDetailFolder(BaseModel):
-    """Folder entry inside a backup snapshot.
+    """Represent a folder entry inside a backup snapshot.
 
     :param title: The folder title.
     :type title: str
@@ -158,7 +158,7 @@ class BackupDetailFolder(BaseModel):
 
 
 class BackupDetail(BaseModel):
-    """Full detail response for a single backup.
+    """Describe the full detail response for a single backup.
 
     :param id: Primary key of the backup row.
     :type id: int
@@ -187,7 +187,7 @@ class BackupDetail(BaseModel):
 
 
 class PagerDutyRequest(BaseModel):
-    """Request body for ``POST /api/plugins/alerts/pagerduty``.
+    """Describe the request body for ``POST /api/plugins/alerts/pagerduty``.
 
     :param integration_key: The PagerDuty integration key. Must be non-empty
         after stripping whitespace.
@@ -198,7 +198,7 @@ class PagerDutyRequest(BaseModel):
 
 
 class PagerDutyResponse(BaseModel):
-    """Response body for the PagerDuty save / delete endpoints.
+    """Describe the response body for the PagerDuty save / delete endpoints.
 
     :param status: ``"created"``, ``"updated"`` (save) or ``"deleted"`` (delete).
     :type status: Literal["created", "updated", "deleted"]
