@@ -477,6 +477,7 @@ def build_checksums_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     connectivity_warning: ConnectivityWarning | None = None,
+    username_mapping: dict[str, str] | None = None,
 ) -> ChecksumTaskResponse:
     """Build a checksum task response object for the JSON API.
 
@@ -487,11 +488,19 @@ def build_checksums_api_task_response(
     :param connectivity_warning: A warning to surface when a connectivity
         check failed during the task creation flow.
     :type connectivity_warning: ConnectivityWarning | None
+    :param username_mapping: Optional mapping of user IDs to usernames.
+    :type username_mapping: dict[str, str] | None
     :return: A validated checksum task API response object.
     :rtype: ChecksumTaskResponse
     """
+    mapping = username_mapping or {}
+    task_data = task.model_dump()
+    created_by = task_data.get("created_by")
+    task_data["created_by"] = mapping.get(created_by, created_by)
+    last_updated_by = task_data.get("last_updated_by")
+    task_data["last_updated_by"] = mapping.get(last_updated_by, last_updated_by)
     return ChecksumTaskResponse(
-        **task.model_dump(),
+        **task_data,
         service_type=ServiceTypeEnum.MYSQL,
         status=status,
         connectivity_warning=connectivity_warning,
@@ -502,6 +511,7 @@ async def get_checksums_api_task_responses(
     tasks_api: TaskAPI,
     service_type: ServiceTypeEnum | None = None,
     status: TaskHistoryStatusEnum | None = None,
+    username_mapping: dict[str, str] | None = None,
 ) -> list[ChecksumTaskResponse]:
     """Retrieve checksum task responses for the JSON API.
 
@@ -511,6 +521,8 @@ async def get_checksums_api_task_responses(
     :type service_type: ServiceTypeEnum | None
     :param status: Optional latest-history status filter for the checksum task list.
     :type status: TaskHistoryStatusEnum | None
+    :param username_mapping: Optional mapping of user IDs to usernames.
+    :type username_mapping: dict[str, str] | None
     :return: The checksum task responses matching the requested filters.
     :rtype: list[ChecksumTaskResponse]
     """
@@ -525,7 +537,9 @@ async def get_checksums_api_task_responses(
     ]
 
     return [
-        build_checksums_api_task_response(task, status=task_status)
+        build_checksums_api_task_response(
+            task, status=task_status, username_mapping=username_mapping
+        )
         for task, task_status in task_status_pairs
         if status is None or task_status == status
     ]

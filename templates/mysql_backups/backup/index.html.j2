@@ -70,6 +70,17 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </div>
 {% endblock sticky %}
 {% block main %}
+    <div class="doc-inline-callout doc-inline-callout--warning" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">warning</span>
+        <div>
+            <strong>This page is deprecated.</strong>
+            The MySQL Backups plugin has moved to the new React UI at
+            {# djlint:off J018 #}
+            <a href="/plugins/mysql_backups">/plugins/mysql_backups</a>.
+            {# djlint:on #}
+            The legacy view will be removed in a future release.
+        </div>
+    </div>
     <p>
         Perform a backup, currently only supporting MySQL and MariaDB with <a href="https://github.com/percona/percona-xtrabackup">Percona XtraBackup</a>
         (physical) and

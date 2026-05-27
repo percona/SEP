@@ -46,6 +46,9 @@ from app.core.config import (
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field
 from app.core.utils import (
     deep_dict_update,
     slugify,
@@ -59,7 +62,6 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
-from app.core.utils.lazy import LazyProxy
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -488,12 +490,12 @@ class SEPSettings(BaseYamlAppSettings):
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
-    SYNC_REFRESH_TIME: int = 5
+    SYNC_REFRESH_TIME: int = hot_field(5)
     PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
-    ARTIFACT_DOWNLOAD_TTL: PositiveInt = 600
-    CONNECTIVITY_CHECK_DEFAULT: bool = True
-    INVENTORY_TOPOLOGY_ENABLED: bool = False
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)
+    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
+    INVENTORY_TOPOLOGY_ENABLED: bool = hot_field(default=False)
     FOOTER_TEMPLATE: Template = Template("$summary $version")
 
     @model_validator(mode="before")
@@ -640,4 +642,6 @@ class SEPSettings(BaseYamlAppSettings):
         return self
 
 
-sep_settings: SEPSettings = LazyProxy(SEPSettings)
+sep_settings: SEPSettings = OverridableSettingsProxy(
+    SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+)

@@ -198,9 +198,11 @@ class ChecksumTaskResponse(ChecksumTaskBase):
     :type created_at: datetime | None
     :param updated_at: The timestamp of the last modification to the task.
     :type updated_at: datetime | None
-    :param created_by: The user who initiated the task.
+    :param created_by: Display name for the user who initiated the task
+        (Casdoor username when resolvable, otherwise the stored user id).
     :type created_by: str | None
-    :param last_updated_by: The user who last modified the task record.
+    :param last_updated_by: Display name for the user who last modified the task record
+        (Casdoor username when resolvable, otherwise the stored user id).
     :type last_updated_by: str | None
     :param connectivity_warning: A warning surfaced when the post-creation
         database connectivity check fails. ``None`` when the check passes,

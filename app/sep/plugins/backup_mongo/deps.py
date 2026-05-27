@@ -15,13 +15,19 @@
 
 """Define dependencies for the Backups plugin."""
 
+import asyncio
+import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
+from aiohttp import ClientResponseError
 from fastapi import Depends, Form, HTTPException, status
 
+from app.core.exceptions import HTTPNotFoundException
+from app.core.models import PaginatedResponse
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -39,15 +45,26 @@ from app.sep.plugins.backup_mongo.models import (
     BackupConfigPITR,
     BackupConfigStorage,
     BackupCreate,
+    BackupDerivedTaskSummary,
+    BackupTaskDetailResponse,
+    BackupTaskResponse,
+    BackupTaskWrite,
+    BackupType,
 )
+from app.sep.plugins.backup_mongo.schema import BACKUP_MONGO_DERIVED
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskLogType,
     TaskOwner,
     TaskWrite,
 )
 
 logger = logging.getLogger(__name__)
+
+PBM_LATEST_STATUS_TAIL_BYTES = 4096
+BACKUP_DERIVED_SUFFIXES = tuple(spec.name_suffix for spec in BACKUP_MONGO_DERIVED)
 
 
 def _build_pitr_config(form: BackupCreate) -> dict[str, Any]:
@@ -113,14 +130,14 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     has_backup_config = any(
-        [
+        (
             form.backup_priority,
             form.backup_compression,
             form.backup_compression_level is not None,
             form.backup_timeouts_starting_status is not None,
             form.backup_oplog_span_min is not None,
             form.backup_num_parallel_collections is not None,
-        ]
+        )
     )
 
     if not has_backup_config:
@@ -155,13 +172,42 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
     return backup_config_dict
 
 
+def backup_derived_task_names(parent_name: str) -> list[str]:
+    """Return derived task names for a parent backup config task.
+
+    :param parent_name: The name of the parent ``pbm_config`` task.
+    :type parent_name: str
+    :return: Derived task names in schema declaration order.
+    :rtype: list[str]
+    """
+    return [f"{parent_name}{suffix}" for suffix in BACKUP_DERIVED_SUFFIXES]
+
+
+def backup_create_from_write(body: BackupTaskWrite) -> BackupCreate:
+    """Convert a :class:`BackupTaskWrite` body into a :class:`BackupCreate` model.
+
+    Always sets ``backup_type`` to ``pbm_config``; POST creates the parent
+    config task and derived logical, physical, and status siblings.
+
+    :param body: The JSON request body for backup task creation.
+    :type body: BackupTaskWrite
+    :return: A :class:`BackupCreate` instance for payload construction.
+    :rtype: BackupCreate
+    """
+    return BackupCreate.model_validate(
+        {
+            **body.model_dump(mode="json"),
+            "backup_type": BackupType.PBM_CONFIG,
+        },
+        from_attributes=False,
+    )
+
+
 async def build_backup_task_payload(
-    form: Annotated[BackupCreate, Form()],
+    form: BackupCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the backup task payload from form.
-
-    Build the payload for a Backups task to be executed.
+    """Build the payload for a Backups task to be executed.
 
     :param form: The form data for the Backups creation.
     :type form: BackupCreate
@@ -232,7 +278,280 @@ async def build_backup_task_payload(
     )
 
 
-BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
+async def build_backup_task_payload_from_form(
+    form: Annotated[BackupCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build a Backups task payload from an HTML form submission.
+
+    Delegates to :func:`build_backup_task_payload` after FastAPI form parsing.
+
+    :param form: The form data for the Backups creation.
+    :type form: BackupCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed ``TaskWrite`` object for the Tasks API.
+    :rtype: TaskWrite
+    """
+    return await build_backup_task_payload(form, inventory_api)
+
+
+BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload_from_form)]
+
+
+def extract_latest_task_status(
+    histories: Iterable[dict[str, Any]],
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload."""
+    for history in histories:
+        if (status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(status)
+    return None
+
+
+async def get_backup_mongo_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for a backup task.
+
+    :param task_name: The name of the backup task.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to query task history.
+    :type tasks_api: TaskAPI
+    :return: The latest known task status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    response = await tasks_api.get(f"/{task_name}/history/")
+    return extract_latest_task_status(response["items"])
+
+
+def build_backup_mongo_api_task_response(
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+) -> BackupTaskResponse:
+    """Build a backup task response object for the JSON API.
+
+    :param task: The backup task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A validated backup task API response object.
+    :rtype: BackupTaskResponse
+    """
+    data = task.data
+    meta = data.get("meta") or {}
+    return BackupTaskResponse(
+        **task.model_dump(),
+        hostname=meta.get("target"),
+        status=status,
+        backup_type=str(data.get("backup_type", "")),
+    )
+
+
+def _is_backup_parent_task(task: Task) -> bool:
+    """Return whether ``task`` is a parent ``pbm_config`` row for the list view."""
+    data = task.data
+    return (
+        not data.get("parent")
+        and data.get("backup_type") == BackupType.PBM_CONFIG.value
+    )
+
+
+def _gathered_task_status(
+    result: TaskHistoryStatusEnum | BaseException | None,
+) -> TaskHistoryStatusEnum | None:
+    """Map a ``gather`` result to a status, treating failures as unknown."""
+    return None if isinstance(result, BaseException) else result
+
+
+async def get_backup_mongo_api_task_responses(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> PaginatedResponse[BackupTaskResponse]:
+    """Retrieve a page of backup task responses for the JSON API.
+
+    Fetches the full parent task list from the Tasks API (the
+    ``_is_backup_parent_task`` Python-side filter prevents pushing the
+    parent predicate upstream cleanly), applies the optional ``status``
+    filter, and slices ``[offset : offset + limit]`` to honour pagination.
+    ``total`` reflects the parent count *after* the status filter so
+    consumers' page math stays correct.
+
+    :param tasks_api: The TaskAPI instance used to query backup tasks.
+    :type tasks_api: TaskAPI
+    :param status: Optional latest-history status filter for the list.
+    :type status: TaskHistoryStatusEnum | None
+    :param offset: Zero-based starting offset for the page slice.
+    :type offset: int
+    :param limit: Maximum items returned for the page.
+    :type limit: int
+    :return: The paginated backup task responses matching the requested filters.
+    :rtype: PaginatedResponse[BackupTaskResponse]
+    """
+    response = await tasks_api.get(
+        "/",
+        params={"owner": TaskOwner.BACKUP_MONGO.value, "limit": 0},
+    )
+    tasks = [Task.model_validate(item) for item in response["items"]]
+    parents = [task for task in tasks if _is_backup_parent_task(task)]
+    statuses = await asyncio.gather(
+        *(get_backup_mongo_task_status(task.name, tasks_api) for task in parents),
+        return_exceptions=True,
+    )
+    normalized_statuses = [_gathered_task_status(status) for status in statuses]
+    task_status_pairs = [
+        (task, task_status)
+        for task, task_status in zip(parents, normalized_statuses, strict=True)
+        if status is None or task_status == status
+    ]
+    items = [
+        build_backup_mongo_api_task_response(task, status=task_status)
+        for task, task_status in task_status_pairs[offset : offset + limit]
+    ]
+    return PaginatedResponse[BackupTaskResponse](
+        items=items,
+        total=len(task_status_pairs),
+        offset=offset,
+        limit=limit,
+    )
+
+
+async def _fetch_latest_pbm_status(
+    tasks_api: TaskAPI, pbm_status_tasks: list[dict[str, Any]]
+) -> str | None:
+    """Return the tail of the latest PBM status task's stdout.
+
+    Streams the ``run-script`` logs for the most recent PBM status history
+    record through the tasks API and returns at most
+    ``PBM_LATEST_STATUS_TAIL_BYTES`` characters of the concatenated stdout
+    content. The rolling buffer is truncated to that window on every append
+    so long-running PBM status tasks do not materialize their full log in
+    memory for this best-effort UI panel.
+
+    :param tasks_api: The TaskAPI instance used to stream task logs.
+    :type tasks_api: TaskAPI
+    :param pbm_status_tasks: The list of PBM status history records returned by
+        the tasks API, or an empty list when no history exists.
+    :type pbm_status_tasks: list[dict[str, Any]]
+    :return: The tail of the latest PBM status stdout, or ``None`` when no
+        history exists or the stream cannot be read.
+    :rtype: str | None
+    """
+    try:
+        pbm_status_id = pbm_status_tasks[0]["id"]
+    except (IndexError, KeyError, TypeError):
+        return None
+    tail = ""
+    try:
+        async for log_entry in tasks_api.stream(
+            f"/history/{pbm_status_id}/logs/",
+            params={"step": "run-script"},
+        ):
+            if not log_entry:
+                continue
+            log_data = json.loads(log_entry)
+            if log_data.get("type") == TaskLogType.STDOUT and log_data.get("msg"):
+                tail = (tail + log_data["msg"])[-PBM_LATEST_STATUS_TAIL_BYTES:]
+    except (ClientResponseError, ValueError, KeyError):
+        logger.exception(
+            "Failed to fetch latest_status for backup_mongo task %s",
+            pbm_status_id,
+        )
+        return None
+    if not tail:
+        return None
+    return tail
+
+
+async def _fetch_backup_derived_detail(
+    derived_name: str,
+    tasks_api: TaskAPI,
+) -> tuple[Task, list[dict[str, Any]]] | None:
+    """Fetch a derived backup task and its history, or ``None`` when missing."""
+    try:
+        derived = await get_backups_task(derived_name, tasks_api)
+    except HTTPNotFoundException:
+        return None
+    history_response = await tasks_api.get(f"/{derived.name}/history/")
+    return derived, history_response["items"]
+
+
+async def build_backup_mongo_api_detail_response(
+    task: Task,
+    tasks_api: TaskAPI,
+) -> BackupTaskDetailResponse:
+    """Build a backup task detail response for the JSON API.
+
+    Aggregates latest execution status for the parent ``pbm_config`` task and
+    each derived logical, physical, and status sibling. When a status sibling
+    exists, includes a tail of its latest stdout for the PBM status panel.
+
+    :param task: The parent backup config task.
+    :type task: Task
+    :param tasks_api: The TaskAPI instance used to query tasks and history.
+    :type tasks_api: TaskAPI
+    :return: A validated backup task detail API response object.
+    :rtype: BackupTaskDetailResponse
+    """
+    derived_names = backup_derived_task_names(task.name)
+    gather_results = await asyncio.gather(
+        get_backup_mongo_task_status(task.name, tasks_api),
+        *(_fetch_backup_derived_detail(name, tasks_api) for name in derived_names),
+        return_exceptions=True,
+    )
+    parent_status = _gathered_task_status(gather_results[0])
+    derived_results = gather_results[1:]
+    derived_tasks: list[BackupDerivedTaskSummary] = []
+    latest_pbm_status: str | None = None
+
+    for derived_detail in derived_results:
+        if isinstance(derived_detail, BaseException) or derived_detail is None:
+            continue
+        derived, history_items = derived_detail
+        derived_status = extract_latest_task_status(history_items)
+        derived_tasks.append(
+            BackupDerivedTaskSummary(
+                name=derived.name,
+                backup_type=str(derived.data.get("backup_type", "")),
+                status=derived_status,
+            )
+        )
+        if derived.data.get("backup_type") == BackupType.PBM_STATUS.value:
+            latest_pbm_status = await _fetch_latest_pbm_status(tasks_api, history_items)
+
+    base = build_backup_mongo_api_task_response(task, status=parent_status)
+    return BackupTaskDetailResponse(
+        **base.model_dump(),
+        derived_tasks=derived_tasks,
+        latest_pbm_status=latest_pbm_status,
+    )
+
+
+async def resolve_backup_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Resolve a task name to its parent ``pbm_config`` task when linked.
+
+    When ``task_name`` refers to a derived sibling, fetches and returns the
+    parent config task. Otherwise returns the task unchanged.
+
+    :param task_name: The name of the task to resolve.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :type tasks_api: TaskAPI
+    :return: The parent backup config task.
+    :rtype: Task
+    """
+    task = await get_backups_task(task_name, tasks_api)
+    parent = task.data.get("parent")
+    if parent:
+        return await get_backups_task(str(parent), tasks_api)
+    return task
 
 
 async def get_backups_task(
