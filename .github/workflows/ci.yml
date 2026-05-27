@@ -244,6 +244,20 @@ jobs:
       - label-gate
       - changes
 
+  audit:
+    # M1 of the QA architecture adoption plan. See docs/qa-architecture.md
+    # Section 4.4. Runs whenever Python or frontend lockfiles can have moved.
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        (needs.changes.outputs.python == 'true' || needs.changes.outputs.frontend == 'true') &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
+    uses: ./.github/workflows/audit.yaml
+    needs:
+      - label-gate
+      - changes
+
   build:
     # Run when Docker-relevant paths change. Use always() so the job still runs
     # when `python` is skipped (no .py changes but Containerfile / bundle assets
@@ -303,6 +317,7 @@ jobs:
       - precommit-frontend
       - python
       - frontend
+      - audit
       - build
     runs-on: ubuntu-latest
     steps:

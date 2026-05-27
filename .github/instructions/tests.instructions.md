@@ -6,13 +6,13 @@ applyTo: "tests/**/*.py"
 
 ## Directory layout
 
-Tests mirror app structure exactly. `app/sep/snippets/config.py` → `tests/app/sep/snippets/test_config.py`. Flag tests placed at the wrong level.
+Tests mirror app structure exactly. `app/sep/snippets/config.py` → `tests/integration/sep/snippets/test_config.py`. Flag tests placed at the wrong level.
 
 ## Factories — never manual dicts
 
-Test data MUST come from factories under `tests/app/factories.py` (`SchemaWriteFactory`, `TableWriteFactory`, `TaskWriteFactory`, `PeriodicTaskFactory`, etc.) or polyfactory subclasses. Build with `.build()`, customise inline: `CasdoorUserFactory.build(is_admin=True)`. Flag every manual dict where a matching factory exists.
+Test data MUST come from factories under `tests/factories.py` (`SchemaWriteFactory`, `TableWriteFactory`, `TaskWriteFactory`, `PeriodicTaskFactory`, etc.) or polyfactory subclasses. Build with `.build()`, customise inline: `CasdoorUserFactory.build(is_admin=True)`. Flag every manual dict where a matching factory exists.
 
-Use mock ID constants from `tests/app/factories.py` (`MOCK_CREATED_NODE_ID`, etc.) — don't invent literals.
+Use mock ID constants from `tests/factories.py` (`MOCK_CREATED_NODE_ID`, etc.) — don't invent literals.
 
 ## Mock subjects vs boundaries
 
@@ -20,7 +20,7 @@ Every test has a **subject** (code under test + machinery it directly operates o
 
 ## Never mock `AsyncSession` on a session-touching SUT — CRITICAL
 
-If the SUT receives `session: AsyncSession` and performs ANY session operation directly or transitively (`session.add`, `commit`, `refresh`, `execute`, or any `BaseSQLModelManager.save`/`get_or_404`/`create`/`update`), consider using the real `session` fixture from `tests/app/tasks/conftest.py` (or the analogous inventory/sep fixture), not `AsyncMock(spec=AsyncSession)`.
+If the SUT receives `session: AsyncSession` and performs ANY session operation directly or transitively (`session.add`, `commit`, `refresh`, `execute`, or any `BaseSQLModelManager.save`/`get_or_404`/`create`/`update`), consider using the real `session` fixture from `tests/integration/tasks/conftest.py` (or the analogous inventory/sep fixture), not `AsyncMock(spec=AsyncSession)`.
 
 Mocking `AsyncSession` bypasses SQLAlchemy's entire lifecycle — commit/flush, `expire_on_commit`, relationship loading, deferred columns, identity-map caching, lazy loads. A mocked session silently accepts every attribute access, so a test passes green while production fails on the first real call. If a real-session sibling already covers the same SUT entrypoint and outcome, consider deleting the mock-based duplicate; otherwise consider rewriting it with the real `session` fixture in the same PR.
 

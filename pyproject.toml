@@ -289,6 +289,9 @@ line-ending = "lf"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "syncmysql: require syncmysql dependencies",
+    "unit: pure-logic tests with no I/O (Testing Trophy: Unit layer)",
+    "integration: API-plane and plugin-plane tests via TestClient (Testing Trophy: Integration layer)",
+    "contract: OpenAPI contract checks via Schemathesis (complementary control)",
 ]
 env = [
     "CASDOOR__CLIENT_ID=test-client-id",

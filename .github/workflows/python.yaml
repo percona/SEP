@@ -62,8 +62,16 @@ jobs:
       - name: Check migrations
         run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
 
-  test:
-    name: test (${{ matrix.python }})
+  # Testing Trophy lanes — see docs/qa-architecture.md and
+  # docs/testing-guidelines.md. The lanes are split by pytest marker (applied
+  # automatically by the per-directory conftests under tests/{unit,integration,contract}/).
+  #
+  # The integration lane is the coverage-gated one: it carries the bulk of
+  # the suite plus the dev-tooling tests under tests/scripts/ that fall
+  # outside the Trophy model.
+
+  test-unit:
+    name: test-unit (${{ matrix.python }})
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -79,8 +87,28 @@ jobs:
           cache: poetry
       - name: Install test dependencies
         run: poetry sync --no-root --with syncmysql
-      - name: Run tests
-        run: make test
+      - name: Run unit lane
+        run: make test-unit
+
+  test-integration:
+    name: test-integration (${{ matrix.python }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.11.9", "3.12.3", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: ${{ matrix.python }}
+          cache: poetry
+      - name: Install test dependencies
+        run: poetry sync --no-root --with syncmysql
+      - name: Run integration lane
+        run: make test-integration
       - name: Generate coverage comment data
         id: coverage_comment
         if: matrix.python == '3.11.9' && github.event_name == 'pull_request'
@@ -93,6 +121,25 @@ jobs:
         with:
           name: python-coverage-comment-action
           path: python-coverage-comment-action.txt
+
+  test-contract:
+    name: test-contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: "3.11.9"
+          cache: poetry
+      - name: Install test dependencies
+        run: poetry sync --no-root --with syncmysql
+      # schemathesis is not declared in pyproject.toml yet — the contract
+      # lane skips cleanly until milestone M6 of the adoption plan. The lane
+      # job runs so the absence of contract tests is visible in CI.
+      - name: Run contract lane
+        run: make test-contract
 
   build:
     strategy:
