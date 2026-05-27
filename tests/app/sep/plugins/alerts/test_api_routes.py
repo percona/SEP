@@ -25,7 +25,13 @@ from fastapi.exceptions import HTTPException
 from fastapi.testclient import TestClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.sep.clients.pmm import ContactPoint, Folder, NotificationPolicy, PMMRemoteAPI
+from app.sep.clients.pmm import (
+    AlertRule,
+    ContactPoint,
+    Folder,
+    NotificationPolicy,
+    PMMRemoteAPI,
+)
 from app.sep.deps import get_session
 from app.sep.main import sep_app
 from app.sep.plugins.alerts.crud import AlertBackupManager
@@ -193,6 +199,69 @@ class TestApiAuthentication:
             f"{API_BASE}/push", json={"selected_templates": ["x"]}
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_restore_rejects_malformed_bearer_header(self, cookie_only_api_client):
+        """Reject an Authorization header that is not ``Bearer <token>``.
+
+        ``RequireBearerAuth`` inspects the raw header prefix; a non-Bearer
+        scheme (e.g. ``Basic``, ``NotBearer``) must surface as 401, never as
+        a 500 or a silent pass-through.
+        """
+        cookie_only_api_client.headers["Authorization"] = "NotBearer abc"
+        response = cookie_only_api_client.post(
+            f"{API_BASE}/restore", json={"backup_id": 1}
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "Bearer authentication required" in response.json()["detail"]
+
+
+class TestApiInputHardening:
+    """Pin abuse-shaped input contracts: oversize, control chars, echo-back."""
+
+    def test_push_handles_extremely_long_template_name(self, api_client, mock_pmm_api):
+        """Treat a 10 KiB template name as a plain unknown template (no 500).
+
+        Guards against unbounded lookup paths or accidental DoS via giant
+        request bodies — the unknown name must funnel through the standard
+        ``"Template not found"`` branch.
+        """
+        huge_name = "x" * 10_000
+        response = api_client.post(
+            f"{API_BASE}/push", json={"selected_templates": [huge_name]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        result = response.json()["results"][0]
+        assert result["status"] == "error"
+        assert result["message"] == "Template not found"
+        mock_pmm_api.create_template.assert_not_awaited()
+
+    def test_pagerduty_integration_key_with_control_chars_not_echoed(
+        self, api_client, mock_pmm_api, caplog
+    ):
+        """Forward a control-char-laden key to PMM without echoing or logging it.
+
+        ``NonEmptyStr`` does not strip control characters, so the value passes
+        validation. The contract is: the key is forwarded verbatim to the PMM
+        client, but never appears in the response body or in any log record.
+        """
+        mock_pmm_api.list_contact_points.return_value = []
+        mock_pmm_api.create_contact_point.return_value = ContactPoint(
+            uid="new", name="SEP PagerDuty", type="pagerduty", settings={}
+        )
+        mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default", routes=[]
+        )
+        bad_key = "key\x00\nctrl"
+        with caplog.at_level("DEBUG"):
+            response = api_client.post(
+                f"{API_BASE}/pagerduty", json={"integration_key": bad_key}
+            )
+        assert response.status_code == status.HTTP_200_OK
+        assert bad_key not in response.text
+        for record in caplog.records:
+            assert bad_key not in record.getMessage()
+        forwarded_settings = mock_pmm_api.create_contact_point.call_args[0][2]
+        assert forwarded_settings == {"integrationKey": bad_key}
 
 
 class TestBearerAuthGate:
@@ -487,6 +556,65 @@ class TestPagerDutyDeleteApi:
         response = api_client.post(f"{API_BASE}/pagerduty/delete")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
 
+    def test_returns_502_when_policy_fetch_fails(self, api_client, mock_pmm_api):
+        """Return 502 when the policy fetch (inside the second try) raises."""
+        mock_pmm_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-1",
+                name="SEP PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "secretkey"},
+            ),
+        ]
+        mock_pmm_api.get_notification_policy.side_effect = OSError("policy down")
+        response = api_client.post(f"{API_BASE}/pagerduty/delete")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "policy down" not in response.text
+        mock_pmm_api.delete_contact_point.assert_not_awaited()
+
+    def test_returns_502_when_delete_contact_point_fails(
+        self, api_client, mock_pmm_api
+    ):
+        """Return 502 when the trailing ``delete_contact_point`` call raises."""
+        mock_pmm_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-1",
+                name="SEP PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "k"},
+            ),
+        ]
+        mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default", routes=[]
+        )
+        mock_pmm_api.delete_contact_point.side_effect = HTTPException(
+            status_code=500, detail="upstream"
+        )
+        response = api_client.post(f"{API_BASE}/pagerduty/delete")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "upstream" not in response.text
+
+    def test_delete_does_not_log_integration_key(
+        self, api_client, mock_pmm_api, caplog
+    ):
+        """Never log the PagerDuty integration key on the delete path either."""
+        mock_pmm_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-1",
+                name="SEP PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "supersecretkey-xyz"},
+            ),
+        ]
+        mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
+            receiver="default", routes=[]
+        )
+        with caplog.at_level("DEBUG"):
+            response = api_client.post(f"{API_BASE}/pagerduty/delete")
+        assert response.status_code == status.HTTP_200_OK
+        for record in caplog.records:
+            assert "supersecretkey-xyz" not in record.getMessage()
+
 
 class TestAlertsPushApi:
     """Tests for the alerts push endpoint."""
@@ -614,6 +742,80 @@ class TestAlertsPushApi:
         response = api_client.post(f"{API_BASE}/push", json={"selected_templates": []})
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
+    def test_push_already_present_swallows_create_rule_failure(
+        self, api_client, mock_pmm_api
+    ):
+        """Report ``skipped`` even when the inner ``create_rule`` call raises.
+
+        When a template is already present in PMM the handler still attempts a
+        no-op ``create_rule`` and silently absorbs any failure (the rule
+        already exists upstream). Covers the ``except (HTTPException, OSError)``
+        arm inside the already-present branch.
+        """
+        sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
+        mock_pmm_api.create_rule.side_effect = HTTPException(
+            status_code=502, detail="rule already exists"
+        )
+        response = api_client.post(
+            f"{API_BASE}/push", json={"selected_templates": ["High CPU"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        result = response.json()["results"][0]
+        assert result["status"] == "skipped"
+        assert result["message"] == "Already present in PMM"
+        mock_pmm_api.create_rule.assert_awaited_once()
+
+    def test_push_conflict_retry_deletes_matching_rules_only(
+        self, api_client, mock_pmm_api
+    ):
+        """Delete conflicting + ghost rules in the target folder only.
+
+        Drive the conflict-retry path with a populated ``list_rules`` so the
+        body of ``delete_conflicting_rules`` actually runs. Rules in another
+        folder must be left untouched.
+        """
+        mock_pmm_api.create_rule.side_effect = [
+            HTTPException(status_code=502, detail="rule conflicts with existing rule"),
+            None,
+        ]
+        mock_pmm_api.list_rules.return_value = [
+            AlertRule(uid="r1", title="High CPU", namespace_uid=_FOLDER.uid),
+            AlertRule(uid="r2", title="", namespace_uid=_FOLDER.uid),
+            AlertRule(uid="r3", title="High CPU", namespace_uid="other-folder"),
+            AlertRule(uid="r4", title="unrelated", namespace_uid=_FOLDER.uid),
+        ]
+        response = api_client.post(
+            f"{API_BASE}/push", json={"selected_templates": ["High CPU"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        result = response.json()["results"][0]
+        assert result["status"] == "success"
+        deleted_uids = sorted(
+            call.args[0] for call in mock_pmm_api.delete_rule.await_args_list
+        )
+        assert deleted_uids == ["r1", "r2"]
+
+    def test_push_mixed_results_preserve_input_order(self, api_client, mock_pmm_api):
+        """Return per-template results in the same order as the request."""
+        mock_pmm_api.create_template.side_effect = [
+            None,
+            HTTPException(status_code=502, detail="boom"),
+        ]
+        response = api_client.post(
+            f"{API_BASE}/push",
+            json={"selected_templates": ["High CPU", "Nonexistent", "Disk Full"]},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        results = response.json()["results"]
+        assert [r["name"] for r in results] == [
+            "High CPU",
+            "Nonexistent",
+            "Disk Full",
+        ]
+        assert [r["status"] for r in results] == ["success", "error", "error"]
+        assert results[1]["message"] == "Template not found"
+        assert "boom" in results[2]["message"]
+
 
 @pytest.mark.asyncio
 class TestRestoreApi:
@@ -725,6 +927,51 @@ class TestRestoreApi:
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert "upstream down" not in response.text
+
+    async def test_restore_re_raises_http_exception_unchanged(
+        self, api_client, mock_pmm_api, seeded_backup: AlertBackup
+    ):
+        """Propagate an upstream HTTPException status verbatim (no 502 mask).
+
+        The ``except HTTPException: raise`` branch is distinct from the
+        ``OSError`` fallback that returns 502 — pin the contract that
+        FastAPI-shaped errors bubble with their original status code.
+        """
+        mock_pmm_api.list_rules.side_effect = HTTPException(
+            status_code=409, detail="precondition failed"
+        )
+        response = api_client.post(
+            f"{API_BASE}/restore", json={"backup_id": seeded_backup.id}
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    async def test_restore_with_empty_backup_data(
+        self, api_client, mock_pmm_api, session: AsyncSession
+    ):
+        """Return zeroed counts when the backup payload is completely empty."""
+        mock_pmm_api.list_rules.return_value = []
+        mock_pmm_api.list_contact_points.return_value = []
+        mock_pmm_api.list_folders.return_value = [_FOLDER]
+        empty_backup = await AlertBackupManager.create(
+            session, AlertBackup(data={}, metadata_={})
+        )
+        response = api_client.post(
+            f"{API_BASE}/restore", json={"backup_id": empty_backup.id}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        details = response.json()["details"]
+        assert details["templates"] == {"created": 0, "skipped": 0}
+        assert details["rules_created"] == 0
+        assert details["rules_deleted"] == 0
+        assert details["notification_policies"] == "skipped"
+
+    async def test_restore_404_detail_does_not_echo_backup_id(self, api_client):
+        """Confirm 404 detail is generic and never echoes the requested id."""
+        forged_id = 13371337
+        response = api_client.post(f"{API_BASE}/restore", json={"backup_id": forged_id})
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert str(forged_id) not in response.text
+        assert response.json()["detail"] == "Backup not found"
 
 
 def test_api_routes_mount_under_plugins_prefix():
