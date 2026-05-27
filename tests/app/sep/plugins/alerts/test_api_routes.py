@@ -965,7 +965,9 @@ class TestRestoreApi:
         assert details["rules_deleted"] == 0
         assert details["notification_policies"] == "skipped"
 
-    async def test_restore_404_detail_does_not_echo_backup_id(self, api_client):
+    async def test_restore_404_detail_does_not_echo_backup_id(
+        self, api_client, mock_pmm_api
+    ):
         """Confirm 404 detail is generic and never echoes the requested id."""
         forged_id = 13371337
         response = api_client.post(f"{API_BASE}/restore", json={"backup_id": forged_id})
