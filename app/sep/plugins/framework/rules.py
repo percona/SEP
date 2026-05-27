@@ -63,6 +63,7 @@ __all__ = [
     "AnyTruthy",
     "CardinalityRule",
     "ConditionalRulesModel",
+    "Contains",
     "Equals",
     "F",
     "FailRule",
@@ -92,6 +93,7 @@ __all__ = [
     "any_present",
     "any_truthy",
     "apply_conditional_rules",
+    "contains",
     "evaluate_conditional_rules",
     "falsy",
     "none_present",
@@ -224,8 +226,11 @@ def _wrap_rhs(value: object) -> object:
 def _field_is_present(instance: Any, name: str) -> bool:
     """Return ``True`` iff ``instance.<name>`` is set and non-empty.
 
-    Treats ``None`` and empty strings/bytes/lists/tuples/sets/dicts as
-    absent. ``0`` and ``False`` count as present (set, just falsy).
+    Treats ``None``, ``False``, and empty strings/bytes/lists/tuples/sets/dicts
+    as absent. ``0`` counts as present (numeric, just falsy). ``False`` is
+    treated as the unset bool default so ``forbidden=`` :class:`FieldGate`
+    entries on :class:`BoolField` fire only on an explicit ``True`` toggle,
+    matching the convention used by :class:`FailRule` ``truthy(name)`` checks.
 
     :param instance: The model instance being evaluated.
     :type instance: Any
@@ -235,7 +240,7 @@ def _field_is_present(instance: Any, name: str) -> bool:
     :rtype: bool
     """
     value = getattr(instance, name, None)
-    if value is None:
+    if value is None or value is False:
         return False
     return not (
         isinstance(value, str | bytes | list | tuple | set | frozenset | dict)
@@ -448,6 +453,58 @@ class NotEquals(Predicate):
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON wire shape for this predicate."""
         return {"not_equals": {self.field: _wire_value(self.value)}}
+
+    def referenced_fields(self) -> set[str]:
+        """Return the field names this predicate reads from."""
+        return {self.field}
+
+
+class Contains(Predicate):
+    """Match when ``value`` is a member of the container at ``instance.<field>``.
+
+    The container must be a list/tuple/set/frozenset (typically the value of
+    a MultiChoice field). Any other type — including ``str``, ``bytes``, and
+    mappings — evaluates to ``False``. This matches the frontend predicate
+    evaluator, which treats non-arrays as ``False``. For substring tests use
+    :class:`Equals` plus :func:`truthy` instead.
+
+    Comparison is tolerant of enum members: when either side is an
+    :class:`Enum`, both the underlying ``.value`` and the member ``.name``
+    are checked. This lets a single :class:`Contains` declaration work
+    against both the post-Pydantic instance (where the container holds
+    enum members) and the frontend wire form (where it holds the choice's
+    ``value`` string).
+
+    :ivar field: The referenced field name.
+    :vartype field: str
+    :ivar value: The literal member checked for inclusion.
+    :vartype value: Any
+    """
+
+    __slots__ = ("field", "value")
+
+    def __init__(self, field: str, value: Any) -> None:
+        self.field = field
+        self.value = value
+
+    @staticmethod
+    def _keys(value: Any) -> set[Any]:
+        """Return the comparison keys for an enum or scalar value."""
+        if isinstance(value, Enum):
+            return {value, value.value, value.name}
+        return {value}
+
+    def evaluate(self, instance: Any) -> bool:
+        """Evaluate this predicate against ``instance``."""
+        container = getattr(instance, self.field, None)
+        if not isinstance(container, list | tuple | set | frozenset):
+            return False
+        target_keys = self._keys(self.value)
+        return any(target_keys & self._keys(item) for item in container)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the JSON wire shape for this predicate."""
+        return {"contains": {self.field: _wire_value(self.value)}}
 
     def referenced_fields(self) -> set[str]:
         """Return the field names this predicate reads from."""
@@ -867,6 +924,19 @@ def absent(name: str) -> Predicate:
     :rtype: Predicate
     """
     return NonePresent([name])
+
+
+def contains(name: str, value: Any) -> Predicate:
+    """Return a predicate matching when ``value`` is a member of ``instance.<name>``.
+
+    :param name: The field name whose value is the container.
+    :type name: str
+    :param value: The literal member checked for inclusion.
+    :type value: Any
+    :return: A :class:`Contains` predicate.
+    :rtype: Predicate
+    """
+    return Contains(name, value)
 
 
 def all_truthy(*names: str) -> Predicate:

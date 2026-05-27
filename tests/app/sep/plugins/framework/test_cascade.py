@@ -27,6 +27,7 @@ from app.core.requests.remote_api import RemoteAPI
 from app.sep.plugins.framework.cascade import (
     build_derived_payload,
     build_predecessor_payload,
+    cascade_create_independent_tasks,
     cascade_create_predecessors,
     cascade_create_tasks,
     cascade_delete_predecessors,
@@ -126,6 +127,177 @@ class TestBuildDerivedPayload:
         assert parent["name"] == before["name"]
         assert parent["data"]["meta"]["args"] == before["args"]
         assert "parent" not in parent["data"]
+
+    def test_applies_payload_substitutions(self) -> None:
+        """Apply ``payload_substitutions`` to ``data.payload`` literally."""
+        parent = {
+            "name": "my-backup",
+            "data": {
+                "backup_type": "pbm_config",
+                "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+            },
+        }
+        result = build_derived_payload(
+            parent,
+            DerivedTask(
+                name_suffix="-logical",
+                payload_substitutions={"pbm_config": "pbm_logical"},
+                data_overrides={"backup_type": "pbm_logical"},
+            ),
+        )
+
+        assert result["name"] == "my-backup-logical"
+        assert result["data"]["parent"] == "my-backup"
+        assert result["data"]["backup_type"] == "pbm_logical"
+        assert (
+            result["data"]["payload"]
+            == "file:///plugins/backup_mongo/pbm_logical_payload"
+        )
+
+    def test_applies_payload_substitutions_in_dict_order(self) -> None:
+        """Apply ``payload_substitutions`` in dict insertion order."""
+        parent = {
+            "name": "my-backup",
+            "data": {
+                "backup_type": "pbm_config",
+                "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+            },
+        }
+        result = build_derived_payload(
+            parent,
+            DerivedTask(
+                name_suffix="-physical",
+                payload_substitutions={
+                    "pbm_config": "pbm_logical",
+                    "pbm_logical": "pbm_physical",
+                },
+                data_overrides={"backup_type": "pbm_physical"},
+            ),
+        )
+
+        assert result["data"]["backup_type"] == "pbm_physical"
+        assert (
+            result["data"]["payload"]
+            == "file:///plugins/backup_mongo/pbm_physical_payload"
+        )
+
+    def test_no_payload_is_noop_for_payload_substitutions(self) -> None:
+        """Skip payload substitution silently when ``data.payload`` is absent."""
+        parent = {"name": "t1", "data": {"backup_type": "pbm_config"}}
+        result = build_derived_payload(
+            parent,
+            DerivedTask(
+                name_suffix="-logical",
+                payload_substitutions={"pbm_config": "pbm_logical"},
+                data_overrides={"backup_type": "pbm_logical"},
+            ),
+        )
+
+        assert result["data"]["backup_type"] == "pbm_logical"
+        assert "payload" not in result["data"]
+
+    def test_status_payload_substitution_chains_through_logical(
+        self,
+    ) -> None:
+        """Chain ``pbm_config`` → ``pbm_logical`` → ``pbm_status`` in the payload path."""
+        parent = {
+            "name": "my-backup",
+            "data": {
+                "backup_type": "pbm_config",
+                "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+            },
+        }
+        result = build_derived_payload(
+            parent,
+            DerivedTask(
+                name_suffix="-status",
+                payload_substitutions={
+                    "pbm_config": "pbm_logical",
+                    "pbm_logical": "pbm_status",
+                },
+                data_overrides={"backup_type": "pbm_status"},
+            ),
+        )
+
+        assert result["name"] == "my-backup-status"
+        assert result["data"]["backup_type"] == "pbm_status"
+        assert (
+            result["data"]["payload"]
+            == "file:///plugins/backup_mongo/pbm_status_payload"
+        )
+
+
+def _backup_mongo_parent_payload() -> dict[str, Any]:
+    """Return a minimal backup_mongo-shaped parent task payload for testing."""
+    return {
+        "name": "my-backup",
+        "data": {
+            "backup_type": "pbm_config",
+            "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+        },
+    }
+
+
+def _backup_mongo_derived_specs() -> list[DerivedTask]:
+    """Return derived specs for the backup_mongo logical/physical/status cascade."""
+    return [
+        DerivedTask(
+            name_suffix="-logical",
+            payload_substitutions={"pbm_config": "pbm_logical"},
+            data_overrides={"backup_type": "pbm_logical"},
+        ),
+        DerivedTask(
+            name_suffix="-physical",
+            payload_substitutions={
+                "pbm_config": "pbm_logical",
+                "pbm_logical": "pbm_physical",
+            },
+            data_overrides={"backup_type": "pbm_physical"},
+        ),
+        DerivedTask(
+            name_suffix="-status",
+            payload_substitutions={
+                "pbm_config": "pbm_logical",
+                "pbm_logical": "pbm_status",
+            },
+            data_overrides={"backup_type": "pbm_status"},
+        ),
+    ]
+
+
+class TestBackupMongoDerivedCascade:
+    """Cover ``build_derived_payload`` with backup_mongo-shaped substitution maps."""
+
+    def test_logical_physical_status_payloads(self) -> None:
+        """Suffix names and rewrite payload paths for each derived leg."""
+        parent = _backup_mongo_parent_payload()
+        logical, physical, status = [
+            build_derived_payload(parent, spec)
+            for spec in _backup_mongo_derived_specs()
+        ]
+
+        assert logical["data"]["payload"].endswith("pbm_logical_payload")
+        assert physical["data"]["payload"].endswith("pbm_physical_payload")
+        assert status["data"]["payload"].endswith("pbm_status_payload")
+
+    @pytest.mark.asyncio
+    async def test_cascade_create_posts_parent_and_three_derived(self) -> None:
+        """POST the parent first, then each derived spec in declaration order."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        parent = _backup_mongo_parent_payload()
+        derived_specs = _backup_mongo_derived_specs()
+
+        await cascade_create_tasks(tasks_api, parent, derived_specs)
+
+        expected_calls = [
+            call("/", json=parent),
+            *(
+                call("/", json=build_derived_payload(parent, spec))
+                for spec in derived_specs
+            ),
+        ]
+        assert tasks_api.post.await_args_list == expected_calls
+        tasks_api.delete.assert_not_awaited()
 
 
 # ── cascade_create_tasks ─────────────────────────────────────────────────
@@ -232,6 +404,103 @@ class TestCascadeCreateTasks:
         with pytest.raises(HTTPException) as exc_info:
             await cascade_create_tasks(
                 tasks_api, _parent_payload(), [DerivedTask(name_suffix="-x")]
+            )
+
+        assert exc_info.value is original
+        logger_warning.assert_called_once()
+        assert "Rollback DELETE failed" in logger_warning.call_args.args[0]
+
+
+# ── cascade_create_independent_tasks ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+class TestCascadeCreateIndependentTasks:
+    """Cover the parent + N independent children POST cascade with rollback."""
+
+    async def test_posts_parent_then_each_child_in_order(self) -> None:
+        """POST the parent first, then each independent child in declaration order."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        parent = {"name": "p1", "data": {}}
+        children = [
+            {"name": "c1", "data": {"parent": "p1"}},
+            {"name": "c2", "data": {"parent": "p1"}},
+        ]
+
+        await cascade_create_independent_tasks(tasks_api, parent, children)
+
+        assert tasks_api.post.await_args_list == [
+            call("/", json=parent),
+            call("/", json=children[0]),
+            call("/", json=children[1]),
+        ]
+        tasks_api.delete.assert_not_awaited()
+
+    async def test_no_children_only_posts_parent(self) -> None:
+        """POST the parent and skip the children loop when the list is empty."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        parent = {"name": "p1", "data": {}}
+
+        await cascade_create_independent_tasks(tasks_api, parent, [])
+
+        tasks_api.post.assert_awaited_once_with("/", json=parent)
+        tasks_api.delete.assert_not_awaited()
+
+    async def test_parent_post_failure_re_raises_and_skips_rollback(self) -> None:
+        """Skip the rollback loop when the parent POST itself fails."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        tasks_api.post.side_effect = exc
+
+        with pytest.raises(HTTPException) as exc_info:
+            await cascade_create_independent_tasks(
+                tasks_api,
+                {"name": "p1", "data": {}},
+                [{"name": "c1", "data": {}}],
+            )
+
+        assert exc_info.value is exc
+        tasks_api.delete.assert_not_awaited()
+
+    async def test_child_post_failure_rolls_back_in_reverse_order(self) -> None:
+        """DELETE created tasks in reverse creation order (LIFO rollback)."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.post.side_effect = [
+            None,
+            None,
+            HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR),
+        ]
+        parent = {"name": "p1", "data": {}}
+        children = [
+            {"name": "c1", "data": {"parent": "p1"}},
+            {"name": "c2", "data": {"parent": "p1"}},
+        ]
+
+        with pytest.raises(HTTPException) as exc_info:
+            await cascade_create_independent_tasks(tasks_api, parent, children)
+
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert tasks_api.delete.await_args_list == [call("/c1"), call("/p1")]
+
+    async def test_rollback_delete_failure_is_logged_and_swallowed(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Log a rollback DELETE failure at WARNING and re-raise the original exception."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        original = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        tasks_api.post.side_effect = [None, original]
+        tasks_api.delete.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        logger_warning = mocker.patch(
+            "app.sep.plugins.framework.cascade.logger.warning"
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await cascade_create_independent_tasks(
+                tasks_api,
+                {"name": "p1", "data": {}},
+                [{"name": "c1", "data": {}}],
             )
 
         assert exc_info.value is original
