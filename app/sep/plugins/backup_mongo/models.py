@@ -15,13 +15,15 @@
 
 """Define models for the Backups plugin."""
 
+from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, FutureDatetime
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -282,3 +284,191 @@ class BackupCreate(BaseCaseInsensitiveModel):
     backup_num_parallel_collections: int | EmptyStrToNone = None
     # Path to MongoDB URI credentials file on the Nomad node (passed as task meta, used by payloads).
     credentials_path: NonEmptyStr | EmptyStrToNone = None
+
+
+class BackupTaskWrite(BaseModel):
+    """Represent a JSON request body for creating a backup task group.
+
+    Mirrors :class:`BackupCreate` except ``backup_type``, which is always
+    ``pbm_config`` on create. POST creates the parent config task plus derived
+    logical, physical, and status siblings.
+
+    :param task_name: The name of the task to be created.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for the task execution.
+    :type hostname: NonEmptyStr
+    :param service_id: The Inventory ID of the MongoDB service to connect to.
+    :type service_id: int
+    :param alert_on_fail: If True, send an alert if the task fails.
+    :type alert_on_fail: bool
+    :param pitr_oplog_span_min: PITR oplog span in minutes.
+    :type pitr_oplog_span_min: int | None
+    :param pitr_enabled: Whether PITR is enabled.
+    :type pitr_enabled: bool
+    :param pitr_compression: PITR compression algorithm.
+    :type pitr_compression: str | None
+    :param storage_type: Storage backend type (``s3`` or ``filesystem``).
+    :type storage_type: str | None
+    :param storage_s3_region: S3 region when ``storage_type`` is ``s3``.
+    :type storage_s3_region: str | None
+    :param storage_s3_bucket: S3 bucket when ``storage_type`` is ``s3``.
+    :type storage_s3_bucket: str | None
+    :param storage_s3_prefix: S3 key prefix when ``storage_type`` is ``s3``.
+    :type storage_s3_prefix: str | None
+    :param storage_s3_endpoint_url: S3 endpoint URL when ``storage_type`` is ``s3``.
+    :type storage_s3_endpoint_url: str | None
+    :param storage_filesystem_path: Filesystem path when ``storage_type`` is
+        ``filesystem``.
+    :type storage_filesystem_path: str | None
+    :param backup_priority: Node priority mapping as YAML.
+    :type backup_priority: str | None
+    :param backup_compression: Backup snapshot compression algorithm.
+    :type backup_compression: CompressionAlgorithm | None
+    :param backup_compression_level: Backup compression level.
+    :type backup_compression_level: int | None
+    :param backup_timeouts_starting_status: PBM starting-status timeout in seconds.
+    :type backup_timeouts_starting_status: int | None
+    :param backup_oplog_span_min: Logical backup oplog span in minutes.
+    :type backup_oplog_span_min: float | None
+    :param backup_num_parallel_collections: Parallel collections for logical backup.
+    :type backup_num_parallel_collections: int | None
+    :param credentials_path: Path to MongoDB URI credentials on the Nomad node.
+    :type credentials_path: str | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    service_id: int
+    alert_on_fail: bool = False
+    pitr_oplog_span_min: int | None = None
+    pitr_enabled: bool = False
+    pitr_compression: str | None = None
+    storage_type: str | None = None
+    storage_s3_region: str | None = None
+    storage_s3_bucket: str | None = None
+    storage_s3_prefix: str | None = None
+    storage_s3_endpoint_url: str | None = None
+    storage_filesystem_path: str | None = None
+    backup_priority: str | None = None
+    backup_compression: CompressionAlgorithm | None = None
+    backup_compression_level: int | None = None
+    backup_timeouts_starting_status: int | None = None
+    backup_oplog_span_min: float | None = None
+    backup_num_parallel_collections: int | None = None
+    credentials_path: str | None = None
+
+
+class BackupDerivedTaskSummary(BaseModel):
+    """Represent one derived sibling in a backup task detail response.
+
+    :param name: The name of the derived task.
+    :type name: str
+    :param backup_type: The PBM backup type for this derived task.
+    :type backup_type: str
+    :param status: The latest execution status of the derived task.
+    :type status: TaskHistoryStatusEnum | None
+    """
+
+    name: str
+    backup_type: str
+    status: TaskHistoryStatusEnum | None = None
+
+
+class BackupTaskBase(BaseModel):
+    """Define the common fields shared across backup task API responses.
+
+    :param name: The name of the backup task.
+    :type name: str
+    :param owner: The entity or user that owns the task.
+    :type owner: TaskOwner
+    :param hostname: The target hostname for the task execution.
+    :type hostname: str | None
+    :param status: The current execution status of the task.
+    :type status: TaskHistoryStatusEnum | None
+    """
+
+    name: str
+    owner: TaskOwner
+    hostname: str | None = None
+    status: TaskHistoryStatusEnum | None = None
+
+
+class BackupTaskResponse(BackupTaskBase):
+    """Represent a backup task API response.
+
+    :param id: The unique identifier for the backup task.
+    :type id: int | None
+    :param backend: The backend worker/engine executing the task.
+    :type backend: TaskBackendEnum
+    :param backup_type: The PBM backup type stored on the task.
+    :type backup_type: str
+    :param data: The raw configuration and parameters for the backup execution.
+    :type data: dict[str, Any]
+    :param protected: Whether the task is protected from deletion or modification.
+    :type protected: bool
+    :param alert_on_fail: If True, notifications are sent upon task failure.
+    :type alert_on_fail: bool
+    :param created_at: The timestamp when the task was first created.
+    :type created_at: datetime | None
+    :param updated_at: The timestamp of the last modification to the task.
+    :type updated_at: datetime | None
+    :param created_by: The user who initiated the task.
+    :type created_by: str | None
+    :param last_updated_by: The user who last modified the task record.
+    :type last_updated_by: str | None
+    """
+
+    id: int | None = None
+    backend: TaskBackendEnum
+    backup_type: str
+    data: dict[str, Any]
+    protected: bool
+    alert_on_fail: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None
+
+
+class BackupTaskDetailResponse(BackupTaskResponse):
+    """Represent a backup task detail API response.
+
+    :param derived_tasks: Latest status for each derived logical, physical, and
+        status sibling.
+    :type derived_tasks: list[BackupDerivedTaskSummary]
+    :param latest_pbm_status: Tail of the latest PBM status task stdout, if
+        available.
+    :type latest_pbm_status: str | None
+    """
+
+    derived_tasks: list[BackupDerivedTaskSummary] = Field(default_factory=list)
+    latest_pbm_status: str | None = None
+
+
+class BackupExecuteWrite(BaseModel):
+    """Represent a JSON request body for executing a backup task.
+
+    :param eta: Optional future datetime to schedule execution.
+    :type eta: FutureDatetime | None
+    :param chain_task_names: Optional list of task names to chain after this one.
+    :type chain_task_names: list[str] | None
+    :param chain_on_failure: Whether to run chained tasks even on failure.
+    :type chain_on_failure: bool | None
+    """
+
+    eta: FutureDatetime | None = None
+    chain_task_names: list[str] | None = None
+    chain_on_failure: bool | None = None
+
+
+class BackupExecutionResponse(BaseModel):
+    """Represent the response from POST /api/plugins/backup_mongo/{task_name}/execute.
+
+    :param task_name: The name of the task that was executed.
+    :type task_name: str
+    :param task_id: The id of the task-history row created by the tasks API.
+    :type task_id: int | None
+    """
+
+    task_name: str
+    task_id: int | None = None

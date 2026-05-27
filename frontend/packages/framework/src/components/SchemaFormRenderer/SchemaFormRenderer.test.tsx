@@ -350,6 +350,38 @@ describe('SchemaFormRenderer — multichoice minItems', () => {
   });
 });
 
+describe('SchemaFormRenderer — multichoice required', () => {
+  it('blocks submission when a required multichoice has the default empty array', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            required: true,
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Fix the highlighted fields/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('select-input-upload')).toHaveAttribute('aria-invalid', 'true'),
+    );
+  });
+});
+
 describe('SchemaFormRenderer — file required', () => {
   it('blocks submission when a required file field is empty', async () => {
     const user = userEvent.setup();
@@ -376,7 +408,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
   it('clears downstream schema value when the upstream service changes', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url === '/inventory/services/') {
+      if (url === '/sep/services/') {
         return Promise.resolve({
           data: {
             items: [
@@ -421,7 +453,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
     // Wait for services to load.
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/inventory/services/', expect.anything()),
+      expect(mockedApi.get).toHaveBeenCalledWith('/sep/services/', expect.anything()),
     );
 
     // Pick first service.
@@ -664,6 +696,107 @@ describe('SchemaFormRenderer — conditional visibility', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ advancedOption: 'secret' }));
   });
+
+  // ── BoolField with a forbidden gate ──────────────────────────────────────
+  // Mirrors the SEP-1061 ``skip_s3_safety_check`` scenario: a bool field is
+  // visible only when the ``upload`` MultiChoice contains ``"S3"``. Locks in
+  // that ``isPresent(false) === false`` so the default does not trip the
+  // forbidden gate, and that the field is unregistered (omitted from the
+  // submit payload) when hidden.
+  const boolGateSections: FormSection[] = [
+    {
+      title: 'Upload',
+      fields: [
+        {
+          type: 'multichoice',
+          name: 'upload',
+          label: 'Upload providers',
+          choices: [
+            { label: 'Rsync', value: 'RSYNC' },
+            { label: 'S3', value: 'S3' },
+          ],
+        },
+        {
+          type: 'bool',
+          name: 'skip_s3_safety_check',
+          label: 'Skip S3 safety check',
+          forbidden: [{ when: { not: { contains: { upload: 'S3' } } } }],
+        },
+      ],
+    },
+  ];
+
+  it('hides a BoolField when its upload-membership gate fires', () => {
+    renderWithProviders(<SchemaFormRenderer sections={boolGateSections} onSubmit={() => {}} />);
+    // upload defaults to [] → not contains "S3" → gate fires → checkbox hidden
+    expect(screen.queryByLabelText('Skip S3 safety check')).toBeNull();
+  });
+
+  it('omits a hidden BoolField from the submit payload (RHF unregister)', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={boolGateSections}
+        onSubmit={onSubmit}
+        defaultValues={{ upload: ['RSYNC'], skip_s3_safety_check: true }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.not.objectContaining({ skip_s3_safety_check: expect.anything() }),
+    );
+  });
+});
+
+describe('SchemaFormRenderer — storage type visibility', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Storage',
+      fields: [
+        {
+          type: 'choice',
+          name: 'storage_type',
+          label: 'Storage Type',
+          default: 's3',
+          choices: [
+            { label: 'S3-compatible', value: 's3' },
+            { label: 'Filesystem', value: 'filesystem' },
+          ],
+        },
+        {
+          type: 'string',
+          name: 'storage_s3_bucket',
+          label: 'S3 Bucket',
+          forbidden: [{ when: { not_equals: { storage_type: 's3' } } }],
+        },
+        {
+          type: 'string',
+          name: 'storage_filesystem_path',
+          label: 'Filesystem Path',
+          required: true,
+          forbidden: [{ when: { not_equals: { storage_type: 'filesystem' } } }],
+        },
+      ],
+    },
+  ];
+
+  it('shows S3 fields and hides filesystem when storage_type defaults to s3', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.getByTestId('text-input-storage_s3_bucket')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-storage_filesystem_path')).toBeNull();
+  });
+
+  it('shows filesystem and hides S3 when storage_type is filesystem', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    await user.click(screen.getByTestId('radio-option-filesystem'));
+    expect(await screen.findByTestId('text-input-storage_filesystem_path')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-storage_s3_bucket')).toBeNull();
+  });
 });
 
 // ── isPresent unit tests ───────────────────────────────────────────────────
@@ -687,8 +820,14 @@ describe('isPresent', () => {
 
   it('treats non-empty scalars as present', () => {
     expect(isPresent(0)).toBe(true);
-    expect(isPresent(false)).toBe(true);
     expect(isPresent('x')).toBe(true);
+  });
+
+  it('treats false as absent so BoolField defaults do not trip forbidden gates', () => {
+    // Matches the backend convention: only an explicit `true` toggle counts
+    // as present. `0` stays present because numeric zero is a real value.
+    expect(isPresent(false)).toBe(false);
+    expect(isPresent(true)).toBe(true);
   });
 });
 

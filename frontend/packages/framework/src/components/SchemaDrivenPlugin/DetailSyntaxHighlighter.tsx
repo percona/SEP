@@ -58,6 +58,9 @@ function formatDetailSyntaxCode(value: unknown, language: DetailSyntaxLanguage):
   if (language === 'sql') {
     return typeof value === 'string' ? formatCreateSql(value) : String(value);
   }
+  if (language === 'yaml') {
+    return typeof value === 'string' ? value : String(value);
+  }
   return formatKeysForDisplay(value);
 }
 

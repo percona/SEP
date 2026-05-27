@@ -15,11 +15,22 @@
 
 """Define models for the Restore plugin."""
 
-from pydantic import AliasChoices, ConfigDict, Field
+from datetime import datetime
+from typing import Any
+
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    FutureDatetime,
+    model_validator,
+)
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.sep.plugins.backup_mongo.models import BackupType
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class RestoreConfigRestore(BaseCaseInsensitiveModel):
@@ -192,3 +203,190 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     restore_mongod_location: NonEmptyStr | EmptyStrToNone = None
     restore_mongod_location_map: NonEmptyStr | EmptyStrToNone = None
     credentials_path: NonEmptyStr | EmptyStrToNone = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_int_service_id(cls, data: Any) -> Any:
+        """Coerce an int ``service_id`` (the JSON body shape) to str.
+
+        The form path receives ``service_id`` as ``NonEmptyStr |
+        EmptyStrToNone`` directly. The JSON path validates a
+        :class:`RestoreTaskWrite` first, where ``service_id`` is
+        ``int | None``, and then dumps it for re-validation here —
+        without this coercion the ``int`` would fail the str-typed
+        field. Form submissions arriving as strings are unaffected.
+
+        :param data: The raw input passed to ``model_validate``.
+        :type data: Any
+        :return: The input with ``service_id`` stringified when it was
+            an int, or ``data`` unchanged otherwise.
+        :rtype: Any
+        """
+        if isinstance(data, dict):
+            sid = data.get("service_id")
+            if isinstance(sid, int):
+                return {**data, "service_id": str(sid)}
+        return data
+
+
+class RestoreTaskWrite(BaseModel):
+    """Represent a JSON request body for creating a restore task group.
+
+    Mirrors :class:`RestoreCreate`. POST always creates a parent config task plus
+    restore, pbm-list, and optional force-resync children.
+
+    :param task_name: The name of the task to be created.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for the task execution.
+    :type hostname: NonEmptyStr
+    :param service_id: Optional Inventory ID of the MongoDB service.
+    :type service_id: int | None
+    :param backup_type: Type of backup to restore from (logical or physical).
+    :type backup_type: BackupType
+    :param backup_source: Backup name or timestamp to restore from.
+    :type backup_source: NonEmptyStr
+    :param restore_batch_size: Number of documents to buffer.
+    :type restore_batch_size: int | None
+    :param restore_num_insertion_workers: Insertion workers per collection.
+    :type restore_num_insertion_workers: int | None
+    :param restore_num_parallel_collections: Parallel collections for logical restore.
+    :type restore_num_parallel_collections: int | None
+    :param restore_num_download_workers: Download workers for physical restore.
+    :type restore_num_download_workers: int | None
+    :param restore_max_download_buffer_mb: Max S3 download buffer in MB.
+    :type restore_max_download_buffer_mb: int | None
+    :param restore_download_chunk_mb: S3 download chunk size in MB.
+    :type restore_download_chunk_mb: int | None
+    :param restore_mongod_location: Custom path to mongod binaries.
+    :type restore_mongod_location: str | None
+    :param restore_mongod_location_map: Per-node mongod paths as YAML.
+    :type restore_mongod_location_map: str | None
+    :param credentials_path: Path to MongoDB URI credentials on the Nomad node.
+    :type credentials_path: str | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    service_id: int | None = None
+    backup_type: BackupType
+    backup_source: NonEmptyStr
+    restore_batch_size: int | None = None
+    restore_num_insertion_workers: int | None = None
+    restore_num_parallel_collections: int | None = None
+    restore_num_download_workers: int | None = None
+    restore_max_download_buffer_mb: int | None = None
+    restore_download_chunk_mb: int | None = None
+    restore_mongod_location: str | None = None
+    restore_mongod_location_map: str | None = None
+    credentials_path: str | None = None
+
+
+class RestoreDerivedTaskSummary(BaseModel):
+    """Represent one child task in a restore task group detail response.
+
+    :param name: The name of the child task.
+    :type name: str
+    :param status: The latest execution status of the child task.
+    :type status: TaskHistoryStatusEnum | None
+    """
+
+    name: str
+    status: TaskHistoryStatusEnum | None = None
+
+
+class RestoreTaskBase(BaseModel):
+    """Define the common fields shared across restore task API responses.
+
+    :param name: The name of the restore task.
+    :type name: str
+    :param owner: The entity or user that owns the task.
+    :type owner: TaskOwner
+    :param hostname: The target hostname for the task execution.
+    :type hostname: str | None
+    :param status: The current execution status of the task.
+    :type status: TaskHistoryStatusEnum | None
+    :param backup_type: The PBM backup type for this restore.
+    :type backup_type: str
+    :param backup_source: The backup name or timestamp to restore from.
+    :type backup_source: str
+    """
+
+    name: str
+    owner: TaskOwner
+    hostname: str | None = None
+    status: TaskHistoryStatusEnum | None = None
+    backup_type: str
+    backup_source: str
+
+
+class RestoreTaskResponse(RestoreTaskBase):
+    """Represent a restore task API response.
+
+    :param id: The unique identifier for the restore task.
+    :type id: int | None
+    :param backend: The backend worker/engine executing the task.
+    :type backend: TaskBackendEnum
+    :param data: The raw configuration and parameters for the restore execution.
+    :type data: dict[str, Any]
+    :param protected: Whether the task is protected from deletion or modification.
+    :type protected: bool
+    :param alert_on_fail: If True, notifications are sent upon task failure.
+    :type alert_on_fail: bool
+    :param created_at: The timestamp when the task was first created.
+    :type created_at: datetime | None
+    :param updated_at: The timestamp of the last modification to the task.
+    :type updated_at: datetime | None
+    :param created_by: The user who initiated the task.
+    :type created_by: str | None
+    :param last_updated_by: The user who last modified the task record.
+    :type last_updated_by: str | None
+    """
+
+    id: int | None = None
+    backend: TaskBackendEnum
+    data: dict[str, Any]
+    protected: bool
+    alert_on_fail: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None
+
+
+class RestoreTaskDetailResponse(RestoreTaskResponse):
+    """Represent a restore task detail API response.
+
+    :param derived_tasks: Latest status for each restore child task.
+    :type derived_tasks: list[RestoreDerivedTaskSummary]
+    """
+
+    derived_tasks: list[RestoreDerivedTaskSummary] = Field(default_factory=list)
+
+
+class RestoreExecuteWrite(BaseModel):
+    """Represent a JSON request body for executing a restore task.
+
+    :param eta: Optional future datetime to schedule execution.
+    :type eta: FutureDatetime | None
+    :param chain_task_names: Optional list of task names to chain after this one.
+    :type chain_task_names: list[str] | None
+    :param chain_on_failure: Whether to run chained tasks even on failure.
+    :type chain_on_failure: bool | None
+    """
+
+    eta: FutureDatetime | None = None
+    chain_task_names: list[str] | None = None
+    chain_on_failure: bool | None = None
+
+
+class RestoreExecutionResponse(BaseModel):
+    """Represent the response from POST .../restores/{task_name}/execute.
+
+    :param task_name: The name of the task that was executed.
+    :type task_name: str
+    :param task_id: The id of the task-history row created by the tasks API.
+    :type task_id: int | None
+    """
+
+    task_name: str
+    task_id: int | None = None

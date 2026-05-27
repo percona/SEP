@@ -37,6 +37,7 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.mysql_backups.deps import (
     BackupGeneratedTask,
     BackupsTask,
@@ -49,7 +50,8 @@ from app.tasks.models import TaskHistoryStatusEnum
 from .restore.routes import router as restore_router
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+# Jinja2 UI deprecated — React replacement at /plugins/mysql_backups.
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 router.include_router(restore_router, prefix="/restores", tags=["restores"])

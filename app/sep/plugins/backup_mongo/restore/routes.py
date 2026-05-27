@@ -13,7 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the restores plugin."""
+"""Define legacy Jinja routes for the restores plugin.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/plugins/backup_mongo/restores/`` and the React UI at
+``/backups/mongodb/restores`` (``frontend/packages/plugins/backup_mongo``).
+Every response from this router carries the RFC 8594 ``Deprecation: true``
+header and emits a WARNING on hit; the routes remain mounted for Wave 1 cutover
+and will be removed in Wave 3.
+"""
 
 import logging
 from typing import Annotated, Any
@@ -43,10 +51,11 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     RestoresTask,
     RestoreTasks,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 
