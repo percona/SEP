@@ -45,7 +45,6 @@ from app.core.settings_override.registry import (
     FieldMetadata,
     is_hot_reloadable,
     iter_class_fields,
-    ReloadClassification,
 )
 
 ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
@@ -324,33 +323,17 @@ def build_settings_router(
             to_apply=to_apply,
         )
         proxy._set_snapshot(await build_snapshot(session, settings_cls))  # noqa: SLF001
-        responses = []
-        for key, _ in to_apply:
-            field_info = settings_cls.model_fields[key]
-            responses.append(
-                _settings_response_from_field(
-                    setting_class=setting_class,
-                    settings_cls=settings_cls,
-                    proxy=proxy,
-                    field_meta=FieldMetadata(
-                        key=key,
-                        annotation=field_info.annotation,
-                        default=field_info.default,
-                        description=field_info.description,
-                        reload=ReloadClassification.HOT,
-                        is_secret=any(
-                            f.key == key and f.is_secret
-                            for f in iter_class_fields(settings_cls)
-                        ),
-                        is_complex=any(
-                            f.key == key and f.is_complex
-                            for f in iter_class_fields(settings_cls)
-                        ),
-                    ),
-                    has_override=True,
-                )
+        field_meta_by_key = {f.key: f for f in iter_class_fields(settings_cls)}
+        return [
+            _settings_response_from_field(
+                setting_class=setting_class,
+                settings_cls=settings_cls,
+                proxy=proxy,
+                field_meta=field_meta_by_key[key],
+                has_override=True,
             )
-        return responses
+            for key, _ in to_apply
+        ]
 
     @router.delete("/{setting_class}/{key}", status_code=status.HTTP_204_NO_CONTENT)
     async def delete_setting(
