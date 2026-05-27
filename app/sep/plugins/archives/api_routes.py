@@ -23,8 +23,7 @@ level; per-route ``IsApiAuthenticated`` declarations are not repeated here.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Query
-from fastapi import status as http_status
+from fastapi import APIRouter, Query, status
 
 from app.sep.deps import TaskAPI
 from app.sep.plugins.archives.deps import (
@@ -68,7 +67,7 @@ async def archives_api_detail(
 @router.post(
     "/",
     response_model=ArchivesCreateResponse,
-    status_code=http_status.HTTP_201_CREATED,
+    status_code=status.HTTP_201_CREATED,
 )
 async def archives_api_create(
     task_write: ArchivesApiGeneratedTask,
@@ -101,7 +100,7 @@ async def archives_api_create(
     )
 
 
-@router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
+@router.delete("/{task_name}", status_code=status.HTTP_204_NO_CONTENT)
 async def archives_api_delete(task: ArchivesTask, tasks_api: TaskAPI) -> None:
     """Delete an archive task."""
     await tasks_api.delete(f"/{task.name}")

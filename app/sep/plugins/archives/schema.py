@@ -16,6 +16,7 @@
 """Define the PluginSchema for the Archives plugin."""
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.framework.rules import (
     absent,
     all_,
@@ -51,9 +52,6 @@ from app.sep.plugins.framework.schema import (
     StringField,
     TableField,
 )
-
-_SWAP_DROP = 1  # SwapDropEnum.SWAP_DROP
-_SWAP_ARCHIVE_DROP = 2  # SwapDropEnum.SWAP_ARCHIVE_DROP
 
 archives_schema = PluginSchema(
     name="archives",
@@ -190,7 +188,7 @@ archives_schema = PluginSchema(
                         # Validator 2: dest forbidden when SWAP_DROP or delete_data.
                         FieldGate(
                             when=any_(
-                                F("swap_drop") == _SWAP_DROP, truthy("delete_data")
+                                F("swap_drop") == SwapDropEnum.SWAP_DROP, truthy("delete_data")
                             )
                         ),
                     ],
@@ -202,7 +200,7 @@ archives_schema = PluginSchema(
                     forbidden=[
                         FieldGate(
                             when=any_(
-                                F("swap_drop") == _SWAP_DROP, truthy("delete_data")
+                                F("swap_drop") == SwapDropEnum.SWAP_DROP, truthy("delete_data")
                             )
                         ),
                     ],
@@ -214,7 +212,7 @@ archives_schema = PluginSchema(
                     forbidden=[
                         FieldGate(
                             when=any_(
-                                F("swap_drop") == _SWAP_DROP, truthy("delete_data")
+                                F("swap_drop") == SwapDropEnum.SWAP_DROP, truthy("delete_data")
                             )
                         ),
                     ],
@@ -232,7 +230,7 @@ archives_schema = PluginSchema(
                 # Validator 2: destination required when not SWAP_DROP and not delete_data.
                 FailRule(
                     fail_when=all_(
-                        F("swap_drop") != _SWAP_DROP,
+                        F("swap_drop") != SwapDropEnum.SWAP_DROP,
                         falsy("delete_data"),
                         absent("dest_file"),
                         absent("dest_table_id"),
@@ -307,7 +305,7 @@ archives_schema = PluginSchema(
                 # Validator 3d: SWAP_ARCHIVE_DROP cannot have a destination host.
                 FailRule(
                     fail_when=all_(
-                        F("swap_drop") == _SWAP_ARCHIVE_DROP,
+                        F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP,
                         any_(present("dest_service_id"), truthy("dest_host")),
                     ),
                     error_fields=["dest_service_id", "dest_host"],
@@ -327,7 +325,7 @@ archives_schema = PluginSchema(
                     description="Date suffix appended to the swap table name (required for SWAP_ARCHIVE_DROP).",
                     # Validator 4: required when swap_drop == SWAP_ARCHIVE_DROP.
                     requires=[
-                        FieldGate(when=F("swap_drop") == _SWAP_ARCHIVE_DROP),
+                        FieldGate(when=F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP),
                     ],
                 ),
                 StringField(
@@ -336,11 +334,11 @@ archives_schema = PluginSchema(
                     description="Condition filtering rows to archive (required unless SWAP_DROP).",
                     # Validator 6: required when swap_drop != SWAP_DROP.
                     requires=[
-                        FieldGate(when=F("swap_drop") != _SWAP_DROP),
+                        FieldGate(when=F("swap_drop") != SwapDropEnum.SWAP_DROP),
                     ],
                     # Validator 6: forbidden when swap_drop == SWAP_DROP.
                     forbidden=[
-                        FieldGate(when=F("swap_drop") == _SWAP_DROP),
+                        FieldGate(when=F("swap_drop") == SwapDropEnum.SWAP_DROP),
                     ],
                 ),
                 StringField(

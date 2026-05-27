@@ -16,7 +16,6 @@
 """Define models for the Archives plugin."""
 
 from datetime import date, datetime
-from enum import IntEnum
 from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -24,6 +23,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.schema import archives_schema
 from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.rules import (
@@ -31,14 +31,6 @@ from app.sep.plugins.framework.rules import (
     ConditionalRulesModel,
 )
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
-
-
-class SwapDropEnum(IntEnum):
-    """Enum for defining types of swap actions for table data handling."""
-
-    PURGE_ONLY = 0
-    SWAP_DROP = 1
-    SWAP_ARCHIVE_DROP = 2
 
 
 @apply_conditional_rules(archives_schema)
