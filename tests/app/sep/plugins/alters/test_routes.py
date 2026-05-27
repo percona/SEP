@@ -32,6 +32,8 @@ from app.sep.plugins.alters.deps import (
     get_alters_task,
 )
 from app.sep.plugins.alters.models import AltersCreate
+from app.sep.plugins.alters.routes import router as alters_jinja_router
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
@@ -582,3 +584,11 @@ def test_alters_update_refreshes_pre_checks_task(
         assert "skip_filesystem_checks: true" in cfg
     else:
         assert "skip_filesystem_checks" not in cfg
+
+
+class TestAltersRouterDeprecation:
+    """The alters Jinja2 router uses the deprecation route class."""
+
+    def test_router_uses_deprecated_route_class(self):
+        """Confirm the router is constructed with ``DeprecatedJinja2Route``."""
+        assert alters_jinja_router.route_class is DeprecatedJinja2Route

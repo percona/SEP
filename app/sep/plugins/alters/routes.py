@@ -45,12 +45,13 @@ from app.sep.plugins.alters.deps import (
     get_alters_index_context,
     parse_alters_task_args,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.utils.decorators import csrf_exempt
 from app.sep.utils.jinja import syntax_highlight
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 
