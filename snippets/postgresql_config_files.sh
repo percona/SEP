@@ -216,6 +216,8 @@ EXTRA_FILES=()
 
 resolve_path() {
     local base_dir="$1" raw="$2"
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
     raw="${raw%\'}"
     raw="${raw#\'}"
     raw="${raw%\"}"
