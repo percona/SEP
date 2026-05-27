@@ -6,5 +6,3 @@ minimumReleaseAgeIgnoreMissingTime: false
 allowBuilds:
   esbuild: true
   msw: true
-overrides:
-  brace-expansion@5.0.5: 5.0.6
