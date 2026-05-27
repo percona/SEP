@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <service> (one of: sep, inventory, tasks)" >&2
+    exit 1
+fi
+
 # Wait for Casdoor to be available
 echo "Waiting for Casdoor..."
 while ! nc -z casdoor 8000; do
