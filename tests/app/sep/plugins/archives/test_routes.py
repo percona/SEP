@@ -31,12 +31,13 @@ from app.sep.connectivity import (
 )
 from app.sep.deps import get_inventory_api
 from app.sep.main import sep_app
+from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.deps import (
     build_archives_task_payload,
     get_archives_index_context,
     get_archives_task,
 )
-from app.sep.plugins.archives.models import ArchivesCreate, SwapDropEnum
+from app.sep.plugins.archives.models import ArchivesCreate
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,

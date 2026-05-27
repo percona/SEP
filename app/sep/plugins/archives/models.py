@@ -23,7 +23,6 @@ from pydantic import BaseModel, Field, field_validator
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.schema import archives_schema
 from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.rules import (

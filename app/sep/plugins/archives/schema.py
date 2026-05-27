@@ -188,7 +188,8 @@ archives_schema = PluginSchema(
                         # Validator 2: dest forbidden when SWAP_DROP or delete_data.
                         FieldGate(
                             when=any_(
-                                F("swap_drop") == SwapDropEnum.SWAP_DROP, truthy("delete_data")
+                                F("swap_drop") == SwapDropEnum.SWAP_DROP,
+                                truthy("delete_data"),
                             )
                         ),
                     ],
@@ -200,7 +201,8 @@ archives_schema = PluginSchema(
                     forbidden=[
                         FieldGate(
                             when=any_(
-                                F("swap_drop") == SwapDropEnum.SWAP_DROP, truthy("delete_data")
+                                F("swap_drop") == SwapDropEnum.SWAP_DROP,
+                                truthy("delete_data"),
                             )
                         ),
                     ],
@@ -212,7 +214,8 @@ archives_schema = PluginSchema(
                     forbidden=[
                         FieldGate(
                             when=any_(
-                                F("swap_drop") == SwapDropEnum.SWAP_DROP, truthy("delete_data")
+                                F("swap_drop") == SwapDropEnum.SWAP_DROP,
+                                truthy("delete_data"),
                             )
                         ),
                     ],
@@ -325,7 +328,9 @@ archives_schema = PluginSchema(
                     description="Date suffix appended to the swap table name (required for SWAP_ARCHIVE_DROP).",
                     # Validator 4: required when swap_drop == SWAP_ARCHIVE_DROP.
                     requires=[
-                        FieldGate(when=F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP),
+                        FieldGate(
+                            when=F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP
+                        ),
                     ],
                 ),
                 StringField(

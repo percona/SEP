@@ -24,6 +24,7 @@ from app.core.exceptions import HTTPNotFoundException
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedTable
+from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.deps import (
     _extract_latest_task_status,
     _resolve_destination_host_and_db,
@@ -38,7 +39,6 @@ from app.sep.plugins.archives.deps import (
 from app.sep.plugins.archives.models import (
     ArchivesCreate,
     PurgeConfigItem,
-    SwapDropEnum,
 )
 from app.tasks.models import (
     Task,

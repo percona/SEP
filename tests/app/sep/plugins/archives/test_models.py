@@ -18,7 +18,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.sep.plugins.archives.models import ArchivesCreate, SwapDropEnum
+from app.sep.plugins.archives.constants import SwapDropEnum
+from app.sep.plugins.archives.models import ArchivesCreate
 
 MAX_VALID_PORT = 65535
 MIN_VALID_PORT = 1

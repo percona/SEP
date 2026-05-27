@@ -18,7 +18,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.sep.plugins.archives.models import ArchivesCreate, SwapDropEnum
+from app.sep.plugins.archives.constants import SwapDropEnum
+from app.sep.plugins.archives.models import ArchivesCreate
 
 
 class TestArchivesCreateModel:
