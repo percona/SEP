@@ -241,6 +241,10 @@ if [[ -z $EXPLAIN_OPTS_ARG ]]; then
     echo "Detected server_version_num=$VER_NUM -> EXPLAIN ($EXPLAIN_OPTS)" >&2
 else
     EXPLAIN_OPTS="$EXPLAIN_OPTS_ARG"
+    if [[ ! $EXPLAIN_OPTS =~ ^[A-Za-z0-9_,\ ]+$ ]]; then
+        echo "Error: --explain-options may only contain letters, digits, commas, and spaces." >&2
+        exit 1
+    fi
     echo "Using EXPLAIN options override: ($EXPLAIN_OPTS)" >&2
 fi
 
