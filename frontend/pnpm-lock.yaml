@@ -256,6 +256,28 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
+  packages/plugins/archives:
+    dependencies:
+      '@sep/api':
+        specifier: workspace:*
+        version: link:../../api
+      '@sep/framework':
+        specifier: workspace:*
+        version: link:../../framework
+      react:
+        specifier: ^19.0.0
+        version: 19.2.6
+      react-router-dom:
+        specifier: ^7.0.0
+        version: 7.15.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.14
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
   packages/plugins/atw:
     dependencies:
       '@emotion/react':
@@ -662,6 +684,9 @@ importers:
       '@sep/plugin-alters':
         specifier: workspace:*
         version: link:../plugins/alters
+      '@sep/plugin-archives':
+        specifier: workspace:*
+        version: link:../plugins/archives
       '@sep/plugin-atw':
         specifier: workspace:*
         version: link:../plugins/atw

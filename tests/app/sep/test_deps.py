@@ -432,6 +432,18 @@ class TestGetUsernameMapping:
             result = await get_username_mapping()
         assert result == {}
 
+    @pytest.mark.asyncio
+    async def test_attribute_error_returns_empty_dict(self) -> None:
+        """Assert AttributeError (e.g. session not initialized) returns empty dict."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.CASDOOR.get_users = AsyncMock(
+                side_effect=AttributeError(
+                    "'NoneType' object has no attribute 'request'"
+                )
+            )
+            result = await get_username_mapping()
+        assert result == {}
+
 
 class TestGetInventoryApi:
     """Test get_inventory_api context manager."""
