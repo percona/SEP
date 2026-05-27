@@ -19,7 +19,7 @@ from datetime import timedelta
 from typing import ClassVar
 
 import pytest
-from pydantic import BaseModel, PositiveInt, SecretStr, ValidationError
+from pydantic import BaseModel, Field, PositiveInt, SecretStr, ValidationError
 
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.registry import (
@@ -155,3 +155,16 @@ def test_dump_field_value_returns_none_for_undefined_default() -> None:
     """A field with no declared default dumps to ``None`` instead of raising."""
     field = _NoDefault.model_fields["BARE"]
     assert dump_field_value(field, field.default) is None
+
+
+class _WithFactory(BaseYamlSettings):
+    """Synthetic settings class with a field declared via ``default_factory``."""
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["FACTORY"]
+    ITEMS: list[str] = Field(default_factory=lambda: ["alpha", "beta"])
+
+
+def test_iter_class_fields_invokes_default_factory() -> None:
+    """``default_factory`` is invoked so the metadata holds the actual default value."""
+    metas = {meta.key: meta for meta in iter_class_fields(_WithFactory)}
+    assert metas["ITEMS"].default == ["alpha", "beta"]

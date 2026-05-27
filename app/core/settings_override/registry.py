@@ -296,7 +296,7 @@ def iter_class_fields(
         yield FieldMetadata(
             key=name,
             annotation=field.annotation,
-            default=field.default,
+            default=_resolve_default(field),
             description=field.description,
             reload=(
                 ReloadClassification.HOT
@@ -306,6 +306,30 @@ def iter_class_fields(
             is_secret=_field_contains_secret(field),
             is_complex=_field_is_complex(field.annotation),
         )
+
+
+def _resolve_default(field_info: FieldInfo) -> Any:
+    """Return the field's declared default, invoking ``default_factory`` if any.
+
+    Pydantic sets ``field_info.default`` to :data:`PydanticUndefined` when a
+    field is declared with ``Field(default_factory=...)``. Returning that
+    sentinel through the metadata layer makes ``dump_field_value`` emit
+    ``None`` -- misrepresenting fields like ``BACKEND_CORS_ORIGINS`` whose
+    real default is the factory's return value (e.g. ``[]``). Invoke the
+    factory eagerly so the API surfaces the actual default.
+
+    :param field_info: The Pydantic field metadata for the target attribute.
+    :type field_info: FieldInfo
+    :return: The resolved default value, or :data:`PydanticUndefined` when
+        neither ``default`` nor ``default_factory`` is declared.
+    :rtype: Any
+    """
+    if field_info.default is not PydanticUndefined:
+        return field_info.default
+    factory = field_info.default_factory
+    if factory is None:
+        return PydanticUndefined
+    return factory()
 
 
 def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
