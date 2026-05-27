@@ -288,7 +288,14 @@ function SchemaFormBody({
           </Box>
         )}
 
-        <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
+        <Button
+          type="submit"
+          variant="contained"
+          size="large"
+          loading={loading}
+          loadingPosition="start"
+          sx={{ mt: 1 }}
+        >
           {submitLabel}
         </Button>
 

@@ -36,7 +36,7 @@ from app.core.utils import validate_importable_settings
 from app.core.utils.openapi import merge_openapi_documents
 from app.inventory.main import inventory_app
 from app.sep.config import sep_settings
-from app.sep.main import sep_app, sep_startup
+from app.sep.main import sep_app, sep_overrides_lifespan, sep_startup
 from app.tasks.main import tasks_app, tasks_lifespan
 
 
@@ -48,6 +48,14 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     CasdoorSDK, the NomadExecutor, and any extra client sessions are properly managed
     during the application's startup and shutdown phases.
 
+    Also enters :func:`app.sep.main.sep_overrides_lifespan` so the
+    ``SEP_SETTINGS``/``SNIPPETS_SETTINGS``/``MESSAGES_SETTINGS`` override
+    refresher runs. ``sep_app`` is mounted under this app via Starlette's
+    ``Mount``, which only forwards ``http``/``websocket`` scopes -- never
+    ``lifespan`` -- so its own ``sep_lifespan`` is never invoked when
+    serving ``app.main:app``. The refresher must therefore be started here,
+    analogous to how ``tasks_lifespan`` is entered for the tasks proxy.
+
     :param app: The FastAPI application instance.
     :type app: FastAPI
     :yield: None
@@ -58,7 +66,7 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         *(s.syncer for s in sep_settings.SYNCERS),
     )
     await sep_startup()
-    async with tasks_lifespan(app):
+    async with sep_overrides_lifespan(app), tasks_lifespan(app):
         yield
 
 

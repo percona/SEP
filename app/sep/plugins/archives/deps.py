@@ -15,12 +15,13 @@
 
 """Define dependencies for the Archives plugin."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Body, Depends, Form
 
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
@@ -41,17 +42,20 @@ from app.sep.deps import (
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.archives.models import (
     ArchivesCreate,
+    ArchivesTaskResponse,
     PurgeConfig,
     PurgeConfigAll,
 )
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
 
 logger = logging.getLogger(__name__)
+_STATUS_FETCH_CONCURRENCY = 10
 
 
 async def _resolve_source_tables(
@@ -176,21 +180,23 @@ async def _resolve_destination_host_and_db(
     return dest_data
 
 
-async def build_archives_task_payload(
-    form: Annotated[ArchivesCreate, Form()],
+async def _build_archives_payload(
+    form: ArchivesCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the archive task payload from form.
+    """Build the ``TaskWrite`` payload from a validated ``ArchivesCreate``.
 
-    Build the payload for an Archives task to be executed, including the
-    necessary command arguments for performing archive.
+    Shared core for both the form-bodied (Jinja2) and JSON-bodied (REST API)
+    entry points. SEP-1007: the two FastAPI dependency wrappers below remain
+    separate because mixing ``Form()`` and ``Body()`` parameter types in a
+    single route signature silently breaks request parsing; this helper holds
+    the body so the wrappers stay thin.
 
-    :param form: The form data for the Archives creation.
+    :param form: The validated form/body model for the Archives creation.
     :type form: ArchivesCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object containing all the necessary
-        configuration to create the Archives task.
+    :return: A fully constructed ``TaskWrite`` object.
     :rtype: TaskWrite
     """
     service = await get_created_entity(
@@ -263,7 +269,28 @@ async def build_archives_task_payload(
     )
 
 
+async def build_archives_task_payload(
+    form: Annotated[ArchivesCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the archive task payload from an HTML form body (Jinja2 path)."""
+    return await _build_archives_payload(form, inventory_api)
+
+
 ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload)]
+
+
+async def build_archives_api_task_payload(
+    form: Annotated[ArchivesCreate, Body()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the archive task payload from a JSON body (REST API path)."""
+    return await _build_archives_payload(form, inventory_api)
+
+
+ArchivesApiGeneratedTask = Annotated[
+    TaskWrite, Depends(build_archives_api_task_payload)
+]
 
 
 async def get_archives_task(
@@ -288,6 +315,81 @@ async def get_archives_task(
 
 
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
+
+
+def _extract_latest_task_status(
+    histories: list[dict[str, Any]],
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload."""
+    for history in histories:
+        if (status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(status)
+    return None
+
+
+async def get_archives_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for an archive task.
+
+    :param task_name: The name of the archive task.
+    :type task_name: str
+    :param tasks_api: The TaskAPI instance used to query task history.
+    :type tasks_api: TaskAPI
+    :return: The latest known task status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    response = await tasks_api.get(f"/{task_name}/history/")
+    return _extract_latest_task_status(response["items"])
+
+
+def build_archives_api_task_response(
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+) -> ArchivesTaskResponse:
+    """Build an archive task response object for the JSON API.
+
+    :param task: The archive task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A validated archive task API response object.
+    :rtype: ArchivesTaskResponse
+    """
+    return ArchivesTaskResponse(
+        **task.model_dump(),
+        service_type=ServiceTypeEnum.MYSQL,
+        status=status,
+    )
+
+
+async def get_archives_api_task_responses(
+    tasks_api: TaskAPI,
+) -> list[ArchivesTaskResponse]:
+    """Retrieve archive task responses for the JSON API.
+
+    :param tasks_api: The TaskAPI instance used to query archive tasks.
+    :type tasks_api: TaskAPI
+    :return: The archive task responses enriched with service_type and status.
+    :rtype: list[ArchivesTaskResponse]
+    """
+    response = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
+    tasks = [Task.model_validate(task) for task in response.get("items", [])]
+    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
+
+    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
+        async with sem:
+            return await get_archives_task_status(task.name, tasks_api)
+
+    task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
+    return [
+        build_archives_api_task_response(
+            task,
+            status=task_status,
+        )
+        for task, task_status in zip(tasks, task_statuses, strict=True)
+    ]
 
 
 def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:

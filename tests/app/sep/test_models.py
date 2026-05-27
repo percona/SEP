@@ -18,7 +18,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.sep.plugins.archives.models import ArchivesCreate, SwapDropEnum
+from app.sep.plugins.archives.constants import SwapDropEnum
+from app.sep.plugins.archives.models import ArchivesCreate
 
 
 class TestArchivesCreateModel:
@@ -118,7 +119,7 @@ class TestArchivesCreateModel:
         """Test that dest_table_id and dest_file are mutually exclusive with swap_drop."""
         with pytest.raises(
             ValidationError,
-            match="both dest_table_id/dest_table_name and dest_file must be None/empty",
+            match="must not be set",
         ):
             ArchivesCreate(
                 alias="task-alias",
@@ -154,7 +155,7 @@ class TestArchivesCreateModel:
 
         When swap_drop is set to SWAP_ARCHIVE_DROP.
         """
-        with pytest.raises(ValidationError, match="swp_table_suffix must be provided"):
+        with pytest.raises(ValidationError, match="'swp_table_suffix' is required"):
             ArchivesCreate(
                 alias="task-alias",
                 hostname="example.com",
@@ -181,10 +182,7 @@ class TestArchivesCreateModel:
                 where="id > 100",
             )
         error_message = str(exc_info.value)
-        assert (
-            "so source_db_id/source_table_id and source_db_name/source_table_name must be None/empty"
-            in error_message
-        )
+        assert "must not be set" in error_message
 
         with pytest.raises(ValidationError) as exc_info:
             ArchivesCreate(
@@ -197,7 +195,7 @@ class TestArchivesCreateModel:
             )
         error_message = str(exc_info.value)
         assert (
-            "either both source_db_id and source_table_id, or both source_db_name and source_table_name must be provided"
+            "either both source_db_id and source_table_id or both source_db_name and source_table_name must be provided"
             in error_message
         )
 
@@ -214,9 +212,7 @@ class TestArchivesCreateModel:
                 where="id > 100",
             )
         error_message = str(exc_info.value)
-        assert "When swap_drop is SWAP_DROP" in error_message
-        assert "where" in error_message
-        assert "must be None" in error_message
+        assert "'where' must not be set" in error_message
 
         with pytest.raises(ValidationError) as exc_info:
             ArchivesCreate(
@@ -229,6 +225,4 @@ class TestArchivesCreateModel:
                 swap_drop=SwapDropEnum.PURGE_ONLY,
             )
         error_message = str(exc_info.value)
-        assert "When swap_drop is not SWAP_DROP" in error_message
-        assert "where" in error_message
-        assert "must be set" in error_message
+        assert "'where' is required" in error_message
