@@ -121,31 +121,47 @@ Every node and cross-subgraph edge in `sep-architecture.mmd` traces to one of th
 
 ## Export PDF
 
-The deliverable is a **single-page A3 portrait** PDF (842 × 1191 pt). The ELK-rendered diagram is naturally tall, so a direct `mermaid-cli → PDF` render produces a non-standard tall page that some PDF viewers paginate visually. The reliable pipeline is two steps: render a high-DPI PNG with `mermaid-cli`, then pack it into a standard A3 page with ImageMagick.
+The deliverable is a **single-page A3 portrait vector PDF** (≈842 × 1191 pt). The ELK-rendered diagram is naturally tall, so `mermaid-cli`'s `--pdfFit` produces a non-standard tall page that some PDF viewers paginate visually; a `mermaid-cli → PNG → ImageMagick` pipeline produces a single page but at the cost of pixelated raster text. The reliable pipeline keeps everything vector and lands on a standard A3 page by wrapping the Mermaid SVG in an HTML page with a CSS `@page` rule and printing it with Chromium headless.
 
 From the repository root:
 
 ```bash
-# 1. Render a high-DPI PNG (≈235 DPI effective inside the final A3 PDF).
+# 1. Render the diagram to SVG.
 npx -y @mermaid-js/mermaid-cli \
   -i docs/customer/sep-architecture/sep-architecture.mmd \
-  -o /tmp/sep-architecture.png \
-  -b white -w 3000 -s 2
+  -o /tmp/sep-architecture.svg \
+  -b white
 
-# 2. Pack the PNG into a single A3 portrait page (842 × 1191 pt),
-#    centered with white margins, preserving aspect ratio.
-magick /tmp/sep-architecture.png \
-  -resize 632x1191 \
-  -background white -gravity center -extent 842x1191 \
-  -units PixelsPerInch -density 72 \
-  docs/customer/sep-architecture/exports/sep-architecture.pdf
+# 2. Wrap the SVG in an HTML page with @page A3 portrait + a centered SVG.
+cat > /tmp/sep-architecture.html <<'HTML'
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><title>SEP Architecture</title>
+<style>
+  @page { size: A3 portrait; margin: 0; }
+  html, body { margin: 0; padding: 0; background: white;
+               -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { width: 297mm; height: 420mm; display: flex;
+         align-items: center; justify-content: center; overflow: hidden; }
+  .frame { width: 95%; height: 95%; display: flex;
+           align-items: center; justify-content: center; }
+  .frame > svg { max-width: 100%; max-height: 100%; width: auto; height: auto; }
+</style></head><body><div class="frame">
+HTML
+sed -e '/^<?xml/d' /tmp/sep-architecture.svg >> /tmp/sep-architecture.html
+printf '</div></body></html>\n' >> /tmp/sep-architecture.html
+
+# 3. Print to vector PDF via Chromium headless.
+chromium --headless --no-sandbox --disable-gpu \
+  --print-to-pdf=docs/customer/sep-architecture/exports/sep-architecture.pdf \
+  --no-pdf-header-footer --virtual-time-budget=10000 --hide-scrollbars \
+  "file:///tmp/sep-architecture.html"
 ```
 
-Verify single-page output with:
+Verify single-page output:
 
 ```bash
 pdfinfo docs/customer/sep-architecture/exports/sep-architecture.pdf | grep -E 'Pages|Page size'
-# Expected: Pages: 1; Page size: 842 x 1191 pts (A3)
+# Expected: Pages: 1; Page size: ~842 x 1191 pts (A3)
 ```
 
 Commit the updated `.mmd` source alongside README/checklist edits. Regenerate the PDF whenever the source changes.
