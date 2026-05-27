@@ -43,10 +43,10 @@ The UI does not submit arbitrary shell commands. SEP uses two main execution pat
 | Run | Pick an **approved** snippet (or dipper collector) and submit a **schema-defined** form | No saved task definition; `meta` is built on each run |
 | Command | Never typed by the user | Fixed Nomad job type (`exec-artifact`, etc.) plus server-built `meta` (target, interpreter, signed artifact URL) |
 
-**Snippets:** `POST /api/plugins/snippets/.../execute` → `POST /api/tasks/execute/exec-artifact`
+**Snippets:** `POST /api/plugins/snippets/snippet/execute?snippet_filename=...` → SEP → Tasks API `POST /execute/{execution_task_name}` where `execution_task_name` resolves to `exec-artifact` for bash snippets and `exec-python-artifact` for Python snippets with requirements.
 **Dipper:** `POST /api/plugins/dipper/` → same Tasks execute pattern with dipper script metadata.
 
-#### Path B — Create then execute (proxy plugins: checksums, gascan, alters)
+#### Path B — Create then execute (proxy plugins: checksums, alters)
 
 | Step | What the engineer does | What the server enforces |
 |------|------------------------|-------------------------|
@@ -60,7 +60,7 @@ The UI does not submit arbitrary shell commands. SEP uses two main execution pat
 2. **Persist:** `POST /api/tasks/` — task row with `owner=CHECKSUMS`, `backend=PROXY`, `data.task=run-command`.
 3. **Execute:** `POST /api/tasks/execute/{task_name}` — body may only contain `eta`, `chain_task_names`; command comes from stored task (`app/sep/plugins/checksums/routes.py`, `checksums_execute`).
 
-The same two-phase pattern applies to **gascan** (`command: gascan`) and **alters** (`command: pt-online-schema-change`).
+The same two-phase pattern applies to **alters** (`command: pt-online-schema-change`).
 
 The Nomad `run-command` template runs `${NOMAD_META_command}` with args from meta; the UI never supplies a free-form command string at execute time.
 
@@ -82,12 +82,12 @@ Optional **Presidio anonymization** may mask log content when `anonymize_mask` i
 
 | Store | Access |
 |-------|--------|
-| **Tasks PostgreSQL** (`taskhistory`, `taskhistory_log`) | Any **authenticated** OAuth user (or `SEP_INTERNAL_TOKEN` service principal) with a valid token can read task history and logs by ID. General list/retrieve APIs do **not** filter by `executed_by`. |
+| **Tasks PostgreSQL** (`taskhistory`, `taskhistory_log`) | Any **authenticated** OAuth user can read task history and logs by ID. A separate `SEP_INTERNAL_TOKEN` service principal (synthetic non-admin user `sep-service`, id `00000000-0000-4000-8000-000000000000`) can authenticate for service-to-service calls and has the same read scope as a regular authenticated user. General list/retrieve APIs do **not** filter by `executed_by`. |
 | **PMM** | Users with PMM annotation access for the environment. |
 | **Infrastructure logs** | Platform operators with access to the deployment log pipeline. |
-| **Snippet approval** | **Admin** users only (`PUT .../approval`). |
+| **Snippet approval** | **Admin** users only. Single approve: `PUT /api/plugins/snippets/snippet/approval?snippet_filename=...`. Bulk approve: `PATCH /api/plugins/snippets/approvals`. Both gated via the `ApiAdminUser` dependency. |
 
-**Exception:** Inventory topology bulk history enforces `executed_by == current_user` for specific task/meta combinations.
+No per-row owner filter is applied to general task history / log reads. Future versions may add filtering for specific task / meta combinations.
 
 ## Edit the diagrams
 
@@ -124,7 +124,7 @@ Commit the updated `.mmd` sources with any README/checklist changes. The PDF und
 |----------|-------------------------|
 | P1 OAuth login | `app/api/routes/oauth.py` (`spa_login`) |
 | P2 JWT introspection | `app/core/auth/providers/casdoor.py`, `app/models.py` (`from_jwt`) |
-| P3 SEP UI | `frontend/packages/shell/src/contexts/auth.tsx`, snippet UI components |
+| P3 SEP UI | `frontend/packages/shell/` (React 18 SPA — entry `src/main.tsx`, auth context `src/contexts/auth.tsx`). Plugin UIs live under `frontend/packages/plugins/{name}/` and `frontend/packages/framework/` (shared schema-driven UI). |
 | P4a Snippets plugin API | `app/sep/plugins/snippets/api_routes.py`, `deps.py` |
 | P4b Proxy plugin create (checksums) | `app/sep/plugins/checksums/api_routes.py` (`checksums_api_create`), `deps.py` (`build_checksum_task`, `_assemble_checksum_payload`) |
 | P4c Proxy plugin execute (checksums) | `app/sep/plugins/checksums/routes.py` (`checksums_execute`) |
@@ -141,7 +141,7 @@ Commit the updated `.mmd` sources with any README/checklist changes. The PDF und
 | D1 Snippet store | `app/sep/snippets/`, snippet approval in DB |
 | D2 Tasks PostgreSQL | `app/tasks/models.py`, `app/tasks/db/` |
 | D3 Nomad runtime | Nomad allocation logs/files (fetched via Nomad API) |
-| mTLS transport | `app/core/requests/remote_api.py`, `settings.yaml` (`TASKS.NOMAD`), `generate_certs.sh` |
+| mTLS / TLS transport | Nginx ingress: TLS cert at `/data/certs/sep/localhost-cert.pem`. SEP-internal mTLS: `app/core/requests/remote_api.py` (SSL context builder); inter-service certs at `/data/certs/sep/*` rendered by `generate_certs.sh` during `sep_installer.sh` setup. Nomad mTLS: client cert and CA at `/data/certs/nomad/`. For external-Nomad deployments these are customer-supplied (the Nomad portion of `generate_certs.sh` is only used for bundled-Nomad sandbox deployments). |
 
 ## Security review
 

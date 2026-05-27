@@ -25,7 +25,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 |---|----------|:----:|:----:|-------|
 | 1.1 | Diagram states engineers use **Casdoor OAuth/JWT**, not client-certificate user login | ☐ | ☐ | |
 | 1.2 | mTLS is shown only on **service-to-service** links (SEP↔Tasks, Tasks↔Nomad), not as user identity | ☐ | ☐ | |
-| 1.3 | Refresh token handling (HttpOnly cookie, `/api/oauth` scope) is accurate if mentioned in README | ☐ | ☐ | |
+| 1.3 | Refresh token: SPA receives it in an `HttpOnly` cookie named `refreshToken`, `Path=/api/oauth`, `SameSite=Lax`, `Secure=True` in production. Legacy `POST /api/oauth/token` clients receive it in the JSON body (no cookie). | ☐ | ☐ | |
 | 1.4 | `SEP_INTERNAL_TOKEN` service principal is documented if relevant to customer deployment | ☐ | ☐ | |
 
 ---
@@ -50,6 +50,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 | 3.2 | PMM annotations described as secondary timeline (not primary audit store) | ☐ | ☐ | |
 | 3.3 | HTTP/app logs distinguished from task execution DB | ☐ | ☐ | |
 | 3.4 | Customer retention/backup expectations called out or referred to ops runbook | ☐ | ☐ | |
+| 3.5 | Storage encryption-at-rest described accurately — `taskhistory_log` content is compressed-but-not-encrypted at the application layer; protection depends on PostgreSQL volume or host-level encryption | ☐ | ☐ | |
 
 ---
 
@@ -59,8 +60,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 |---|----------|:----:|:----:|-------|
 | 4.1 | Authenticated users can read task history/logs **without per-user row filter** (documented accurately) | ☐ | ☐ | |
 | 4.2 | Snippet approval restricted to **admin** | ☐ | ☐ | |
-| 4.3 | Inventory topology `executed_by` exception documented if in scope for customer | ☐ | ☐ | |
-| 4.4 | No overstatement of “only the executor can see logs” unless deployment adds controls | ☐ | ☐ | |
+| 4.3 | No overstatement of “only the executor can see logs” unless deployment adds controls | ☐ | ☐ | |
 
 ---
 
@@ -68,7 +68,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 5.1 | Browser ↔ SEP: HTTPS (server certificate) | ☐ | ☐ | |
+| 5.1 | Browser ↔ Nginx ingress: HTTPS (Nginx terminates TLS and fronts SEP UI, `/api/*`, `/legacy/*`, and Casdoor `/oauth/*`) | ☐ | ☐ | |
 | 5.2 | SEP ↔ Tasks/Inventory: mTLS with client certs | ☐ | ☐ | |
 | 5.3 | Tasks ↔ Nomad API: TLS/mTLS per deployment config | ☐ | ☐ | |
 
@@ -100,7 +100,7 @@ Complete **§8** when delivering [`nomad-driver-deployment.md`](../nomad-driver-
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 8.1 | Doc states SEP uses **`raw_exec` only**; **`exec` driver is not enabled** on agents | ☐ | ☐ | |
+| 8.1 | Doc states **SEP dispatches `raw_exec` jobs only** and **filters Nomad nodes by `raw_exec` availability**; whether the `exec` driver is also enabled on customer Nomad agents is a customer-cluster configuration choice (SEP does not dispatch to it either way) | ☐ | ☐ | |
 | 8.2 | Links to official HashiCorp **exec** and **raw_exec** driver documentation are present and correct | ☐ | ☐ | |
 | 8.3 | **Nomad agent does not run as root** — default user systemd + automation OS user accurately described | ☐ | ☐ | Spot-check: `ps` / `systemctl` on a Nomad host |
 | 8.4 | **Server vs client** topology matches customer inventory (`nomad_server_enabled` / `nomad_enabled` hosts) | ☐ | ☐ | |

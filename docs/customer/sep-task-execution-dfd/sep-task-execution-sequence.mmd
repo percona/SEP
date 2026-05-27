@@ -17,9 +17,11 @@ sequenceDiagram
 
     rect rgb(232, 244, 252)
         Note over Eng,Casdoor: Authentication OAuth JWT
-        Eng->>UI: Login
-        UI->>Casdoor: OAuth login via SEP
-        Casdoor-->>UI: access_token
+        Eng->>UI: Login form, username and password
+        UI->>SEP: POST api oauth login JSON
+        SEP->>Casdoor: OAuth2 password grant, server-to-server
+        Casdoor-->>SEP: access_token and refresh_token
+        SEP-->>UI: access_token JSON, Set-Cookie refreshToken Path api oauth HttpOnly
         Eng->>UI: API calls with Bearer JWT
     end
 

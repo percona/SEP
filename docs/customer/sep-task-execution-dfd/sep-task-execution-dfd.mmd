@@ -22,7 +22,8 @@ flowchart TB
     end
 
     P_UI["P3: SEP UI"]
-    P_TasksAPI["P5: Tasks API<br/>prepare history + dispatch"]
+    P_SEPApi["P5a: SEP /api/sep/* gateway<br/>SPA never reaches Tasks API directly"]
+    P_TasksAPI["P5b: Tasks API<br/>prepare history + dispatch<br/>internal-only, behind mTLS"]
     P_Celery["P6: Celery worker"]
     P_NomadExec["P7: Nomad executor"]
 
@@ -34,8 +35,8 @@ flowchart TB
 
     subgraph pathB ["Path B — Proxy plugins e.g. Checksums (create, then execute)"]
         direction TB
-        P_ProxyCreate["P4b: Plugin API create<br/>(checksums, gascan, alters)"]
-        P_ProxyExecute["P4c: Plugin API execute<br/>(no new command from UI)"]
+        P_ProxyCreate["P4b: Plugin API create<br/>checksums, alters"]
+        P_ProxyExecute["P4c: Plugin API execute<br/>no new command from UI"]
         TaskDefs[("D4: Task definitions<br/>PROXY → run-command")]
     end
 
@@ -50,9 +51,10 @@ flowchart TB
     NomadRuntime[("D3: Nomad allocation")]
 
     %% Auth
-    Engineer -->|"username + password"| P_Login
-    P_Login --> Casdoor
-    Casdoor -->|"JWT + refresh cookie"| Engineer
+    Engineer -->|"POST /api/oauth/login<br/>JSON: username + password"| P_Login
+    P_Login -->|"Casdoor password grant,<br/>server-to-server"| Casdoor
+    Casdoor -->|"access_token + refresh_token"| P_Login
+    P_Login -->|"access_token in JSON body,<br/>refresh_token as HttpOnly cookie,<br/>Path=/api/oauth"| Engineer
     Engineer -->|"Bearer JWT"| P_UI
     P_UI --> P_Validate
     P_Validate --> Casdoor
@@ -60,20 +62,20 @@ flowchart TB
     P_Validate --> P_UI
 
     %% Path A — snippets
-    P_UI -->|"POST snippets/.../execute<br/>filename + schema args"| P_SnippetAPI
+    P_UI -->|"POST /api/plugins/snippets/snippet/execute<br/>?snippet_filename=...<br/>JSON: form args"| P_SnippetAPI
     P_SnippetAPI --> SnippetStore
     SnippetStore --> P_SnippetAPI
     P_SnippetAPI -->|"meta: target, interpreter,<br/>signed snippet_source"| P_TasksAPI
 
     %% Path B — checksums (two phases)
-    P_UI -->|"POST checksums/ — create form"| P_ProxyCreate
+    P_UI -->|"POST /api/plugins/checksums/<br/>JSON: create form"| P_ProxyCreate
     P_ProxyCreate -->|"resolve MySQL service,<br/>databases, tables"| Inventory
     Inventory --> P_ProxyCreate
     P_ProxyCreate -->|"TaskWrite: command pt-table-checksum,<br/>args, target in meta"| TaskDefs
     P_ProxyCreate -->|"POST /tasks/ persist definition"| TasksDB
 
-    P_UI -->|"POST checksums/task — Execute<br/>eta / chain only"| P_ProxyExecute
-    P_ProxyExecute -->|"POST /execute/task_name"| P_TasksAPI
+    P_UI -->|"POST /api/plugins/checksums/{task_name}/execute<br/>body: eta, chain_task_names, chain_on_failure"| P_ProxyExecute
+    P_ProxyExecute -->|"POST /execute/{task_name}"| P_TasksAPI
     TaskDefs -->|"PROXY: merge stored meta<br/>command + args + target"| P_TasksAPI
 
     %% Shared dispatch (both paths)
@@ -87,12 +89,15 @@ flowchart TB
     P_NomadExec --> NomadCluster
     P_NomadExec --> P_LogPersist
     P_LogPersist --> TasksDB
-    P_TasksAPI --> P_PMMAnnotate
-    P_PMMAnnotate --> PMM
+    P_TasksAPI -.->|"if PMM.ANNOTATIONS_ENABLED"| P_PMMAnnotate
+    P_PMMAnnotate -.-> PMM
 
-    %% Log read-back
-    P_UI -->|"GET history logs SSE"| P_TasksAPI
-    TasksDB --> P_UI
+    %% Log read-back (via SEP gateway, never directly to Tasks API)
+    P_UI -->|"GET /api/sep/task-history/.../logs SSE"| P_SEPApi
+    P_SEPApi --> P_TasksAPI
+    TasksDB --> P_TasksAPI
+    P_TasksAPI --> P_SEPApi
+    P_SEPApi --> P_UI
     P_UI --> Engineer
 
     P_Validate --> P_AppLog
@@ -100,12 +105,14 @@ flowchart TB
     Engineer -.->|"authenticated read by history ID"| TasksDB
 
     subgraph transportNote ["Transport security (not user identity)"]
-        T_HTTPS["Browser ↔ SEP: HTTPS"]
+        T_HTTPS["Browser ↔ Nginx ingress: HTTPS<br/>Nginx terminates TLS and fronts SEP UI,<br/>/api/*, /legacy/*, and Casdoor /oauth/*"]
+        T_Internal["Nginx ↔ SEP FastAPI: in-stack HTTP loopback"]
         T_mTLS["SEP ↔ Tasks / Inventory: mTLS"]
-        T_NomadTLS["Tasks ↔ Nomad: mTLS"]
+        T_NomadTLS["Tasks ↔ Nomad: mTLS<br/>Nomad CA + client cert customer-supplied<br/>for external-Nomad deployments"]
+        T_Casdoor["Stack-internal Nginx ↔ Casdoor container:<br/>HTTP loopback"]
     end
 
     class Engineer,Casdoor,Inventory,NomadCluster,RemoteNode,PMM,InfraLogs entity
-    class P_Login,P_Validate,P_UI,P_SnippetAPI,P_ProxyCreate,P_ProxyExecute,P_TasksAPI,P_Celery,P_NomadExec process
+    class P_Login,P_Validate,P_UI,P_SEPApi,P_SnippetAPI,P_ProxyCreate,P_ProxyExecute,P_TasksAPI,P_Celery,P_NomadExec process
     class P_Record,P_LogPersist,P_PMMAnnotate,P_AppLog audit
     class SnippetStore,TasksDB,TaskDefs,NomadRuntime store
