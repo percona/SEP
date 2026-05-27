@@ -1,4 +1,5 @@
 #!/bin/sh
+set -eu
 
 # Wait for Casdoor to be available
 echo "Waiting for Casdoor..."
@@ -15,7 +16,7 @@ done
 echo "PostgreSQL started"
 
 # Apply migrations
-alembic --name="$1" upgrade head
+alembic --name="$1" upgrade heads
 
 # Start the FastAPI app
 python -m "app.$1.main"
