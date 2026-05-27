@@ -585,6 +585,50 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
         }
 
+    async def create_nomad_variable(
+        self,
+        path: str,
+        data: dict[str, Any],
+        namespace: str | None = None,
+    ) -> None:
+        """Create or update a Nomad variable at the given path.
+
+        Values that are not strings are JSON-serialised (Nomad Items are string→string).
+        Raises HTTPException(502) if the Nomad API call fails.
+        """
+        from fastapi import HTTPException
+
+        items = {k: v if isinstance(v, str) else json.dumps(v) for k, v in data.items()}
+        body: dict[str, Any] = {"Path": path, "Items": items}
+        if namespace:
+            body["Namespace"] = namespace
+        try:
+            await async_run(self.backend.variable.create_variable, path, body, namespace=namespace)
+        except BaseNomadException as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(exc),
+            ) from exc
+
+    async def delete_nomad_variable(
+        self,
+        path: str,
+        namespace: str | None = None,
+    ) -> None:
+        """Delete a Nomad variable at the given path.
+
+        Raises HTTPException(502) if the Nomad API call fails.
+        """
+        from fastapi import HTTPException
+
+        try:
+            await async_run(self.backend.variable.delete_variable, path, namespace=namespace)
+        except BaseNomadException as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(exc),
+            ) from exc
+
     def get_allocation_for_task_history(
         self, queue_item: TaskHistory
     ) -> dict[str, Any]:

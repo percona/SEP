@@ -39,7 +39,9 @@ export function DeleteRoleButton({ row, selectedTarget, onSuccess, buttonProps =
     setLoading(true);
     setError(null);
     try {
+      // [MUM-REPLACE] begin — dispatch delete-role task via SEP internal endpoint
       await apiClient.post('/mum/ui/delete-role', { target: selectedTarget, role: roleName, db: dbName });
+      // [MUM-REPLACE] end
       setOpen(false);
       onSuccess?.({ role: roleName, db: dbName, target: selectedTarget });
     } catch (e) {

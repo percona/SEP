@@ -189,13 +189,24 @@ async def task_history_logs_event_stream(
 
             # No read timeout: log stream can stall under backpressure (e.g. ~26MB)
             # and must not be killed by the default sock_read=120.
-            async for log_entry in tasks_api.stream(
+            # Buffer raw bytes and emit one SSE event per complete newline-terminated
+            # JSON line. aiohttp chunks are arbitrary-size and may split JSON lines
+            # mid-stream, so each chunk cannot be emitted directly as an SSE event.
+            line_buf = b""
+            async for chunk in tasks_api.stream(
                 f"/history/{task_history_id}/logs/",
                 params=request.query_params,
                 timeout=ClientTimeout(sock_read=None),
             ):
-                if log_entry:
-                    yield f"data: {log_entry.decode()}\n\n"
+                if not chunk:
+                    continue
+                line_buf += chunk
+                while b"\n" in line_buf:
+                    line, line_buf = line_buf.split(b"\n", 1)
+                    if line:
+                        yield f"data: {line.decode()}\n\n"
+            if line_buf.strip():
+                yield f"data: {line_buf.decode()}\n\n"
             task_history = await tasks_api.post(f"/history/{task_history_id}/sync/")
         yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
     except TimeoutError as exc:

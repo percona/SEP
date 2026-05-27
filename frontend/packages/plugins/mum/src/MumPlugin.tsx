@@ -1,3 +1,7 @@
+// [MUM-REPLACE] This component's data-fetching layer (executor host options, list-users,
+// list-roles and all CRUD operations) is currently implemented via SEP task-dispatch + SSE
+// streaming.  When the SEP live-request API is available, replace every block marked
+// [MUM-REPLACE] with a direct API call and remove the EventSource / stream-log logic.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient, getToken } from '@sep/api';
 import {
@@ -59,6 +63,7 @@ export function MumPlugin() {
   const [rolesStreamError, setRolesStreamError] = useState<string | null>(null);
   const [rolesData, setRolesData] = useState<RoleRow[]>([]);
   const rolesStdoutBufferRef = useRef('');
+  const rolesStderrBufferRef = useRef('');
   const rolesEsRef = useRef<EventSource | null>(null);
 
   const builtinRoles = useMemo(
@@ -72,6 +77,7 @@ export function MumPlugin() {
   );
 
   const stdoutBufferRef = useRef('');
+  const stderrBufferRef = useRef('');
   const esRef = useRef<EventSource | null>(null);
 
   const listBusy = listBusyCount > 0;
@@ -80,8 +86,10 @@ export function MumPlugin() {
   useEffect(() => {
     const loadOptions = async () => {
       try {
+        // [MUM-REPLACE] begin — fetch executor hosts from SEP internal endpoint
         const resp = await apiClient.get('/mum/ui/options');
         setExecutorHosts(normalizeExecutorHosts((resp.data as Record<string, unknown>)?.['executor_hosts']));
+        // [MUM-REPLACE] end
       } catch (_) {
         // swallow
       }
@@ -113,6 +121,8 @@ export function MumPlugin() {
 
   useEffect(() => () => stopStreaming(), [stopStreaming]);
 
+  // [MUM-REPLACE] begin — SSE stream consumer for task-log output (list-users job)
+  // Replace with a direct API call that returns user data synchronously.
   const streamListUsers = useCallback(
     (historyId: string) => {
       if (!historyId) { setStreamError('Missing execution history ID.'); return; }
@@ -120,6 +130,7 @@ export function MumPlugin() {
       setStreamError(null);
       setIsStreaming(true);
       stdoutBufferRef.current = '';
+      stderrBufferRef.current = '';
 
       try {
         const token = getToken();
@@ -131,23 +142,32 @@ export function MumPlugin() {
           try {
             const data = JSON.parse(event.data as string) as Record<string, unknown>;
             const { msg, type, step } = data;
-            if (type === 'stdout' && step === 'run-script' && typeof msg === 'string') {
-              stdoutBufferRef.current += msg;
-              const arr = extractJsonArray(stdoutBufferRef.current);
-              if (arr) {
-                setUsersData(arr as UserRow[]);
-                setStreamError(null);
-                stopStreaming();
+            if (step === 'run-script' && typeof msg === 'string') {
+              if (type === 'stdout') {
+                stdoutBufferRef.current += msg;
+                const arr = extractJsonArray(stdoutBufferRef.current);
+                if (arr) {
+                  setUsersData(arr as UserRow[]);
+                  setStreamError(null);
+                  stopStreaming();
+                }
+              } else if (type === 'stderr') {
+                stderrBufferRef.current += msg;
               }
             }
           } catch (_) { /* ignore non-JSON */ }
         };
 
         es.addEventListener('finish', () => {
+          if (esRef.current !== es) return;
           stopStreaming();
           const arr = extractJsonArray(stdoutBufferRef.current);
-          if (arr) setUsersData(arr as UserRow[]);
-          else setStreamError('Could not parse output JSON.');
+          if (arr) {
+            setUsersData(arr as UserRow[]);
+          } else {
+            const errDetail = stderrBufferRef.current.trim();
+            setStreamError(errDetail || 'Could not parse output JSON.');
+          }
         });
 
         es.onerror = () => { if (esRef.current === es) { setStreamError('Stream failed.'); stopStreaming(); } };
@@ -158,13 +178,17 @@ export function MumPlugin() {
     },
     [stopStreaming],
   );
+  // [MUM-REPLACE] end
 
+  // [MUM-REPLACE] begin — SSE stream consumer for task-log output (list-roles job)
+  // Replace with a direct API call that returns role data synchronously.
   const streamListRoles = useCallback((historyId: string) => {
     if (!historyId) { setRolesStreamError('Missing execution history ID.'); return; }
     if (rolesEsRef.current) { rolesEsRef.current.close(); rolesEsRef.current = null; }
     setRolesStreamError(null);
     setIsRolesStreaming(true);
     rolesStdoutBufferRef.current = '';
+    rolesStderrBufferRef.current = '';
 
     try {
       const token = getToken();
@@ -182,19 +206,28 @@ export function MumPlugin() {
         try {
           const data = JSON.parse(event.data as string) as Record<string, unknown>;
           const { msg, type, step } = data;
-          if (type === 'stdout' && step === 'run-script' && typeof msg === 'string') {
-            rolesStdoutBufferRef.current += msg;
-            const arr = extractJsonArray(rolesStdoutBufferRef.current);
-            if (arr) { setRolesData(arr as RoleRow[]); setRolesStreamError(null); stopRoles(); }
+          if (step === 'run-script' && typeof msg === 'string') {
+            if (type === 'stdout') {
+              rolesStdoutBufferRef.current += msg;
+              const arr = extractJsonArray(rolesStdoutBufferRef.current);
+              if (arr) { setRolesData(arr as RoleRow[]); setRolesStreamError(null); stopRoles(); }
+            } else if (type === 'stderr') {
+              rolesStderrBufferRef.current += msg;
+            }
           }
         } catch (_) { /* ignore */ }
       };
 
       es.addEventListener('finish', () => {
+        if (rolesEsRef.current !== es) return;
         stopRoles();
         const arr = extractJsonArray(rolesStdoutBufferRef.current);
-        if (arr) setRolesData(arr as RoleRow[]);
-        else setRolesStreamError('Could not parse output JSON.');
+        if (arr) {
+          setRolesData(arr as RoleRow[]);
+        } else {
+          const errDetail = rolesStderrBufferRef.current.trim();
+          setRolesStreamError(errDetail || 'Could not parse output JSON.');
+        }
       });
 
       es.onerror = () => { if (rolesEsRef.current === es) { setRolesStreamError('Stream failed.'); stopRoles(); } };
@@ -203,6 +236,7 @@ export function MumPlugin() {
       setIsRolesStreaming(false);
     }
   }, []);
+  // [MUM-REPLACE] end
 
   const listRoles = useCallback(
     async (targetOverride?: string) => {
@@ -213,9 +247,11 @@ export function MumPlugin() {
       setRolesStreamError(null);
       setRolesData([]);
       try {
+        // [MUM-REPLACE] begin — dispatch list-roles task via SEP internal endpoint, then stream logs
         const response = await apiClient.post('/mum/ui/list-roles', { target });
         const rolesHistoryData = (response.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
         streamListRoles(rolesHistoryData?.['id'] as string);
+        // [MUM-REPLACE] end
       } catch (err) {
         const e = err as { response?: { data?: { detail?: string }; status?: number }; message?: string };
         if (e?.response?.status === 409) return;
@@ -237,9 +273,11 @@ export function MumPlugin() {
       setUsersData([]);
       listRoles(target);
       try {
+        // [MUM-REPLACE] begin — dispatch list-users task via SEP internal endpoint, then stream logs
         const response = await apiClient.post('/mum/ui/list-users', { target });
         const historyData = (response.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
         streamListUsers(historyData?.['id'] as string);
+        // [MUM-REPLACE] end
       } catch (err) {
         const e = err as { response?: { data?: { detail?: string }; status?: number }; message?: string };
         if (e?.response?.status === 409) return;

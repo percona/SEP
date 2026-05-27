@@ -60,6 +60,7 @@ export function AddDatabaseUserButton({
     setLoading(true);
     setError(null);
     try {
+      // [MUM-REPLACE] begin — dispatch create-user task via SEP internal endpoint
       await apiClient.post('/mum/ui/create-user', {
         target: selectedTarget,
         username,
@@ -67,6 +68,7 @@ export function AddDatabaseUserButton({
         roles,
         db: rolesDb || DEFAULT_DB,
       });
+      // [MUM-REPLACE] end
       setOpen(false);
       onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
       resetForm();

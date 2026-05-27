@@ -15,8 +15,15 @@
 
 """Define routes for the MUM Plugin."""
 
+# [MUM-REPLACE] The entire task-dispatch layer in this module (helper functions
+# _create_nomad_config_variable, _delete_nomad_config_variable, _ensure_mum_task,
+# _execute_mum_task and all TaskAPI usages in the route handlers) will be replaced
+# by the SEP live-request API.  When that API is available, remove the TaskAPI
+# dependency and the task/stream-log round-trip from every route below.
+
 import json
 import logging
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -29,10 +36,10 @@ from app.sep.deps import (
     DefaultContext,
     InventoryAPI,
     IsAuthenticated,
-    TaskAPI,
+    TaskAPI,  # [MUM-REPLACE] remove once live-request API is wired up
 )
 from app.sep.utils.decorators import csrf_exempt
-from app.sep.plugins.mum.task import (
+from app.sep.plugins.mum.task import (  # [MUM-REPLACE] task definitions not needed after migration
     MUM_TASK_NAME_BY_ACTION,
     get_mum_task as get_mum_task_spec,
 )
@@ -55,6 +62,9 @@ def _redact_config(config: dict[str, Any] | None) -> dict[str, Any] | None:
     return redacted
 
 
+# [MUM-REPLACE] Nomad variable helpers — used to pass sensitive config (passwords)
+# to tasks without exposing them in task meta/logs.  The live-request API will
+# handle credentials directly; remove both functions below.
 async def _create_nomad_config_variable(
     tasks_api: TaskAPI,
     *,
@@ -103,6 +113,7 @@ async def _delete_nomad_config_variable(
         )
 
 
+# [MUM-REPLACE] Task-name resolution — only needed for the dispatch pattern.
 def _resolve_mum_task_name(action: str | None) -> str:
     """Resolve a MUM task name for an action."""
     if action is None:
@@ -115,6 +126,8 @@ def _resolve_mum_task_name(action: str | None) -> str:
     return MUM_TASK_NAME_BY_ACTION[action]
 
 
+# [MUM-REPLACE] Task registration helper — ensures the Nomad job definition
+# exists before dispatch.  Not needed once the live-request API is in place.
 async def _ensure_mum_task(tasks_api: TaskAPI, task_name: str) -> dict[str, Any]:
     """Ensure a MUM task exists, creating it if necessary."""
     # First try to get the task via API
@@ -166,6 +179,10 @@ async def _ensure_mum_task(tasks_api: TaskAPI, task_name: str) -> dict[str, Any]
         raise
 
 
+# [MUM-REPLACE] Core dispatch helper — dispatches a Nomad job and returns the
+# task history ID that the frontend streams via SSE.  Replace the entire function
+# with a single live-request call; the 409 reuse logic and Nomad variable
+# plumbing go away too.
 async def _execute_mum_task(
     tasks_api: TaskAPI,
     *,
@@ -215,6 +232,18 @@ async def _execute_mum_task(
         )
         return default_task, history
     except HTTPException as exc:  # type: ignore[name-defined]
+        if exc.status_code == status.HTTP_409_CONFLICT:
+            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+            m = re.search(r"\((\d+)\)", detail)
+            if m:
+                existing_id = int(m.group(1))
+                logger.info(
+                    "Task '%s' already running (history ID: %s); reusing stream",
+                    task_name,
+                    existing_id,
+                )
+                existing_history = await tasks_api.get(f"/history/{existing_id}")
+                return default_task, existing_history
         logger.error("Failed to execute task '%s': %s (status: %s)", task_name, exc.detail, exc.status_code)
         raise
 
@@ -236,7 +265,7 @@ async def mum_index(
 async def mum_options(
     request: Request,
     inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove TaskAPI param once live-request API is used
 ) -> JSONResponse:
     """Return executor hosts and MongoDB services for MUM UI."""
     services_resp = await inventory_api.get(
@@ -254,6 +283,9 @@ async def mum_options(
             )
         except Exception:
             service["schemas"] = []
+
+    # [MUM-REPLACE] Executor host list and default task come from tasks_api.
+    # Replace with live-request API equivalent (target enumeration endpoint).
     try:
         executor_hosts = await tasks_api.get("/hosts/")
     except HTTPException:
@@ -264,6 +296,8 @@ async def mum_options(
     except HTTPException as exc:  # type: ignore[name-defined]
         logger.warning("Failed to ensure MUM task: %s", exc)
         default_task = None
+    # [MUM-REPLACE] end
+
     return JSONResponse(
         content={
             "executor_hosts": [
@@ -285,7 +319,7 @@ async def mum_options(
 async def mum_list_users(
     request: Request,  # noqa: ARG001
     body: dict[str, Any],
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove; replace body with direct live-request result
 ) -> JSONResponse:
     """List MongoDB users by executing the MUM list task.
     Expects JSON body with:
@@ -305,12 +339,15 @@ async def mum_list_users(
         }
         logger.debug("Listing users for target '%s'", target)
         task_name = _resolve_mum_task_name(config_obj["action"])
+        # [MUM-REPLACE] dispatch + stream pattern — replace with live-request call
+        # that returns the user list directly (no task history / SSE needed).
         default_task, history = await _execute_mum_task(
             tasks_api,
             task_name=task_name,
             target=target,
             config=config_obj,
         )
+        # [MUM-REPLACE] end
         logger.info("Successfully executed list_users for target '%s' (history ID: %s)", target, history.get("id"))
         return JSONResponse(
             content={"task": default_task, "history": history},
@@ -335,7 +372,7 @@ async def mum_list_users(
 async def mum_list_roles(
     request: Request,  # noqa: ARG001
     body: dict[str, Any],
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove; replace body with direct live-request result
 ) -> JSONResponse:
     """List MongoDB roles (built-in and custom) by executing the MUM list-roles task.
     Expects JSON body with:
@@ -351,12 +388,14 @@ async def mum_list_roles(
     try:
         config_obj: dict[str, Any] = {"action": "list_roles"}
         task_name = _resolve_mum_task_name(config_obj["action"])
+        # [MUM-REPLACE] dispatch + stream pattern — replace with live-request call.
         default_task, history = await _execute_mum_task(
             tasks_api,
             task_name=task_name,
             target=target,
             config=config_obj,
         )
+        # [MUM-REPLACE] end
         logger.info(
             "Successfully executed list_roles for target '%s' (history ID: %s)",
             target,
@@ -391,7 +430,7 @@ async def mum_list_roles(
 async def mum_create_user(
     request: Request,  # noqa: ARG001
     body: dict[str, Any],
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove; credentials pass directly to live-request API
 ) -> JSONResponse:
     """Create and execute a one-off task to create a MongoDB user.
     Expects JSON body with:
@@ -425,6 +464,8 @@ async def mum_create_user(
             "roles": roles,
             "db": db_name,
         }
+        # [MUM-REPLACE] Nomad variable + dispatch + stream pattern.
+        # Replace with a single live-request call; Nomad variable plumbing goes away.
         job_token = uuid4().hex
         job_prefix = f"mum-{job_token}"
         config_nomad_variable = await _create_nomad_config_variable(
@@ -446,6 +487,7 @@ async def mum_create_user(
         except Exception:
             await _delete_nomad_config_variable(tasks_api, path=config_nomad_variable)
             raise
+        # [MUM-REPLACE] end
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
@@ -463,7 +505,7 @@ async def mum_create_user(
 async def mum_update_user(
     request: Request,  # noqa: ARG001
     body: dict[str, Any],
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove; credentials pass directly to live-request API
 ) -> JSONResponse:
     """Create and execute a one-off task to update a MongoDB user.
     Expects JSON body with:
@@ -500,6 +542,8 @@ async def mum_update_user(
         if roles is not None:
             config_obj["roles"] = roles
 
+        # [MUM-REPLACE] Nomad variable + dispatch + stream pattern.
+        # Replace with a single live-request call; Nomad variable plumbing goes away.
         config_nomad_variable = None
         exec_meta: dict[str, Any] | None = None
         if "password" in config_obj:
@@ -529,6 +573,7 @@ async def mum_update_user(
                     tasks_api, path=config_nomad_variable
                 )
             raise
+        # [MUM-REPLACE] end
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
@@ -546,7 +591,7 @@ async def mum_update_user(
 async def mum_delete_user(
     request: Request,  # noqa: ARG001
     body: dict[str, Any],
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove; replace with live-request call
 ) -> JSONResponse:
     """Create and execute a one-off task to delete a MongoDB user.
     Expects JSON body with:
@@ -575,12 +620,14 @@ async def mum_delete_user(
             "db": db_name,
         }
         task_name = _resolve_mum_task_name(config_obj["action"])
+        # [MUM-REPLACE] dispatch + stream pattern — replace with live-request call.
         default_task, history = await _execute_mum_task(
             tasks_api,
             task_name=task_name,
             target=target,
             config=config_obj,
         )
+        # [MUM-REPLACE] end
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
@@ -597,7 +644,7 @@ async def mum_delete_user(
 async def mum_create_role(
     request: Request,  # noqa: ARG001
     body: dict[str, Any],
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove; replace with live-request call
 ) -> JSONResponse:
     """Create a custom MongoDB role.
 
@@ -633,12 +680,14 @@ async def mum_create_role(
             "inheritedRoles": inherited_roles,
         }
         task_name = _resolve_mum_task_name(config_obj["action"])
+        # [MUM-REPLACE] dispatch + stream pattern — replace with live-request call.
         default_task, history = await _execute_mum_task(
             tasks_api,
             task_name=task_name,
             target=target,
             config=config_obj,
         )
+        # [MUM-REPLACE] end
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
@@ -662,7 +711,7 @@ async def mum_create_role(
 async def mum_update_role(
     request: Request,  # noqa: ARG001
     body: dict[str, Any],
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove; replace with live-request call
 ) -> JSONResponse:
     """Update privileges and inherited roles for an existing custom MongoDB role.
 
@@ -698,12 +747,14 @@ async def mum_update_role(
             "inheritedRoles": inherited_roles,
         }
         task_name = _resolve_mum_task_name(config_obj["action"])
+        # [MUM-REPLACE] dispatch + stream pattern — replace with live-request call.
         default_task, history = await _execute_mum_task(
             tasks_api,
             task_name=task_name,
             target=target,
             config=config_obj,
         )
+        # [MUM-REPLACE] end
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
@@ -727,7 +778,7 @@ async def mum_update_role(
 async def mum_delete_role(
     request: Request,  # noqa: ARG001
     body: dict[str, Any],
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove; replace with live-request call
 ) -> JSONResponse:
     """Drop a custom MongoDB role.
 
@@ -757,12 +808,14 @@ async def mum_delete_role(
             "db": db_name,
         }
         task_name = _resolve_mum_task_name(config_obj["action"])
+        # [MUM-REPLACE] dispatch + stream pattern — replace with live-request call.
         default_task, history = await _execute_mum_task(
             tasks_api,
             task_name=task_name,
             target=target,
             config=config_obj,
         )
+        # [MUM-REPLACE] end
         return JSONResponse(
             content={"task": default_task, "history": history},
             status_code=status.HTTP_201_CREATED,
@@ -785,13 +838,15 @@ async def mum_delete_role(
 @csrf_exempt
 async def get_mum_task(
     request: Request,  # noqa: ARG001
-    tasks_api: TaskAPI,
+    tasks_api: TaskAPI,  # [MUM-REPLACE] remove once live-request API is in place
     action: str | None = None,
 ) -> JSONResponse:
     """Get a MUM task by action, defaulting to list-users."""
+    # [MUM-REPLACE] task lookup — not needed after migration.
     try:
         task_name = _resolve_mum_task_name(action)
         task = await _ensure_mum_task(tasks_api, task_name)
         return JSONResponse(content=task, status_code=status.HTTP_200_OK)
     except HTTPException as exc:  # type: ignore[name-defined]
         return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+    # [MUM-REPLACE] end

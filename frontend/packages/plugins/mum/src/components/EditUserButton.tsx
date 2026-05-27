@@ -88,7 +88,9 @@ export function EditUserButton({
     try {
       const body: Record<string, unknown> = { target: selectedTarget, username, db: rolesDb || DEFAULT_DB, roles };
       if (password) body['password'] = password;
+      // [MUM-REPLACE] begin — dispatch update-user task via SEP internal endpoint
       await apiClient.post('/mum/ui/update-user', body);
+      // [MUM-REPLACE] end
       setOpen(false);
       onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
     } catch (e) {

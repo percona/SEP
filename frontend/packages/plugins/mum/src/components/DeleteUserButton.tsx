@@ -39,7 +39,9 @@ export function DeleteUserButton({ row, selectedTarget, onSuccess, buttonProps =
     setLoading(true);
     setError(null);
     try {
+      // [MUM-REPLACE] begin — dispatch delete-user task via SEP internal endpoint
       await apiClient.post('/mum/ui/delete-user', { target: selectedTarget, username, db: dbName || DEFAULT_DB });
+      // [MUM-REPLACE] end
       setOpen(false);
       onSuccess?.({ username, db: dbName || DEFAULT_DB, target: selectedTarget });
     } catch (e) {

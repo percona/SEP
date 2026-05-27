@@ -20,6 +20,7 @@ import argparse
 import json
 import os
 import re
+import socket
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -42,6 +43,22 @@ def sanitize_error_message(error_message: str) -> str:
         redacted_message,
     )
     return redacted_message
+
+
+def _normalize_mongo_host(host: str) -> str:
+    """Return 127.0.0.1 when host resolves to a loopback address.
+
+    Debian-family systems often map the machine's own hostname to 127.0.1.1 in
+    /etc/hosts, but mongod typically binds to 127.0.0.0 (not 127.0.1.1).
+    Using 127.0.0.0 directly avoids the resulting ECONNREFUSED.
+    """
+    try:
+        addr = socket.gethostbyname(host)
+        if addr.startswith("127."):
+            return "127.0.0.1"
+    except Exception:
+        pass
+    return host
 
 
 def _uri_from_mongo_alias() -> Optional[str]:
@@ -69,9 +86,10 @@ def _uri_from_mongo_alias() -> Optional[str]:
         if user and pwd and host:
             from urllib.parse import quote_plus
             p = port.group(1) if port else "27017"
+            resolved_host = _normalize_mongo_host(host.group(1))
             return (
                 f"mongodb://{quote_plus(user.group(1))}:{quote_plus(pwd.group(1))}"
-                f"@{host.group(1)}:{p}/admin"
+                f"@{resolved_host}:{p}/admin"
                 f"?directConnection=true"
             )
     return None

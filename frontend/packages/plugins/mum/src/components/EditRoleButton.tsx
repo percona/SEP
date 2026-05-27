@@ -56,7 +56,9 @@ export function EditRoleButton({ row, selectedTarget, rolesData = [], onSuccess,
 
   const handleSubmit = async ({ role, db, privileges, inheritedRoles }: { role: string; db: string; privileges: unknown; inheritedRoles: unknown }) => {
     if (!selectedTarget) throw new Error('Select an executor host first.');
+    // [MUM-REPLACE] begin — dispatch update-role task via SEP internal endpoint
     await apiClient.post('/mum/ui/update-role', { target: selectedTarget, role, db, privileges, inheritedRoles });
+    // [MUM-REPLACE] end
     setOpen(false);
     onSuccess?.({ role, db, target: selectedTarget });
   };
