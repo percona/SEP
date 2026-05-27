@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
+import requests.exceptions
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -1270,6 +1271,35 @@ async def test_get_executor_hosts(test_client, mock_executor):
     response = test_client.get("/hosts/")
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"node1": "10.0.0.1"}
+
+
+@pytest.mark.asyncio
+async def test_get_executor_hosts_nomad_returns_non_json(test_client, mock_executor):
+    """Assert /hosts/ returns 502 JSON when executor raises JSONDecodeError."""
+    mock_executor.get_hosts.side_effect = requests.exceptions.JSONDecodeError(
+        "Expecting value", "doc", 0
+    )
+    response = test_client.get("/hosts/")
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert "detail" in body
+    assert body["detail"].startswith("Executor backend unreachable:")
+
+
+@pytest.mark.asyncio
+async def test_get_executor_hosts_nomad_unreachable(test_client, mock_executor):
+    """Assert /hosts/ returns 502 JSON when executor raises ConnectionError."""
+    mock_executor.get_hosts.side_effect = requests.exceptions.ConnectionError(
+        "Connection refused"
+    )
+    response = test_client.get("/hosts/")
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert "detail" in body
+    assert body["detail"].startswith("Executor backend unreachable:")
+    assert "Connection refused" in body["detail"]
 
 
 @pytest.mark.asyncio

@@ -22,6 +22,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import timedelta
 from typing import Annotated
 
+import requests.exceptions
 from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
@@ -34,7 +35,11 @@ from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPBadRequestException,
+    HTTPConflictException,
+)
 from app.core.models import PaginatedResponse
 from app.core.utils import utc_now
 from app.core.utils.fields import NonEmptyStr
@@ -680,8 +685,18 @@ async def get_task_stats(session: SessionDep, task: str) -> TaskStats:
 
 @router.get("/hosts/", dependencies=[IsAuthenticatedDep])
 async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
-    """Return the executor hosts from the executor."""
-    return executor.get_hosts()
+    """Return the executor hosts from the executor.
+
+    Wrap the upstream executor call so connection failures or non-JSON
+    bodies surface as a 502 JSON response instead of leaking a default
+    500 + text/plain that masks the real failure on the dashboard banner.
+    """
+    try:
+        return executor.get_hosts()
+    except requests.exceptions.RequestException as exc:
+        raise HTTPBadGatewayException(
+            detail=f"Executor backend unreachable: {exc}"
+        ) from exc
 
 
 @router.post(
