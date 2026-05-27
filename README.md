@@ -39,7 +39,7 @@
 | app/core/requests/remote\_api.py                                                                            |      215 |        8 |     96% |96, 115, 414, 454-457, 465 |
 | app/core/security.py                                                                                        |        4 |        0 |    100% |           |
 | app/core/settings\_override/cache.py                                                                        |       37 |        0 |    100% |           |
-| app/core/settings\_override/lifecycle.py                                                                    |       49 |        1 |     98% |       154 |
+| app/core/settings\_override/lifecycle.py                                                                    |       49 |        2 |     96% |   153-154 |
 | app/core/settings\_override/manager.py                                                                      |        5 |        0 |    100% |           |
 | app/core/settings\_override/models.py                                                                       |       19 |        0 |    100% |           |
 | app/core/settings\_override/proxy.py                                                                        |       20 |        0 |    100% |           |
@@ -244,7 +244,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      223 |       38 |     83% |130-134, 191, 212-219, 251, 300-307, 358-359, 386-387, 415-416, 435, 566, 590, 603-617, 638-651, 667-668 |
-| **TOTAL**                                                                                                   | **16709** | **2108** | **87%** |           |
+| **TOTAL**                                                                                                   | **16709** | **2109** | **87%** |           |
 
 
 ## Setup coverage badge
