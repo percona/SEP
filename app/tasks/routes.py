@@ -340,7 +340,7 @@ async def _populate_has_logs(
 
     Read the chunk store in one batched query so list endpoints avoid an
     N+1 :meth:`TaskHistoryLogManager.exists_for_task` call per row, then
-    OR the result with :func:`has_legacy_logs` so pre-SEP-817 rows keep
+    OR the result with :func:`has_legacy_logs` so legacy rows keep
     rendering the **View Logs** button until the backfill lands.
 
     :param session: The SQLAlchemy asynchronous session.

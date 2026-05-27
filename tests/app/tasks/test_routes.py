@@ -829,11 +829,11 @@ async def test_sync_task_history_populates_has_logs(
 class TestSyncTaskHistoryChainDispatch:
     """Cover chain dispatch and sync-lock semantics on POST /history/{id}/sync/.
 
-    Regression for SEP-1093: when the SEP log-stream SSE finishes and posts
-    to the sync route, the route must claim the celery sync lock, save the
-    terminal status, and dispatch any chained task. Without these, the
-    celery ``sync_running_tasks`` periodic loses the race against the HTTP
-    route and the chain is silently dropped.
+    When the SEP log-stream SSE finishes and posts to the sync route, the
+    route must claim the celery sync lock, save the terminal status, and
+    dispatch any chained task. Without these, the celery
+    ``sync_running_tasks`` periodic loses the race against the HTTP route
+    and the chain is silently dropped.
     """
 
     async def _seed_chain_target(self, session: AsyncSession) -> Task:
@@ -1617,7 +1617,7 @@ async def test_execute_task_name_refreshes_execution_request_before_annotation(
 ):
     """Assert the STARTED annotation fires against a loaded ``execution_request``.
 
-    Regression for SEP-1017. Exercise the full
+    Exercise the full
     ``POST /execute/{task_name}`` → ``_dispatch_queue_item`` →
     ``schedule_annotation(result, "STARTED")`` flow with a real session
     and a fake executor whose ``dispatch_task`` runs the real
@@ -2180,9 +2180,9 @@ class TestPreExecutionConnectivityCheck:
 class TestSyncTaskHistoryRealSession:
     """Integration coverage for POST /history/{id}/sync/ with a real session.
 
-    Regression for SEP-1035: a real HTTP POST must open a fresh writer
-    session, forward it to executor.sync_task_history, and let the Nomad
-    executor's _persist_nomad_task_logs append chunks to taskhistory_log.
+    A real HTTP POST must open a fresh writer session, forward it to
+    ``executor.sync_task_history``, and let the Nomad executor's
+    ``_persist_nomad_task_logs`` append chunks to ``taskhistory_log``.
     """
 
     async def test_sync_running_persists_logs_via_writer_session(
