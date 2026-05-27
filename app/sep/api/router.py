@@ -48,8 +48,8 @@ def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
     """Build the ``/plugins`` sub-router by iterating ``plugins``.
 
     Mirror the Jinja UI mount loop in ``app/sep/main.py`` so future
-    runtime enable/disable guards (SEP-982) can be applied symmetrically at
-    both mount points.
+    runtime enable/disable guards can be applied symmetrically at both
+    mount points.
 
     :param plugins: Iterable of ``Plugin`` settings entries.
     :type plugins: Iterable[Plugin]
