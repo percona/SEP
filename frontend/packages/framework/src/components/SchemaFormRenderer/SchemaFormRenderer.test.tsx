@@ -421,10 +421,10 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
           },
         });
       }
-      if (url === '/inventory-api/services/1/schemas') {
+      if (url === '/sep/services/1/schemas') {
         return Promise.resolve({ data: [{ id: 11, name: 'app_production' }] });
       }
-      if (url === '/inventory-api/services/2/schemas') {
+      if (url === '/sep/services/2/schemas') {
         return Promise.resolve({ data: [{ id: 21, name: 'app_staging' }] });
       }
       return Promise.resolve({ data: [] });

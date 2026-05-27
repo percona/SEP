@@ -20,7 +20,8 @@ schema-driven service selectors without bypassing the SEP layer (see the
 non-bypass rule in ``app/sep/api/router.py``).
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.models import PaginatedResponse
@@ -28,6 +29,19 @@ from app.inventory.models import ServiceResponse, ServiceTypeEnum
 from app.sep.deps import InventoryAPI
 
 router = APIRouter()
+
+
+class InventorySelectorOption(BaseModel):
+    """Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.
+
+    :param id: The inventory entity ID consumed by form payloads.
+    :type id: int
+    :param name: The human-readable display label.
+    :type name: str
+    """
+
+    id: int
+    name: str
 
 
 @router.get("/", response_model=PaginatedResponse[ServiceResponse])
@@ -55,3 +69,38 @@ async def list_services(
         params["service_type"] = service_type.value
     response = await inventory_api.get("/services/", params=params)
     return PaginatedResponse[ServiceResponse].model_validate(response)
+
+
+@router.get("/{service_id}/schemas", response_model=list[InventorySelectorOption])
+async def list_service_schemas(
+    service_id: int,
+    inventory_api: InventoryAPI,
+    search: str | None = None,
+) -> list[InventorySelectorOption]:
+    """Return schemas for a service via the SEP gateway.
+
+    Proxies Inventory ``GET /services/{service_id}/schemas/`` for React
+    ``SchemaSelector`` components. Returns an empty list when the service is
+    missing or inventory raises an HTTP error (matches legacy AJAX behavior).
+
+    :param service_id: The inventory service ID whose schemas are listed.
+    :type service_id: int
+    :param inventory_api: The Inventory API client used to proxy the request.
+    :type inventory_api: InventoryAPI
+    :param search: Optional substring filter forwarded to inventory.
+    :type search: str | None
+    :return: Minimal id/name options for each schema on the service.
+    :rtype: list[InventorySelectorOption]
+    """
+    params: dict[str, int | str] = {"limit": 0}
+    if search:
+        params["search"] = search
+    try:
+        schemas = await inventory_api.get(
+            f"/services/{service_id}/schemas/", params=params
+        )
+    except HTTPException:
+        return []
+    return [
+        InventorySelectorOption(id=s["id"], name=s["name"]) for s in schemas["items"]
+    ]
