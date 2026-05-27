@@ -16,23 +16,28 @@
 """Define tests for the app.sep.plugins.alters.deps module."""
 
 import shlex
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
+from fastapi import HTTPException, status
 
+from app.core.requests.remote_api import RemoteAPI
 from app.sep.plugins.alters.deps import (
     _build_dsn_with_service,
     alters_executor_matches_service_host,
+    alters_satellite_task_names,
     build_alters_task_payload,
     build_pre_checks_task,
+    cascade_create_alters_group,
     extract_service_info,
     get_alters_index_context,
     get_alters_task,
     get_alters_task_info,
     parse_alters_task_args,
     parse_single_arg,
+    resolve_predecessor_spec,
 )
-from app.sep.plugins.alters.models import AltersCreate
+from app.sep.plugins.alters.models import AltersCreate, AltersTaskWrite
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import (
     AltersCreateFactory,
@@ -406,3 +411,152 @@ async def test_get_alters_index_context(mocker):
         TaskOwner.ALTERS,
         alert_on_fail_default=True,
     )
+
+
+EXPECTED_CASCADE_CREATE_POSTS = 4
+
+
+def _cascade_parent_task(name: str = "t1") -> TaskWrite:
+    """Return a minimal parent execute TaskWrite for cascade tests."""
+    return TaskWrite(
+        name=name,
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        target="host1",
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--execute",
+                "target": "host1",
+            },
+        },
+    )
+
+
+def _cascade_pre_checks_template() -> TaskWrite:
+    """Return a minimal pre-checks TaskWrite template for cascade tests."""
+    return TaskWrite(
+        name="ignored",
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        target="host1",
+        data={
+            "task": "run-python",
+            "meta": {"config": "schema: s\ntable: t"},
+            "payload": "file:///tmp/pre_checks.py",
+        },
+    )
+
+
+def test_alters_satellite_task_names():
+    """Test alters_satellite_task_names includes dry-run and pre-checks suffixes."""
+    assert alters_satellite_task_names("my-alter") == [
+        "my-alter-dry-run",
+        "my-alter-pre-checks",
+    ]
+
+
+def test_resolve_predecessor_spec_halt_by_default():
+    """Test resolve_predecessor_spec defaults to on_failure halt."""
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        alter="ADD COLUMN x INT",
+    )
+    spec = resolve_predecessor_spec(body)
+    assert spec.on_failure == "halt"
+    assert spec.name_suffix == "-pre-checks"
+
+
+def test_resolve_predecessor_spec_continue_when_user_overrides():
+    """Test continue_on_pre_check_failure maps resolve_predecessor_spec to on_failure continue."""
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        alter="ADD COLUMN x INT",
+        continue_on_pre_check_failure=True,
+    )
+    spec = resolve_predecessor_spec(body)
+    assert spec.on_failure == "continue"
+
+
+@pytest.mark.asyncio
+async def test_cascade_create_alters_group_posts_three_tasks_and_chains():
+    """Test cascade_create_alters_group POSTs parent, dry-run, pre-checks, and chains execute."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        alter="ADD COLUMN x INT",
+    )
+
+    await cascade_create_alters_group(
+        tasks_api,
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert tasks_api.post.await_args_list[-1] == call(
+        "/execute/t1-pre-checks",
+        json={"chain_task_names": ["t1"], "chain_on_failure": False},
+    )
+    assert len(tasks_api.post.await_args_list) == EXPECTED_CASCADE_CREATE_POSTS
+    tasks_api.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cascade_create_alters_group_continue_on_pre_check_failure():
+    """Test cascade_create_alters_group sets chain_on_failure when user opts into continue."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        alter="ADD COLUMN x INT",
+        continue_on_pre_check_failure=True,
+    )
+
+    await cascade_create_alters_group(
+        tasks_api,
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert tasks_api.post.await_args_list[-1] == call(
+        "/execute/t1-pre-checks",
+        json={"chain_task_names": ["t1"], "chain_on_failure": True},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cascade_create_alters_group_rolls_back_on_execute_failure():
+    """Test cascade_create_alters_group rolls back parent and satellites on execute failure."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
+    tasks_api.post.side_effect = [None, None, None, exc]
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        alter="ADD COLUMN x INT",
+    )
+
+    with pytest.raises(HTTPException):
+        await cascade_create_alters_group(
+            tasks_api,
+            _cascade_parent_task(),
+            _cascade_pre_checks_template(),
+            body,
+        )
+
+    assert tasks_api.delete.await_args_list == [
+        call("/t1-pre-checks"),
+        call("/t1-dry-run"),
+        call("/t1"),
+    ]
