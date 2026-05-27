@@ -36,7 +36,7 @@ export function LogOutputPane({
 }: LogOutputPaneProps) {
   if (!text) {
     return (
-      <Box sx={{ p: 2, color: 'text.secondary' }}>
+      <Box sx={{ height, width: '100%', p: 2, color: 'text.secondary' }}>
         <Typography variant="body2">{emptyLabel}</Typography>
       </Box>
     );

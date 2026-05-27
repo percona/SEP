@@ -124,7 +124,7 @@ function TaskHistoryTableView({
       {
         id: 'status',
         header: 'Status',
-        size: 130,
+        size: 100,
         accessorFn: (row) => row.status,
         Cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
@@ -135,20 +135,20 @@ function TaskHistoryTableView({
               id: 'task',
               header: 'Task',
               accessorFn: (row: TaskHistoryEntry) => row.task?.name ?? '',
-              size: 180,
+              size: 140,
             } satisfies MRT_ColumnDef<TaskHistoryEntry>,
           ]),
       {
         id: 'host',
         header: 'Host',
         accessorFn: (row) => row.execution_request?.target ?? '',
-        size: 160,
+        size: 140,
       },
       {
         id: 'chain',
         header: 'Chain',
         enableSorting: false,
-        size: 220,
+        size: 150,
         Cell: ({ row }) => {
           const meta = readMeta(row.original);
           return (
@@ -167,7 +167,7 @@ function TaskHistoryTableView({
       {
         id: 'started_at',
         header: 'Started',
-        size: 180,
+        size: 160,
         accessorFn: (row) => row.started_at ?? '',
         sortingFn: 'datetime',
         Cell: ({ row }) => (
@@ -179,7 +179,7 @@ function TaskHistoryTableView({
       {
         id: 'duration',
         header: 'Duration',
-        size: 110,
+        size: 90,
         accessorFn: (row) => row.duration ?? -1,
         Cell: ({ row }) => (
           <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
@@ -190,7 +190,7 @@ function TaskHistoryTableView({
       {
         id: 'executed_by',
         header: 'Executed By',
-        size: 150,
+        size: 120,
         accessorFn: (row) =>
           (resolveUserName ? resolveUserName(row.executed_by) : (row.executed_by ?? '')) || '',
       },
@@ -199,7 +199,7 @@ function TaskHistoryTableView({
         header: 'Actions',
         enableSorting: false,
         enableColumnFilter: false,
-        size: 150,
+        size: 120,
         Cell: ({ row }) => {
           const entry = row.original;
           const running = isRunningStatus(entry.status);
