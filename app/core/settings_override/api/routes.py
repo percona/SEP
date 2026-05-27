@@ -21,6 +21,7 @@ from typing import Any
 
 from fastapi import APIRouter, params, status
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseYamlSettings
@@ -405,6 +406,40 @@ async def _persist_overrides(
     Existing rows have ``value`` and ``is_active`` updated; missing rows are
     inserted fresh. The transaction is committed once at the end so a failure
     on any single row rolls back the entire batch.
+
+    Concurrent PATCHes against the same key would otherwise race: both
+    requests can observe ``existing is None`` between their ``first()`` and
+    the unique-index commit, and the second commit would raise
+    :class:`sqlalchemy.exc.IntegrityError`. The handler catches that case,
+    rolls back the failed transaction, and replays the batch against the
+    rows the winning writer left in place so the second PATCH still applies
+    its values cleanly.
+
+    :param session: The sub-app's database session.
+    :type session: AsyncSession
+    :param setting_class: The settings class the rows belong to.
+    :type setting_class: SettingClassEnum
+    :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
+    :type to_apply: list[tuple[str, Any]]
+    """
+    try:
+        await _stage_and_commit_overrides(
+            session=session, setting_class=setting_class, to_apply=to_apply
+        )
+    except IntegrityError:
+        await session.rollback()
+        await _stage_and_commit_overrides(
+            session=session, setting_class=setting_class, to_apply=to_apply
+        )
+
+
+async def _stage_and_commit_overrides(
+    *,
+    session: AsyncSession,
+    setting_class: SettingClassEnum,
+    to_apply: list[tuple[str, Any]],
+) -> None:
+    """Stage every (setting_class, key) row and commit the batch.
 
     :param session: The sub-app's database session.
     :type session: AsyncSession

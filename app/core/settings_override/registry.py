@@ -343,8 +343,11 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
 
     When ``field_info.annotation`` is a non-Pydantic-compatible type (e.g.
     ``string.Template``) for which Pydantic cannot build a TypeAdapter, the
-    helper falls back to ``str(value)`` so the LIST/GET responses surface the
-    field instead of returning a 500 to the operator.
+    helper returns ``None`` rather than ``str(value)``: a default object
+    ``repr`` like ``<string.Template object at 0x7f...>`` is unstable
+    (memory-address dependent) and useless for a diffing UI. Operators see
+    the field's ``key``, ``description``, ``is_complex`` and ``type`` flags
+    and know it cannot be edited via the API.
 
     :param field_info: The Pydantic field metadata for the target attribute.
     :type field_info: FieldInfo
@@ -360,4 +363,4 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     try:
         return TypeAdapter(field_info.annotation).dump_python(value, mode="json")
     except PydanticSchemaGenerationError:
-        return str(value)
+        return None

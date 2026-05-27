@@ -168,3 +168,21 @@ def test_iter_class_fields_invokes_default_factory() -> None:
     """``default_factory`` is invoked so the metadata holds the actual default value."""
     metas = {meta.key: meta for meta in iter_class_fields(_WithFactory)}
     assert metas["ITEMS"].default == ["alpha", "beta"]
+
+
+class _Unschemable:
+    """A non-Pydantic type with no overridden ``__str__`` (default object repr)."""
+
+
+class _WithUnschemableAnnotation(BaseYamlSettings):
+    """Synthetic settings class whose field annotation Pydantic can't schemafy."""
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["UNSCHEMABLE"]
+    model_config = {"arbitrary_types_allowed": True}
+    OPAQUE: _Unschemable = _Unschemable()
+
+
+def test_dump_field_value_returns_none_for_unschemable_annotation() -> None:
+    """Unschemable annotations dump to ``None`` rather than an unstable object repr."""
+    field = _WithUnschemableAnnotation.model_fields["OPAQUE"]
+    assert dump_field_value(field, _Unschemable()) is None
