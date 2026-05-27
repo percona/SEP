@@ -34,6 +34,12 @@ def test_messages_settings_resolved_at_lifespan_startup(
     semantics it had before the proxy conversion. Patching
     ``MessagesSettings.__init__`` to raise and entering the lifespan must
     surface the error during startup, not on first request.
+
+    ``app.sep.main.sep_startup`` is patched to a no-op coroutine to keep the
+    test hermetic regardless of lifespan ordering: today ``_resolve()`` runs
+    before ``sep_startup()`` so the broken ``__init__`` raises first, but a
+    future reorder would otherwise drag ``init_sep_db()`` and the Celery
+    beat ``schedule.db`` into this test.
     """
     # Drop the previously-resolved instance so ``_resolve`` re-invokes the
     # factory under the broken ``__init__`` instead of returning a cached value.
@@ -42,7 +48,11 @@ def test_messages_settings_resolved_at_lifespan_startup(
     def _broken_init(self: MessagesSettings, *args: object, **kwargs: object) -> None:
         raise ValueError("intentionally invalid messages config")
 
+    async def _no_op() -> None:
+        """No-op stand-in for ``sep_startup`` so the test stays hermetic."""
+
     monkeypatch.setattr(MessagesSettings, "__init__", _broken_init)
+    monkeypatch.setattr("app.sep.main.sep_startup", _no_op)
     try:
         with (
             pytest.raises(ValueError, match="intentionally invalid messages config"),
