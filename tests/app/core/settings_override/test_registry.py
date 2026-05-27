@@ -55,8 +55,10 @@ def test_is_hot_reloadable_false_for_missing_field() -> None:
 
 
 def test_hot_field_names_sep_settings() -> None:
-    """``SEPSettings`` ships the HOT fields promoted by SEP-980 plus the
-    ``INVENTORY_TOPOLOGY_ENABLED`` runtime toggle added by SEP-1140."""
+    """``SEPSettings`` ships the HOT fields promoted by SEP-980.
+
+    Plus the ``INVENTORY_TOPOLOGY_ENABLED`` runtime toggle in SEP-1140.
+    """
     assert hot_field_names(SEPSettings) == frozenset(
         {
             "CONNECTIVITY_CHECK_DEFAULT",
