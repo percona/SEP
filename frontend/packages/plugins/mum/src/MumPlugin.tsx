@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiClient } from '@sep/api';
+import { apiClient, getToken } from '@sep/api';
 import {
   Box,
   Button,
@@ -122,7 +122,9 @@ export function MumPlugin() {
       stdoutBufferRef.current = '';
 
       try {
-        const es = new EventSource(`/stream-logs/${encodeURIComponent(historyId)}`);
+        const token = getToken();
+        const streamUrl = `/stream-logs/${encodeURIComponent(historyId)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+        const es = new EventSource(streamUrl);
         esRef.current = es;
 
         es.onmessage = (event) => {
@@ -165,7 +167,9 @@ export function MumPlugin() {
     rolesStdoutBufferRef.current = '';
 
     try {
-      const es = new EventSource(`/stream-logs/${encodeURIComponent(historyId)}`);
+      const token = getToken();
+      const streamUrl = `/stream-logs/${encodeURIComponent(historyId)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+      const es = new EventSource(streamUrl);
       rolesEsRef.current = es;
 
       const stopRoles = () => {

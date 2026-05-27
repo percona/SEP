@@ -196,6 +196,11 @@ async def get_current_user(
         bearer_token = await oauth2_scheme(request)
         return await get_current_user_api(bearer_token)
 
+    # EventSource cannot send custom headers, so SPA SSE clients pass the
+    # access token as a ?token= query parameter instead.
+    if qs_token := request.query_params.get("token"):
+        return await get_current_user_api(qs_token)
+
     return await get_current_user_from_cookie(request)
 
 
