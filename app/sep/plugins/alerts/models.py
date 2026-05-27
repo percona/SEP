@@ -16,14 +16,15 @@
 """Define the alerts plugin's DB model and Pydantic helpers."""
 
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel
 from sqlalchemy import Column, JSON
 from sqlmodel import Field as SQLField
 
 from app.core.db.models import BaseSQLModel
+from app.core.utils.fields import StrippedNonEmptyStr
 from app.sep.models import AlertServiceType as ServiceType
 
 
@@ -71,7 +72,7 @@ class AlertTemplate(BaseModel):
     :type service_type: ServiceType
     :param expression: The PromQL expression used to evaluate the alert condition.
         Whitespace is stripped and the value must be non-empty.
-    :type expression: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    :type expression: StrippedNonEmptyStr
     :param default_threshold: The default numeric threshold displayed and configured
         in the UI. This is independent of ``expression`` — the bundled PromQL expression
         may embed its own comparison value. ``default_threshold`` is UI metadata that
@@ -87,7 +88,7 @@ class AlertTemplate(BaseModel):
 
     name: str
     service_type: ServiceType
-    expression: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    expression: StrippedNonEmptyStr
     default_threshold: float
     severity: AlertSeverity
     description: str
