@@ -54,6 +54,7 @@ from app.sep.deps import (
     get_tasks_context,
     get_tasks_index_context,
     get_username_mapping,
+    require_bearer_for_unsafe_methods,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
@@ -1033,3 +1034,74 @@ class TestGetExecutorHostsContext:
         ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "nomad-2"
+
+
+def _make_request_with_method(method: str, authorization: str | None = None) -> Request:
+    """Build a minimal Request with explicit HTTP method for dep tests."""
+    headers = []
+    if authorization is not None:
+        headers.append((b"authorization", authorization.encode()))
+    scope = {
+        "type": "http",
+        "headers": headers,
+        "method": method,
+        "client": ("127.0.0.1", "80"),
+        "path": "/",
+        "app": MagicMock(),
+        "router": MagicMock(),
+    }
+    return Request(scope)
+
+
+class TestRequireBearerForUnsafeMethods:
+    """Tests for ``require_bearer_for_unsafe_methods`` dependency."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
+    async def test_safe_methods_pass_without_bearer(self, method: str) -> None:
+        """Safe HTTP methods do not require a Bearer header."""
+        request = _make_request_with_method(method)
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+    async def test_unsafe_methods_without_bearer_raise_401(self, method: str) -> None:
+        """Mutating methods without an Authorization header raise 401."""
+        request = _make_request_with_method(method)
+        with pytest.raises(HTTPUnauthorizedException) as exc_info:
+            await require_bearer_for_unsafe_methods(request)
+        assert "Bearer" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+    async def test_unsafe_methods_with_bearer_pass(self, method: str) -> None:
+        """Mutating methods with a Bearer header pass through."""
+        request = _make_request_with_method(method, authorization="Bearer abc")
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_lowercase_bearer_scheme_passes(self) -> None:
+        """Bearer detection is case-insensitive (existing helper contract)."""
+        request = _make_request_with_method("POST", authorization="bearer abc")
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_basic_scheme_raises(self) -> None:
+        """Non-Bearer Authorization schemes still raise 401 on mutating methods."""
+        request = _make_request_with_method("POST", authorization="Basic abc")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_bearer_without_trailing_space_raises(self) -> None:
+        """The helper requires ``Bearer `` (trailing space) to match."""
+        request = _make_request_with_method("POST", authorization="Bearer")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_empty_authorization_header_raises(self) -> None:
+        """An empty Authorization header is not a valid Bearer credential."""
+        request = _make_request_with_method("POST", authorization="")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)

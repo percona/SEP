@@ -33,6 +33,7 @@ from app.sep.crud import SyncItemManager
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService
 from app.sep.main import sep_app
 from app.sep.plugins.inventory.deps import get_syncers
+from tests.app.sep.conftest import api_admin_client_no_bearer  # noqa: F401
 
 
 class StubPMMSyncer:

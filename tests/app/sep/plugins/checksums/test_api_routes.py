@@ -415,6 +415,26 @@ class TestChecksumsSchemaEndpoint:
         assert caps["scheduling"] is True
 
 
+class TestChecksumsBearerGate:
+    """Bearer-gate (SEP-1242) coverage on checksums JSON mutations."""
+
+    def test_cookie_only_create_returns_401(
+        self,
+        api_admin_client_no_bearer,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ):
+        """Cookie-auth admin POST without Bearer header is 401'd by the framework gate."""
+        response = api_admin_client_no_bearer.post(
+            "/api/plugins/checksums/",
+            json={"name": "x", "hostname": "h", "service_id": 1},
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "Bearer" in response.json()["detail"]
+        mock_task_api_dep.post.assert_not_called()
+        mock_inventory_api_dep.get.assert_not_called()
+
+
 class TestChecksumsCreateEndpoint:
     """Tests for POST /api/plugins/checksums/."""
 

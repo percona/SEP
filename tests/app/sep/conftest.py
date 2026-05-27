@@ -38,6 +38,7 @@ from app.sep.deps import (
     get_current_user,
     get_inventory_api,
     get_tasks_api,
+    require_bearer_for_unsafe_methods,
     validate_csrf,
 )
 from app.sep.main import sep_app
@@ -60,10 +61,34 @@ async def session_fixture() -> AsyncSession:
 
 @pytest.fixture
 def test_client(regular_user: CasdoorUser) -> TestClient:
-    """Create an authenticated test client for the app."""
+    """Yield an authenticated cookie-auth TestClient for the SEP app.
+
+    Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
+    mutations under ``/api/plugins/*`` are not blocked by the framework
+    Bearer gate (SEP-1242). Plugin-local ``test_client`` overrides MUST
+    mirror this override; see :func:`api_admin_client_no_bearer` for the
+    negative-path fixture that leaves the gate intact.
+    """
     sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def api_admin_client_no_bearer(admin_user: CasdoorUser) -> TestClient:
+    """Yield a cookie-auth admin TestClient with the Bearer gate intact.
+
+    Mirrors :func:`test_client` but deliberately leaves
+    ``require_bearer_for_unsafe_methods`` un-overridden, so cookie-only
+    JSON mutations to ``/api/plugins/*`` are rejected by the framework
+    Bearer gate (SEP-1242). Use in tests that assert the 401 path.
+    """
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -81,8 +106,12 @@ def unauthenticated_client() -> Iterator[TestClient]:
 
 @pytest_asyncio.fixture
 async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
-    """Create an authenticated async test client for the app."""
+    """Yield an authenticated async cookie-auth client for the SEP app.
+
+    See :func:`test_client` for the Bearer-gate override rationale.
+    """
     sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
 

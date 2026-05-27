@@ -579,9 +579,11 @@ class TestExecuteEndpoint:
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_execute_with_cookie_only_returns_401(self, test_client, mock_task_api_dep):
+    def test_execute_with_cookie_only_returns_401(
+        self, api_admin_client_no_bearer, mock_task_api_dep
+    ):
         """Execute without Bearer header is rejected as 401."""
-        response = test_client.post(
+        response = api_admin_client_no_bearer.post(
             "/api/plugins/mysql_backups/some-task/execute", json={}
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -591,16 +593,24 @@ class TestExecuteEndpoint:
 class TestBearerAuthGate:
     """Mutations must include an ``Authorization: Bearer`` header."""
 
-    def test_create_with_cookie_only_returns_401(self, test_client, mock_task_api_dep):
+    def test_create_with_cookie_only_returns_401(
+        self, api_admin_client_no_bearer, mock_task_api_dep
+    ):
         """POST without Bearer header is rejected as 401."""
         body = build_backup_write_body()
-        response = test_client.post("/api/plugins/mysql_backups/", json=body)
+        response = api_admin_client_no_bearer.post(
+            "/api/plugins/mysql_backups/", json=body
+        )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         mock_task_api_dep.post.assert_not_called()
 
-    def test_delete_with_cookie_only_returns_401(self, test_client, mock_task_api_dep):
+    def test_delete_with_cookie_only_returns_401(
+        self, api_admin_client_no_bearer, mock_task_api_dep
+    ):
         """DELETE without Bearer header is rejected as 401."""
-        response = test_client.delete("/api/plugins/mysql_backups/some-task")
+        response = api_admin_client_no_bearer.delete(
+            "/api/plugins/mysql_backups/some-task"
+        )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         mock_task_api_dep.delete.assert_not_called()
 

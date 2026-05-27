@@ -22,7 +22,14 @@ from pydantic import ValidationError
 
 from app.sep.api.router import api_router, build_plugins_router, plugins_router
 from app.sep.config import Plugin, sep_settings
-from app.sep.deps import IsApiAuthenticated
+from app.sep.deps import (
+    BEARER_REQUIRED_DETAIL,
+    get_api_authenticated_user,
+    get_current_user,
+    IsApiAuthenticated,
+    require_bearer_for_unsafe_methods,
+    validate_csrf,
+)
 from app.sep.main import sep_app
 
 
@@ -136,6 +143,136 @@ class TestApiRouterUnauthenticated:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
+
+
+@pytest.fixture
+def cookie_only_client(regular_user):
+    """Return a TestClient that has cookie auth but no Bearer override.
+
+    Overrides ``get_current_user``, ``get_api_authenticated_user`` and
+    ``validate_csrf`` so the request passes the existing auth/CSRF stack,
+    but deliberately leaves ``require_bearer_for_unsafe_methods`` unmocked
+    so the framework Bearer gate fires for mutating methods.
+    """
+    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+class TestPluginBearerGate:
+    """Tests for the framework-level Bearer gate on /api/plugins/* mutations (SEP-1242)."""
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("POST", "/api/plugins/snippets/refresh"),
+            ("PUT", "/api/plugins/snippets/snippet/approval"),
+            ("PATCH", "/api/plugins/snippets/approvals"),
+            ("DELETE", "/api/plugins/snippets/snippet/approval"),
+            ("POST", "/api/plugins/inventory/sync/"),
+            ("POST", "/api/plugins/dipper/"),
+            ("POST", "/api/plugins/checksums/"),
+            ("DELETE", "/api/plugins/checksums/some-task"),
+        ],
+    )
+    def test_cookie_only_mutation_is_rejected_with_401(
+        self, cookie_only_client: TestClient, method: str, path: str
+    ) -> None:
+        """Cookie-authenticated JSON mutations under /api/plugins/* return 401."""
+        response = cookie_only_client.request(method, path, json={})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+    def test_cookie_only_get_passes_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """Cookie-authenticated GET on /api/plugins/* is not blocked by the Bearer gate."""
+        response = cookie_only_client.get("/api/plugins/checksums/schema")
+        assert response.status_code != status.HTTP_401_UNAUTHORIZED
+
+    def test_bearer_mutation_passes_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """A Bearer header on a mutation bypasses the framework Bearer gate.
+
+        The downstream route may still 422/404/etc., but the response must
+        not be the framework Bearer-gate 401.
+        """
+        response = cookie_only_client.post(
+            "/api/plugins/snippets/refresh",
+            json={},
+            headers={"Authorization": "Bearer test-token"},
+        )
+        if response.status_code == status.HTTP_401_UNAUTHORIZED:
+            assert response.json().get("detail") != BEARER_REQUIRED_DETAIL
+
+    def test_malformed_json_cookie_only_still_401_before_body_parse(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """The Bearer gate fires before request-body validation.
+
+        Sending malformed JSON with cookie auth must return the Bearer-gate
+        401, not a 422 from body parsing.
+        """
+        response = cookie_only_client.post(
+            "/api/plugins/snippets/refresh",
+            content=b"{not-json",
+            headers={"content-type": "application/json"},
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+    def test_head_method_passes_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """HEAD requests are treated as safe and not Bearer-gated."""
+        response = cookie_only_client.head("/api/plugins/checksums/schema")
+        assert response.status_code != status.HTTP_401_UNAUTHORIZED
+
+    def test_options_method_passes_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """OPTIONS (CORS preflight) requests are not Bearer-gated."""
+        response = cookie_only_client.options("/api/plugins/checksums/schema")
+        assert response.status_code != status.HTTP_401_UNAUTHORIZED
+
+    def test_bearer_gate_is_on_plugins_router_only(self) -> None:
+        """The gate is wired into plugins_router, not the broader api_router.
+
+        Regression guard against accidentally Bearer-gating /api/sep/*
+        (dashboard, hosts, task-stats) which serve cookie-authenticated
+        React reads.
+        """
+        plugin_deps = [dep.dependency for dep in plugins_router.dependencies]
+        api_deps = [dep.dependency for dep in api_router.dependencies]
+        assert require_bearer_for_unsafe_methods in plugin_deps
+        assert require_bearer_for_unsafe_methods not in api_deps
+
+    def test_api_sep_get_routes_are_not_bearer_gated(
+        self,
+        cookie_only_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Cookie-only GET on /api/sep/* is not blocked by the Bearer gate.
+
+        Regression guard: dashboard/hosts/task-stats serve cookie-auth
+        React reads; the response must succeed (200) under cookie-only
+        credentials. Upstream Tasks/Inventory calls are stubbed so the
+        dashboard returns a deterministic payload.
+        """
+        mock_inventory_api_dep.get.return_value = {"nodes": 0}
+        mock_task_api_dep.get.side_effect = [{"total": 0}, []]
+        response = cookie_only_client.get("/api/sep/dashboard/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "nodes": 0,
+            "tasks": 0,
+            "snippets": 0,
+            "targets": 0,
+        }
 
 
 class TestApiRouterConfigDrivenLoop:

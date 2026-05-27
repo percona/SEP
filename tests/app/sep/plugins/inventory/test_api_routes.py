@@ -390,6 +390,19 @@ class TestInventoryNewRoutesAuthentication:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
+class TestInventoryBearerGate:
+    """Bearer-gate (SEP-1242) coverage on inventory JSON mutations."""
+
+    def test_cookie_only_sync_post_returns_401(
+        self, api_admin_client_no_bearer, mock_run_sync_funcs
+    ):
+        """Cookie-auth POST without Bearer header is 401'd by the framework gate."""
+        response = api_admin_client_no_bearer.post("/api/plugins/inventory/sync/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "Bearer" in response.json()["detail"]
+        mock_run_sync_funcs["inventory"].assert_not_called()
+
+
 class TestInventorySyncTrigger:
     """Tests for POST ``/api/plugins/inventory/sync/``.
 
