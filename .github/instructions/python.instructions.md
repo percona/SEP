@@ -34,3 +34,4 @@ Pre-commit runs ruff (lint + format), bandit, and addlicense. Don't flag what th
 - **Comments**: flag NEW inline comments that don't document a non-obvious invariant or workaround.
 - **No magic HTTP integers**: `status.HTTP_404_NOT_FOUND`, not `404`.
 - **Custom exceptions**: raise `HTTPNotFoundException` / `HTTPConflictException` / `HTTPForbiddenException`, not `fastapi.HTTPException`.
+- **Pydantic / SQLModel class body order**: `model_config` first, then fields, then `@field_validator` / `@model_validator`, then methods (`@computed_field` properties before regular methods). `model_config` placed below the fields hides it from a reader scanning the top of the class.
