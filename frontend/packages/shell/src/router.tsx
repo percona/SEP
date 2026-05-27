@@ -52,6 +52,9 @@ const AlertTroubleshootingPlugin = lazy(() =>
 const TasksPlugin = lazy(() =>
   import('@sep/plugin-tasks').then((m) => ({ default: m.TasksPlugin })),
 );
+const ArchivesPlugin = lazy(() =>
+  import('@sep/plugin-archives').then((m) => ({ default: m.ArchivesPlugin })),
+);
 const BackupMongoPlugin = lazy(() =>
   import('@sep/plugin-backup-mongo').then((m) => ({ default: m.BackupMongoPlugin })),
 );
@@ -94,7 +97,7 @@ export const router = createBrowserRouter([
           { path: 'backups/mysql', element: <PlaceholderPage /> },
           { path: 'backups/mongodb/*', element: <BackupMongoPlugin /> },
           { path: 'backups/postgresql', element: <PlaceholderPage /> },
-          { path: 'archive', element: <PlaceholderPage /> },
+          { path: 'plugins/archives/*', element: <ArchivesPlugin /> },
           { path: 'reports', element: <PlaceholderPage /> },
           { path: 'settings', element: <PlaceholderPage /> },
           { path: '*', element: <NotFoundPage /> },
