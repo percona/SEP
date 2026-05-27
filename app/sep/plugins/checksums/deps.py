@@ -495,12 +495,10 @@ def build_checksums_api_task_response(
     """
     mapping = username_mapping or {}
     task_data = task.model_dump()
-    task_data["created_by"] = mapping.get(
-        task_data.get("created_by"), task_data.get("created_by")
-    )
-    task_data["last_updated_by"] = mapping.get(
-        task_data.get("last_updated_by"), task_data.get("last_updated_by")
-    )
+    created_by = task_data.get("created_by")
+    task_data["created_by"] = mapping.get(created_by, created_by)
+    last_updated_by = task_data.get("last_updated_by")
+    task_data["last_updated_by"] = mapping.get(last_updated_by, last_updated_by)
     return ChecksumTaskResponse(
         **task_data,
         service_type=ServiceTypeEnum.MYSQL,
