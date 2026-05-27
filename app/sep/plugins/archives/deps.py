@@ -281,8 +281,6 @@ ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload
 
 
 async def build_archives_api_task_payload(
-    # SEP-1007: JSON POST uses Body(); keep separate dep to avoid mixing
-    # Form() and Body() parameter types in the same route signature.
     form: Annotated[ArchivesCreate, Body()],
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
