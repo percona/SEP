@@ -113,8 +113,8 @@ function taskNameFromPath(pathname: string): string | null {
   if (!pathname.startsWith(prefix)) {
     return null;
   }
-  const segment = pathname.slice(prefix.length);
-  if (!segment || segment === 'schema') {
+  const segment = pathname.slice(prefix.length).replace(/\/$/, '');
+  if (!segment || segment === 'schema' || segment === 'schedule') {
     return null;
   }
   return decodeURIComponent(segment);
@@ -204,9 +204,9 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
     }
 
     return route.fulfill({
-      status: 200,
+      status: 404,
       contentType: 'application/json',
-      body: '[]',
+      body: JSON.stringify({ detail: 'not mocked' }),
     });
   });
 }

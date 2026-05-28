@@ -16,8 +16,8 @@
  */
 
 import { SchemaDrivenPlugin } from '@sep/framework';
-import { PLUGIN_NAME } from './routes';
+import { PLUGIN_BASE_PATH, PLUGIN_NAME } from './routes';
 
 export function BackupPgPlugin() {
-  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} />;
+  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} routeBase={PLUGIN_BASE_PATH} />;
 }
