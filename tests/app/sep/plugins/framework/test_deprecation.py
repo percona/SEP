@@ -17,6 +17,7 @@
 
 from unittest.mock import patch
 
+import pytest
 from fastapi import APIRouter, FastAPI, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.testclient import TestClient
@@ -91,5 +92,13 @@ def test_deprecation_emits_warning_log():
 
     assert mock_warning.called
     args = mock_warning.call_args.args
-    assert args[0].startswith("Jinja2 plugin route %s is deprecated")
-    assert args[1] == "/legacy"
+    assert "Jinja2 plugin route /legacy is deprecated" in args[0]
+
+
+def test_deprecation_emits_deprecationwarning():
+    """Each deprecated route hit triggers a ``DeprecationWarning``."""
+    with pytest.warns(DeprecationWarning, match="Jinja2 plugin route /legacy"):
+        response = TestClient(_build_app()).get("/legacy")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers.get("Deprecation") == "true"

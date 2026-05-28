@@ -42,19 +42,21 @@ export function StandaloneHostSelector({
 }: StandaloneHostSelectorProps) {
   const { enqueueSnackbar } = useSnackbar();
   const { data, isLoading, isError, error } = useHosts();
-  const hosts = data?.hosts ?? EMPTY_OPTIONS;
-  const upstreamError = data?.upstreamError ?? null;
+  const hosts = data ?? EMPTY_OPTIONS;
 
-  const lastSurfacedRef = useRef<string | null>(null);
+  // Surface a hosts-query failure (e.g. an upstream Tasks-API 502) via the
+  // shell's snackbar. De-dup on the `error` object identity (stable per
+  // failure) so the snackbar fires once per failure, not once per render.
+  const lastSurfacedRef = useRef<unknown>(null);
   useEffect(() => {
-    if (upstreamError && upstreamError !== lastSurfacedRef.current) {
-      enqueueSnackbar(`Failed to load executor hosts: ${upstreamError}`, {
+    if (isError && error && error !== lastSurfacedRef.current) {
+      enqueueSnackbar(`Failed to load executor hosts: ${error.message}`, {
         variant: 'error',
         autoHideDuration: 30_000,
       });
-      lastSurfacedRef.current = upstreamError;
+      lastSurfacedRef.current = error;
     }
-  }, [upstreamError, enqueueSnackbar]);
+  }, [isError, error, enqueueSnackbar]);
 
   const options: HostIdOption[] = hosts.map((h) => ({ id: h.id, label: h.name }));
   const selected = options.find((o) => o.id === value) ?? null;

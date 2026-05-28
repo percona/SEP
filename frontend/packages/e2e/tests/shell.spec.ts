@@ -57,6 +57,8 @@ const MOCK_PLUGIN_SCHEMA = {
  *   /api/oauth/refresh           -> fake access token (bootstraps AuthProvider)
  *   /api/users/me                -> fake user profile (completes session bootstrap)
  *   /api/plugins/:name/schema    -> minimal valid PluginSchema (renders heading)
+ *   /api/sep/dashboard/          -> zero counts for dashboard stat cards
+ *   /api/tasks/history/          -> empty paginated response (prevents refetchInterval crash)
  *   everything else              -> 200 [] (empty task list; sufficient for smoke assertions)
  */
 async function mockAuthenticatedApis(page: Page): Promise<void> {
@@ -89,6 +91,22 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(MOCK_PLUGIN_SCHEMA),
+      });
+    }
+
+    if (pathname.endsWith('/sep/dashboard/')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ nodes: 0, tasks: 0, snippets: 0, targets: 0 }),
+      });
+    }
+
+    if (pathname.includes('/tasks/history/')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, offset: 0, limit: 5 }),
       });
     }
 

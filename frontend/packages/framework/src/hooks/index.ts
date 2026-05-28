@@ -38,11 +38,12 @@ export type { SchemaOption, UseSchemasOptions } from './useSchemas';
 export { useTables } from './useTables';
 export type { TableOption, UseTablesOptions } from './useTables';
 export { useHosts } from './useHosts';
-export type { HostOption, HostsResult, UseHostsOptions } from './useHosts';
+export type { HostOption, UseHostsOptions } from './useHosts';
 
 export {
   useTaskHistory,
   useTaskHistoryByName,
+  useTaskHistoryByNames,
   useStopTaskHistory,
   useExecuteTask,
   isRunningStatus,
@@ -64,3 +65,8 @@ export type { TaskFileDownloadParams } from './useTaskFileDownload';
 export { useSnippetPluginSchema } from './useSnippetPluginSchema';
 export { useSnippetPluginExecution } from './useSnippetPluginExecution';
 export type { UseSnippetPluginExecutionOptions } from './useSnippetPluginExecution';
+
+export { useTaskStats } from './useTaskStats';
+export type { TaskStatsView } from './useTaskStats';
+
+export { sepRetry } from './sepRetry';
