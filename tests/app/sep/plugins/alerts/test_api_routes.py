@@ -32,7 +32,7 @@ from app.sep.clients.pmm import (
     NotificationPolicy,
     PMMRemoteAPI,
 )
-from app.sep.deps import get_session
+from app.sep.deps import get_session, require_bearer_for_unsafe_methods
 from app.sep.main import sep_app
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.deps import (
@@ -87,9 +87,10 @@ def api_client(test_client: TestClient, session: AsyncSession) -> TestClient:
     """Return an authenticated TestClient wired to the in-memory test session.
 
     Set a default ``Authorization: Bearer`` header so requests satisfy the
-    ``RequireBearerAuth`` dependency on mutating routes — the dep inspects
-    the raw request header, not the (overridden) user dep, so without this
-    header cookie-only mutations would (correctly) 401.
+    framework-level ``RequireBearerForUnsafeMethods`` guard on the
+    ``/api/plugins`` router (SEP-1242) — the guard inspects the raw request
+    header, not the (overridden) user dep, so without this header cookie-only
+    mutations would (correctly) 401.
     """
     sep_app.dependency_overrides[get_session] = lambda: session
     test_client.headers["Authorization"] = BEARER_HEADERS["Authorization"]
@@ -103,9 +104,13 @@ def cookie_only_api_client(
     """Return a cookie-authenticated TestClient with NO Bearer header.
 
     Used to assert that mutating routes reject cookie-only callers (CSRF
-    guard via ``RequireBearerAuth``).
+    guard via framework-level ``RequireBearerForUnsafeMethods`` on the
+    ``/api/plugins`` router). The shared ``test_client`` fixture overrides
+    the framework Bearer guard to a no-op so cookie auth works in tests; pop
+    that override here so the real guard runs and the 401 path is exercised.
     """
     sep_app.dependency_overrides[get_session] = lambda: session
+    sep_app.dependency_overrides.pop(require_bearer_for_unsafe_methods, None)
     test_client.headers.pop("Authorization", None)
     return test_client
 
@@ -203,9 +208,9 @@ class TestApiAuthentication:
     def test_restore_rejects_malformed_bearer_header(self, cookie_only_api_client):
         """Reject an Authorization header that is not ``Bearer <token>``.
 
-        ``RequireBearerAuth`` inspects the raw header prefix; a non-Bearer
-        scheme (e.g. ``Basic``, ``NotBearer``) must surface as 401, never as
-        a 500 or a silent pass-through.
+        The framework-level Bearer guard inspects the raw header prefix; a
+        non-Bearer scheme (e.g. ``Basic``, ``NotBearer``) must surface as
+        401, never as a 500 or a silent pass-through.
         """
         cookie_only_api_client.headers["Authorization"] = "NotBearer abc"
         response = cookie_only_api_client.post(
@@ -268,8 +273,9 @@ class TestBearerAuthGate:
     """Cookie-authenticated mutations must be rejected without a Bearer token.
 
     ``IsApiAuthenticated`` alone accepts cookie auth — the ``/api`` tier has
-    no CSRF check, so without ``RequireBearerAuth`` a logged-in browser
-    could be CSRF'd into mutating PMM state from a malicious origin.
+    no CSRF check, so without the framework-level
+    ``RequireBearerForUnsafeMethods`` guard a logged-in browser could be
+    CSRF'd into mutating PMM state from a malicious origin.
     """
 
     def test_restore_with_cookie_only_returns_401(self, cookie_only_api_client):
@@ -325,11 +331,15 @@ class TestBearerAuthGate:
 class TestListBackups:
     """Tests for the list-backups endpoint."""
 
-    async def test_returns_empty_list_when_no_backups(self, api_client):
-        """Return an empty list when no backups exist."""
+    async def test_returns_empty_page_when_no_backups(self, api_client):
+        """Return an empty paginated envelope when no backups exist."""
         response = api_client.get(f"{API_BASE}/backups")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"items": []}
+        body = response.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+        assert body["offset"] == 0
+        assert body["limit"] > 0
 
     async def test_returns_recent_backups_ordered_desc(
         self, api_client, session: AsyncSession
@@ -343,10 +353,13 @@ class TestListBackups:
         )
         response = api_client.get(f"{API_BASE}/backups")
         assert response.status_code == status.HTTP_200_OK
-        items = response.json()["items"]
+        body = response.json()
+        items = body["items"]
         assert len(items) == 2  # noqa: PLR2004
         assert items[0]["id"] > items[1]["id"]
         assert items[0]["metadata"] == {"templates": 2}
+        assert body["total"] == 2  # noqa: PLR2004
+        assert body["offset"] == 0
 
     async def test_respects_limit_query_param(self, api_client, session: AsyncSession):
         """Clamp the result count to the requested ``limit``."""
@@ -354,7 +367,30 @@ class TestListBackups:
             await AlertBackupManager.create(session, AlertBackup(data={}, metadata_={}))
         response = api_client.get(f"{API_BASE}/backups", params={"limit": 2})
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.json()["items"]) == 2  # noqa: PLR2004
+        body = response.json()
+        assert len(body["items"]) == 2  # noqa: PLR2004
+        assert body["total"] == 3  # noqa: PLR2004
+        assert body["limit"] == 2  # noqa: PLR2004
+
+    async def test_respects_offset_query_param(self, api_client, session: AsyncSession):
+        """Skip the first ``offset`` rows of the ordered listing."""
+        for _ in range(3):
+            await AlertBackupManager.create(session, AlertBackup(data={}, metadata_={}))
+        full = api_client.get(f"{API_BASE}/backups").json()["items"]
+        response = api_client.get(
+            f"{API_BASE}/backups", params={"offset": 1, "limit": 2}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["offset"] == 1
+        assert body["total"] == 3  # noqa: PLR2004
+        ids = [item["id"] for item in body["items"]]
+        assert ids == [full[1]["id"], full[2]["id"]]
+
+    async def test_rejects_offset_negative(self, api_client):
+        """Reject offset < 0 with 422."""
+        response = api_client.get(f"{API_BASE}/backups", params={"offset": -1})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     async def test_rejects_limit_out_of_range_low(self, api_client):
         """Reject limit < 1 with 422."""

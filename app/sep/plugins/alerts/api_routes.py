@@ -35,11 +35,13 @@ import logging
 from fastapi import APIRouter, Query
 from fastapi.exceptions import HTTPException
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPNotFoundException,
 )
-from app.sep.deps import IsApiAuthenticated, RequireBearerAuth, SessionDep
+from app.core.models import PaginatedResponse
+from app.sep.deps import IsApiAuthenticated, SessionDep
 from app.sep.plugins.alerts.config import alerts_pmm_config
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.deps import (
@@ -59,7 +61,6 @@ from app.sep.plugins.alerts.schemas import (
     BackupDetailFolder,
     BackupDetailRule,
     BackupDetailTemplate,
-    BackupListResponse,
     BackupSummary,
     PagerDutyRequest,
     PagerDutyResponse,
@@ -74,46 +75,46 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-_BACKUPS_LIMIT_DEFAULT = 10
 _BACKUPS_LIMIT_MAX = 100
 
 
-@router.get(
-    "/backups",
-    response_model=BackupListResponse,
-    dependencies=[IsApiAuthenticated],
-)
+@router.get("/backups", dependencies=[IsApiAuthenticated])
 async def alerts_api_list_backups(
     session: SessionDep,
-    limit: int = Query(default=_BACKUPS_LIMIT_DEFAULT, ge=1, le=_BACKUPS_LIMIT_MAX),
-) -> BackupListResponse:
-    """Return the most recent alert backups.
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=1, le=_BACKUPS_LIMIT_MAX),
+) -> PaginatedResponse[BackupSummary]:
+    """Return a paginated page of alert backups, newest first.
 
     :param session: The async database session.
     :type session: SessionDep
+    :param offset: Zero-based starting offset. Rejected with HTTP 422 if negative.
+    :type offset: int
     :param limit: Maximum number of backups to return. Validated to the
         range ``[1, 100]``; out-of-range values are rejected with HTTP 422.
     :type limit: int
-    :return: A list of backup summaries ordered by ``created_at`` descending.
-    :rtype: BackupListResponse
+    :return: A paginated envelope of backup summaries ordered by
+        ``created_at`` descending.
+    :rtype: PaginatedResponse[BackupSummary]
     """
-    backups = await AlertBackupManager.list_recent(session, limit=limit)
+    page = await AlertBackupManager.list_paginated(session, offset=offset, limit=limit)
     items = [
         BackupSummary(
             id=backup.id,
             created_at=backup.created_at,
             metadata=backup.metadata_,
         )
-        for backup in backups
+        for backup in page.items
     ]
-    return BackupListResponse(items=items)
+    return PaginatedResponse[BackupSummary](
+        items=items,
+        total=page.total,
+        offset=page.offset,
+        limit=page.limit,
+    )
 
 
-@router.get(
-    "/backups/{backup_id}",
-    response_model=BackupDetail,
-    dependencies=[IsApiAuthenticated],
-)
+@router.get("/backups/{backup_id}", dependencies=[IsApiAuthenticated])
 async def alerts_api_get_backup(session: SessionDep, backup_id: int) -> BackupDetail:
     """Return a categorised view of a single backup.
 
@@ -152,11 +153,7 @@ async def alerts_api_get_backup(session: SessionDep, backup_id: int) -> BackupDe
     )
 
 
-@router.post(
-    "/restore",
-    response_model=RestoreResponse,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
-)
+@router.post("/restore", dependencies=[IsApiAuthenticated])
 async def alerts_api_restore(
     payload: RestoreRequest,
     pmm_api: RequiredPMMAPIDep,
@@ -190,11 +187,7 @@ async def alerts_api_restore(
     return RestoreResponse(status="success", details=details)
 
 
-@router.post(
-    "/pagerduty",
-    response_model=PagerDutyResponse,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
-)
+@router.post("/pagerduty", dependencies=[IsApiAuthenticated])
 async def alerts_api_pagerduty_save(
     payload: PagerDutyRequest,
     pmm_api: RequiredPMMAPIDep,
@@ -241,11 +234,7 @@ async def alerts_api_pagerduty_save(
     return response
 
 
-@router.post(
-    "/pagerduty/delete",
-    response_model=PagerDutyResponse,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
-)
+@router.post("/pagerduty/delete", dependencies=[IsApiAuthenticated])
 async def alerts_api_pagerduty_delete(
     pmm_api: RequiredPMMAPIDep,
 ) -> PagerDutyResponse:
@@ -285,11 +274,7 @@ async def alerts_api_pagerduty_delete(
     return PagerDutyResponse(status="deleted")
 
 
-@router.post(
-    "/push",
-    response_model=PushResponse,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
-)
+@router.post("/push", dependencies=[IsApiAuthenticated])
 async def alerts_api_push(
     payload: PushRequest,
     pmm_api: RequiredPMMAPIDep,

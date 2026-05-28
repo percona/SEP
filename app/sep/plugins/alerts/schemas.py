@@ -101,16 +101,6 @@ class BackupSummary(BaseModel):
     metadata: dict[str, Any]
 
 
-class BackupListResponse(BaseModel):
-    """Wrap a list of backup summaries.
-
-    :param items: Backups ordered by ``created_at`` descending.
-    :type items: list[BackupSummary]
-    """
-
-    items: list[BackupSummary]
-
-
 class BackupDetailTemplate(BaseModel):
     """Represent a template entry inside a backup snapshot.
 

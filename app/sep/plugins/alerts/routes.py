@@ -46,7 +46,9 @@ router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 
-@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.get(
+    "/", dependencies=[IsAuthenticated], response_class=HTMLResponse, deprecated=True
+)
 async def alerts_index(
     request: Request,
     context: AlertsIndexContext,
