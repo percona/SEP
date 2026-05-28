@@ -22,6 +22,7 @@ import {
   Button,
   FormControl,
   FormControlLabel,
+  FormHelperText,
   FormLabel,
   InputLabel,
   MenuItem,
@@ -200,6 +201,10 @@ export function ReportFormPage() {
                   </MenuItem>
                 ))}
               </Select>
+              <FormHelperText>
+                Filters the JSON preview only. PDF and ServiceNow upload always include all
+                sections.
+              </FormHelperText>
             </FormControl>
           )}
         />

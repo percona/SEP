@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { ApiError, apiClient } from '@sep/api';
 import type { ReportConfig, ReportData, ReportParams, UploadResult } from './types';
 
 // The PDF and upload endpoints do not accept a `sections` filter (the backend
@@ -33,6 +33,7 @@ export function useGenerateReport(params: ReportParams | null) {
       // params is guaranteed non-null when enabled (params !== null guard below)
       const p = params as ReportParams;
       const { data } = await apiClient.get<ReportData>(`${API_BASE}/generate/json`, {
+        baseURL: '',
         params: {
           since: p.since,
           until: p.until,
@@ -57,6 +58,7 @@ export function useDownloadPdf() {
         refresh: String(params.refresh),
       });
       const { data } = await apiClient.post<Blob>(`${API_BASE}/generate/pdf`, body, {
+        baseURL: '',
         responseType: 'blob',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
@@ -87,6 +89,7 @@ export function useUploadToServiceNow() {
         refresh: String(params.refresh),
       });
       const { data } = await apiClient.post<UploadResult>(`${API_BASE}/upload`, body, {
+        baseURL: '',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
       return data;
@@ -103,11 +106,12 @@ export function useReportConfig() {
     queryKey: ['report', 'config'],
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<ReportConfig>(`${API_BASE}/config`);
+        const { data } = await apiClient.get<ReportConfig>(`${API_BASE}/config`, {
+          baseURL: '',
+        });
         return data;
       } catch (err) {
-        const status = (err as { response?: { status?: number } }).response?.status;
-        if (status === 404) {
+        if (err instanceof ApiError && err.status === 404) {
           return { upload_disabled_reasons: [] };
         }
         throw err;
