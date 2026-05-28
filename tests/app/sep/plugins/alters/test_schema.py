@@ -18,7 +18,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.sep.plugins.alters.models import AltersTaskWrite
+from app.sep.plugins.alters.models import AltersCreate, AltersTaskWrite
 from app.sep.plugins.alters.schema import alters_schema
 
 DATA_SECTION_FAIL_WHEN_RULE_COUNT = 2
@@ -79,12 +79,39 @@ def test_alters_schema_serialises_snake_case():
     assert payload["predecessors"][0]["on_failure"] == "halt"
 
 
+def test_alters_create_dsn_table_required_when_recursion_dsn():
+    """Test AltersCreate requires dsn_table when recursion_method is dsn."""
+    AltersCreate(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+        recursion_method="dsn",
+        dsn_table="D=percona,t=dsns",
+    )
+    with pytest.raises(ValidationError, match="dsn_table"):
+        AltersCreate(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            schema_name="app",
+            table_name="users",
+            alter="ADD COLUMN x INT",
+            recursion_method="dsn",
+            dsn_table="",
+        )
+
+
 def test_alters_task_write_dsn_table_required_when_recursion_dsn():
     """Test AltersTaskWrite requires dsn_table when recursion_method is dsn."""
     AltersTaskWrite(
         task_name="t1",
         hostname="host1",
         service_id=1,
+        schema_name="app",
+        table_name="users",
         alter="ADD COLUMN x INT",
         recursion_method="dsn",
         dsn_table="D=percona,t=dsns",
@@ -94,6 +121,8 @@ def test_alters_task_write_dsn_table_required_when_recursion_dsn():
             task_name="t1",
             hostname="host1",
             service_id=1,
+            schema_name="app",
+            table_name="users",
             alter="ADD COLUMN x INT",
             recursion_method="dsn",
             dsn_table="",
@@ -121,6 +150,8 @@ def test_alters_task_write_continue_on_pre_check_failure_default_false():
         task_name="t1",
         hostname="host1",
         service_id=1,
+        schema_name="app",
+        table_name="users",
         alter="ADD COLUMN x INT",
     )
     assert body.continue_on_pre_check_failure is False

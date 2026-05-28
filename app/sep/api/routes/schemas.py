@@ -21,24 +21,11 @@ layer (see the non-bypass rule in ``app/sep/api/router.py``).
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
+from app.sep.api.models import InventorySelectorOption
 from app.sep.deps import InventoryAPI
 
 router = APIRouter()
-
-
-class InventorySelectorOption(BaseModel):
-    """Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.
-
-    :param id: The inventory entity ID consumed by form payloads.
-    :type id: int
-    :param name: The human-readable display label.
-    :type name: str
-    """
-
-    id: int
-    name: str
 
 
 @router.get("/{schema_id}/tables", response_model=list[InventorySelectorOption])

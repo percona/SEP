@@ -21,27 +21,14 @@ non-bypass rule in ``app/sep/api/router.py``).
 """
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.models import PaginatedResponse
 from app.inventory.models import ServiceResponse, ServiceTypeEnum
+from app.sep.api.models import InventorySelectorOption
 from app.sep.deps import InventoryAPI
 
 router = APIRouter()
-
-
-class InventorySelectorOption(BaseModel):
-    """Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.
-
-    :param id: The inventory entity ID consumed by form payloads.
-    :type id: int
-    :param name: The human-readable display label.
-    :type name: str
-    """
-
-    id: int
-    name: str
 
 
 @router.get("/", response_model=PaginatedResponse[ServiceResponse])

@@ -463,6 +463,8 @@ def test_resolve_predecessor_spec_halt_by_default():
         task_name="t1",
         hostname="host1",
         service_id=1,
+        schema_name="app",
+        table_name="users",
         alter="ADD COLUMN x INT",
     )
     spec = resolve_predecessor_spec(body)
@@ -476,6 +478,8 @@ def test_resolve_predecessor_spec_continue_when_user_overrides():
         task_name="t1",
         hostname="host1",
         service_id=1,
+        schema_name="app",
+        table_name="users",
         alter="ADD COLUMN x INT",
         continue_on_pre_check_failure=True,
     )
@@ -491,6 +495,8 @@ async def test_cascade_create_alters_group_posts_three_tasks_and_chains():
         task_name="t1",
         hostname="host1",
         service_id=1,
+        schema_name="app",
+        table_name="users",
         alter="ADD COLUMN x INT",
     )
 
@@ -517,6 +523,8 @@ async def test_cascade_create_alters_group_continue_on_pre_check_failure():
         task_name="t1",
         hostname="host1",
         service_id=1,
+        schema_name="app",
+        table_name="users",
         alter="ADD COLUMN x INT",
         continue_on_pre_check_failure=True,
     )
@@ -544,6 +552,8 @@ async def test_cascade_create_alters_group_rolls_back_on_execute_failure():
         task_name="t1",
         hostname="host1",
         service_id=1,
+        schema_name="app",
+        table_name="users",
         alter="ADD COLUMN x INT",
     )
 

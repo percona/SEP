@@ -31,7 +31,8 @@ from app.sep.plugins.framework.rules import (
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
-class AltersCreate(BaseModel):
+@apply_conditional_rules(alters_schema)
+class AltersCreate(ConditionalRulesModel):
     """Represent an Alters creation form.
 
     :param task_name: The name of the task to be created.

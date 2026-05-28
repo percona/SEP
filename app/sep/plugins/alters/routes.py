@@ -38,13 +38,17 @@ from app.sep.deps import (
 )
 from app.sep.plugins.alters.deps import (
     alters_executor_matches_service_host,
-    AltersGeneratedTask,
-    AltersPreChecksTask,
     AltersTask,
+    build_alters_task,
+    build_pre_checks_task_payload,
+    cascade_create_alters_group,
+    cascade_delete_alters_group,
+    cascade_update_alters_group,
     extract_service_info,
     get_alters_index_context,
     parse_alters_task_args,
 )
+from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.utils.decorators import csrf_exempt
 from app.sep.utils.jinja import syntax_highlight
@@ -102,50 +106,33 @@ async def get_table_details(
 )
 async def alters_create(
     request: Request,
-    task: AltersGeneratedTask,
+    form: Annotated[AltersCreate, Form()],
     task_api: TaskAPI,
-    pre_checks_task: AltersPreChecksTask,
+    inventory_api: InventoryAPI,
     *,
     check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
 ) -> RedirectResponse:
-    """Create alter tasks - one for execution and one for dry run."""
-    logger.debug("Create alters tasks: %s", task)
-
-    # Create the execute task
-    await task_api.post(
-        "/",
-        json=task.model_dump(),
+    """Create the alters task group and chain pre-checks into the parent run task."""
+    logger.debug("Create alters tasks: %s", form.task_name)
+    parent_task = await build_alters_task(form, inventory_api)
+    pre_checks_template = await build_pre_checks_task_payload(
+        parent_task, task_api=task_api
     )
-
-    # Create the dry-run task
-    dry_run_task = task.model_copy(deep=True)
-    dry_run_task.name = f"{task.name}-dry-run"
-    # Replace --execute with --dry-run in the task arguments and add parent reference
-    if "meta" in dry_run_task.data:
-        dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
-            "--execute", "--dry-run"
-        )
-        dry_run_task.data["parent"] = task.name
-
-    await task_api.post(
-        "/",
-        json=dry_run_task.model_dump(),
-    )
-
-    await task_api.post(
-        "/",
-        json=pre_checks_task.model_dump(),
+    await cascade_create_alters_group(
+        task_api,
+        parent_task,
+        pre_checks_template,
+        form,
     )
 
     await maybe_check_connectivity(
         request,
         task_api,
-        task.data.get("meta", {}),
+        parent_task.data.get("meta", {}),
         check_connectivity=check_connectivity,
     )
 
-    # Redirect to the execute task detail page
-    task_path = request.url_for("alters_detail", task_name=task.name)
+    task_path = request.url_for("alters_detail", task_name=parent_task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,
@@ -274,7 +261,8 @@ async def alters_execute(
             "chain_on_failure": chain_on_failure,
         },
     )
-    task_path = request.url_for("alters_detail", task_name=task.name)
+    parent_name = task.data.get("parent") or task.name
+    task_path = request.url_for("alters_detail", task_name=parent_name)
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -286,35 +274,33 @@ async def alters_execute(
 async def alters_update(
     request: Request,
     task_name: str,
-    updated_task: AltersGeneratedTask,
+    form: Annotated[AltersCreate, Form()],
     tasks_api: TaskAPI,
-    pre_checks_task: AltersPreChecksTask,
+    inventory_api: InventoryAPI,
 ) -> RedirectResponse:
-    """Update alters task."""
-    logger.debug("Updating alters task: %s", updated_task)
-    await tasks_api.put(
-        f"/{task_name}",
-        json=updated_task.model_dump(),
+    """Update the alters task group."""
+    logger.debug("Updating alters task: %s", form.task_name)
+    updated_parent = await build_alters_task(form, inventory_api)
+    pre_checks_template = await build_pre_checks_task_payload(
+        updated_parent, task_api=tasks_api
     )
-    dry_run_task = updated_task.model_copy(deep=True)
-    dry_run_task.name = f"{updated_task.name}-dry-run"
-    if "meta" in dry_run_task.data:
-        dry_run_task.data["meta"]["args"] = dry_run_task.data["meta"]["args"].replace(
-            "--execute", "--dry-run"
+    result = await cascade_update_alters_group(
+        tasks_api,
+        task_name,
+        updated_parent,
+        pre_checks_template,
+    )
+    if not result.success:
+        failed = [
+            (failure.task_name, str(failure.exception)) for failure in result.failures
+        ]
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Partial update failure; inconsistent task group: {failed}",
         )
-        dry_run_task.data["parent"] = updated_task.name
-    await tasks_api.put(
-        f"/{task_name}-dry-run",
-        json=dry_run_task.model_dump(),
-    )
-
-    await tasks_api.put(
-        f"/{task_name}-pre-checks",
-        json=pre_checks_task.model_dump(),
-    )
 
     return RedirectResponse(
-        request.url_for("alters_detail", task_name=updated_task.name),
+        request.url_for("alters_detail", task_name=updated_parent.name),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -328,8 +314,16 @@ async def alters_delete(
     task: AltersTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Delete alters tasks."""
-    await tasks_api.delete(f"/{task.name}")
-    await tasks_api.delete(f"/{task.name}-dry-run")
-    await tasks_api.delete(f"/{task.name}-pre-checks")
+    """Delete the alters task group."""
+    parent_name = task.data.get("parent") or task.name
+    result = await cascade_delete_alters_group(tasks_api, parent_name)
+    if not result.success:
+        failed = [
+            (failure.task_name, str(failure.exception)) for failure in result.failures
+        ]
+        logger.warning(
+            "Partial delete failure for alters group %r: %s",
+            parent_name,
+            failed,
+        )
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

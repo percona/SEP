@@ -16,7 +16,7 @@
 """Define tests for the app.sep.plugins.alters.routes module."""
 
 from datetime import datetime, timedelta, UTC
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 from fastapi import HTTPException, status
@@ -27,7 +27,6 @@ from app.sep.connectivity import (
 )
 from app.sep.main import sep_app
 from app.sep.plugins.alters.deps import (
-    build_alters_task_payload,
     get_alters_index_context,
     get_alters_task,
 )
@@ -55,10 +54,12 @@ def created_alters() -> AltersCreate:
 
 @pytest.fixture
 def _mock_alters_task_payload(generated_task):
-    """Mock the AltersGeneratedTask dependency."""
-    sep_app.dependency_overrides[build_alters_task_payload] = lambda: generated_task
-    yield
-    sep_app.dependency_overrides = {}
+    """Mock build_alters_task used by create/update Jinja routes."""
+    with patch(
+        "app.sep.plugins.alters.routes.build_alters_task",
+        new=AsyncMock(return_value=generated_task),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -114,7 +115,7 @@ def test_alters_create(
     )
 
 
-EXPECTED_ALTERS_POST_CALLS = 3
+EXPECTED_ALTERS_POST_CALLS = 4
 
 
 def test_alters_create_full_form_dependency_chain_without_payload_override(
@@ -125,13 +126,14 @@ def test_alters_create_full_form_dependency_chain_without_payload_override(
     created_schema,
     created_table,
 ):
-    """Test POST /alters/ route without overriding build_alters_task_payload."""
+    """Test POST /alters/ route without overriding build_alters_task."""
     created_alters = AltersCreateFactory.build()
     created_alters.service_id = created_service.id
     created_alters.schema_id = created_schema.id
     created_alters.table_id = created_table.id
     created_alters.alter = "ADD COLUMN new_column INT"
     created_alters.recursion_method = "dsn"
+    created_alters.dsn_table = "D=percona,t=dsns"
 
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
@@ -151,6 +153,12 @@ def test_alters_create_full_form_dependency_chain_without_payload_override(
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"].endswith(f"/alters/{created_alters.task_name}")
     assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
+    execute_call = mock_task_api_dep.post.call_args_list[-1]
+    assert execute_call.args[0] == f"/execute/{created_alters.task_name}-pre-checks"
+    assert execute_call.kwargs["json"] == {
+        "chain_task_names": [created_alters.task_name],
+        "chain_on_failure": False,
+    }
 
 
 def test_alters_create_skips_connectivity_check_when_opted_out(
@@ -180,26 +188,28 @@ def test_alters_create_skips_connectivity_check_when_opted_out(
         },
     )
 
-    sep_app.dependency_overrides[build_alters_task_payload] = lambda: fake_task_write
-    mock_task_api_dep.get = AsyncMock(return_value={})
+    with patch(
+        "app.sep.plugins.alters.routes.build_alters_task",
+        new=AsyncMock(return_value=fake_task_write),
+    ):
+        mock_task_api_dep.get = AsyncMock(return_value={})
 
-    response = test_client.post(
-        "/alters/", data=created_alters.model_dump(), follow_redirects=False
-    )
-    assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert (
-        response.headers["location"]
-        == f"{test_client.base_url}/alters/{fake_task_write.name}"
-    )
+        response = test_client.post(
+            "/alters/", data=created_alters.model_dump(), follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert (
+            response.headers["location"]
+            == f"{test_client.base_url}/alters/{fake_task_write.name}"
+        )
 
-    assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
-    first_call = mock_task_api_dep.post.call_args_list[0]
-    assert first_call.args[0] == "/"
-    assert first_call.kwargs["json"] == fake_task_write.model_dump()
-    assert get_latest_connectivity_result("node1", "mysql") is None
+        assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
+        first_call = mock_task_api_dep.post.call_args_list[0]
+        assert first_call.args[0] == "/"
+        assert first_call.kwargs["json"] == fake_task_write.model_dump()
+        assert get_latest_connectivity_result("node1", "mysql") is None
 
     clear_connectivity_caches()
-    sep_app.dependency_overrides = {}
 
 
 @pytest.mark.parametrize(
@@ -233,8 +243,10 @@ def test_alters_create_pre_checks_filesystem_skip_flag(
         },
         backend=TaskBackendEnum.PROXY,
     )
-    sep_app.dependency_overrides[build_alters_task_payload] = lambda: task
-    try:
+    with patch(
+        "app.sep.plugins.alters.routes.build_alters_task",
+        new=AsyncMock(return_value=task),
+    ):
         mock_task_api_dep.post.return_value = AsyncMock()
         mock_task_api_dep.get = AsyncMock(return_value=nomad_hosts)
         response = test_client.post(
@@ -249,8 +261,6 @@ def test_alters_create_pre_checks_filesystem_skip_flag(
             assert "skip_filesystem_checks: true" in pre_checks_cfg
         else:
             assert "skip_filesystem_checks" not in pre_checks_cfg
-    finally:
-        sep_app.dependency_overrides.pop(build_alters_task_payload, None)
 
 
 @pytest.mark.usefixtures("_mock_get_alters_task_dep", "mock_get_username_mapping")
@@ -352,9 +362,9 @@ def test_alters_delete(
     assert response.headers["location"] == "/alters"
     mock_task_api_dep.delete.assert_has_awaits(
         [
-            call(f"/{created_task.name}"),
             call(f"/{created_task.name}-dry-run"),
             call(f"/{created_task.name}-pre-checks"),
+            call(f"/{created_task.name}"),
         ]
     )
 
