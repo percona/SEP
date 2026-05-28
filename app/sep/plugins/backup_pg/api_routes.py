@@ -16,9 +16,11 @@
 """Define the JSON API router for the backup_pg plugin.
 
 Mounted at ``/api/plugins/backup_pg/`` via ``plugins_router`` in
-``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level; the ``schema_endpoint`` helper also pins ``IsApiAuthenticated`` per
-route for safety.
+``app/sep/api/router.py``. Authentication is enforced at the
+``api_router`` level (``IsApiAuthenticated``); the ``plugins_router``
+additionally attaches ``RequireBearerForUnsafeMethods`` so POST/PUT/
+PATCH/DELETE require an ``Authorization: Bearer`` header (cookie-only
+mutations are rejected with 401 before reaching route logic).
 """
 
 import logging
@@ -30,8 +32,6 @@ from app.core.models import PaginatedResponse
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
-    IsApiAuthenticated,
-    RequireBearerAuth,
     TaskAPI,
 )
 from app.sep.plugins.backup_pg.deps import (
@@ -85,7 +85,6 @@ async def backup_pg_api_detail(
 @router.post(
     "/",
     status_code=http_status.HTTP_201_CREATED,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
 )
 async def backup_pg_api_create(
     body: BackupTaskWrite,
@@ -110,7 +109,7 @@ async def backup_pg_api_create(
 @router.post(
     "/{task_name}/execute",
     status_code=http_status.HTTP_201_CREATED,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated, HasNoConflictedRunningTasks],
+    dependencies=[HasNoConflictedRunningTasks],
 )
 async def backup_pg_api_execute(
     task_name: str,
@@ -134,7 +133,7 @@ async def backup_pg_api_execute(
 @router.delete(
     "/{task_name}",
     status_code=http_status.HTTP_204_NO_CONTENT,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated, HasNoConflictedRunningTasks],
+    dependencies=[HasNoConflictedRunningTasks],
 )
 async def backup_pg_api_delete(
     task_name: str,

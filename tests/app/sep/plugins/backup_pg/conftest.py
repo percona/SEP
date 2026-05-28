@@ -18,7 +18,7 @@
 import pytest
 import yaml
 
-from app.sep.deps import IsApiAuthenticated
+from app.sep.deps import IsApiAuthenticated, RequireBearerForUnsafeMethods
 from app.sep.main import sep_app
 from app.sep.plugins.backup_pg.api_routes import router as backup_pg_api_router
 from app.sep.plugins.backup_pg.deps import (
@@ -39,7 +39,7 @@ if not any(route.path.startswith("/api/plugins/backup_pg") for route in sep_app.
         backup_pg_api_router,
         prefix="/api/plugins/backup_pg",
         tags=["backup_pg"],
-        dependencies=[IsApiAuthenticated],
+        dependencies=[IsApiAuthenticated, RequireBearerForUnsafeMethods],
     )
 
 

@@ -473,24 +473,28 @@ class TestBackupPgApiAuth:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_create_without_bearer_returns_401(self, test_client) -> None:
-        """Cookie-authenticated POST without a Bearer header is rejected.
+    @pytest.mark.parametrize(
+        ("method", "path", "json_body"),
+        [
+            ("POST", f"{API_BASE}/", build_backup_write_body()),
+            ("DELETE", f"{API_BASE}/pg-backup-task", None),
+            ("POST", f"{API_BASE}/pg-backup-task/execute", {}),
+        ],
+        ids=["create", "delete", "execute"],
+    )
+    def test_mutation_without_bearer_returns_401(
+        self,
+        api_admin_client_no_bearer,
+        method: str,
+        path: str,
+        json_body: dict | None,
+    ) -> None:
+        """Cookie-authenticated mutations without a Bearer header are rejected.
 
         Mutations must require ``Authorization: Bearer`` so cookie-bound
-        cross-site JSON POSTs cannot bypass CSRF protection.
+        cross-site JSON requests cannot bypass CSRF protection.
         """
-        response = test_client.post(f"{API_BASE}/", json=build_backup_write_body())
-
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-    def test_delete_without_bearer_returns_401(self, test_client) -> None:
-        """Cookie-authenticated DELETE without a Bearer header is rejected."""
-        response = test_client.delete(f"{API_BASE}/pg-backup-task")
-
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-    def test_execute_without_bearer_returns_401(self, test_client) -> None:
-        """Cookie-authenticated execute without a Bearer header is rejected."""
-        response = test_client.post(f"{API_BASE}/pg-backup-task/execute", json={})
+        kwargs = {"json": json_body} if json_body is not None else {}
+        response = api_admin_client_no_bearer.request(method, path, **kwargs)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
