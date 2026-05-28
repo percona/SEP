@@ -59,6 +59,7 @@ from app.sep.plugins.framework.rules import (
     truthy,
     xor_,
 )
+from app.sep.plugins.framework.task_status import extract_latest_task_status
 
 __all__ = [
     "CardinalityRule",
@@ -91,6 +92,7 @@ __all__ = [
     "cascade_update_predecessors",
     "cascade_update_tasks",
     "evaluate_conditional_rules",
+    "extract_latest_task_status",
     "falsy",
     "maybe_record_connectivity_warning",
     "none_present",

@@ -34,16 +34,41 @@ DEFAULT_PG_PORT = 5432
 SAMPLE_TASK_ID = 99
 
 
+SAMPLE_BACKUP_DIR = "/var/lib/pgbackrest"
+
+
 def test_backup_task_write_accepts_minimal_payload() -> None:
     """BackupTaskWrite accepts the minimal required fields."""
     body = BackupTaskWrite(
         task_name="pg-task",
         hostname="pg-host",
         service_id=1,
+        backup_dir=SAMPLE_BACKUP_DIR,
     )
 
     assert body.task_name == "pg-task"
     assert body.alert_on_fail is False
+
+
+def test_backup_task_write_rejects_missing_backup_dir() -> None:
+    """``backup_dir`` is now required: omitting it fails Pydantic validation."""
+    with pytest.raises(ValidationError):
+        BackupTaskWrite(
+            task_name="pg-task",
+            hostname="pg-host",
+            service_id=1,
+        )
+
+
+def test_backup_task_write_rejects_empty_backup_dir() -> None:
+    """``backup_dir`` is ``NonEmptyStr``; an empty string fails validation."""
+    with pytest.raises(ValidationError):
+        BackupTaskWrite(
+            task_name="pg-task",
+            hostname="pg-host",
+            service_id=1,
+            backup_dir="",
+        )
 
 
 def test_backup_task_write_rejects_extra_host_port_fields() -> None:
@@ -54,12 +79,19 @@ def test_backup_task_write_rejects_extra_host_port_fields() -> None:
     submit values that vanish.
     """
     with pytest.raises(ValidationError):
-        BackupTaskWrite(task_name="pg-task", hostname="pg-host", service_id=1, host="x")
+        BackupTaskWrite(
+            task_name="pg-task",
+            hostname="pg-host",
+            service_id=1,
+            backup_dir=SAMPLE_BACKUP_DIR,
+            host="x",
+        )
     with pytest.raises(ValidationError):
         BackupTaskWrite(
             task_name="pg-task",
             hostname="pg-host",
             service_id=1,
+            backup_dir=SAMPLE_BACKUP_DIR,
             port=DEFAULT_PG_PORT,
         )
 
@@ -67,7 +99,12 @@ def test_backup_task_write_rejects_extra_host_port_fields() -> None:
 def test_backup_task_write_rejects_empty_task_name() -> None:
     """Empty task_name fails Pydantic validation."""
     with pytest.raises(ValidationError):
-        BackupTaskWrite(task_name="", hostname="pg-host", service_id=1)
+        BackupTaskWrite(
+            task_name="",
+            hostname="pg-host",
+            service_id=1,
+            backup_dir=SAMPLE_BACKUP_DIR,
+        )
 
 
 def test_backup_task_write_accepts_pgbackrest_backup_type() -> None:
@@ -76,6 +113,7 @@ def test_backup_task_write_accepts_pgbackrest_backup_type() -> None:
         task_name="pg-task",
         hostname="pg-host",
         service_id=1,
+        backup_dir=SAMPLE_BACKUP_DIR,
         pgbackrest_backup_type=PgBackRestBackupType.DIFF,
     )
 
@@ -89,6 +127,7 @@ def test_backup_task_write_rejects_unknown_pgbackrest_backup_type() -> None:
             task_name="pg-task",
             hostname="pg-host",
             service_id=1,
+            backup_dir=SAMPLE_BACKUP_DIR,
             pgbackrest_backup_type="full",
         )
 

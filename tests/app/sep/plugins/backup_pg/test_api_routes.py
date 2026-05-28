@@ -22,6 +22,7 @@ import pytest
 import yaml
 from fastapi import HTTPException, status
 
+from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedNode, CreatedService
@@ -30,9 +31,11 @@ from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import CreatedServiceFactory, TaskFactory
 
 API_BASE = "/api/plugins/backup_pg"
-DEFAULT_PAGE_LIMIT = 50
 THREE_PARENT_FIXTURE_TOTAL = 3
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
+
+FIXTURE_PG_HOST = "localhost"
+FIXTURE_PG_PORT = 5432
 
 
 def build_backup_task(name: str = "pg-backup-task", **overrides: Any) -> dict:
@@ -74,6 +77,7 @@ def build_backup_write_body(
     task_name: str = "pg-backup-task",
     hostname: str = "pg-host",
     service_id: int = 1,
+    backup_dir: str = "/var/lib/pgbackrest",
     **kwargs: Any,
 ) -> dict:
     """Build a valid BackupTaskWrite-compatible request body."""
@@ -81,6 +85,7 @@ def build_backup_write_body(
         "task_name": task_name,
         "hostname": hostname,
         "service_id": service_id,
+        "backup_dir": backup_dir,
         "pgbackrest_backup_type": "incr",
         **kwargs,
     }
@@ -154,11 +159,16 @@ class TestBackupPgApiList:
         body = response.json()
         assert body["total"] == 1
         assert body["offset"] == 0
-        assert body["limit"] == DEFAULT_PAGE_LIMIT
+        assert body["limit"] == DEFAULT_PAGINATION_LIMIT
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "pg-backup-a"
         mock_task_api_dep.get.assert_any_await(
-            "/", params={"owner": TaskOwner.BACKUP_PG.value, "limit": 0}
+            "/",
+            params={
+                "owner": TaskOwner.BACKUP_PG.value,
+                "offset": 0,
+                "limit": DEFAULT_PAGINATION_LIMIT,
+            },
         )
 
     def test_list_returns_empty_page(self, test_client, mock_task_api_dep) -> None:
@@ -172,17 +182,13 @@ class TestBackupPgApiList:
         assert body["items"] == []
         assert body["total"] == 0
 
-    def test_list_paginates_with_offset_and_limit(
+    def test_list_forwards_offset_and_limit_to_tasks_api(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """Slice ``[offset:offset+limit]`` after the status filter."""
-        tasks = [
-            build_backup_task("pg-backup-a"),
-            build_backup_task("pg-backup-b"),
-            build_backup_task("pg-backup-c"),
-        ]
+        """Forward ``offset`` and ``limit`` to the Tasks API for server-side pagination."""
+        task_b = build_backup_task("pg-backup-b")
         mock_task_api_dep.get = AsyncMock(
-            return_value={"items": tasks, "total": THREE_PARENT_FIXTURE_TOTAL}
+            return_value={"items": [task_b], "total": THREE_PARENT_FIXTURE_TOTAL}
         )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
@@ -193,10 +199,18 @@ class TestBackupPgApiList:
         assert body["offset"] == 1
         assert body["limit"] == 1
         assert [item["name"] for item in body["items"]] == ["pg-backup-b"]
+        mock_task_api_dep.get.assert_any_await(
+            "/",
+            params={
+                "owner": TaskOwner.BACKUP_PG.value,
+                "offset": 1,
+                "limit": 1,
+            },
+        )
 
     def test_list_rejects_limit_above_cap(self, test_client, mock_task_api_dep) -> None:
-        """Reject limit > 200 with 422 to block pagination DoS."""
-        response = test_client.get(f"{API_BASE}/?limit=10000")
+        """Reject limit above MAX_PAGINATION_LIMIT with 422 to block pagination DoS."""
+        response = test_client.get(f"{API_BASE}/?limit={MAX_PAGINATION_LIMIT + 1}")
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
@@ -230,7 +244,7 @@ class TestBackupPgApiDetail:
     """Tests for GET /api/plugins/backup_pg/{task_name}."""
 
     def test_detail_returns_200(self, test_client, mock_task_api_dep) -> None:
-        """Detail returns 200 with the requested task."""
+        """Detail returns 200 with the requested task and Jinja-parity host/port."""
         task = build_backup_task("pg-backup-task")
         mock_task_api_dep.get = mock_task_api_get_by_path({"/pg-backup-task": task})
 
@@ -240,6 +254,8 @@ class TestBackupPgApiDetail:
         body = response.json()
         assert body["name"] == "pg-backup-task"
         assert body["owner"] == TaskOwner.BACKUP_PG.value
+        assert body["host"] == FIXTURE_PG_HOST
+        assert body["port"] == FIXTURE_PG_PORT
 
     def test_detail_returns_404_for_unknown_task(
         self, test_client, mock_task_api_dep
@@ -255,6 +271,7 @@ class TestBackupPgApiDetail:
 class TestBackupPgApiCreate:
     """Tests for POST /api/plugins/backup_pg/."""
 
+    @pytest.mark.usefixtures("_mock_check_create_has_no_conflicted_running_tasks")
     def test_create_returns_201_and_posts_task(
         self,
         test_client,
@@ -306,6 +323,7 @@ class TestBackupPgApiCreate:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
+    @pytest.mark.usefixtures("_mock_check_create_has_no_conflicted_running_tasks")
     def test_create_rolls_back_on_post_failure(
         self,
         test_client,
@@ -329,6 +347,44 @@ class TestBackupPgApiCreate:
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         # parent POST failed before adding to created_names → no rollback DELETE
         assert mock_task_api_dep.delete.await_args_list == []
+
+    @pytest.mark.usefixtures(
+        "_mock_check_create_has_no_conflicted_running_tasks_raises"
+    )
+    def test_create_returns_409_when_task_already_running(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        pg_service: CreatedService,
+    ) -> None:
+        """POST returns 409 when an in-flight task with the same name exists.
+
+        The body-aware conflict guard short-circuits before
+        ``cascade_create_tasks`` is reached, so no upstream POST is issued.
+        """
+        mock_inventory_api_dep.get = AsyncMock(return_value=pg_service.model_dump())
+        mock_task_api_dep.post = AsyncMock()
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(service_id=pg_service.id),
+            headers=BEARER_HEADERS,
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert mock_task_api_dep.post.await_count == 0
+
+    def test_create_returns_422_when_backup_dir_missing(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ) -> None:
+        """POST returns 422 when the now-required ``backup_dir`` is omitted."""
+        body = build_backup_write_body()
+        del body["backup_dir"]
+
+        response = test_client.post(f"{API_BASE}/", json=body, headers=BEARER_HEADERS)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
 class TestBackupPgApiDelete:
@@ -462,6 +518,26 @@ class TestBackupPgApiExecute:
         assert isinstance(forwarded["eta"], str)
         # ISO round-trips back to an aware datetime
         assert datetime.fromisoformat(forwarded["eta"]).tzinfo is not None
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_drops_past_eta(self, test_client, mock_task_api_dep) -> None:
+        """A past ``eta`` is dropped from the upstream payload (runs immediately)."""
+        from datetime import datetime, timedelta, UTC
+
+        eta = datetime.now(tz=UTC) - timedelta(hours=1)
+        task = build_backup_task("pg-backup-task")
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.post = AsyncMock(return_value=build_execute_response())
+
+        response = test_client.post(
+            f"{API_BASE}/pg-backup-task/execute",
+            json={"eta": eta.isoformat()},
+            headers=BEARER_HEADERS,
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        forwarded = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
+        assert "eta" not in forwarded
 
 
 class TestBackupPgApiAuth:

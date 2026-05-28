@@ -24,10 +24,17 @@ mutations are rejected with 401 before reaching route logic).
 """
 
 import logging
+from datetime import datetime, UTC
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
+from app.core.db.crud import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    MAX_PAGINATION_LIMIT,
+)
+from app.core.exceptions import HTTPInternalServerErrorException
 from app.core.models import PaginatedResponse
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
@@ -40,6 +47,7 @@ from app.sep.plugins.backup_pg.deps import (
     build_backup_task_payload,
     get_backup_pg_api_task_responses,
     get_backups_task,
+    HasNoConflictedRunningTasksOnCreate,
 )
 from app.sep.plugins.backup_pg.models import (
     BackupExecuteWrite,
@@ -63,10 +71,15 @@ schema_endpoint(router=router, plugin_schema=backup_pg_schema)
 async def backup_pg_api_list(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=0, le=200),
+    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
+    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=1, le=MAX_PAGINATION_LIMIT),
 ) -> PaginatedResponse[BackupTaskResponse]:
-    """List pgBackRest backup tasks."""
+    """List pgBackRest backup tasks.
+
+    ``limit`` is capped because each listed task triggers a follow-up
+    history fetch in :func:`get_backup_pg_api_task_responses`; an
+    unbounded ``limit`` would amplify fan-out to the Tasks API.
+    """
     return await get_backup_pg_api_task_responses(
         tasks_api, status=status, offset=offset, limit=limit
     )
@@ -85,6 +98,7 @@ async def backup_pg_api_detail(
 @router.post(
     "/",
     status_code=http_status.HTTP_201_CREATED,
+    dependencies=[HasNoConflictedRunningTasksOnCreate],
 )
 async def backup_pg_api_create(
     body: BackupTaskWrite,
@@ -116,12 +130,27 @@ async def backup_pg_api_execute(
     body: BackupExecuteWrite,
     tasks_api: TaskAPI,
 ) -> BackupExecutionResponse:
-    """Execute a pgBackRest backup task."""
+    """Execute a pgBackRest backup task.
+
+    If ``body.eta`` is non-null but already in the past (e.g. because of
+    client/server clock skew or request latency), it is dropped from the
+    upstream payload and the task is dispatched immediately rather than
+    rejecting the request with a 422.
+    """
     task = await get_backups_task(task_name, tasks_api)
     logger.info("Executing backup_pg task %r", task.name)
+    exclude: set[str] = set()
+    if body.eta is not None:
+        now = (
+            datetime.now(tz=body.eta.tzinfo)
+            if body.eta.tzinfo
+            else datetime.now(tz=UTC).replace(tzinfo=None)
+        )
+        if body.eta <= now:
+            exclude.add("eta")
     created = await tasks_api.post(
         f"/execute/{task.name}",
-        json=body.model_dump(mode="json", exclude_none=True),
+        json=body.model_dump(mode="json", exclude_none=True, exclude=exclude),
     )
     task_history = TaskHistoryResponse.model_validate(created)
     return BackupExecutionResponse(
@@ -146,7 +175,6 @@ async def backup_pg_api_delete(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+        raise HTTPInternalServerErrorException(
             detail=f"Partial delete failure; orphaned tasks: {failed}",
         )

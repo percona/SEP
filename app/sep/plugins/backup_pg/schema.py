@@ -24,6 +24,9 @@ from app.sep.plugins.framework.schema import (
     ChoiceField,
     Column,
     ColumnFormat,
+    DetailField,
+    DetailSection,
+    DetailView,
     FormSection,
     HostField,
     IntegerField,
@@ -89,11 +92,13 @@ backup_pg_schema = PluginSchema(
                     name="pgbackrest_bin",
                     label="pgBackRest Binary",
                     description="Absolute path to the pgbackrest binary on the host.",
+                    default="/usr/bin/pgbackrest",
                 ),
                 StringField(
                     name="pgbackrest_config_file",
                     label="pgBackRest Config File",
                     description="Path to the pgbackrest.conf used by the task.",
+                    default="/etc/pgbackrest.conf",
                 ),
                 StringField(
                     name="pgbackrest_datadir",
@@ -124,6 +129,7 @@ backup_pg_schema = PluginSchema(
                 StringField(
                     name="backup_dir",
                     label="Backup Directory",
+                    required=True,
                 ),
             ],
         ),
@@ -143,5 +149,20 @@ backup_pg_schema = PluginSchema(
             Column(key="created_by", label="Created By"),
         ],
         default_sort="name",
+    ),
+    detail_view=DetailView(
+        sections=[
+            DetailSection(
+                title="Overview",
+                fields=[
+                    DetailField(path="hostname", label="Target"),
+                    DetailField(path="host", label="Host"),
+                    DetailField(path="port", label="Port"),
+                    DetailField(path="backup_type", label="Type"),
+                    DetailField(path="created_at", label="Created at"),
+                    DetailField(path="updated_at", label="Updated at"),
+                ],
+            ),
+        ],
     ),
 )

@@ -18,11 +18,13 @@
 import pytest
 import yaml
 
+from app.core.exceptions import HTTPConflictException
 from app.sep.deps import IsApiAuthenticated, RequireBearerForUnsafeMethods
 from app.sep.main import sep_app
 from app.sep.plugins.backup_pg.api_routes import router as backup_pg_api_router
 from app.sep.plugins.backup_pg.deps import (
     build_backup_task_payload_from_form,
+    check_create_has_no_conflicted_running_tasks,
     get_backups_index_context,
     get_backups_task,
 )
@@ -102,6 +104,32 @@ def _mock_get_backups_task_dep(created_task: Task) -> None:
     sep_app.dependency_overrides[get_backups_task] = lambda: created_task
     yield
     sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def _mock_check_create_has_no_conflicted_running_tasks() -> None:
+    """Bypass the body-aware create-conflict guard for create-path tests."""
+    previous = sep_app.dependency_overrides.copy()
+    sep_app.dependency_overrides[check_create_has_no_conflicted_running_tasks] = (
+        lambda: None
+    )
+    yield
+    sep_app.dependency_overrides = previous
+
+
+@pytest.fixture
+def _mock_check_create_has_no_conflicted_running_tasks_raises() -> None:
+    """Force the body-aware create-conflict guard to raise HTTPConflictException."""
+
+    def raise_conflict() -> None:
+        raise HTTPConflictException("Task is already running or pending.")
+
+    previous = sep_app.dependency_overrides.copy()
+    sep_app.dependency_overrides[check_create_has_no_conflicted_running_tasks] = (
+        raise_conflict
+    )
+    yield
+    sep_app.dependency_overrides = previous
 
 
 @pytest.fixture

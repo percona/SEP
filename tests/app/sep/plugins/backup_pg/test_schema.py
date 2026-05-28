@@ -86,6 +86,55 @@ def test_schema_has_no_derived_cascade() -> None:
     assert not backup_pg_schema.derived
 
 
+def _field_by_name(name: str):
+    for section in backup_pg_schema.forms:
+        for field in section.fields:
+            if field.name == name:
+                return field
+    raise AssertionError(f"Field {name!r} not found in schema forms")
+
+
+def test_backup_dir_is_required() -> None:
+    """``backup_dir`` is marked required so the FE form blocks empty submits.
+
+    Matches the Jinja form which marks the input as ``required`` and the
+    write-model contract on :class:`BackupTaskWrite.backup_dir`.
+    """
+    assert _field_by_name("backup_dir").required is True
+
+
+def test_pgbackrest_bin_has_jinja_parity_default() -> None:
+    """``pgbackrest_bin`` defaults to ``/usr/bin/pgbackrest`` (Jinja parity)."""
+    assert _field_by_name("pgbackrest_bin").default == "/usr/bin/pgbackrest"
+
+
+def test_pgbackrest_config_file_has_jinja_parity_default() -> None:
+    """``pgbackrest_config_file`` defaults to ``/etc/pgbackrest.conf`` (Jinja parity)."""
+    assert _field_by_name("pgbackrest_config_file").default == "/etc/pgbackrest.conf"
+
+
+def test_detail_view_renders_overview_with_host_and_port() -> None:
+    """``detail_view`` declares an Overview section so the FE renders host/port.
+
+    PR #831's ``PluginDetailPage`` only renders fields declared by
+    ``detail_view``; without this block the new ``host`` + ``port`` fields on
+    :class:`BackupTaskDetailResponse` would be dead data.
+    """
+    assert backup_pg_schema.detail_view is not None
+    sections = backup_pg_schema.detail_view.sections
+    assert len(sections) == 1
+    assert sections[0].title == "Overview"
+    paths = [field.path for field in sections[0].fields]
+    assert paths == [
+        "hostname",
+        "host",
+        "port",
+        "backup_type",
+        "created_at",
+        "updated_at",
+    ]
+
+
 def test_pgbackrest_backup_type_choice_values() -> None:
     """pgbackrest_backup_type offers exactly INCR and DIFF as choices."""
     for section in backup_pg_schema.forms:

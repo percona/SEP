@@ -19,7 +19,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, FutureDatetime
+from pydantic import BaseModel, ConfigDict
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
@@ -114,8 +114,8 @@ class BackupTaskWrite(BaseModel):
     :type alert_on_fail: bool
     :param logging_dir: Optional directory used by the payload for logs.
     :type logging_dir: str | None
-    :param backup_dir: Optional pgBackRest backup directory.
-    :type backup_dir: str | None
+    :param backup_dir: Required pgBackRest backup directory.
+    :type backup_dir: NonEmptyStr
     :param pgbackrest_bin: Absolute path to the ``pgbackrest`` binary.
     :type pgbackrest_bin: str | None
     :param pgbackrest_config_file: Path to ``pgbackrest.conf`` on the host.
@@ -139,7 +139,7 @@ class BackupTaskWrite(BaseModel):
     service_id: int
     alert_on_fail: bool = False
     logging_dir: str | None = None
-    backup_dir: str | None = None
+    backup_dir: NonEmptyStr
     pgbackrest_bin: str | None = None
     pgbackrest_config_file: str | None = None
     pgbackrest_backup_type: PgBackRestBackupType | None = None
@@ -208,24 +208,33 @@ class BackupTaskResponse(BackupTaskBase):
 class BackupTaskDetailResponse(BackupTaskResponse):
     """Represent a single pgBackRest backup task detail response.
 
-    Currently shaped identically to :class:`BackupTaskResponse` because the
-    plugin does not declare any derived sub-tasks; kept distinct so the FE can
-    rely on the same model name as ``backup_mongo`` for detail views.
+    Adds the executor host and port resolved from the task's YAML config so
+    the FE detail view can render them alongside the parity Overview block;
+    list rows omit these to keep the table response compact.
+
+    :param host: The PostgreSQL host the task connects to.
+    :type host: str | None
+    :param port: The PostgreSQL port the task connects to.
+    :type port: int | None
     """
+
+    host: str | None = None
+    port: int | None = None
 
 
 class BackupExecuteWrite(BaseModel):
     """Represent a JSON request body for executing a backup task.
 
-    :param eta: Optional future datetime to schedule execution.
-    :type eta: FutureDatetime | None
+    :param eta: Optional datetime to schedule execution. Values in the past
+        are dropped by the execute route and the task runs immediately.
+    :type eta: datetime | None
     :param chain_task_names: Optional list of task names to chain after.
     :type chain_task_names: list[str] | None
     :param chain_on_failure: Whether to run chained tasks even on failure.
     :type chain_on_failure: bool | None
     """
 
-    eta: FutureDatetime | None = None
+    eta: datetime | None = None
     chain_task_names: list[str] | None = None
     chain_on_failure: bool | None = None
 
@@ -240,4 +249,4 @@ class BackupExecutionResponse(BaseModel):
     """
 
     task_name: str
-    task_id: int | None = Field(default=None)
+    task_id: int | None = None
