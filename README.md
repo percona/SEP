@@ -90,7 +90,7 @@
 | app/sep/db/seed.py                                                                                          |       29 |       16 |     45% | 65-79, 97 |
 | app/sep/deps.py                                                                                             |      299 |       10 |     97% |393, 396-397, 415, 887-888, 1068-1071 |
 | app/sep/exceptions.py                                                                                       |       13 |        0 |    100% |           |
-| app/sep/inventory.py                                                                                        |       97 |        9 |     91% |81, 92, 229, 286, 304, 326, 363, 385, 419 |
+| app/sep/inventory.py                                                                                        |       97 |        8 |     92% |81, 92, 229, 286, 326, 363, 385, 419 |
 | app/sep/main.py                                                                                             |      171 |        7 |     96% |83-85, 169, 478-482 |
 | app/sep/middleware/csrf.py                                                                                  |       48 |        1 |     98% |       129 |
 | app/sep/middleware/messages/\_middleware.py                                                                 |       28 |        0 |    100% |           |
@@ -244,7 +244,7 @@
 | app/tasks/periodic/models.py                                                                                |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      223 |       38 |     83% |130-134, 191, 212-219, 251, 300-307, 358-359, 386-387, 415-416, 435, 566, 590, 603-617, 638-651, 667-668 |
-| **TOTAL**                                                                                                   | **16734** | **2109** | **87%** |           |
+| **TOTAL**                                                                                                   | **16734** | **2108** | **87%** |           |
 
 
 ## Setup coverage badge
