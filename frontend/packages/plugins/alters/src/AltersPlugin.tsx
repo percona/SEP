@@ -16,8 +16,16 @@
  */
 
 import { SchemaDrivenPlugin } from '@sep/framework';
+import { getAltersExecuteActions, getAltersHistoryTaskNames } from './altersTaskDetail';
 import { PLUGIN_BASE_PATH, PLUGIN_NAME } from './routes';
 
 export function AltersPlugin() {
-  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} routeBase={PLUGIN_BASE_PATH} />;
+  return (
+    <SchemaDrivenPlugin
+      pluginName={PLUGIN_NAME}
+      routeBase={PLUGIN_BASE_PATH}
+      getTaskExecuteActions={getAltersExecuteActions}
+      getTaskHistoryNames={getAltersHistoryTaskNames}
+    />
+  );
 }
