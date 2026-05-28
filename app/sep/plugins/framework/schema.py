@@ -64,7 +64,7 @@ from pydantic import (
     StringConstraints,
 )
 
-from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
+from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, StrippedNonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.rules import (
     CardinalityRule,
@@ -586,10 +586,18 @@ class ListView(SchemaBaseModel):
         ``"-lastRun"``). The unprefixed key must match one of the declared
         column keys. Defaults to ``None``.
     :type default_sort: NonEmptyStr | None
+    :param overview_hidden_fields: Additional task-level keys to suppress
+        from the auto-rendered "extras" loop on the plugin detail Overview
+        tab. The framework always hides a baseline set of internal fields
+        (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,
+        ``last_updated_by``, ``connectivity_warning``); any keys listed here
+        are merged with that baseline. Defaults to ``[]``.
+    :type overview_hidden_fields: list[str]
     """
 
     columns: list[Column]
     default_sort: NonEmptyStr | None = None
+    overview_hidden_fields: list[StrippedNonEmptyStr] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_default_sort_references_column(self) -> Self:
@@ -795,12 +803,20 @@ class Capabilities(SchemaBaseModel):
         execution statistics card on its detail page. Defaults to
         ``False``.
     :type stats: bool
+    :param pii_anonymization: Whether the plugin wires ``anonymize_mask``
+        into task execution and the React detail page should surface which
+        PII entities are anonymized. This is a UI-rendering gate — the
+        anonymization always happens when configured; this flag controls
+        whether the detail view renders the "PII Anonymization" section.
+        Defaults to ``False``.
+    :type pii_anonymization: bool
     """
 
     chaining: bool = False
     alert_on_fail: bool = False
     scheduling: bool = False
     stats: bool = False
+    pii_anonymization: bool = False
 
 
 def _collect_reference_errors(

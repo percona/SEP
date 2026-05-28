@@ -3873,6 +3873,10 @@ export interface components {
      *         execution statistics card on its detail page. Defaults to
      *         ``False``.
      *     :type stats: bool
+     *     :param pii_anonymization: Whether the plugin wires anonymize_mask into
+     *         task execution and the React detail page should surface which PII
+     *         entities are anonymized. Defaults to ``False``.
+     *     :type pii_anonymization: bool
      */
     Capabilities: {
       /**
@@ -3895,6 +3899,11 @@ export interface components {
        * @default false
        */
       stats: boolean;
+      /**
+       * Pii Anonymization
+       * @default false
+       */
+      pii_anonymization: boolean;
     };
     /**
      * CardinalityRule
@@ -4051,6 +4060,8 @@ export interface components {
       protected: boolean;
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
       /** Created At */
       created_at?: string | null;
       /** Updated At */
@@ -4060,6 +4071,8 @@ export interface components {
       /** Last Updated By */
       last_updated_by?: string | null;
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Anonymized Entities */
+      anonymized_entities: string[];
     };
     /**
      * ChecksumTaskWrite
@@ -5224,6 +5237,8 @@ export interface components {
       columns: components['schemas']['Column'][];
       /** Default Sort */
       default_sort?: string | null;
+      /** Overview Hidden Fields */
+      overview_hidden_fields?: string[];
     };
     /**
      * MultiChoiceField
@@ -6427,6 +6442,8 @@ export interface components {
       created_by: string | null;
       /** Last Updated By */
       last_updated_by: string | null;
+      /** Anonymized Entities */
+      anonymized_entities: string[];
     };
     /**
      * TextAreaField

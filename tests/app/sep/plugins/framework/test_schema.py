@@ -284,6 +284,32 @@ def test_dipper_schema_stats_capability_defaults_false():
     assert dipper_schema.capabilities.stats is False
 
 
+def test_capabilities_pii_anonymization_defaults_to_false():
+    """Default value of ``pii_anonymization`` flag must be ``False`` for backward compat."""
+    caps = Capabilities()
+    assert caps.pii_anonymization is False
+
+
+def test_capabilities_pii_anonymization_accepts_true():
+    """``pii_anonymization=True`` is a valid construction."""
+    caps = Capabilities(pii_anonymization=True)
+    assert caps.pii_anonymization is True
+
+
+def test_capabilities_serialization_round_trip_includes_pii_anonymization():
+    """``pii_anonymization`` survives ``model_dump`` / ``model_validate`` round trip."""
+    dumped = Capabilities(pii_anonymization=True).model_dump()
+    assert dumped["pii_anonymization"] is True
+    restored = Capabilities.model_validate({"pii_anonymization": True})
+    assert restored.pii_anonymization is True
+
+
+def test_capabilities_omitted_pii_anonymization_in_payload_defaults_false():
+    """Payload missing the ``pii_anonymization`` key validates to ``False``."""
+    caps = Capabilities.model_validate({})
+    assert caps.pii_anonymization is False
+
+
 @pytest.mark.parametrize(
     ("field_cls", "field_type", "extra_kwargs"),
     [
@@ -708,6 +734,57 @@ def test_list_view_rejects_double_dash_prefix():
             columns=[Column(key="id", label="ID")],
             default_sort="--id",
         )
+
+
+# ── ListView.overview_hidden_fields ──────────────────────────────────────
+
+
+def test_list_view_overview_hidden_fields_defaults_to_empty():
+    """``overview_hidden_fields`` defaults to ``[]`` when omitted."""
+    view = ListView(columns=[Column(key="id", label="ID")])
+
+    assert view.overview_hidden_fields == []
+
+
+def test_list_view_overview_hidden_fields_accepts_non_empty_strings():
+    """``overview_hidden_fields`` accepts a list of non-empty strings."""
+    view = ListView(
+        columns=[Column(key="id", label="ID")],
+        overview_hidden_fields=["foo", "bar_baz"],
+    )
+
+    assert view.overview_hidden_fields == ["foo", "bar_baz"]
+
+
+def test_list_view_overview_hidden_fields_rejects_empty_string():
+    """``overview_hidden_fields`` rejects entries that are empty strings."""
+    with pytest.raises(ValidationError):
+        ListView(
+            columns=[Column(key="id", label="ID")],
+            overview_hidden_fields=[""],
+        )
+
+
+@pytest.mark.parametrize("bad_value", ["", " ", "  ", "\t", "\n"])
+def test_list_view_overview_hidden_fields_rejects_blank_entries(bad_value):
+    """``overview_hidden_fields`` rejects blank entries (empty, whitespace-only)."""
+    with pytest.raises(ValidationError):
+        ListView(
+            columns=[Column(key="id", label="ID")],
+            overview_hidden_fields=[bad_value],
+        )
+
+
+def test_list_view_overview_hidden_fields_round_trip():
+    """``overview_hidden_fields`` survives serialisation and ``model_validate``."""
+    original = ListView(
+        columns=[Column(key="id", label="ID")],
+        overview_hidden_fields=["internal_key"],
+    )
+    dumped = original.model_dump()
+    rehydrated = ListView.model_validate(dumped)
+
+    assert rehydrated.overview_hidden_fields == ["internal_key"]
 
 
 # ── Discriminated-union rejection ────────────────────────────────────────

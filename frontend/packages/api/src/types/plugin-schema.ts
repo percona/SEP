@@ -237,6 +237,8 @@ export interface ListView {
   columns: ListColumn[];
   /** Column key to sort by. Prefix with '-' for descending (e.g. '-last_run'). */
   default_sort?: string;
+  /** Extra task-level keys to hide from the Overview tab extras loop (merged with the framework baseline). */
+  overview_hidden_fields?: string[];
 }
 
 // ── Capabilities ────────────────────────────────────────────────────────
@@ -246,6 +248,7 @@ export interface PluginCapabilities {
   alert_on_fail?: boolean;
   scheduling?: boolean;
   stats?: boolean;
+  pii_anonymization?: boolean;
 }
 
 // ── Detail view (task-style plugins) ────────────────────────────────────
