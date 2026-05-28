@@ -636,6 +636,106 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 });
 
+describe('PluginDetailPage — PII Anonymization section', () => {
+  it('renders PII section with entity chips when capability is true and entities present', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        anonymized_entities: ['EMAIL_ADDRESS', 'IP_ADDRESS'],
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({ pii_anonymization: true }));
+
+    expect(screen.getByRole('heading', { name: 'PII Anonymization' })).toBeInTheDocument();
+    const chips = screen.getAllByTestId('pii-entity-chip');
+    expect(chips).toHaveLength(2);
+    expect(chips[0]).toHaveTextContent('EMAIL ADDRESS');
+    expect(chips[1]).toHaveTextContent('IP ADDRESS');
+  });
+
+  it('renders empty state message when capability is true but entities list is empty', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed', anonymized_entities: [] },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({ pii_anonymization: true }));
+
+    expect(screen.getByRole('heading', { name: 'PII Anonymization' })).toBeInTheDocument();
+    expect(screen.getByText('No PII entities configured for anonymization.')).toBeInTheDocument();
+  });
+
+  it('does not render PII section when capability is false', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        anonymized_entities: ['EMAIL_ADDRESS'],
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({ pii_anonymization: false }));
+
+    expect(screen.queryByRole('heading', { name: 'PII Anonymization' })).toBeNull();
+  });
+
+  it('does not render PII section when capability is absent', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        anonymized_entities: ['EMAIL_ADDRESS'],
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    expect(screen.queryByRole('heading', { name: 'PII Anonymization' })).toBeNull();
+  });
+
+  it('does not render PII section when capabilities is undefined', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        anonymized_entities: ['EMAIL_ADDRESS'],
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema(undefined));
+
+    expect(screen.queryByRole('heading', { name: 'PII Anonymization' })).toBeNull();
+  });
+
+  it('suppresses anonymize_mask and anonymized_entities from the Task information extras', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        anonymize_mask: 2,
+        anonymized_entities: ['EMAIL_ADDRESS'],
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({ pii_anonymization: true }));
+
+    expect(screen.queryByText('Anonymize Mask')).toBeNull();
+    expect(screen.queryByText('Anonymized Entities')).toBeNull();
+  });
+});
+
 describe('PluginDetailPage — overview_hidden_fields', () => {
   function schemaWithHidden(overview_hidden_fields?: string[]): PluginSchema {
     return {

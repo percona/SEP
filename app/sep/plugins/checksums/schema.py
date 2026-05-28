@@ -170,7 +170,11 @@ checksums_schema = PluginSchema(
         ),
     ],
     capabilities=Capabilities(
-        chaining=True, alert_on_fail=True, scheduling=True, stats=True
+        chaining=True,
+        alert_on_fail=True,
+        scheduling=True,
+        stats=True,
+        pii_anonymization=True,
     ),
     list_view=ListView(
         columns=[

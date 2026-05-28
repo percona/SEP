@@ -248,6 +248,7 @@ export interface PluginCapabilities {
   alert_on_fail?: boolean;
   scheduling?: boolean;
   stats?: boolean;
+  pii_anonymization?: boolean;
 }
 
 // ── Detail view (task-style plugins) ────────────────────────────────────
