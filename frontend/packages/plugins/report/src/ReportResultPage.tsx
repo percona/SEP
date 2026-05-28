@@ -129,7 +129,7 @@ export function ReportResultPage() {
           </span>
         </Tooltip>
 
-        <Button variant="text" onClick={() => navigate(-1)}>
+        <Button variant="text" onClick={() => navigate('/reports')}>
           Generate New Report
         </Button>
       </Stack>

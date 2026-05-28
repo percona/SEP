@@ -19,6 +19,11 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import type { ReportConfig, ReportData, ReportParams, UploadResult } from './types';
 
+// The PDF and upload endpoints do not accept a `sections` filter (the backend
+// Form params for those routes omit it). Use this type to make the omission
+// explicit rather than silently dropping it.
+type ReportPdfParams = Omit<ReportParams, 'sections'>;
+
 const API_BASE = '/report';
 
 export function useGenerateReport(params: ReportParams | null) {
@@ -43,7 +48,7 @@ export function useGenerateReport(params: ReportParams | null) {
 }
 
 export function useDownloadPdf() {
-  return useMutation<void, Error, ReportParams>({
+  return useMutation<void, Error, ReportPdfParams>({
     mutationFn: async (params) => {
       const body = new URLSearchParams({
         since: params.since,
@@ -73,7 +78,7 @@ export function useDownloadPdf() {
 }
 
 export function useUploadToServiceNow() {
-  return useMutation<UploadResult, Error, ReportParams>({
+  return useMutation<UploadResult, Error, ReportPdfParams>({
     mutationFn: async (params) => {
       const body = new URLSearchParams({
         since: params.since,
@@ -90,7 +95,8 @@ export function useUploadToServiceNow() {
 }
 
 // Probe whether ServiceNow upload is configured. Returns empty disabled_reasons
-// (upload enabled) if the /report/config endpoint is not yet available.
+// (upload enabled) only when the /report/config endpoint returns 404 (not yet
+// deployed by SEP-1059). All other errors propagate so the caller can surface them.
 // SEP-1059 should expose GET /api/report/config with { upload_disabled_reasons }.
 export function useReportConfig() {
   return useQuery<ReportConfig>({
@@ -99,8 +105,12 @@ export function useReportConfig() {
       try {
         const { data } = await apiClient.get<ReportConfig>(`${API_BASE}/config`);
         return data;
-      } catch {
-        return { upload_disabled_reasons: [] };
+      } catch (err) {
+        const status = (err as { response?: { status?: number } }).response?.status;
+        if (status === 404) {
+          return { upload_disabled_reasons: [] };
+        }
+        throw err;
       }
     },
     staleTime: Infinity,

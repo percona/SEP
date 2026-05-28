@@ -138,8 +138,19 @@ test.describe('Report plugin smoke', () => {
     await expect(page.getByRole('button', { name: /upload to servicenow/i })).toBeVisible();
   });
 
-  test('PDF download button triggers download', async ({ page }) => {
+  test('PDF download button calls generate/pdf and shows no error', async ({ page }) => {
+    let pdfRequested = false;
     await mockReportRoutes(page);
+    await page.route('**/api/report/generate/pdf', (route) => {
+      pdfRequested = true;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/pdf',
+        body: Buffer.from('%PDF-1.4 smoke-test'),
+        headers: { 'Content-Disposition': 'attachment; filename="report.pdf"' },
+      });
+    });
+
     await page.goto('/reports');
 
     await expect(page.getByRole('heading', { name: /health.*security report/i })).toBeVisible({
@@ -152,16 +163,14 @@ test.describe('Report plugin smoke', () => {
       timeout: 15_000,
     });
 
-    const [download] = await Promise.all([
-      page.waitForEvent('download').catch(() => null),
-      page.getByRole('button', { name: /download pdf/i }).click(),
-    ]);
+    await page.getByRole('button', { name: /download pdf/i }).click();
 
-    // The PDF endpoint was called (download may be null in headless; what matters is no error shown)
-    await expect(page.getByRole('alert'))
-      .not.toBeVisible({ timeout: 3_000 })
-      .catch(() => {});
-    expect(download === null || download !== null).toBeTruthy();
+    // Wait for the mutation to complete by checking the PDF was requested
+    await page.waitForFunction(() => true); // flush microtasks
+    expect(pdfRequested).toBe(true);
+
+    // No error alert should appear
+    await expect(page.getByRole('alert')).not.toBeVisible({ timeout: 3_000 });
   });
 
   test('ServiceNow upload shows success', async ({ page }) => {
