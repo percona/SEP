@@ -245,7 +245,7 @@ export function AlertsListPage() {
             Recent Backups
           </Typography>
           <Divider sx={{ mb: 1 }} />
-          {data!.recent_backups.map((backup) => (
+          {(data?.recent_backups ?? []).map((backup) => (
             <Box
               key={backup.id}
               sx={{

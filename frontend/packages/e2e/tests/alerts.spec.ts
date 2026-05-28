@@ -133,6 +133,11 @@ async function mockAlertsRoutes(page: Page) {
       return route.fulfill({ json: MOCK_PAGERDUTY_SAVE });
     }
 
+    // PagerDuty delete
+    if (req.method() === 'POST' && pathname === '/api/plugins/alerts/pagerduty/delete') {
+      return route.fulfill({ json: { status: 'deleted' } });
+    }
+
     // Backup detail
     if (req.method() === 'GET' && pathname === '/api/plugins/alerts/backups/1') {
       return route.fulfill({ json: MOCK_BACKUP_DETAIL });
@@ -273,6 +278,54 @@ test.describe('PagerDuty flow (wizard branching)', () => {
     await page.getByLabel('PagerDuty Integration Key').fill('my-key-abc123');
     await page.getByRole('button', { name: /^Save$/i }).click();
     await expect(page.getByText('PagerDuty configured.')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('deletes pagerduty when already configured', async ({ page }) => {
+    // Serve index with pagerduty already configured so the delete button appears
+    await page.route('**/api/**', (route) => {
+      const req = route.request();
+      const url = new URL(req.url());
+      const { pathname } = url;
+
+      if (!pathname.startsWith('/api/')) {
+        return route.continue();
+      }
+      if (pathname.includes('/oauth/refresh')) {
+        return route.fulfill({ json: MOCK_TOKEN });
+      }
+      if (pathname.includes('/users/me')) {
+        return route.fulfill({ json: MOCK_USER });
+      }
+      if (
+        req.method() === 'GET' &&
+        (pathname === '/api/plugins/alerts/' || pathname === '/api/plugins/alerts')
+      ) {
+        return route.fulfill({
+          json: { ...MOCK_INDEX, pagerduty: { configured: true, uid: 'abc' } },
+        });
+      }
+      if (req.method() === 'POST' && pathname === '/api/plugins/alerts/pagerduty/delete') {
+        return route.fulfill({ json: { status: 'deleted' } });
+      }
+      return route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: '{"detail":"not found"}',
+      });
+    });
+    await page.goto('/alerts/templates');
+    await expect(page.getByRole('heading', { name: 'Alert Templates' })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByRole('button', { name: /PagerDuty Configured/i }).click();
+    await expect(page.getByRole('button', { name: /Delete PagerDuty/i })).toBeVisible({
+      timeout: 5_000,
+    });
+    await page.getByRole('button', { name: /Delete PagerDuty/i }).click();
+    await expect(page.getByText('PagerDuty contact point deleted.')).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });
 

@@ -53,10 +53,14 @@ function PushFlow({ templates, onClose }: PushFlowProps) {
   const pushMutation = usePushTemplates();
 
   const handlePush = async () => {
-    const data = await pushMutation.mutateAsync({
-      selectedTemplates: templates.map((t) => t.name),
-    });
-    setResults(data.results);
+    try {
+      const data = await pushMutation.mutateAsync({
+        selectedTemplates: templates.map((t) => t.name),
+      });
+      setResults(data.results);
+    } catch {
+      // react-query sets isError; render handled above
+    }
   };
 
   if (results !== null) {
@@ -126,7 +130,8 @@ function PushFlow({ templates, onClose }: PushFlowProps) {
 // ── Restore flow ──────────────────────────────────────────────────────────────
 
 interface RestoreFormValues {
-  backupId: number | null;
+  // Radio inputs yield string values from the DOM; coerce to number only at submit.
+  backupId: string | null;
 }
 
 interface RestoreFlowProps {
@@ -146,8 +151,12 @@ function RestoreFlow({ backups, onClose }: RestoreFlowProps) {
     if (values.backupId === null) {
       return;
     }
-    await restoreMutation.mutateAsync({ backupId: Number(values.backupId) });
-    setDone(true);
+    try {
+      await restoreMutation.mutateAsync({ backupId: Number(values.backupId) });
+      setDone(true);
+    } catch {
+      // react-query sets isError; render handled above
+    }
   };
 
   if (done) {
@@ -235,13 +244,21 @@ function PagerDutyFlow({ configured, onClose }: PagerDutyFlowProps) {
   const [result, setResult] = useState<string | null>(null);
 
   const onSave = async (values: PagerDutyFormValues) => {
-    const res = await saveMutation.mutateAsync({ integrationKey: values.integrationKey });
-    setResult(res.status === 'created' ? 'PagerDuty configured.' : 'PagerDuty updated.');
+    try {
+      const res = await saveMutation.mutateAsync({ integrationKey: values.integrationKey });
+      setResult(res.status === 'created' ? 'PagerDuty configured.' : 'PagerDuty updated.');
+    } catch {
+      // react-query sets isError; render handled above
+    }
   };
 
   const onDelete = async () => {
-    await deleteMutation.mutateAsync();
-    setResult('PagerDuty contact point deleted.');
+    try {
+      await deleteMutation.mutateAsync();
+      setResult('PagerDuty contact point deleted.');
+    } catch {
+      // react-query sets isError; render handled above
+    }
   };
 
   const isBusy = saveMutation.isPending || deleteMutation.isPending;

@@ -24,7 +24,7 @@ import { AlertsDetailPage } from './AlertsDetailPage';
  *
  * Routes:
  *   /alerts/templates/              → alert templates list + push/restore/PagerDuty wizard
- *   /alerts/templates/backup/:id    → backup detail view
+ *   /alerts/templates/backup/:backupId → backup detail view
  */
 export function AlertsPlugin() {
   return (

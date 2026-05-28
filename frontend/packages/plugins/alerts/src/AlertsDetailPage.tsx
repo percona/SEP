@@ -139,6 +139,20 @@ export function AlertsDetailPage() {
         )}
       </Paper>
 
+      {data.folders.length > 0 && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Folders ({data.folders.length})
+          </Typography>
+          <Divider sx={{ mb: 1 }} />
+          {data.folders.map((f) => (
+            <Typography key={f.title} variant="body2" sx={{ py: 0.25 }}>
+              {f.title}
+            </Typography>
+          ))}
+        </Paper>
+      )}
+
       {data.notification_policy_receiver && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
