@@ -30,6 +30,7 @@ from fastapi import status as http_status
 from app.core.exceptions import HTTPConflictException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
+    get_username_mapping,
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsApiAuthenticated,
@@ -73,10 +74,12 @@ async def alters_api_list(
     status: TaskHistoryStatusEnum | None = None,
 ) -> list[AltersTaskResponse]:
     """List parent alters execute tasks."""
+    username_mapping = await get_username_mapping()
     return await get_alters_api_task_responses(
         tasks_api,
         service_type=service_type,
         status=status,
+        username_mapping=username_mapping,
     )
 
 
@@ -88,7 +91,12 @@ async def alters_api_detail(
     """Retrieve a single parent alters task."""
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
     task_status = await get_alters_task_status(parent_task.name, tasks_api)
-    return build_alters_api_task_response(parent_task, status=task_status)
+    username_mapping = await get_username_mapping()
+    return build_alters_api_task_response(
+        parent_task,
+        status=task_status,
+        username_mapping=username_mapping,
+    )
 
 
 @router.post(
@@ -129,6 +137,7 @@ async def alters_api_create(
         body,
     )
     task = await get_alters_task(parent_task.name, tasks_api)
+    username_mapping = await get_username_mapping()
     connectivity_warning = await maybe_record_connectivity_warning(
         tasks_api,
         task.data.get("meta", {}),
@@ -138,6 +147,7 @@ async def alters_api_create(
         task,
         status=None,
         connectivity_warning=connectivity_warning,
+        username_mapping=username_mapping,
     )
 
 
@@ -190,6 +200,7 @@ async def alters_api_update(
 
     updated_task = await get_alters_task(updated_parent.name, tasks_api)
     task_status = await get_alters_task_status(updated_task.name, tasks_api)
+    username_mapping = await get_username_mapping()
     connectivity_warning = await maybe_record_connectivity_warning(
         tasks_api,
         updated_task.data.get("meta", {}),
@@ -199,6 +210,7 @@ async def alters_api_update(
         updated_task,
         status=task_status,
         connectivity_warning=connectivity_warning,
+        username_mapping=username_mapping,
     )
 
 

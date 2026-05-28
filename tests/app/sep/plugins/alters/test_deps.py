@@ -26,6 +26,7 @@ from app.sep.plugins.alters.deps import (
     _build_dsn_with_service,
     alters_executor_matches_service_host,
     alters_satellite_task_names,
+    build_alters_api_task_response,
     build_alters_task_payload,
     build_pre_checks_task,
     cascade_create_alters_group,
@@ -570,3 +571,71 @@ async def test_cascade_create_alters_group_rolls_back_on_execute_failure():
         call("/t1-dry-run"),
         call("/t1"),
     ]
+
+
+def _make_alters_task(
+    created_by: str | None = None, last_updated_by: str | None = None
+) -> Task:
+    return TaskFactory.build(
+        name="test-alter",
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        is_template=False,
+        protected=False,
+        alert_on_fail=False,
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--alter=ADD COLUMN x INT --execute",
+                "target": "host1",
+                "_schema_name": "test_schema",
+                "_table_name": "test_table",
+            },
+        },
+        created_by=created_by,
+        last_updated_by=last_updated_by,
+    )
+
+
+class TestBuildAltersApiTaskResponse:
+    """Tests for build_alters_api_task_response username mapping."""
+
+    def test_created_by_resolved_to_display_name_when_mapping_provided(self):
+        """Assert created_by is resolved when mapping contains the ID."""
+        task = _make_alters_task(created_by="uid-abc", last_updated_by=None)
+
+        result = build_alters_api_task_response(
+            task, username_mapping={"uid-abc": "Alice"}
+        )
+
+        assert result.created_by == "Alice"
+
+    def test_created_by_falls_back_to_raw_id_when_not_in_mapping(self):
+        """Assert created_by is preserved when the ID is not in the mapping."""
+        task = _make_alters_task(created_by="uid-unknown", last_updated_by=None)
+
+        result = build_alters_api_task_response(
+            task, username_mapping={"uid-other": "Bob"}
+        )
+
+        assert result.created_by == "uid-unknown"
+
+    def test_last_updated_by_resolved_to_display_name(self):
+        """Assert last_updated_by is also resolved via the mapping."""
+        task = _make_alters_task(created_by=None, last_updated_by="uid-xyz")
+
+        result = build_alters_api_task_response(
+            task, username_mapping={"uid-xyz": "Carol"}
+        )
+
+        assert result.last_updated_by == "Carol"
+
+    def test_username_mapping_none_preserves_raw_ids(self):
+        """Assert created_by and last_updated_by are unchanged when mapping is None."""
+        task = _make_alters_task(created_by="uid-123", last_updated_by="uid-456")
+
+        result = build_alters_api_task_response(task, username_mapping=None)
+
+        assert result.created_by == "uid-123"
+        assert result.last_updated_by == "uid-456"

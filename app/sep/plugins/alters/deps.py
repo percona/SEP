@@ -963,6 +963,7 @@ def build_alters_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     connectivity_warning: ConnectivityWarning | None = None,
+    username_mapping: dict[str, str] | None = None,
 ) -> AltersTaskResponse:
     """Build an alters task response object for the JSON API.
 
@@ -973,10 +974,17 @@ def build_alters_api_task_response(
     :param connectivity_warning: A warning to surface when a connectivity
         check failed during the task creation flow.
     :type connectivity_warning: ConnectivityWarning | None
+    :param username_mapping: Optional mapping of user IDs to usernames.
+    :type username_mapping: dict[str, str] | None
     :return: A validated alters task API response object.
     :rtype: AltersTaskResponse
     """
+    mapping = username_mapping or {}
     payload = task.model_dump()
+    created_by = payload.get("created_by")
+    payload["created_by"] = mapping.get(created_by, created_by)
+    last_updated_by = payload.get("last_updated_by")
+    payload["last_updated_by"] = mapping.get(last_updated_by, last_updated_by)
     meta = payload.get("data", {}).get("meta")
     if isinstance(meta, dict):
         command_line = _command_line_from_meta(meta)
@@ -994,6 +1002,7 @@ async def get_alters_api_task_responses(
     tasks_api: TaskAPI,
     service_type: ServiceTypeEnum | None = None,
     status: TaskHistoryStatusEnum | None = None,
+    username_mapping: dict[str, str] | None = None,
 ) -> list[AltersTaskResponse]:
     """Retrieve parent alters task responses for the JSON API.
 
@@ -1006,6 +1015,8 @@ async def get_alters_api_task_responses(
     :type service_type: ServiceTypeEnum | None
     :param status: Optional latest-history status filter for the alters task list.
     :type status: TaskHistoryStatusEnum | None
+    :param username_mapping: Optional mapping of user IDs to usernames.
+    :type username_mapping: dict[str, str] | None
     :return: The alters task responses matching the requested filters.
     :rtype: list[AltersTaskResponse]
     """
@@ -1024,7 +1035,11 @@ async def get_alters_api_task_responses(
     ]
 
     return [
-        build_alters_api_task_response(task, status=task_status)
+        build_alters_api_task_response(
+            task,
+            status=task_status,
+            username_mapping=username_mapping,
+        )
         for task, task_status in task_status_pairs
         if status is None or task_status == status
     ]
