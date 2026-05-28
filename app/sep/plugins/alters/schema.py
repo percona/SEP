@@ -35,6 +35,7 @@ from app.sep.plugins.framework.schema import (
     ColumnFormat,
     DerivedTask,
     DetailField,
+    DetailHighlightLanguage,
     DetailSection,
     DetailView,
     FormSection,
@@ -328,8 +329,11 @@ alters_schema = PluginSchema(
             DetailSection(
                 title="Execution",
                 fields=[
-                    DetailField(path="data.meta.command", label="Command"),
-                    DetailField(path="data.meta.args", label="Args"),
+                    DetailField(
+                        path="data.meta._command_line",
+                        label="Command line",
+                        highlight=DetailHighlightLanguage.BASH,
+                    ),
                     DetailField(path="data.meta.target", label="Target"),
                     DetailField(path="data.meta._schema_name", label="Schema"),
                     DetailField(path="data.meta._table_name", label="Table"),

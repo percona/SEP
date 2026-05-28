@@ -1738,11 +1738,12 @@ class TestDetailViewReviewFixes:
 
         The TypeScript ``DetailField.highlight`` type in
         ``frontend/packages/api/src/types/plugin-schema.ts`` is hand-maintained
-        as ``'sql' | 'json'``. If a new enum value is added here without
+        as ``'sql' | 'json' | 'bash'``. If a new enum value is added here without
         updating the frontend literal, this test fails and forces the author
         to sync both sides.
         """
         assert {member.value for member in DetailHighlightLanguage} == {
             "sql",
             "json",
+            "bash",
         }

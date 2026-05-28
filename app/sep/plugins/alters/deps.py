@@ -232,6 +232,7 @@ def _assemble_alters_payload(
             "meta": {
                 "command": "pt-online-schema-change",
                 "args": shlex.join(args),
+                "_command_line": f"pt-online-schema-change {shlex.join(args)}",
                 "target": body.hostname,
                 "_schema_name": schema_name,
                 "_table_name": table_name,
@@ -901,6 +902,36 @@ async def get_alters_task_status(
     return _extract_latest_task_status(response["items"])
 
 
+def _command_line_from_meta(meta: dict[str, Any]) -> str | None:
+    """Return the full pt-osc invocation for detail display.
+
+    New tasks store ``_command_line`` at creation time; older tasks are
+    synthesized from ``command`` + ``args`` when the API response is built.
+
+    :param meta: The task ``data.meta`` mapping.
+    :type meta: dict[str, Any]
+    :return: The rendered command line, or ``None`` when unavailable.
+    :rtype: str | None
+    """
+    stored = meta.get("_command_line")
+    if isinstance(stored, str) and stored.strip():
+        return stored.strip()
+    command = meta.get("command")
+    args = meta.get("args")
+    if (
+        isinstance(command, str)
+        and isinstance(args, str)
+        and command.strip()
+        and args.strip()
+    ):
+        return f"{command.strip()} {args.strip()}"
+    if isinstance(args, str) and args.strip():
+        return args.strip()
+    if isinstance(command, str) and command.strip():
+        return command.strip()
+    return None
+
+
 def build_alters_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
@@ -919,8 +950,14 @@ def build_alters_api_task_response(
     :return: A validated alters task API response object.
     :rtype: AltersTaskResponse
     """
+    payload = task.model_dump()
+    meta = payload.get("data", {}).get("meta")
+    if isinstance(meta, dict):
+        command_line = _command_line_from_meta(meta)
+        if command_line is not None:
+            meta["_command_line"] = command_line
     return AltersTaskResponse(
-        **task.model_dump(),
+        **payload,
         service_type=ServiceTypeEnum.MYSQL,
         status=status,
         connectivity_warning=connectivity_warning,

@@ -259,7 +259,7 @@ export interface DetailField {
   path: string;
   label: string;
   /** Optional syntax-highlighter hint. */
-  highlight?: 'sql' | 'json';
+  highlight?: 'sql' | 'json' | 'bash';
 }
 
 /** One titled section rendered on the task detail page. */
@@ -283,7 +283,7 @@ export interface PluginEntitySchema {
   forms: FormSection[];
   list_view: ListView;
   /** Optional detail-view syntax hints keyed by field name. */
-  detail_highlights?: Partial<Record<string, 'sql' | 'json'>>;
+  detail_highlights?: Partial<Record<string, 'sql' | 'json' | 'bash'>>;
 }
 
 // ── Top-level schema ────────────────────────────────────────────────────

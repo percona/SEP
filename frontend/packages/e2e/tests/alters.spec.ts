@@ -154,8 +154,11 @@ const MOCK_ALTERS_SCHEMA = {
       {
         title: 'Execution',
         fields: [
-          { path: 'data.meta.command', label: 'Command' },
-          { path: 'data.meta.args', label: 'Args' },
+          {
+            path: 'data.meta._command_line',
+            label: 'Command line',
+            highlight: 'bash',
+          },
         ],
       },
     ],
@@ -165,6 +168,15 @@ const MOCK_ALTERS_SCHEMA = {
 };
 
 const tasks: Array<Record<string, unknown>> = [];
+
+function withCommandLineMeta(meta: Record<string, unknown>): Record<string, unknown> {
+  const command = meta.command;
+  const args = meta.args;
+  if (typeof command === 'string' && typeof args === 'string' && command && args) {
+    return { ...meta, _command_line: `${command} ${args}` };
+  }
+  return meta;
+}
 
 interface MockOverrides {
   capturePosts?: Array<Record<string, unknown>>;
@@ -214,13 +226,13 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
         created_by: 'smoke',
         data: {
           task: 'run-command',
-          meta: {
+          meta: withCommandLineMeta({
             command: 'pt-online-schema-change',
             args: `--alter=${body.alter} --execute`,
             target: body.hostname,
             _schema_name: body.schema_name,
             _table_name: body.table_name,
-          },
+          }),
         },
       };
       tasks.push(created);
@@ -390,13 +402,13 @@ test.describe(`${PLUGIN_DISPLAY_NAME} plugin smoke`, () => {
       created_by: 'smoke',
       data: {
         task: 'run-command',
-        meta: {
+        meta: withCommandLineMeta({
           command: 'pt-online-schema-change',
           args: '--alter=ADD COLUMN x INT --execute',
           target: 'host1',
           _schema_name: 'app',
           _table_name: 'users',
-        },
+        }),
       },
     });
 
