@@ -43,6 +43,7 @@ from app.sep.plugins.alters.deps import (
     cascade_create_alters_group,
     cascade_delete_alters_group,
     cascade_update_alters_group,
+    ensure_alters_group_update_preserves_names,
     get_alters_api_task_responses,
     get_alters_task,
     get_alters_task_status,
@@ -165,6 +166,7 @@ async def alters_api_update(
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
     if parent_task.protected:
         raise HTTPConflictException("Cannot edit a protected task.")
+    ensure_alters_group_update_preserves_names(parent_task.name, body.task_name)
 
     logger.debug("Update alters task group (JSON path): %s", parent_task.name)
     updated_parent = await build_alters_task(body, inventory_api)

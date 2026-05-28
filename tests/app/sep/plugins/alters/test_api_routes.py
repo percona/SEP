@@ -444,6 +444,24 @@ class TestAltersApiUpdate:
         assert response.status_code == status.HTTP_409_CONFLICT
         mock_task_api_dep.put.assert_not_called()
 
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_update_returns_409_when_renaming_parent(
+        self,
+        test_client,
+        mock_task_api_dep,
+    ) -> None:
+        """PUT returns 409 when task_name in the body differs from the parent."""
+        group = build_alters_task_group(DEFAULT_PARENT_NAME)
+        mock_task_api_dep.get = AsyncMock(return_value=group["parent"])
+
+        response = test_client.put(
+            f"{API_BASE}/{DEFAULT_PARENT_NAME}",
+            json=build_alters_write_body(task_name="renamed-alter"),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_called()
+
 
 class TestAltersApiDelete:
     """Tests for DELETE /api/plugins/alters/{task_name}."""

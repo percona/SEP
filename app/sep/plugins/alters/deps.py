@@ -755,6 +755,30 @@ async def cascade_create_alters_group(
         raise
 
 
+_ALTERS_GROUP_RENAME_MESSAGE = (
+    "Cannot rename an alters task group. Delete and recreate the task "
+    "instead; the pre-checks chain wired at create time stores task "
+    "names verbatim."
+)
+
+
+def ensure_alters_group_update_preserves_names(
+    parent_existing_name: str,
+    updated_parent_name: str,
+) -> None:
+    """Refuse parent renames on update; create-time chain stores names verbatim.
+
+    :param parent_existing_name: The current parent task name (PUT URL path).
+    :type parent_existing_name: str
+    :param updated_parent_name: The parent name from the update payload.
+    :type updated_parent_name: str
+    :raises HTTPConflictException: When ``updated_parent_name`` differs from
+        ``parent_existing_name``.
+    """
+    if updated_parent_name != parent_existing_name:
+        raise HTTPConflictException(_ALTERS_GROUP_RENAME_MESSAGE)
+
+
 async def cascade_update_alters_group(
     tasks_api: RemoteAPI,
     parent_existing_name: str,
@@ -776,7 +800,9 @@ async def cascade_update_alters_group(
     :type pre_checks_template: TaskWrite
     :return: A merged :class:`CascadeResult` across derived and predecessor legs.
     :rtype: CascadeResult
+    :raises HTTPConflictException: When the update attempts to rename the parent.
     """
+    ensure_alters_group_update_preserves_names(parent_existing_name, parent_task.name)
     parent_payload = parent_task.model_dump()
     derived_specs = alters_schema.derived or []
     derived_names = alters_derived_task_names(parent_existing_name)
