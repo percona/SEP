@@ -16,7 +16,15 @@
 """Define the PluginSchema for the Alters plugin."""
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.framework.rules import F, FieldGate
+from app.sep.plugins.framework.rules import (
+    all_,
+    all_present,
+    F,
+    FailRule,
+    FieldGate,
+    not_,
+    truthy,
+)
 from app.sep.plugins.framework.schema import (
     BoolField,
     Capabilities,
@@ -38,6 +46,11 @@ from app.sep.plugins.framework.schema import (
     StringField,
     TableField,
     TextAreaField,
+)
+
+_INVENTORY_TARGET_SET = FieldGate(when=all_present("schema_id", "table_id"))
+_MANUAL_TARGET_SET = FieldGate(
+    when=all_(truthy("schema_name"), truthy("table_name")),
 )
 
 alters_schema = PluginSchema(
@@ -85,21 +98,59 @@ alters_schema = PluginSchema(
                     name="schema_id",
                     label="Schema",
                     depends_on="service_id",
+                    forbidden=[_MANUAL_TARGET_SET],
                 ),
                 TableField(
                     name="table_id",
                     label="Table",
                     depends_on="schema_id",
+                    forbidden=[_MANUAL_TARGET_SET],
                 ),
                 StringField(
                     name="schema_name",
                     label="Schema Name",
                     description="Manual schema name when not selecting from inventory",
+                    forbidden=[_INVENTORY_TARGET_SET],
                 ),
                 StringField(
                     name="table_name",
                     label="Table Name",
                     description="Manual table name when not selecting from inventory",
+                    forbidden=[_INVENTORY_TARGET_SET],
+                ),
+            ],
+            fail_when=[
+                FailRule(
+                    fail_when=all_(
+                        not_(all_present("schema_id", "table_id")),
+                        not_(all_(truthy("schema_name"), truthy("table_name"))),
+                    ),
+                    error_fields=[
+                        "schema_id",
+                        "table_id",
+                        "schema_name",
+                        "table_name",
+                    ],
+                    message=(
+                        "Either both schema_id and table_id or both "
+                        "schema_name and table_name must be provided."
+                    ),
+                ),
+                FailRule(
+                    fail_when=all_(
+                        all_present("schema_id", "table_id"),
+                        all_(truthy("schema_name"), truthy("table_name")),
+                    ),
+                    error_fields=[
+                        "schema_id",
+                        "table_id",
+                        "schema_name",
+                        "table_name",
+                    ],
+                    message=(
+                        "Cannot use both schema_id/table_id and "
+                        "schema_name/table_name at the same time."
+                    ),
                 ),
             ],
         ),

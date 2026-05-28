@@ -21,6 +21,8 @@ from pydantic import ValidationError
 from app.sep.plugins.alters.models import AltersTaskWrite
 from app.sep.plugins.alters.schema import alters_schema
 
+DATA_SECTION_FAIL_WHEN_RULE_COUNT = 2
+
 
 def test_alters_schema_declares_cascade_primitives():
     """Test alters_schema declares derived dry-run and chained pre-checks predecessors."""
@@ -33,6 +35,24 @@ def test_alters_schema_declares_cascade_primitives():
     assert len(alters_schema.predecessors) == 1
     assert alters_schema.predecessors[0].name_suffix == "-pre-checks"
     assert alters_schema.predecessors[0].on_failure == "halt"
+
+
+def test_alters_schema_data_target_mutual_exclusion_gates():
+    """Test Data section gates hide inventory vs manual target fields."""
+    data_section = next(
+        section for section in alters_schema.forms if section.title == "Data"
+    )
+    schema_id = next(f for f in data_section.fields if f.name == "schema_id")
+    table_id = next(f for f in data_section.fields if f.name == "table_id")
+    schema_name = next(f for f in data_section.fields if f.name == "schema_name")
+    table_name = next(f for f in data_section.fields if f.name == "table_name")
+
+    assert schema_id.forbidden is not None
+    assert table_id.forbidden is not None
+    assert schema_name.forbidden is not None
+    assert table_name.forbidden is not None
+    assert data_section.fail_when is not None
+    assert len(data_section.fail_when) == DATA_SECTION_FAIL_WHEN_RULE_COUNT
 
 
 def test_alters_schema_dsn_table_conditional_gates():
@@ -77,6 +97,21 @@ def test_alters_task_write_dsn_table_required_when_recursion_dsn():
             alter="ADD COLUMN x INT",
             recursion_method="dsn",
             dsn_table="",
+        )
+
+
+def test_alters_task_write_rejects_both_inventory_and_manual_targets():
+    """Test AltersTaskWrite rejects mixed inventory IDs and manual names."""
+    with pytest.raises(ValidationError, match="schema_name"):
+        AltersTaskWrite(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            schema_id=1,
+            table_id=2,
+            schema_name="app",
+            table_name="users",
+            alter="ADD COLUMN x INT",
         )
 
 
