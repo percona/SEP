@@ -75,6 +75,7 @@ class AltersCreateFactory(ModelFactory[AltersCreate]):
     table_name = ""
     recursion_method = "processlist"
     dsn_table = ""
+    continue_on_pre_check_failure = False
 
 
 class ArchivesCreateFactory(ModelFactory[ArchivesCreate]):

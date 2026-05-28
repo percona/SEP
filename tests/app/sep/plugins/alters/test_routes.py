@@ -134,6 +134,7 @@ def test_alters_create_full_form_dependency_chain_without_payload_override(
     created_alters.alter = "ADD COLUMN new_column INT"
     created_alters.recursion_method = "dsn"
     created_alters.dsn_table = "D=percona,t=dsns"
+    created_alters.continue_on_pre_check_failure = False
 
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[

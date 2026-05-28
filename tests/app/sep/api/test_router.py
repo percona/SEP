@@ -233,12 +233,12 @@ class TestApiRouterConfigDrivenLoop:
             plugin = Plugin(name=module.title(), module_name=module)
             assert plugin.api_router_path == expected
 
-    def test_plugin_omitting_api_router_path_stays_none_when_no_api_routes(
+    def test_plugin_omitting_api_router_path_auto_derives_for_alters(
         self,
     ) -> None:
-        """Assert convention is silent when the plugin ships no ``api_routes`` module."""
+        """Assert convention derives ``api_router_path`` once alters ships API routes."""
         plugin = Plugin(name="Alters", module_name="alters")
-        assert plugin.api_router_path is None
+        assert plugin.api_router_path == "app.sep.plugins.alters.api_routes.router"
 
     def test_explicit_null_api_router_path_opts_out(self) -> None:
         """Assert explicit ``null`` input wins over convention auto-derive."""
