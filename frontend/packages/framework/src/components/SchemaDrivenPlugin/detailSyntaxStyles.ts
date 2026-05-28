@@ -17,8 +17,8 @@
 
 import type { SxProps, Theme } from '@mui/material/styles';
 
-/** Matches backend ``DetailHighlightLanguage``. */
-export type DetailSyntaxLanguage = 'sql' | 'json';
+/** Matches backend ``DetailHighlightLanguage`` plus frontend-only ``yaml``. */
+export type DetailSyntaxLanguage = 'sql' | 'json' | 'yaml';
 
 /** Shared layout for syntax blocks and matching Suspense fallbacks (no prism/sql deps). */
 export const detailSyntaxBlockSx: SxProps<Theme> = {

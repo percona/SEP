@@ -33,6 +33,7 @@ from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
     get_session,
+    require_bearer_for_unsafe_methods,
     validate_csrf,
 )
 from app.sep.main import sep_app
@@ -66,6 +67,7 @@ def snippets_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Return a TestClient authenticated as an admin with the real session."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -76,6 +78,7 @@ def admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
 def non_admin_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Return a TestClient authenticated as a non-admin user."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -86,6 +89,7 @@ def non_admin_client(regular_user: CasdoorUser, session: AsyncSession) -> TestCl
 def api_admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Return a TestClient authenticated as an admin via the JSON API auth path."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: session
@@ -99,8 +103,30 @@ def api_non_admin_client(
 ) -> TestClient:
     """Return a TestClient authenticated as a non-admin via the JSON API auth path."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def api_admin_client_no_bearer(
+    admin_user: CasdoorUser, session: AsyncSession
+) -> TestClient:
+    """Return a cookie-auth API admin TestClient with the Bearer gate intact.
+
+    Diverges from the central :func:`tests.app.sep.conftest.api_admin_client_no_bearer`
+    by additionally pinning ``get_session`` to the in-memory test ``session``:
+    the snippets ``Snippet`` table only exists on that session, so the
+    central fixture (no session override) would 500 inside the route. Keep
+    this local override; do not delete in favour of the central one without
+    first solving the snippets table-visibility constraint.
+    """
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}

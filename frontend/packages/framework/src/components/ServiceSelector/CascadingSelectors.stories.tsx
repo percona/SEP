@@ -69,9 +69,9 @@ const TABLES_BY_SCHEMA: Record<number, Array<{ id: number; name: string }>> = {
 
 // Build the per-URL response map consumed by the storybook fetch wrapper.
 // Matching is longest-prefix, so the per-id paths take precedence over the
-// generic `/api/inventory/services/` services-list registration.
+// generic `/api/sep/services/` services-list registration.
 const cascadeFetchResponses: Record<string, unknown> = {
-  '/api/inventory/services/': SERVICES,
+  '/api/sep/services/': SERVICES,
 };
 for (const [serviceId, list] of Object.entries(SCHEMAS_BY_SERVICE)) {
   cascadeFetchResponses[`/inventory-api/services/${serviceId}/schemas`] = list;

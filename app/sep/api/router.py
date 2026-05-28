@@ -34,9 +34,13 @@ from collections.abc import Iterable
 from fastapi import APIRouter
 
 from app.core.utils import import_var
+from app.sep.api.routes.dashboard import router as dashboard_router
 from app.sep.api.routes.hosts import router as hosts_router
+from app.sep.api.routes.services import router as services_router
+from app.sep.api.routes.task_history import router as task_history_router
+from app.sep.api.routes.task_stats import router as task_stats_router
 from app.sep.config import Plugin, sep_settings
-from app.sep.deps import IsApiAuthenticated
+from app.sep.deps import IsApiAuthenticated, RequireBearerForUnsafeMethods
 
 
 def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
@@ -52,7 +56,9 @@ def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
         ``api_router_path`` is set included at ``/{key}`` with ``tags=[key]``.
     :rtype: APIRouter
     """
-    plugins_router = APIRouter(prefix="/plugins")
+    plugins_router = APIRouter(
+        prefix="/plugins", dependencies=[RequireBearerForUnsafeMethods]
+    )
     for plugin in plugins:
         if not plugin.api_router_path:
             continue
@@ -71,4 +77,8 @@ plugins_router = build_plugins_router(sep_settings.PLUGINS)
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
 api_router.include_router(plugins_router)
+api_router.include_router(dashboard_router, prefix="/sep/dashboard", tags=["sep"])
 api_router.include_router(hosts_router, prefix="/sep/hosts", tags=["sep"])
+api_router.include_router(services_router, prefix="/sep/services", tags=["sep"])
+api_router.include_router(task_stats_router, prefix="/sep/task-stats", tags=["sep"])
+api_router.include_router(task_history_router, prefix="/sep/task-history", tags=["sep"])

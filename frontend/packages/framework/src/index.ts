@@ -30,6 +30,7 @@ export {
   PluginSchedulePage,
 } from './components/SchemaDrivenPlugin';
 export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
+export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
@@ -66,6 +67,18 @@ export { ChainBuilder } from './components/ChainBuilder';
 export type { ChainBuilderProps, ChainValue, AvailableTask } from './components/ChainBuilder';
 export { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
+export {
+  useScheduledTasksForPlugin,
+  useCreateScheduledTask,
+  useUpdateScheduledTask,
+  useDeleteScheduledTask,
+  type PeriodicTaskResponse,
+  type PeriodicTaskCreate,
+  type PeriodicTaskUpdate,
+  type CrontabSchedule,
+  type IntervalSchedule,
+  type PeriodicTaskExecuteRequest,
+} from './components/ScheduledTasksPanel/hooks';
 export { default as DetailSyntaxHighlighter } from './components/SchemaDrivenPlugin/DetailSyntaxHighlighter';
 export { detailSyntaxBlockSx } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
 export type { DetailSyntaxLanguage } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
@@ -78,7 +91,6 @@ export type {
   SchemaOption,
   TableOption,
   HostOption,
-  HostsResult,
   UseServicesOptions,
   UseSchemasOptions,
   UseTablesOptions,
@@ -91,6 +103,7 @@ export {
   useLogDownload,
   useTaskHistory,
   useTaskHistoryByName,
+  useTaskHistoryByNames,
   useStopTaskHistory,
   useSnippetPluginExecution,
   useSnippetPluginSchema,
@@ -122,6 +135,8 @@ export {
 export type { SnippetExecutionFormPayload } from './utils/snippetFormSubmission';
 
 export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetPlugin';
+
+export { resolvePath } from './utils/resolvePath';
 
 export {
   SNIPPETS_PLUGINS_API_BASE,

@@ -53,6 +53,7 @@ export function ChoiceField({ field }: ChoiceFieldProps) {
       isRequired={field.required}
       control={control}
       helperText={field.description}
+      formControlProps={{ fullWidth: true }}
       selectFieldProps={{ fullWidth: true }}
       controllerProps={{ name: field.name, rules }}
     >

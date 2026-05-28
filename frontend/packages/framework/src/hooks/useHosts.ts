@@ -17,6 +17,7 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
+import { sepRetry } from './sepRetry';
 
 export interface HostOption {
   /** Executor node name — the value sent to the dispatch payload as `executor_host`. */
@@ -27,18 +28,9 @@ export interface HostOption {
   address: string;
 }
 
-export interface HostsResult {
-  hosts: HostOption[];
-  /** Detail from the `X-Sep-Upstream-Error` header when the Tasks API
-   * was unreachable. `null` when the upstream call succeeded. */
-  upstreamError: string | null;
-}
-
 export interface UseHostsOptions {
   enabled?: boolean;
 }
-
-const UPSTREAM_ERROR_HEADER = 'x-sep-upstream-error';
 
 /**
  * Fetch executor hosts merged with inventory display names.
@@ -46,20 +38,21 @@ const UPSTREAM_ERROR_HEADER = 'x-sep-upstream-error';
  * Calls the SEP-side proxy `GET /api/sep/hosts/`, which performs the
  * Tasks/Inventory merge server-side. Loading and error states are
  * first-class React Query states. When the Tasks API is unreachable the
- * route degrades to `200 []` and surfaces the upstream detail via the
- * `X-Sep-Upstream-Error` response header — this hook exposes that
- * detail as `data.upstreamError` so the consumer can raise a notification.
+ * route responds with `502` + `{"detail": "<upstream detail>"}`; the axios
+ * interceptor turns that into an `ApiError` whose `.message` carries the
+ * detail, so consumers handle it via React Query's `isError` / `error`
+ * slot — no out-of-band header plumbing.
  */
-export function useHosts(options: UseHostsOptions = {}): UseQueryResult<HostsResult, Error> {
+export function useHosts(options: UseHostsOptions = {}): UseQueryResult<HostOption[], Error> {
   const { enabled = true } = options;
-  return useQuery<HostsResult, Error>({
+  return useQuery<HostOption[], Error>({
     queryKey: ['sep', 'hosts'],
     enabled,
     staleTime: 60_000,
     queryFn: async () => {
       const response = await apiClient.get<HostOption[]>('/sep/hosts/');
-      const upstreamError = response.headers[UPSTREAM_ERROR_HEADER] ?? null;
-      return { hosts: response.data, upstreamError };
+      return response.data;
     },
+    retry: sepRetry,
   });
 }
