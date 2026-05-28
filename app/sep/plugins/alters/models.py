@@ -18,7 +18,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, FutureDatetime
+from pydantic import BaseModel, FutureDatetime, model_validator
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
@@ -31,8 +31,55 @@ from app.sep.plugins.framework.rules import (
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
+def _coerce_optional_int(value: Any) -> int | None:
+    """Coerce HTML form / JSON optional int fields to ``int | None``."""
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
+def normalize_alters_target_fields(data: Any) -> Any:
+    """Resolve inventory vs manual schema/table targets before conditional rules.
+
+    Legacy Jinja create/edit forms keep ``schema_name`` / ``table_name`` inputs
+    in the DOM (hidden, still submitted) while inventory selectors populate
+    ``schema_id`` / ``table_id``. Prefer the ID pair when both are present so
+    mutual-exclusion rules do not reject otherwise valid edits.
+
+    :param data: Raw model input (typically a form mapping).
+    :type data: Any
+    :return: Normalized input with exactly one target mode represented.
+    :rtype: Any
+    """
+    if not isinstance(data, dict):
+        return data
+    normalized = dict(data)
+    schema_id = _coerce_optional_int(normalized.get("schema_id"))
+    table_id = _coerce_optional_int(normalized.get("table_id"))
+    schema_name = str(normalized.get("schema_name") or "").strip()
+    table_name = str(normalized.get("table_name") or "").strip()
+    normalized["schema_id"] = schema_id
+    normalized["table_id"] = table_id
+    if schema_id is not None and table_id is not None:
+        normalized["schema_name"] = ""
+        normalized["table_name"] = ""
+    elif schema_name and table_name:
+        normalized["schema_id"] = None
+        normalized["table_id"] = None
+    return normalized
+
+
+class _AltersTargetFieldsMixin:
+    """Shared target-field normalization for Jinja forms and JSON write models."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_target_fields(cls, data: Any) -> Any:
+        return normalize_alters_target_fields(data)
+
+
 @apply_conditional_rules(alters_schema)
-class AltersCreate(ConditionalRulesModel):
+class AltersCreate(_AltersTargetFieldsMixin, ConditionalRulesModel):
     """Represent an Alters creation form.
 
     :param task_name: The name of the task to be created.
@@ -132,7 +179,7 @@ class AltersCreate(ConditionalRulesModel):
 
 
 @apply_conditional_rules(alters_schema)
-class AltersTaskWrite(ConditionalRulesModel):
+class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
     """Represent a JSON request body for creating or updating an alters task group.
 
     Mirrors :class:`AltersCreate` and is validated against ``alters_schema``

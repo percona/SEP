@@ -22,6 +22,10 @@ from app.sep.plugins.alters.models import AltersCreate, AltersTaskWrite
 from app.sep.plugins.alters.schema import alters_schema
 
 DATA_SECTION_FAIL_WHEN_RULE_COUNT = 2
+LEGACY_FORM_SCHEMA_ID = 10
+LEGACY_FORM_TABLE_ID = 20
+TASK_WRITE_SCHEMA_ID = 1
+TASK_WRITE_TABLE_ID = 2
 
 
 def test_alters_schema_declares_cascade_primitives():
@@ -129,19 +133,43 @@ def test_alters_task_write_dsn_table_required_when_recursion_dsn():
         )
 
 
-def test_alters_task_write_rejects_both_inventory_and_manual_targets():
-    """Test AltersTaskWrite rejects mixed inventory IDs and manual names."""
-    with pytest.raises(ValidationError, match="schema_name"):
-        AltersTaskWrite(
-            task_name="t1",
-            hostname="host1",
-            service_id=1,
-            schema_id=1,
-            table_id=2,
-            schema_name="app",
-            table_name="users",
-            alter="ADD COLUMN x INT",
-        )
+def test_alters_create_normalizes_legacy_dual_target_fields():
+    """Test AltersCreate prefers inventory IDs when legacy forms post both modes."""
+    body = AltersCreate.model_validate(
+        {
+            "task_name": "t1",
+            "hostname": "host1",
+            "service_id": 1,
+            "schema_id": str(LEGACY_FORM_SCHEMA_ID),
+            "table_id": str(LEGACY_FORM_TABLE_ID),
+            "schema_name": "app",
+            "table_name": "users",
+            "alter": "ADD COLUMN x INT",
+            "recursion_method": "processlist",
+        }
+    )
+    assert body.schema_id == LEGACY_FORM_SCHEMA_ID
+    assert body.table_id == LEGACY_FORM_TABLE_ID
+    assert body.schema_name == ""
+    assert body.table_name == ""
+
+
+def test_alters_task_write_normalizes_legacy_dual_target_fields():
+    """Test AltersTaskWrite prefers inventory IDs when legacy forms post both modes."""
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_id=TASK_WRITE_SCHEMA_ID,
+        table_id=TASK_WRITE_TABLE_ID,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+    )
+    assert body.schema_id == TASK_WRITE_SCHEMA_ID
+    assert body.table_id == TASK_WRITE_TABLE_ID
+    assert body.schema_name == ""
+    assert body.table_name == ""
 
 
 def test_alters_task_write_continue_on_pre_check_failure_default_false():
