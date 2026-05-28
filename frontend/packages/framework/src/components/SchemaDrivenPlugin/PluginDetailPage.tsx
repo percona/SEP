@@ -187,7 +187,8 @@ function EntityDetailField({
 // Framework baseline: numeric `id`, internal worker plumbing (`backend`, `protected`), and
 // timestamps already shown in list_view columns. The `data` payload is rendered via
 // schema-declared ``detail_view`` sections. Plugin schemas can extend this via
-// ``list_view.overview_hidden_fields``.
+// ``list_view.overview_hidden_fields``. The PII fields are handled by the dedicated
+// "PII Anonymization" capability-gated section.
 const BASELINE_OVERVIEW_HIDDEN_FIELDS = [
   'id',
   'backend',
@@ -196,6 +197,8 @@ const BASELINE_OVERVIEW_HIDDEN_FIELDS = [
   'updated_at',
   'last_updated_by',
   'connectivity_warning',
+  'anonymize_mask',
+  'anonymized_entities',
 ] as const;
 
 function formatLabel(key: string): string {
@@ -332,6 +335,27 @@ function OverviewTab({ schema, task, hiddenFields = [], children }: OverviewTabP
             typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined
           }
         />
+      )}
+
+      {schema.capabilities?.pii_anonymization && (
+        <SectionCard title="PII Anonymization">
+          {Array.isArray(task.anonymized_entities) && task.anonymized_entities.length > 0 ? (
+            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+              {(task.anonymized_entities as string[]).map((entity) => (
+                <Chip
+                  key={entity}
+                  label={entity.replace(/_/g, ' ')}
+                  size="small"
+                  data-testid="pii-entity-chip"
+                />
+              ))}
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No PII entities configured for anonymization.
+            </Typography>
+          )}
+        </SectionCard>
       )}
 
       {schema.detail_view?.sections.map((section, idx) => (
