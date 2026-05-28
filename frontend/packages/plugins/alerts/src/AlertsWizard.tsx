@@ -299,6 +299,8 @@ function PagerDutyFlow({ configured, onClose }: PagerDutyFlowProps) {
           size="small"
           error={Boolean(errors.integrationKey)}
           helperText={errors.integrationKey?.message}
+          type="password"
+          autoComplete="off"
           inputProps={{ 'data-testid': 'pagerduty-key-input' }}
         />
         {configured && (

@@ -38,7 +38,12 @@ export function AlertsDetailPage() {
   const navigate = useNavigate();
   const id = backupId !== undefined ? Number(backupId) : undefined;
 
-  const { data, isLoading, error } = useAlertBackupDetail(Number.isNaN(id) ? undefined : id);
+  const invalidId = id === undefined || Number.isNaN(id);
+  const { data, isLoading, error } = useAlertBackupDetail(invalidId ? undefined : id);
+
+  if (invalidId) {
+    return <Alert severity="error">Invalid backup ID.</Alert>;
+  }
 
   if (isLoading) {
     return (
@@ -57,7 +62,7 @@ export function AlertsDetailPage() {
   }
 
   if (!data) {
-    return null;
+    return <Alert severity="error">Backup not found.</Alert>;
   }
 
   return (
