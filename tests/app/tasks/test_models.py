@@ -39,6 +39,7 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
+    TaskResponse,
     TaskStats,
     TransformPayloadRequest,
 )
@@ -262,6 +263,49 @@ class TestTask:
             mock_settings.DEFAULT_ENTITIES = mock_defaults
             result = task.anonymized_entities
         assert result == default_entities
+
+
+class TestTaskResponseAnonymizedEntities:
+    """Test the anonymized_entities computed field on TaskResponse."""
+
+    BASE_FIELDS: dict = {
+        "id": 1,
+        "name": "test-task",
+        "data": {},
+        "deleted_at": None,
+        "created_by": None,
+        "last_updated_by": None,
+    }
+
+    def test_explicit_mask_returns_sorted_entity_names(self) -> None:
+        """Explicit anonymize_mask decodes to a sorted list of PIIEntity name strings."""
+        mask = int(PIIEntity.CREDIT_CARD | PIIEntity.EMAIL_ADDRESS)
+        response = TaskResponse.model_validate(
+            {**self.BASE_FIELDS, "anonymize_mask": mask}
+        )
+        assert response.anonymized_entities == ["CREDIT_CARD", "EMAIL_ADDRESS"]
+
+    def test_zero_mask_returns_empty_list(self) -> None:
+        """anonymize_mask=0 decodes to an empty list (no entities set)."""
+        response = TaskResponse.model_validate(
+            {**self.BASE_FIELDS, "anonymize_mask": 0}
+        )
+        assert response.anonymized_entities == []
+
+    def test_none_mask_falls_back_to_owner_defaults(self) -> None:
+        """anonymize_mask=None falls back to anonymizer_settings.DEFAULT_ENTITIES[owner]."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
+        mock_defaults = defaultdict(lambda: default_entities)
+        fields = {
+            **self.BASE_FIELDS,
+            "owner": TaskOwner.CHECKSUMS,
+            "anonymize_mask": None,
+        }
+        with patch("app.tasks.models.anonymizer_settings") as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            response = TaskResponse.model_validate(fields)
+            result = response.anonymized_entities
+        assert result == sorted(e.name for e in default_entities)
 
 
 class TestTaskExecutionRequest:

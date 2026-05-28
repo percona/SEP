@@ -128,6 +128,7 @@ class TestSchemaEndpoint:
             "alert_on_fail": True,
             "scheduling": True,
             "stats": False,
+            "pii_anonymization": False,
         }
 
     def test_schema_includes_backup_type_field(self, test_client):
