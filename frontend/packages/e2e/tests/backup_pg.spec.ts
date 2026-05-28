@@ -107,7 +107,7 @@ function isBenignConsoleError(msg: string): boolean {
 
 type ApiState = { tasks: TaskRow[] };
 
-/** Task name segment from ``/api/plugins/backup_pg/{task_name}`` (not list/schema). */
+/** Task name segment from ``/api/plugins/backup_pg/{task_name}`` (not list/schema/schedule). */
 function taskNameFromPath(pathname: string): string | null {
   const prefix = '/api/plugins/backup_pg/';
   if (!pathname.startsWith(prefix)) {
