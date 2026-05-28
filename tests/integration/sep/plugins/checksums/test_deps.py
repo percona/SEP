@@ -16,7 +16,8 @@
 """Define tests for the app.sep.plugins.checksums.deps module."""
 
 import shlex
-from unittest.mock import AsyncMock
+from collections import defaultdict
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -27,7 +28,12 @@ from app.sep.plugins.checksums.deps import (
     build_checksums_task_payload,
     DEFAULT_RECURSION_DSN_TABLE,
 )
-from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumTaskWrite
+from app.sep.plugins.checksums.models import (
+    ChecksumsCreate,
+    ChecksumTaskResponse,
+    ChecksumTaskWrite,
+)
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import TaskFactory
 
@@ -402,3 +408,44 @@ class TestBuildChecksumsApiTaskResponse:
 
         assert result.created_by == "uid-123"
         assert result.last_updated_by == "uid-456"
+
+
+class TestChecksumTaskResponseAnonymizedEntities:
+    """Test the anonymized_entities computed field on ChecksumTaskResponse."""
+
+    BASE_FIELDS: dict = {
+        "name": "test-checksum",
+        "owner": TaskOwner.CHECKSUMS,
+        "backend": "nomad",
+        "data": {},
+        "protected": False,
+        "alert_on_fail": False,
+    }
+
+    def test_explicit_mask_returns_sorted_entity_names(self) -> None:
+        """Explicit anonymize_mask decodes to a sorted list of PIIEntity name strings."""
+        mask = int(PIIEntity.IP_ADDRESS | PIIEntity.PERSON)
+        response = ChecksumTaskResponse.model_validate(
+            {**self.BASE_FIELDS, "anonymize_mask": mask}
+        )
+        assert response.anonymized_entities == ["IP_ADDRESS", "PERSON"]
+
+    def test_zero_mask_returns_empty_list(self) -> None:
+        """anonymize_mask=0 decodes to an empty list (no entities set)."""
+        response = ChecksumTaskResponse.model_validate(
+            {**self.BASE_FIELDS, "anonymize_mask": 0}
+        )
+        assert response.anonymized_entities == []
+
+    def test_none_mask_falls_back_to_owner_defaults(self) -> None:
+        """anonymize_mask=None falls back to anonymizer_settings.DEFAULT_ENTITIES[owner]."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS}
+        mock_defaults = defaultdict(lambda: default_entities)
+        fields = {**self.BASE_FIELDS, "anonymize_mask": None}
+        with patch(
+            "app.sep.plugins.checksums.models.anonymizer_settings"
+        ) as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            response = ChecksumTaskResponse.model_validate(fields)
+            result = response.anonymized_entities
+        assert result == ["EMAIL_ADDRESS"]
