@@ -5237,6 +5237,8 @@ export interface components {
       columns: components['schemas']['Column'][];
       /** Default Sort */
       default_sort?: string | null;
+      /** Overview Hidden Fields */
+      overview_hidden_fields?: string[];
     };
     /**
      * MultiChoiceField
