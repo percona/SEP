@@ -140,6 +140,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     binlog_compress_cmd: NonEmptyStr | EmptyStrToNone = None
     binlog_cmd: NonEmptyStr | EmptyStrToNone = None
     binlog_run_all: bool = True
+    binlog_alternative_host: NonEmptyStr | EmptyStrToNone = None
     s3_bucket: NonEmptyStr | EmptyStrToNone = None
     s3_storage_class: NonEmptyStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
@@ -276,7 +277,6 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     service_id: int
     backup_type: BackupType
     encryption_recipient: NonEmptyStr | EmptyStrToNone = None
-    binlog_alternative_host: NonEmptyStr | EmptyStrToNone = None
     alias: NonEmptyStr | EmptyStrToNone = None
     alert_on_fail: bool = False
     upload: list[UploadProvider] = Field(min_length=1)

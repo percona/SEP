@@ -27,6 +27,7 @@ from app.sep.plugins.mysql_backups.deps import (
     get_backups_task,
     get_backups_task_info,
     get_backups_task_status,
+    parse_backup_task_data,
 )
 from app.sep.plugins.mysql_backups.models import (
     BackupCreate,
@@ -62,6 +63,12 @@ from app.tasks.models import (
             "xtrabackup_payload",
             "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
             "localhost",
+        ),
+        (
+            BackupType.BINLOG,
+            "binlog_payload",
+            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
+            "10.0.0.5",
         ),
     ],
 )
@@ -101,6 +108,8 @@ async def test_build_backup_task_payload(
         "encrypt": True,
         "encryption_recipient": faker.email(),
     }
+    if backup_type == BackupType.BINLOG:
+        form_data["binlog_alternative_host"] = "10.0.0.5"
     backup_create = BackupCreate(**form_data)
 
     task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
@@ -124,10 +133,12 @@ async def test_build_backup_task_payload(
     server_config = server_list[0]
 
     assert server_config["HOST"] == expected_host
-    if backup_type == BackupType.MYDUMPER:
-        assert server_config["BACKUP_TYPE"] == BackupType.MYDUMPER.value
+    assert server_config["BACKUP_TYPE"] == backup_type.value
+
+    if backup_type == BackupType.BINLOG:
+        assert cfg["ALL_SERVERS"]["BINLOG_ALTERNATIVE_HOST"] == "10.0.0.5"
     else:
-        assert server_config["BACKUP_TYPE"] == BackupType.XTRABACKUP.value
+        assert "BINLOG_ALTERNATIVE_HOST" not in cfg["ALL_SERVERS"]
 
     assert "s3" in server_config["UPLOAD"]
     assert "rsync" in server_config["UPLOAD"]
@@ -211,6 +222,89 @@ def test_get_backups_task_info():
     assert result["port"] == server_port
     assert result["upload"] == "S3, RSYNC"
     assert result["backup_type"] == BackupType.XTRABACKUP.name
+
+
+@pytest.mark.parametrize(
+    ("all_servers", "expected_alt_host"),
+    [
+        (
+            {
+                "BINLOG_ALTERNATIVE_HOST": "10.0.0.5",
+                "BINLOG_PREFIX": "binlog",
+            },
+            "10.0.0.5",
+        ),
+        (
+            {"BINLOG_PREFIX": "binlog"},
+            None,
+        ),
+    ],
+)
+def test_parse_backup_task_data(all_servers: dict, expected_alt_host: str | None):
+    """Round-trip the binlog alt host from persisted YAML on the edit form path."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1-mysql",
+                                "HOST": "10.0.0.5",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.BINLOG.value,
+                                "UPLOAD": ["gsutil"],
+                            }
+                        ],
+                        "ALL_SERVERS": all_servers,
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["name"] == "test_task"
+    assert result["hostname"] == "host.example.com"
+    assert result["backup_type"] == BackupType.BINLOG.value
+    assert result["service_id"] is None
+    assert result["host"] == "10.0.0.5"
+    assert result["binlog_alternative_host"] == expected_alt_host
+
+
+def test_parse_backup_task_data_without_all_servers():
+    """parse_backup_task_data handles a YAML config with no ALL_SERVERS block."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1-mysql",
+                                "HOST": "10.0.0.5",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.BINLOG.value,
+                                "UPLOAD": ["gsutil"],
+                            }
+                        ],
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["name"] == "test_task"
+    assert result["hostname"] == "host.example.com"
+    assert result["host"] == "10.0.0.5"
+    assert result["binlog_alternative_host"] is None
 
 
 def _task_with_raw_config(raw_config: str) -> Task:
