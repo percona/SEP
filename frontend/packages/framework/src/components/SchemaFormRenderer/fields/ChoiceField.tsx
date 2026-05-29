@@ -59,7 +59,7 @@ export function ChoiceField({ field }: ChoiceFieldProps) {
       control={control}
       rules={rules}
       render={({ field: rhfField, fieldState: { error } }) => (
-        <FormControl fullWidth size="small" error={!!error} sx={{ mt: 3 }}>
+        <FormControl fullWidth size="small" error={!!error}>
           <InputLabel id={labelId} shrink required={field.required}>
             {field.label}
           </InputLabel>

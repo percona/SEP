@@ -17,19 +17,11 @@
 
 // SEP-1278 — empty-state placeholder + shrunk label regression suite.
 //
-// Locks in the rev. 2 fix to MultiChoiceField / ChoiceField (select-mode):
+// Locks in the fix to MultiChoiceField / ChoiceField (select-mode):
 // the floating MUI <InputLabel> must shrink above the outline notch when the
-// select is empty, while a muted "Select…" placeholder renders inside. Each
-// test takes an explicit screenshot under screenshots/sep-1278/ so the PR
-// reviewer can drag the PNGs into the PR body for visual review.
+// select is empty, while a muted "Select…" placeholder renders inside.
 
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const SCREENSHOT_DIR = path.join(__dirname, '..', 'screenshots', 'sep-1278');
 
 // ── Mock stubs ────────────────────────────────────────────────────────────────
 
@@ -142,13 +134,6 @@ async function openCreateForm(page: Page) {
   await expect(page.locator('label#upload-label')).toBeVisible({ timeout: 30_000 });
 }
 
-async function snap(page: Page, name: string) {
-  await page.screenshot({
-    path: path.join(SCREENSHOT_DIR, `${name}.png`),
-    fullPage: false,
-  });
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
@@ -163,8 +148,6 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
     await expect(label).toHaveAttribute('data-shrink', 'true');
     await expect(label).toHaveClass(/MuiInputLabel-shrink/);
     await expect(page.locator('#mui-component-select-upload')).toContainText('Select…');
-
-    await snap(page, 'empty-multichoice');
   });
 
   test('choice (>3 options): empty state shows placeholder and shrunk label', async ({ page }) => {
@@ -174,8 +157,6 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
     await expect(label).toHaveAttribute('data-shrink', 'true');
     await expect(label).toHaveClass(/MuiInputLabel-shrink/);
     await expect(page.locator('#mui-component-select-region')).toContainText('Select…');
-
-    await snap(page, 'empty-choice-select');
   });
 
   test('clear back to empty restores placeholder, label stays shrunk', async ({ page }) => {
@@ -193,8 +174,6 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
 
     await expect(page.locator('label#upload-label')).toHaveAttribute('data-shrink', 'true');
     await expect(page.locator('#mui-component-select-upload')).toContainText('Select…');
-
-    await snap(page, 'selected-then-cleared');
   });
 
   test('required asterisk renders inside the shrunk label', async ({ page }) => {
@@ -203,8 +182,6 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
     const asterisk = page.locator('label#upload-label .MuiInputLabel-asterisk');
     await expect(asterisk).toBeVisible();
     await expect(asterisk).toHaveText(/\*/);
-
-    await snap(page, 'required-empty');
   });
 
   test('validation error keeps the label shrunk and notch open', async ({ page }) => {
@@ -221,8 +198,6 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
       'true',
     );
     await expect(page.locator('label#upload-label')).toHaveAttribute('data-shrink', 'true');
-
-    await snap(page, 'error-state-empty');
   });
 
   test('re-mounted choice keeps placeholder and shrunk label', async ({ page }) => {
@@ -241,8 +216,6 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
     await expect(label).toHaveAttribute('data-shrink', 'true');
     await expect(page.locator('#mui-component-select-s3_storage_class')).toContainText('Select…');
 
-    await snap(page, 'remounted-empty');
-
     // Deselect S3 → field unregisters again.
     await page.locator('#mui-component-select-upload').click();
     await page.getByRole('option', { name: 'S3' }).click();
@@ -256,7 +229,7 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
     await expect(label).toHaveAttribute('data-shrink', 'true');
   });
 
-  test('populated state — control screenshot for visual diff', async ({ page }) => {
+  test('populated multichoice renders selected labels', async ({ page }) => {
     await openCreateForm(page);
 
     await page.locator('#mui-component-select-upload').click();
@@ -266,7 +239,5 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
 
     await expect(page.locator('#mui-component-select-upload')).toContainText(/S3.*Rsync|Rsync.*S3/);
     await expect(page.locator('label#upload-label')).toHaveAttribute('data-shrink', 'true');
-
-    await snap(page, 'populated-multichoice');
   });
 });
