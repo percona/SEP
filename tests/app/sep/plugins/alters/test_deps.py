@@ -24,6 +24,7 @@ from fastapi import HTTPException, status
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.plugins.alters.deps import (
     _build_dsn_with_service,
+    _extract_latest_task_status,
     alters_executor_matches_service_host,
     alters_satellite_task_names,
     build_alters_api_task_response,
@@ -684,6 +685,18 @@ async def test_cascade_update_alters_group_continue_on_pre_check_failure(mocker)
 
     assert captured_specs == [resolve_predecessor_spec(body)]
     assert captured_specs[0].on_failure == "continue"
+
+
+def test_extract_latest_task_status_unknown_status_returns_none() -> None:
+    """Unrecognised Tasks API status strings degrade to None instead of 500."""
+    assert _extract_latest_task_status([{"status": "future_status"}]) is None
+
+
+def test_extract_latest_task_status_known_status_returns_enum() -> None:
+    """Recognised status strings map to TaskHistoryStatusEnum."""
+    assert _extract_latest_task_status([{"status": "success"}]) == (
+        TaskHistoryStatusEnum.SUCCESS
+    )
 
 
 @pytest.mark.asyncio

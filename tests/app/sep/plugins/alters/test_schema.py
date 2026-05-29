@@ -172,6 +172,20 @@ def test_alters_task_write_normalizes_legacy_dual_target_fields():
     assert body.table_name == ""
 
 
+def test_alters_task_write_dsn_recursion_uses_schema_default_dsn_table() -> None:
+    """JSON clients omitting dsn_table get the schema default, not a 422."""
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+        recursion_method="dsn",
+    )
+    assert body.dsn_table == "D=percona,t=dsns"
+
+
 def test_alters_task_write_rejects_empty_recursion_method():
     """Test AltersTaskWrite rejects empty recursion_method like AltersCreate."""
     with pytest.raises(ValidationError, match="recursion_method"):

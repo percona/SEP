@@ -972,7 +972,14 @@ def _extract_latest_task_status(
     """Return the latest known status from a task history payload."""
     for history in histories:
         if (status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(status)
+            try:
+                return TaskHistoryStatusEnum(status)
+            except ValueError:
+                logger.warning(
+                    "Unknown task history status %r; treating as None",
+                    status,
+                )
+                return None
     return None
 
 

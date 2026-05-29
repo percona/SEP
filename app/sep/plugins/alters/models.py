@@ -204,7 +204,9 @@ class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
     :type recursion_method: NonEmptyStr
     :param alter: The specific alter command to be executed.
     :type alter: NonEmptyStr
-    :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``.
+    :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``. Defaults
+        to ``D=percona,t=dsns`` (Percona Toolkit convention), matching
+        ``alters_schema`` and :func:`build_alters_task` fallback behavior.
     :type dsn_table: str
     :param pause_file: Execution pauses while this file exists.
     :type pause_file: str
@@ -258,7 +260,7 @@ class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
     table_name: str = ""
     recursion_method: NonEmptyStr = "processlist"
     alter: NonEmptyStr
-    dsn_table: str = ""
+    dsn_table: str = "D=percona,t=dsns"
     pause_file: str = ""
     new_table_name: str = ""
     print_arg: bool = False
