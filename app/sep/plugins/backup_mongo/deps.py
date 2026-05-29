@@ -358,7 +358,7 @@ def _backup_parent_list_params(
     """Build upstream task-list query params for parent ``pbm_config`` rows."""
     return {
         "owner": TaskOwner.BACKUP_MONGO.value,
-        "parent_is_null": True,
+        "parent_is_null": "true",
         "backup_type": BackupType.PBM_CONFIG.value,
         "offset": offset,
         "limit": limit,

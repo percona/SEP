@@ -182,7 +182,7 @@ class TestBackupMongoApiList:
             "/",
             params={
                 "owner": TaskOwner.BACKUP_MONGO.value,
-                "parent_is_null": True,
+                "parent_is_null": "true",
                 "backup_type": BackupType.PBM_CONFIG.value,
                 "offset": 0,
                 "limit": DEFAULT_PAGE_LIMIT,
@@ -221,7 +221,7 @@ class TestBackupMongoApiList:
             "/",
             params={
                 "owner": TaskOwner.BACKUP_MONGO.value,
-                "parent_is_null": True,
+                "parent_is_null": "true",
                 "backup_type": BackupType.PBM_CONFIG.value,
                 "offset": 1,
                 "limit": 1,

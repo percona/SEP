@@ -155,9 +155,9 @@ class TestRestoreMongoApiList:
             if path != "/":
                 raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
             params = kwargs.get("params") or {}
-            if params.get("parent_is_null") is True:
+            if params.get("parent_is_null") == "true":
                 return {"items": [parent], "total": 1}
-            if params.get("parent_is_null") is False:
+            if params.get("parent_is_null") == "false":
                 return {"items": [child], "total": 1}
             raise AssertionError(f"Unexpected list params: {params!r}")
 
@@ -194,9 +194,9 @@ class TestRestoreMongoApiList:
             if path != "/":
                 raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
             params = kwargs.get("params") or {}
-            if params.get("parent_is_null") is True:
+            if params.get("parent_is_null") == "true":
                 return {"items": parents, "total": THREE_PARENT_FIXTURE_TOTAL}
-            if params.get("parent_is_null") is False:
+            if params.get("parent_is_null") == "false":
                 return {"items": [], "total": 0}
             raise AssertionError(f"Unexpected list params: {params!r}")
 
@@ -230,12 +230,12 @@ class TestRestoreMongoApiList:
             if path != "/":
                 raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
             params = kwargs.get("params") or {}
-            if params.get("parent_is_null") is True:
+            if params.get("parent_is_null") == "true":
                 return {
                     "items": [parent_a, parent_b],
                     "total": TWO_PARENT_FIXTURE_TOTAL,
                 }
-            if params.get("parent_is_null") is False:
+            if params.get("parent_is_null") == "false":
                 return {"items": [], "total": 0}
             raise AssertionError(f"Unexpected list params: {params!r}")
 

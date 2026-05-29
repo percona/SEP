@@ -640,7 +640,7 @@ async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
             "/",
             params={
                 "owner": TaskOwner.RESTORE_MONGO.value,
-                "parent_is_null": True,
+                "parent_is_null": "true",
                 "limit": 0,
             },
         ),
@@ -648,7 +648,7 @@ async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
             "/",
             params={
                 "owner": TaskOwner.RESTORE_MONGO.value,
-                "parent_is_null": False,
+                "parent_is_null": "false",
                 "limit": 0,
             },
         ),
