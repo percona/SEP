@@ -26,6 +26,7 @@ import pytest
 from fastapi import status
 
 from app.sep.crud import SyncItemManager
+from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.main import sep_app
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.inventory.deps import (
@@ -388,6 +389,54 @@ class TestInventoryNewRoutesAuthentication:
             "/api/plugins/inventory/available-syncers/"
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+class TestInventoryBearerGate:
+    """Cover Bearer-gate behavior on inventory JSON mutations."""
+
+    def test_cookie_only_sync_post_returns_401(
+        self, api_admin_client_no_bearer, mock_run_sync_funcs
+    ):
+        """Cookie-auth POST without Bearer header is 401'd by the framework gate."""
+        response = api_admin_client_no_bearer.post("/api/plugins/inventory/sync/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+        mock_run_sync_funcs["inventory"].assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("method", "path", "json_body"),
+        [
+            (
+                "POST",
+                "/api/plugins/inventory/services/",
+                {"node_id": 1, "name": "db", "type": "mysql"},
+            ),
+            ("PUT", "/api/plugins/inventory/nodes/3", {"name": "x"}),
+            ("DELETE", "/api/plugins/inventory/nodes/3", None),
+        ],
+    )
+    def test_inventory_crud_mutations_are_gate_rejected(
+        self,
+        api_admin_client_no_bearer,
+        mock_inventory_api_dep,
+        mock_run_sync_funcs,
+        method: str,
+        path: str,
+        json_body: dict | None,
+    ) -> None:
+        """Every CRUD mutation under inventory 401s before any upstream call.
+
+        Coverage matrix: POST (create), PUT (update), DELETE (destroy) all
+        share the same gate. The inventory API mock must remain untouched.
+        """
+        kwargs = {"json": json_body} if json_body is not None else {}
+        response = api_admin_client_no_bearer.request(method, path, **kwargs)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+        mock_inventory_api_dep.post.assert_not_called()
+        mock_inventory_api_dep.put.assert_not_called()
+        mock_inventory_api_dep.delete.assert_not_called()
+        mock_run_sync_funcs["inventory"].assert_not_called()
 
 
 class TestInventorySyncTrigger:

@@ -25,9 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.sep.plugins.snippets.api_routes as snippets_api_routes
 from app.sep.deps import (
+    BEARER_REQUIRED_DETAIL,
     get_api_authenticated_user,
     get_current_user,
     get_session,
+    require_bearer_for_unsafe_methods,
     validate_csrf,
 )
 from app.sep.main import sep_app
@@ -1007,6 +1009,55 @@ class TestSnippetsApiRefresh:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         update_mock.assert_not_called()
 
+    async def test_cookie_only_admin_mutation_rejected_by_bearer_gate(
+        self, api_admin_client_no_bearer, enable_manual_sync, mocker
+    ):
+        """Cookie-auth admin POST without Bearer header is rejected with 401.
+
+        The framework Bearer gate on ``/api/plugins/*`` must fire before the
+        route's business logic, so the refresh helper is never invoked.
+        """
+        enable_manual_sync(value=True)
+        update_mock = mocker.patch.object(
+            snippets_api_routes,
+            "update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+
+        response = api_admin_client_no_bearer.post(self.URL)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+        update_mock.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("PUT", "/api/plugins/snippets/snippet/approval"),
+            ("DELETE", "/api/plugins/snippets/snippet/approval"),
+            ("PATCH", "/api/plugins/snippets/approvals"),
+        ],
+    )
+    async def test_cookie_only_approval_mutations_are_gate_rejected(
+        self,
+        api_admin_client_no_bearer,
+        method: str,
+        path: str,
+    ) -> None:
+        """The full snippets approval mutation matrix 401s under cookie-only auth.
+
+        ``PUT/DELETE/PATCH`` on the approval surface share the framework gate;
+        each must return the exact ``BEARER_REQUIRED_DETAIL`` body, with the
+        gate firing before any DB write.
+        """
+        kwargs = {
+            "params": {"snippet_filename": "hello.sh"},
+            "json": {"filenames": ["hello.sh"]},
+        }
+        response = api_admin_client_no_bearer.request(method, path, **kwargs)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
     async def test_dependency_order_auth_runs_before_config_gate(
         self, api_unauthenticated_client, enable_manual_sync
     ):
@@ -1186,6 +1237,7 @@ class TestSnippetsApiNestedFilenameContract:
 def test_client(regular_user, session, snippets_dir):
     """Return a TestClient sharing the in-memory session and snippets dir."""
     sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session

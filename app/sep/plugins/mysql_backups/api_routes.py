@@ -30,7 +30,6 @@ from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsApiAuthenticated,
-    RequireBearerAuth,
     TaskAPI,
 )
 from app.sep.plugins.framework.api import schema_endpoint
@@ -90,7 +89,7 @@ async def mysql_backups_api_detail(
     "/",
     response_model=BackupResponse,
     status_code=http_status.HTTP_201_CREATED,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
+    dependencies=[IsApiAuthenticated],
 )
 async def mysql_backups_api_create(
     body: BackupCreate,
@@ -109,7 +108,7 @@ async def mysql_backups_api_create(
     "/{task_name}/execute",
     response_model=BackupExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated, HasNoConflictedRunningTasks],
+    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
 )
 async def mysql_backups_api_execute(
     task: BackupsTask,
@@ -129,7 +128,7 @@ async def mysql_backups_api_execute(
 @router.delete(
     "/{task_name}",
     status_code=http_status.HTTP_204_NO_CONTENT,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
+    dependencies=[IsApiAuthenticated],
 )
 async def mysql_backups_api_delete(
     task: BackupsTask,
