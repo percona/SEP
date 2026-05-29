@@ -68,6 +68,10 @@ type TaskRow = {
   created_by: string;
 };
 
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function buildTaskRow(name: string, hostname: string): TaskRow {
   return {
     name,
@@ -96,9 +100,6 @@ function buildCreateResponse(name: string, hostname: string) {
 const MOCK_TASK_LIST: TaskRow[] = [buildTaskRow(MOCK_TASK_NAME, 'pg-host')];
 
 function isBenignConsoleError(msg: string): boolean {
-  if (msg.startsWith('Warning:')) {
-    return true;
-  }
   if (msg.includes(':nth-child')) {
     return true;
   }
@@ -158,8 +159,15 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
       (pathname === '/api/plugins/backup_pg/' || pathname === '/api/plugins/backup_pg')
     ) {
       const body = req.postDataJSON() as { task_name?: string; hostname?: string };
-      const taskName = String(body.task_name ?? NEW_TASK_NAME);
-      const hostname = String(body.hostname ?? NEW_TASK_HOSTNAME);
+      if (!body.task_name || !body.hostname) {
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Missing required fields: task_name, hostname' }),
+        });
+      }
+      const taskName = body.task_name;
+      const hostname = body.hostname;
       const created = buildCreateResponse(taskName, hostname);
       apiState.tasks = [buildTaskRow(taskName, hostname), ...apiState.tasks];
       return route.fulfill({
@@ -213,20 +221,25 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
 
 test.describe('PostgreSQL backup_pg plugin smoke', () => {
   let apiState: ApiState;
+  let consoleErrors: string[];
 
   test.beforeEach(async ({ page }) => {
     apiState = { tasks: [...MOCK_TASK_LIST] };
-    await mockBackupPgApis(page, apiState);
-  });
-
-  test('list page mounts with task rows', async ({ page }) => {
-    const consoleErrors: string[] = [];
+    consoleErrors = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
         consoleErrors.push(msg.text());
       }
     });
+    await mockBackupPgApis(page, apiState);
+  });
 
+  test.afterEach(async () => {
+    const criticalErrors = consoleErrors.filter((msg) => !isBenignConsoleError(msg));
+    expect(criticalErrors).toEqual([]);
+  });
+
+  test('list page mounts with task rows', async ({ page }) => {
     await page.goto(PLUGIN_ROUTE);
 
     await expect(page.getByRole('heading', { name: DISPLAY_NAME })).toBeVisible({
@@ -234,9 +247,6 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
     });
     await expect(page.getByRole('button', { name: /new postgresql backups/i })).toBeVisible();
     await expect(page.getByText(MOCK_TASK_NAME)).toBeVisible({ timeout: 15_000 });
-
-    const criticalErrors = consoleErrors.filter((msg) => !isBenignConsoleError(msg));
-    expect(criticalErrors).toEqual([]);
   });
 
   test('creates a backup task', async ({ page }) => {
@@ -269,7 +279,9 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
 
     await page.getByText(MOCK_TASK_NAME).click();
 
-    await expect(page).toHaveURL(new RegExp(`/backups/postgresql/task/${MOCK_TASK_NAME}`));
+    await expect(page).toHaveURL(
+      new RegExp(escapeRegExp(`/backups/postgresql/task/${MOCK_TASK_NAME}`)),
+    );
     await expect(page.getByTestId('plugin-task-delete')).toBeVisible({ timeout: 15_000 });
   });
 
@@ -289,7 +301,9 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
     await expect(page.getByText(MOCK_TASK_NAME)).toBeVisible({ timeout: 15_000 });
 
     await page.getByText(MOCK_TASK_NAME).click();
-    await expect(page).toHaveURL(new RegExp(`/backups/postgresql/task/${MOCK_TASK_NAME}`));
+    await expect(page).toHaveURL(
+      new RegExp(escapeRegExp(`/backups/postgresql/task/${MOCK_TASK_NAME}`)),
+    );
 
     await page.getByTestId('plugin-task-delete').click();
 
