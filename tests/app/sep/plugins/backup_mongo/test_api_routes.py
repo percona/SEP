@@ -159,17 +159,13 @@ class TestBackupMongoApiList:
     def test_list_returns_parent_tasks_only(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """List only parent config tasks, not derived siblings."""
+        """List parent config tasks via upstream filters and batch status lookup."""
         parent = build_backup_task("parent-backup")
-        child = build_backup_task(
-            "parent-backup-logical",
-            data={
-                "backup_type": BackupType.PBM_LOGICAL.value,
-                "parent": "parent-backup",
-            },
-        )
         mock_task_api_dep.get = AsyncMock(
-            return_value={"items": [parent, child], "total": 2}
+            return_value={"items": [parent], "total": 1, "offset": 0, "limit": 50}
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-backup": "success"},
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -181,21 +177,36 @@ class TestBackupMongoApiList:
         assert body["limit"] == DEFAULT_PAGE_LIMIT
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "parent-backup"
-        mock_task_api_dep.get.assert_any_await(
+        assert body["items"][0]["status"] == "success"
+        mock_task_api_dep.get.assert_awaited_once_with(
             "/",
-            params={"owner": TaskOwner.BACKUP_MONGO.value, "limit": 0},
+            params={
+                "owner": TaskOwner.BACKUP_MONGO.value,
+                "parent_is_null": True,
+                "backup_type": BackupType.PBM_CONFIG.value,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            },
+        )
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-backup"]},
         )
 
     def test_list_paginates_with_offset_and_limit(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """Slice ``[offset:offset+limit]`` after the parent + status filters."""
-        parents = [
-            build_backup_task("parent-backup-a"),
-            build_backup_task("parent-backup-b"),
-            build_backup_task("parent-backup-c"),
-        ]
-        mock_task_api_dep.get = AsyncMock(return_value={"items": parents, "total": 3})
+        """Pass offset and limit to the upstream filtered task list."""
+        parent_page = build_backup_task("parent-backup-b")
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [parent_page],
+                "total": THREE_PARENT_FIXTURE_TOTAL,
+                "offset": 1,
+                "limit": 1,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"parent-backup-b": "running"})
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
 
@@ -206,24 +217,36 @@ class TestBackupMongoApiList:
         assert body["limit"] == 1
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "parent-backup-b"
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/",
+            params={
+                "owner": TaskOwner.BACKUP_MONGO.value,
+                "parent_is_null": True,
+                "backup_type": BackupType.PBM_CONFIG.value,
+                "offset": 1,
+                "limit": 1,
+            },
+        )
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-backup-b"]},
+        )
 
-    def test_list_tolerates_history_fetch_failure_for_one_parent(
+    def test_list_tolerates_batch_status_fetch_failure(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """Return 200 when one parent history fetch fails after the task list."""
+        """Return 200 with unknown status when batch latest-status lookup fails."""
         parent_a = build_backup_task("parent-backup-a")
         parent_b = build_backup_task("parent-backup-b")
-
-        async def _mock_get(path: str, **kwargs: Any) -> Any:
-            if path == "/":
-                return {"items": [parent_a, parent_b], "total": 2}
-            if path == "/parent-backup-a/history/":
-                return {"items": [{"status": "success"}]}
-            if path == "/parent-backup-b/history/":
-                raise HTTPNotFoundException
-            raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
-
-        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [parent_a, parent_b],
+                "total": TWO_PARENT_FIXTURE_TOTAL,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(side_effect=HTTPNotFoundException)
 
         response = test_client.get(f"{API_BASE}/")
 
@@ -232,8 +255,12 @@ class TestBackupMongoApiList:
         assert body["total"] == TWO_PARENT_FIXTURE_TOTAL
         assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         by_name = {item["name"]: item for item in body["items"]}
-        assert by_name["parent-backup-a"]["status"] == "success"
+        assert by_name["parent-backup-a"]["status"] is None
         assert by_name["parent-backup-b"]["status"] is None
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-backup-a", "parent-backup-b"]},
+        )
 
 
 class TestBackupMongoApiCreate:

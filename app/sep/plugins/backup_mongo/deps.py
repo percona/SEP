@@ -18,7 +18,7 @@
 import asyncio
 import json
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -350,13 +350,37 @@ def build_backup_mongo_api_task_response(
     )
 
 
-def _is_backup_parent_task(task: Task) -> bool:
-    """Return whether ``task`` is a parent ``pbm_config`` row for the list view."""
-    data = task.data
-    return (
-        not data.get("parent")
-        and data.get("backup_type") == BackupType.PBM_CONFIG.value
-    )
+def _backup_parent_list_params(
+    *,
+    offset: int,
+    limit: int,
+) -> dict[str, Any]:
+    """Build upstream task-list query params for parent ``pbm_config`` rows."""
+    return {
+        "owner": TaskOwner.BACKUP_MONGO.value,
+        "parent_is_null": True,
+        "backup_type": BackupType.PBM_CONFIG.value,
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+async def _fetch_latest_task_statuses_for_names(
+    tasks_api: TaskAPI,
+    names: Sequence[str],
+) -> dict[str, TaskHistoryStatusEnum | None]:
+    """Resolve latest history status for ``names`` via the tasks batch endpoint."""
+    if not names:
+        return {}
+    try:
+        response = await tasks_api.post("/history/latest", json={"names": list(names)})
+    except Exception:
+        logger.exception("Failed to batch-fetch latest history status for backup list")
+        return dict.fromkeys(names)
+    return {
+        name: TaskHistoryStatusEnum(value) if value is not None else None
+        for name, value in response.items()
+    }
 
 
 def _gathered_task_status(
@@ -374,12 +398,9 @@ async def get_backup_mongo_api_task_responses(
 ) -> PaginatedResponse[BackupTaskResponse]:
     """Retrieve a page of backup task responses for the JSON API.
 
-    Fetches the full parent task list from the Tasks API (the
-    ``_is_backup_parent_task`` Python-side filter prevents pushing the
-    parent predicate upstream cleanly), applies the optional ``status``
-    filter, and slices ``[offset : offset + limit]`` to honour pagination.
-    ``total`` reflects the parent count *after* the status filter so
-    consumers' page math stays correct.
+    Uses one filtered upstream task list plus one batch latest-status lookup per
+    page. When ``status`` is set, the upstream list uses ``limit=0`` so
+    ``total`` reflects the parent count after the status filter.
 
     :param tasks_api: The TaskAPI instance used to query backup tasks.
     :type tasks_api: TaskAPI
@@ -392,25 +413,48 @@ async def get_backup_mongo_api_task_responses(
     :return: The paginated backup task responses matching the requested filters.
     :rtype: PaginatedResponse[BackupTaskResponse]
     """
+    if status is None:
+        response = await tasks_api.get(
+            "/",
+            params=_backup_parent_list_params(offset=offset, limit=limit),
+        )
+        parents = [Task.model_validate(item) for item in response["items"]]
+        status_map = await _fetch_latest_task_statuses_for_names(
+            tasks_api,
+            [task.name for task in parents],
+        )
+        items = [
+            build_backup_mongo_api_task_response(
+                task,
+                status=status_map.get(task.name),
+            )
+            for task in parents
+        ]
+        return PaginatedResponse[BackupTaskResponse](
+            items=items,
+            total=response["total"],
+            offset=offset,
+            limit=limit,
+        )
+
     response = await tasks_api.get(
         "/",
-        params={"owner": TaskOwner.BACKUP_MONGO.value, "limit": 0},
+        params=_backup_parent_list_params(offset=0, limit=0),
     )
-    tasks = [Task.model_validate(item) for item in response["items"]]
-    parents = [task for task in tasks if _is_backup_parent_task(task)]
-    statuses = await asyncio.gather(
-        *(get_backup_mongo_task_status(task.name, tasks_api) for task in parents),
-        return_exceptions=True,
+    parents = [Task.model_validate(item) for item in response["items"]]
+    status_map = await _fetch_latest_task_statuses_for_names(
+        tasks_api,
+        [task.name for task in parents],
     )
-    normalized_statuses = [_gathered_task_status(status) for status in statuses]
     task_status_pairs = [
         (task, task_status)
-        for task, task_status in zip(parents, normalized_statuses, strict=True)
-        if status is None or task_status == status
+        for task in parents
+        if (task_status := status_map.get(task.name)) == status
     ]
+    page_pairs = task_status_pairs[offset : offset + limit]
     items = [
         build_backup_mongo_api_task_response(task, status=task_status)
-        for task, task_status in task_status_pairs[offset : offset + limit]
+        for task, task_status in page_pairs
     ]
     return PaginatedResponse[BackupTaskResponse](
         items=items,
