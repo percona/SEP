@@ -47,6 +47,7 @@ from app.sep.plugins.alters.deps import (
     extract_service_info,
     get_alters_index_context,
     parse_alters_task_args,
+    UnprotectedAltersTask,
 )
 from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
@@ -273,7 +274,7 @@ async def alters_execute(
 )
 async def alters_update(
     request: Request,
-    task_name: str,
+    task: UnprotectedAltersTask,
     form: Annotated[AltersCreate, Form()],
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
@@ -286,7 +287,7 @@ async def alters_update(
     )
     result = await cascade_update_alters_group(
         tasks_api,
-        task_name,
+        task.name,
         updated_parent,
         pre_checks_template,
     )

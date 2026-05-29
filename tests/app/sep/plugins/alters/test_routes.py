@@ -29,6 +29,7 @@ from app.sep.main import sep_app
 from app.sep.plugins.alters.deps import (
     get_alters_index_context,
     get_alters_task,
+    get_unprotected_alters_task,
 )
 from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.alters.routes import router as alters_jinja_router
@@ -53,11 +54,12 @@ def created_alters() -> AltersCreate:
 
 
 @pytest.fixture
-def _mock_alters_task_payload(generated_task):
+def _mock_alters_task_payload(generated_task, created_alters):
     """Mock build_alters_task used by create/update Jinja routes."""
+    task = generated_task.model_copy(update={"name": created_alters.task_name})
     with patch(
         "app.sep.plugins.alters.routes.build_alters_task",
-        new=AsyncMock(return_value=generated_task),
+        new=AsyncMock(return_value=task),
     ):
         yield
 
@@ -72,6 +74,7 @@ def created_task():
 def _mock_get_alters_task_dep(created_task):
     """Mock the TaskDep dependency."""
     sep_app.dependency_overrides[get_alters_task] = lambda: created_task
+    sep_app.dependency_overrides[get_unprotected_alters_task] = lambda: created_task
     yield
     sep_app.dependency_overrides = {}
 
@@ -552,11 +555,13 @@ def test_alters_detail_when_services_api_fails(
         ({"db1": "10.0.0.99"}, "db1", True),
     ],
 )
+@pytest.mark.usefixtures("_mock_get_alters_task_dep", "_mock_alters_task_payload")
 def test_alters_update_refreshes_pre_checks_task(
     test_client,
     mock_task_api_dep,
     mock_inventory_api_dep,
     created_alters,
+    created_task,
     created_service,
     created_schema,
     created_table,
@@ -565,6 +570,7 @@ def test_alters_update_refreshes_pre_checks_task(
     expect_skip_in_pre_checks_yaml,
 ):
     """Update main/dry-run/pre-checks tasks; pre-checks YAML reflects executor vs DB."""
+    created_task.name = created_alters.task_name
     created_alters.service_id = created_service.id
     created_alters.schema_id = created_schema.id
     created_alters.table_id = created_table.id
@@ -595,6 +601,33 @@ def test_alters_update_refreshes_pre_checks_task(
         assert "skip_filesystem_checks: true" in cfg
     else:
         assert "skip_filesystem_checks" not in cfg
+
+
+def test_alters_update_returns_409_for_protected_task(
+    test_client,
+    mock_task_api_dep,
+    created_alters,
+) -> None:
+    """POST /alters/{task_name}/update returns 409 when the parent task is protected."""
+    protected = TaskFactory.build(
+        name="protected-alter",
+        owner=TaskOwner.ALTERS,
+        protected=True,
+    )
+    mock_task_api_dep.get = AsyncMock(return_value=protected.model_dump(mode="json"))
+
+    with patch(
+        "app.sep.plugins.alters.routes.build_alters_task",
+        new=AsyncMock(),
+    ):
+        response = test_client.post(
+            "/alters/protected-alter/update",
+            data=created_alters.model_dump(),
+            follow_redirects=False,
+        )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    mock_task_api_dep.put.assert_not_called()
 
 
 class TestAltersRouterDeprecation:

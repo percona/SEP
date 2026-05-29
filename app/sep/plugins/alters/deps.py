@@ -904,18 +904,28 @@ async def resolve_alters_parent_task(task_name: str, tasks_api: TaskAPI) -> Task
     return task
 
 
-async def get_unprotected_alters_task(task: AltersTask) -> Task:
-    """Return an alters task or raise 409 when the task is protected.
+async def get_unprotected_alters_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Return the parent alters task or raise 409 when it is protected.
 
-    :param task: The alters task resolved from the path parameter.
-    :type task: AltersTask
-    :raises HTTPConflictException: If the task is marked as protected.
-    :return: The unprotected task.
+    Resolves satellite path parameters to the parent execute task before
+    applying the protected check so both the JSON API and Jinja form paths
+    gate the same record.
+
+    :param task_name: The requested task name (parent or satellite).
+    :type task_name: str
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :raises HTTPConflictException: If the parent task is marked as protected.
+    :return: The unprotected parent task.
     :rtype: Task
     """
-    if task.protected:
+    parent_task = await resolve_alters_parent_task(task_name, tasks_api)
+    if parent_task.protected:
         raise HTTPConflictException("Cannot edit a protected task.")
-    return task
+    return parent_task
 
 
 UnprotectedAltersTask = Annotated[Task, Depends(get_unprotected_alters_task)]
