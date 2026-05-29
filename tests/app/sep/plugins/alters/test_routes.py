@@ -397,6 +397,35 @@ def test_alters_delete_returns_303_for_protected_task(
     mock_task_api_dep.delete.assert_not_called()
 
 
+@pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+def test_alters_delete_surfaces_partial_cascade_failure(
+    test_client,
+    created_task,
+    mock_task_api_dep,
+) -> None:
+    """POST delete flashes and redirects on partial cascade failure, not /alters."""
+    task_name = created_task.name
+    mock_task_api_dep.get = AsyncMock(return_value=created_task.model_dump(mode="json"))
+    derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    async def _delete(path: str) -> None:
+        if path == f"/{task_name}-pre-checks":
+            raise derived_exc
+
+    mock_task_api_dep.delete = AsyncMock(side_effect=_delete)
+    referer = f"{test_client.base_url}/alters/{task_name}"
+
+    response = test_client.post(
+        f"/alters/{task_name}/delete",
+        headers={"referer": referer},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == referer
+    assert response.headers["location"] != "/alters"
+
+
 def test_get_table_details(
     test_client,
     mock_inventory_api_dep,

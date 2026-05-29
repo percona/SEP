@@ -323,9 +323,8 @@ async def alters_delete(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        logger.warning(
-            "Partial delete failure for alters group %r: %s",
-            parent_task.name,
-            failed,
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Partial delete failure; orphaned tasks: {failed}",
         )
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
