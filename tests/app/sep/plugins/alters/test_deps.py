@@ -40,8 +40,11 @@ from app.sep.plugins.alters.deps import (
     parse_alters_task_args,
     parse_single_arg,
     resolve_predecessor_spec,
+    resolve_predecessor_specs,
 )
 from app.sep.plugins.alters.models import AltersCreate, AltersTaskWrite
+from app.sep.plugins.alters.schema import alters_schema
+from app.sep.plugins.framework.schema import ChainedPredecessor
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -685,6 +688,66 @@ async def test_cascade_update_alters_group_continue_on_pre_check_failure(mocker)
 
     assert captured_specs == [resolve_predecessor_spec(body)]
     assert captured_specs[0].on_failure == "continue"
+
+
+@pytest.mark.asyncio
+async def test_cascade_update_pairs_predecessor_names_with_specs(mocker):
+    """Each predecessor PUT uses the matching schema spec, not a shared one."""
+    primary = (alters_schema.predecessors or [None])[0]
+    assert primary is not None
+    secondary = ChainedPredecessor(
+        name_suffix="-secondary",
+        on_failure="continue",
+        parent_link=True,
+    )
+    original_predecessors = alters_schema.predecessors
+    alters_schema.predecessors = [primary, secondary]
+    try:
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        body = AltersTaskWrite(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            schema_name="app",
+            table_name="users",
+            alter="ADD COLUMN x INT",
+        )
+        captured_specs: list[ChainedPredecessor] = []
+        original_build = __import__(
+            "app.sep.plugins.framework.cascade", fromlist=["build_predecessor_payload"]
+        ).build_predecessor_payload
+
+        def _capture_build(parent_payload, pred_payload, spec):
+            captured_specs.append(spec)
+            return original_build(parent_payload, pred_payload, spec)
+
+        mocker.patch(
+            "app.sep.plugins.alters.deps.build_predecessor_payload",
+            side_effect=_capture_build,
+        )
+        mocker.patch(
+            "app.sep.plugins.alters.deps.cascade_update_tasks",
+            new=AsyncMock(
+                return_value=__import__(
+                    "app.sep.plugins.framework.cascade", fromlist=["CascadeResult"]
+                ).CascadeResult()
+            ),
+        )
+
+        await cascade_update_alters_group(
+            tasks_api,
+            "t1",
+            _cascade_parent_task(),
+            _cascade_pre_checks_template(),
+            body,
+        )
+
+        assert captured_specs == resolve_predecessor_specs(body)
+        assert captured_specs[0].name_suffix == primary.name_suffix
+        assert captured_specs[1] is secondary
+        assert tasks_api.put.await_count == len(captured_specs)
+    finally:
+        alters_schema.predecessors = original_predecessors
 
 
 def test_extract_latest_task_status_unknown_status_returns_none() -> None:

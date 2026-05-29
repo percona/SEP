@@ -669,29 +669,48 @@ def alters_satellite_task_names(parent_name: str) -> list[str]:
     )
 
 
-def resolve_predecessor_spec(
+def resolve_predecessor_specs(
     body: AltersCreate | AltersTaskWrite,
-) -> ChainedPredecessor:
-    """Resolve the effective chained-predecessor spec for one submission.
+) -> list[ChainedPredecessor]:
+    """Resolve chained-predecessor specs for cascade wiring, one per schema entry.
 
     Applies the user-overridable ``continue_on_pre_check_failure`` toggle on
-    top of the schema's default ``on_failure="halt"`` policy.
+    the first schema predecessor only (the alters pre-checks task).
 
     :param body: The alters create/write payload.
     :type body: AltersCreate | AltersTaskWrite
-    :return: The ``ChainedPredecessor`` spec to use for cascade wiring.
+    :return: Ordered specs aligned with ``alters_schema.predecessors``.
+    :rtype: list[ChainedPredecessor]
+    """
+    schema_predecessors = list(alters_schema.predecessors or [])
+    if not schema_predecessors:
+        raise ValueError("alters_schema must declare at least one predecessor")
+    resolved: list[ChainedPredecessor] = []
+    for index, schema_spec in enumerate(schema_predecessors):
+        if index == 0 and body.continue_on_pre_check_failure:
+            resolved.append(
+                ChainedPredecessor(
+                    name_suffix=schema_spec.name_suffix,
+                    on_failure="continue",
+                    parent_link=schema_spec.parent_link,
+                )
+            )
+        else:
+            resolved.append(schema_spec)
+    return resolved
+
+
+def resolve_predecessor_spec(
+    body: AltersCreate | AltersTaskWrite,
+) -> ChainedPredecessor:
+    """Resolve the effective chained-predecessor spec for the primary predecessor.
+
+    :param body: The alters create/write payload.
+    :type body: AltersCreate | AltersTaskWrite
+    :return: The first resolved ``ChainedPredecessor`` spec.
     :rtype: ChainedPredecessor
     """
-    schema_spec = (alters_schema.predecessors or [None])[0]
-    if schema_spec is None:
-        raise ValueError("alters_schema must declare at least one predecessor")
-    if body.continue_on_pre_check_failure:
-        return ChainedPredecessor(
-            name_suffix=schema_spec.name_suffix,
-            on_failure="continue",
-            parent_link=schema_spec.parent_link,
-        )
-    return schema_spec
+    return resolve_predecessor_specs(body)[0]
 
 
 _PRE_CHECKS_AUTO_FIRE_FAILED_MESSAGE = (
@@ -835,7 +854,12 @@ async def cascade_update_alters_group(
     derived_specs = alters_schema.derived or []
     derived_names = alters_derived_task_names(parent_existing_name)
     predecessor_names = alters_predecessor_task_names(parent_existing_name)
-    predecessor_spec = resolve_predecessor_spec(body)
+    predecessor_specs = resolve_predecessor_specs(body)
+    if len(predecessor_names) != len(predecessor_specs):
+        raise ValueError(
+            f"predecessor name count {len(predecessor_names)} does not match "
+            f"schema predecessor count {len(predecessor_specs)}"
+        )
 
     derived_result = await cascade_update_tasks(
         tasks_api,
@@ -845,11 +869,12 @@ async def cascade_update_alters_group(
         derived_specs,
     )
     predecessor_result = CascadeResult()
-    for existing_name in predecessor_names:
+    pre_checks_payload = pre_checks_template.model_dump()
+    for existing_name, spec in zip(predecessor_names, predecessor_specs, strict=True):
         built = build_predecessor_payload(
             parent_payload,
-            pre_checks_template.model_dump(),
-            predecessor_spec,
+            pre_checks_payload,
+            spec,
         )
         try:
             await tasks_api.put(f"/{existing_name}", json=built)
