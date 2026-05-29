@@ -44,6 +44,8 @@ from tests.app.factories import TaskFactory
 HISTORY_FIXTURE_COUNT = 3
 PAGINATED_TASK_COUNT = 2
 PAGINATED_CUSTOM_TASK_COUNT = 3
+PBM_CONFIG_BACKUP_TYPE = "pbm_config"
+PARENT_FILTER_TASK_COUNT = 3
 
 
 async def _create_task(
@@ -574,6 +576,90 @@ class TestTaskManagerListActivePaginated:
 
         assert result.total == 1
         assert result.items == []
+
+    @pytest.mark.asyncio
+    async def test_with_parent_is_null_filter(self, session: AsyncSession) -> None:
+        """Assert parent_is_null=True excludes tasks with a parent reference."""
+        await _create_task(
+            session,
+            name="pag-parent",
+            data={"backup_type": PBM_CONFIG_BACKUP_TYPE},
+        )
+        await _create_task(
+            session,
+            name="pag-child",
+            data={
+                "backup_type": "pbm_logical",
+                "parent": "pag-parent",
+            },
+        )
+
+        null_parents = await TaskManager.list_active_paginated(
+            session, parent_is_null=True
+        )
+        non_null_parents = await TaskManager.list_active_paginated(
+            session, parent_is_null=False
+        )
+
+        assert null_parents.total == 1
+        assert null_parents.items[0].name == "pag-parent"
+        assert non_null_parents.total == 1
+        assert non_null_parents.items[0].name == "pag-child"
+
+    @pytest.mark.asyncio
+    async def test_with_backup_type_filter(self, session: AsyncSession) -> None:
+        """Assert backup_type filters on data.backup_type as string."""
+        await _create_task(
+            session,
+            name="pag-pbm-config",
+            data={"backup_type": PBM_CONFIG_BACKUP_TYPE},
+        )
+        await _create_task(
+            session,
+            name="pag-pbm-logical",
+            data={"backup_type": "pbm_logical", "parent": "pag-pbm-config"},
+        )
+
+        result = await TaskManager.list_active_paginated(
+            session, backup_type=PBM_CONFIG_BACKUP_TYPE
+        )
+
+        assert result.total == 1
+        assert result.items[0].name == "pag-pbm-config"
+
+    @pytest.mark.asyncio
+    async def test_parent_and_backup_type_filters_with_pagination(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert combined JSON filters paginate over the filtered set."""
+        for index in range(PARENT_FILTER_TASK_COUNT):
+            await _create_task(
+                session,
+                name=f"pag-filter-parent-{index}",
+                data={"backup_type": PBM_CONFIG_BACKUP_TYPE},
+            )
+        await _create_task(
+            session,
+            name="pag-filter-child",
+            data={
+                "backup_type": "pbm_logical",
+                "parent": "pag-filter-parent-0",
+            },
+        )
+
+        result = await TaskManager.list_active_paginated(
+            session,
+            parent_is_null=True,
+            backup_type=PBM_CONFIG_BACKUP_TYPE,
+            offset=1,
+            limit=1,
+        )
+
+        assert result.total == PARENT_FILTER_TASK_COUNT
+        assert result.offset == 1
+        assert result.limit == 1
+        assert len(result.items) == 1
+        assert result.items[0].name == "pag-filter-parent-1"
 
 
 # ---------------------------------------------------------------------------

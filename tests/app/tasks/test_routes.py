@@ -59,6 +59,7 @@ from tests.app.factories import TaskFactory
 
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
+PARENT_FILTER_TASK_COUNT = 2
 
 
 @pytest_asyncio.fixture
@@ -1441,6 +1442,76 @@ async def test_list_tasks_filter_with_pagination(test_client, session):
     assert data["total"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["name"] == "backup-1"
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_parent_is_null_filter(test_client, session):
+    """Assert parent_is_null query param filters on data.parent."""
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-parent",
+                data={"backup_type": "pbm_config"},
+            )
+        ),
+    )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-child",
+                data={"backup_type": "pbm_logical", "parent": "route-parent"},
+            )
+        ),
+    )
+
+    response = test_client.get("/", params={"parent_is_null": True})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "route-parent"
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_backup_type_filter_with_pagination(test_client, session):
+    """Assert backup_type and pagination params compose on GET /."""
+    for index in range(PARENT_FILTER_TASK_COUNT):
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=f"route-pbm-config-{index}",
+                    data={"backup_type": "pbm_config"},
+                )
+            ),
+        )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-pbm-logical",
+                data={"backup_type": "pbm_logical", "parent": "route-pbm-config-0"},
+            )
+        ),
+    )
+
+    response = test_client.get(
+        "/",
+        params={
+            "parent_is_null": True,
+            "backup_type": "pbm_config",
+            "offset": 1,
+            "limit": 1,
+        },
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == PARENT_FILTER_TASK_COUNT
+    assert data["offset"] == 1
+    assert data["limit"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["name"] == "route-pbm-config-1"
 
 
 @pytest.mark.asyncio

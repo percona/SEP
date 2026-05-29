@@ -104,13 +104,21 @@ async def list_tasks(
     session: SessionDep,
     owner: str | None = None,
     target: str | None = None,
+    parent_is_null: bool | None = None,
+    backup_type: str | None = None,
     offset: int = DEFAULT_PAGINATION_OFFSET,
     limit: int = DEFAULT_PAGINATION_LIMIT,
 ) -> PaginatedResponse[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
     return await TaskManager.list_active_paginated(
-        session=session, owner=owner, target=target, offset=offset, limit=limit
+        session=session,
+        owner=owner,
+        target=target,
+        parent_is_null=parent_is_null,
+        backup_type=backup_type,
+        offset=offset,
+        limit=limit,
     )
 
 

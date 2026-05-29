@@ -63,6 +63,30 @@ class TaskManager(BaseSQLModelManager):
     Model = Task
 
     @classmethod
+    def _append_list_active_data_filters(
+        cls,
+        where: list,
+        session: AsyncSession,
+        *,
+        target: str | None = None,
+        parent_is_null: bool | None = None,
+        backup_type: str | None = None,
+    ) -> None:
+        """Append JSON ``Task.data`` predicates used by active-task list queries."""
+        if target is not None:
+            where.append(Task.data["meta"]["target"].as_string() == target)
+        if parent_is_null is not None:
+            parent_value = func_json_extract(
+                session.get_bind().name, col(Task.data), "parent"
+            )
+            if parent_is_null:
+                where.append(parent_value.is_(None))
+            else:
+                where.append(parent_value.isnot(None))
+        if backup_type is not None:
+            where.append(Task.data["backup_type"].as_string() == backup_type)
+
+    @classmethod
     async def list_active(
         cls,
         session: AsyncSession,
@@ -86,8 +110,7 @@ class TaskManager(BaseSQLModelManager):
         kwargs = {}
         if owner is not None:
             kwargs["owner"] = owner
-        if target is not None:
-            where.append(Task.data["meta"]["target"].as_string() == target)
+        cls._append_list_active_data_filters(where, session, target=target)
         return await cls.list(session, *where, **kwargs)
 
     @classmethod
@@ -96,6 +119,8 @@ class TaskManager(BaseSQLModelManager):
         session: AsyncSession,
         owner: TaskOwner | None = None,
         target: str | None = None,
+        parent_is_null: bool | None = None,
+        backup_type: str | None = None,
         offset: int = DEFAULT_PAGINATION_OFFSET,
         limit: int = DEFAULT_PAGINATION_LIMIT,
     ) -> PaginatedResponse[Task]:
@@ -109,6 +134,13 @@ class TaskManager(BaseSQLModelManager):
         :param target: The execution target hostname. If provided, only tasks whose
             ``data["meta"]["target"]`` matches will be listed.
         :type target: str | None
+        :param parent_is_null: When ``True``, only tasks with a null ``data["parent"]``
+            key; when ``False``, only tasks with a non-null parent. When ``None``,
+            do not filter on parent.
+        :type parent_is_null: bool | None
+        :param backup_type: When provided, only tasks whose ``data["backup_type"]``
+            matches this string.
+        :type backup_type: str | None
         :param offset: The zero-based starting offset for the query results.
         :type offset: int
         :param limit: The maximum number of records to return.
@@ -120,8 +152,13 @@ class TaskManager(BaseSQLModelManager):
         kwargs = {}
         if owner is not None:
             kwargs["owner"] = owner
-        if target is not None:
-            where.append(Task.data["meta"]["target"].as_string() == target)
+        cls._append_list_active_data_filters(
+            where,
+            session,
+            target=target,
+            parent_is_null=parent_is_null,
+            backup_type=backup_type,
+        )
         return await cls.list_paginated(
             session, *where, offset=offset, limit=limit, **kwargs
         )
