@@ -231,7 +231,10 @@ class TestRestoreMongoApiList:
                 raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
             params = kwargs.get("params") or {}
             if params.get("parent_is_null") is True:
-                return {"items": [parent_a, parent_b], "total": 2}
+                return {
+                    "items": [parent_a, parent_b],
+                    "total": TWO_PARENT_FIXTURE_TOTAL,
+                }
             if params.get("parent_is_null") is False:
                 return {"items": [], "total": 0}
             raise AssertionError(f"Unexpected list params: {params!r}")
