@@ -1602,12 +1602,12 @@ class S3UploadProvider:
             msg = "S3_BUCKET is not set."
             raise BackupError(msg)
 
-        s3_tool = str(settings.get("S3_TOOL", "")).strip().lower()
-        prefix = "awscli" if s3_tool in {"aws", "awscli"} or self.awscli_s3_upload_extra_args else "s3cmd"
-        log_name = f"{prefix}-{self.alias}-{self.backup_type}-{time.strftime('%Y%m%d')}.log"
-        log_file = self.logging_dir / log_name
+        log_file = (
+            Path(self.logging_dir)
+            / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
+        )
         self.log_stream = log_file.open("a")
-        self.logger = upload_logging_setup(self.logging_dir, log_name, self.alias, logger.level)
+        self.logger = upload_logging_setup(self.logging_dir, log_file.name, self.alias, logger.level)
 
         bucket_str = self.s3_bucket
         if bucket_str.startswith("s3://"):
