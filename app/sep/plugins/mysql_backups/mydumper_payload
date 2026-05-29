@@ -492,13 +492,26 @@ def upload_logging_setup(
     alias: str | None = None,
     level: int = logging.INFO,
 ) -> logging.Logger:
-    """Return a logger dedicated to upload messages with ``propagate=False``."""
+    """Return a logger dedicated to upload messages with ``propagate=False``.
+
+    Idempotent: if a FileHandler for this log file already exists on the
+    named logger, return as-is. Per-day provider log names are reused
+    across upload cycles, and without this guard each call would stack
+    another FileHandler and another ContextFilter.
+    """
     d = Path(logging_dir).expanduser().resolve()
     d.mkdir(parents=True, exist_ok=True)
     name = log_name.replace(".log", "")
     logger = logging.getLogger(name)
     logger.propagate = False
-    h = logging.FileHandler(str(d / log_name))
+    log_file = str(d / log_name)
+    if any(
+        isinstance(h, logging.FileHandler)
+        and getattr(h, "baseFilename", None) == log_file
+        for h in logger.handlers
+    ):
+        return logger
+    h = logging.FileHandler(log_file)
     h.setFormatter(logging.Formatter(LOGGING_FORMAT))
     logger.addHandler(h)
     logger.setLevel(level)
