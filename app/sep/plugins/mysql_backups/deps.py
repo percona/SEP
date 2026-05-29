@@ -205,6 +205,10 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     if "RSYNC" in upload_providers:
         result["rsync_path"] = all_servers_config.get("rsync_path")
 
+    result["binlog_alternative_host"] = all_servers_config.get(
+        "BINLOG_ALTERNATIVE_HOST"
+    )
+
     for key, value in all_servers_config.items():
         if key.lower() not in result:
             result[key.lower()] = value
