@@ -391,6 +391,46 @@ def logging_set_host(alias: str | None, log_name: str) -> None:
     logging.getLogger(log_name).addFilter(ContextFilter())
 
 
+def upload_logging_setup(
+    logging_dir: str | Path, log_name: str, level: int = LOGGING_LEVEL
+) -> logging.Logger:
+    """Return a logger dedicated to upload messages.
+
+    The returned logger writes to ``log_name`` inside ``logging_dir`` using
+    the standard ``LOGGING_FORMAT`` and the alias filter from
+    :func:`logging_set_host`. ``propagate`` is set to ``False`` so messages
+    do not bubble up to the general backup log (e.g. ``xtrabackup.log``).
+
+    :param logging_dir: Directory where the upload log file lives.
+    :param log_name: Name of the upload log file (e.g. ``upload-xtrabackup.log``
+        or ``s3cmd-<alias>-<type>-<YYYYMMDD>.log``).
+    :param level: Logging level.
+    :return: Configured upload logger instance.
+    """
+    os.umask(0o007)
+    real_logging_dir = Path(logging_dir).expanduser().resolve()
+    if not real_logging_dir.is_dir():
+        real_logging_dir.mkdir(parents=True, exist_ok=True)
+
+    name = log_name.replace(".log", "")
+    logger = logging.getLogger(name)
+    logger.propagate = False
+    log_file = real_logging_dir / log_name
+
+    if not any(
+        isinstance(h, logging.FileHandler)
+        and getattr(h, "baseFilename", None) == str(log_file)
+        for h in logger.handlers
+    ):
+        file_handler = logging.FileHandler(str(log_file))
+        file_handler.setFormatter(logging.Formatter(LOGGING_FORMAT))
+        logger.addHandler(file_handler)
+
+    logger.setLevel(level)
+    logging_set_host(None, name)
+    return logger
+
+
 def format_seconds_to_hhmmss(seconds: int | float) -> str:
     """Format seconds into HH:MM:SS format.
 
@@ -1387,10 +1427,13 @@ class Upload(Backup):
         backup_code = settings["BACKUP_TYPE"]
         super().__init__(settings, backup_code, native_upload, logger)
         self.upload_type = upload_type
-        self.upload_provider = upload_provider(settings, logger)
+        logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
+        self.logger = upload_logging_setup(
+            logging_dir, "upload-xtrabackup.log", logger.level
+        )
+        self.upload_provider = upload_provider(settings, self.logger)
         self.last_uploaded_number = 0
         self.last_to_upload_number = 0
-        logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
         log_path = Path(logging_dir) / "upload-xtrabackup.log"
         self.log_stream = log_path.open("a")
         self.backup_type = BACKUP_TYPES[self.backup_code]
@@ -1623,7 +1666,6 @@ class RsyncUploadProvider:
         :param logger: Logger instance.
         :raises BackupError: If RSYNC_PATH not set or rsync not installed.
         """
-        self.logger = logger
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.rsync_dir = settings.get("RSYNC_PATH")
@@ -1633,11 +1675,13 @@ class RsyncUploadProvider:
             raise BackupError(msg)
 
         logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
-        log_file = (
-            Path(logging_dir)
-            / "rsync-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
+        log_name = "rsync-{}-{}-{}.log".format(
+            self.alias, self.backup_type, time.strftime("%Y%m%d")
         )
+        log_file = Path(logging_dir) / log_name
         self.log_stream = log_file.open("a")
+        self.logger = upload_logging_setup(logging_dir, log_name, logger.level)
+        logging_set_host(self.alias, log_name)
 
     def upload(self, source_dir: str, dest_dir: str) -> str:
         """Rsync files from source dir to target directory.
@@ -1687,14 +1731,14 @@ class S3UploadProvider:
         :param logger: Logger instance.
         :raises BackupError: If S3_BUCKET not set.
         """
-        self.logger = logger
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.s3_bucket = settings.get("S3_BUCKET")
         self.fake_s3_upload = settings.get("FAKE_S3_UPLOAD")
         self.s3_limit_rate = settings.get("S3_LIMIT_RATE")
         self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
-        self.awscli_s3_upload_extra_args = settings.get('AWSCLI_S3_UPLOAD_EXTRA_ARGS')
+        self.awscli_s3_upload_extra_args = settings.get("AWSCLI_S3_UPLOAD_EXTRA_ARGS")
+        self.s3_tool = str(settings.get("S3_TOOL", "")).strip().lower()
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
         self.logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
@@ -1703,11 +1747,19 @@ class S3UploadProvider:
             msg = "S3_BUCKET is not set."
             raise BackupError(msg)
 
-        log_file = (
-            Path(self.logging_dir)
-            / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
+        if self.s3_tool in {"aws", "awscli"} or self.awscli_s3_upload_extra_args:
+            s3_log_prefix = "awscli"
+        else:
+            s3_log_prefix = "s3cmd"
+
+        log_name = "{}-{}-{}-{}.log".format(
+            s3_log_prefix,
+            self.alias, self.backup_type, time.strftime("%Y%m%d")
         )
+        log_file = Path(self.logging_dir) / log_name
         self.log_stream = log_file.open("a")
+        self.logger = upload_logging_setup(self.logging_dir, log_name, logger.level)
+        logging_set_host(self.alias, log_name)
 
         bucket_str = self.s3_bucket
         if bucket_str.startswith("s3://"):
@@ -1826,7 +1878,6 @@ class GSUploadProvider:
         :param logger: Logger instance.
         :raises BackupError: If GS_BUCKET not set.
         """
-        self.logger = logger
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.gs_bucket = settings.get("GS_BUCKET")
@@ -1837,13 +1888,13 @@ class GSUploadProvider:
 
         logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
         os.makedirs(logging_dir, exist_ok=True)
-        log_file = os.path.join(logging_dir, 'gcloud-storage-%s-%s-%s.log' %
-                    (self.alias,
-                     self.backup_type,
-                     time.strftime('%Y%m%d')
-                    )
-                       )
+        log_name = 'gcloud-storage-%s-%s-%s.log' % (
+            self.alias, self.backup_type, time.strftime('%Y%m%d'),
+        )
+        log_file = os.path.join(logging_dir, log_name)
         self.log_stream = open(log_file, 'a')
+        self.logger = upload_logging_setup(logging_dir, log_name, logger.level)
+        logging_set_host(self.alias, log_name)
 
         bucket_str = self.gs_bucket
         if bucket_str.startswith("gs://"):
