@@ -557,6 +557,19 @@ class TestAltersApiDelete:
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert f"{DEFAULT_PARENT_NAME}-pre-checks" in response.json()["detail"]
 
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_delete_returns_409_for_protected_task(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """DELETE returns 409 when the parent task is protected."""
+        parent = build_alters_task("protected-alter", protected=True)
+        mock_task_api_dep.get = AsyncMock(return_value=parent)
+
+        response = test_client.delete(f"{API_BASE}/protected-alter")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.delete.assert_not_called()
+
     def test_delete_via_satellite_returns_409_when_parent_running(
         self, test_client, mock_task_api_dep
     ) -> None:

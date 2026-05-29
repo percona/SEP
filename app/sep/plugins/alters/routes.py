@@ -44,6 +44,7 @@ from app.sep.plugins.alters.deps import (
     cascade_create_alters_group,
     cascade_delete_alters_group,
     cascade_update_alters_group,
+    DeletableAltersParent,
     extract_service_info,
     get_alters_index_context,
     parse_alters_task_args,
@@ -312,19 +313,18 @@ async def alters_update(
     response_class=RedirectResponse,
 )
 async def alters_delete(
-    task: AltersTask,
+    parent_task: DeletableAltersParent,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete the alters task group."""
-    parent_name = task.data.get("parent") or task.name
-    result = await cascade_delete_alters_group(tasks_api, parent_name)
+    result = await cascade_delete_alters_group(tasks_api, parent_task.name)
     if not result.success:
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
         logger.warning(
             "Partial delete failure for alters group %r: %s",
-            parent_name,
+            parent_task.name,
             failed,
         )
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

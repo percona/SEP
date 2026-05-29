@@ -114,7 +114,7 @@ def test_alters_create(
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
         response.headers["location"]
-        == f"{test_client.base_url}/alters/{generated_task.name}"
+        == f"{test_client.base_url}/alters/{created_alters.task_name}"
     )
 
 
@@ -338,6 +338,7 @@ def test_alters_execute(
     mock_task_api_dep,
 ):
     """Test executing a alters task."""
+    created_task.data.pop("parent", None)
     mock_task_api_dep.post.return_value = AsyncMock()
     eta = datetime.now(tz=UTC) + timedelta(days=1)
     response = test_client.post(
@@ -350,13 +351,14 @@ def test_alters_execute(
     )
 
 
-@pytest.mark.usefixtures("_mock_get_alters_task_dep")
+@pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
 def test_alters_delete(
     test_client,
     created_task,
     mock_task_api_dep,
 ):
     """Test deleting a alters task."""
+    mock_task_api_dep.get = AsyncMock(return_value=created_task.model_dump(mode="json"))
     mock_task_api_dep.delete.return_value = AsyncMock()
 
     response = test_client.post(
@@ -371,6 +373,28 @@ def test_alters_delete(
             call(f"/{created_task.name}"),
         ]
     )
+
+
+@pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+def test_alters_delete_returns_303_for_protected_task(
+    test_client,
+    mock_task_api_dep,
+) -> None:
+    """POST /alters/{task_name}/delete rejects protected tasks (303 redirect for forms)."""
+    protected = TaskFactory.build(
+        name="protected-alter",
+        owner=TaskOwner.ALTERS,
+        protected=True,
+    )
+    mock_task_api_dep.get = AsyncMock(return_value=protected.model_dump(mode="json"))
+
+    response = test_client.post(
+        "/alters/protected-alter/delete",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.delete.assert_not_called()
 
 
 def test_get_table_details(
@@ -555,7 +579,7 @@ def test_alters_detail_when_services_api_fails(
         ({"db1": "10.0.0.99"}, "db1", True),
     ],
 )
-@pytest.mark.usefixtures("_mock_get_alters_task_dep", "_mock_alters_task_payload")
+@pytest.mark.usefixtures("_mock_get_alters_task_dep")
 def test_alters_update_refreshes_pre_checks_task(
     test_client,
     mock_task_api_dep,
@@ -608,7 +632,7 @@ def test_alters_update_returns_409_for_protected_task(
     mock_task_api_dep,
     created_alters,
 ) -> None:
-    """POST /alters/{task_name}/update returns 409 when the parent task is protected."""
+    """POST /alters/{task_name}/update rejects protected tasks (303 redirect for forms)."""
     protected = TaskFactory.build(
         name="protected-alter",
         owner=TaskOwner.ALTERS,
@@ -626,7 +650,7 @@ def test_alters_update_returns_409_for_protected_task(
             follow_redirects=False,
         )
 
-    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.status_code == status.HTTP_303_SEE_OTHER
     mock_task_api_dep.put.assert_not_called()
 
 

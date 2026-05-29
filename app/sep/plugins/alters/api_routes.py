@@ -45,6 +45,7 @@ from app.sep.plugins.alters.deps import (
     cascade_create_alters_group,
     cascade_delete_alters_group,
     cascade_update_alters_group,
+    DeletableAltersParent,
     ensure_alters_group_update_preserves_names,
     get_alters_api_task_responses,
     get_alters_task,
@@ -239,12 +240,10 @@ async def alters_api_execute(
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def alters_api_delete(
-    task_name: str,
+    parent_task: DeletableAltersParent,
     tasks_api: TaskAPI,
 ) -> None:
     """Delete an alters task group."""
-    parent_task = await resolve_alters_parent_task(task_name, tasks_api)
-    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
     result = await cascade_delete_alters_group(tasks_api, parent_task.name)
     if not result.success:
         failed = [

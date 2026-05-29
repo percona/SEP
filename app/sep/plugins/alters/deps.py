@@ -34,6 +34,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
 from app.sep.deps import (
+    check_for_conflicted_running_tasks,
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
@@ -929,6 +930,35 @@ async def get_unprotected_alters_task(
 
 
 UnprotectedAltersTask = Annotated[Task, Depends(get_unprotected_alters_task)]
+
+
+async def get_deletable_alters_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Return the parent alters task or raise when delete is not allowed.
+
+    Resolves satellite path parameters to the parent execute task, then
+    applies the same running-task and protected gates as
+    :func:`get_unprotected_alters_task` plus
+    :func:`check_for_conflicted_running_tasks`.
+
+    :param task_name: The requested task name (parent or satellite).
+    :type task_name: str
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :raises HTTPConflictException: If the parent is running/pending or protected.
+    :return: The deletable parent task.
+    :rtype: Task
+    """
+    parent_task = await resolve_alters_parent_task(task_name, tasks_api)
+    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
+    if parent_task.protected:
+        raise HTTPConflictException("Cannot delete a protected task.")
+    return parent_task
+
+
+DeletableAltersParent = Annotated[Task, Depends(get_deletable_alters_parent_task)]
 
 
 def _extract_latest_task_status(

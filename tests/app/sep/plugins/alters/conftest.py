@@ -36,10 +36,11 @@ def _mock_check_for_conflicted_running_tasks(mocker: MockerFixture) -> None:
     async def _noop(*_args: object, **_kwargs: object) -> None:
         return None
 
-    mocker.patch(
+    for target in (
         "app.sep.plugins.alters.api_routes.check_for_conflicted_running_tasks",
-        side_effect=_noop,
-    )
+        "app.sep.plugins.alters.deps.check_for_conflicted_running_tasks",
+    ):
+        mocker.patch(target, side_effect=_noop)
     previous = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = lambda: None
     yield
@@ -58,10 +59,11 @@ def _mock_check_for_conflicted_running_tasks_raises(
     async def _raise(*_args: object, **_kwargs: object) -> None:
         raise_conflict()
 
-    mocker.patch(
+    for target in (
         "app.sep.plugins.alters.api_routes.check_for_conflicted_running_tasks",
-        side_effect=_raise,
-    )
+        "app.sep.plugins.alters.deps.check_for_conflicted_running_tasks",
+    ):
+        mocker.patch(target, side_effect=_raise)
     previous = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = raise_conflict
     yield raise_conflict
