@@ -210,6 +210,7 @@ async def test_build_pre_checks_task_filesystem_skip_flag(
             "meta": {
                 "command": "pt-online-schema-change",
                 "args": "--alter=x --execute",
+                "_command_line": "pt-online-schema-change --alter=x --execute",
                 "target": "db1",
                 "_schema_name": "db",
                 "_table_name": "t",
@@ -226,6 +227,8 @@ async def test_build_pre_checks_task_filesystem_skip_flag(
     assert pre.data["parent"] == "prechk-alter"
     assert pre.data["task"] == "run-python"
     assert "command" not in pre.data["meta"]
+    assert "args" not in pre.data["meta"]
+    assert "_command_line" not in pre.data["meta"]
     assert task.data["meta"]["command"] == "pt-online-schema-change"
     cfg = pre.data["meta"]["config"]
     if expect_skip_in_config:

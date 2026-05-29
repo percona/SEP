@@ -409,6 +409,7 @@ def alters_executor_matches_service_host(
 
 
 _PRE_CHECKS_SCRIPT_PATH = Path(__file__).resolve().parent / "pre_checks.py"
+_PARENT_ONLY_META_KEYS = ("command", "args", "_command_line")
 
 
 async def build_pre_checks_task_payload(
@@ -434,9 +435,9 @@ async def build_pre_checks_task_payload(
     """
     pre_checks_task = base_task.model_copy(deep=True)
     pre_checks_task.data["task"] = "run-python"
-    del pre_checks_task.data["meta"]["command"]
-    del pre_checks_task.data["meta"]["args"]
     meta = pre_checks_task.data["meta"]
+    for key in _PARENT_ONLY_META_KEYS:
+        meta.pop(key, None)
     db_host = meta.get("_service_host", "")
     db_port = meta.get("_service_port")
     executor_hosts = await task_api.get("/hosts/")
