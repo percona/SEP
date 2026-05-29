@@ -239,6 +239,9 @@ IsApiAuthenticated = Depends(get_api_authenticated_user)
 ApiCurrentUser = Annotated[User, IsApiAuthenticated]
 
 
+BEARER_REQUIRED_DETAIL = "Bearer authentication required for state-changing requests."
+
+
 async def require_bearer_auth(request: Request) -> None:
     """Reject JSON-API state-changing requests that lack a Bearer token.
 
@@ -255,12 +258,36 @@ async def require_bearer_auth(request: Request) -> None:
         ``Authorization: Bearer`` header.
     """
     if not is_bearer_authenticated(request):
-        raise HTTPUnauthorizedException(
-            detail="Bearer authentication required for /api mutations.",
-        )
+        raise HTTPUnauthorizedException(detail=BEARER_REQUIRED_DETAIL)
 
 
 RequireBearerAuth = Depends(require_bearer_auth)
+
+
+async def require_bearer_for_unsafe_methods(request: Request) -> None:
+    """Require a Bearer Authorization header on mutating HTTP methods.
+
+    Method-aware sibling of :func:`require_bearer_auth`. ``GET``, ``HEAD`` and
+    ``OPTIONS`` pass through (cookie-authenticated SSR reads and CORS
+    preflights are unaffected). ``POST``, ``PUT``, ``PATCH`` and ``DELETE``
+    require ``Authorization: Bearer ...``; cookie-authenticated cross-site
+    JSON mutations are rejected with ``401`` before any business logic runs.
+
+    Intended to be attached at router level to ``/api/plugins/*`` so every
+    plugin's JSON mutation routes inherit the guard uniformly.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :raises HTTPUnauthorizedException: When the method is unsafe and the
+        request lacks an ``Authorization: Bearer`` header.
+    """
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    if not is_bearer_authenticated(request):
+        raise HTTPUnauthorizedException(detail=BEARER_REQUIRED_DETAIL)
+
+
+RequireBearerForUnsafeMethods = Depends(require_bearer_for_unsafe_methods)
 
 
 async def get_current_admin(current_user: CurrentUser) -> User:
