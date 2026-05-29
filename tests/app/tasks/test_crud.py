@@ -663,6 +663,71 @@ class TestTaskManagerListActivePaginated:
 
 
 # ---------------------------------------------------------------------------
+# TaskHistoryManager.latest_status_by_task_names
+# ---------------------------------------------------------------------------
+
+
+class TestTaskHistoryManagerLatestStatusByTaskNames:
+    """Test TaskHistoryManager.latest_status_by_task_names."""
+
+    @pytest.mark.asyncio
+    async def test_empty_names_returns_empty_mapping(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert an empty request yields an empty mapping."""
+        result = await TaskHistoryManager.latest_status_by_task_names(session, [])
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_latest_status_per_task(self, session: AsyncSession) -> None:
+        """Assert newest non-null history status is returned for each task."""
+        task_a = await _create_task(session, name="latest-status-a")
+        task_b = await _create_task(session, name="latest-status-b")
+        await _create_task_history(
+            session, task_a, status=TaskHistoryStatusEnum.SUCCESS
+        )
+        await _create_task_history(
+            session, task_a, status=TaskHistoryStatusEnum.RUNNING
+        )
+        await _create_task_history(session, task_b, status=TaskHistoryStatusEnum.FAILED)
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session,
+            ["latest-status-a", "latest-status-b", "latest-status-missing"],
+        )
+
+        assert result == {
+            "latest-status-a": TaskHistoryStatusEnum.RUNNING,
+            "latest-status-b": TaskHistoryStatusEnum.FAILED,
+            "latest-status-missing": None,
+        }
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_duplicate_names(self, session: AsyncSession) -> None:
+        """Assert duplicate names are resolved once while preserving order."""
+        task = await _create_task(session, name="latest-status-dedupe")
+        await _create_task_history(session, task, status=TaskHistoryStatusEnum.SUCCESS)
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session,
+            ["latest-status-dedupe", "latest-status-dedupe"],
+        )
+
+        assert list(result.keys()) == ["latest-status-dedupe"]
+        assert result["latest-status-dedupe"] == TaskHistoryStatusEnum.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_latest_status_from_history_statuses_skips_nulls(self) -> None:
+        """Assert null statuses are skipped when scanning newest-to-oldest."""
+        result = TaskHistoryManager._latest_status_from_history_statuses(
+            [None, TaskHistoryStatusEnum.SUCCESS, TaskHistoryStatusEnum.FAILED]
+        )
+
+        assert result == TaskHistoryStatusEnum.SUCCESS
+
+
+# ---------------------------------------------------------------------------
 # TaskHistoryManager.list_by_task_name_paginated
 # ---------------------------------------------------------------------------
 

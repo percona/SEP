@@ -180,6 +180,63 @@ async def test_update_task_not_found(test_client):
 
 
 @pytest.mark.asyncio
+async def test_latest_task_history_status_batch(test_client, session):
+    """Assert POST /history/latest returns latest status keyed by task name."""
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="route-latest-status")),
+    )
+    await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            execution_request={
+                "task": task.name,
+                "target": "localhost",
+                "meta": {},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+        ),
+    )
+    await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            status=TaskHistoryStatusEnum.RUNNING,
+            execution_request={
+                "task": task.name,
+                "target": "localhost",
+                "meta": {},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+        ),
+    )
+
+    response = test_client.post(
+        "/history/latest",
+        json={"names": [task.name, "route-latest-missing"]},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {
+        task.name: TaskHistoryStatusEnum.RUNNING.value,
+        "route-latest-missing": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_latest_task_history_status_rejects_too_many_names(test_client) -> None:
+    """Assert POST /history/latest rejects more than 200 task names."""
+    response = test_client.post(
+        "/history/latest",
+        json={"names": [f"task-{index}" for index in range(201)]},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+@pytest.mark.asyncio
 async def test_list_task_history(test_client, created_task_with_history):
     """Assert listing task history returns paginated history records."""
     response = test_client.get("/history/")
