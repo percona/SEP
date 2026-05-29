@@ -805,6 +805,7 @@ async def cascade_update_alters_group(
     parent_existing_name: str,
     parent_task: TaskWrite,
     pre_checks_template: TaskWrite,
+    body: AltersCreate | AltersTaskWrite,
 ) -> CascadeResult:
     """PUT the parent, dry-run sibling, and pre-checks predecessor.
 
@@ -819,6 +820,8 @@ async def cascade_update_alters_group(
     :type parent_task: TaskWrite
     :param pre_checks_template: The updated imperative pre-checks payload.
     :type pre_checks_template: TaskWrite
+    :param body: The alters create/write payload (for ``continue_on_pre_check_failure``).
+    :type body: AltersCreate | AltersTaskWrite
     :return: A merged :class:`CascadeResult` across derived and predecessor legs.
     :rtype: CascadeResult
     :raises HTTPConflictException: When the update attempts to rename the parent.
@@ -828,9 +831,7 @@ async def cascade_update_alters_group(
     derived_specs = alters_schema.derived or []
     derived_names = alters_derived_task_names(parent_existing_name)
     predecessor_names = alters_predecessor_task_names(parent_existing_name)
-    predecessor_spec = (alters_schema.predecessors or [None])[0]
-    if predecessor_spec is None:
-        raise ValueError("alters_schema must declare at least one predecessor")
+    predecessor_spec = resolve_predecessor_spec(body)
 
     derived_result = await cascade_update_tasks(
         tasks_api,

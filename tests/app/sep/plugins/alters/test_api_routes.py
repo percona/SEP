@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 from fastapi import HTTPException, status
+from pytest_mock import MockerFixture
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
@@ -424,6 +425,58 @@ class TestAltersApiUpdate:
             f"/{DEFAULT_PARENT_NAME}-dry-run",
             f"/{DEFAULT_PARENT_NAME}-pre-checks",
         ]
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_update_continue_on_pre_check_failure_uses_continue_predecessor_spec(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        mocker: MockerFixture,
+    ) -> None:
+        """PUT honors continue_on_pre_check_failure when rebuilding the pre-checks task."""
+        from app.sep.plugins.framework.schema import ChainedPredecessor
+
+        group = build_alters_task_group(DEFAULT_PARENT_NAME)
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                group["parent"],
+                NOMAD_HOSTS,
+                group["parent"],
+                {"items": []},
+            ]
+        )
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=group["parent"])
+        captured_specs: list[ChainedPredecessor] = []
+        original_build = __import__(
+            "app.sep.plugins.framework.cascade", fromlist=["build_predecessor_payload"]
+        ).build_predecessor_payload
+
+        def _capture_build(parent_payload, pred_payload, spec):
+            captured_specs.append(spec)
+            return original_build(parent_payload, pred_payload, spec)
+
+        mocker.patch(
+            "app.sep.plugins.alters.deps.build_predecessor_payload",
+            side_effect=_capture_build,
+        )
+
+        response = test_client.put(
+            f"{API_BASE}/{DEFAULT_PARENT_NAME}?check_connectivity=false",
+            json=build_alters_write_body(
+                task_name=DEFAULT_PARENT_NAME,
+                service_id=created_service.id,
+                continue_on_pre_check_failure=True,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(captured_specs) == 1
+        assert captured_specs[0].on_failure == "continue"
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_update_returns_409_for_protected_task(

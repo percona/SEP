@@ -188,6 +188,7 @@ async def alters_api_update(
         parent_task.name,
         updated_parent,
         pre_checks_template,
+        body,
     )
     if not result.success:
         failed = [

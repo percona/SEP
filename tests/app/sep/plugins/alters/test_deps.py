@@ -30,6 +30,7 @@ from app.sep.plugins.alters.deps import (
     build_alters_task_payload,
     build_pre_checks_task,
     cascade_create_alters_group,
+    cascade_update_alters_group,
     extract_service_info,
     get_alters_index_context,
     get_alters_task,
@@ -596,6 +597,83 @@ async def test_cascade_create_alters_group_rolls_back_on_task_post_failure():
         call("/t1-dry-run"),
         call("/t1"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_cascade_update_alters_group_halt_by_default(mocker):
+    """Test cascade_update uses resolve_predecessor_spec halt unless user opts into continue."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+    )
+    captured_specs: list = []
+    original_build = __import__(
+        "app.sep.plugins.framework.cascade", fromlist=["build_predecessor_payload"]
+    ).build_predecessor_payload
+
+    def _capture_build(parent_payload, pred_payload, spec):
+        captured_specs.append(spec)
+        return original_build(parent_payload, pred_payload, spec)
+
+    mocker.patch(
+        "app.sep.plugins.alters.deps.build_predecessor_payload",
+        side_effect=_capture_build,
+    )
+
+    await cascade_update_alters_group(
+        tasks_api,
+        "t1",
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert captured_specs == [resolve_predecessor_spec(body)]
+    assert captured_specs[0].on_failure == "halt"
+
+
+@pytest.mark.asyncio
+async def test_cascade_update_alters_group_continue_on_pre_check_failure(mocker):
+    """Test cascade_update honors continue_on_pre_check_failure like create."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+        continue_on_pre_check_failure=True,
+    )
+    captured_specs: list = []
+    original_build = __import__(
+        "app.sep.plugins.framework.cascade", fromlist=["build_predecessor_payload"]
+    ).build_predecessor_payload
+
+    def _capture_build(parent_payload, pred_payload, spec):
+        captured_specs.append(spec)
+        return original_build(parent_payload, pred_payload, spec)
+
+    mocker.patch(
+        "app.sep.plugins.alters.deps.build_predecessor_payload",
+        side_effect=_capture_build,
+    )
+
+    await cascade_update_alters_group(
+        tasks_api,
+        "t1",
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert captured_specs == [resolve_predecessor_spec(body)]
+    assert captured_specs[0].on_failure == "continue"
 
 
 def _make_alters_task(
