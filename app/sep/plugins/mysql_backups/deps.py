@@ -199,17 +199,21 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
             "encryption_recipient"
         )
 
-    upload_providers = server_config.get("UPLOAD", [])
+    upload_providers = {
+        provider.upper()
+        for provider in server_config.get("UPLOAD", [])
+        if isinstance(provider, str)
+    }
     if "S3" in upload_providers:
-        result["s3_bucket"] = all_servers_config.get("s3_bucket")
-        result["s3_storage_class"] = all_servers_config.get("s3_storage_class")
+        result["s3_bucket"] = all_servers_config.get("S3_BUCKET")
+        result["s3_storage_class"] = all_servers_config.get("S3_STORAGE_CLASS")
         result["skip_s3_safety_check"] = all_servers_config.get(
-            "skip_s3_safety_check", False
+            "SKIP_S3_SAFETY_CHECK", False
         )
     if "GSUTIL" in upload_providers:
-        result["gs_bucket"] = all_servers_config.get("gs_bucket")
+        result["gs_bucket"] = all_servers_config.get("GS_BUCKET")
     if "RSYNC" in upload_providers:
-        result["rsync_path"] = all_servers_config.get("rsync_path")
+        result["rsync_path"] = all_servers_config.get("RSYNC_PATH")
 
     result["binlog_alternative_host"] = all_servers_config.get(
         "BINLOG_ALTERNATIVE_HOST"
