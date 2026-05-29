@@ -222,6 +222,19 @@ export interface FormSection {
   cardinality_rules?: CardinalityRule[];
   /** Predicate-only invariants scoped to this section. */
   fail_when?: FailRule[];
+  /**
+   * Section-level visibility gates. When any gate fires the entire section
+   * is hidden and every child field is unregistered from react-hook-form
+   * so stale values do not ship in the submission payload.
+   * Gates may reference any field in the plugin schema.
+   */
+  forbidden?: FieldGate[];
+  /**
+   * Reserved for future positive-gating semantics on sections. Backend
+   * Tier-2 validates the references today, but the renderer ignores
+   * ``requires``. Prefer ``forbidden=[{when: not_equals: ...}]``.
+   */
+  requires?: FieldGate[];
 }
 
 // ── List view ───────────────────────────────────────────────────────────

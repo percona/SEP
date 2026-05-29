@@ -5023,6 +5023,10 @@ export interface components {
        * @default false
        */
       render_after_submit: boolean;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
