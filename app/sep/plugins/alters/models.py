@@ -30,6 +30,8 @@ from app.sep.plugins.framework.rules import (
 )
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
+DEFAULT_ALTERS_DSN_TABLE = "D=percona,t=dsns"
+
 
 def _coerce_optional_int(value: Any) -> int | None:
     """Coerce HTML form / JSON optional int fields to ``int | None``."""
@@ -204,9 +206,9 @@ class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
     :type recursion_method: NonEmptyStr
     :param alter: The specific alter command to be executed.
     :type alter: NonEmptyStr
-    :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``. Defaults
-        to ``D=percona,t=dsns`` (Percona Toolkit convention), matching
-        ``alters_schema`` and :func:`build_alters_task` fallback behavior.
+    :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``. When
+        recursion is ``"dsn"`` and this field is omitted or empty, it defaults to
+        ``D=percona,t=dsns`` (Percona Toolkit convention), matching ``alters_schema``.
     :type dsn_table: str
     :param pause_file: Execution pauses while this file exists.
     :type pause_file: str
@@ -251,6 +253,19 @@ class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
     :type continue_on_pre_check_failure: bool
     """
 
+    @model_validator(mode="before")
+    @classmethod
+    def _default_dsn_table_for_dsn_recursion(cls, data: Any) -> Any:
+        """Apply the schema DSN table default only when ``recursion_method`` is ``dsn``."""
+        if not isinstance(data, dict):
+            return data
+        if (
+            data.get("recursion_method") == "dsn"
+            and not str(data.get("dsn_table") or "").strip()
+        ):
+            return {**data, "dsn_table": DEFAULT_ALTERS_DSN_TABLE}
+        return data
+
     task_name: NonEmptyStr
     hostname: NonEmptyStr
     service_id: int
@@ -260,7 +275,7 @@ class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
     table_name: str = ""
     recursion_method: NonEmptyStr = "processlist"
     alter: NonEmptyStr
-    dsn_table: str = "D=percona,t=dsns"
+    dsn_table: str = ""
     pause_file: str = ""
     new_table_name: str = ""
     print_arg: bool = False
