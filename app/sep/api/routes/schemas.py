@@ -20,7 +20,7 @@ frontend can populate schema-driven table selectors without bypassing the SEP
 layer (see the non-bypass rule in ``app/sep/api/router.py``).
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 
 from app.sep.api.models import InventorySelectorOption
 from app.sep.deps import InventoryAPI
@@ -37,8 +37,9 @@ async def list_schema_tables(
     """Return tables for a schema via the SEP gateway.
 
     Proxies Inventory ``GET /schemas/{schema_id}/tables/`` for React
-    ``TableSelector`` components. Returns an empty list when the schema is
-    missing or inventory raises an HTTP error (matches legacy AJAX behavior).
+    ``TableSelector`` components. Returns an empty list only when Inventory
+    responds with 404 (missing schema); other HTTP errors propagate to the
+    global handler (matches legacy AJAX empty-selector UX for not-found only).
 
     :param schema_id: The inventory schema ID whose tables are listed.
     :type schema_id: int
@@ -54,8 +55,9 @@ async def list_schema_tables(
         params["search"] = search
     try:
         tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
-    except HTTPException:
-        return []
-    return [
-        InventorySelectorOption(id=t["id"], name=t["name"]) for t in tables["items"]
-    ]
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_404_NOT_FOUND:
+            return []
+        raise
+    items = (tables or {}).get("items", [])
+    return [InventorySelectorOption(id=t["id"], name=t["name"]) for t in items]

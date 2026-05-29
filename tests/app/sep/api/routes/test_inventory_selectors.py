@@ -60,14 +60,34 @@ class TestSepServiceSchemasEndpoint:
             "/services/10/schemas/", params={"limit": 0, "search": "my"}
         )
 
-    def test_list_schemas_empty_on_inventory_error(
+    def test_list_schemas_empty_on_404(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
-        """Return empty list when inventory API raises HTTPException."""
+        """Return empty list when inventory responds with 404."""
         mock_inventory_api_dep.get.side_effect = HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
         )
         response = test_client.get("/api/sep/services/9999/schemas")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    def test_list_schemas_propagates_non_404_inventory_error(
+        self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
+    ) -> None:
+        """Propagate auth and server errors instead of masking as empty list."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Inventory unavailable",
+        )
+        response = test_client.get("/api/sep/services/10/schemas")
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def test_list_schemas_empty_when_response_has_no_items(
+        self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
+    ) -> None:
+        """Return empty list when inventory returns a non-dict or missing items."""
+        mock_inventory_api_dep.get.return_value = None
+        response = test_client.get("/api/sep/services/10/schemas")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
@@ -113,13 +133,33 @@ class TestSepSchemaTablesEndpoint:
             "/schemas/5/tables/", params={"limit": 0, "search": "user"}
         )
 
-    def test_list_tables_empty_on_inventory_error(
+    def test_list_tables_empty_on_404(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
-        """Return empty list when inventory API raises HTTPException."""
+        """Return empty list when inventory responds with 404."""
         mock_inventory_api_dep.get.side_effect = HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
         )
         response = test_client.get("/api/sep/schemas/9999/tables")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    def test_list_tables_propagates_non_404_inventory_error(
+        self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
+    ) -> None:
+        """Propagate auth and server errors instead of masking as empty list."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+        )
+        response = test_client.get("/api/sep/schemas/5/tables")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_list_tables_empty_when_response_has_no_items(
+        self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
+    ) -> None:
+        """Return empty list when inventory returns a non-dict or missing items."""
+        mock_inventory_api_dep.get.return_value = {}
+        response = test_client.get("/api/sep/schemas/5/tables")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []

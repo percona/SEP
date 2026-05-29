@@ -20,7 +20,7 @@ schema-driven service selectors without bypassing the SEP layer (see the
 non-bypass rule in ``app/sep/api/router.py``).
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.models import PaginatedResponse
@@ -67,8 +67,9 @@ async def list_service_schemas(
     """Return schemas for a service via the SEP gateway.
 
     Proxies Inventory ``GET /services/{service_id}/schemas/`` for React
-    ``SchemaSelector`` components. Returns an empty list when the service is
-    missing or inventory raises an HTTP error (matches legacy AJAX behavior).
+    ``SchemaSelector`` components. Returns an empty list only when Inventory
+    responds with 404 (missing service); other HTTP errors propagate to the
+    global handler (matches legacy AJAX empty-selector UX for not-found only).
 
     :param service_id: The inventory service ID whose schemas are listed.
     :type service_id: int
@@ -86,8 +87,9 @@ async def list_service_schemas(
         schemas = await inventory_api.get(
             f"/services/{service_id}/schemas/", params=params
         )
-    except HTTPException:
-        return []
-    return [
-        InventorySelectorOption(id=s["id"], name=s["name"]) for s in schemas["items"]
-    ]
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_404_NOT_FOUND:
+            return []
+        raise
+    items = (schemas or {}).get("items", [])
+    return [InventorySelectorOption(id=s["id"], name=s["name"]) for s in items]
