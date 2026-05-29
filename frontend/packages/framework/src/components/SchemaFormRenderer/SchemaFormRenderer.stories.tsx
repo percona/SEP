@@ -448,6 +448,52 @@ export const ArchivesSourceXor: Story = {
   },
 };
 
+/**
+ * Empty-state placeholder for `multi_choice` and `choice` (select-mode).
+ * Confirms the floating label sits above and a muted "Select…" affordance
+ * is visible inside the control when no value is chosen (SEP-1278).
+ */
+export const EmptyChoicePlaceholder: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Empty selects',
+        description:
+          'Both controls below render a muted "Select…" placeholder when no value is selected.',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+              { label: 'GCS', value: 'GCS' },
+            ],
+          },
+          {
+            type: 'choice',
+            name: 'region',
+            label: 'Region (required)',
+            required: true,
+            choices: [
+              { label: 'us-east-1', value: 'us-east-1' },
+              { label: 'us-west-2', value: 'us-west-2' },
+              { label: 'eu-west-1', value: 'eu-west-1' },
+              { label: 'ap-south-1', value: 'ap-south-1' },
+            ],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Submit',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
 /** Alert provider configured: checkbox is enabled and actionable. */
 export const WithAlertCapabilityEnabled: Story = {
   decorators: [withAlertConfig(true)],
