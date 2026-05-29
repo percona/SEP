@@ -342,21 +342,20 @@ class TestAltersApiCreate:
             },
         )
 
-    def test_create_rolls_back_on_execute_chain_failure(
+    def test_create_returns_201_with_warning_when_execute_chain_fails(
         self,
         test_client,
         mock_task_api_dep,
         mock_inventory_api_dep,
         created_service,
     ) -> None:
-        """Rollback DELETEs created tasks when the pre-checks execute POST fails."""
+        """Persist the task group and surface a warning when pre-checks auto-fire fails."""
         configure_cascade_create_mocks(
             mock_task_api_dep,
             mock_inventory_api_dep,
             created_service,
             DEFAULT_TASK_NAME,
             execute_result=HTTPException(status_code=status.HTTP_502_BAD_GATEWAY),
-            fetch_created_task=False,
         )
         mock_task_api_dep.delete = AsyncMock(return_value=None)
 
@@ -368,12 +367,10 @@ class TestAltersApiCreate:
             ),
         )
 
-        assert response.status_code == status.HTTP_502_BAD_GATEWAY
-        assert mock_task_api_dep.delete.await_args_list == [
-            call(f"/{DEFAULT_TASK_NAME}-pre-checks"),
-            call(f"/{DEFAULT_TASK_NAME}-dry-run"),
-            call(f"/{DEFAULT_TASK_NAME}"),
-        ]
+        assert response.status_code == status.HTTP_201_CREATED
+        payload = response.json()
+        assert payload["pre_checks_auto_fire_warning"] is not None
+        mock_task_api_dep.delete.assert_not_awaited()
 
     def test_create_returns_422_missing_required_fields(
         self, test_client, mock_task_api_dep

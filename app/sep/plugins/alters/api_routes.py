@@ -131,7 +131,7 @@ async def alters_api_create(
     pre_checks_template = await build_pre_checks_task_payload(
         parent_task, task_api=tasks_api
     )
-    await cascade_create_alters_group(
+    pre_checks_auto_fire_warning = await cascade_create_alters_group(
         tasks_api,
         parent_task,
         pre_checks_template,
@@ -148,6 +148,7 @@ async def alters_api_create(
         task,
         status=None,
         connectivity_warning=connectivity_warning,
+        pre_checks_auto_fire_warning=pre_checks_auto_fire_warning,
         username_mapping=username_mapping,
     )
 

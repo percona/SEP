@@ -544,11 +544,37 @@ async def test_cascade_create_alters_group_continue_on_pre_check_failure():
 
 
 @pytest.mark.asyncio
-async def test_cascade_create_alters_group_rolls_back_on_execute_failure():
-    """Test cascade_create_alters_group rolls back parent and satellites on execute failure."""
+async def test_cascade_create_alters_group_keeps_tasks_when_execute_fails():
+    """Test execute failure returns a warning and does not roll back persisted tasks."""
     tasks_api = AsyncMock(spec=RemoteAPI)
     exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
     tasks_api.post.side_effect = [None, None, None, exc]
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+    )
+
+    warning = await cascade_create_alters_group(
+        tasks_api,
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert warning is not None
+    tasks_api.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cascade_create_alters_group_rolls_back_on_task_post_failure():
+    """Test cascade_create_alters_group rolls back when a task POST fails."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
+    tasks_api.post.side_effect = [None, None, exc]
     body = AltersTaskWrite(
         task_name="t1",
         hostname="host1",
@@ -567,7 +593,6 @@ async def test_cascade_create_alters_group_rolls_back_on_execute_failure():
         )
 
     assert tasks_api.delete.await_args_list == [
-        call("/t1-pre-checks"),
         call("/t1-dry-run"),
         call("/t1"),
     ]

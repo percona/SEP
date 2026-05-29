@@ -22,7 +22,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, Form
+from fastapi import Depends, Form, HTTPException
 
 from app.core.exceptions import HTTPConflictException
 from app.core.requests.remote_api import RemoteAPI
@@ -689,17 +689,24 @@ def resolve_predecessor_spec(
     return schema_spec
 
 
+_PRE_CHECKS_AUTO_FIRE_FAILED_MESSAGE = (
+    "Task group was created, but automatic pre-checks could not be started. "
+    "Run Pre-checks from the task detail page."
+)
+
+
 async def cascade_create_alters_group(
     tasks_api: RemoteAPI,
     parent_task: TaskWrite,
     pre_checks_template: TaskWrite,
     body: AltersCreate | AltersTaskWrite,
-) -> None:
+) -> str | None:
     """POST parent + dry-run + pre-checks, then fire the pre-checks chain.
 
-    Atomically creates the three-task group and wires
+    Atomically creates the three-task group, then best-effort fires
     ``POST /execute/{parent}-pre-checks`` to chain into the parent run task.
-    Rolls back already-created tasks on any failure.
+    Rolls back already-created tasks when any of the three POSTs fail; a
+    failure on the execute call leaves the persisted group intact.
 
     :param tasks_api: The Tasks API client.
     :type tasks_api: RemoteAPI
@@ -710,13 +717,17 @@ async def cascade_create_alters_group(
     :type pre_checks_template: TaskWrite
     :param body: The alters create/write payload (for ``continue_on_pre_check_failure``).
     :type body: AltersCreate | AltersTaskWrite
-    :raises Exception: Re-raises the underlying Tasks API error after rollback.
+    :return: A user-facing warning when auto-fire of pre-checks fails, else ``None``.
+    :rtype: str | None
+    :raises Exception: Re-raises the underlying Tasks API error after rollback
+        when one of the three task POSTs fails.
     """
     parent_payload = parent_task.model_dump()
     derived_specs = alters_schema.derived or []
     predecessor_spec = resolve_predecessor_spec(body)
 
     created_names: list[str] = []
+    predecessor_payload: dict[str, Any]
     try:
         await tasks_api.post("/", json=parent_payload)
         created_names.append(parent_payload["name"])
@@ -733,14 +744,6 @@ async def cascade_create_alters_group(
         )
         await tasks_api.post("/", json=predecessor_payload)
         created_names.append(predecessor_payload["name"])
-
-        await tasks_api.post(
-            f"/execute/{predecessor_payload['name']}",
-            json={
-                "chain_task_names": [parent_payload["name"]],
-                "chain_on_failure": predecessor_spec.on_failure == "continue",
-            },
-        )
     except Exception:
         for task_name in reversed(created_names):
             try:
@@ -753,6 +756,23 @@ async def cascade_create_alters_group(
                     rollback_exc,
                 )
         raise
+
+    try:
+        await tasks_api.post(
+            f"/execute/{predecessor_payload['name']}",
+            json={
+                "chain_task_names": [parent_payload["name"]],
+                "chain_on_failure": predecessor_spec.on_failure == "continue",
+            },
+        )
+    except HTTPException as exc:
+        logger.warning(
+            "Auto-fire of pre-checks %r failed; task group persisted: %s",
+            predecessor_payload["name"],
+            exc,
+        )
+        return _PRE_CHECKS_AUTO_FIRE_FAILED_MESSAGE
+    return None
 
 
 _ALTERS_GROUP_RENAME_MESSAGE = (
@@ -963,6 +983,7 @@ def build_alters_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     connectivity_warning: ConnectivityWarning | None = None,
+    pre_checks_auto_fire_warning: str | None = None,
     username_mapping: dict[str, str] | None = None,
 ) -> AltersTaskResponse:
     """Build an alters task response object for the JSON API.
@@ -974,6 +995,9 @@ def build_alters_api_task_response(
     :param connectivity_warning: A warning to surface when a connectivity
         check failed during the task creation flow.
     :type connectivity_warning: ConnectivityWarning | None
+    :param pre_checks_auto_fire_warning: A warning when automatic pre-checks
+        could not be started after create.
+    :type pre_checks_auto_fire_warning: str | None
     :param username_mapping: Optional mapping of user IDs to usernames.
     :type username_mapping: dict[str, str] | None
     :return: A validated alters task API response object.
@@ -995,6 +1019,7 @@ def build_alters_api_task_response(
         service_type=ServiceTypeEnum.MYSQL,
         status=status,
         connectivity_warning=connectivity_warning,
+        pre_checks_auto_fire_warning=pre_checks_auto_fire_warning,
     )
 
 

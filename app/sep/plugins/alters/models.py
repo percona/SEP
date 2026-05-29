@@ -324,6 +324,9 @@ class AltersTaskResponse(AltersTaskBase):
         database connectivity check fails. ``None`` when the check passes,
         is opted out, or the task meta lacks the connectivity keys.
     :type connectivity_warning: ConnectivityWarning | None
+    :param pre_checks_auto_fire_warning: A warning when the task group was
+        created but the automatic pre-checks execute call failed.
+    :type pre_checks_auto_fire_warning: str | None
     """
 
     id: int | None = None
@@ -336,6 +339,7 @@ class AltersTaskResponse(AltersTaskBase):
     created_by: str | None = None
     last_updated_by: str | None = None
     connectivity_warning: ConnectivityWarning | None = None
+    pre_checks_auto_fire_warning: str | None = None
 
 
 class AltersExecuteWrite(BaseModel):
