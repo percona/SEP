@@ -25,7 +25,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, Form, HTTPException
 
-from app.core.exceptions import HTTPConflictException
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
@@ -806,6 +806,25 @@ _ALTERS_GROUP_RENAME_MESSAGE = (
 )
 
 
+def ensure_alters_update_addresses_parent(
+    requested_name: str,
+    parent_task: Task,
+) -> None:
+    """Reject updates whose URL names a satellite instead of the parent execute task.
+
+    :param requested_name: The ``task_name`` path segment from the request URL.
+    :type requested_name: str
+    :param parent_task: The resolved parent alters task.
+    :type parent_task: Task
+    :raises HTTPBadRequestException: When ``requested_name`` is a satellite path.
+    """
+    if requested_name != parent_task.name:
+        raise HTTPBadRequestException(
+            f"Address the parent task ({parent_task.name!r}), "
+            f"not the satellite {requested_name!r}."
+        )
+
+
 def ensure_alters_group_update_preserves_names(
     parent_existing_name: str,
     updated_parent_name: str,
@@ -954,6 +973,7 @@ async def get_unprotected_alters_task(
     :rtype: Task
     """
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
+    ensure_alters_update_addresses_parent(task_name, parent_task)
     if parent_task.protected:
         raise HTTPConflictException("Cannot edit a protected task.")
     return parent_task

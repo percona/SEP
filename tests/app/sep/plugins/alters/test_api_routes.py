@@ -512,43 +512,30 @@ class TestAltersApiUpdate:
         assert response.status_code == status.HTTP_409_CONFLICT
         mock_task_api_dep.put.assert_not_called()
 
-    def test_update_via_satellite_returns_409_when_parent_running(
+    def test_update_via_satellite_returns_400_not_rename_409(
         self,
         test_client,
         mock_task_api_dep,
         created_service,
     ) -> None:
-        """PUT by satellite name must block when the resolved parent is running."""
+        """PUT by satellite URL returns 400 with a clear message, not 409 rename."""
         group = build_alters_task_group(DEFAULT_PARENT_NAME)
-        running_history = {"items": [{"id": 1}], "total": 1, "offset": 0, "limit": 50}
-        empty_history = {"items": [], "total": 0, "offset": 0, "limit": 50}
-
-        async def _get(path: str, params: dict | None = None) -> dict:
-            if path == f"/{DEFAULT_PARENT_NAME}-pre-checks":
-                return group["pre_checks"]
-            if path == f"/{DEFAULT_PARENT_NAME}":
-                return group["parent"]
-            if path == f"/{DEFAULT_PARENT_NAME}/history/":
-                if params and params.get("status") == TaskHistoryStatusEnum.RUNNING:
-                    return running_history
-                return empty_history
-            raise AssertionError(f"unexpected GET {path!r} params={params!r}")
-
-        mock_task_api_dep.get = AsyncMock(side_effect=_get)
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[group["pre_checks"], group["parent"]]
+        )
 
         response = test_client.put(
             f"{API_BASE}/{DEFAULT_PARENT_NAME}-pre-checks",
             json=build_alters_write_body(
-                task_name=DEFAULT_PARENT_NAME,
+                task_name=f"{DEFAULT_PARENT_NAME}-pre-checks",
                 service_id=created_service.id,
             ),
         )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert DEFAULT_PARENT_NAME in response.json()["detail"]
+        assert f"{DEFAULT_PARENT_NAME}-pre-checks" in response.json()["detail"]
         mock_task_api_dep.put.assert_not_called()
-        history_paths = [c.args[0] for c in mock_task_api_dep.get.await_args_list]
-        assert f"/{DEFAULT_PARENT_NAME}/history/" in history_paths
-        assert f"/{DEFAULT_PARENT_NAME}-pre-checks/history/" not in history_paths
 
 
 class TestAltersApiDelete:

@@ -47,6 +47,7 @@ from app.sep.plugins.alters.deps import (
     cascade_update_alters_group,
     DeletableAltersParent,
     ensure_alters_group_update_preserves_names,
+    ensure_alters_update_addresses_parent,
     get_alters_api_task_responses,
     get_alters_task,
     get_alters_task_status,
@@ -173,6 +174,7 @@ async def alters_api_update(
     :type check_connectivity: bool
     """
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
+    ensure_alters_update_addresses_parent(task_name, parent_task)
     await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
     if parent_task.protected:
         raise HTTPConflictException("Cannot edit a protected task.")
