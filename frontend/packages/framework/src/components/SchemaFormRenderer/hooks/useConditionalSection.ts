@@ -31,10 +31,6 @@ export interface ConditionalSectionState {
  * unregistered from react-hook-form so stale values do not ship in the
  * submission payload.
  *
- * ``requires`` is parsed by the backend Tier-2 validator for symmetry
- * with ``BaseField`` but the renderer intentionally ignores it. Express
- * positive gating as ``forbidden=[{when: not_equals: ...}]``.
- *
  * Cardinality (repeated) sections are out of scope for this hook — none
  * of the current schema-driven plugins gate a cardinality_rules-driven
  * section. Revisit if a future plugin needs the combination.

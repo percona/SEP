@@ -229,12 +229,6 @@ export interface FormSection {
    * Gates may reference any field in the plugin schema.
    */
   forbidden?: FieldGate[];
-  /**
-   * Reserved for future positive-gating semantics on sections. Backend
-   * Tier-2 validates the references today, but the renderer ignores
-   * ``requires``. Prefer ``forbidden=[{when: not_equals: ...}]``.
-   */
-  requires?: FieldGate[];
 }
 
 // ── List view ───────────────────────────────────────────────────────────

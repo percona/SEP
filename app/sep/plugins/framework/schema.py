@@ -551,11 +551,6 @@ class FormSection(SchemaBaseModel):
         Backend ``fail_when`` and conditional-rule validation on hidden
         sections still applies; only the client payload is stripped.
     :type forbidden: list[FieldGate] | None
-    :param requires: Reserved for future positive-gating semantics on
-        sections. Tier-2 validates field references today, but the
-        renderer ignores ``requires``. Prefer expressing "show only when"
-        as ``forbidden=[when != target]``. Defaults to ``None``.
-    :type requires: list[FieldGate] | None
     """
 
     title: NonEmptyStr
@@ -567,7 +562,6 @@ class FormSection(SchemaBaseModel):
     collapsed_by_default: bool = False
     render_after_submit: bool = False
     forbidden: list[FieldGate] | None = None
-    requires: list[FieldGate] | None = None
 
 
 class Column(SchemaBaseModel):
@@ -904,15 +898,14 @@ def _collect_section_gate_errors(
     declared_field_names: set[str],
     errors: list[str],
 ) -> None:
-    """Walk a ``FormSection``'s ``requires`` / ``forbidden`` gates."""
-    for primitive in ("requires", "forbidden"):
-        for rule_index, gate in enumerate(getattr(section, primitive) or []):
-            _collect_reference_errors(
-                f"{section_label} {primitive}[{rule_index}]",
-                gate.when.referenced_fields(),
-                declared_field_names,
-                errors,
-            )
+    """Walk a ``FormSection``'s ``forbidden`` gates."""
+    for rule_index, gate in enumerate(section.forbidden or []):
+        _collect_reference_errors(
+            f"{section_label} forbidden[{rule_index}]",
+            gate.when.referenced_fields(),
+            declared_field_names,
+            errors,
+        )
 
 
 def _collect_cardinality_rule_errors(

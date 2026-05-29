@@ -1213,22 +1213,6 @@ class TestSchemaTier2ReferenceResolution:
                 list_view=_minimal_list_view(),
             )
 
-    def test_unknown_field_in_section_requires_rejected(self) -> None:
-        """Section ``requires`` referencing a missing field is rejected."""
-        with pytest.raises(ValidationError, match="unknown field 'NOT_THERE'"):
-            PluginSchema(
-                name="t",
-                display_name="T",
-                forms=[
-                    FormSection(
-                        title="Mode",
-                        fields=[StringField(name="x", label="X")],
-                        requires=[FieldGate(when=F("NOT_THERE") == "v")],
-                    ),
-                ],
-                list_view=_minimal_list_view(),
-            )
-
     def test_section_forbidden_referencing_own_child_field_accepted(self) -> None:
         """Section gate referencing one of its own fields validates clean."""
         schema = PluginSchema(
