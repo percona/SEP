@@ -449,7 +449,7 @@ export const ArchivesSourceXor: Story = {
 };
 
 /**
- * Empty-state placeholder for `multi_choice` and `choice` (select-mode).
+ * Empty-state placeholder for `multichoice` and `choice` (select-mode).
  * Confirms the floating label sits above and a muted "Select…" affordance
  * is visible inside the control when no value is chosen (SEP-1278).
  */
