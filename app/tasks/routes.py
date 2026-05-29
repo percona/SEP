@@ -79,6 +79,7 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskHistory,
+    TaskHistoryLatestStatusRequest,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskResponse,
@@ -393,6 +394,20 @@ async def list_task_history(
     )
     await _populate_has_logs(session, response.items)
     return response
+
+
+@router.post(
+    "/history/latest",
+    dependencies=[IsAuthenticatedDep],
+    response_model=dict[str, TaskHistoryStatusEnum | None],
+)
+async def latest_task_history_status(
+    session: SessionDep,
+    body: TaskHistoryLatestStatusRequest,
+) -> dict[str, TaskHistoryStatusEnum | None]:
+    """Return the latest known execution status for each requested task name."""
+    logger.debug("Resolving latest history status for %s task(s)", len(body.names))
+    return await TaskHistoryManager.latest_status_by_task_names(session, body.names)
 
 
 @router.get(

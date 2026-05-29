@@ -440,6 +440,65 @@ class TaskHistoryManager(BaseSQLModelManager):
             limit=limit,
         )
 
+    @staticmethod
+    def _latest_status_from_history_statuses(
+        statuses: Sequence[TaskHistoryStatusEnum | None],
+    ) -> TaskHistoryStatusEnum | None:
+        """Return the first non-null status in newest-to-oldest order."""
+        for status in statuses:
+            if status is not None:
+                return status
+        return None
+
+    @classmethod
+    async def latest_status_by_task_names(
+        cls,
+        session: AsyncSession,
+        names: Sequence[str],
+    ) -> dict[str, TaskHistoryStatusEnum | None]:
+        """Return the latest known history status for each task name.
+
+        Status resolution matches SEP list helpers: histories are considered in
+        ``created_at`` descending order and the first non-null status wins.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param names: Task names to resolve. Duplicates are ignored; order is
+            preserved in the returned mapping.
+        :type names: Sequence[str]
+        :return: A mapping of task name to latest status, or ``None`` when no
+            history exists or every history row has a null status.
+        :rtype: dict[str, TaskHistoryStatusEnum | None]
+        """
+        unique_names = list(dict.fromkeys(names))
+        if not unique_names:
+            return {}
+
+        query = (
+            select(col(TaskHistory.status), col(Task.name))
+            .select_from(TaskHistory)
+            .join(Task)
+            .where(col(Task.name).in_(unique_names))
+            .order_by(
+                col(Task.name),
+                col(TaskHistory.created_at).desc(),
+                col(TaskHistory.id).desc(),
+            )
+        )
+        result = await cls._exec(session, query)
+        rows = result.all()
+
+        histories_by_name: dict[str, list[TaskHistoryStatusEnum | None]] = {
+            name: [] for name in unique_names
+        }
+        for status, task_name in rows:
+            histories_by_name[task_name].append(status)
+
+        return {
+            name: cls._latest_status_from_history_statuses(histories_by_name[name])
+            for name in unique_names
+        }
+
 
 class TaskHistoryLogManager(BaseSQLModelManager):
     """Manage append-only task history log chunk operations.

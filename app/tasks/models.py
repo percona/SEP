@@ -1063,6 +1063,18 @@ class TaskStats(BaseModel):
             )
 
 
+LATEST_HISTORY_STATUS_NAMES_MAX = 200
+
+
+class TaskHistoryLatestStatusRequest(BaseModel):
+    """Request body for batch latest-history status lookup."""
+
+    names: list[str] = Field(
+        default_factory=list,
+        max_length=LATEST_HISTORY_STATUS_NAMES_MAX,
+    )
+
+
 class TransformPayloadRequest(BaseModel):
     """Define the request body for the /transform/ API route.
 
