@@ -172,6 +172,20 @@ def test_alters_task_write_normalizes_legacy_dual_target_fields():
     assert body.table_name == ""
 
 
+def test_alters_task_write_rejects_empty_recursion_method():
+    """Test AltersTaskWrite rejects empty recursion_method like AltersCreate."""
+    with pytest.raises(ValidationError, match="recursion_method"):
+        AltersTaskWrite(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            schema_name="app",
+            table_name="users",
+            alter="ADD COLUMN x INT",
+            recursion_method="",
+        )
+
+
 def test_alters_task_write_continue_on_pre_check_failure_default_false():
     """Test continue_on_pre_check_failure defaults to False on AltersTaskWrite."""
     body = AltersTaskWrite(

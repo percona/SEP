@@ -201,7 +201,7 @@ class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
     :param table_name: Manual table name when ``table_id`` is not set.
     :type table_name: str
     :param recursion_method: The method for handling replica discovery.
-    :type recursion_method: str
+    :type recursion_method: NonEmptyStr
     :param alter: The specific alter command to be executed.
     :type alter: NonEmptyStr
     :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``.
@@ -256,7 +256,7 @@ class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
     table_id: int | None = None
     schema_name: str = ""
     table_name: str = ""
-    recursion_method: str = "processlist"
+    recursion_method: NonEmptyStr = "processlist"
     alter: NonEmptyStr
     dsn_table: str = ""
     pause_file: str = ""
