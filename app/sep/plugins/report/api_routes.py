@@ -19,9 +19,9 @@ Mounted at ``/api/plugins/report/`` via ``plugins_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
 level. Route layout:
 
-* ``GET /generate`` — return report data as JSON
-* ``POST /generate/pdf`` — generate report and return PDF bytes
-* ``POST /upload`` — generate report, render PDF, upload to ServiceNow
+* ``GET /generate`` — return report data as JSON (cookie or Bearer)
+* ``POST /generate/pdf`` — generate report and return PDF bytes (Bearer required)
+* ``POST /upload`` — generate report, render PDF, upload to ServiceNow (Bearer required)
 """
 
 from typing import Annotated
@@ -29,6 +29,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
+from app.sep.deps import RequireBearerAuth
 from app.sep.plugins.report.deps import IsUploadConfigured, RequiredPMMAPIDep
 from app.sep.plugins.report.models import REPORT_SECTIONS, ReportData
 from app.sep.plugins.report.schemas import ReportGenerateRequest, ReportUploadResponse
@@ -91,7 +92,7 @@ async def report_api_generate(
     )
 
 
-@router.post("/generate/pdf")
+@router.post("/generate/pdf", dependencies=[RequireBearerAuth])
 async def report_api_generate_pdf(
     pmm_api: RequiredPMMAPIDep,
     body: ReportGenerateRequest,
@@ -121,7 +122,7 @@ async def report_api_generate_pdf(
     )
 
 
-@router.post("/upload", dependencies=[IsUploadConfigured])
+@router.post("/upload", dependencies=[RequireBearerAuth, IsUploadConfigured])
 async def report_api_upload(
     pmm_api: RequiredPMMAPIDep,
     body: ReportGenerateRequest,

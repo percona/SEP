@@ -31,6 +31,7 @@ from tests.app.sep.plugins.report.test_routes import _make_report
 
 API_BASE = "/api/plugins/report"
 _API = "app.sep.plugins.report.api_routes"
+BEARER_HEADERS = {"Authorization": "Bearer test-token"}
 
 
 @pytest.fixture
@@ -226,7 +227,7 @@ class TestReportApiGeneratePDF:
                 return_value=pdf_bytes,
             ),
         ):
-            response = test_client.post(self._PDF_URL, json={})
+            response = test_client.post(self._PDF_URL, json={}, headers=BEARER_HEADERS)
 
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"] == "application/pdf"
@@ -247,7 +248,7 @@ class TestReportApiGeneratePDF:
                 return_value=b"%PDF-1.4",
             ),
         ):
-            response = test_client.post(self._PDF_URL, json={})
+            response = test_client.post(self._PDF_URL, json={}, headers=BEARER_HEADERS)
 
         disposition = response.headers["content-disposition"]
         assert "Health_and_Security_Report_2026-03-31.pdf" in disposition
@@ -268,7 +269,7 @@ class TestReportApiGeneratePDF:
                 return_value=b"%PDF-1.4",
             ),
         ):
-            test_client.post(self._PDF_URL, json={})
+            test_client.post(self._PDF_URL, json={}, headers=BEARER_HEADERS)
 
         _, kwargs = mock_gen.call_args
         assert kwargs["since"] == "now-7d"
@@ -299,6 +300,7 @@ class TestReportApiGeneratePDF:
                     "full": True,
                     "refresh": True,
                 },
+                headers=BEARER_HEADERS,
             )
 
         _, kwargs = mock_gen.call_args
@@ -311,7 +313,7 @@ class TestReportApiGeneratePDF:
         """Assert 503 is returned when PMM is not configured."""
         sep_app.dependency_overrides[get_pmm_api] = lambda: None
         try:
-            response = test_client.post(self._PDF_URL, json={})
+            response = test_client.post(self._PDF_URL, json={}, headers=BEARER_HEADERS)
             assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         finally:
             sep_app.dependency_overrides = {}
@@ -323,7 +325,7 @@ class TestReportApiGeneratePDF:
             new_callable=AsyncMock,
             side_effect=RuntimeError("collection failed"),
         ):
-            response = test_client.post(self._PDF_URL, json={})
+            response = test_client.post(self._PDF_URL, json={}, headers=BEARER_HEADERS)
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
@@ -361,7 +363,9 @@ class TestReportApiUpload:
                 return_value=upload_result,
             ),
         ):
-            response = test_client.post(self._UPLOAD_URL, json={})
+            response = test_client.post(
+                self._UPLOAD_URL, json={}, headers=BEARER_HEADERS
+            )
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == upload_result
@@ -386,7 +390,7 @@ class TestReportApiUpload:
                 return_value={},
             ),
         ):
-            test_client.post(self._UPLOAD_URL, json={})
+            test_client.post(self._UPLOAD_URL, json={}, headers=BEARER_HEADERS)
 
         _, kwargs = mock_gen.call_args
         assert kwargs["since"] == "now-7d"
@@ -422,6 +426,7 @@ class TestReportApiUpload:
                     "full": True,
                     "refresh": True,
                 },
+                headers=BEARER_HEADERS,
             )
 
         _, kwargs = mock_gen.call_args
@@ -434,7 +439,9 @@ class TestReportApiUpload:
         """Assert 503 is returned when PMM is not configured."""
         sep_app.dependency_overrides[get_pmm_api] = lambda: None
         try:
-            response = test_client.post(self._UPLOAD_URL, json={})
+            response = test_client.post(
+                self._UPLOAD_URL, json={}, headers=BEARER_HEADERS
+            )
             assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         finally:
             sep_app.dependency_overrides = {}
@@ -442,7 +449,7 @@ class TestReportApiUpload:
     def test_returns_503_when_upload_not_configured(self, test_client, mock_pmm_api):
         """Assert 503 is returned when upload settings are missing."""
         sep_app.dependency_overrides.pop(require_upload_configured, None)
-        response = test_client.post(self._UPLOAD_URL, json={})
+        response = test_client.post(self._UPLOAD_URL, json={}, headers=BEARER_HEADERS)
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
     def test_returns_500_on_upload_error(self, test_client, mock_pmm_api):
@@ -465,6 +472,38 @@ class TestReportApiUpload:
                 side_effect=RuntimeError("upload failed"),
             ),
         ):
-            response = test_client.post(self._UPLOAD_URL, json={})
+            response = test_client.post(
+                self._UPLOAD_URL, json={}, headers=BEARER_HEADERS
+            )
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+class TestReportApiBearerAuthGate:
+    """Mutations require ``Authorization: Bearer``; reads accept cookie auth."""
+
+    def test_generate_with_cookie_only_returns_200(self, test_client, mock_pmm_api):
+        """GET /generate accepts cookie-only auth."""
+        report = _make_report()
+        with patch(
+            f"{_API}.generate_report",
+            new_callable=AsyncMock,
+            return_value=report,
+        ):
+            response = test_client.get(f"{API_BASE}/generate")
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_pdf_with_cookie_only_returns_401(self, test_client, mock_pmm_api):
+        """POST /generate/pdf without Bearer is rejected."""
+        response = test_client.post(f"{API_BASE}/generate/pdf", json={})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_upload_with_cookie_only_returns_401(self, test_client, mock_pmm_api):
+        """POST /upload without Bearer is rejected."""
+        sep_app.dependency_overrides[require_upload_configured] = lambda: None
+        try:
+            response = test_client.post(f"{API_BASE}/upload", json={})
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        finally:
+            sep_app.dependency_overrides.pop(require_upload_configured, None)
