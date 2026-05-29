@@ -15,6 +15,7 @@
 
 """Define dependencies for the Alters plugin."""
 
+import asyncio
 import json
 import logging
 import shlex
@@ -70,6 +71,8 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+_STATUS_FETCH_CONCURRENCY = 10
 
 DEFAULT_RECURSION_DSN_TABLE = "D=percona,t=dsns"
 
@@ -1091,14 +1094,18 @@ async def get_alters_api_task_responses(
 
     params = {"owner": TaskOwner.ALTERS.value}
     response = await tasks_api.get("/", params=params)
-    tasks = [
-        Task.model_validate(task)
-        for task in response["items"]
-        if not task.get("data", {}).get("parent")
+    parent_tasks = [
+        task
+        for item in response["items"]
+        if is_alters_parent_task(task := Task.model_validate(item))
     ]
-    task_status_pairs = [
-        (task, await get_alters_task_status(task.name, tasks_api)) for task in tasks
-    ]
+    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
+
+    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
+        async with sem:
+            return await get_alters_task_status(task.name, tasks_api)
+
+    statuses = await asyncio.gather(*(_bounded_status(task) for task in parent_tasks))
 
     return [
         build_alters_api_task_response(
@@ -1106,7 +1113,7 @@ async def get_alters_api_task_responses(
             status=task_status,
             username_mapping=username_mapping,
         )
-        for task, task_status in task_status_pairs
+        for task, task_status in zip(parent_tasks, statuses, strict=True)
         if status is None or task_status == status
     ]
 
