@@ -462,10 +462,49 @@ class TestAltersApiUpdate:
         assert response.status_code == status.HTTP_409_CONFLICT
         mock_task_api_dep.put.assert_not_called()
 
+    def test_update_via_satellite_returns_409_when_parent_running(
+        self,
+        test_client,
+        mock_task_api_dep,
+        created_service,
+    ) -> None:
+        """PUT by satellite name must block when the resolved parent is running."""
+        group = build_alters_task_group(DEFAULT_PARENT_NAME)
+        running_history = {"items": [{"id": 1}], "total": 1, "offset": 0, "limit": 50}
+        empty_history = {"items": [], "total": 0, "offset": 0, "limit": 50}
+
+        async def _get(path: str, params: dict | None = None) -> dict:
+            if path == f"/{DEFAULT_PARENT_NAME}-pre-checks":
+                return group["pre_checks"]
+            if path == f"/{DEFAULT_PARENT_NAME}":
+                return group["parent"]
+            if path == f"/{DEFAULT_PARENT_NAME}/history/":
+                if params and params.get("status") == TaskHistoryStatusEnum.RUNNING:
+                    return running_history
+                return empty_history
+            raise AssertionError(f"unexpected GET {path!r} params={params!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_get)
+
+        response = test_client.put(
+            f"{API_BASE}/{DEFAULT_PARENT_NAME}-pre-checks",
+            json=build_alters_write_body(
+                task_name=DEFAULT_PARENT_NAME,
+                service_id=created_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_called()
+        history_paths = [c.args[0] for c in mock_task_api_dep.get.await_args_list]
+        assert f"/{DEFAULT_PARENT_NAME}/history/" in history_paths
+        assert f"/{DEFAULT_PARENT_NAME}-pre-checks/history/" not in history_paths
+
 
 class TestAltersApiDelete:
     """Tests for DELETE /api/plugins/alters/{task_name}."""
 
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_delete_removes_satellites_then_parent(
         self, test_client, mock_task_api_dep
     ) -> None:
@@ -483,6 +522,7 @@ class TestAltersApiDelete:
             call(f"/{DEFAULT_PARENT_NAME}"),
         ]
 
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_delete_resolves_satellite_name_to_parent_group(
         self, test_client, mock_task_api_dep
     ) -> None:
@@ -500,6 +540,7 @@ class TestAltersApiDelete:
             f"/{DEFAULT_PARENT_NAME}"
         )
 
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_delete_returns_500_when_cascade_delete_partially_fails(
         self, test_client, mock_task_api_dep
     ) -> None:
@@ -518,6 +559,34 @@ class TestAltersApiDelete:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert f"{DEFAULT_PARENT_NAME}-pre-checks" in response.json()["detail"]
+
+    def test_delete_via_satellite_returns_409_when_parent_running(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """DELETE by satellite name must block when the resolved parent is running."""
+        group = build_alters_task_group(DEFAULT_PARENT_NAME)
+        running_history = {"items": [{"id": 1}], "total": 1, "offset": 0, "limit": 50}
+        empty_history = {"items": [], "total": 0, "offset": 0, "limit": 50}
+
+        async def _get(path: str, params: dict | None = None) -> dict:
+            if path == f"/{DEFAULT_PARENT_NAME}-pre-checks":
+                return group["pre_checks"]
+            if path == f"/{DEFAULT_PARENT_NAME}":
+                return group["parent"]
+            if path == f"/{DEFAULT_PARENT_NAME}/history/":
+                if params and params.get("status") == TaskHistoryStatusEnum.RUNNING:
+                    return running_history
+                return empty_history
+            raise AssertionError(f"unexpected GET {path!r} params={params!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_get)
+
+        response = test_client.delete(f"{API_BASE}/{DEFAULT_PARENT_NAME}-pre-checks")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.delete.assert_not_called()
+        history_paths = [c.args[0] for c in mock_task_api_dep.get.await_args_list]
+        assert f"/{DEFAULT_PARENT_NAME}/history/" in history_paths
 
 
 class TestAltersApiExecute:

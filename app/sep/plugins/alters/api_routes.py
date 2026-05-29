@@ -30,6 +30,7 @@ from fastapi import status as http_status
 from app.core.exceptions import HTTPConflictException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
+    check_for_conflicted_running_tasks,
     get_username_mapping,
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -151,11 +152,7 @@ async def alters_api_create(
     )
 
 
-@router.put(
-    "/{task_name}",
-    response_model=AltersTaskResponse,
-    dependencies=[HasNoConflictedRunningTasks],
-)
+@router.put("/{task_name}", response_model=AltersTaskResponse)
 async def alters_api_update(
     task_name: str,
     body: AltersTaskWrite,
@@ -174,6 +171,7 @@ async def alters_api_update(
     :type check_connectivity: bool
     """
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
+    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
     if parent_task.protected:
         raise HTTPConflictException("Cannot edit a protected task.")
     ensure_alters_group_update_preserves_names(parent_task.name, body.task_name)
@@ -245,6 +243,7 @@ async def alters_api_delete(
 ) -> None:
     """Delete an alters task group."""
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
+    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
     result = await cascade_delete_alters_group(tasks_api, parent_task.name)
     if not result.success:
         failed = [

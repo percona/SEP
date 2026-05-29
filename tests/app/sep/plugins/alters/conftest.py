@@ -15,7 +15,54 @@
 
 """Define test fixtures for alters plugin route tests."""
 
+from collections.abc import Callable
+
+import pytest
+from pytest_mock import MockerFixture
+
+from app.core.exceptions import HTTPConflictException
+from app.sep.deps import check_for_conflicted_running_tasks
+from app.sep.main import sep_app
 from tests.app.sep.conftest import (  # noqa: F401
     mock_inventory_api_dep,
     mock_task_api_dep,
 )
+
+
+@pytest.fixture
+def _mock_check_for_conflicted_running_tasks(mocker: MockerFixture) -> None:
+    """Mock running-task guard for Depends and direct handler calls."""
+
+    async def _noop(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    mocker.patch(
+        "app.sep.plugins.alters.api_routes.check_for_conflicted_running_tasks",
+        side_effect=_noop,
+    )
+    previous = sep_app.dependency_overrides.copy()
+    sep_app.dependency_overrides[check_for_conflicted_running_tasks] = lambda: None
+    yield
+    sep_app.dependency_overrides = previous
+
+
+@pytest.fixture
+def _mock_check_for_conflicted_running_tasks_raises(
+    mocker: MockerFixture,
+) -> Callable[[], None]:
+    """Mock running-task guard to raise HTTPConflictException."""
+
+    def raise_conflict() -> None:
+        raise HTTPConflictException("Task is already running or pending.")
+
+    async def _raise(*_args: object, **_kwargs: object) -> None:
+        raise_conflict()
+
+    mocker.patch(
+        "app.sep.plugins.alters.api_routes.check_for_conflicted_running_tasks",
+        side_effect=_raise,
+    )
+    previous = sep_app.dependency_overrides.copy()
+    sep_app.dependency_overrides[check_for_conflicted_running_tasks] = raise_conflict
+    yield raise_conflict
+    sep_app.dependency_overrides = previous
