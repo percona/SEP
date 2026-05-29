@@ -103,6 +103,11 @@ function isBenignConsoleError(msg: string): boolean {
   if (msg.includes(':nth-child')) {
     return true;
   }
+  // React Query may re-fetch the task detail after deletion, before the
+  // component unmounts; the 404 response is expected and not a test failure.
+  if (msg.includes('404 (Not Found)')) {
+    return true;
+  }
   return false;
 }
 
