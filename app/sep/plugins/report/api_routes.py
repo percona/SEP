@@ -32,7 +32,7 @@ from fastapi.responses import Response
 from app.sep.deps import RequireBearerAuth
 from app.sep.plugins.report.deps import IsUploadConfigured, RequiredPMMAPIDep
 from app.sep.plugins.report.models import REPORT_SECTIONS, ReportData
-from app.sep.plugins.report.schemas import ReportGenerateRequest, ReportUploadResponse
+from app.sep.plugins.report.schemas import ReportGenerateWrite, ReportUploadResponse
 from app.sep.plugins.report.service import (
     generate_pdf_report,
     generate_report,
@@ -95,14 +95,14 @@ async def report_api_generate(
 @router.post("/generate/pdf", dependencies=[RequireBearerAuth])
 async def report_api_generate_pdf(
     pmm_api: RequiredPMMAPIDep,
-    body: ReportGenerateRequest,
+    body: ReportGenerateWrite,
 ) -> Response:
     """Generate a report and return it as a downloadable PDF.
 
     :param pmm_api: The PMM API client.
     :type pmm_api: PMMRemoteAPI
     :param body: Report generation parameters.
-    :type body: ReportGenerateRequest
+    :type body: ReportGenerateWrite
     :return: PDF file response.
     :rtype: Response
     """
@@ -125,14 +125,14 @@ async def report_api_generate_pdf(
 @router.post("/upload", dependencies=[RequireBearerAuth, IsUploadConfigured])
 async def report_api_upload(
     pmm_api: RequiredPMMAPIDep,
-    body: ReportGenerateRequest,
+    body: ReportGenerateWrite,
 ) -> ReportUploadResponse:
     """Generate a report, convert to PDF, and upload to ServiceNow.
 
     :param pmm_api: The PMM API client.
     :type pmm_api: PMMRemoteAPI
     :param body: Report generation parameters.
-    :type body: ReportGenerateRequest
+    :type body: ReportGenerateWrite
     :return: ServiceNow upload API response.
     :rtype: ReportUploadResponse
     """

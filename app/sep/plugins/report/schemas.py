@@ -18,13 +18,14 @@
 from pydantic import BaseModel, ConfigDict
 
 
-class ReportGenerateRequest(BaseModel):
-    """Define the shared parameters for report generation JSON API routes.
+class ReportGenerateWrite(BaseModel):
+    """Define shared JSON body parameters for report generation API routes.
 
-    Used as query parameters on ``GET /generate/json`` and as the request body on
-    ``POST /generate/pdf`` and ``POST /upload``. The ``sections`` field applies
-    only to ``GET /generate/json``; PDF and upload routes ignore it and collect all
-    sections.
+    Request body for ``POST /api/plugins/report/generate/pdf`` and
+    ``POST /api/plugins/report/upload`` only. ``GET /api/plugins/report/generate``
+    uses explicit query parameters (``since``, ``until``, ``full``, ``refresh``,
+    ``sections``) and does not use this model. Legacy Jinja JSON remains at
+    ``GET /report/generate/json``.
 
     :param since: Relative start of the report period (e.g. ``now-7d``).
     :type since: str
@@ -34,19 +35,16 @@ class ReportGenerateRequest(BaseModel):
     :type full: bool
     :param refresh: Force a refresh of advisor checks before fetching results.
     :type refresh: bool
-    :param sections: Optional list of section names to include.
-    :type sections: list[str] | None
     """
 
     since: str = "now-7d"
     until: str = "now"
     full: bool = True
     refresh: bool = False
-    sections: list[str] | None = None
 
 
 class ReportUploadResponse(BaseModel):
-    """Represent the ServiceNow upload response from ``POST /upload``.
+    """Represent the ServiceNow upload response from ``POST /api/plugins/report/upload``.
 
     The upstream upload endpoint returns a dynamic JSON object; this model
     preserves all fields for OpenAPI typing and frontend consumption.
