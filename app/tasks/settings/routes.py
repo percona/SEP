@@ -33,5 +33,5 @@ _settings_router = build_settings_router(
     admin_dep=IsAdminDep,
 )
 
-router = APIRouter(prefix="/settings", tags=["settings"])
+router = APIRouter(prefix="/admin/settings", tags=["settings"])
 router.include_router(_settings_router)

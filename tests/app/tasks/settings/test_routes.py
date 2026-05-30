@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the Tasks settings REST API at ``/settings/`` (mounted at ``/api/tasks``)."""
+"""Tests for the Tasks settings REST API at ``/admin/settings/`` (mounted at ``/api/tasks``)."""
 
 from collections.abc import Iterator
 from unittest.mock import AsyncMock
@@ -82,7 +82,7 @@ class TestTasksSettingsApi:
         self, admin_test_client: TestClient
     ) -> None:
         """The Tasks router exposes exactly one settings class: TasksSettings."""
-        response = admin_test_client.get("/settings/")
+        response = admin_test_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         groups = response.json()["groups"]
         assert len(groups) == 1
@@ -91,7 +91,7 @@ class TestTasksSettingsApi:
     async def test_get_single_setting(self, admin_test_client: TestClient) -> None:
         """A single Tasks HOT field returns its metadata."""
         response = admin_test_client.get(
-            "/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS"
+            "/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS"
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -106,7 +106,7 @@ class TestTasksSettingsApi:
         """PATCHing a Tasks HOT field creates a row in the Tasks DB."""
         new_value = 7200
         response = admin_test_client.patch(
-            "/settings/TasksSettings",
+            "/admin/settings/TasksSettings",
             json={"STALENESS_THRESHOLD_SECONDS": new_value},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -123,7 +123,7 @@ class TestTasksSettingsApi:
     ) -> None:
         """Two HOT Tasks fields persist in a single transaction."""
         response = admin_test_client.patch(
-            "/settings/TasksSettings",
+            "/admin/settings/TasksSettings",
             json={
                 "STALENESS_THRESHOLD_SECONDS": 1800,
                 "PRE_EXECUTION_CONNECTIVITY_CHECK": "block",
@@ -140,7 +140,7 @@ class TestTasksSettingsApi:
         """After PATCH, the proxy returns the new value without the background refresher."""
         new_value = 99
         response = admin_test_client.patch(
-            "/settings/TasksSettings",
+            "/admin/settings/TasksSettings",
             json={"STALENESS_THRESHOLD_SECONDS": new_value},
         )
         try:
@@ -156,7 +156,7 @@ class TestTasksSettingsApi:
     ) -> None:
         """One bad key rejects the batch and writes zero rows."""
         response = admin_test_client.patch(
-            "/settings/TasksSettings",
+            "/admin/settings/TasksSettings",
             json={
                 "STALENESS_THRESHOLD_SECONDS": 1800,
                 "PRE_EXECUTION_CONNECTIVITY_CHECK": "not-a-valid-mode",
@@ -173,7 +173,7 @@ class TestTasksSettingsApi:
     ) -> None:
         """A non-HOT Tasks field is rejected as ``not_overridable``."""
         response = admin_test_client.patch(
-            "/settings/TasksSettings",
+            "/admin/settings/TasksSettings",
             json={"UVICORN_PORT": 9999},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -183,7 +183,7 @@ class TestTasksSettingsApi:
     async def test_patch_type_mismatch(self, admin_test_client: TestClient) -> None:
         """An int field rejects a string value with a structured 422."""
         response = admin_test_client.patch(
-            "/settings/TasksSettings",
+            "/admin/settings/TasksSettings",
             json={"STALENESS_THRESHOLD_SECONDS": "not-a-number"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -191,7 +191,7 @@ class TestTasksSettingsApi:
     async def test_delete_idempotent(self, admin_test_client: TestClient) -> None:
         """Deleting a HOT field with no row still succeeds with 204."""
         response = admin_test_client.delete(
-            "/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS"
+            "/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -199,10 +199,10 @@ class TestTasksSettingsApi:
         self, unauthenticated_client: TestClient
     ) -> None:
         """An unauthenticated request to the settings endpoint returns 401."""
-        response = unauthenticated_client.get("/settings/")
+        response = unauthenticated_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     async def test_non_admin_returns_403(self, non_admin_client: TestClient) -> None:
         """A non-admin user is rejected with 403."""
-        response = non_admin_client.get("/settings/")
+        response = non_admin_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_403_FORBIDDEN

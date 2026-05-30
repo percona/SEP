@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP settings REST API at ``/api/sep/settings``."""
+"""Tests for the SEP settings REST API at ``/api/sep/admin/settings``."""
 
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
@@ -134,11 +134,11 @@ def _find_setting(
 
 @pytest.mark.asyncio
 class TestSepSettingsList:
-    """Tests for ``GET /api/sep/settings/``."""
+    """Tests for ``GET /api/sep/admin/settings/``."""
 
     async def test_returns_three_groups(self, api_admin_client: TestClient) -> None:
         """Returns one group per wired settings class on the SEP sub-app."""
-        response = api_admin_client.get("/api/sep/settings/")
+        response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         groups = {group["setting_class"] for group in payload["groups"]}
@@ -152,7 +152,7 @@ class TestSepSettingsList:
         self, api_admin_client: TestClient
     ) -> None:
         """A SEPSettings group exposes both HOT and NOT_OVERRIDABLE fields."""
-        response = api_admin_client.get("/api/sep/settings/")
+        response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         sep_entry = next(
@@ -170,7 +170,7 @@ class TestSepSettingsList:
         self, api_admin_client: TestClient
     ) -> None:
         """A field with no override row reports ``has_override=False``."""
-        response = api_admin_client.get("/api/sep/settings/")
+        response = api_admin_client.get("/api/sep/admin/settings/")
         sep_setting = _find_setting(
             response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
         )
@@ -179,14 +179,14 @@ class TestSepSettingsList:
 
 @pytest.mark.asyncio
 class TestSepSettingsGet:
-    """Tests for ``GET /api/sep/settings/{setting_class}/{key}``."""
+    """Tests for ``GET /api/sep/admin/settings/{setting_class}/{key}``."""
 
     async def test_existing_field_returns_metadata(
         self, api_admin_client: TestClient
     ) -> None:
         """Returns a single setting's metadata and current value."""
         response = api_admin_client.get(
-            "/api/sep/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -200,19 +200,19 @@ class TestSepSettingsGet:
     ) -> None:
         """FastAPI's enum validation rejects an unknown settings class with 422."""
         response = api_admin_client.get(
-            "/api/sep/settings/InventorySettings/SYNC_REFRESH_TIME"
+            "/api/sep/admin/settings/InventorySettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_unknown_key_returns_404(self, api_admin_client: TestClient) -> None:
         """An unknown key on a wired class returns 404."""
-        response = api_admin_client.get("/api/sep/settings/SEPSettings/DOES_NOT_EXIST")
+        response = api_admin_client.get("/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 @pytest.mark.asyncio
 class TestSepSettingsPatch:
-    """Tests for ``PATCH /api/sep/settings/{setting_class}``."""
+    """Tests for ``PATCH /api/sep/admin/settings/{setting_class}``."""
 
     async def test_single_key_creates_override_row(
         self,
@@ -222,7 +222,7 @@ class TestSepSettingsPatch:
         """Persisting one key creates exactly one row and reflects in next read."""
         new_value = 10
         response = api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": new_value},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -249,11 +249,11 @@ class TestSepSettingsPatch:
         first_value = 10
         second_value = 20
         api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": first_value},
         )
         api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": second_value},
         )
         rows = await SettingsOverrideManager.list(
@@ -269,7 +269,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Patching three valid keys creates three rows, all visible on the next GET."""
         response = api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={
                 "SYNC_REFRESH_TIME": 12,
                 "ARTIFACT_DOWNLOAD_TTL": 1200,
@@ -280,7 +280,7 @@ class TestSepSettingsPatch:
         expected_keys = 3
         assert len(response.json()) == expected_keys
 
-        list_payload = api_admin_client.get("/api/sep/settings/").json()
+        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
         sync = _find_setting(
             list_payload, SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
         )
@@ -305,7 +305,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """A single invalid key rejects the whole batch — zero rows are written."""
         response = api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 10, "ARTIFACT_DOWNLOAD_TTL": "not-a-number"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -320,7 +320,7 @@ class TestSepSettingsPatch:
         """After PATCH, the proxy returns the new value without the background refresher."""
         original = sep_settings.SYNC_REFRESH_TIME
         api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": original + 5},
         )
         try:
@@ -331,7 +331,7 @@ class TestSepSettingsPatch:
     async def test_unknown_key_returns_422(self, api_admin_client: TestClient) -> None:
         """An unknown key is rejected with ``type='unknown_key'`` in the per-key error."""
         response = api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"NONEXISTENT": 1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -343,7 +343,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Patching a NOT_OVERRIDABLE field returns 422 with ``type='not_overridable'``."""
         response = api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"INVENTORY_ENDPOINT": "https://attacker.example"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -358,7 +358,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """A ``PositiveInt`` violation surfaces the Pydantic constraint error."""
         response = api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"ARTIFACT_DOWNLOAD_TTL": -1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -370,7 +370,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Three error types in one batch produce three matching ``detail`` entries."""
         response = api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={
                 "SYNC_REFRESH_TIME": 10,
                 "BOGUS_KEY": 1,
@@ -391,7 +391,7 @@ class TestSepSettingsPatch:
 
     async def test_empty_body_returns_422(self, api_admin_client: TestClient) -> None:
         """An empty PATCH body fails the ``min_length=1`` root model constraint."""
-        response = api_admin_client.patch("/api/sep/settings/SEPSettings", json={})
+        response = api_admin_client.patch("/api/sep/admin/settings/SEPSettings", json={})
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_integrity_error_triggers_single_retry(
@@ -415,7 +415,7 @@ class TestSepSettingsPatch:
             settings_routes, "_stage_and_commit_overrides", side_effect=flaky
         ) as spy:
             response = api_admin_client.patch(
-                "/api/sep/settings/SEPSettings",
+                "/api/sep/admin/settings/SEPSettings",
                 json={"SYNC_REFRESH_TIME": new_value},
             )
         assert response.status_code == status.HTTP_200_OK
@@ -433,7 +433,7 @@ class TestSepSettingsPatch:
 
 @pytest.mark.asyncio
 class TestSepSettingsDelete:
-    """Tests for ``DELETE /api/sep/settings/{setting_class}/{key}``."""
+    """Tests for ``DELETE /api/sep/admin/settings/{setting_class}/{key}``."""
 
     async def test_delete_existing_override(
         self,
@@ -442,11 +442,11 @@ class TestSepSettingsDelete:
     ) -> None:
         """Deleting an override row succeeds with 204 and clears ``has_override``."""
         api_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 11},
         )
         response = api_admin_client.delete(
-            "/api/sep/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -460,7 +460,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Deleting a HOT field with no override row still returns 204."""
         response = api_admin_client.delete(
-            "/api/sep/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -469,7 +469,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Deleting a NOT_OVERRIDABLE field returns 409 — the row can't exist."""
         response = api_admin_client.delete(
-            "/api/sep/settings/SEPSettings/INVENTORY_ENDPOINT"
+            "/api/sep/admin/settings/SEPSettings/INVENTORY_ENDPOINT"
         )
         assert response.status_code == status.HTTP_409_CONFLICT
 
@@ -478,7 +478,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Deleting an unknown key returns 404."""
         response = api_admin_client.delete(
-            "/api/sep/settings/SEPSettings/DOES_NOT_EXIST"
+            "/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -492,7 +492,7 @@ class TestSepSettingsAuth:
     ) -> None:
         """An unauthenticated GET responds with a JSON 401."""
         response = api_unauthenticated_client.get(
-            "/api/sep/settings/", follow_redirects=False
+            "/api/sep/admin/settings/", follow_redirects=False
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
@@ -501,7 +501,7 @@ class TestSepSettingsAuth:
         self, api_non_admin_client: TestClient
     ) -> None:
         """A non-admin user is rejected with 403 on every endpoint."""
-        response = api_non_admin_client.get("/api/sep/settings/")
+        response = api_non_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_non_admin_patch_returns_403(
@@ -509,7 +509,7 @@ class TestSepSettingsAuth:
     ) -> None:
         """A non-admin user cannot mutate settings."""
         response = api_non_admin_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -519,7 +519,7 @@ class TestSepSettingsAuth:
     ) -> None:
         """Cookie-authenticated admin cannot PATCH without a Bearer header (CSRF defense)."""
         response = api_admin_cookie_client.patch(
-            "/api/sep/settings/SEPSettings",
+            "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -529,7 +529,7 @@ class TestSepSettingsAuth:
     ) -> None:
         """Cookie-authenticated admin cannot DELETE without a Bearer header (CSRF defense)."""
         response = api_admin_cookie_client.delete(
-            "/api/sep/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -537,7 +537,7 @@ class TestSepSettingsAuth:
         self, api_admin_cookie_client: TestClient
     ) -> None:
         """GET endpoints remain accessible via cookie auth — only mutations require Bearer."""
-        response = api_admin_cookie_client.get("/api/sep/settings/")
+        response = api_admin_cookie_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
 
 
@@ -549,7 +549,7 @@ class TestSepSettingsSecondaryClasses:
         """A Snippets HOT field is patchable via the SEP router."""
         original = snippets_settings.ENABLE_MANUAL_SYNC
         response = api_admin_client.patch(
-            "/api/sep/settings/SnippetsSettings",
+            "/api/sep/admin/settings/SnippetsSettings",
             json={"ENABLE_MANUAL_SYNC": not original},
         )
         try:
@@ -562,7 +562,7 @@ class TestSepSettingsSecondaryClasses:
         """A Messages HOT field is patchable via the SEP router."""
         target_level = 30
         response = api_admin_client.patch(
-            "/api/sep/settings/MessagesSettings",
+            "/api/sep/admin/settings/MessagesSettings",
             json={"LEVEL": target_level},
         )
         try:
