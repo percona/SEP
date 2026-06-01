@@ -58,6 +58,7 @@ from app.sep.deps import (
     get_tasks_api,
     get_tasks_context,
     get_tasks_index_context,
+    get_toggleable_app_key,
     get_username_mapping,
     is_bearer_authenticated,
     PROTECTED_APP_KEYS,
@@ -1387,6 +1388,34 @@ class TestRequireAppEnabled:
     def test_inventory_is_protected(self) -> None:
         """``inventory`` is the protected key the mount loops must skip."""
         assert "inventory" in PROTECTED_APP_KEYS
+
+
+class TestGetToggleableAppKey:
+    """Test app-key resolver used by the app-state toggle endpoint."""
+
+    def test_returns_key_for_toggleable_configured_app(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "app.sep.deps.sep_settings.PLUGINS",
+            [
+                Plugin(name="Inventory", module_name="inventory"),
+                Plugin(name="Snippet Manager", module_name="snippets"),
+            ],
+        )
+        assert get_toggleable_app_key("snippets") == "snippets"
+
+    def test_protected_key_raises_conflict(self) -> None:
+        with pytest.raises(HTTPConflictException):
+            get_toggleable_app_key("inventory")
+
+    def test_unknown_key_raises_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "app.sep.deps.sep_settings.PLUGINS",
+            [Plugin(name="Snippet Manager", module_name="snippets")],
+        )
+        with pytest.raises(HTTPNotFoundException):
+            get_toggleable_app_key("unknown")
 
 
 class TestGetDefaultContextPluginFiltering:

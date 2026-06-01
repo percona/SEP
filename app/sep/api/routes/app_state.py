@@ -25,13 +25,16 @@ cannot be toggled (toggle returns 409) and are reported with
 ``toggleable=False`` in the listing.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
-from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
+from app.sep.deps import (
+    PROTECTED_APP_KEYS,
+    SessionDep,
+    get_toggleable_app_key,
+)
 from app.sep.models import AppState, AppStateBase, AppStateWrite
 
 router = APIRouter(tags=["admin", "apps"])
@@ -112,7 +115,7 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
 
 @router.put("/{app_key}/state", response_model=AppStateResponse)
 async def update_app_state(
-    app_key: str,
+    app_key: str = Depends(get_toggleable_app_key),
     body: AppStateWrite,
     session: SessionDep,
 ) -> AppState:
@@ -133,20 +136,7 @@ async def update_app_state(
     :type session: SessionDep
     :return: The updated app-state row.
     :rtype: AppState
-    :raises HTTPConflictException: If the app is protected.
-    :raises HTTPNotFoundException: If the key matches no configured plugin.
     """
-    if app_key in PROTECTED_APP_KEYS:
-        raise HTTPConflictException(
-            detail=f"App '{app_key}' is protected and cannot be disabled.",
-        )
-    configured_keys = {
-        plugin.module_name.split(".")[-1] for plugin in sep_settings.PLUGINS
-    }
-    if app_key not in configured_keys:
-        raise HTTPNotFoundException(
-            detail=f"No app configured with key '{app_key}'.",
-        )
     state, created = await AppStateManager.get_or_create(
         session,
         AppStateBase(app_key=app_key, enabled=body.enabled),

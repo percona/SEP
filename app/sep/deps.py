@@ -484,6 +484,26 @@ def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None
     return _gate
 
 
+def get_toggleable_app_key(app_key: str) -> str:
+    """Resolve a toggleable, configured app key.
+
+    :param app_key: The plugin key from the path parameter.
+    :type app_key: str
+    :return: The validated app key.
+    :rtype: str
+    :raises HTTPConflictException: If the key is protected and immutable.
+    :raises HTTPNotFoundException: If the key is not in configured plugins.
+    """
+    if app_key in PROTECTED_APP_KEYS:
+        raise HTTPConflictException(detail="This app cannot be toggled")
+    configured_keys = {
+        plugin.module_name.split(".")[-1] for plugin in sep_settings.PLUGINS
+    }
+    if app_key not in configured_keys:
+        raise HTTPNotFoundException(detail="App not found")
+    return app_key
+
+
 async def get_default_context(
     request: Request,
     user: CurrentUser,
