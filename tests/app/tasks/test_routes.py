@@ -59,7 +59,7 @@ from tests.app.factories import TaskFactory
 
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
-PARENT_FILTER_TASK_COUNT = 2
+PARENT_FILTER_TASK_COUNT = 3
 
 
 @pytest_asyncio.fixture
@@ -1553,22 +1553,26 @@ async def test_list_tasks_backup_type_filter_with_pagination(test_client, sessio
         ),
     )
 
-    response = test_client.get(
-        "/",
-        params={
-            "parent_is_null": True,
-            "backup_type": "pbm_config",
-            "offset": 1,
-            "limit": 1,
-        },
-    )
-    assert response.status_code == status.HTTP_200_OK
-    data = response.json()
+    common_params = {"parent_is_null": True, "backup_type": "pbm_config"}
+    page_1 = test_client.get("/", params={**common_params, "offset": 0, "limit": 1})
+    page_2 = test_client.get("/", params={**common_params, "offset": 1, "limit": 1})
+    page_3 = test_client.get("/", params={**common_params, "offset": 2, "limit": 1})
+
+    assert page_2.status_code == status.HTTP_200_OK
+    data = page_2.json()
     assert data["total"] == PARENT_FILTER_TASK_COUNT
     assert data["offset"] == 1
     assert data["limit"] == 1
     assert len(data["items"]) == 1
-    assert data["items"][0]["name"] == "route-pbm-config-1"
+    assert data["items"][0]["data"]["backup_type"] == "pbm_config"
+    paginated_names = {
+        page_1.json()["items"][0]["name"],
+        page_2.json()["items"][0]["name"],
+        page_3.json()["items"][0]["name"],
+    }
+    assert paginated_names == {
+        f"route-pbm-config-{index}" for index in range(PARENT_FILTER_TASK_COUNT)
+    }
 
 
 @pytest.mark.asyncio
