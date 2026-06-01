@@ -333,6 +333,28 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
+  packages/plugins/backup_pg:
+    dependencies:
+      '@sep/api':
+        specifier: workspace:*
+        version: link:../../api
+      '@sep/framework':
+        specifier: workspace:*
+        version: link:../../framework
+      react:
+        specifier: ^19.0.0
+        version: 19.2.6
+      react-router-dom:
+        specifier: ^7.0.0
+        version: 7.15.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.14
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
   packages/plugins/checksums:
     dependencies:
       '@sep/api':
@@ -726,6 +748,9 @@ importers:
       '@sep/plugin-backup-mongo':
         specifier: workspace:*
         version: link:../plugins/backup_mongo
+      '@sep/plugin-backup-pg':
+        specifier: workspace:*
+        version: link:../plugins/backup_pg
       '@sep/plugin-checksums':
         specifier: workspace:*
         version: link:../plugins/checksums
