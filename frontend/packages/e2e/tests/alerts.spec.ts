@@ -77,6 +77,16 @@ const MOCK_PUSH_RESULT = {
   results: [{ name: 'MySQL Slow Queries', status: 'success', message: 'Pushed successfully' }],
 };
 
+const MOCK_BACKUPS_PAGE = {
+  items: [
+    { id: 1, created_at: '2026-05-28 10:00 UTC' },
+    { id: 2, created_at: '2026-05-27 08:00 UTC' },
+  ],
+  total: 2,
+  offset: 0,
+  limit: 100,
+};
+
 const MOCK_RESTORE_RESULT = { status: 'success', details: {} };
 
 const MOCK_PAGERDUTY_SAVE = { status: 'created' };
@@ -136,6 +146,11 @@ async function mockAlertsRoutes(page: Page) {
     // PagerDuty delete
     if (req.method() === 'POST' && pathname === '/api/plugins/alerts/pagerduty/delete') {
       return route.fulfill({ json: { status: 'deleted' } });
+    }
+
+    // Paginated backups list (restore picker source)
+    if (req.method() === 'GET' && pathname === '/api/plugins/alerts/backups') {
+      return route.fulfill({ json: MOCK_BACKUPS_PAGE });
     }
 
     // Backup detail

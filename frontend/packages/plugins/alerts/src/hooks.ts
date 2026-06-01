@@ -17,9 +17,24 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
-import type { AlertBackupDetail, AlertIndexResponse, PushResponse } from './types';
+import type {
+  AlertBackupDetail,
+  AlertBackupSummary,
+  AlertIndexResponse,
+  PushResponse,
+} from './types';
 
 const API_BASE = '/plugins/alerts';
+
+/** Backend caps GET /backups at 100 rows per page (see `_BACKUPS_LIMIT_MAX`). */
+const MAX_BACKUPS = 100;
+
+interface PaginatedBackups {
+  items: AlertBackupSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+}
 
 export function useAlertsIndex() {
   return useQuery<AlertIndexResponse>({
@@ -28,6 +43,26 @@ export function useAlertsIndex() {
       const { data } = await apiClient.get<AlertIndexResponse>(`${API_BASE}/`);
       return data;
     },
+  });
+}
+
+/**
+ * Fetch the paginated backups list (newest first, up to {@link MAX_BACKUPS}).
+ *
+ * The index endpoint's `recent_backups` is only the 10 most recent, so the
+ * restore picker sources from here to let users restore older backups too.
+ * Pass `enabled=false` to defer the request until the restore flow opens.
+ */
+export function useAlertBackups(enabled: boolean) {
+  return useQuery<AlertBackupSummary[]>({
+    queryKey: ['alerts', 'backups', MAX_BACKUPS],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PaginatedBackups>(`${API_BASE}/backups`, {
+        params: { limit: MAX_BACKUPS },
+      });
+      return data.items;
+    },
+    enabled,
   });
 }
 

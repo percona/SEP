@@ -46,9 +46,10 @@ import { useDeletePagerDuty, usePushTemplates, useRestoreBackup, useSavePagerDut
 interface PushFlowProps {
   templates: AlertTemplate[];
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
-function PushFlow({ templates, onClose }: PushFlowProps) {
+function PushFlow({ templates, onClose, onSuccess }: PushFlowProps) {
   const [results, setResults] = useState<PushResult[] | null>(null);
   const pushMutation = usePushTemplates();
 
@@ -58,6 +59,9 @@ function PushFlow({ templates, onClose }: PushFlowProps) {
         selectedTemplates: templates.map((t) => t.name),
       });
       setResults(data.results);
+      // Clear the parent's selection so the just-pushed templates aren't left
+      // checked (which would invite an accidental immediate re-push).
+      onSuccess?.();
     } catch {
       // react-query sets isError; render handled above
     }
@@ -358,6 +362,8 @@ export interface AlertsWizardProps {
   backups?: AlertBackupSummary[];
   /** Whether PagerDuty is already configured. */
   pagerdutyConfigured?: boolean;
+  /** Called after a push succeeds (e.g. to clear the list-page selection). */
+  onPushSuccess?: () => void;
 }
 
 /**
@@ -375,13 +381,16 @@ export function AlertsWizard({
   selectedTemplates = [],
   backups = [],
   pagerdutyConfigured = false,
+  onPushSuccess,
 }: AlertsWizardProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{WIZARD_TITLES[mode]}</DialogTitle>
 
       {/* Conditional branching: each mode renders a different form flow */}
-      {mode === 'push' && <PushFlow templates={selectedTemplates} onClose={onClose} />}
+      {mode === 'push' && (
+        <PushFlow templates={selectedTemplates} onClose={onClose} onSuccess={onPushSuccess} />
+      )}
       {mode === 'restore' && <RestoreFlow backups={backups} onClose={onClose} />}
       {mode === 'pagerduty' && <PagerDutyFlow configured={pagerdutyConfigured} onClose={onClose} />}
     </Dialog>

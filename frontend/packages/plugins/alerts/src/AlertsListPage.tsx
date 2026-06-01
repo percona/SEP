@@ -35,7 +35,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import SettingsIcon from '@mui/icons-material/Settings';
-import { useAlertsIndex } from './hooks';
+import { useAlertBackups, useAlertsIndex } from './hooks';
 import { AlertsWizard } from './AlertsWizard';
 import type { AlertTemplate, WizardMode } from './types';
 
@@ -57,6 +57,11 @@ export function AlertsListPage() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [wizardMode, setWizardMode] = useState<WizardMode | null>(null);
+
+  // Source the restore picker from the full (paginated) backups list rather
+  // than the index's 10-item `recent_backups` slice, so older backups can be
+  // restored too. Deferred until the restore wizard is actually opened.
+  const restoreBackups = useAlertBackups(wizardMode === 'restore');
 
   const openWizard = (mode: WizardMode) => setWizardMode(mode);
   const closeWizard = () => setWizardMode(null);
@@ -271,8 +276,9 @@ export function AlertsListPage() {
           open
           onClose={closeWizard}
           selectedTemplates={selectedTemplates}
-          backups={data?.recent_backups ?? []}
+          backups={restoreBackups.data ?? data?.recent_backups ?? []}
           pagerdutyConfigured={pagerdutyConfigured}
+          onPushSuccess={() => setSelected(new Set())}
         />
       )}
     </Box>

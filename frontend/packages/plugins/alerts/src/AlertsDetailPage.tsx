@@ -93,8 +93,8 @@ export function AlertsDetailPage() {
             No templates in this backup.
           </Typography>
         ) : (
-          data.templates.map((t) => (
-            <Box key={t.name} sx={{ py: 0.25 }}>
+          data.templates.map((t, i) => (
+            <Box key={`${t.name}-${i}`} sx={{ py: 0.25 }}>
               <Typography variant="body2" fontWeight={500}>
                 {t.name}
               </Typography>
@@ -118,8 +118,8 @@ export function AlertsDetailPage() {
             No rules in this backup.
           </Typography>
         ) : (
-          data.rules.map((r) => (
-            <Typography key={r.title} variant="body2" sx={{ py: 0.25 }}>
+          data.rules.map((r, i) => (
+            <Typography key={`${r.title}-${i}`} variant="body2" sx={{ py: 0.25 }}>
               {r.title}
             </Typography>
           ))
@@ -136,8 +136,8 @@ export function AlertsDetailPage() {
             No contact points in this backup.
           </Typography>
         ) : (
-          data.contact_points.map((cp) => (
-            <Typography key={cp.name} variant="body2" sx={{ py: 0.25 }}>
+          data.contact_points.map((cp, i) => (
+            <Typography key={`${cp.name}-${i}`} variant="body2" sx={{ py: 0.25 }}>
               {cp.name} ({cp.type})
             </Typography>
           ))
@@ -150,8 +150,8 @@ export function AlertsDetailPage() {
             Folders ({data.folders.length})
           </Typography>
           <Divider sx={{ mb: 1 }} />
-          {data.folders.map((f) => (
-            <Typography key={f.title} variant="body2" sx={{ py: 0.25 }}>
+          {data.folders.map((f, i) => (
+            <Typography key={`${f.title}-${i}`} variant="body2" sx={{ py: 0.25 }}>
               {f.title}
             </Typography>
           ))}
