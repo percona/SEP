@@ -681,7 +681,9 @@ async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
         ) from exc
 
 
-@router.post("/transform/", dependencies=[IsAuthenticatedDep],
+@router.post(
+    "/transform/",
+    dependencies=[IsAuthenticatedDep],
 )
 async def transform_payload(
     data: TransformPayloadRequest,
