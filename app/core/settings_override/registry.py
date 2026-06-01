@@ -19,13 +19,24 @@ __all__ = [
     "FieldMetadata",
     "ReloadClassification",
     "coerce_field_value",
+    "coerce_nested_field_value",
     "dump_field_value",
+    "field_reload_classification",
     "hot_field",
     "hot_field_names",
+    "is_explicit_not_overridable",
     "is_hot_reloadable",
+    "is_nested_overridable_parent",
     "iter_class_fields",
+    "nested_overridable_field",
+    "nested_overridable_field_names",
+    "not_overridable_field",
+    "parse_nested_key",
+    "resolve_nested_field",
+    "resolve_nested_field_metadata",
 ]
 
+import functools
 import typing
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -47,13 +58,21 @@ class ReloadClassification(StrEnum):
 
     :cvar HOT: Field can be overridden via a DB row and the new value takes
         effect on the next snapshot refresh, without restarting the service.
+        For a nested-model field, ``HOT`` permits both whole-object override
+        (``PATCH {parent: {...}}``) and per-child override (``parent__leaf``).
     :vartype HOT: str
+    :cvar NESTED_ONLY: Nested-model field whose children may be overridden
+        (``parent__leaf``) while the parent itself rejects whole-object
+        override (``PATCH {parent: {...}}`` → 422). Children default to
+        HOT-inherit unless explicitly marked :func:`not_overridable_field`.
+    :vartype NESTED_ONLY: str
     :cvar NOT_OVERRIDABLE: Field is not overridable from the database; YAML
         and environment variables remain the only sources of truth.
     :vartype NOT_OVERRIDABLE: str
     """
 
     HOT = "hot"
+    NESTED_ONLY = "nested_only"
     NOT_OVERRIDABLE = "not_overridable"
 
 
@@ -76,11 +95,15 @@ def hot_field(default: Any, **kwargs: Any) -> FieldInfo:
     )
 
 
-def is_hot_reloadable(settings_cls: type[BaseYamlSettings], field_name: str) -> bool:
+def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
     """Return whether the given field is marked HOT on the given settings class.
 
-    :param settings_cls: The Pydantic settings class to inspect.
-    :type settings_cls: type[BaseYamlSettings]
+    Accepts any Pydantic ``BaseModel`` subclass, not just ``BaseYamlSettings``:
+    the nested-override resolver consults this predicate against nested
+    submodels (e.g. ``SessionOptions``) when classifying leaf fields.
+
+    :param settings_cls: The Pydantic model class to inspect.
+    :type settings_cls: type[BaseModel]
     :param field_name: The name of the field to check.
     :type field_name: str
     :return: ``True`` when ``field_name`` exists on ``settings_cls`` and is
@@ -93,6 +116,50 @@ def is_hot_reloadable(settings_cls: type[BaseYamlSettings], field_name: str) -> 
         return False
     metadata = CustomFieldMetadata.field_to_dict(field)
     return metadata.get("reload") == ReloadClassification.HOT
+
+
+def field_reload_classification(field_info: FieldInfo) -> ReloadClassification:
+    """Return the reload classification attached to a single field.
+
+    Reads the ``{"reload": ...}`` metadata set by :func:`hot_field`,
+    :func:`nested_overridable_field`, or :func:`not_overridable_field`. Any
+    field with no recognised marker is reported ``NOT_OVERRIDABLE``.
+
+    Unlike :func:`is_hot_reloadable` (which takes a settings class plus a field
+    name), this operates on a :class:`FieldInfo` directly so callers can
+    classify a nested leaf resolved out of a submodel.
+
+    :param field_info: The Pydantic field metadata to classify.
+    :type field_info: FieldInfo
+    :return: The field's reload classification.
+    :rtype: ReloadClassification
+    """
+    value = CustomFieldMetadata.field_to_dict(field_info).get("reload")
+    if value in {ReloadClassification.HOT, ReloadClassification.NESTED_ONLY}:
+        return value
+    return ReloadClassification.NOT_OVERRIDABLE
+
+
+def is_explicit_not_overridable(field_info: FieldInfo) -> bool:
+    """Return whether a field carries an *explicit* ``NOT_OVERRIDABLE`` marker.
+
+    Distinct from ``field_reload_classification(...) == NOT_OVERRIDABLE``: an
+    unmarked field reports ``NOT_OVERRIDABLE`` from
+    :func:`field_reload_classification` (the default top-level classification),
+    but a *nested leaf* under a nested-overridable parent inherits HOT unless it
+    is explicitly :func:`not_overridable_field`-marked. This predicate is
+    ``True`` only for the explicit marker, so unmarked nested leaves stay
+    overridable.
+
+    :param field_info: The Pydantic field metadata to inspect.
+    :type field_info: FieldInfo
+    :return: ``True`` iff the field has an explicit ``NOT_OVERRIDABLE`` marker.
+    :rtype: bool
+    """
+    return (
+        CustomFieldMetadata.field_to_dict(field_info).get("reload")
+        == ReloadClassification.NOT_OVERRIDABLE
+    )
 
 
 def hot_field_names(settings_cls: type[BaseYamlSettings]) -> frozenset[str]:
@@ -172,6 +239,271 @@ def coerce_field_value(field_info: FieldInfo, raw: Any) -> Any:
         preserved constraint. Callers in the API layer map this to HTTP 422.
     """
     return _coerce_value(field_info, raw)
+
+
+def nested_overridable_field(default: Any, **kwargs: Any) -> FieldInfo:
+    """Declare a nested-model field whose children may be overridden by DB rows.
+
+    The parent field itself rejects whole-object override
+    (``PATCH {parent: {...}}`` → 422). Nested children (``parent__leaf``) are
+    accepted, defaulting to HOT-inherit unless the leaf is explicitly
+    :func:`not_overridable_field`-marked.
+
+    Mirrors :func:`hot_field`'s call signature; attaches
+    ``{"reload": ReloadClassification.NESTED_ONLY}``.
+
+    :param default: The field's default value, passed positionally to ``Field``.
+    :type default: Any
+    :param kwargs: Additional keyword arguments forwarded to ``Field``.
+    :type kwargs: Any
+    :return: A Pydantic field marked NESTED_ONLY.
+    :rtype: FieldInfo
+    """
+    return field_with_metadata(
+        default,
+        metadata={"reload": ReloadClassification.NESTED_ONLY},
+        **kwargs,
+    )
+
+
+def not_overridable_field(default: Any, **kwargs: Any) -> FieldInfo:
+    """Declare a settings field as explicitly NOT overridable from a DB row.
+
+    Mirrors :func:`hot_field` but attaches
+    ``{"reload": ReloadClassification.NOT_OVERRIDABLE}``. Use under a HOT or
+    NESTED_ONLY parent when a specific nested leaf must NOT inherit the
+    parent's HOT-by-default child semantics.
+
+    :param default: The field's default value, passed positionally to ``Field``.
+    :type default: Any
+    :param kwargs: Additional keyword arguments forwarded to ``Field``.
+    :type kwargs: Any
+    :return: A Pydantic field marked NOT_OVERRIDABLE.
+    :rtype: FieldInfo
+    """
+    return field_with_metadata(
+        default,
+        metadata={"reload": ReloadClassification.NOT_OVERRIDABLE},
+        **kwargs,
+    )
+
+
+def is_nested_overridable_parent(
+    settings_cls: type[BaseModel], field_name: str
+) -> bool:
+    """Return whether ``field_name`` accepts nested-child overrides.
+
+    ``True`` iff the field's classification is :attr:`ReloadClassification.HOT`
+    OR :attr:`ReloadClassification.NESTED_ONLY`. ``False`` for unknown fields
+    and for fields classified ``NOT_OVERRIDABLE``.
+
+    Used by :func:`app.core.settings_override.api.routes._validate_patch_body`
+    and :func:`app.core.settings_override.cache.build_snapshot` to gate
+    ``__``-delimited keys at the parent level before walking into the nested
+    resolver.
+
+    :param settings_cls: The Pydantic settings class declaring the field.
+    :type settings_cls: type[BaseModel]
+    :param field_name: The top-level field name.
+    :type field_name: str
+    :return: ``True`` iff nested-child overrides may target this field.
+    :rtype: bool
+    """
+    info = settings_cls.model_fields.get(field_name)
+    if info is None:
+        return False
+    metadata = CustomFieldMetadata.field_to_dict(info)
+    return metadata.get("reload") in {
+        ReloadClassification.HOT,
+        ReloadClassification.NESTED_ONLY,
+    }
+
+
+def nested_overridable_field_names(
+    settings_cls: type[BaseModel],
+) -> frozenset[str]:
+    """Return the set of field names on ``settings_cls`` marked ``NESTED_ONLY``.
+
+    Parallels :func:`hot_field_names`. Used by tests and by future tooling that
+    needs to surface which parents accept nested overrides.
+
+    :param settings_cls: The Pydantic settings class to introspect.
+    :type settings_cls: type[BaseModel]
+    :return: A frozenset of field names declared NESTED_ONLY.
+    :rtype: frozenset[str]
+    """
+    return frozenset(
+        name
+        for name, info in settings_cls.model_fields.items()
+        if CustomFieldMetadata.field_to_dict(info).get("reload")
+        == ReloadClassification.NESTED_ONLY
+    )
+
+
+def parse_nested_key(key: str) -> tuple[str, ...]:
+    """Split a ``__``-delimited override key into segments.
+
+    :param key: The raw override key (e.g. ``"SESSION__MAX_AGE"``).
+    :type key: str
+    :return: Tuple of segments (``("SESSION", "MAX_AGE")``).
+    :rtype: tuple[str, ...]
+    """
+    return tuple(key.split("__"))
+
+
+def _annotation_pydantic_class(annotation: Any) -> type[BaseModel] | None:
+    """Return the Pydantic ``BaseModel`` subclass referenced by ``annotation``, if any.
+
+    Unwraps ``X | None`` / ``Optional[X]`` and returns the first ``BaseModel``
+    subclass found in the type arguments. Returns ``None`` when the annotation
+    is a primitive, a generic container (``list[X]``, ``dict[K, V]``), or any
+    other non-BaseModel type -- those are not traversable by the nested-override
+    mechanism.
+
+    :param annotation: The Pydantic field annotation to inspect.
+    :type annotation: Any
+    :return: The referenced ``BaseModel`` subclass, or ``None``.
+    :rtype: type[BaseModel] | None
+    """
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    origin = typing.get_origin(annotation)
+    if origin in {Union, UnionType}:
+        for arg in typing.get_args(annotation):
+            if isinstance(arg, type) and issubclass(arg, BaseModel):
+                return arg
+    return None
+
+
+def _resolve_field_in_model(
+    model_cls: type[BaseModel], segment: str
+) -> tuple[str, FieldInfo] | None:
+    """Return ``(canonical_attribute_name, FieldInfo)`` for ``segment`` on ``model_cls``.
+
+    Performs case-insensitive matching across:
+
+    1. The Pydantic attribute name in ``model_cls.model_fields``.
+    2. The field's ``alias`` / ``validation_alias`` / ``serialization_alias``.
+
+    Required so that ``SECURITY_HEADERS__X_FRAME_OPTIONS_DENY`` (uppercase, the
+    override-key convention) resolves to ``x_frame_options_deny`` on
+    :class:`app.core.middleware.security_headers.SecurityHeadersOptions` (a
+    ``BaseCaseInsensitiveModel`` declaring lowercase attribute names with an
+    uppercase alias).
+
+    :param model_cls: The Pydantic model class to search.
+    :type model_cls: type[BaseModel]
+    :param segment: The path segment to resolve.
+    :type segment: str
+    :return: ``(attribute_name, FieldInfo)`` on success, or ``None`` when no
+        field matches.
+    :rtype: tuple[str, FieldInfo] | None
+    """
+    if segment in model_cls.model_fields:
+        return segment, model_cls.model_fields[segment]
+    seg_lower = segment.lower()
+    for name, info in model_cls.model_fields.items():
+        if name.lower() == seg_lower:
+            return name, info
+        for alias in (info.alias, info.validation_alias, info.serialization_alias):
+            if isinstance(alias, str) and alias.lower() == seg_lower:
+                return name, info
+    return None
+
+
+def resolve_nested_field(
+    settings_cls: type[BaseModel],
+    key: str,
+) -> tuple[tuple[str, ...], FieldInfo] | None:
+    """Resolve a ``__``-delimited path to its canonical attribute chain and leaf field.
+
+    Walks one segment at a time, descending into nested Pydantic models.
+    Returns ``None`` when any segment is unresolvable, the path hits a
+    non-Pydantic intermediate, or the path is empty.
+
+    The returned chain uses canonical (case-corrected) attribute names so the
+    caller can plug it straight into nested ``model_copy(update=...)`` calls.
+
+    :param settings_cls: The top-level Pydantic settings class.
+    :type settings_cls: type[BaseModel]
+    :param key: The override key to resolve (e.g.
+        ``"SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"``).
+    :type key: str
+    :return: ``((canonical_segment, ...), leaf_FieldInfo)`` or ``None``.
+    :rtype: tuple[tuple[str, ...], FieldInfo] | None
+    """
+    segments = parse_nested_key(key)
+    if not segments:
+        return None
+    chain = []
+    current_cls = settings_cls
+    for i, seg in enumerate(segments):
+        resolved = _resolve_field_in_model(current_cls, seg)
+        if resolved is None:
+            return None
+        canonical, info = resolved
+        chain.append(canonical)
+        if i < len(segments) - 1:
+            next_cls = _annotation_pydantic_class(info.annotation)
+            if next_cls is None:
+                return None
+            current_cls = next_cls
+    return tuple(chain), info
+
+
+def coerce_nested_field_value(
+    settings_cls: type[BaseModel],
+    key: str,
+    raw: Any,
+) -> tuple[tuple[str, ...], Any]:
+    """Resolve ``key`` to a nested attribute chain and coerce ``raw`` to the leaf type.
+
+    Combines :func:`resolve_nested_field` and :func:`coerce_field_value` so the
+    cache and API layers have one entry point for the full nested-row coercion
+    contract. Leaves explicitly classified ``NOT_OVERRIDABLE`` are rejected by
+    raising :class:`KeyError`, matching the unresolvable-path contract so the
+    caller's existing ``except KeyError`` branch logs and skips uniformly.
+
+    :param settings_cls: The top-level Pydantic settings class.
+    :type settings_cls: type[BaseModel]
+    :param key: The override row's ``__``-delimited key.
+    :type key: str
+    :param raw: The raw JSON-decoded value to coerce.
+    :type raw: Any
+    :return: ``((canonical_segment, ...), coerced_value)``.
+    :rtype: tuple[tuple[str, ...], Any]
+    :raises KeyError: If the path is unresolvable on ``settings_cls`` or the
+        resolved leaf is classified ``NOT_OVERRIDABLE``.
+    :raises ValidationError: If ``raw`` cannot be coerced to the leaf's type.
+    """
+    resolved = resolve_nested_field(settings_cls, key)
+    if resolved is None:
+        raise KeyError(key)
+    chain, leaf_info = resolved
+    metadata = CustomFieldMetadata.field_to_dict(leaf_info)
+    if metadata.get("reload") == ReloadClassification.NOT_OVERRIDABLE:
+        raise KeyError(key)
+    return chain, coerce_field_value(leaf_info, raw)
+
+
+def _clear_cached_properties(instance: BaseModel) -> None:
+    """Remove every ``@cached_property`` memo from ``instance.__dict__``.
+
+    Pydantic ``model_copy()`` is shallow and carries over any
+    :class:`functools.cached_property` values that were already evaluated on
+    the source instance. Drop them so the copy recomputes lazily against its
+    new (possibly overridden) field values.
+
+    :param instance: The freshly-copied Pydantic instance to clean.
+    :type instance: BaseModel
+    """
+    cls = type(instance)
+    for name in list(instance.__dict__):
+        # ``getattr`` walks the full MRO, so a ``cached_property`` declared on a
+        # base class (e.g. ``BaseRemoteAPI.logger``) is cleared too -- scanning
+        # only ``cls.__dict__`` would leave those inherited memos stale.
+        if isinstance(getattr(cls, name, None), functools.cached_property):
+            del instance.__dict__[name]
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -298,14 +630,51 @@ def iter_class_fields(
             annotation=field.annotation,
             default=_resolve_default(field),
             description=field.description,
-            reload=(
-                ReloadClassification.HOT
-                if is_hot_reloadable(settings_cls, name)
-                else ReloadClassification.NOT_OVERRIDABLE
-            ),
+            reload=field_reload_classification(field),
             is_secret=_field_contains_secret(field),
             is_complex=_field_is_complex(field.annotation),
         )
+
+
+def resolve_nested_field_metadata(
+    settings_cls: type[BaseModel], key: str
+) -> FieldMetadata | None:
+    """Return introspected metadata for a ``__``-delimited nested override key.
+
+    Resolves ``key`` to its leaf field and synthesises a :class:`FieldMetadata`
+    whose ``key`` is the full nested key while every other attribute
+    (annotation, default, description, secret/complex flags) is taken from the
+    leaf field. The reported ``reload`` is ``HOT`` for an override-eligible
+    leaf (the default under a nested-overridable parent) and
+    ``NOT_OVERRIDABLE`` only when the leaf is explicitly
+    :func:`not_overridable_field`-marked.
+
+    :param settings_cls: The top-level Pydantic settings class.
+    :type settings_cls: type[BaseModel]
+    :param key: The ``__``-delimited override key.
+    :type key: str
+    :return: The synthesised leaf metadata, or ``None`` when ``key`` does not
+        resolve to a nested field.
+    :rtype: FieldMetadata | None
+    """
+    resolved = resolve_nested_field(settings_cls, key)
+    if resolved is None:
+        return None
+    _chain, leaf_info = resolved
+    reload = (
+        ReloadClassification.NOT_OVERRIDABLE
+        if is_explicit_not_overridable(leaf_info)
+        else ReloadClassification.HOT
+    )
+    return FieldMetadata(
+        key=key,
+        annotation=leaf_info.annotation,
+        default=_resolve_default(leaf_info),
+        description=leaf_info.description,
+        reload=reload,
+        is_secret=_field_contains_secret(leaf_info),
+        is_complex=_field_is_complex(leaf_info.annotation),
+    )
 
 
 def _resolve_default(field_info: FieldInfo) -> Any:

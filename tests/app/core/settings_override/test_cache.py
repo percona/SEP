@@ -16,15 +16,20 @@
 """Tests for the snapshot-building cache layer."""
 
 import logging
+from datetime import timedelta
+from functools import cached_property
+from types import SimpleNamespace
 
 import pytest
+from pydantic import BaseModel, computed_field
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.settings_override.cache import build_snapshot
+from app.core.settings_override.cache import _build_nested_update, build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
-from app.sep.config import SEPSettings
+from app.sep.config import SEPSettings, SessionOptions
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
+from app.tasks.execution.executors.nomad import NomadExecutor
 
 
 async def _insert(session: AsyncSession, **kwargs: object) -> None:
@@ -223,3 +228,341 @@ async def test_other_entries_remain_after_failure(session: AsyncSession) -> None
     )
     snapshot = await build_snapshot(session, SEPSettings)
     assert snapshot == {"CONNECTIVITY_CHECK_DEFAULT": False}
+
+
+# --- Nested overrides -----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_nested_override_appears_as_model_copy_under_top_level_key(
+    session: AsyncSession,
+) -> None:
+    """A nested row merges into a copy stored under the top-level key."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__MAX_AGE",
+        value=3600,
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    merged = snapshot["SESSION"]
+    assert isinstance(merged, SessionOptions)
+    assert timedelta(seconds=3600) == merged.MAX_AGE
+    # Untouched fields match the default ``SessionOptions``.
+    assert merged.COOKIE_NAME == SessionOptions().COOKIE_NAME
+    assert merged.SAMESITE == SessionOptions().SAMESITE
+
+
+@pytest.mark.asyncio
+async def test_nested_override_merges_onto_base_settings_value(
+    session: AsyncSession,
+) -> None:
+    """Leaves with no override row fall back to the YAML/env base value (AC #3)."""
+    base = SimpleNamespace(SESSION=SessionOptions(SAMESITE="strict"))
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__MAX_AGE",
+        value=3600,
+    )
+    snapshot = await build_snapshot(session, SEPSettings, base_settings=base)
+    merged = snapshot["SESSION"]
+    assert timedelta(seconds=3600) == merged.MAX_AGE
+    # The non-overridden SAMESITE keeps the base (YAML/env) value, not the default.
+    assert merged.SAMESITE == "strict"
+
+
+@pytest.mark.asyncio
+async def test_nested_override_falls_back_when_parent_not_overridable(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A nested row under a non-overridable parent is skipped and warned."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="INVENTORY_ENDPOINT__SCHEME",
+        value="http",
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    assert "INVENTORY_ENDPOINT" not in snapshot
+    assert any("non-overridable parent" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_multi_level_nested_instantiates_none_intermediate(
+    session: AsyncSession,
+) -> None:
+    """A multi-level path through a ``None`` intermediate instantiates it from leaves."""
+    max_age = 31536000
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE",
+        value=max_age,
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__INCLUDE_SUB_DOMAINS",
+        value=True,
+    )
+    snapshot = await build_snapshot(session, TasksSettings)
+    sts = snapshot["SECURITY_HEADERS"].strict_transport_security
+    assert sts is not None
+    assert sts.max_age == max_age
+    assert sts.include_sub_domains is True
+
+
+@pytest.mark.asyncio
+async def test_multi_level_missing_required_leaf_skips_group(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Instantiating a ``None`` intermediate without its required leaf is skipped."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    # ``max_age`` is required on StrictTransportSecurityOptions; omit it.
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__INCLUDE_SUB_DOMAINS",
+        value=True,
+    )
+    snapshot = await build_snapshot(session, TasksSettings)
+    assert "SECURITY_HEADERS" not in snapshot
+    assert any("merged model" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_unknown_nested_leaf_skipped_with_warning(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An unknown nested leaf is skipped; the parent is not stored if it was the only row."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__BOGUS_FIELD",
+        value=1,
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    assert "SESSION" not in snapshot
+    assert any(
+        "unknown or not-overridable field" in r.getMessage() for r in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_nested_coercion_failure_skips_only_failing_leaf(
+    session: AsyncSession,
+) -> None:
+    """One bad nested leaf is dropped while a sibling leaf still merges."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__MAX_AGE",
+        value="not-a-number",
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__SAMESITE",
+        value="strict",
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    merged = snapshot["SESSION"]
+    assert merged.SAMESITE == "strict"
+    # The failed MAX_AGE leaf keeps the default.
+    assert merged.MAX_AGE == SessionOptions().MAX_AGE
+
+
+@pytest.mark.asyncio
+async def test_top_level_row_targeting_nested_only_parent_is_skipped(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A whole-parent row on a NESTED_ONLY parent is dropped; nested rows still merge."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION",
+        value={"MAX_AGE": 10, "SAMESITE": "none"},
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__MAX_AGE",
+        value=3600,
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    merged = snapshot["SESSION"]
+    assert timedelta(seconds=3600) == merged.MAX_AGE
+    # The whole-object row did not take effect (SAMESITE stays default).
+    assert merged.SAMESITE == SessionOptions().SAMESITE
+    assert any("non-HOT" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_security_headers_uppercase_key_resolves_to_lowercase_attribute(
+    session: AsyncSession,
+) -> None:
+    """An uppercase nested key resolves to the lowercase case-insensitive attribute."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="SECURITY_HEADERS__X_FRAME_OPTIONS_DENY",
+        value=False,
+    )
+    snapshot = await build_snapshot(session, TasksSettings)
+    assert snapshot["SECURITY_HEADERS"].x_frame_options_deny is False
+
+
+@pytest.mark.asyncio
+async def test_security_headers_lowercase_key_also_resolves(
+    session: AsyncSession,
+) -> None:
+    """A lowercase nested key resolves to the same case-insensitive attribute."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="security_headers__x_frame_options_deny",
+        value=False,
+    )
+    snapshot = await build_snapshot(session, TasksSettings)
+    assert snapshot["SECURITY_HEADERS"].x_frame_options_deny is False
+
+
+@pytest.mark.asyncio
+async def test_cached_property_cleared_on_merged_copy(
+    session: AsyncSession,
+) -> None:
+    """The merged copy drops any ``cached_property`` carried over by ``model_copy``."""
+    override_timeout = 30
+    nomad = NomadExecutor(endpoint="http://nomad.example:4646")
+    assert nomad.backend is not None  # populate the cached_property memo
+    assert "backend" in nomad.__dict__
+    base = SimpleNamespace(NOMAD=nomad)
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="NOMAD__TIMEOUT",
+        value=override_timeout,
+    )
+    snapshot = await build_snapshot(session, TasksSettings, base_settings=base)
+    merged = snapshot["NOMAD"]
+    assert merged.timeout == override_timeout
+    assert "backend" not in merged.__dict__
+
+
+@pytest.mark.asyncio
+async def test_snapshot_refresh_replaces_merged_copy(session: AsyncSession) -> None:
+    """Deleting the only nested row drops the merged parent on the next build."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__MAX_AGE",
+        value=100,
+    )
+    first = await build_snapshot(session, SEPSettings)
+    assert "SESSION" in first
+    await SettingsOverrideManager.delete_where(
+        session, setting_class=SettingClassEnum.SEP_SETTINGS, key="SESSION__MAX_AGE"
+    )
+    second = await build_snapshot(session, SEPSettings)
+    assert "SESSION" not in second
+
+
+class _Derived(BaseModel):
+    """Model with a ``computed_field`` derived from a plain field."""
+
+    base: int = 1
+
+    @computed_field
+    @property
+    def doubled(self) -> int:
+        """Return twice ``base``, recomputed at access time."""
+        return self.base * 2
+
+
+def test_model_copy_recomputes_computed_field() -> None:
+    """``model_copy(update=...)`` recomputes a ``@computed_field`` (AC #6 mechanism)."""
+    base, updated_base = 5, 7
+    original = _Derived(base=base)
+    assert original.doubled == base * 2
+    copy = original.model_copy(update={"base": updated_base})
+    assert copy.doubled == updated_base * 2
+
+
+class _CachedChild(BaseModel):
+    """Nested child carrying a ``cached_property`` to merge through."""
+
+    v: int = 1
+
+    @cached_property
+    def memo(self) -> int:
+        """Return a value derived from ``v`` (memoised on first access)."""
+        return self.v * 100
+
+
+class _CachedParent(BaseModel):
+    """Parent holding a nested child with a ``cached_property``."""
+
+    child: _CachedChild = _CachedChild()
+
+
+def test_nested_child_cached_property_cleared_at_every_level() -> None:
+    """A nested child's ``cached_property`` memo is dropped on the merged copy."""
+    override_v = 5
+    parent = _CachedParent()
+    assert parent.child.memo == parent.child.v * 100  # populate the child memo
+    merged = _build_nested_update(parent, {("child", "v"): override_v})
+    assert merged.child.v == override_v
+    assert "memo" not in merged.child.__dict__
+
+
+@pytest.mark.asyncio
+async def test_whole_child_and_leaf_override_layer_together(
+    session: AsyncSession,
+) -> None:
+    """A whole-child override and a deeper leaf override of it both apply."""
+    max_age = 100
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY",
+        value={"max_age": max_age, "preload": True},
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__INCLUDE_SUB_DOMAINS",
+        value=True,
+    )
+    snapshot = await build_snapshot(session, TasksSettings)
+    sts = snapshot["SECURITY_HEADERS"].strict_transport_security
+    assert sts.max_age == max_age  # from the whole-child override
+    assert sts.preload is True  # from the whole-child override
+    assert sts.include_sub_domains is True  # layered from the leaf override
+
+
+@pytest.mark.asyncio
+async def test_inherited_cached_property_cleared_on_merged_copy(
+    session: AsyncSession,
+) -> None:
+    """A ``cached_property`` inherited from a base class is cleared on the copy.
+
+    ``NomadExecutor`` inherits ``logger`` (derived from ``logger_name``) from
+    ``BaseRemoteAPI``; overriding ``NOMAD__LOGGER_NAME`` must not leave the old
+    logger memoised on the merged copy.
+    """
+    nomad = NomadExecutor(endpoint="http://nomad.example:4646")
+    assert nomad.logger is not None  # populate the inherited cached_property
+    assert "logger" in nomad.__dict__
+    base = SimpleNamespace(NOMAD=nomad)
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="NOMAD__LOGGER_NAME",
+        value="custom.logger",
+    )
+    snapshot = await build_snapshot(session, TasksSettings, base_settings=base)
+    assert "logger" not in snapshot["NOMAD"].__dict__

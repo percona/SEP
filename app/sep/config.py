@@ -48,7 +48,7 @@ from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field
+from app.core.settings_override.registry import hot_field, nested_overridable_field
 from app.core.utils import (
     deep_dict_update,
     slugify,
@@ -472,10 +472,12 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
-    SESSION: SessionOptions = SessionOptions()
-    SESSION_REFRESH: SessionOptions = SessionOptions(
-        COOKIE_NAME="refreshToken",
-        PATH="/api/oauth",
+    SESSION: SessionOptions = nested_overridable_field(SessionOptions())
+    SESSION_REFRESH: SessionOptions = nested_overridable_field(
+        SessionOptions(
+            COOKIE_NAME="refreshToken",
+            PATH="/api/oauth",
+        )
     )
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")

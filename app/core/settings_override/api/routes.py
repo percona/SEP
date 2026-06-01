@@ -41,11 +41,17 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
+    _resolve_field_in_model,
     coerce_field_value,
     dump_field_value,
     FieldMetadata,
+    is_explicit_not_overridable,
     is_hot_reloadable,
+    is_nested_overridable_parent,
     iter_class_fields,
+    ReloadClassification,
+    resolve_nested_field,
+    resolve_nested_field_metadata,
 )
 
 ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
@@ -76,8 +82,13 @@ def _settings_response_from_field(
     :return: The structured response for the field.
     :rtype: SettingResponse
     """
-    field_info = settings_cls.model_fields[field_meta.key]
-    current_value = getattr(proxy, field_meta.key)
+    if "__" in field_meta.key:
+        field_info, current_value = _resolve_nested_value(
+            settings_cls=settings_cls, proxy=proxy, key=field_meta.key
+        )
+    else:
+        field_info = settings_cls.model_fields[field_meta.key]
+        current_value = getattr(proxy, field_meta.key)
     return SettingResponse(
         setting_class=setting_class,
         key=field_meta.key,
@@ -111,6 +122,70 @@ def _format_annotation(annotation: Any) -> str:
     return repr(annotation).removeprefix("typing.")
 
 
+def _resolve_nested_value(
+    *,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
+    key: str,
+) -> tuple[Any, Any]:
+    """Return the leaf field metadata and current value for a nested key.
+
+    Walks the proxy attribute chain segment by segment using the resolver's
+    canonical (case-corrected) names, so the returned value reflects the merged
+    snapshot copy when an override is active and the YAML/env value otherwise.
+
+    :param settings_cls: The Pydantic settings class the key belongs to.
+    :type settings_cls: type[BaseYamlSettings]
+    :param proxy: The proxy whose attribute chain yields the current value.
+    :type proxy: OverridableSettingsProxy
+    :param key: The ``__``-delimited nested key.
+    :type key: str
+    :return: A ``(leaf_FieldInfo, current_value)`` pair.
+    :rtype: tuple[Any, Any]
+    :raises HTTPNotFoundException: If ``key`` does not resolve to a nested
+        field on ``settings_cls``.
+    """
+    resolved = resolve_nested_field(settings_cls, key)
+    if resolved is None:
+        raise HTTPNotFoundException(
+            f"Setting {settings_cls.__name__}.{key} does not exist.",
+        )
+    chain, leaf_info = resolved
+    current = proxy
+    for segment in chain:
+        # An ``Optional`` intermediate may currently be ``None`` (e.g.
+        # ``SECURITY_HEADERS.STRICT_TRANSPORT_SECURITY`` before any override):
+        # short-circuit to ``None`` instead of raising ``AttributeError``.
+        current = getattr(current, segment, None)
+    return leaf_info, current
+
+
+def _canonical_override_key(settings_cls: type[BaseYamlSettings], key: str) -> str:
+    """Return the canonical ``__``-joined attribute path for a nested key.
+
+    Case-insensitive spellings of the same nested path (e.g.
+    ``security_headers__x_frame_options_deny`` and its uppercase form) collapse
+    to one deterministic key so DB rows, snapshot lookups, and DELETE/GET by key
+    all agree. Top-level keys and keys that do not resolve are returned
+    unchanged.
+
+    :param settings_cls: The Pydantic settings class the key belongs to.
+    :type settings_cls: type[BaseYamlSettings]
+    :param key: The override key, possibly ``__``-delimited.
+    :type key: str
+    :return: The canonical key, or ``key`` unchanged when not a resolvable
+        nested path.
+    :rtype: str
+    """
+    if "__" not in key:
+        return key
+    resolved = resolve_nested_field(settings_cls, key)
+    if resolved is None:
+        return key
+    chain, _ = resolved
+    return "__".join(chain)
+
+
 def _validate_patch_body(
     *,
     settings_cls: type[BaseYamlSettings],
@@ -136,6 +211,15 @@ def _validate_patch_body(
     errors = []
     to_apply = []
     for key, raw_value in body.root.items():
+        if "__" in key:
+            _validate_nested_key(
+                settings_cls=settings_cls,
+                key=key,
+                raw_value=raw_value,
+                errors=errors,
+                to_apply=to_apply,
+            )
+            continue
         field_info = settings_cls.model_fields.get(key)
         if field_info is None:
             errors.append(
@@ -172,6 +256,92 @@ def _validate_patch_body(
     if errors:
         raise HTTPUnprocessableEntityException(detail=errors)
     return to_apply
+
+
+def _validate_nested_key(
+    *,
+    settings_cls: type[BaseYamlSettings],
+    key: str,
+    raw_value: Any,
+    errors: list[dict[str, Any]],
+    to_apply: list[tuple[str, Any]],
+) -> None:
+    """Validate one ``__``-delimited nested key, appending to ``errors``/``to_apply``.
+
+    Gates the key in four steps, each mapping to a distinct 422 ``type``:
+    the parent must exist (``unknown_key``) and be nested-overridable
+    (``not_overridable``); the leaf must resolve (``unknown_nested_field``)
+    and not be explicitly not-overridable (``not_overridable``); finally the
+    value is coerced to the leaf type (structured Pydantic error on failure).
+
+    :param settings_cls: The Pydantic settings class to validate against.
+    :type settings_cls: type[BaseYamlSettings]
+    :param key: The ``__``-delimited override key.
+    :type key: str
+    :param raw_value: The raw value to coerce to the leaf type.
+    :type raw_value: Any
+    :param errors: The running list of structured error entries, mutated in place.
+    :type errors: list[dict[str, Any]]
+    :param to_apply: The running list of ``(key, coerced_value)`` tuples,
+        mutated in place.
+    :type to_apply: list[tuple[str, Any]]
+    """
+    top_resolved = _resolve_field_in_model(settings_cls, key.split("__", 1)[0])
+    if top_resolved is None:
+        errors.append(
+            {
+                "loc": ["body", key],
+                "msg": "Parent field does not exist on this settings class.",
+                "type": "unknown_key",
+            }
+        )
+        return
+    canonical_top, _ = top_resolved
+    if not is_nested_overridable_parent(settings_cls, canonical_top):
+        errors.append(
+            {
+                "loc": ["body", key],
+                "msg": "Setting cannot be overridden from the API.",
+                "type": "not_overridable",
+            }
+        )
+        return
+    resolved = resolve_nested_field(settings_cls, key)
+    if resolved is None:
+        errors.append(
+            {
+                "loc": ["body", key],
+                "msg": "Nested field does not exist on this settings class.",
+                "type": "unknown_nested_field",
+            }
+        )
+        return
+    chain, leaf_info = resolved
+    if is_explicit_not_overridable(leaf_info):
+        errors.append(
+            {
+                "loc": ["body", key],
+                "msg": "Setting cannot be overridden from the API.",
+                "type": "not_overridable",
+            }
+        )
+        return
+    try:
+        validated = coerce_field_value(leaf_info, raw_value)
+    except ValidationError as exc:
+        errors.extend(
+            {
+                "loc": ["body", key, *entry.get("loc", ())],
+                "msg": entry.get("msg", ""),
+                "type": entry.get("type", "value_error"),
+            }
+            for entry in exc.errors()
+        )
+        return
+    # Persist the canonical (case-corrected) path so case-insensitive spellings
+    # collapse to one row instead of creating divergent, partially-shadowing
+    # overrides for the same leaf.
+    to_apply.append(("__".join(chain), validated))
 
 
 def build_settings_router(
@@ -253,7 +423,7 @@ def build_settings_router(
             rows = await SettingsOverrideManager.list(
                 session, setting_class=setting_class, is_active=True
             )
-            override_keys = {row.key for row in rows}
+            override_keys = _override_keys_for_rows(settings_cls, rows)
             settings_list = [
                 _settings_response_from_field(
                     setting_class=setting_class,
@@ -289,16 +459,18 @@ def build_settings_router(
             doesn't exist on the class.
         """
         settings_cls, proxy = _resolve(setting_class)
+        key = _canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
-        existing = await SettingsOverrideManager.first(
-            session, setting_class=setting_class, key=key
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=setting_class, is_active=True
         )
+        override_keys = _override_keys_for_rows(settings_cls, rows)
         return _settings_response_from_field(
             setting_class=setting_class,
             settings_cls=settings_cls,
             proxy=proxy,
             field_meta=field_meta,
-            has_override=existing is not None,
+            has_override=key in override_keys,
         )
 
     @router.patch("/{setting_class}", dependencies=mutation_deps or [])
@@ -335,7 +507,7 @@ def build_settings_router(
             to_apply=to_apply,
         )
         await publish_snapshot(proxy, session, settings_cls)
-        field_meta_by_key = {f.key: f for f in iter_class_fields(settings_cls)}
+        field_meta_by_key = _applied_field_meta(settings_cls, to_apply)
         return [
             _settings_response_from_field(
                 setting_class=setting_class,
@@ -373,14 +545,14 @@ def build_settings_router(
         :raises HTTPNotFoundException: If the class isn't exposed or the key
             doesn't exist on the class.
         :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+        :raises HTTPUnprocessableEntityException: If ``key`` names a
+            ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
+            target an individual ``parent__leaf`` instead).
         """
         settings_cls, proxy = _resolve(setting_class)
-        _field_meta_or_404(settings_cls, key)
-        if not is_hot_reloadable(settings_cls, key):
-            raise HTTPConflictException(
-                f"Setting {settings_cls.__name__}.{key} cannot be overridden;"
-                " no row to delete.",
-            )
+        key = _canonical_override_key(settings_cls, key)
+        field_meta = _field_meta_or_404(settings_cls, key)
+        _assert_key_deletable(settings_cls, field_meta)
         await SettingsOverrideManager.delete_where(
             session, setting_class=setting_class, key=key
         )
@@ -392,21 +564,122 @@ def build_settings_router(
 def _field_meta_or_404(settings_cls: type[BaseYamlSettings], key: str) -> FieldMetadata:
     """Return the :class:`FieldMetadata` for ``key`` on ``settings_cls`` or raise 404.
 
+    Accepts both top-level keys (matched against
+    :func:`iter_class_fields`) and ``__``-delimited nested keys (resolved via
+    :func:`resolve_nested_field_metadata` into a synthesised leaf metadata
+    whose ``key`` is the full nested string).
+
     :param settings_cls: The Pydantic settings class to look up the field on.
     :type settings_cls: type[BaseYamlSettings]
-    :param key: The field name to find.
+    :param key: The field name (or ``__``-delimited nested key) to find.
     :type key: str
     :return: The metadata for the field.
     :rtype: FieldMetadata
     :raises HTTPNotFoundException: If ``key`` is not a declared field of
-        ``settings_cls``.
+        ``settings_cls`` (nor a resolvable nested key).
     """
+    if "__" in key:
+        nested_meta = resolve_nested_field_metadata(settings_cls, key)
+        if nested_meta is not None:
+            return nested_meta
+        raise HTTPNotFoundException(
+            f"Setting {settings_cls.__name__}.{key} does not exist.",
+        )
     for field_meta in iter_class_fields(settings_cls):
         if field_meta.key == key:
             return field_meta
     raise HTTPNotFoundException(
         f"Setting {settings_cls.__name__}.{key} does not exist.",
     )
+
+
+def _applied_field_meta(
+    settings_cls: type[BaseYamlSettings],
+    to_apply: list[tuple[str, Any]],
+) -> dict[str, FieldMetadata]:
+    """Return a ``key -> FieldMetadata`` map covering every applied override key.
+
+    Seeds the map with all top-level fields and adds a synthesised entry for
+    each ``__``-delimited key in ``to_apply`` (which ``iter_class_fields`` does
+    not enumerate). Every key was already accepted by
+    :func:`_validate_patch_body`, so the nested lookups cannot 404.
+
+    :param settings_cls: The Pydantic settings class the keys belong to.
+    :type settings_cls: type[BaseYamlSettings]
+    :param to_apply: The list of ``(key, value)`` tuples being applied.
+    :type to_apply: list[tuple[str, Any]]
+    :return: A mapping from override key to its field metadata.
+    :rtype: dict[str, FieldMetadata]
+    """
+    field_meta_by_key = {f.key: f for f in iter_class_fields(settings_cls)}
+    for key, _ in to_apply:
+        if "__" in key and key not in field_meta_by_key:
+            field_meta_by_key[key] = _field_meta_or_404(settings_cls, key)
+    return field_meta_by_key
+
+
+def _assert_key_deletable(
+    settings_cls: type[BaseYamlSettings],
+    field_meta: FieldMetadata,
+) -> None:
+    """Raise the appropriate HTTP error when ``field_meta`` cannot be deleted.
+
+    A ``NESTED_ONLY`` parent rejects whole-parent deletion with 422 (target a
+    nested child instead); a ``NOT_OVERRIDABLE`` field rejects deletion with
+    409 (no override row can exist). Overridable keys pass through silently.
+
+    :param settings_cls: The Pydantic settings class the field belongs to.
+    :type settings_cls: type[BaseYamlSettings]
+    :param field_meta: The resolved metadata for the key being deleted.
+    :type field_meta: FieldMetadata
+    :raises HTTPUnprocessableEntityException: If the key names a ``NESTED_ONLY``
+        parent.
+    :raises HTTPConflictException: If the key names a ``NOT_OVERRIDABLE`` field.
+    """
+    if field_meta.reload == ReloadClassification.NESTED_ONLY:
+        raise HTTPUnprocessableEntityException(
+            detail=[
+                {
+                    "loc": ["path", "key"],
+                    "msg": "Whole-parent override is not allowed; target a"
+                    " nested field instead.",
+                    "type": "not_overridable",
+                }
+            ]
+        )
+    if field_meta.reload == ReloadClassification.NOT_OVERRIDABLE:
+        raise HTTPConflictException(
+            f"Setting {settings_cls.__name__}.{field_meta.key} cannot be"
+            " overridden; no row to delete.",
+        )
+
+
+def _override_keys_for_rows(
+    settings_cls: type[BaseYamlSettings],
+    rows: list[SettingOverride],
+) -> set[str]:
+    """Return the set of keys (and canonical parent prefixes) with active overrides.
+
+    Each row's own ``key`` is included; additionally, every ``__``-delimited
+    row contributes its canonical top-level parent name so a top-level
+    ``field_meta.key in override_keys`` lookup reports ``has_override=True``
+    when only nested rows exist for that parent.
+
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :type settings_cls: type[BaseYamlSettings]
+    :param rows: The active override rows for the class.
+    :type rows: list[SettingOverride]
+    :return: The set of keys and parent prefixes carrying an override.
+    :rtype: set[str]
+    """
+    keys = {row.key for row in rows}
+    for row in rows:
+        if "__" not in row.key:
+            continue
+        resolved = _resolve_field_in_model(settings_cls, row.key.split("__", 1)[0])
+        if resolved is not None:
+            keys.add(resolved[0])
+    return keys
 
 
 async def _persist_overrides(
