@@ -273,6 +273,35 @@ async def test_nested_override_merges_onto_base_settings_value(
 
 
 @pytest.mark.asyncio
+async def test_mixed_case_sibling_rows_merge_into_one_parent(
+    session: AsyncSession,
+) -> None:
+    """Sibling rows for one parent under different casings both survive the merge.
+
+    The API persists canonical keys, but a row inserted directly into the table
+    may carry a non-canonical casing. Grouping must fold on the case-insensitive
+    prefix so two spellings of the same parent merge together instead of one
+    group clobbering the other's ``snapshot[parent]`` write.
+    """
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="session__max_age",
+        value=3600,
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__SAMESITE",
+        value="strict",
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    merged = snapshot["SESSION"]
+    assert timedelta(seconds=3600) == merged.MAX_AGE
+    assert merged.SAMESITE == "strict"
+
+
+@pytest.mark.asyncio
 async def test_nested_override_falls_back_when_parent_not_overridable(
     session: AsyncSession, caplog: pytest.LogCaptureFixture
 ) -> None:

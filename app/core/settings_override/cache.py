@@ -101,7 +101,11 @@ async def build_snapshot(
     nested_groups = defaultdict(list)
     for row in rows:
         if "__" in row.key:
-            nested_groups[row.key.split("__", 1)[0]].append(row)
+            # Group on the case-folded prefix so mixed-case sibling rows for one
+            # parent (only reachable via direct DB insertion -- the API persists
+            # canonical keys) merge into a single group instead of clobbering
+            # each other when ``_apply_nested_group`` writes ``snapshot[parent]``.
+            nested_groups[row.key.split("__", 1)[0].lower()].append(row)
             continue
         _apply_top_level_row(snapshot, settings_cls, setting_class, row)
     for prefix, group in nested_groups.items():
