@@ -37,6 +37,7 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.deps import (
+    _fetch_latest_task_statuses_for_names,
     _gathered_task_status,
     extract_latest_task_status,
 )
@@ -616,10 +617,35 @@ def _backup_type_from_parent(task: Task) -> BackupType:
     return BackupType(backup_type_str)
 
 
-def _is_restore_parent_task(task: Task) -> bool:
-    """Return whether ``task`` is a parent restore-config row for the list view."""
-    parent = task.data.get("parent")
-    return not parent or parent == task.name
+async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
+    """Fetch null-parent and legacy self-parent restore rows in two upstream calls.
+
+    The first call fetches modern restore parent rows (``parent`` is null). The
+    second call fetches legacy rows with non-null ``parent`` where
+    ``parent == name``.
+    """
+    null_response, self_parent_response = await asyncio.gather(
+        tasks_api.get(
+            "/",
+            params={
+                "owner": TaskOwner.RESTORE_MONGO.value,
+                "parent_is_null": "true",
+                "limit": 0,
+            },
+        ),
+        tasks_api.get(
+            "/",
+            params={
+                "owner": TaskOwner.RESTORE_MONGO.value,
+                "parent_is_null": "false",
+                "self_parent": "true",
+                "limit": 0,
+            },
+        ),
+    )
+    null_parents = [Task.model_validate(item) for item in null_response["items"]]
+    self_parents = [Task.model_validate(item) for item in self_parent_response["items"]]
+    return null_parents + self_parents
 
 
 async def get_restore_mongo_task_status(
@@ -673,12 +699,10 @@ async def get_restore_mongo_api_task_responses(
 ) -> PaginatedResponse[RestoreTaskResponse]:
     """Retrieve a page of restore task responses for the JSON API.
 
-    Fetches the full parent task list from the Tasks API (the
-    ``_is_restore_parent_task`` Python-side filter prevents pushing the
-    parent predicate upstream cleanly), applies the optional ``status``
-    filter, and slices ``[offset : offset + limit]`` to honour pagination.
-    ``total`` reflects the parent count *after* the status filter so
-    consumers' page math stays correct.
+    Uses two filtered upstream task lists (null-parent config rows plus legacy
+    self-parent rows) and one batch latest-status lookup per page. When
+    ``status`` is set, ``total`` reflects the parent count after the status
+    filter.
 
     :param tasks_api: The TaskAPI instance used to query restore tasks.
     :type tasks_api: TaskAPI
@@ -691,25 +715,41 @@ async def get_restore_mongo_api_task_responses(
     :return: The paginated restore task responses matching the requested filters.
     :rtype: PaginatedResponse[RestoreTaskResponse]
     """
-    response = await tasks_api.get(
-        "/",
-        params={"owner": TaskOwner.RESTORE_MONGO.value, "limit": 0},
+    parents = await _fetch_restore_parent_tasks(tasks_api)
+
+    if status is None:
+        page_parents = parents[offset : offset + limit]
+        status_map = await _fetch_latest_task_statuses_for_names(
+            tasks_api,
+            [task.name for task in page_parents],
+        )
+        items = [
+            build_restore_mongo_api_task_response(
+                task,
+                status=status_map.get(task.name),
+            )
+            for task in page_parents
+        ]
+        return PaginatedResponse[RestoreTaskResponse](
+            items=items,
+            total=len(parents),
+            offset=offset,
+            limit=limit,
+        )
+
+    status_map = await _fetch_latest_task_statuses_for_names(
+        tasks_api,
+        [task.name for task in parents],
     )
-    tasks = [Task.model_validate(item) for item in response["items"]]
-    parents = [task for task in tasks if _is_restore_parent_task(task)]
-    statuses = await asyncio.gather(
-        *(get_restore_mongo_task_status(task.name, tasks_api) for task in parents),
-        return_exceptions=True,
-    )
-    normalized_statuses = [_gathered_task_status(status) for status in statuses]
     task_status_pairs = [
         (task, task_status)
-        for task, task_status in zip(parents, normalized_statuses, strict=True)
-        if status is None or task_status == status
+        for task in parents
+        if (task_status := status_map.get(task.name)) == status
     ]
+    page_pairs = task_status_pairs[offset : offset + limit]
     items = [
         build_restore_mongo_api_task_response(task, status=task_status)
-        for task, task_status in task_status_pairs[offset : offset + limit]
+        for task, task_status in page_pairs
     ]
     return PaginatedResponse[RestoreTaskResponse](
         items=items,

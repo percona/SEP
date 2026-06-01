@@ -36,6 +36,7 @@ DEFAULT_PAGE_LIMIT = 50
 EXPECTED_LOGICAL_RESTORE_PUTS = 3
 THREE_PARENT_FIXTURE_TOTAL = 3
 TWO_PARENT_FIXTURE_TOTAL = 2
+EXPECTED_RESTORE_PARENT_LIST_GETS = 2
 
 
 def build_restore_task(name: str = "mongo-restore-task", **overrides: Any) -> dict:
@@ -143,36 +144,77 @@ class TestRestoreMongoApiList:
     def test_list_returns_parent_tasks_only(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """List only parent config tasks, not child siblings."""
+        """List parent rows via upstream filters, self-parent merge, and batch status."""
         parent = build_restore_task("parent-restore")
-        child = build_restore_task(
-            "parent-restore-pbm_logical",
-            data={"parent": "parent-restore", "payload": "pbm_logical_restore_payload"},
+        legacy_self_parent = build_restore_task(
+            "legacy-self-parent-restore",
+            data={
+                "parent": "legacy-self-parent-restore",
+                "payload": "pbm_logical_restore_payload",
+            },
         )
-        mock_task_api_dep.get = AsyncMock(
-            return_value={"items": [parent, child], "total": 2}
-        )
+
+        async def _mock_get(path: str, **kwargs: Any) -> Any:
+            if path != "/":
+                raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+            params = kwargs.get("params") or {}
+            if params.get("parent_is_null") == "true":
+                return {"items": [parent], "total": 1}
+            if (
+                params.get("parent_is_null") == "false"
+                and params.get("self_parent") == "true"
+            ):
+                return {"items": [legacy_self_parent], "total": 1}
+            raise AssertionError(f"Unexpected list params: {params!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+        mock_task_api_dep.post = AsyncMock(return_value={"parent-restore": "success"})
 
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["total"] == 1
+        assert body["total"] == TWO_PARENT_FIXTURE_TOTAL
         assert body["offset"] == 0
         assert body["limit"] == DEFAULT_PAGE_LIMIT
-        assert len(body["items"]) == 1
+        assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         assert body["items"][0]["name"] == "parent-restore"
+        assert body["items"][0]["status"] == "success"
+        assert body["items"][1]["name"] == "legacy-self-parent-restore"
+        assert body["items"][1]["status"] is None
+        assert mock_task_api_dep.get.await_count == EXPECTED_RESTORE_PARENT_LIST_GETS
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-restore", "legacy-self-parent-restore"]},
+        )
 
     def test_list_paginates_with_offset_and_limit(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """Slice ``[offset:offset+limit]`` after the parent + status filters."""
+        """Paginate merged null-parent rows after two upstream list calls."""
         parents = [
             build_restore_task("parent-restore-a"),
             build_restore_task("parent-restore-b"),
             build_restore_task("parent-restore-c"),
         ]
-        mock_task_api_dep.get = AsyncMock(return_value={"items": parents, "total": 3})
+
+        async def _mock_get(path: str, **kwargs: Any) -> Any:
+            if path != "/":
+                raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+            params = kwargs.get("params") or {}
+            if params.get("parent_is_null") == "true":
+                return {"items": parents, "total": THREE_PARENT_FIXTURE_TOTAL}
+            if (
+                params.get("parent_is_null") == "false"
+                and params.get("self_parent") == "true"
+            ):
+                return {"items": [], "total": 0}
+            raise AssertionError(f"Unexpected list params: {params!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-restore-b": "running"},
+        )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
 
@@ -183,24 +225,36 @@ class TestRestoreMongoApiList:
         assert body["limit"] == 1
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "parent-restore-b"
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-restore-b"]},
+        )
 
-    def test_list_tolerates_history_fetch_failure_for_one_parent(
+    def test_list_tolerates_batch_status_fetch_failure(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """Return 200 when one parent history fetch fails after the task list."""
+        """Return 200 with unknown status when batch latest-status lookup fails."""
         parent_a = build_restore_task("parent-restore-a")
         parent_b = build_restore_task("parent-restore-b")
 
         async def _mock_get(path: str, **kwargs: Any) -> Any:
-            if path == "/":
-                return {"items": [parent_a, parent_b], "total": 2}
-            if path == "/parent-restore-a/history/":
-                return {"items": [{"status": "success"}]}
-            if path == "/parent-restore-b/history/":
-                raise HTTPNotFoundException
-            raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+            if path != "/":
+                raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+            params = kwargs.get("params") or {}
+            if params.get("parent_is_null") == "true":
+                return {
+                    "items": [parent_a, parent_b],
+                    "total": TWO_PARENT_FIXTURE_TOTAL,
+                }
+            if (
+                params.get("parent_is_null") == "false"
+                and params.get("self_parent") == "true"
+            ):
+                return {"items": [], "total": 0}
+            raise AssertionError(f"Unexpected list params: {params!r}")
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+        mock_task_api_dep.post = AsyncMock(side_effect=HTTPNotFoundException)
 
         response = test_client.get(f"{API_BASE}/")
 
@@ -209,8 +263,12 @@ class TestRestoreMongoApiList:
         assert body["total"] == TWO_PARENT_FIXTURE_TOTAL
         assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         by_name = {item["name"]: item for item in body["items"]}
-        assert by_name["parent-restore-a"]["status"] == "success"
+        assert by_name["parent-restore-a"]["status"] is None
         assert by_name["parent-restore-b"]["status"] is None
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-restore-a", "parent-restore-b"]},
+        )
 
 
 class TestRestoreMongoApiCreate:
