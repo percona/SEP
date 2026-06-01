@@ -382,6 +382,156 @@ describe('SchemaFormRenderer — multichoice required', () => {
   });
 });
 
+describe('SchemaFormRenderer — multichoice empty-state placeholder', () => {
+  it('renders "Select…" placeholder when nothing is selected', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Select…')).toBeVisible();
+  });
+
+  it('does NOT render placeholder when at least one value is selected', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={vi.fn()}
+        defaultValues={{ upload: ['S3'] }}
+      />,
+    );
+    expect(screen.queryByText('Select…')).toBeNull();
+    expect(screen.getByText('S3')).toBeVisible();
+  });
+});
+
+describe('SchemaFormRenderer — choice (select mode) empty-state placeholder', () => {
+  it('renders "Select…" when >3 choices and no value is chosen', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'region',
+            label: 'Region',
+            choices: [
+              { label: 'us-east-1', value: 'us-east-1' },
+              { label: 'us-west-2', value: 'us-west-2' },
+              { label: 'eu-west-1', value: 'eu-west-1' },
+              { label: 'ap-south-1', value: 'ap-south-1' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Select…')).toBeVisible();
+  });
+
+  it('radio-mode branch (≤3 choices) does NOT add a placeholder', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'mode',
+            label: 'Mode',
+            choices: [
+              { label: 'Fast', value: 'fast' },
+              { label: 'Slow', value: 'slow' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.queryByText('Select…')).toBeNull();
+  });
+});
+
+describe('SchemaFormRenderer — multichoice empty-state label shrink', () => {
+  it('floats the label above when nothing is selected (no overlap with placeholder)', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    // MUI renders the label text in both <label> and the notched <legend>; pick the <label>.
+    const labelRoot = screen.getAllByText('Upload providers')[0].closest('label');
+    expect(labelRoot).toHaveAttribute('data-shrink', 'true');
+    expect(labelRoot).toHaveClass('MuiInputLabel-shrink');
+  });
+});
+
+describe('SchemaFormRenderer — choice (select mode) empty-state label shrink', () => {
+  it('floats the label above on empty >3-choice select', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'region',
+            label: 'Region',
+            choices: [
+              { label: 'us-east-1', value: 'us-east-1' },
+              { label: 'us-west-2', value: 'us-west-2' },
+              { label: 'eu-west-1', value: 'eu-west-1' },
+              { label: 'ap-south-1', value: 'ap-south-1' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    const labelRoot = screen.getAllByText('Region')[0].closest('label');
+    expect(labelRoot).toHaveAttribute('data-shrink', 'true');
+    expect(labelRoot).toHaveClass('MuiInputLabel-shrink');
+  });
+});
+
 describe('SchemaFormRenderer — file required', () => {
   it('blocks submission when a required file field is empty', async () => {
     const user = userEvent.setup();

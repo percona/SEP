@@ -157,6 +157,25 @@ describe('StandaloneHostSelector', () => {
     expect(await screen.findByText('No hosts available')).toBeInTheDocument();
   });
 
+  it('refetches /api/sep/hosts/ when the dropdown is opened', async () => {
+    const hosts = [{ id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' }];
+    mocked.get.mockResolvedValue(makeResponse(hosts));
+
+    const client = makeClient();
+    render(
+      <Wrapper client={client}>
+        <StandaloneHostSelector value="" onChange={vi.fn()} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(1));
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText('Executor Host'));
+
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
+  });
+
   it('shows "Loading hosts…" while the host list is loading', async () => {
     mocked.get.mockReturnValueOnce(new Promise(() => {}));
     const client = makeClient();

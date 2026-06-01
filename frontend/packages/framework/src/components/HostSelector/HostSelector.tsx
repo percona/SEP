@@ -43,7 +43,7 @@ export function HostSelector({ name, label, required, disabled, helperText }: Ho
   } = useFormContext();
   const { enqueueSnackbar } = useSnackbar();
 
-  const { data, isLoading, isError, error } = useHosts();
+  const { data, isLoading, isError, error, refetch } = useHosts();
   const hosts = data ?? EMPTY_OPTIONS;
 
   const empty = !isLoading && !isError && hosts.length === 0;
@@ -91,6 +91,7 @@ export function HostSelector({ name, label, required, disabled, helperText }: Ho
         getOptionLabel,
         isOptionEqualToValue,
         noOptionsText: isLoading ? 'Loading hosts…' : 'No hosts available',
+        onOpen: () => refetch(),
       }}
       textFieldProps={{ helperText: text, error: isError || !!fieldError }}
     />
