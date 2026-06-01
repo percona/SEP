@@ -15,9 +15,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useFormContext } from 'react-hook-form';
+import { Controller, useFormContext } from 'react-hook-form';
+import Box from '@mui/material/Box';
+import FormControl from '@mui/material/FormControl';
+import FormHelperText from '@mui/material/FormHelperText';
+import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
-import { RadioGroup, SelectInput } from '@percona/percona-ui';
+import Select from '@mui/material/Select';
+import { RadioGroup } from '@percona/percona-ui';
 import type { ChoiceField as ChoiceFieldType } from '../types';
 import { buildValidationRules } from '../utils/validationMapper';
 
@@ -46,22 +51,48 @@ export function ChoiceField({ field }: ChoiceFieldProps) {
     );
   }
 
+  const labelId = `${field.name}-label`;
+
   return (
-    <SelectInput
+    <Controller
       name={field.name}
-      label={field.label}
-      isRequired={field.required}
       control={control}
-      helperText={field.description}
-      formControlProps={{ fullWidth: true }}
-      selectFieldProps={{ fullWidth: true }}
-      controllerProps={{ name: field.name, rules }}
-    >
-      {field.choices.map((choice) => (
-        <MenuItem key={choice.value} value={choice.value}>
-          {choice.label}
-        </MenuItem>
-      ))}
-    </SelectInput>
+      rules={rules}
+      render={({ field: rhfField, fieldState: { error } }) => (
+        <FormControl fullWidth size="small" error={!!error}>
+          <InputLabel id={labelId} shrink required={field.required}>
+            {field.label}
+          </InputLabel>
+          <Select
+            {...rhfField}
+            labelId={labelId}
+            label={field.label}
+            displayEmpty
+            notched
+            data-testid={`select-${field.name}-button`}
+            inputProps={{ 'data-testid': `select-input-${field.name}` }}
+            renderValue={(value) => {
+              if (value === undefined || value === null || value === '') {
+                return (
+                  <Box component="span" sx={{ color: 'text.disabled' }}>
+                    Select…
+                  </Box>
+                );
+              }
+              return field.choices.find((c) => c.value === value)?.label ?? String(value);
+            }}
+          >
+            {field.choices.map((choice) => (
+              <MenuItem key={choice.value} value={choice.value}>
+                {choice.label}
+              </MenuItem>
+            ))}
+          </Select>
+          {(error?.message || field.description) && (
+            <FormHelperText>{error?.message ?? field.description}</FormHelperText>
+          )}
+        </FormControl>
+      )}
+    />
   );
 }

@@ -632,39 +632,35 @@ class TestGetRecentBackups:
 
     @pytest.mark.asyncio
     async def test_returns_backups_from_manager(self, mocker):
-        """Assert recent backups are fetched via AlertBackupManager.list_recent."""
+        """Assert recent backups are fetched via AlertBackupManager.list."""
         from app.sep.plugins.alerts.deps import _MAX_SIDEBAR_BACKUPS, get_recent_backups
 
         backups = [AlertBackup(id=i, data={}, metadata_={}) for i in range(1, 6)]
-        mock_list_recent = AsyncMock(return_value=backups)
+        mock_list = AsyncMock(return_value=backups)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.AlertBackupManager.list_recent",
-            new=mock_list_recent,
+            "app.sep.plugins.alerts.deps.AlertBackupManager.list",
+            new=mock_list,
         )
         mock_session = AsyncMock()
 
         result = await get_recent_backups(mock_session)
 
         assert result == backups
-        mock_list_recent.assert_awaited_once_with(
-            mock_session, limit=_MAX_SIDEBAR_BACKUPS
-        )
+        mock_list.assert_awaited_once_with(mock_session, limit=_MAX_SIDEBAR_BACKUPS)
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_backups(self, mocker):
         """Assert an empty list is returned when no backups exist."""
         from app.sep.plugins.alerts.deps import _MAX_SIDEBAR_BACKUPS, get_recent_backups
 
-        mock_list_recent = AsyncMock(return_value=[])
+        mock_list = AsyncMock(return_value=[])
         mocker.patch(
-            "app.sep.plugins.alerts.deps.AlertBackupManager.list_recent",
-            new=mock_list_recent,
+            "app.sep.plugins.alerts.deps.AlertBackupManager.list",
+            new=mock_list,
         )
         mock_session = AsyncMock()
 
         result = await get_recent_backups(mock_session)
 
         assert result == []
-        mock_list_recent.assert_awaited_once_with(
-            mock_session, limit=_MAX_SIDEBAR_BACKUPS
-        )
+        mock_list.assert_awaited_once_with(mock_session, limit=_MAX_SIDEBAR_BACKUPS)

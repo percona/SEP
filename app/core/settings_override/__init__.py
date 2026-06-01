@@ -16,15 +16,20 @@
 """DB-backed settings override layer (HOT-only)."""
 
 __all__ = [
+    "FieldMetadata",
     "OverridableSettingsProxy",
     "ReloadClassification",
     "SettingClassEnum",
     "SettingOverride",
     "SettingsOverrideManager",
     "build_snapshot",
+    "coerce_field_value",
+    "dump_field_value",
     "hot_field",
     "hot_field_names",
     "is_hot_reloadable",
+    "iter_class_fields",
+    "publish_snapshot",
     "refresh_all",
     "settings_override_refresher",
     "start_refresh_task",
@@ -32,6 +37,7 @@ __all__ = [
 
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
+    publish_snapshot,
     refresh_all,
     settings_override_refresher,
     start_refresh_task,
@@ -40,8 +46,12 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
+    coerce_field_value,
+    dump_field_value,
+    FieldMetadata,
     hot_field,
     hot_field_names,
     is_hot_reloadable,
+    iter_class_fields,
     ReloadClassification,
 )
