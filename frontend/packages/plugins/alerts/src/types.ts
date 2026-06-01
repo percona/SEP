@@ -48,7 +48,7 @@ export interface AlertBackupSummary {
   created_at: string;
 }
 
-/** Shape returned by GET /api/plugins/alerts/ (exposed by SEP-1081). */
+/** Shape returned by GET /api/plugins/alerts/ (the alerts index endpoint). */
 export interface AlertIndexResponse {
   groups: AlertTemplateGroup[];
   pmm_connected: boolean;
@@ -73,5 +73,5 @@ export interface AlertBackupDetail {
   rules: Array<{ title: string }>;
   contact_points: Array<{ name: string; type: string }>;
   folders: Array<{ title: string }>;
-  notification_policy_receiver: string;
+  notification_policy_receiver: string | null;
 }
