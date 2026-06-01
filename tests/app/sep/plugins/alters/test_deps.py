@@ -28,8 +28,8 @@ from app.sep.plugins.alters.deps import (
     alters_executor_matches_service_host,
     alters_satellite_task_names,
     build_alters_api_task_response,
-    build_alters_task_payload,
-    build_pre_checks_task,
+    build_alters_task,
+    build_pre_checks_task_payload,
     cascade_create_alters_group,
     cascade_update_alters_group,
     extract_service_info,
@@ -91,7 +91,7 @@ def created_task() -> Task:
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload(
+async def test_build_alters_task(
     created_alters, created_service, created_schema, created_table, mock_remote_api
 ):
     """Test for building the alter task payload from form."""
@@ -102,7 +102,7 @@ async def test_build_alters_task_payload(
             created_table.model_dump(),
         ]
     )
-    generated_task = await build_alters_task_payload(created_alters, mock_remote_api)
+    generated_task = await build_alters_task(created_alters, mock_remote_api)
     assert isinstance(generated_task, TaskWrite)
     assert generated_task.owner == TaskOwner.ALTERS
 
@@ -225,10 +225,10 @@ async def test_build_pre_checks_task_filesystem_skip_flag(
         backend=TaskBackendEnum.PROXY,
     )
     mock_remote_api.get = AsyncMock(return_value=nomad_hosts)
-    pre = await build_pre_checks_task(task, mock_remote_api)
+    pre = await build_pre_checks_task_payload(task, task_api=mock_remote_api)
     mock_remote_api.get.assert_awaited_once_with("/hosts/")
-    assert pre.name == "prechk-alter-pre-checks"
-    assert pre.data["parent"] == "prechk-alter"
+    assert pre.name == "prechk-alter"
+    assert "parent" not in pre.data
     assert pre.data["task"] == "run-python"
     assert "command" not in pre.data["meta"]
     assert "args" not in pre.data["meta"]
@@ -266,7 +266,7 @@ async def test_build_pre_checks_task_mysql_config_file_in_yaml(mock_remote_api):
         backend=TaskBackendEnum.PROXY,
     )
     mock_remote_api.get = AsyncMock(return_value={"db1": "10.0.0.5"})
-    pre = await build_pre_checks_task(task, mock_remote_api)
+    pre = await build_pre_checks_task_payload(task, task_api=mock_remote_api)
     assert 'mysql_config_file: "/path/with space/my.cnf"' in pre.data["meta"]["config"]
 
 
@@ -309,7 +309,7 @@ def test_build_dsn_with_service_branches():
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload_schema_name_table_name(
+async def test_build_alters_task_schema_name_table_name(
     created_alters, created_service, mock_remote_api
 ):
     """Build payload using schema_name/table_name when schema/table IDs are omitted."""
@@ -318,14 +318,14 @@ async def test_build_alters_task_payload_schema_name_table_name(
     created_alters.schema_name = "manual_schema"
     created_alters.table_name = "manual_table"
     mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
-    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    task = await build_alters_task(created_alters, mock_remote_api)
     assert task.data["meta"]["_schema_name"] == "manual_schema"
     assert task.data["meta"]["_table_name"] == "manual_table"
     assert "D=manual_schema,t=manual_table" in task.data["meta"]["args"]
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload_requires_schema_and_table(
+async def test_build_alters_task_requires_schema_and_table(
     created_alters, created_service, mock_remote_api
 ):
     """Raise when neither IDs nor schema/table names are set."""
@@ -335,11 +335,11 @@ async def test_build_alters_task_payload_requires_schema_and_table(
     created_alters.table_name = ""
     mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
     with pytest.raises(ValueError, match="schema/table"):
-        await build_alters_task_payload(created_alters, mock_remote_api)
+        await build_alters_task(created_alters, mock_remote_api)
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload_dsn_recursion_defaults_empty_dsn_table(
+async def test_build_alters_task_dsn_recursion_defaults_empty_dsn_table(
     created_alters, created_service, created_schema, created_table, mock_remote_api
 ):
     """DSN recursion with blank dsn_table applies default D=percona,t=dsns in command."""
@@ -352,7 +352,7 @@ async def test_build_alters_task_payload_dsn_recursion_defaults_empty_dsn_table(
             created_table.model_dump(),
         ]
     )
-    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    task = await build_alters_task(created_alters, mock_remote_api)
     args = task.data["meta"]["args"]
     assert "D=percona,t=dsns" in args
     rec_arg = next(a for a in shlex.split(args) if a.startswith("--recursion-method="))
@@ -361,7 +361,7 @@ async def test_build_alters_task_payload_dsn_recursion_defaults_empty_dsn_table(
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload_print_arg_adds_progress(
+async def test_build_alters_task_print_arg_adds_progress(
     created_alters, created_service, created_schema, created_table, mock_remote_api
 ):
     """--progress is appended when print_arg is enabled."""
@@ -374,7 +374,7 @@ async def test_build_alters_task_payload_print_arg_adds_progress(
             created_table.model_dump(),
         ]
     )
-    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    task = await build_alters_task(created_alters, mock_remote_api)
     assert "--progress=time,5" in task.data["meta"]["args"]
 
 

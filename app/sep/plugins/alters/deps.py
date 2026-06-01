@@ -23,7 +23,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, Form, HTTPException
+from fastapi import Depends, HTTPException
 
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.requests.remote_api import RemoteAPI
@@ -280,26 +280,6 @@ async def build_alters_task(
     return _assemble_alters_payload(service, schema_name, table_name, body)
 
 
-async def build_alters_task_payload(
-    form: Annotated[AltersCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the alter task payload from a Jinja form submission.
-
-    :param form: The form data for the Alters creation.
-    :type form: AltersCreate
-    :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object containing all the necessary
-        commands and parameters for the Alters task execution.
-    :rtype: TaskWrite
-    """
-    return await build_alters_task(form, inventory_api)
-
-
-AltersGeneratedTask = Annotated[TaskWrite, Depends(build_alters_task_payload)]
-
-
 async def get_alters_task(
     task_name: str,
     tasks_api: TaskAPI,
@@ -461,33 +441,6 @@ async def build_pre_checks_task_payload(
     )
     pre_checks_task.data["payload"] = f"file://{_PRE_CHECKS_SCRIPT_PATH}"
     return pre_checks_task
-
-
-async def build_pre_checks_task(
-    base_task: AltersGeneratedTask,
-    task_api: TaskAPI,
-) -> TaskWrite:
-    """Build the Alters pre-checks ``TaskWrite`` from the execute task payload.
-
-    Used as a FastAPI dependency (``AltersPreChecksTask``) and wired with the
-    same ``Depends`` as route parameters named ``task`` or ``updated_task`` /
-    ``tasks_api``, so the generated task and API client are cached once per
-    request.
-
-    :param base_task: The execute (pt-osc) task from the form.
-    :type base_task: AltersGeneratedTask
-    :param task_api: Tasks API client (for ``GET /hosts/``).
-    :type task_api: TaskAPI
-    :return: Pre-checks task ready to POST or PUT.
-    :rtype: TaskWrite
-    """
-    pre_checks_task = await build_pre_checks_task_payload(base_task, task_api=task_api)
-    pre_checks_task.name = f"{base_task.name}-pre-checks"
-    pre_checks_task.data["parent"] = base_task.name
-    return pre_checks_task
-
-
-AltersPreChecksTask = Annotated[TaskWrite, Depends(build_pre_checks_task)]
 
 
 def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
