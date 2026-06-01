@@ -28,14 +28,14 @@ Customer-facing reference for security and cloud architects reviewing how **Hash
 | **`exec`** | **No** — not enabled in automation templates | **No** |
 | **`nomad-driver-podman`** | Optional (`nomad_plugin_container_enabled`, default **false**) | **No** for SEP task execution |
 
-SEP registers parameterized Nomad jobs (`run-command`, `run-python`, `exec-artifact`, etc.) whose tasks declare `"Driver": "raw_exec"`. The Tasks service only schedules work onto nodes that advertise a healthy `raw_exec` driver:
+SEP registers parameterized Nomad jobs (`run-command`, `run-python`, `exec-artifact`, etc.) whose tasks declare `"Driver": "raw_exec"`. The Tasks service only schedules work onto nodes that advertise a healthy `raw_exec` driver. From `app/tasks/execution/executors/nomad/models.py`:
 
-```582:586:app/tasks/execution/executors/nomad/models.py
-        filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
-        return {
-            node["Name"]: node["Address"]
-            for node in self.backend.nodes.get_nodes(filter_=filter_expression)
-        }
+```python
+filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
+return {
+    node["Name"]: node["Address"]
+    for node in self.backend.nodes.get_nodes(filter_=filter_expression)
+}
 ```
 
 **Why `raw_exec` and not `exec`:** SEP runs predefined tooling (Percona Toolkit, approved snippets, Python payloads) on **database hosts** already managed by Percona automation. `raw_exec` runs the process as the **same unprivileged OS user as the Nomad client agent** (see §5), with job placement constrained to a named node (see §4). The `exec` driver adds an isolation boundary (chroot, cgroups) that is not required for the current SEP job design and is **not** turned on in the standard playbook.
@@ -145,16 +145,16 @@ Exact host lists are **customer-specific** (Ansible inventory / ServiceNow). Per
 
 1. Engineers choose a **target** (Nomad node name) in the UI/API, from `GET /api/tasks/hosts/` (healthy clients with `raw_exec`).
 2. Dispatched jobs include meta `target` matching `${node.unique.name}`.
-3. Job templates constrain placement, for example:
+3. Job templates constrain placement. From `app/tasks/db/seed.py`:
 
-```86:91:app/tasks/db/seed.py
-    "Constraints": [
-        {
-            "LTarget": "${node.unique.name}",
-            "RTarget": "${NOMAD_META_target}",
-            "Operand": "=",
-        },
-    ],
+```python
+"Constraints": [
+    {
+        "LTarget": "${node.unique.name}",
+        "RTarget": "${NOMAD_META_target}",
+        "Operand": "=",
+    },
+],
 ```
 
 So a task runs **only** on the client whose registered name equals the selected target (usually the DB host’s inventory / PMM node name).
