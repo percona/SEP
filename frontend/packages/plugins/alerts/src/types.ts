@@ -29,7 +29,7 @@ export interface AlertTemplate {
   description: string;
   summary: string;
   /** True when the template is already present in PMM. */
-  in_pmm?: boolean;
+  in_pmm: boolean;
 }
 
 export interface AlertTemplateGroup {
@@ -40,7 +40,7 @@ export interface AlertTemplateGroup {
 
 export interface PagerDutyStatus {
   configured: boolean;
-  uid?: string;
+  uid: string | null;
 }
 
 export interface AlertBackupSummary {

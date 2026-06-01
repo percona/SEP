@@ -81,6 +81,7 @@ const MOCK_TEMPLATES: AlertTemplate[] = [
     severity: 'warning',
     description: 'High rate of slow queries.',
     summary: 'Slow queries on {{ $labels.instance }}',
+    in_pmm: false,
   },
 ];
 

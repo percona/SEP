@@ -257,6 +257,22 @@ class IndexPagerDutyStatus(BaseModel):
     uid: str | None = None
 
 
+class IndexBackupSummary(BaseModel):
+    """Represent a compact backup row for the index "recent backups" widget.
+
+    Leaner than :class:`BackupSummary` (no ``metadata``): the list page only
+    renders the id and timestamp, so the index payload omits the summary counts.
+
+    :param id: Primary key of the backup row.
+    :type id: int
+    :param created_at: UTC timestamp the backup was written.
+    :type created_at: datetime
+    """
+
+    id: int
+    created_at: datetime
+
+
 class IndexResponse(BaseModel):
     """Describe the response body for ``GET /api/plugins/alerts/``.
 
@@ -272,10 +288,10 @@ class IndexResponse(BaseModel):
     :param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.
     :type pagerduty: IndexPagerDutyStatus | None
     :param recent_backups: The most recent alert backups, newest first.
-    :type recent_backups: list[BackupSummary]
+    :type recent_backups: list[IndexBackupSummary]
     """
 
     groups: list[IndexTemplateGroup]
     pmm_connected: bool
     pagerduty: IndexPagerDutyStatus | None
-    recent_backups: list[BackupSummary]
+    recent_backups: list[IndexBackupSummary]

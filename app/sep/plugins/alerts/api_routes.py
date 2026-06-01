@@ -65,6 +65,7 @@ from app.sep.plugins.alerts.schemas import (
     BackupDetailRule,
     BackupDetailTemplate,
     BackupSummary,
+    IndexBackupSummary,
     IndexPagerDutyStatus,
     IndexResponse,
     IndexTemplate,
@@ -148,11 +149,7 @@ async def alerts_api_index(
         pmm_connected=pmm_connected,
         pagerduty=pagerduty,
         recent_backups=[
-            BackupSummary(
-                id=backup.id,
-                created_at=backup.created_at,
-                metadata=backup.metadata_,
-            )
+            IndexBackupSummary(id=backup.id, created_at=backup.created_at)
             for backup in recent_backups
         ],
     )
