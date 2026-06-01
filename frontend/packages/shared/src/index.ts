@@ -38,8 +38,9 @@
 //   • schema-driven plugins live under /plugins/<name>  (checksums, mysql_backups, archives)
 //   • domain-grouped backups keep /backups/<db>          (mongodb, postgresql)
 //   • cross-cutting tools stay at bare top-level paths   (inventory, tasks, …)
-// `schema*` entries below are legacy /schema-change/* aliases that router.tsx
-// still routes; they have no sidebar consumer but are kept intentionally.
+// `schemaAlters` backs the "Schema Change / Alters" sidebar item; the other
+// /schema-change/* entries (`schemaChecksums`, `schemaInventory`) are legacy
+// router aliases with no sidebar consumer, kept intentionally.
 export const ROUTES = {
   dashboard: '/',
   login: '/login',
