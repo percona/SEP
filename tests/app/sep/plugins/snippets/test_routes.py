@@ -178,25 +178,13 @@ class TestSnippetsApproveBatch:
         fresh = await SnippetManager.get(session, filename="fresh.sh")
         assert not fresh.is_approved
 
-    def test_empty_payload_rejected_by_validator(
-        self, admin_client: TestClient, mocker: MockerFixture
-    ):
-        """Assert missing ``filenames`` is rejected before any DB mutation.
-
-        The sep_app's ``RequestValidationError`` handler converts the 422 into
-        a flash error + 303 redirect for non-API form submissions, so assert
-        on the side effects (flash error fired) rather than the raw 422.
-        """
-        from_validation_error = mocker.patch(
-            "app.sep.main.messages.from_validation_error"
-        )
-
+    def test_empty_payload_rejected_by_validator(self, admin_client: TestClient):
+        """Assert missing ``filenames`` yields 422 before any DB mutation."""
         response = admin_client.post(
             _BATCH_APPROVE_URL, data={}, follow_redirects=False
         )
 
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        from_validation_error.assert_called_once()
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     @pytest.mark.asyncio
     async def test_non_admin_blocked_by_admin_dep(
