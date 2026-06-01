@@ -219,7 +219,8 @@ test.describe('Push flow (wizard branching)', () => {
     await page.getByRole('checkbox', { name: 'MySQL Slow Queries' }).click();
     await page.getByRole('button', { name: /Push Selected \(1\)/i }).click();
     await expect(page.getByText('Push Templates to PMM')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('MySQL Slow Queries')).toBeVisible();
+    // Scope to the dialog: the template name also appears in the list behind it.
+    await expect(page.getByRole('dialog').getByText('MySQL Slow Queries')).toBeVisible();
   });
 
   test('push wizard shows results after confirming', async ({ page }) => {
@@ -239,9 +240,13 @@ test.describe('Restore flow (wizard branching)', () => {
   test('opens restore wizard and shows backup list', async ({ page }) => {
     await gotoAlerts(page);
     await page.getByRole('button', { name: 'Restore from Backup' }).click();
-    await expect(page.getByText('Restore from Backup')).toBeVisible({ timeout: 5_000 });
+    // Target the dialog title: the trigger button shares the same text.
+    await expect(page.getByRole('heading', { name: 'Restore from Backup' })).toBeVisible({
+      timeout: 5_000,
+    });
     await expect(page.getByText('Backup #1')).toBeVisible();
-    await expect(page.getByText('2026-05-28 10:00 UTC')).toBeVisible();
+    // Scope to the dialog: the timestamp also shows in the list behind it.
+    await expect(page.getByRole('dialog').getByText('2026-05-28 10:00 UTC')).toBeVisible();
   });
 
   test('restore button disabled until backup selected', async ({ page }) => {
@@ -268,7 +273,10 @@ test.describe('PagerDuty flow (wizard branching)', () => {
   test('opens pagerduty wizard with key input', async ({ page }) => {
     await gotoAlerts(page);
     await page.getByRole('button', { name: /Configure PagerDuty/i }).click();
-    await expect(page.getByText('Configure PagerDuty')).toBeVisible({ timeout: 5_000 });
+    // Target the dialog title: the trigger button shares the same text.
+    await expect(page.getByRole('heading', { name: 'Configure PagerDuty' })).toBeVisible({
+      timeout: 5_000,
+    });
     await expect(page.getByLabel('PagerDuty Integration Key')).toBeVisible();
   });
 
@@ -347,7 +355,9 @@ test.describe('Backup detail page', () => {
     await expect(page.getByRole('heading', { name: /Backup #1/i })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByText('MySQL Slow Queries')).toBeVisible({ timeout: 5_000 });
+    // The name appears in both the Templates and Rules sections; the Templates
+    // section renders first, so .first() targets it deterministically.
+    await expect(page.getByText('MySQL Slow Queries').first()).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText('SEP PagerDuty (pagerduty)')).toBeVisible({ timeout: 5_000 });
   });
 
