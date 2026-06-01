@@ -27,7 +27,7 @@ from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.backup_pg.models import BackupType
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import CreatedServiceFactory, TaskFactory
 
 API_BASE = "/api/plugins/backup_pg"
@@ -236,7 +236,7 @@ class TestBackupPgApiList:
 
         assert response.status_code == status.HTTP_200_OK
         by_name = {item["name"]: item for item in response.json()["items"]}
-        assert by_name["pg-backup-a"]["status"] == "success"
+        assert by_name["pg-backup-a"]["status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert by_name["pg-backup-b"]["status"] is None
 
 

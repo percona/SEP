@@ -204,10 +204,30 @@ def _gathered_task_status(
     return None if isinstance(result, BaseException) else result
 
 
+def _parse_first_server_config(task: Task) -> dict[str, Any]:
+    """Parse ``meta['config']`` YAML and return the first ``SERVER_LIST`` entry.
+
+    :param task: The task whose ``meta['config']`` YAML should be parsed.
+    :type task: Task
+    :return: The first server-config dict, or an empty dict on parse failure or
+        when ``SERVER_LIST`` is missing/empty.
+    :rtype: dict[str, Any]
+    """
+    meta = (task.data or {}).get("meta") or {}
+    try:
+        config = yaml.safe_load(meta.get("config") or "") or {}
+    except yaml.YAMLError:
+        logger.warning("Failed to parse config for backup_pg task %s", task.name)
+        return {}
+    server_list = config.get("SERVER_LIST") or []
+    return server_list[0] if server_list else {}
+
+
 def build_backup_pg_api_task_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    server_config: dict[str, Any] | None = None,
 ) -> BackupTaskResponse:
     """Build a backup_pg task response for the JSON API.
 
@@ -215,19 +235,17 @@ def build_backup_pg_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param server_config: Pre-parsed first ``SERVER_LIST`` entry. When ``None``
+        (the default) the YAML config is parsed here; callers that already
+        parsed it can pass it through to avoid a second ``yaml.safe_load``.
+    :type server_config: dict[str, Any] | None
     :return: A validated backup_pg task API response.
     :rtype: BackupTaskResponse
     """
-    data = task.data
-    meta = data.get("meta") or {}
-    backup_type = ""
-    try:
-        config = yaml.safe_load(meta.get("config") or "") or {}
-        server_list = config.get("SERVER_LIST") or []
-        if server_list:
-            backup_type = str(server_list[0].get("BACKUP_TYPE", ""))
-    except yaml.YAMLError:
-        logger.warning("Failed to parse config for backup_pg task %s", task.name)
+    meta = (task.data or {}).get("meta") or {}
+    if server_config is None:
+        server_config = _parse_first_server_config(task)
+    backup_type = str(server_config.get("BACKUP_TYPE", ""))
     return BackupTaskResponse(
         **task.model_dump(),
         hostname=meta.get("target"),
@@ -318,12 +336,14 @@ async def build_backup_pg_api_detail_response(
     except HTTPException:
         logger.exception("Failed to fetch history for backup_pg task %s", task.name)
         status = None
-    base = build_backup_pg_api_task_response(task, status=status)
-    info = get_backups_task_info(task.model_dump(mode="json"))
+    server_config = _parse_first_server_config(task)
+    base = build_backup_pg_api_task_response(
+        task, status=status, server_config=server_config
+    )
     return BackupTaskDetailResponse(
         **base.model_dump(),
-        host=info.get("host"),
-        port=info.get("port"),
+        host=server_config.get("HOST"),
+        port=server_config.get("PORT") or DEFAULT_POSTGRESQL_PORT,
     )
 
 
@@ -345,7 +365,7 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     return {
         "hostname": meta["target"],
         "host": backup_server.get("HOST"),
-        "port": backup_server.get("PORT") or 3306,
+        "port": backup_server.get("PORT") or DEFAULT_POSTGRESQL_PORT,
         "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
     }
 
@@ -466,7 +486,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "backup_type": server_config["BACKUP_TYPE"],
         "service_id": None,
         "host": server_config["HOST"],
-        "port": server_config.get("PORT") or 3306,
+        "port": server_config.get("PORT") or DEFAULT_POSTGRESQL_PORT,
     }
 
     for key, value in all_servers_config.items():

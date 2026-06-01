@@ -62,7 +62,7 @@ async def pg_backups_index(
     request: Request,
     context: BackupsIndexContext,
 ) -> HTMLResponse:
-    """Homepage of PG backups plugin.
+    """Render the PG backups plugin index page.
 
     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
     """
