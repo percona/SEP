@@ -1067,7 +1067,11 @@ LATEST_HISTORY_STATUS_NAMES_MAX = 200
 
 
 class TaskHistoryLatestStatusRequest(BaseModel):
-    """Request body for batch latest-history status lookup."""
+    """Define request body for batch latest-history status lookup.
+
+    :param names: Task names to resolve latest non-null history statuses for.
+    :type names: list[str]
+    """
 
     names: list[str] = Field(
         default_factory=list,

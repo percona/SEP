@@ -20,6 +20,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 
 from sqlalchemy import CursorResult, func, literal, update
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.orm import aliased
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -65,26 +66,30 @@ class TaskManager(BaseSQLModelManager):
     @classmethod
     def _append_list_active_data_filters(
         cls,
-        where: list,
+        where: list[ColumnElement[bool]],
         session: AsyncSession,
         *,
         target: str | None = None,
         parent_is_null: bool | None = None,
         backup_type: str | None = None,
+        self_parent: bool | None = None,
     ) -> None:
         """Append JSON ``Task.data`` predicates used by active-task list queries."""
         if target is not None:
             where.append(Task.data["meta"]["target"].as_string() == target)
-        if parent_is_null is not None:
+        if parent_is_null is not None or self_parent:
             parent_value = func_json_extract(
                 session.get_bind().name, col(Task.data), "parent"
             )
+        if parent_is_null is not None:
             if parent_is_null:
                 where.append(parent_value.is_(None))
             else:
                 where.append(parent_value.isnot(None))
         if backup_type is not None:
             where.append(Task.data["backup_type"].as_string() == backup_type)
+        if self_parent:
+            where.append(parent_value == col(Task.name))
 
     @classmethod
     async def list_active(
@@ -121,6 +126,7 @@ class TaskManager(BaseSQLModelManager):
         target: str | None = None,
         parent_is_null: bool | None = None,
         backup_type: str | None = None,
+        self_parent: bool | None = None,
         offset: int = DEFAULT_PAGINATION_OFFSET,
         limit: int = DEFAULT_PAGINATION_LIMIT,
     ) -> PaginatedResponse[Task]:
@@ -141,6 +147,9 @@ class TaskManager(BaseSQLModelManager):
         :param backup_type: When provided, only tasks whose ``data["backup_type"]``
             matches this string.
         :type backup_type: str | None
+        :param self_parent: When ``True``, only tasks whose ``data["parent"]`` equals
+            ``Task.name`` are returned.
+        :type self_parent: bool | None
         :param offset: The zero-based starting offset for the query results.
         :type offset: int
         :param limit: The maximum number of records to return.
@@ -158,6 +167,7 @@ class TaskManager(BaseSQLModelManager):
             target=target,
             parent_is_null=parent_is_null,
             backup_type=backup_type,
+            self_parent=self_parent,
         )
         return await cls.list_paginated(
             session, *where, offset=offset, limit=limit, **kwargs
@@ -474,28 +484,40 @@ class TaskHistoryManager(BaseSQLModelManager):
         if not unique_names:
             return {}
 
-        query = (
-            select(col(TaskHistory.status), col(Task.name))
+        latest_status_subquery = (
+            select(
+                col(Task.name).label("task_name"),
+                col(TaskHistory.status).label("status"),
+                func.row_number()
+                .over(
+                    partition_by=col(Task.name),
+                    order_by=(
+                        col(TaskHistory.created_at).desc(),
+                        col(TaskHistory.id).desc(),
+                    ),
+                )
+                .label("row_number"),
+            )
             .select_from(TaskHistory)
             .join(Task)
-            .where(col(Task.name).in_(unique_names))
-            .order_by(
-                col(Task.name),
-                col(TaskHistory.created_at).desc(),
-                col(TaskHistory.id).desc(),
+            .where(
+                col(Task.name).in_(unique_names),
+                col(TaskHistory.status).isnot(None),
             )
+            .subquery()
+        )
+        query = select(
+            latest_status_subquery.c.task_name,
+            latest_status_subquery.c.status,
+        ).where(
+            latest_status_subquery.c.row_number == 1,
         )
         result = await cls._exec(session, query)
         rows = result.all()
-
-        histories_by_name: dict[str, list[TaskHistoryStatusEnum | None]] = {
-            name: [] for name in unique_names
-        }
-        for status, task_name in rows:
-            histories_by_name[task_name].append(status)
+        statuses_by_name: dict[str, TaskHistoryStatusEnum | None] = dict(rows)
 
         return {
-            name: cls._latest_status_from_history_statuses(histories_by_name[name])
+            name: statuses_by_name.get(name)
             for name in unique_names
         }
 

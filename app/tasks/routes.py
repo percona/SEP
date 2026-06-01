@@ -107,6 +107,7 @@ async def list_tasks(
     target: str | None = None,
     parent_is_null: bool | None = None,
     backup_type: str | None = None,
+    self_parent: bool | None = None,
     offset: int = DEFAULT_PAGINATION_OFFSET,
     limit: int = DEFAULT_PAGINATION_LIMIT,
 ) -> PaginatedResponse[Task]:
@@ -118,6 +119,7 @@ async def list_tasks(
         target=target,
         parent_is_null=parent_is_null,
         backup_type=backup_type,
+        self_parent=self_parent,
         offset=offset,
         limit=limit,
     )

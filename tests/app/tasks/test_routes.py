@@ -1572,6 +1572,35 @@ async def test_list_tasks_backup_type_filter_with_pagination(test_client, sessio
 
 
 @pytest.mark.asyncio
+async def test_list_tasks_self_parent_filter(test_client, session):
+    """Assert self_parent query param keeps rows where parent equals task name."""
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-self-parent",
+                data={"backup_type": "pbm_logical", "parent": "route-self-parent"},
+            )
+        ),
+    )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-child-parent",
+                data={"backup_type": "pbm_logical", "parent": "route-self-parent"},
+            )
+        ),
+    )
+
+    response = test_client.get("/", params={"self_parent": True})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "route-self-parent"
+
+
+@pytest.mark.asyncio
 async def test_list_task_history_status_filter_with_pagination(
     test_client, created_task_with_history
 ):

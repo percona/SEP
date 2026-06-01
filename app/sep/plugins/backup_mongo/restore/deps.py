@@ -617,25 +617,14 @@ def _backup_type_from_parent(task: Task) -> BackupType:
     return BackupType(backup_type_str)
 
 
-def _is_legacy_self_parent_restore_task(task: Task) -> bool:
-    """Return whether ``task`` is a legacy self-parent restore-config row."""
-    parent = task.data.get("parent")
-    return parent is not None and parent == task.name
-
-
-def _dedupe_restore_parent_tasks(tasks: list[Task]) -> list[Task]:
-    """Return ``tasks`` deduplicated by name, preserving first occurrence order."""
-    return list({task.name: task for task in tasks}.values())
-
-
 async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
     """Fetch null-parent and legacy self-parent restore rows in two upstream calls.
 
-    Child restore tasks (``parent`` set to another task's name) are excluded by
-    the upstream ``parent_is_null`` filter on the second call; only rows whose
-    ``parent`` equals their own name are kept from that response.
+    The first call fetches modern restore parent rows (``parent`` is null). The
+    second call fetches legacy rows with non-null ``parent`` where
+    ``parent == name``.
     """
-    null_response, non_null_response = await asyncio.gather(
+    null_response, self_parent_response = await asyncio.gather(
         tasks_api.get(
             "/",
             params={
@@ -649,17 +638,14 @@ async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
             params={
                 "owner": TaskOwner.RESTORE_MONGO.value,
                 "parent_is_null": "false",
+                "self_parent": "true",
                 "limit": 0,
             },
         ),
     )
     null_parents = [Task.model_validate(item) for item in null_response["items"]]
-    self_parents: list[Task] = []
-    for item in non_null_response["items"]:
-        task = Task.model_validate(item)
-        if _is_legacy_self_parent_restore_task(task):
-            self_parents.append(task)
-    return _dedupe_restore_parent_tasks(null_parents + self_parents)
+    self_parents = [Task.model_validate(item) for item in self_parent_response["items"]]
+    return null_parents + self_parents
 
 
 async def get_restore_mongo_task_status(

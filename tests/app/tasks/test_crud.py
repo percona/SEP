@@ -628,6 +628,30 @@ class TestTaskManagerListActivePaginated:
         assert result.items[0].name == "pag-pbm-config"
 
     @pytest.mark.asyncio
+    async def test_with_self_parent_filter(self, session: AsyncSession) -> None:
+        """Assert self_parent=True keeps only rows where data.parent == task.name."""
+        await _create_task(
+            session,
+            name="pag-self-parent",
+            data={"backup_type": "pbm_logical", "parent": "pag-self-parent"},
+        )
+        await _create_task(
+            session,
+            name="pag-config-parent",
+            data={"backup_type": PBM_CONFIG_BACKUP_TYPE},
+        )
+        await _create_task(
+            session,
+            name="pag-child",
+            data={"backup_type": "pbm_logical", "parent": "pag-config-parent"},
+        )
+
+        result = await TaskManager.list_active_paginated(session, self_parent=True)
+
+        assert result.total == 1
+        assert result.items[0].name == "pag-self-parent"
+
+    @pytest.mark.asyncio
     async def test_parent_and_backup_type_filters_with_pagination(
         self, session: AsyncSession
     ) -> None:
@@ -691,6 +715,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
             session, task_a, status=TaskHistoryStatusEnum.RUNNING
         )
         await _create_task_history(session, task_b, status=TaskHistoryStatusEnum.FAILED)
+        await _create_task_history(session, task_b, status=None)
 
         result = await TaskHistoryManager.latest_status_by_task_names(
             session,

@@ -157,7 +157,10 @@ class TestRestoreMongoApiList:
             params = kwargs.get("params") or {}
             if params.get("parent_is_null") == "true":
                 return {"items": [parent], "total": 1}
-            if params.get("parent_is_null") == "false":
+            if (
+                params.get("parent_is_null") == "false"
+                and params.get("self_parent") == "true"
+            ):
                 return {"items": [child], "total": 1}
             raise AssertionError(f"Unexpected list params: {params!r}")
 
@@ -196,7 +199,10 @@ class TestRestoreMongoApiList:
             params = kwargs.get("params") or {}
             if params.get("parent_is_null") == "true":
                 return {"items": parents, "total": THREE_PARENT_FIXTURE_TOTAL}
-            if params.get("parent_is_null") == "false":
+            if (
+                params.get("parent_is_null") == "false"
+                and params.get("self_parent") == "true"
+            ):
                 return {"items": [], "total": 0}
             raise AssertionError(f"Unexpected list params: {params!r}")
 
@@ -235,7 +241,10 @@ class TestRestoreMongoApiList:
                     "items": [parent_a, parent_b],
                     "total": TWO_PARENT_FIXTURE_TOTAL,
                 }
-            if params.get("parent_is_null") == "false":
+            if (
+                params.get("parent_is_null") == "false"
+                and params.get("self_parent") == "true"
+            ):
                 return {"items": [], "total": 0}
             raise AssertionError(f"Unexpected list params: {params!r}")
 

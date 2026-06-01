@@ -15,8 +15,6 @@
 
 """Define tests for the shared SEP API router at ``/api/plugins/``."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -257,7 +255,6 @@ class TestPluginBearerGate:
         cookie_only_client: TestClient,
         mock_task_api_dep,
         mock_inventory_api_dep,
-        mocker,
     ) -> None:
         """Cookie-only GET on /api/sep/* is not blocked by the Bearer gate.
 
@@ -266,10 +263,6 @@ class TestPluginBearerGate:
         credentials. Upstream Tasks/Inventory calls are stubbed so the
         dashboard returns a deterministic payload.
         """
-        mocker.patch(
-            "app.sep.api.routes.dashboard.SnippetManager.count",
-            new=AsyncMock(return_value=0),
-        )
         mock_inventory_api_dep.get.return_value = {"nodes": 0}
         mock_task_api_dep.get.side_effect = [{"total": 0}, []]
         response = cookie_only_client.get("/api/sep/dashboard/")
