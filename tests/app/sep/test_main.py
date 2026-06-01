@@ -31,7 +31,7 @@ from app.core.auth.exceptions import (
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.api.router import plugins_router
 from app.sep.config import sep_settings
-from app.sep.deps import _PROTECTED_APP_KEYS, get_access_token_from_cookie, get_session
+from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppState
@@ -651,7 +651,8 @@ def test_sep_app_keeps_default_docs_urls():
 def guarded_client(test_client: TestClient, session) -> TestClient:
     """Build an authenticated client whose routes read the in-memory ``session``."""
     sep_app.dependency_overrides[get_session] = lambda: session
-    return test_client
+    yield test_client
+    sep_app.dependency_overrides = {}
 
 
 class TestAppStateGuards:
@@ -691,7 +692,7 @@ class TestAppStateGuards:
         guarded_prefixes = {
             p.uri_path
             for p in sep_settings.PLUGINS
-            if p.module_name.split(".")[-1] not in _PROTECTED_APP_KEYS
+            if p.module_name.split(".")[-1] not in PROTECTED_APP_KEYS
         }
         seen = set()
         for route in sep_app.routes:
@@ -720,7 +721,7 @@ class TestAppStateGuards:
         guarded_keys = {
             key
             for p in sep_settings.PLUGINS
-            if (key := p.module_name.split(".")[-1]) not in _PROTECTED_APP_KEYS
+            if (key := p.module_name.split(".")[-1]) not in PROTECTED_APP_KEYS
             and p.api_router_path
         }
         seen = set()

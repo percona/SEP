@@ -431,7 +431,7 @@ async def get_username_mapping() -> dict[str, str]:
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Yield an asynchronous database session for FastAPI routes.
 
-    This function provides a dependency for FastAPI routes that yields an `AsyncSession`
+    This function provides a dependency for FastAPI routes that yields an ``AsyncSession``
     for interacting with the database. The session is properly closed after use.
 
     :yield: An asynchronous session for database operations.
@@ -445,7 +445,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
-_PROTECTED_APP_KEYS: frozenset[str] = frozenset({"inventory"})
+PROTECTED_APP_KEYS: frozenset[str] = frozenset({"inventory"})
 """Apps that cannot be disabled at runtime.
 
 These are foundational to SEP and are excluded from every plugin-state
@@ -467,7 +467,7 @@ def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None
     The factory closure-captures ``app_key`` at router-mount time; the returned
     coroutine is invoked per request and queries the DB via the standard
     :data:`SessionDep` dependency. Callers must not invoke this factory for keys
-    in :data:`_PROTECTED_APP_KEYS` -- the mount loops enforce that skip.
+    in :data:`PROTECTED_APP_KEYS` -- the mount loops enforce that skip.
 
     :param app_key: The plugin module key to gate on.
     :type app_key: str
@@ -523,7 +523,7 @@ async def get_default_context(
     plugins = [
         plugin
         for plugin in sep_settings.PLUGINS
-        if (key := plugin.module_name.split(".")[-1]) in _PROTECTED_APP_KEYS
+        if (key := plugin.module_name.split(".")[-1]) in PROTECTED_APP_KEYS
         or states.get(key, True)
     ]
     return {

@@ -50,7 +50,6 @@ from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import init_sep_db
 from app.sep.deps import (
-    _PROTECTED_APP_KEYS,
     AccessTokenCookie,
     get_base_url,
     get_current_user,
@@ -60,6 +59,7 @@ from app.sep.deps import (
     IsAuthenticated,
     IsCsrfValidated,
     IsNotAuthenticated,
+    PROTECTED_APP_KEYS,
     require_app_enabled,
 )
 from app.sep.exceptions import LoginRedirectException
@@ -199,7 +199,7 @@ for plugin in sep_settings.PLUGINS:
     plugin_key = plugin.module_name.split(".")[-1]
     plugin_deps = (
         []
-        if plugin_key in _PROTECTED_APP_KEYS
+        if plugin_key in PROTECTED_APP_KEYS
         else [Depends(require_app_enabled(plugin_key))]
     )
     sep_app.include_router(router, prefix=plugin.uri_path, dependencies=plugin_deps)

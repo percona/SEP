@@ -44,9 +44,9 @@ from app.sep.api.routes.task_history import router as task_history_router
 from app.sep.api.routes.task_stats import router as task_stats_router
 from app.sep.config import Plugin, sep_settings
 from app.sep.deps import (
-    _PROTECTED_APP_KEYS,
     IsApiAdmin,
     IsApiAuthenticated,
+    PROTECTED_APP_KEYS,
     require_app_enabled,
     RequireBearerForUnsafeMethods,
 )
@@ -79,7 +79,7 @@ def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
                 f" APIRouter, got {type(plugin_api_router).__name__}"
             )
         plugin_deps = (
-            [] if key in _PROTECTED_APP_KEYS else [Depends(require_app_enabled(key))]
+            [] if key in PROTECTED_APP_KEYS else [Depends(require_app_enabled(key))]
         )
         plugins_router.include_router(
             plugin_api_router, prefix=f"/{key}", tags=[key], dependencies=plugin_deps

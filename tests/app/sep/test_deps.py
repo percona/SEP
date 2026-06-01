@@ -38,7 +38,6 @@ from app.models import CasdoorUser
 from app.sep.config import Plugin, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import (
-    _PROTECTED_APP_KEYS,
     BEARER_REQUIRED_DETAIL,
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
@@ -61,6 +60,7 @@ from app.sep.deps import (
     get_tasks_index_context,
     get_username_mapping,
     is_bearer_authenticated,
+    PROTECTED_APP_KEYS,
     require_app_enabled,
     require_bearer_auth,
     require_bearer_for_unsafe_methods,
@@ -1386,7 +1386,7 @@ class TestRequireAppEnabled:
 
     def test_inventory_is_protected(self) -> None:
         """``inventory`` is the protected key the mount loops must skip."""
-        assert "inventory" in _PROTECTED_APP_KEYS
+        assert "inventory" in PROTECTED_APP_KEYS
 
 
 class TestGetDefaultContextPluginFiltering:

@@ -20,7 +20,7 @@ Mounted under ``/api/admin/apps/`` with router-level admin auth
 both attached at the mount in :mod:`app.sep.api.router`. See
 :class:`app.sep.models.AppState` for the underlying DB model and
 :func:`app.sep.deps.require_app_enabled` for the per-route guard that consumes
-the state at request time. Apps in :data:`app.sep.deps._PROTECTED_APP_KEYS`
+the state at request time. Apps in :data:`app.sep.deps.PROTECTED_APP_KEYS`
 cannot be toggled (toggle returns 409) and are reported with
 ``toggleable=False`` in the listing.
 """
@@ -31,7 +31,7 @@ from pydantic import BaseModel
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
-from app.sep.deps import _PROTECTED_APP_KEYS, SessionDep
+from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
 from app.sep.models import AppState, AppStateBase, AppStateWrite
 
 router = APIRouter(tags=["admin", "apps"])
@@ -100,8 +100,8 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
         AppInfoResponse(
             app_key=(key := plugin.module_name.split(".")[-1]),
             name=plugin.name,
-            enabled=True if key in _PROTECTED_APP_KEYS else states.get(key, True),
-            toggleable=key not in _PROTECTED_APP_KEYS,
+            enabled=True if key in PROTECTED_APP_KEYS else states.get(key, True),
+            toggleable=key not in PROTECTED_APP_KEYS,
             uri_path=str(plugin.uri_path),
             css_class=plugin.css_class,
             sidebar=plugin.sidebar,
@@ -137,7 +137,7 @@ async def update_app_state(
     :raises HTTPConflictException: If the app is protected.
     :raises HTTPNotFoundException: If the key matches no configured plugin.
     """
-    if app_key in _PROTECTED_APP_KEYS:
+    if app_key in PROTECTED_APP_KEYS:
         raise HTTPConflictException(
             detail=f"App '{app_key}' is protected and cannot be disabled.",
         )

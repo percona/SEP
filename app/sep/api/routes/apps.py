@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
-from app.sep.deps import _PROTECTED_APP_KEYS, SessionDep
+from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
 
 router = APIRouter(tags=["apps"])
 
@@ -69,7 +69,7 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     return [
         AppKeyResponse(
             app_key=(key := plugin.module_name.split(".")[-1]),
-            enabled=True if key in _PROTECTED_APP_KEYS else states.get(key, True),
+            enabled=True if key in PROTECTED_APP_KEYS else states.get(key, True),
             sidebar=plugin.sidebar,
             uri_path=str(plugin.uri_path),
         )

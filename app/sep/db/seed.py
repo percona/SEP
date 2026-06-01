@@ -27,7 +27,7 @@ from app.core.celery.utils import (
 from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
-from app.sep.deps import _PROTECTED_APP_KEYS
+from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppState, AppStateBase
 from app.sep.snippets.config import snippets_settings
 
@@ -111,7 +111,7 @@ async def init_sep_db() -> None:
         configured = [
             (key, plugin.enabled)
             for plugin in sep_settings.PLUGINS
-            if (key := plugin.module_name.split(".")[-1]) not in _PROTECTED_APP_KEYS
+            if (key := plugin.module_name.split(".")[-1]) not in PROTECTED_APP_KEYS
         ]
         configured_keys = {key for key, _ in configured}
         existing_keys = set(await AppStateManager.all_states(session))
