@@ -174,10 +174,10 @@ class TestRestoreMongoApiList:
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["total"] == 2
+        assert body["total"] == TWO_PARENT_FIXTURE_TOTAL
         assert body["offset"] == 0
         assert body["limit"] == DEFAULT_PAGE_LIMIT
-        assert len(body["items"]) == 2
+        assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         assert body["items"][0]["name"] == "parent-restore"
         assert body["items"][0]["status"] == "success"
         assert body["items"][1]["name"] == "legacy-self-parent-restore"
