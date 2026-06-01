@@ -19,8 +19,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.sep.plugins.mysql_backups.models import (
+    BackupConfigAll,
     BackupCreate,
     BackupType,
+    MydumperVerbose,
     UploadProvider,
 )
 
@@ -279,3 +281,64 @@ class TestCompressionAlgorithmValidator:
     def test_binlog_accepts_gzip(self):
         """compression_algorithm=gzip is valid for B."""
         BackupCreate(**_base_payload(BackupType.BINLOG, compression_algorithm="gzip"))
+
+
+class TestMydumperVerbose:
+    """``mydumper_verbose`` accepts only valid levels and is gated to mydumper mode."""
+
+    def test_accepts_level_by_value(self):
+        """A valid level value validates and resolves to the enum member."""
+        backup = BackupCreate(
+            **_base_payload(BackupType.MYDUMPER, mydumper_verbose="2")
+        )
+        assert backup.mydumper_verbose == MydumperVerbose.WARNINGS
+
+    def test_accepts_level_by_name(self):
+        """The enum is resolvable by member name via EnumFieldMixin."""
+        backup = BackupCreate(
+            **_base_payload(BackupType.MYDUMPER, mydumper_verbose="INFO")
+        )
+        assert backup.mydumper_verbose == MydumperVerbose.INFO
+
+    def test_blank_is_none(self):
+        """An empty form value coerces to None (EmptyStrToNone)."""
+        backup = BackupCreate(**_base_payload(BackupType.MYDUMPER, mydumper_verbose=""))
+        assert backup.mydumper_verbose is None
+
+    @pytest.mark.parametrize("level", ["0", "3"])
+    def test_boundary_levels_accepted(self, level: str):
+        """The inclusive ends of the 0 to 3 range validate."""
+        backup = BackupCreate(
+            **_base_payload(BackupType.MYDUMPER, mydumper_verbose=level)
+        )
+        assert backup.mydumper_verbose == MydumperVerbose(level)
+
+    @pytest.mark.parametrize("bad", ["4", "-1", "abc"])
+    def test_out_of_range_rejected(self, bad: str):
+        """Out-of-range / garbage values are rejected before reaching YAML/CLI."""
+        with pytest.raises(ValidationError, match="(?i)mydumper_verbose"):
+            BackupCreate(**_base_payload(BackupType.MYDUMPER, mydumper_verbose=bad))
+
+    def test_binlog_rejects_verbose(self):
+        """mydumper_verbose is forbidden when backup_type=B."""
+        with pytest.raises(ValidationError, match="mydumper_verbose"):
+            BackupCreate(**_base_payload(BackupType.BINLOG, mydumper_verbose="1"))
+
+    def test_xtrabackup_rejects_verbose(self):
+        """mydumper_verbose is forbidden when backup_type=X."""
+        with pytest.raises(ValidationError, match="mydumper_verbose"):
+            BackupCreate(**_base_payload(BackupType.XTRABACKUP, mydumper_verbose="1"))
+
+    def test_field_lives_on_backup_config_all(self):
+        """The field must persist via BackupConfigAll, not only BackupCreate.
+
+        BackupConfigAll.model_validate silently drops undeclared fields
+        (Pydantic extra='ignore'); a BackupCreate-only field would never
+        serialize into the persisted ALL_SERVERS YAML. Assert it round-trips
+        and serializes to a plain string under the uppercase alias.
+        """
+        cfg = BackupConfigAll.model_validate({"MYDUMPER_VERBOSE": "2"})
+        assert cfg.mydumper_verbose == MydumperVerbose.WARNINGS
+
+        dumped = cfg.model_dump(by_alias=True, mode="json")
+        assert dumped["MYDUMPER_VERBOSE"] == "2"

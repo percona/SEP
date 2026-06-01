@@ -218,6 +218,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     result["binlog_alternative_host"] = all_servers_config.get(
         "BINLOG_ALTERNATIVE_HOST"
     )
+    result["mydumper_verbose"] = all_servers_config.get("MYDUMPER_VERBOSE")
 
     for key, value in all_servers_config.items():
         if key.lower() not in result:

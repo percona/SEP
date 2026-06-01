@@ -56,6 +56,19 @@ class CompressionAlgorithm(EnumFieldMixin, StrEnum):
     QUICKLZ = "quicklz"
 
 
+class MydumperVerbose(EnumFieldMixin, StrEnum):
+    """Enumerate mydumper ``--verbose`` levels.
+
+    Mirrors the mydumper CLI flag, which accepts ``0`` to ``3``: silent, errors,
+    warnings, and info (most verbose). Higher levels grow ``mydumper.log``.
+    """
+
+    SILENT = "0"
+    ERRORS = "1"
+    WARNINGS = "2"
+    INFO = "3"
+
+
 ALLOWED_COMPRESSIONS = {
     BackupType.MYDUMPER: [CompressionAlgorithm.GZIP, CompressionAlgorithm.ZSTD],
     BackupType.XTRABACKUP: [
@@ -108,6 +121,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     mydumper_desync_pxc: bool = False
     mydumper_use_numa: bool = False
     mydumper_extra_args: str | EmptyStrToNone = None
+    mydumper_verbose: MydumperVerbose | EmptyStrToNone = None
     use_ftwrl_guardian: bool = False
     xtrabackup_copies: int | EmptyStrToNone = None
     xtrabackup_kill_queries: bool = False
@@ -189,6 +203,9 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type mydumper_use_numa: bool
     :param mydumper_extra_args: Additional command-line arguments for mydumper.
     :type mydumper_extra_args: str | EmptyStrToNone
+    :param mydumper_verbose: mydumper log verbosity level (0 silent … 3 info).
+        Unset falls back to the payload default of ``3``.
+    :type mydumper_verbose: MydumperVerbose | EmptyStrToNone
     :param use_ftwrl_guardian: Whether to use FTWRL guardian to manage locks during backup.
     :type use_ftwrl_guardian: bool
     :param xtrabackup_copies: Number of backup copies for xtrabackup.

@@ -246,6 +246,17 @@ mysql_backups_schema = PluginSchema(
                     label="Extra args",
                     forbidden=_mydumper_forbidden,
                 ),
+                ChoiceField(
+                    name="mydumper_verbose",
+                    label="Verbose level",
+                    forbidden=_mydumper_forbidden,
+                    choices=[
+                        Choice(label="Silent (0)", value="0"),
+                        Choice(label="Errors (1)", value="1"),
+                        Choice(label="Warnings (2)", value="2"),
+                        Choice(label="Info (3)", value="3"),
+                    ],
+                ),
             ],
         ),
         FormSection(

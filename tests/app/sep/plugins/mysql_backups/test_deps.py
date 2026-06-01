@@ -394,6 +394,52 @@ def test_parse_backup_task_data_without_all_servers():
     assert result["binlog_alternative_host"] is None
 
 
+@pytest.mark.parametrize(
+    ("all_servers", "expected_verbose"),
+    [
+        ({"MYDUMPER_VERBOSE": "1"}, "1"),
+        ({"MYDUMPER_EXTRA_ARGS": "--foo"}, None),
+        ({"MYDUMPER_VERBOSE": "0"}, "0"),
+    ],
+)
+def test_parse_backup_task_data_mydumper_verbose(
+    all_servers: dict, expected_verbose: str | None
+):
+    """Round-trip the mydumper verbose level from persisted YAML on the edit form path.
+
+    The ``0`` (silent) case guards against a falsy-value bug: a non-empty
+    ``"0"`` must survive rather than collapse to "unset"/default. The
+    no-key case asserts legacy tasks pre-populate the form empty (``None``)
+    rather than omitting the field entirely.
+    """
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1-mysql",
+                                "HOST": "10.0.0.5",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.MYDUMPER.value,
+                                "UPLOAD": ["gsutil"],
+                            }
+                        ],
+                        "ALL_SERVERS": all_servers,
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["mydumper_verbose"] == expected_verbose
+
+
 def _task_with_raw_config(raw_config: str) -> Task:
     """Build a minimal Task whose YAML config is the given raw string."""
     return Task(
