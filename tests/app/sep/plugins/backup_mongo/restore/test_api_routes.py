@@ -146,9 +146,12 @@ class TestRestoreMongoApiList:
     ) -> None:
         """List parent rows via upstream filters, self-parent merge, and batch status."""
         parent = build_restore_task("parent-restore")
-        child = build_restore_task(
-            "parent-restore-pbm_logical",
-            data={"parent": "parent-restore", "payload": "pbm_logical_restore_payload"},
+        legacy_self_parent = build_restore_task(
+            "legacy-self-parent-restore",
+            data={
+                "parent": "legacy-self-parent-restore",
+                "payload": "pbm_logical_restore_payload",
+            },
         )
 
         async def _mock_get(path: str, **kwargs: Any) -> Any:
@@ -161,7 +164,7 @@ class TestRestoreMongoApiList:
                 params.get("parent_is_null") == "false"
                 and params.get("self_parent") == "true"
             ):
-                return {"items": [child], "total": 1}
+                return {"items": [legacy_self_parent], "total": 1}
             raise AssertionError(f"Unexpected list params: {params!r}")
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
@@ -171,16 +174,18 @@ class TestRestoreMongoApiList:
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["total"] == 1
+        assert body["total"] == 2
         assert body["offset"] == 0
         assert body["limit"] == DEFAULT_PAGE_LIMIT
-        assert len(body["items"]) == 1
+        assert len(body["items"]) == 2
         assert body["items"][0]["name"] == "parent-restore"
         assert body["items"][0]["status"] == "success"
+        assert body["items"][1]["name"] == "legacy-self-parent-restore"
+        assert body["items"][1]["status"] is None
         assert mock_task_api_dep.get.await_count == EXPECTED_RESTORE_PARENT_LIST_GETS
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest",
-            json={"names": ["parent-restore"]},
+            json={"names": ["parent-restore", "legacy-self-parent-restore"]},
         )
 
     def test_list_paginates_with_offset_and_limit(

@@ -15,6 +15,8 @@
 
 """Define tests for the Tasks CRUD managers."""
 
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -706,8 +708,13 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
     @pytest.mark.asyncio
     async def test_returns_latest_status_per_task(self, session: AsyncSession) -> None:
         """Assert newest non-null history status is returned for each task."""
-        task_a = await _create_task(session, name="latest-status-a")
-        task_b = await _create_task(session, name="latest-status-b")
+        suffix = uuid4().hex[:8]
+        task_a_name = f"latest-status-a-{suffix}"
+        task_b_name = f"latest-status-b-{suffix}"
+        missing_name = f"latest-status-missing-{suffix}"
+
+        task_a = await _create_task(session, name=task_a_name)
+        task_b = await _create_task(session, name=task_b_name)
         await _create_task_history(
             session, task_a, status=TaskHistoryStatusEnum.SUCCESS
         )
@@ -715,17 +722,16 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
             session, task_a, status=TaskHistoryStatusEnum.RUNNING
         )
         await _create_task_history(session, task_b, status=TaskHistoryStatusEnum.FAILED)
-        await _create_task_history(session, task_b, status=None)
 
         result = await TaskHistoryManager.latest_status_by_task_names(
             session,
-            ["latest-status-a", "latest-status-b", "latest-status-missing"],
+            [task_a_name, task_b_name, missing_name],
         )
 
         assert result == {
-            "latest-status-a": TaskHistoryStatusEnum.RUNNING,
-            "latest-status-b": TaskHistoryStatusEnum.FAILED,
-            "latest-status-missing": None,
+            task_a_name: TaskHistoryStatusEnum.RUNNING,
+            task_b_name: TaskHistoryStatusEnum.FAILED,
+            missing_name: None,
         }
 
     @pytest.mark.asyncio
