@@ -272,7 +272,7 @@ async def _backup_alert_config() -> None:
 
     async_session = get_async_session_maker()
     async with async_session() as session:
-        recent = await AlertBackupManager.list_recent(session, limit=1)
+        recent = await AlertBackupManager.list(session, limit=1)
         if recent and recent[0].data == data:
             logger.debug("Alert config unchanged, skipping backup")
             return
