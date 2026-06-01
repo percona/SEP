@@ -99,19 +99,24 @@ function buildCreateResponse(name: string, hostname: string) {
 
 const MOCK_TASK_LIST: TaskRow[] = [buildTaskRow(MOCK_TASK_NAME, 'pg-host')];
 
-function isBenignConsoleError(msg: string): boolean {
+function isBenignConsoleError(msg: string, deletedTaskNames: string[]): boolean {
   if (msg.includes(':nth-child')) {
     return true;
   }
-  // React Query may re-fetch the task detail after deletion, before the
-  // component unmounts; the 404 response is expected and not a test failure.
-  if (msg.includes('404 (Not Found)')) {
+  // React Query may re-fetch a just-deleted task's detail before the component
+  // unmounts; a 404 for *that specific task's* plugin endpoint is expected. Any
+  // other 404 (wrong route, missing mock, unrelated endpoint) must still fail.
+  if (
+    msg.includes('404 (Not Found)') &&
+    msg.includes('/api/plugins/backup_pg/') &&
+    deletedTaskNames.some((name) => msg.includes(name))
+  ) {
     return true;
   }
   return false;
 }
 
-type ApiState = { tasks: TaskRow[] };
+type ApiState = { tasks: TaskRow[]; deletedTaskNames: string[] };
 
 /** Task name segment from ``/api/plugins/backup_pg/{task_name}`` (not list/schema/schedule). */
 function taskNameFromPath(pathname: string): string | null {
@@ -186,6 +191,7 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
 
     if (req.method() === 'DELETE' && taskName) {
       apiState.tasks = apiState.tasks.filter((t) => t.name !== taskName);
+      apiState.deletedTaskNames.push(taskName);
       return route.fulfill({ status: 204, body: '' });
     }
 
@@ -229,18 +235,24 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
   let consoleErrors: string[];
 
   test.beforeEach(async ({ page }) => {
-    apiState = { tasks: [...MOCK_TASK_LIST] };
+    apiState = { tasks: [...MOCK_TASK_LIST], deletedTaskNames: [] };
     consoleErrors = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
-        consoleErrors.push(msg.text());
+        // Append the source URL: a "Failed to load resource" console error
+        // carries the failed request URL in its location, not its text, and
+        // the benign-404 gate below needs the URL to scope the carve-out.
+        const url = msg.location()?.url ?? '';
+        consoleErrors.push(url ? `${msg.text()} ${url}` : msg.text());
       }
     });
     await mockBackupPgApis(page, apiState);
   });
 
   test.afterEach(async () => {
-    const criticalErrors = consoleErrors.filter((msg) => !isBenignConsoleError(msg));
+    const criticalErrors = consoleErrors.filter(
+      (msg) => !isBenignConsoleError(msg, apiState.deletedTaskNames),
+    );
     expect(criticalErrors).toEqual([]);
   });
 
