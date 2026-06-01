@@ -1871,7 +1871,7 @@ class MyDumper(Backup):
         self.less_locking: bool = server_data.get("MYDUMPER_LESS_LOCKING", False)
         self.updated_since: int = server_data.get("MYDUMPER_UPDATED_SINCE", 0)
         self.mydumper_extra_args: str | None = server_data.get("MYDUMPER_EXTRA_ARGS")
-        self.mydumper_verbose: str = server_data.get("MYDUMPER_VERBOSE", "3")
+        self.mydumper_verbose: int = server_data.get("MYDUMPER_VERBOSE", 3)
         self.use_ftwrl_guardian: bool = server_data.get("USE_FTWRL_GUARDIAN", True)
         self.mydumper_use_numa: bool = server_data.get("MYDUMPER_USE_NUMA", False)
 

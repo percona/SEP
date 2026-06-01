@@ -397,13 +397,13 @@ def test_parse_backup_task_data_without_all_servers():
 @pytest.mark.parametrize(
     ("all_servers", "expected_verbose"),
     [
-        ({"MYDUMPER_VERBOSE": "1"}, "1"),
+        ({"MYDUMPER_VERBOSE": 1}, 1),
         ({"MYDUMPER_EXTRA_ARGS": "--foo"}, None),
-        ({"MYDUMPER_VERBOSE": "0"}, "0"),
+        ({"MYDUMPER_VERBOSE": 0}, 0),
     ],
 )
 def test_parse_backup_task_data_mydumper_verbose(
-    all_servers: dict, expected_verbose: str | None
+    all_servers: dict, expected_verbose: int | None
 ):
     """Round-trip the mydumper verbose level from persisted YAML on the edit form path.
 
