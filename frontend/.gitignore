@@ -9,3 +9,4 @@ packages/*/storybook-static/
 packages/e2e/playwright-report/
 packages/e2e/test-results/
 packages/e2e/blob-report/
+packages/e2e/screenshots/

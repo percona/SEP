@@ -138,7 +138,7 @@ async def get_recent_backups(session: SessionDep) -> list[AlertBackup]:
     :return: A list of recent alert backups, ordered by creation date descending.
     :rtype: list[AlertBackup]
     """
-    return await AlertBackupManager.list_recent(session, limit=_MAX_SIDEBAR_BACKUPS)
+    return await AlertBackupManager.list(session, limit=_MAX_SIDEBAR_BACKUPS)
 
 
 RecentBackupsDep = Annotated[list[AlertBackup], Depends(get_recent_backups)]

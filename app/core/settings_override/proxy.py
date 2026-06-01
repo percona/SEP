@@ -74,6 +74,10 @@ class OverridableSettingsProxy(LazyProxy[T]):
         that reset state between tests. Other code should read attributes
         normally and let the refresher publish snapshots.
 
+        See :func:`app.core.settings_override.lifecycle.publish_snapshot`
+        for the public seam that API handlers use to build and publish a
+        fresh snapshot in one call.
+
         :param snapshot: The new mapping of field name to typed override
             value. The mapping is treated as immutable -- callers must not
             mutate it after the swap.
