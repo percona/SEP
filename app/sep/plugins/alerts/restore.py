@@ -35,6 +35,32 @@ from app.sep.plugins.alerts.models import (
 logger = logging.getLogger(__name__)
 
 
+async def delete_conflicting_rules(
+    pmm_api: PMMRemoteAPI, rule_name: str, folder_uid: str
+) -> None:
+    """Delete rules that conflict with the given name in the folder.
+
+    Remove any existing rule whose title matches ``rule_name`` as well as
+    ghost rules (empty title) within the same folder so that a subsequent
+    ``create_rule`` call can succeed.
+
+    :param pmm_api: The PMM API client.
+    :type pmm_api: PMMRemoteAPI
+    :param rule_name: The rule title that triggered the conflict.
+    :type rule_name: str
+    :param folder_uid: The folder UID where the conflict occurred.
+    :type folder_uid: str
+    """
+    rules = await pmm_api.list_rules()
+    for rule in rules:
+        namespace = getattr(rule, "namespace_uid", "")
+        if namespace != folder_uid:
+            continue
+        if rule.title in (rule_name, ""):
+            logger.info("Deleting conflicting rule %s (title=%r)", rule.uid, rule.title)
+            await pmm_api.delete_rule(rule.uid)
+
+
 async def _restore_contact_point(
     pmm_api: PMMRemoteAPI,
     uid: str,
