@@ -97,7 +97,9 @@ export const router = createBrowserRouter([
           { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
           { path: 'plugins/mysql_backups/*', element: <MysqlBackupsPlugin /> },
           { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
-          { path: 'backups/mysql', element: <PlaceholderPage /> },
+          // NOTE: MySQL Backups lives at /plugins/mysql_backups (above), matching
+          // its PLUGIN_BASE_PATH. The old /backups/mysql placeholder route was
+          // removed in SEP-1270 — the sidebar now points at the real plugin.
           { path: 'backups/mongodb/*', element: <BackupMongoPlugin /> },
           { path: 'backups/postgresql/*', element: <BackupPgPlugin /> },
           { path: 'plugins/archives/*', element: <ArchivesPlugin /> },
