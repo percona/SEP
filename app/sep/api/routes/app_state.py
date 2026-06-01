@@ -38,7 +38,7 @@ router = APIRouter(tags=["admin", "apps"])
 
 
 class AppInfoResponse(BaseModel):
-    """Per-app info entry returned by ``GET /``.
+    """Represent a per-app info entry returned by ``GET /``.
 
     :param app_key: The plugin module key.
     :type app_key: str
@@ -69,7 +69,7 @@ class AppInfoResponse(BaseModel):
 
 
 class AppStateResponse(BaseModel):
-    """Response of the toggle endpoint.
+    """Represent the toggle endpoint's response.
 
     :param app_key: The toggled app's key.
     :type app_key: str
@@ -86,9 +86,8 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
     """List every configured app with its current enabled state.
 
     Returns one entry per ``SEP.PLUGINS`` entry, in declaration order. Protected
-    apps (``inventory``) appear with ``enabled=True, toggleable=False``. Bounded
-    cardinality (<20) -- a non-paginated list is appropriate per
-    ``architecture-patterns.md`` § "List endpoint pagination contract".
+    apps (``inventory``) appear with ``enabled=True, toggleable=False``. The list
+    is non-paginated: app cardinality is bounded (<20).
 
     :param session: The database session.
     :type session: SessionDep

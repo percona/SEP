@@ -34,7 +34,7 @@ router = APIRouter(tags=["apps"])
 
 
 class AppKeyResponse(BaseModel):
-    """Minimal per-app entry for the navigation shell.
+    """Represent a minimal per-app entry for the navigation shell.
 
     :param app_key: The plugin module key.
     :type app_key: str
