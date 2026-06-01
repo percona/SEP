@@ -126,5 +126,4 @@ async def init_sep_db() -> None:
             await AppStateManager.delete_where(
                 session, col(AppState.app_key).in_(orphan_keys)
             )
-        await session.commit()
     await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "sep__")

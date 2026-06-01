@@ -22,6 +22,7 @@ import pytest
 from fastapi import HTTPException, Request
 from itsdangerous import BadSignature
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.auth.exceptions import (
     HTTPForbiddenException,
@@ -35,6 +36,7 @@ from app.core.exceptions import (
 )
 from app.models import CasdoorUser
 from app.sep.config import Plugin, sep_settings
+from app.sep.crud import AppStateManager
 from app.sep.deps import (
     _PROTECTED_APP_KEYS,
     BEARER_REQUIRED_DETAIL,
@@ -1451,6 +1453,29 @@ class TestGetDefaultContextPluginFiltering:
         with (
             patch("app.sep.deps.sep_settings") as mock_sep,
             patch("app.sep.deps.settings"),
+        ):
+            mock_sep.PLUGINS = self._plugins()
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        assert keys == {"inventory", "snippets", "checksums"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_db_failure_degrades_to_showing_all_apps(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """A DB read failure shows every app so the page (and error pages) render."""
+        with (
+            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch("app.sep.deps.settings"),
+            patch.object(
+                AppStateManager,
+                "all_states",
+                side_effect=SQLAlchemyError("db down"),
+            ),
         ):
             mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(

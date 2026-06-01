@@ -25,6 +25,7 @@ import aiohttp
 from fastapi import Depends, HTTPException, Request, status
 from itsdangerous import BadSignature
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_user as get_current_user_api
@@ -508,7 +509,17 @@ async def get_default_context(
     :return: The default context.
     :rtype: dict[str, Any]
     """
-    states = await AppStateManager.all_states(session)
+    try:
+        states = await AppStateManager.all_states(session)
+    except SQLAlchemyError:
+        # Keep the page (including the error pages, which build this context
+        # from a fresh session) renderable when the DB is unreachable: degrade
+        # to showing every app rather than failing the whole response.
+        logger.warning(
+            "Could not read app state; rendering all apps in the sidebar.",
+            exc_info=True,
+        )
+        states = {}
     plugins = [
         plugin
         for plugin in sep_settings.PLUGINS
