@@ -15,6 +15,8 @@
 
 """Define tests for the Tasks CRUD managers."""
 
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -44,6 +46,8 @@ from tests.app.factories import TaskFactory
 HISTORY_FIXTURE_COUNT = 3
 PAGINATED_TASK_COUNT = 2
 PAGINATED_CUSTOM_TASK_COUNT = 3
+PBM_CONFIG_BACKUP_TYPE = "pbm_config"
+PARENT_FILTER_TASK_COUNT = 3
 
 
 async def _create_task(
@@ -574,6 +578,184 @@ class TestTaskManagerListActivePaginated:
 
         assert result.total == 1
         assert result.items == []
+
+    @pytest.mark.asyncio
+    async def test_with_parent_is_null_filter(self, session: AsyncSession) -> None:
+        """Assert parent_is_null=True excludes tasks with a parent reference."""
+        await _create_task(
+            session,
+            name="pag-parent",
+            data={"backup_type": PBM_CONFIG_BACKUP_TYPE},
+        )
+        await _create_task(
+            session,
+            name="pag-child",
+            data={
+                "backup_type": "pbm_logical",
+                "parent": "pag-parent",
+            },
+        )
+
+        null_parents = await TaskManager.list_active_paginated(
+            session, parent_is_null=True
+        )
+        non_null_parents = await TaskManager.list_active_paginated(
+            session, parent_is_null=False
+        )
+
+        assert null_parents.total == 1
+        assert null_parents.items[0].name == "pag-parent"
+        assert non_null_parents.total == 1
+        assert non_null_parents.items[0].name == "pag-child"
+
+    @pytest.mark.asyncio
+    async def test_with_backup_type_filter(self, session: AsyncSession) -> None:
+        """Assert backup_type filters on data.backup_type as string."""
+        await _create_task(
+            session,
+            name="pag-pbm-config",
+            data={"backup_type": PBM_CONFIG_BACKUP_TYPE},
+        )
+        await _create_task(
+            session,
+            name="pag-pbm-logical",
+            data={"backup_type": "pbm_logical", "parent": "pag-pbm-config"},
+        )
+
+        result = await TaskManager.list_active_paginated(
+            session, backup_type=PBM_CONFIG_BACKUP_TYPE
+        )
+
+        assert result.total == 1
+        assert result.items[0].name == "pag-pbm-config"
+
+    @pytest.mark.asyncio
+    async def test_with_self_parent_filter(self, session: AsyncSession) -> None:
+        """Assert self_parent=True keeps only rows where data.parent == task.name."""
+        await _create_task(
+            session,
+            name="pag-self-parent",
+            data={"backup_type": "pbm_logical", "parent": "pag-self-parent"},
+        )
+        await _create_task(
+            session,
+            name="pag-config-parent",
+            data={"backup_type": PBM_CONFIG_BACKUP_TYPE},
+        )
+        await _create_task(
+            session,
+            name="pag-child",
+            data={"backup_type": "pbm_logical", "parent": "pag-config-parent"},
+        )
+
+        result = await TaskManager.list_active_paginated(session, self_parent=True)
+
+        assert result.total == 1
+        assert result.items[0].name == "pag-self-parent"
+
+    @pytest.mark.asyncio
+    async def test_parent_and_backup_type_filters_with_pagination(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert combined JSON filters paginate over the filtered set."""
+        for index in range(PARENT_FILTER_TASK_COUNT):
+            await _create_task(
+                session,
+                name=f"pag-filter-parent-{index}",
+                data={"backup_type": PBM_CONFIG_BACKUP_TYPE},
+            )
+        await _create_task(
+            session,
+            name="pag-filter-child",
+            data={
+                "backup_type": "pbm_logical",
+                "parent": "pag-filter-parent-0",
+            },
+        )
+
+        result = await TaskManager.list_active_paginated(
+            session,
+            parent_is_null=True,
+            backup_type=PBM_CONFIG_BACKUP_TYPE,
+            offset=1,
+            limit=1,
+        )
+
+        assert result.total == PARENT_FILTER_TASK_COUNT
+        assert result.offset == 1
+        assert result.limit == 1
+        assert len(result.items) == 1
+        assert result.items[0].name == "pag-filter-parent-1"
+
+
+# ---------------------------------------------------------------------------
+# TaskHistoryManager.latest_status_by_task_names
+# ---------------------------------------------------------------------------
+
+
+class TestTaskHistoryManagerLatestStatusByTaskNames:
+    """Test TaskHistoryManager.latest_status_by_task_names."""
+
+    @pytest.mark.asyncio
+    async def test_empty_names_returns_empty_mapping(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert an empty request yields an empty mapping."""
+        result = await TaskHistoryManager.latest_status_by_task_names(session, [])
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_latest_status_per_task(self, session: AsyncSession) -> None:
+        """Assert newest non-null history status is returned for each task."""
+        suffix = uuid4().hex[:8]
+        task_a_name = f"latest-status-a-{suffix}"
+        task_b_name = f"latest-status-b-{suffix}"
+        missing_name = f"latest-status-missing-{suffix}"
+
+        task_a = await _create_task(session, name=task_a_name)
+        task_b = await _create_task(session, name=task_b_name)
+        await _create_task_history(
+            session, task_a, status=TaskHistoryStatusEnum.SUCCESS
+        )
+        await _create_task_history(
+            session, task_a, status=TaskHistoryStatusEnum.RUNNING
+        )
+        await _create_task_history(session, task_b, status=TaskHistoryStatusEnum.FAILED)
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session,
+            [task_a_name, task_b_name, missing_name],
+        )
+
+        assert result == {
+            task_a_name: TaskHistoryStatusEnum.RUNNING,
+            task_b_name: TaskHistoryStatusEnum.FAILED,
+            missing_name: None,
+        }
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_duplicate_names(self, session: AsyncSession) -> None:
+        """Assert duplicate names are resolved once while preserving order."""
+        task = await _create_task(session, name="latest-status-dedupe")
+        await _create_task_history(session, task, status=TaskHistoryStatusEnum.SUCCESS)
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session,
+            ["latest-status-dedupe", "latest-status-dedupe"],
+        )
+
+        assert list(result.keys()) == ["latest-status-dedupe"]
+        assert result["latest-status-dedupe"] == TaskHistoryStatusEnum.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_latest_status_from_history_statuses_skips_nulls(self) -> None:
+        """Assert null statuses are skipped when scanning newest-to-oldest."""
+        result = TaskHistoryManager._latest_status_from_history_statuses(
+            [None, TaskHistoryStatusEnum.SUCCESS, TaskHistoryStatusEnum.FAILED]
+        )
+
+        assert result == TaskHistoryStatusEnum.SUCCESS
 
 
 # ---------------------------------------------------------------------------

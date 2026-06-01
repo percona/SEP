@@ -79,6 +79,7 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskHistory,
+    TaskHistoryLatestStatusRequest,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskResponse,
@@ -104,13 +105,23 @@ async def list_tasks(
     session: SessionDep,
     owner: str | None = None,
     target: str | None = None,
+    parent_is_null: bool | None = None,
+    backup_type: str | None = None,
+    self_parent: bool | None = None,
     offset: int = DEFAULT_PAGINATION_OFFSET,
     limit: int = DEFAULT_PAGINATION_LIMIT,
 ) -> PaginatedResponse[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
     return await TaskManager.list_active_paginated(
-        session=session, owner=owner, target=target, offset=offset, limit=limit
+        session=session,
+        owner=owner,
+        target=target,
+        parent_is_null=parent_is_null,
+        backup_type=backup_type,
+        self_parent=self_parent,
+        offset=offset,
+        limit=limit,
     )
 
 
@@ -385,6 +396,20 @@ async def list_task_history(
     )
     await _populate_has_logs(session, response.items)
     return response
+
+
+@router.post(
+    "/history/latest",
+    dependencies=[IsAuthenticatedDep],
+    response_model=dict[str, TaskHistoryStatusEnum | None],
+)
+async def latest_task_history_status(
+    session: SessionDep,
+    body: TaskHistoryLatestStatusRequest,
+) -> dict[str, TaskHistoryStatusEnum | None]:
+    """Return the latest known execution status for each requested task name."""
+    logger.debug("Resolving latest history status for %s task(s)", len(body.names))
+    return await TaskHistoryManager.latest_status_by_task_names(session, body.names)
 
 
 @router.get(

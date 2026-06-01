@@ -21,6 +21,7 @@ from datetime import datetime
 
 from sqlalchemy import CursorResult, func, literal, update
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -63,6 +64,34 @@ class TaskManager(BaseSQLModelManager):
     Model = Task
 
     @classmethod
+    def _append_list_active_data_filters(
+        cls,
+        where: list[ColumnElement[bool]],
+        session: AsyncSession,
+        *,
+        target: str | None = None,
+        parent_is_null: bool | None = None,
+        backup_type: str | None = None,
+        self_parent: bool | None = None,
+    ) -> None:
+        """Append JSON ``Task.data`` predicates used by active-task list queries."""
+        if target is not None:
+            where.append(Task.data["meta"]["target"].as_string() == target)
+        if parent_is_null is not None or self_parent:
+            parent_value = func_json_extract(
+                session.get_bind().name, col(Task.data), "parent"
+            )
+        if parent_is_null is not None:
+            if parent_is_null:
+                where.append(parent_value.is_(None))
+            else:
+                where.append(parent_value.isnot(None))
+        if backup_type is not None:
+            where.append(Task.data["backup_type"].as_string() == backup_type)
+        if self_parent:
+            where.append(parent_value == col(Task.name))
+
+    @classmethod
     async def list_active(
         cls,
         session: AsyncSession,
@@ -86,8 +115,7 @@ class TaskManager(BaseSQLModelManager):
         kwargs = {}
         if owner is not None:
             kwargs["owner"] = owner
-        if target is not None:
-            where.append(Task.data["meta"]["target"].as_string() == target)
+        cls._append_list_active_data_filters(where, session, target=target)
         return await cls.list(session, *where, **kwargs)
 
     @classmethod
@@ -96,6 +124,9 @@ class TaskManager(BaseSQLModelManager):
         session: AsyncSession,
         owner: TaskOwner | None = None,
         target: str | None = None,
+        parent_is_null: bool | None = None,
+        backup_type: str | None = None,
+        self_parent: bool | None = None,
         offset: int = DEFAULT_PAGINATION_OFFSET,
         limit: int = DEFAULT_PAGINATION_LIMIT,
     ) -> PaginatedResponse[Task]:
@@ -109,6 +140,16 @@ class TaskManager(BaseSQLModelManager):
         :param target: The execution target hostname. If provided, only tasks whose
             ``data["meta"]["target"]`` matches will be listed.
         :type target: str | None
+        :param parent_is_null: When ``True``, only tasks with a null ``data["parent"]``
+            key; when ``False``, only tasks with a non-null parent. When ``None``,
+            do not filter on parent.
+        :type parent_is_null: bool | None
+        :param backup_type: When provided, only tasks whose ``data["backup_type"]``
+            matches this string.
+        :type backup_type: str | None
+        :param self_parent: When ``True``, only tasks whose ``data["parent"]`` equals
+            ``Task.name`` are returned.
+        :type self_parent: bool | None
         :param offset: The zero-based starting offset for the query results.
         :type offset: int
         :param limit: The maximum number of records to return.
@@ -120,8 +161,14 @@ class TaskManager(BaseSQLModelManager):
         kwargs = {}
         if owner is not None:
             kwargs["owner"] = owner
-        if target is not None:
-            where.append(Task.data["meta"]["target"].as_string() == target)
+        cls._append_list_active_data_filters(
+            where,
+            session,
+            target=target,
+            parent_is_null=parent_is_null,
+            backup_type=backup_type,
+            self_parent=self_parent,
+        )
         return await cls.list_paginated(
             session, *where, offset=offset, limit=limit, **kwargs
         )
@@ -402,6 +449,74 @@ class TaskHistoryManager(BaseSQLModelManager):
             offset=offset,
             limit=limit,
         )
+
+    @staticmethod
+    def _latest_status_from_history_statuses(
+        statuses: Sequence[TaskHistoryStatusEnum | None],
+    ) -> TaskHistoryStatusEnum | None:
+        """Return the first non-null status in newest-to-oldest order."""
+        for status in statuses:
+            if status is not None:
+                return status
+        return None
+
+    @classmethod
+    async def latest_status_by_task_names(
+        cls,
+        session: AsyncSession,
+        names: Sequence[str],
+    ) -> dict[str, TaskHistoryStatusEnum | None]:
+        """Return the latest known history status for each task name.
+
+        Status resolution matches SEP list helpers: histories are considered in
+        ``created_at`` descending order and the first non-null status wins.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param names: Task names to resolve. Duplicates are ignored; order is
+            preserved in the returned mapping.
+        :type names: Sequence[str]
+        :return: A mapping of task name to latest status, or ``None`` when no
+            history exists or every history row has a null status.
+        :rtype: dict[str, TaskHistoryStatusEnum | None]
+        """
+        unique_names = list(dict.fromkeys(names))
+        if not unique_names:
+            return {}
+
+        latest_status_subquery = (
+            select(
+                col(Task.name).label("task_name"),
+                col(TaskHistory.status).label("status"),
+                func.row_number()
+                .over(
+                    partition_by=col(Task.name),
+                    order_by=(
+                        col(TaskHistory.created_at).desc(),
+                        col(TaskHistory.id).desc(),
+                    ),
+                )
+                .label("row_number"),
+            )
+            .select_from(TaskHistory)
+            .join(Task)
+            .where(
+                col(Task.name).in_(unique_names),
+                col(TaskHistory.status).isnot(None),
+            )
+            .subquery()
+        )
+        query = select(
+            latest_status_subquery.c.task_name,
+            latest_status_subquery.c.status,
+        ).where(
+            latest_status_subquery.c.row_number == 1,
+        )
+        result = await cls._exec(session, query)
+        rows = result.all()
+        statuses_by_name: dict[str, TaskHistoryStatusEnum | None] = dict(rows)
+
+        return {name: statuses_by_name.get(name) for name in unique_names}
 
 
 class TaskHistoryLogManager(BaseSQLModelManager):
