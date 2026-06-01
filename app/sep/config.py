@@ -92,6 +92,11 @@ class Plugin(BaseCaseInsensitiveModel):
     :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
     :type sidebar: bool
+    :param enabled: Whether the plugin ships enabled. Read only at first-startup
+        seed time to set the initial :class:`app.sep.models.AppState` row;
+        defaults to ``True`` so every plugin already in ``settings.yaml`` keeps
+        shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
+    :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
         JSON ``APIRouter`` instance (e.g. ``"app.sep.plugins.checksums.api_routes.router"``).
         When set, the router is mounted under ``/api/plugins/{key}`` by the
@@ -111,6 +116,7 @@ class Plugin(BaseCaseInsensitiveModel):
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
+    enabled: bool = True
     api_router_path: StrImportableAttribute | None = None
 
     def __eq__(self, other: Any) -> bool:

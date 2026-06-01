@@ -29,11 +29,31 @@ from app.core.auth.exceptions import (
     HTTPUnauthorizedException,
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
+from app.sep.api.router import plugins_router
 from app.sep.config import sep_settings
-from app.sep.deps import get_access_token_from_cookie
+from app.sep.deps import _PROTECTED_APP_KEYS, get_access_token_from_cookie, get_session
 from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
 from app.sep.main import lifespan as sep_module_lifespan
+from app.sep.models import AppState
 from tests.app.factories import OAuthTokenFactory
+
+
+def _route_has_app_guard(route) -> bool:
+    """Return whether a route carries the ``require_app_enabled`` guard.
+
+    The router-level ``Depends(require_app_enabled(<key>))`` injected at mount
+    time surfaces as a sub-dependency of the route's ``dependant`` whose
+    callable is the closure ``require_app_enabled.<locals>._gate``.
+    """
+    dependant = getattr(route, "dependant", None)
+    if dependant is None:
+        return False
+    return any(
+        getattr(sub.call, "__qualname__", "").endswith(
+            "require_app_enabled.<locals>._gate"
+        )
+        for sub in dependant.dependencies
+    )
 
 
 def test_sep_app_lifespan_is_always_set():
@@ -479,7 +499,7 @@ class TestExceptionHandlers:
             unexpected_exc, limit=-1, chain=False
         )
         get_default_context_patch.assert_called_once_with(
-            mocker.ANY, regular_user, base_uri
+            mocker.ANY, regular_user, base_uri, mocker.ANY
         )
         template_patch.assert_called_with(
             request=mocker.ANY,
@@ -492,6 +512,7 @@ class TestExceptionHandlers:
     def test_404_error(self, mocker, regular_user, test_client):
         """Test 404 errors renders the 404 template for authenticated users."""
         mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
+        mocker.patch("app.sep.main.get_default_context", return_value={})
         template_spy = mocker.spy(templates, "TemplateResponse")
 
         response = test_client.get("/non-existent-page")
@@ -624,3 +645,90 @@ def test_sep_app_keeps_default_docs_urls():
     """
     assert sep_app.docs_url == "/docs"
     assert sep_app.redoc_url == "/redoc"
+
+
+@pytest.fixture
+def guarded_client(test_client: TestClient, session) -> TestClient:
+    """Build an authenticated client whose routes read the in-memory ``session``."""
+    sep_app.dependency_overrides[get_session] = lambda: session
+    return test_client
+
+
+class TestAppStateGuards:
+    """Integration tests for the per-app enable/disable route guards."""
+
+    @pytest.mark.parametrize(
+        ("plugin_key", "plugin_route"),
+        [("snippets", "/snippets/"), ("checksums", "/checksums/")],
+    )
+    @pytest.mark.asyncio
+    async def test_ui_guard_returns_503_when_disabled(
+        self, guarded_client: TestClient, session, plugin_key, plugin_route
+    ) -> None:
+        """A disabled non-protected plugin's UI route returns a 503."""
+        session.add(AppState(app_key=plugin_key, enabled=False))
+        await session.commit()
+
+        response = guarded_client.get(plugin_route)
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert plugin_key in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_inventory_ui_route_never_503s(
+        self, guarded_client: TestClient, session
+    ) -> None:
+        """Inventory has no guard, so a disabled row never gates ``/inventory/``."""
+        session.add(AppState(app_key="inventory", enabled=False))
+        await session.commit()
+
+        response = guarded_client.get("/inventory/")
+
+        assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
+        """Every non-protected UI plugin route carries the app-state guard."""
+        guarded_prefixes = {
+            p.uri_path
+            for p in sep_settings.PLUGINS
+            if p.module_name.split(".")[-1] not in _PROTECTED_APP_KEYS
+        }
+        seen = set()
+        for route in sep_app.routes:
+            path = getattr(route, "path", "")
+            for prefix in guarded_prefixes:
+                if (
+                    path == prefix or path.startswith(f"{prefix}/")
+                ) and _route_has_app_guard(route):
+                    seen.add(prefix)
+        assert guarded_prefixes <= seen
+
+    def test_inventory_ui_routes_are_not_guarded(self) -> None:
+        """The protected ``inventory`` plugin's UI routes carry no app-state guard."""
+        inventory_prefix = next(
+            p.uri_path
+            for p in sep_settings.PLUGINS
+            if p.module_name.split(".")[-1] == "inventory"
+        )
+        for route in sep_app.routes:
+            path = getattr(route, "path", "")
+            if path == inventory_prefix or path.startswith(f"{inventory_prefix}/"):
+                assert not _route_has_app_guard(route)
+
+    def test_json_api_mount_loop_guards_non_protected_plugins(self) -> None:
+        """Every non-protected JSON-API plugin sub-router carries the guard."""
+        guarded_keys = {
+            key
+            for p in sep_settings.PLUGINS
+            if (key := p.module_name.split(".")[-1]) not in _PROTECTED_APP_KEYS
+            and p.api_router_path
+        }
+        seen = set()
+        for route in plugins_router.routes:
+            path = getattr(route, "path", "")
+            for key in guarded_keys:
+                if (
+                    path.startswith(f"/plugins/{key}/") or path == f"/plugins/{key}"
+                ) and _route_has_app_guard(route):
+                    seen.add(key)
+        assert guarded_keys <= seen

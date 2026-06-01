@@ -17,12 +17,18 @@
 
 import json
 
+from sqlmodel import col
+
 from app.core.celery.utils import (
     init_periodic_tasks_db,
     SystemPeriodicTaskData,
     SystemPeriodicTaskSchedule,
 )
 from app.sep.config import sep_settings
+from app.sep.crud import AppStateManager
+from app.sep.db import get_async_session_maker
+from app.sep.deps import _PROTECTED_APP_KEYS
+from app.sep.models import AppState, AppStateBase
 from app.sep.snippets.config import snippets_settings
 
 _alerts_plugin_enabled = any(
@@ -93,5 +99,32 @@ if _report_plugin_enabled:
 
 
 async def init_sep_db() -> None:
-    """Initialize the SEP database with periodic tasks."""
+    """Initialize the SEP database with app state and periodic tasks.
+
+    Seeds one :class:`app.sep.models.AppState` row per non-protected plugin in
+    ``SEP.PLUGINS`` using get-or-create (the YAML ``enabled`` value is read only
+    on insert; existing rows are never overwritten), removes rows for apps no
+    longer configured, then seeds the SEP periodic tasks.
+    """
+    async_session_maker = get_async_session_maker()
+    async with async_session_maker() as session:
+        configured = [
+            (key, plugin.enabled)
+            for plugin in sep_settings.PLUGINS
+            if (key := plugin.module_name.split(".")[-1]) not in _PROTECTED_APP_KEYS
+        ]
+        configured_keys = {key for key, _ in configured}
+        existing_keys = set(await AppStateManager.all_states(session))
+        for key, enabled in configured:
+            if key in existing_keys:
+                continue
+            await AppStateManager.create(
+                session, AppStateBase(app_key=key, enabled=enabled)
+            )
+        orphan_keys = existing_keys - configured_keys
+        if orphan_keys:
+            await AppStateManager.delete_where(
+                session, col(AppState.app_key).in_(orphan_keys)
+            )
+        await session.commit()
     await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "sep__")

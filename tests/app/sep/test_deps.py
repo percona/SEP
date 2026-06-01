@@ -31,10 +31,12 @@ from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPRedirectException,
+    HTTPServiceUnavailableException,
 )
 from app.models import CasdoorUser
-from app.sep.config import sep_settings
+from app.sep.config import Plugin, sep_settings
 from app.sep.deps import (
+    _PROTECTED_APP_KEYS,
     BEARER_REQUIRED_DETAIL,
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
@@ -46,6 +48,7 @@ from app.sep.deps import (
     get_created_schema,
     get_current_admin,
     get_current_user,
+    get_default_context,
     get_executor_hosts,
     get_executor_hosts_context,
     get_inventory_api,
@@ -56,12 +59,13 @@ from app.sep.deps import (
     get_tasks_index_context,
     get_username_mapping,
     is_bearer_authenticated,
+    require_app_enabled,
     require_bearer_auth,
     require_bearer_for_unsafe_methods,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
-from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.models import AppState, SyncInventoryEntityTypeEnum
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
@@ -837,13 +841,45 @@ class TestGetTasksIndexContext:
         mock_plugin.sidebar = True
 
         executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
-        with patch("app.sep.deps.sep_settings") as mock_sep:
-            mock_sep.PLUGINS = [mock_plugin]
-            context = await get_tasks_index_context(
-                mock_inv_api, mock_tasks_api, {}, executor_hosts_ctx
-            )
+        # The Task Manager flag now derives from the already-filtered plugin
+        # list carried on the default context, not the raw settings.
+        context = await get_tasks_index_context(
+            mock_inv_api,
+            mock_tasks_api,
+            {"plugins": [mock_plugin]},
+            executor_hosts_ctx,
+        )
 
         assert context["is_task_manager_enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_task_manager_disabled_when_filtered_out(self) -> None:
+        """Report False when Task Manager is absent from the filtered list."""
+        mock_inv_api = AsyncMock()
+        mock_tasks_api = AsyncMock()
+        mock_tasks_api.get = AsyncMock(
+            side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                [],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+            ]
+        )
+        mock_inv_api.get = AsyncMock(return_value={})
+
+        other_plugin = MagicMock()
+        other_plugin.name = "Snippet Manager"
+        other_plugin.sidebar = True
+
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
+        context = await get_tasks_index_context(
+            mock_inv_api,
+            mock_tasks_api,
+            {"plugins": [other_plugin]},
+            executor_hosts_ctx,
+        )
+
+        assert context["is_task_manager_enabled"] is False
 
 
 class TestCheckForConflictedRunningTasks:
@@ -1317,3 +1353,109 @@ class TestBearerHeaderEdgeCases:
         with pytest.raises(HTTPUnauthorizedException) as exc_info:
             await require_bearer_for_unsafe_methods(request)
         assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
+
+
+class TestRequireAppEnabled:
+    """Test the per-router app-state guard factory."""
+
+    @pytest.mark.asyncio
+    async def test_gate_passes_when_enabled(self, session) -> None:
+        """The gate returns ``None`` when the app row is enabled."""
+        session.add(AppState(app_key="snippets", enabled=True))
+        await session.commit()
+        gate = require_app_enabled("snippets")
+        assert await gate(session) is None
+
+    @pytest.mark.asyncio
+    async def test_gate_raises_503_when_disabled(self, session) -> None:
+        """The gate raises 503 when the app row is disabled."""
+        session.add(AppState(app_key="snippets", enabled=False))
+        await session.commit()
+        gate = require_app_enabled("snippets")
+        with pytest.raises(HTTPServiceUnavailableException) as exc_info:
+            await gate(session)
+        assert "snippets" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_gate_passes_when_missing(self, session) -> None:
+        """A missing row is treated as enabled (active until explicitly disabled)."""
+        gate = require_app_enabled("snippets")
+        assert await gate(session) is None
+
+    def test_inventory_is_protected(self) -> None:
+        """``inventory`` is the protected key the mount loops must skip."""
+        assert "inventory" in _PROTECTED_APP_KEYS
+
+
+class TestGetDefaultContextPluginFiltering:
+    """Test that ``get_default_context`` filters the sidebar by app state."""
+
+    @staticmethod
+    def _plugins() -> list[Plugin]:
+        """Build a representative inventory + two non-protected plugins."""
+        return [
+            Plugin(name="Inventory", module_name="inventory"),
+            Plugin(name="Snippet Manager", module_name="snippets"),
+            Plugin(name="Checksums", module_name="checksums"),
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_enabled_plugin_included_disabled_excluded(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """Only protected apps plus enabled non-protected apps reach the sidebar."""
+        session.add(AppState(app_key="snippets", enabled=True))
+        session.add(AppState(app_key="checksums", enabled=False))
+        await session.commit()
+
+        with (
+            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch("app.sep.deps.settings"),
+        ):
+            mock_sep.PLUGINS = self._plugins()
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        assert keys == {"inventory", "snippets"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_inventory_always_present_even_when_row_disabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """A protected app stays in the sidebar regardless of any DB row."""
+        session.add(AppState(app_key="inventory", enabled=False))
+        await session.commit()
+
+        with (
+            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch("app.sep.deps.settings"),
+        ):
+            mock_sep.PLUGINS = self._plugins()
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        assert "inventory" in keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_missing_row_includes_plugin(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """A configured plugin with no DB row is shown (missing -> enabled)."""
+        with (
+            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch("app.sep.deps.settings"),
+        ):
+            mock_sep.PLUGINS = self._plugins()
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        assert keys == {"inventory", "snippets", "checksums"}
