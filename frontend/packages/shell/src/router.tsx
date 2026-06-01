@@ -61,6 +61,9 @@ const ArchivesPlugin = lazy(() =>
 const BackupMongoPlugin = lazy(() =>
   import('@sep/plugin-backup-mongo').then((m) => ({ default: m.BackupMongoPlugin })),
 );
+const BackupPgPlugin = lazy(() =>
+  import('@sep/plugin-backup-pg').then((m) => ({ default: m.BackupPgPlugin })),
+);
 
 function SnippetsPlugin() {
   const { isAdmin } = useAuth();
@@ -99,7 +102,7 @@ export const router = createBrowserRouter([
           { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
           { path: 'backups/mysql', element: <PlaceholderPage /> },
           { path: 'backups/mongodb/*', element: <BackupMongoPlugin /> },
-          { path: 'backups/postgresql', element: <PlaceholderPage /> },
+          { path: 'backups/postgresql/*', element: <BackupPgPlugin /> },
           { path: 'plugins/archives/*', element: <ArchivesPlugin /> },
           { path: 'reports', element: <PlaceholderPage /> },
           { path: 'settings', element: <PlaceholderPage /> },
