@@ -336,6 +336,7 @@ async def build_backup_pg_api_detail_response(
     except HTTPException:
         logger.exception("Failed to fetch history for backup_pg task %s", task.name)
         status = None
+    meta = (task.data or {}).get("meta") or {}
     server_config = _parse_first_server_config(task)
     base = build_backup_pg_api_task_response(
         task, status=status, server_config=server_config
@@ -343,7 +344,9 @@ async def build_backup_pg_api_detail_response(
     return BackupTaskDetailResponse(
         **base.model_dump(),
         host=server_config.get("HOST"),
-        port=server_config.get("PORT") or DEFAULT_POSTGRESQL_PORT,
+        port=server_config.get("PORT")
+        or meta.get(CONNECTIVITY_META_PORT_KEY)
+        or DEFAULT_POSTGRESQL_PORT,
     )
 
 
@@ -365,7 +368,9 @@ def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
     return {
         "hostname": meta["target"],
         "host": backup_server.get("HOST"),
-        "port": backup_server.get("PORT") or DEFAULT_POSTGRESQL_PORT,
+        "port": backup_server.get("PORT")
+        or meta.get(CONNECTIVITY_META_PORT_KEY)
+        or DEFAULT_POSTGRESQL_PORT,
         "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
     }
 
@@ -486,7 +491,9 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "backup_type": server_config["BACKUP_TYPE"],
         "service_id": None,
         "host": server_config["HOST"],
-        "port": server_config.get("PORT") or DEFAULT_POSTGRESQL_PORT,
+        "port": server_config.get("PORT")
+        or meta.get(CONNECTIVITY_META_PORT_KEY)
+        or DEFAULT_POSTGRESQL_PORT,
     }
 
     upload_providers = {

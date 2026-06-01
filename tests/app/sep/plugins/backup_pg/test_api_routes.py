@@ -25,6 +25,7 @@ from fastapi import HTTPException, status
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.backup_pg.models import BackupType
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
@@ -256,6 +257,40 @@ class TestBackupPgApiDetail:
         assert body["owner"] == TaskOwner.BACKUP_PG.value
         assert body["host"] == FIXTURE_PG_HOST
         assert body["port"] == FIXTURE_PG_PORT
+
+    def test_detail_port_falls_back_to_meta_when_yaml_omits_port(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """PORT missing from YAML surfaces the resolved meta connectivity port."""
+        meta_port = 6543
+        config = yaml.dump(
+            {
+                "SERVER_LIST": [
+                    {
+                        "HOST": "localhost",
+                        "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                    }
+                ],
+                "ALL_SERVERS": {},
+            }
+        )
+        task = build_backup_task(
+            "pg-backup-task",
+            data={
+                "meta": {
+                    "target": "pg-host",
+                    "config": config,
+                    "requirements": "packaging\nPyYAML",
+                    CONNECTIVITY_META_PORT_KEY: meta_port,
+                }
+            },
+        )
+        mock_task_api_dep.get = mock_task_api_get_by_path({"/pg-backup-task": task})
+
+        response = test_client.get(f"{API_BASE}/pg-backup-task")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["port"] == meta_port
 
     def test_detail_returns_404_for_unknown_task(
         self, test_client, mock_task_api_dep
