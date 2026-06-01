@@ -495,13 +495,18 @@ def get_toggleable_app_key(app_key: str) -> str:
     :raises HTTPNotFoundException: If the key is not in configured plugins.
     """
     if app_key in PROTECTED_APP_KEYS:
-        raise HTTPConflictException(detail="This app cannot be toggled")
+        raise HTTPConflictException(
+            detail=f"App '{app_key}' is protected and cannot be disabled.",
+        )
     configured_keys = {
         plugin.module_name.split(".")[-1] for plugin in sep_settings.PLUGINS
     }
     if app_key not in configured_keys:
         raise HTTPNotFoundException(detail="App not found")
     return app_key
+
+
+ToggleableAppKeyDep = Annotated[str, Depends(get_toggleable_app_key)]
 
 
 async def get_default_context(

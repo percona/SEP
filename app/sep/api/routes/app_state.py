@@ -25,7 +25,7 @@ cannot be toggled (toggle returns 409) and are reported with
 ``toggleable=False`` in the listing.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.sep.config import sep_settings
@@ -33,7 +33,7 @@ from app.sep.crud import AppStateManager
 from app.sep.deps import (
     PROTECTED_APP_KEYS,
     SessionDep,
-    get_toggleable_app_key,
+    ToggleableAppKeyDep,
 )
 from app.sep.models import AppState, AppStateBase, AppStateWrite
 
@@ -115,7 +115,7 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
 
 @router.put("/{app_key}/state", response_model=AppStateResponse)
 async def update_app_state(
-    app_key: str = Depends(get_toggleable_app_key),
+    app_key: ToggleableAppKeyDep,
     body: AppStateWrite,
     session: SessionDep,
 ) -> AppState:
