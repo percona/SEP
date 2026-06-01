@@ -259,6 +259,93 @@ def test_parse_backup_task_data(all_servers: dict, expected_alt_host: str | None
     assert result["binlog_alternative_host"] == expected_alt_host
 
 
+@pytest.mark.parametrize(
+    ("upload_providers", "all_servers", "expected_result"),
+    [
+        (
+            ["s3"],
+            {
+                "S3_BUCKET": "my-bucket",
+                "S3_STORAGE_CLASS": "STANDARD_IA",
+                "SKIP_S3_SAFETY_CHECK": True,
+            },
+            {
+                "s3_bucket": "my-bucket",
+                "s3_storage_class": "STANDARD_IA",
+                "skip_s3_safety_check": True,
+            },
+        ),
+        (
+            ["s3"],
+            {},
+            {
+                "s3_bucket": None,
+                "s3_storage_class": None,
+                "skip_s3_safety_check": False,
+            },
+        ),
+        (
+            ["gsutil"],
+            {"GS_BUCKET": "my-gs-bucket"},
+            {"gs_bucket": "my-gs-bucket"},
+        ),
+        (
+            ["gsutil"],
+            {},
+            {"gs_bucket": None},
+        ),
+        (
+            ["rsync"],
+            {"RSYNC_PATH": "/mnt/backups"},
+            {"rsync_path": "/mnt/backups"},
+        ),
+        (
+            ["rsync"],
+            {},
+            {"rsync_path": None},
+        ),
+        (
+            ["S3"],
+            {"S3_BUCKET": "case-insensitive"},
+            {"s3_bucket": "case-insensitive"},
+        ),
+    ],
+)
+def test_parse_backup_task_data_storage_targets(
+    upload_providers: list[str],
+    all_servers: dict,
+    expected_result: dict,
+):
+    """Round-trip S3/GSUTIL/RSYNC storage-target keys from persisted YAML on the edit form path."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1-mysql",
+                                "HOST": "10.0.0.5",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.XTRABACKUP.value,
+                                "UPLOAD": upload_providers,
+                            }
+                        ],
+                        "ALL_SERVERS": all_servers,
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    for key, value in expected_result.items():
+        assert result[key] == value
+
+
 def test_parse_backup_task_data_without_all_servers():
     """parse_backup_task_data handles a YAML config with no ALL_SERVERS block."""
     fake_task_dict = {
