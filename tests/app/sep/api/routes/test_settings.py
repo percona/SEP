@@ -206,7 +206,9 @@ class TestSepSettingsGet:
 
     async def test_unknown_key_returns_404(self, api_admin_client: TestClient) -> None:
         """An unknown key on a wired class returns 404."""
-        response = api_admin_client.get("/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST")
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST"
+        )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
@@ -391,7 +393,9 @@ class TestSepSettingsPatch:
 
     async def test_empty_body_returns_422(self, api_admin_client: TestClient) -> None:
         """An empty PATCH body fails the ``min_length=1`` root model constraint."""
-        response = api_admin_client.patch("/api/sep/admin/settings/SEPSettings", json={})
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings", json={}
+        )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_integrity_error_triggers_single_retry(
