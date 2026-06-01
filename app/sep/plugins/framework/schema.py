@@ -549,7 +549,11 @@ class FormSection(SchemaBaseModel):
         field declared in the plugin schema (including fields in other
         sections). Defaults to ``None`` — sections render unconditionally.
         Backend ``fail_when`` and conditional-rule validation on hidden
-        sections still applies; only the client payload is stripped.
+        sections still applies: hidden-section children arrive in the
+        submitted payload as **absent** (not zeroed or defaulted), so
+        ``truthy``/``present`` predicates silently pass while
+        ``falsy``/``absent`` predicates see the children as missing.
+        Author ``fail_when`` rules accordingly.
     :type forbidden: list[FieldGate] | None
     """
 
