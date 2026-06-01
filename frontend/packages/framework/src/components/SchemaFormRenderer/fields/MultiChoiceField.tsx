@@ -15,11 +15,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useFormContext, useWatch } from 'react-hook-form';
-import MenuItem from '@mui/material/MenuItem';
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
+import Box from '@mui/material/Box';
 import Checkbox from '@mui/material/Checkbox';
+import FormControl from '@mui/material/FormControl';
+import FormHelperText from '@mui/material/FormHelperText';
+import InputLabel from '@mui/material/InputLabel';
 import ListItemText from '@mui/material/ListItemText';
-import { SelectInput } from '@percona/percona-ui';
+import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
 import type { MultiChoiceField as MultiChoiceFieldType } from '../types';
 import { buildValidationRules } from '../utils/validationMapper';
 
@@ -30,33 +34,54 @@ interface MultiChoiceFieldProps {
 export function MultiChoiceField({ field }: MultiChoiceFieldProps) {
   const { control } = useFormContext();
   const selected = (useWatch({ control, name: field.name }) as string[] | undefined) ?? [];
+  const labelId = `${field.name}-label`;
 
   return (
-    <SelectInput
+    <Controller
       name={field.name}
-      label={field.label}
-      isRequired={field.required}
       control={control}
-      helperText={field.description}
-      selectFieldProps={{
-        fullWidth: true,
-        multiple: true,
-        renderValue: (value) => {
-          const values = (value as string[]) ?? [];
-          return field.choices
-            .filter((c) => values.includes(c.value))
-            .map((c) => c.label)
-            .join(', ');
-        },
-      }}
-      controllerProps={{ name: field.name, rules: buildValidationRules(field) }}
-    >
-      {field.choices.map((choice) => (
-        <MenuItem key={choice.value} value={choice.value}>
-          <Checkbox checked={selected.includes(choice.value)} />
-          <ListItemText primary={choice.label} />
-        </MenuItem>
-      ))}
-    </SelectInput>
+      rules={buildValidationRules(field)}
+      render={({ field: rhfField, fieldState: { error } }) => (
+        <FormControl fullWidth size="small" error={!!error}>
+          <InputLabel id={labelId} shrink required={field.required}>
+            {field.label}
+          </InputLabel>
+          <Select
+            {...rhfField}
+            labelId={labelId}
+            label={field.label}
+            multiple
+            displayEmpty
+            notched
+            data-testid={`select-${field.name}-button`}
+            inputProps={{ 'data-testid': `select-input-${field.name}` }}
+            renderValue={(value) => {
+              const values = (value as string[] | undefined) ?? [];
+              if (values.length === 0) {
+                return (
+                  <Box component="span" sx={{ color: 'text.disabled' }}>
+                    Select…
+                  </Box>
+                );
+              }
+              return field.choices
+                .filter((c) => values.includes(c.value))
+                .map((c) => c.label)
+                .join(', ');
+            }}
+          >
+            {field.choices.map((choice) => (
+              <MenuItem key={choice.value} value={choice.value}>
+                <Checkbox checked={selected.includes(choice.value)} />
+                <ListItemText primary={choice.label} />
+              </MenuItem>
+            ))}
+          </Select>
+          {(error?.message || field.description) && (
+            <FormHelperText>{error?.message ?? field.description}</FormHelperText>
+          )}
+        </FormControl>
+      )}
+    />
   );
 }
