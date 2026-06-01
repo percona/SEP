@@ -20,8 +20,8 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 
 from sqlalchemy import CursorResult, func, literal, update
-from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -516,10 +516,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         rows = result.all()
         statuses_by_name: dict[str, TaskHistoryStatusEnum | None] = dict(rows)
 
-        return {
-            name: statuses_by_name.get(name)
-            for name in unique_names
-        }
+        return {name: statuses_by_name.get(name) for name in unique_names}
 
 
 class TaskHistoryLogManager(BaseSQLModelManager):
