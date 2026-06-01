@@ -201,13 +201,18 @@ class BaseManager:
         """Return the ordering for SELECT queries.
 
         :return: The explicit manager ordering or the default ``created_at``
-            descending fallback for ``BaseSQLModel`` models.
+            descending fallback (tie-broken by primary key) for
+            ``BaseSQLModel`` models.
         :rtype: Iterable[ColumnExpressionOrStrLabelArgument] | None
         """
         if cls.ordering is not None:
             return cls.ordering
         if issubclass(cls.Model, BaseSQLModel):
-            return [cls._get_column("created_at").desc()]
+            # Tie-break on the primary key so pagination is deterministic when
+            # rows share a created_at — utc_now() has second resolution, so
+            # ties are common and an unstable order can skip/duplicate rows
+            # across pages (and differs across SQLite builds / Python versions).
+            return [cls._get_column("created_at").desc(), cls._get_column("id").asc()]
         return None
 
     @staticmethod
