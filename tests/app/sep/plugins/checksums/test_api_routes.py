@@ -32,7 +32,7 @@ from app.sep.connectivity import (
     clear_connectivity_caches,
     get_latest_connectivity_result,
 )
-from app.sep.deps import check_for_conflicted_running_tasks
+from app.sep.deps import BEARER_REQUIRED_DETAIL, check_for_conflicted_running_tasks
 from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
@@ -413,6 +413,57 @@ class TestChecksumsSchemaEndpoint:
         assert caps["chaining"] is True
         assert caps["alert_on_fail"] is True
         assert caps["scheduling"] is True
+
+
+class TestChecksumsBearerGate:
+    """Cover Bearer-gate behavior on checksums JSON mutations."""
+
+    def test_cookie_only_create_returns_401(
+        self,
+        api_admin_client_no_bearer,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ):
+        """Cookie-auth admin POST without Bearer header is 401'd by the framework gate."""
+        response = api_admin_client_no_bearer.post(
+            "/api/plugins/checksums/",
+            json={"name": "x", "hostname": "h", "service_id": 1},
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+        mock_task_api_dep.post.assert_not_called()
+        mock_inventory_api_dep.get.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("PUT", "/api/plugins/checksums/some-task"),
+            ("DELETE", "/api/plugins/checksums/some-task"),
+            ("POST", "/api/plugins/checksums/some-task/execute"),
+        ],
+    )
+    def test_cookie_only_mutation_methods_are_gate_rejected(
+        self,
+        api_admin_client_no_bearer,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        method: str,
+        path: str,
+    ) -> None:
+        """Every mutating verb on the checksums router 401s before any business call.
+
+        Coverage matrix complementing the create-path test above: PUT (rename/
+        edit), DELETE (drop), and POST (execute) all exercise the framework
+        gate. ``mock_task_api_dep``/``mock_inventory_api_dep`` must never be
+        touched — proves the 401 fires before route handlers run.
+        """
+        response = api_admin_client_no_bearer.request(method, path, json={})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+        mock_task_api_dep.post.assert_not_called()
+        mock_task_api_dep.put.assert_not_called()
+        mock_task_api_dep.delete.assert_not_called()
+        mock_inventory_api_dep.get.assert_not_called()
 
 
 class TestChecksumsCreateEndpoint:

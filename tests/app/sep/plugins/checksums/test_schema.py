@@ -28,12 +28,30 @@ def test_checksums_schema_has_stats_capability_true():
 
 
 def test_checksums_schema_other_capabilities_unchanged():
-    """Adding ``stats`` must not regress the existing capability flags."""
+    """Adding ``pii_anonymization`` must not regress the existing capability flags."""
     caps = checksums_schema.capabilities
     assert caps is not None
     assert caps.chaining is True
     assert caps.alert_on_fail is True
     assert caps.scheduling is True
+    assert caps.stats is True
+
+
+def test_checksums_schema_has_pii_anonymization_capability_true():
+    """Checksums opts into the PII anonymization detail section capability."""
+    assert checksums_schema.capabilities is not None
+    assert checksums_schema.capabilities.pii_anonymization is True
+
+
+def test_checksums_schema_endpoint_exposes_pii_anonymization_capability(
+    test_client: TestClient,
+) -> None:
+    """The plugin-schema API surface must expose ``pii_anonymization=True`` for checksums."""
+    response = test_client.get("/api/plugins/checksums/schema")
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["capabilities"]["pii_anonymization"] is True
 
 
 def test_checksums_schema_endpoint_exposes_stats_capability(

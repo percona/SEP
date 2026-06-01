@@ -23,7 +23,6 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.core.utils.fields import NonEmptyStr
-from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated, SessionDep
 from app.sep.plugins.alerts.config import alerts_pmm_config
@@ -40,40 +39,16 @@ from app.sep.plugins.alerts.deps import (
     RequiredPMMAPIDep,
 )
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
-from app.sep.plugins.alerts.restore import restore_from_backup
+from app.sep.plugins.alerts.restore import delete_conflicting_rules, restore_from_backup
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 
-async def _delete_conflicting_rules(
-    pmm_api: PMMRemoteAPI, rule_name: str, folder_uid: str
-) -> None:
-    """Delete rules that conflict with the given name in the folder.
-
-    Remove any existing rule whose title matches ``rule_name`` as well as
-    ghost rules (empty title) within the same folder so that a subsequent
-    ``create_rule`` call can succeed.
-
-    :param pmm_api: The PMM API client.
-    :type pmm_api: PMMRemoteAPI
-    :param rule_name: The rule title that triggered the conflict.
-    :type rule_name: str
-    :param folder_uid: The folder UID where the conflict occurred.
-    :type folder_uid: str
-    """
-    rules = await pmm_api.list_rules()
-    for rule in rules:
-        namespace = getattr(rule, "namespace_uid", "")
-        if namespace != folder_uid:
-            continue
-        if rule.title in (rule_name, ""):
-            logger.info("Deleting conflicting rule %s (title=%r)", rule.uid, rule.title)
-            await pmm_api.delete_rule(rule.uid)
-
-
-@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.get(
+    "/", dependencies=[IsAuthenticated], response_class=HTMLResponse, deprecated=True
+)
 async def alerts_index(
     request: Request,
     context: AlertsIndexContext,
@@ -86,7 +61,9 @@ async def alerts_index(
     )
 
 
-@router.post("/restore", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/restore", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+)
 async def alerts_restore(
     pmm_api: PMMAPIDep,
     session: SessionDep,
@@ -126,7 +103,7 @@ async def alerts_restore(
     return JSONResponse({"status": "success", "details": results})
 
 
-@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated])
+@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated], deprecated=True)
 async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONResponse:
     """Return a summary of a single backup's contents.
 
@@ -165,7 +142,9 @@ async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONRespo
     )
 
 
-@router.post("/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+)
 async def pagerduty_save(
     pmm_api: RequiredPMMAPIDep,
     integration_key: Annotated[NonEmptyStr, Form()],
@@ -211,7 +190,11 @@ async def pagerduty_save(
         )
 
 
-@router.post("/pagerduty/delete", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post(
+    "/pagerduty/delete",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    deprecated=True,
+)
 async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
     """Delete the PagerDuty contact point and remove its notification route.
 
@@ -248,7 +231,7 @@ async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
         )
 
 
-@router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated])
+@router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True)
 async def alerts_push(
     pmm_api: RequiredPMMAPIDep,
     alert_templates: AlertTemplatesDep,
@@ -336,7 +319,7 @@ async def alerts_push(
                 )
                 continue
             try:
-                await _delete_conflicting_rules(pmm_api, template.name, folder.uid)
+                await delete_conflicting_rules(pmm_api, template.name, folder.uid)
                 await pmm_api.create_rule(
                     name=template.name,
                     template_name=template.name,

@@ -41,7 +41,7 @@ from app.sep.api.routes.settings import router as settings_router
 from app.sep.api.routes.task_history import router as task_history_router
 from app.sep.api.routes.task_stats import router as task_stats_router
 from app.sep.config import Plugin, sep_settings
-from app.sep.deps import IsApiAuthenticated
+from app.sep.deps import IsApiAuthenticated, RequireBearerForUnsafeMethods
 
 
 def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
@@ -57,7 +57,9 @@ def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
         ``api_router_path`` is set included at ``/{key}`` with ``tags=[key]``.
     :rtype: APIRouter
     """
-    plugins_router = APIRouter(prefix="/plugins")
+    plugins_router = APIRouter(
+        prefix="/plugins", dependencies=[RequireBearerForUnsafeMethods]
+    )
     for plugin in plugins:
         if not plugin.api_router_path:
             continue
