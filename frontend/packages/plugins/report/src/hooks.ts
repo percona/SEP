@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ApiError, apiClient } from '@sep/api';
+import { apiClient } from '@sep/api';
 import type { ReportConfig, ReportData, ReportParams, UploadResult } from './types';
 
 // The PDF and upload endpoints do not accept a `sections` filter (the backend
@@ -24,7 +24,7 @@ import type { ReportConfig, ReportData, ReportParams, UploadResult } from './typ
 // explicit rather than silently dropping it.
 type ReportPdfParams = Omit<ReportParams, 'sections'>;
 
-const API_BASE = '/report';
+const API_BASE = '/plugins/report';
 
 export function useGenerateReport(params: ReportParams | null) {
   return useQuery<ReportData>({
@@ -33,7 +33,6 @@ export function useGenerateReport(params: ReportParams | null) {
       // params is guaranteed non-null when enabled (params !== null guard below)
       const p = params as ReportParams;
       const { data } = await apiClient.get<ReportData>(`${API_BASE}/generate/json`, {
-        baseURL: '',
         params: {
           since: p.since,
           until: p.until,
@@ -58,7 +57,6 @@ export function useDownloadPdf() {
         refresh: String(params.refresh),
       });
       const { data } = await apiClient.post<Blob>(`${API_BASE}/generate/pdf`, body, {
-        baseURL: '',
         responseType: 'blob',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
@@ -89,7 +87,6 @@ export function useUploadToServiceNow() {
         refresh: String(params.refresh),
       });
       const { data } = await apiClient.post<UploadResult>(`${API_BASE}/upload`, body, {
-        baseURL: '',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
       return data;
@@ -98,23 +95,18 @@ export function useUploadToServiceNow() {
 }
 
 // Probe whether ServiceNow upload is configured. Returns empty disabled_reasons
-// (upload enabled) only when the /report/config endpoint returns 404 (not yet
-// deployed by SEP-1059). All other errors propagate so the caller can surface them.
-// SEP-1059 should expose GET /api/report/config with { upload_disabled_reasons }.
+// (upload enabled) on any error — 404 means endpoint not yet deployed (SEP-1059),
+// other errors are transient config blips that should not silently block the user.
+// SEP-1059 should expose GET /api/plugins/report/config with { upload_disabled_reasons }.
 export function useReportConfig() {
   return useQuery<ReportConfig>({
     queryKey: ['report', 'config'],
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<ReportConfig>(`${API_BASE}/config`, {
-          baseURL: '',
-        });
+        const { data } = await apiClient.get<ReportConfig>(`${API_BASE}/config`);
         return data;
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 404) {
-          return { upload_disabled_reasons: [] };
-        }
-        throw err;
+      } catch {
+        return { upload_disabled_reasons: [] };
       }
     },
     staleTime: Infinity,

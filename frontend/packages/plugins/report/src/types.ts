@@ -148,7 +148,9 @@ export interface ReportData {
 }
 
 export interface UploadResult {
-  [key: string]: unknown;
+  sys_id: string;
+  status: string;
+  url?: string;
 }
 
 export interface ReportConfig {

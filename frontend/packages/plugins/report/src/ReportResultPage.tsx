@@ -23,6 +23,7 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Link,
   Stack,
   Tooltip,
   Typography,
@@ -41,7 +42,7 @@ export function ReportResultPage() {
   const upload = useUploadToServiceNow();
 
   const uploadDisabledReasons = config?.upload_disabled_reasons ?? [];
-  const uploadDisabled = upload.isPending || uploadDisabledReasons.length > 0;
+  const uploadDisabled = upload.isPending || upload.isSuccess || uploadDisabledReasons.length > 0;
   const uploadTooltip =
     uploadDisabledReasons.length > 0 ? uploadDisabledReasons.join('; ') : undefined;
 
@@ -49,13 +50,14 @@ export function ReportResultPage() {
     return (
       <Alert severity="warning">
         No report parameters found. Please{' '}
-        <Box
-          component="span"
-          sx={{ cursor: 'pointer', textDecoration: 'underline' }}
+        <Link
+          component="button"
+          type="button"
           onClick={() => navigate('/reports')}
+          sx={{ verticalAlign: 'baseline' }}
         >
           go back
-        </Box>{' '}
+        </Link>{' '}
         and generate a report.
       </Alert>
     );
@@ -98,7 +100,7 @@ export function ReportResultPage() {
         <Chip label={`${report.monitored.total_nodes} nodes`} size="small" />
         <Chip label={`${report.monitored.total_services} services`} size="small" />
         <Chip
-          label={`${report.advisors.total_failed} advisor failures`}
+          label={`${report.advisors.total_failed} advisor ${report.advisors.total_failed === 1 ? 'failure' : 'failures'}`}
           size="small"
           color={report.advisors.total_failed > 0 ? 'error' : 'success'}
         />

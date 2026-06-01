@@ -137,7 +137,7 @@ describe('ReportResultPage', () => {
 
   it('renders report data after successful fetch', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/report/config')) {
+      if (url.includes('/plugins/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
       return Promise.resolve({ data: MOCK_REPORT });
@@ -157,7 +157,7 @@ describe('ReportResultPage', () => {
 
   it('fires useDownloadPdf mutation on PDF button click', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/report/config')) {
+      if (url.includes('/plugins/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
       return Promise.resolve({ data: MOCK_REPORT });
@@ -180,7 +180,7 @@ describe('ReportResultPage', () => {
 
     await waitFor(() => {
       expect(mockedApi.post).toHaveBeenCalledWith(
-        '/report/generate/pdf',
+        '/plugins/report/generate/pdf',
         expect.any(URLSearchParams),
         expect.objectContaining({ responseType: 'blob' }),
       );
@@ -189,7 +189,7 @@ describe('ReportResultPage', () => {
 
   it('fires useUploadToServiceNow mutation on upload button click', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/report/config')) {
+      if (url.includes('/plugins/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
       return Promise.resolve({ data: MOCK_REPORT });
@@ -206,7 +206,7 @@ describe('ReportResultPage', () => {
 
     await waitFor(() => {
       expect(mockedApi.post).toHaveBeenCalledWith(
-        '/report/upload',
+        '/plugins/report/upload',
         expect.any(URLSearchParams),
         expect.objectContaining({
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -217,7 +217,7 @@ describe('ReportResultPage', () => {
 
   it('disables upload button when upload_disabled_reasons returned', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/report/config')) {
+      if (url.includes('/plugins/report/config')) {
         return Promise.resolve({
           data: { upload_disabled_reasons: ['ServiceNow credentials not configured'] },
         });
