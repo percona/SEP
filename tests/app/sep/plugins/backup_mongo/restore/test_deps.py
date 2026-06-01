@@ -28,7 +28,6 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.deps import (
     _backup_type_from_parent,
-    _is_restore_parent_task,
     _resolve_service_name,
     build_pbm_force_resync_task_payload,
     build_pbm_list_task_payload,
@@ -76,32 +75,6 @@ def test_backup_type_from_parent_raises_when_backup_type_missing() -> None:
         _backup_type_from_parent(_restore_parent_task(config=yaml.dump({})))
 
     assert exc_info.value.detail == "Task 'restore-parent' has no backupType in config"
-
-
-def test_is_restore_parent_task_accepts_config_and_legacy_self_parent() -> None:
-    """Treat config rows and legacy self-parent corrupt rows as list parents."""
-    config_parent = _restore_parent_task(
-        config=yaml.dump({"backupType": BackupType.PBM_LOGICAL.value}),
-    )
-    legacy_corrupt = config_parent.model_copy(
-        update={
-            "data": {
-                **config_parent.data,
-                "payload": "file:///plugins/backup_mongo/restore/pbm_logical_restore_payload",
-                "parent": config_parent.name,
-            },
-        },
-    )
-    child = config_parent.model_copy(
-        update={
-            "name": f"{config_parent.name}-pbm_logical",
-            "data": {**config_parent.data, "parent": config_parent.name},
-        },
-    )
-
-    assert _is_restore_parent_task(config_parent) is True
-    assert _is_restore_parent_task(legacy_corrupt) is True
-    assert _is_restore_parent_task(child) is False
 
 
 @pytest.mark.asyncio
