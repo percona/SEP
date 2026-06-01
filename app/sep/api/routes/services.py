@@ -20,12 +20,12 @@ schema-driven service selectors without bypassing the SEP layer (see the
 non-bypass rule in ``app/sep/api/router.py``).
 """
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query
 
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.models import PaginatedResponse
 from app.inventory.models import ServiceResponse, ServiceTypeEnum
-from app.sep.api.models import InventorySelectorOption
+from app.sep.api.models import InventorySelectorOption, proxy_inventory_selector
 from app.sep.deps import InventoryAPI
 
 router = APIRouter()
@@ -80,16 +80,8 @@ async def list_service_schemas(
     :return: Minimal id/name options for each schema on the service.
     :rtype: list[InventorySelectorOption]
     """
-    params: dict[str, int | str] = {"limit": 0}
-    if search:
-        params["search"] = search
-    try:
-        schemas = await inventory_api.get(
-            f"/services/{service_id}/schemas/", params=params
-        )
-    except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
-            return []
-        raise
-    items = (schemas or {}).get("items", [])
-    return [InventorySelectorOption(id=s["id"], name=s["name"]) for s in items]
+    return await proxy_inventory_selector(
+        inventory_api,
+        f"/services/{service_id}/schemas/",
+        search,
+    )

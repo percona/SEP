@@ -20,9 +20,9 @@ frontend can populate schema-driven table selectors without bypassing the SEP
 layer (see the non-bypass rule in ``app/sep/api/router.py``).
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 
-from app.sep.api.models import InventorySelectorOption
+from app.sep.api.models import InventorySelectorOption, proxy_inventory_selector
 from app.sep.deps import InventoryAPI
 
 router = APIRouter()
@@ -50,14 +50,8 @@ async def list_schema_tables(
     :return: Minimal id/name options for each table in the schema.
     :rtype: list[InventorySelectorOption]
     """
-    params: dict[str, int | str] = {"limit": 0}
-    if search:
-        params["search"] = search
-    try:
-        tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
-    except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
-            return []
-        raise
-    items = (tables or {}).get("items", [])
-    return [InventorySelectorOption(id=t["id"], name=t["name"]) for t in items]
+    return await proxy_inventory_selector(
+        inventory_api,
+        f"/schemas/{schema_id}/tables/",
+        search,
+    )

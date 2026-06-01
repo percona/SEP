@@ -13,9 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared Pydantic models for SEP JSON API routes."""
+"""Shared Pydantic models and helpers for SEP JSON API routes."""
 
+from fastapi import HTTPException, status
 from pydantic import BaseModel
+
+from app.sep.deps import InventoryAPI
 
 
 class InventorySelectorOption(BaseModel):
@@ -29,3 +32,32 @@ class InventorySelectorOption(BaseModel):
 
     id: int
     name: str
+
+
+async def proxy_inventory_selector(
+    inventory_api: InventoryAPI,
+    url: str,
+    search: str | None,
+) -> list[InventorySelectorOption]:
+    """Proxy a selector endpoint and normalize to ``[{id, name}]`` options.
+
+    :param inventory_api: The Inventory API client used to proxy the request.
+    :type inventory_api: InventoryAPI
+    :param url: Inventory endpoint URL (for example ``/services/{id}/schemas/``).
+    :type url: str
+    :param search: Optional substring filter forwarded to inventory.
+    :type search: str | None
+    :return: Minimal selector options, or an empty list on Inventory 404.
+    :rtype: list[InventorySelectorOption]
+    """
+    params: dict[str, int | str] = {"limit": 0}
+    if search:
+        params["search"] = search
+    try:
+        response = await inventory_api.get(url, params=params)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_404_NOT_FOUND:
+            return []
+        raise
+    items = (response or {}).get("items", [])
+    return [InventorySelectorOption(id=item["id"], name=item["name"]) for item in items]
