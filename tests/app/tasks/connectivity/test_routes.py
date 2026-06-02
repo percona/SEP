@@ -31,7 +31,7 @@ from app.tasks.connectivity.models import (
 )
 from app.tasks.connectivity.service import _cached_check_connectivity, POLL_INTERVAL
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
-from app.tasks.deps import get_executor, get_session
+from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.main import tasks_app
@@ -71,7 +71,7 @@ def test_client(regular_user, mock_executor) -> TestClient:
     session = AsyncMock()
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 
@@ -218,7 +218,7 @@ class TestConnectivityCheckEndpointRealSession:
     The tests in :class:`TestConnectivityCheckEndpoint` above patch
     ``app.tasks.connectivity.routes.check_connectivity`` itself, so the
     service-layer writer-session wiring is never exercised from the HTTP
-    boundary. Regression for SEP-1034: a real HTTP POST must run the real
+    boundary. As a regression guard, a real HTTP POST must run the real
     ``check_connectivity`` polling loop and pick up the ``run-script`` stdout
     chunk persisted by the executor's writer session.
     """
@@ -254,7 +254,7 @@ class TestConnectivityCheckEndpointRealSession:
 
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
-        tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+        tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
 
         stdout_bytes = b'{"success": true}'
         call_count = {"n": 0}

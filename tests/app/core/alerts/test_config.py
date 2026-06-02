@@ -17,8 +17,35 @@
 
 import pytest
 
-from app.core.alerts.config import AlertProviderEnum, AlertSettings
+from app.core.alerts.config import (
+    alert_service,
+    alert_settings,
+    AlertProviderEnum,
+    AlertSettings,
+)
+from app.core.alerts.models import Alert, AlertSeverity, BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
+
+_SENT_ALERTS: list[Alert] = []
+_RESOLVED_KEYS: list[str] = []
+
+
+class _CapturingProvider(BaseAlertProvider):
+    """A provider that records the alerts and dedup keys it receives."""
+
+    async def send_alert(self, alert: Alert) -> None:
+        _SENT_ALERTS.append(alert)
+
+    async def resolve_alert(self, dedup_key: str) -> None:
+        _RESOLVED_KEYS.append(dedup_key)
+
+
+@pytest.fixture
+def captured() -> tuple[list[Alert], list[str]]:
+    """Reset and expose the capturing-provider record lists."""
+    _SENT_ALERTS.clear()
+    _RESOLVED_KEYS.clear()
+    return _SENT_ALERTS, _RESOLVED_KEYS
 
 
 def make_provider_entry(name: str, **kwargs):
@@ -62,3 +89,34 @@ def test_set_alerts_providers_invalid_provider_configuration():
     """Ensure invalid provider configuration raises ValueError."""
     with pytest.raises(ValueError, match="Invalid configuration"):
         AlertSettings(PROVIDERS=[make_provider_entry("pagerduty")])
+
+
+@pytest.mark.asyncio
+async def test_live_alert_service_reads_overridden_providers_and_affixes(
+    captured: tuple[list[Alert], list[str]],
+) -> None:
+    """``alert_service.trigger`` reads providers and source affixes per emit."""
+    sent, _resolved = captured
+    alert_settings._set_snapshot(
+        {
+            "PROVIDERS": {_CapturingProvider()},
+            "SOURCE_PREFIX": "PRE-",
+            "SOURCE_SUFFIX": "-SUF",
+        }
+    )
+    await alert_service.trigger(
+        Alert(summary="disk full", source="node-1", severity=AlertSeverity.CRITICAL)
+    )
+    assert len(sent) == 1
+    assert sent[0].source == "PRE-node-1-SUF"
+
+
+@pytest.mark.asyncio
+async def test_live_alert_service_resolve_reads_overridden_providers(
+    captured: tuple[list[Alert], list[str]],
+) -> None:
+    """``alert_service.resolve`` routes through the override-configured providers."""
+    _sent, resolved = captured
+    alert_settings._set_snapshot({"PROVIDERS": {_CapturingProvider()}})
+    await alert_service.resolve("dedup-123")
+    assert resolved == ["dedup-123"]

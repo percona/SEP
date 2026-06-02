@@ -41,6 +41,7 @@ from app.tasks.db.seed import (
     verify_taskhistory_execution_request_is_jsonb,
 )
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
+from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.periodic.routes import router as periodic_router
 from app.tasks.routes import router as tasks_router
 from app.tasks.settings.routes import router as settings_router
@@ -53,11 +54,19 @@ celery_logger = get_task_logger(__name__)
 async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage the Tasks API's lifespan.
 
-    Initializes the Tasks database data and ensures that the CasdoorSDK, the
-    NomadExecutor, and any extra client sessions are properly managed during the
-    application's startup and shutdown phases.
+    Initializes the Tasks database data and starts the settings-override
+    refresher, the default lifespan, and the :class:`NomadLifecycle` holder that
+    owns the live entered ``NomadExecutor``.
 
-    :param app: The FastAPI application instance.
+    The holder is anchored to the module-level ``tasks_app`` rather than to
+    ``app``: when this lifespan runs under the combined ``app.main:app``,
+    ``app`` is the *parent* application, but requests routed to the mounted
+    ``/api/tasks`` sub-app resolve ``request.app`` to ``tasks_app`` -- so the
+    holder must live on ``tasks_app.state`` for ``get_request_executor`` to find
+    it in both standalone and mounted deployments.
+
+    :param app: The FastAPI application instance whose lifespan this manages
+        (``tasks_app`` standalone, the parent app when mounted).
     :type app: FastAPI
     :return: An async context manager yielding ``None`` for the lifespan duration.
     :rtype: AsyncGenerator[None, None]
@@ -67,16 +76,28 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with (
         settings_override_refresher(
             get_async_session_maker,
+            # ALERT_SETTINGS is intentionally NOT wired here. ``alert_settings``
+            # is a single shared module-level proxy; the SEP refresher
+            # (``sep_overrides_lifespan``) owns it. Wiring it here too would, in
+            # the combined ``app.main:app`` process, have both refreshers publish
+            # into the same proxy from their separate databases and clobber each
+            # other every cycle. Alert overrides are therefore loaded from the
+            # SEP database only.
             {
                 SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
                     tasks_settings, TasksSettings
-                )
+                ),
             },
             settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
             enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+            callbacks={
+                (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): (
+                    lambda _: tasks_app.state.nomad_lifecycle.reconcile()
+                ),
+            },
         ),
         default_lifespan(app),
-        tasks_settings.NOMAD,
+        NomadLifecycle(tasks_app),
     ):
         yield
 

@@ -41,11 +41,12 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
-    coerce_field_value,
     dump_field_value,
+    field_materializer,
     FieldMetadata,
     is_hot_reloadable,
     iter_class_fields,
+    materialize_override_value,
 )
 
 ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
@@ -119,9 +120,14 @@ def _validate_patch_body(
     """Validate every key/value in a PATCH body for one settings class.
 
     Performs Phase A of the PATCH handler: each key is checked for existence
-    on ``settings_cls``, HOT classification, and Pydantic type/constraint
-    validation via :func:`coerce_field_value`. Errors are collected per-key;
-    if any are present the entire batch is rejected with HTTP 422.
+    on ``settings_cls``, HOT classification, and type/constraint validation via
+    :func:`materialize_override_value` (which routes materializer-backed fields
+    -- ``PROVIDERS``, ``FOOTER_TEMPLATE``, ``NOMAD`` -- through their declared
+    materializer so the API accepts the same payloads the snapshot loader does).
+    Errors are collected per-key; if any are present the entire batch is
+    rejected with HTTP 422. Materializer-backed fields persist the raw JSON (the
+    materialized value is not JSON-storable); plain fields persist the coerced
+    value.
 
     :param settings_cls: The Pydantic settings class to validate against.
     :type settings_cls: type[BaseYamlSettings]
@@ -155,8 +161,11 @@ def _validate_patch_body(
                 }
             )
             continue
+        materializer = field_materializer(settings_cls, key)
         try:
-            validated = coerce_field_value(field_info, raw_value)
+            materialized = materialize_override_value(
+                settings_cls, key, field_info, raw_value
+            )
         except ValidationError as exc:
             errors.extend(
                 {
@@ -167,7 +176,16 @@ def _validate_patch_body(
                 for entry in exc.errors()
             )
             continue
-        to_apply.append((key, validated))
+        except ValueError as exc:
+            errors.append(
+                {"loc": ["body", key], "msg": str(exc), "type": "value_error"}
+            )
+            continue
+        # Materializer-backed fields (PROVIDERS, FOOTER_TEMPLATE, NOMAD) produce
+        # values that are not JSON-storable (a provider set, a Template, a
+        # NomadExecutor); persist the raw JSON so build_snapshot re-materializes
+        # on load. Plain fields persist the coerced value as before.
+        to_apply.append((key, raw_value if materializer is not None else materialized))
 
     if errors:
         raise HTTPUnprocessableEntityException(detail=errors)

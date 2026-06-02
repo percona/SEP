@@ -24,12 +24,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.models import CasdoorUser
-from app.tasks.config import tasks_settings
-from app.tasks.deps import get_executor, get_session
+from app.tasks.config import tasks_settings, TasksSettings
+from app.tasks.deps import get_request_executor, get_session
 from app.tasks.main import tasks_app
 
 
@@ -42,7 +43,7 @@ def admin_test_client_fixture(
     """Yield an admin-authenticated Tasks TestClient bound to the test session."""
     tasks_app.dependency_overrides[get_current_user] = lambda: admin_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 
@@ -56,7 +57,7 @@ def non_admin_client_fixture(
     """Yield a non-admin Tasks TestClient bound to the test session."""
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 
@@ -69,7 +70,7 @@ def unauthenticated_client_fixture(
     """Yield an unauthenticated Tasks TestClient bound to the test session."""
     tasks_app.dependency_overrides = {}
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 
@@ -115,6 +116,34 @@ class TestTasksSettingsApi:
         )
         assert len(rows) == 1
         assert rows[0].value == new_value
+
+    async def test_patch_materializer_field_nomad_is_patchable(
+        self,
+        admin_test_client: TestClient,
+        session: AsyncSession,
+    ) -> None:
+        """A ``NOMAD`` override is accepted and stored as raw config JSON.
+
+        Regression: ``NOMAD`` declares a fingerprint materializer; the PATCH
+        validation must route through it and persist the raw config dict (not the
+        coerced ``NomadExecutor`` instance) so the snapshot loader materializes a
+        diff-stable fingerprint.
+        """
+        raw_config = {"endpoint": "https://nomad-override.example.org"}
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD": raw_config},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=SettingClassEnum.TASKS_SETTINGS, key="NOMAD"
+        )
+        assert len(rows) == 1
+        assert rows[0].value == raw_config
+
+        snapshot = await build_snapshot(session, TasksSettings)
+        assert isinstance(snapshot["NOMAD"], dict)
+        assert snapshot["NOMAD"]["endpoint"].rstrip("/") == raw_config["endpoint"]
 
     async def test_patch_multiple_atomic(
         self,

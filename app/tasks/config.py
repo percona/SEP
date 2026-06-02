@@ -26,7 +26,7 @@ from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field
+from app.core.settings_override.registry import hot_field, materialize_fingerprint
 from app.tasks.execution.executors.nomad import NomadExecutor
 
 
@@ -77,7 +77,7 @@ class TasksSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
-    NOMAD: NomadExecutor
+    NOMAD: NomadExecutor = hot_field(..., materializer=materialize_fingerprint)
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
         content_security_policy_strict=False

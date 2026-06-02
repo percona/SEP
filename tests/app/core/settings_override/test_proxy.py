@@ -50,6 +50,21 @@ def test_empty_snapshot_delegates_to_factory(
     assert proxy.count == 1
 
 
+def test_get_snapshot_starts_empty(
+    proxy: OverridableSettingsProxy[_Sample],
+) -> None:
+    """A fresh proxy exposes an empty snapshot mapping."""
+    assert dict(proxy.get_snapshot()) == {}
+
+
+def test_get_snapshot_reflects_published_mapping(
+    proxy: OverridableSettingsProxy[_Sample],
+) -> None:
+    """``get_snapshot`` returns the mapping most recently published."""
+    proxy._set_snapshot({"name": "override-name"})
+    assert dict(proxy.get_snapshot()) == {"name": "override-name"}
+
+
 def test_snapshot_intercepts_named_attribute(
     proxy: OverridableSettingsProxy[_Sample],
 ) -> None:

@@ -16,6 +16,7 @@
 """Tests for the SEP settings REST API at ``/api/sep/admin/settings``."""
 
 from collections.abc import AsyncIterator, Iterator
+from string import Template
 from typing import Any
 from unittest.mock import patch
 
@@ -30,12 +31,13 @@ from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api import routes as settings_routes
+from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
-from app.sep.config import sep_settings
+from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -242,6 +244,54 @@ class TestSepSettingsPatch:
         assert rows[0].key == "SYNC_REFRESH_TIME"
         assert rows[0].value == new_value
 
+    async def test_materializer_field_footer_template_is_patchable(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """A ``FOOTER_TEMPLATE`` override is accepted and stored as raw JSON.
+
+        Regression: ``FOOTER_TEMPLATE`` declares a materializer because
+        ``TypeAdapter(Template)`` raises ``PydanticSchemaGenerationError``; the
+        PATCH validation must route through the materializer (not the bare
+        coercion that returned HTTP 500) and persist the raw string so the
+        snapshot loader re-materializes it to a ``Template``.
+        """
+        raw_template = "$summary custom $version"
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"FOOTER_TEMPLATE": raw_template},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key="FOOTER_TEMPLATE",
+        )
+        assert len(rows) == 1
+        assert rows[0].value == raw_template
+
+        snapshot = await build_snapshot(override_session, SEPSettings)
+        assert isinstance(snapshot["FOOTER_TEMPLATE"], Template)
+        assert snapshot["FOOTER_TEMPLATE"].template == raw_template
+
+    async def test_materializer_field_footer_template_rejects_non_string(
+        self,
+        api_admin_client: TestClient,
+    ) -> None:
+        """A non-string ``FOOTER_TEMPLATE`` override is rejected with HTTP 422.
+
+        Regression: the materializer must reject a non-string payload (which
+        would otherwise be published and crash the next ``safe_substitute`` read)
+        and the API must surface it as 422, not 500.
+        """
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"FOOTER_TEMPLATE": 123},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     async def test_existing_override_is_updated(
         self,
         api_admin_client: TestClient,
@@ -346,7 +396,7 @@ class TestSepSettingsPatch:
         """Patching a NOT_OVERRIDABLE field returns 422 with ``type='not_overridable'``."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"INVENTORY_ENDPOINT": "https://attacker.example"},
+            json={"PROXY_HEADERS": True},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
@@ -376,7 +426,7 @@ class TestSepSettingsPatch:
             json={
                 "SYNC_REFRESH_TIME": 10,
                 "BOGUS_KEY": 1,
-                "INVENTORY_ENDPOINT": "https://example.com",
+                "PROXY_HEADERS": True,
                 "ARTIFACT_DOWNLOAD_TTL": -1,
             },
         )
@@ -473,7 +523,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Deleting a NOT_OVERRIDABLE field returns 409 — the row can't exist."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/INVENTORY_ENDPOINT"
+            "/api/sep/admin/settings/SEPSettings/PROXY_HEADERS"
         )
         assert response.status_code == status.HTTP_409_CONFLICT
 

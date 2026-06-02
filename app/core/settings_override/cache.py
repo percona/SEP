@@ -15,22 +15,27 @@
 
 """Build immutable override snapshots for a settings class."""
 
+from __future__ import annotations
+
 __all__ = ["build_snapshot"]
 
 import logging
 from types import MappingProxyType
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from pydantic import ValidationError
-from sqlmodel.ext.asyncio.session import AsyncSession
-
-from app.core.config import BaseYamlSettings
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import (
-    coerce_field_value,
     is_hot_reloadable,
+    materialize_override_value,
 )
+
+if TYPE_CHECKING:
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    # Annotations only -- see app/core/settings_override/registry.py for the
+    # circular-import rationale.
+    from app.core.config import BaseYamlSettings
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +91,10 @@ async def build_snapshot(
             )
             continue
         try:
-            snapshot[row.key] = coerce_field_value(field_info, row.value)
-        except ValidationError as exc:
+            snapshot[row.key] = materialize_override_value(
+                settings_cls, row.key, field_info, row.value
+            )
+        except ValueError as exc:
             logger.warning(
                 "Override for %s.%s failed type coercion: %s",
                 setting_class.name,

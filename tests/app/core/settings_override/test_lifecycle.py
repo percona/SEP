@@ -217,6 +217,132 @@ async def test_start_refresh_task_cancellable(
     assert task.cancelled()
 
 
+_CALLBACK_KEY = (SettingClassEnum.SEP_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
+
+
+async def _seed_connectivity_override(
+    session_maker: async_sessionmaker, *, value: bool
+) -> None:
+    """Insert a ``CONNECTIVITY_CHECK_DEFAULT`` override row."""
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=value,
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_fires_callback_for_changed_key(
+    session_maker: async_sessionmaker,
+) -> None:
+    """A callback fires for a key whose value changed between snapshots."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    await _seed_connectivity_override(session_maker, value=override_value)
+    fired = []
+
+    async def _callback(_: object) -> None:
+        fired.append(True)
+
+    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _callback})
+    assert fired == [True]
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_skips_callback_for_unchanged_key(
+    session_maker: async_sessionmaker,
+) -> None:
+    """A callback does not fire when its key's value is unchanged."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    await _seed_connectivity_override(session_maker, value=override_value)
+    await refresh_all(lambda: session_maker, registry)
+    fired = []
+
+    async def _callback(_: object) -> None:
+        fired.append(True)
+
+    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _callback})
+    assert fired == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_isolates_callback_exception(
+    session_maker: async_sessionmaker,
+) -> None:
+    """A raising callback is caught; the snapshot is still published."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    await _seed_connectivity_override(session_maker, value=override_value)
+
+    async def _boom(_: object) -> None:
+        raise RuntimeError("callback boom")
+
+    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _boom})
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_start_refresh_task_initial_does_not_fire_callbacks(
+    session_maker: async_sessionmaker,
+) -> None:
+    """The initial inline refresh publishes the snapshot but fires no callback."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    await _seed_connectivity_override(session_maker, value=override_value)
+    fired = []
+
+    async def _callback(_: object) -> None:
+        fired.append(True)
+
+    task = await start_refresh_task(
+        lambda: session_maker,
+        registry,
+        interval=timedelta(seconds=3600),
+        callbacks={_CALLBACK_KEY: _callback},
+    )
+    try:
+        assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+        assert fired == []
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_start_refresh_task_fires_callback_on_loop_change(
+    session_maker: async_sessionmaker,
+) -> None:
+    """A change inserted after startup fires the callback on a later loop cycle."""
+    proxy, registry = _make_proxies()
+    fired = asyncio.Event()
+
+    async def _callback(_: object) -> None:
+        fired.set()
+
+    task = await start_refresh_task(
+        lambda: session_maker,
+        registry,
+        interval=timedelta(milliseconds=50),
+        callbacks={_CALLBACK_KEY: _callback},
+    )
+    try:
+        assert not fired.is_set()
+        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        await _seed_connectivity_override(session_maker, value=override_value)
+        await asyncio.wait_for(fired.wait(), timeout=5)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
 @pytest.mark.asyncio
 async def test_refresh_picks_up_changes_on_next_cycle(
     session_maker: async_sessionmaker,

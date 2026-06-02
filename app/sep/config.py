@@ -38,7 +38,6 @@ from pydantic import (
     SecretStr,
 )
 
-from app import __summary__, __version__
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
@@ -48,7 +47,7 @@ from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field
+from app.core.settings_override.registry import hot_field, materialize_template
 from app.core.utils import (
     deep_dict_update,
     slugify,
@@ -480,8 +479,8 @@ class SEPSettings(BaseYamlAppSettings):
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
-    INVENTORY_ENDPOINT: HttpUrl
-    TASKS_ENDPOINT: HttpUrl
+    INVENTORY_ENDPOINT: HttpUrl = hot_field(...)
+    TASKS_ENDPOINT: HttpUrl = hot_field(...)
     PLUGINS: UniqueList[Plugin] = UniqueList()
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
@@ -492,7 +491,9 @@ class SEPSettings(BaseYamlAppSettings):
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
-    FOOTER_TEMPLATE: Template = Template("$summary $version")
+    FOOTER_TEMPLATE: Template = hot_field(
+        Template("$summary $version"), materializer=materialize_template
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -548,20 +549,6 @@ class SEPSettings(BaseYamlAppSettings):
         """
         return Jinja2Templates(
             env=self.JINJA_ENVIRONMENT,
-        )
-
-    @property
-    def FOOTER_TEXT(self) -> str:
-        """Return the rendered footer template.
-
-        This property renders the ``FOOTER_TEMPLATE`` with the current application
-        version and summary, returning the resulting string.
-
-        :return: The rendered footer string.
-        :rtype: str
-        """
-        return self.FOOTER_TEMPLATE.safe_substitute(
-            version=__version__, summary=__summary__
         )
 
     @field_validator("FOOTER_TEMPLATE", mode="before")

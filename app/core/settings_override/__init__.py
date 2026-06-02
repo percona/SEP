@@ -16,8 +16,12 @@
 """DB-backed settings override layer (HOT-only)."""
 
 __all__ = [
+    "CallbackRegistry",
     "FieldMetadata",
+    "Materializer",
+    "MaterializerContext",
     "OverridableSettingsProxy",
+    "RefreshCallback",
     "ReloadClassification",
     "SettingClassEnum",
     "SettingOverride",
@@ -25,10 +29,15 @@ __all__ = [
     "build_snapshot",
     "coerce_field_value",
     "dump_field_value",
+    "field_materializer",
     "hot_field",
     "hot_field_names",
     "is_hot_reloadable",
     "iter_class_fields",
+    "materialize_fingerprint",
+    "materialize_override_value",
+    "materialize_template",
+    "materialize_via_owning_model",
     "publish_snapshot",
     "refresh_all",
     "settings_override_refresher",
@@ -37,8 +46,10 @@ __all__ = [
 
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
+    CallbackRegistry,
     publish_snapshot,
     refresh_all,
+    RefreshCallback,
     settings_override_refresher,
     start_refresh_task,
 )
@@ -48,10 +59,17 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     coerce_field_value,
     dump_field_value,
+    field_materializer,
     FieldMetadata,
     hot_field,
     hot_field_names,
     is_hot_reloadable,
     iter_class_fields,
+    materialize_fingerprint,
+    materialize_override_value,
+    materialize_template,
+    materialize_via_owning_model,
+    Materializer,
+    MaterializerContext,
     ReloadClassification,
 )

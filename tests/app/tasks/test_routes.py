@@ -39,7 +39,7 @@ from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
-from app.tasks.deps import get_executor, get_session
+from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
@@ -2405,7 +2405,7 @@ class TestSyncTaskHistoryRealSession:
 
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
-        tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+        tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
 
         try:
             with patch(
