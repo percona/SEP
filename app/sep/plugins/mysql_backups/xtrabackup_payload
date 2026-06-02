@@ -1651,11 +1651,11 @@ class XtraBackupUpload(Upload):
 class RsyncUploadProvider:
     """Rsync folder to another location."""
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
         """Initialize RsyncUploadProvider.
 
         :param settings: Backup/server settings.
-        :param logger: Logger instance.
+        :param level: Logging level.
         :raises BackupError: If RSYNC_PATH not set or rsync not installed.
         """
         host = settings.get("HOST", "localhost")
@@ -1672,7 +1672,7 @@ class RsyncUploadProvider:
         )
         log_file = Path(logging_dir) / log_name
         self.log_stream = log_file.open("a")
-        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, logger.level)
+        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, level)
 
     def upload(self, source_dir: str, dest_dir: str) -> str:
         """Rsync files from source dir to target directory.
@@ -1715,11 +1715,11 @@ class RsyncUploadProvider:
 class S3UploadProvider:
     """Upload to Amazon S3 bucket using boto3."""
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
         """Initialize S3UploadProvider.
 
         :param settings: Backup/server settings.
-        :param logger: Logger instance.
+        :param level: Logging level.
         :raises BackupError: If S3_BUCKET not set.
         """
         host = settings.get("HOST", "localhost")
@@ -1742,7 +1742,7 @@ class S3UploadProvider:
             / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
-        self.logger = upload_logging_setup(self.logging_dir, log_file.name, self.alias, logger.level)
+        self.logger = upload_logging_setup(self.logging_dir, log_file.name, self.alias, level)
 
         bucket_str = self.s3_bucket
         if bucket_str.startswith("s3://"):
@@ -1854,11 +1854,11 @@ class S3UploadProvider:
 class GSUploadProvider:
     """Google Cloud Storage upload using gcloud storage."""
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
         """Initialize GSUploadProvider.
 
         :param settings: Backup/server settings.
-        :param logger: Logger instance.
+        :param level: Logging level.
         :raises BackupError: If GS_BUCKET not set.
         """
         host = settings.get("HOST", "localhost")
@@ -1876,7 +1876,7 @@ class GSUploadProvider:
         )
         log_file = os.path.join(logging_dir, log_name)
         self.log_stream = open(log_file, 'a')
-        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, logger.level)
+        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, level)
 
         bucket_str = self.gs_bucket
         if bucket_str.startswith("gs://"):
@@ -2191,6 +2191,7 @@ class Xtrabackup(Backup):
                 self._save_disk_space()
 
         # Upload if needed
+        upload_log_level = LOGGER.getEffectiveLevel()
         for upload_type in self.upload_type:
             self.enable_upload(self.last_backup_dir)
             if upload_type == "rsync":
@@ -2198,21 +2199,21 @@ class Xtrabackup(Backup):
                     upload_type=upload_type,
                     upload_provider=RsyncUploadProvider,
                     settings=self.server_setting,
-                    logger=self.logger,
+                    level=upload_log_level,
                 ).run()
             elif upload_type == "s3":
                 XtraBackupUpload(
                     upload_type=upload_type,
                     upload_provider=S3UploadProvider,
                     settings=self.server_setting,
-                    logger=self.logger,
+                    level=upload_log_level,
                 ).run()
             elif upload_type == "gsutil":
                 XtraBackupUpload(
                     upload_type=upload_type,
                     upload_provider=GSUploadProvider,
                     settings=self.server_setting,
-                    logger=self.logger,
+                    level=upload_log_level,
                 ).run()
             else:
                 self.logger.warning("Unsupported upload type: %r", upload_type)
