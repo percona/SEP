@@ -64,7 +64,7 @@ const MOCK_SCHEMA = {
       title: 'Upload',
       fields: [
         {
-          type: 'multichoice',
+          type: 'multi_choice',
           name: 'upload',
           label: 'Upload providers',
           required: true,
