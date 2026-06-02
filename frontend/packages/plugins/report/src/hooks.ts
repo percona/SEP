@@ -40,6 +40,11 @@ export function useGenerateReport(params: ReportParams | null) {
           refresh: p.refresh,
           ...(p.sections?.length ? { sections: p.sections } : {}),
         },
+        // FastAPI's `sections: list[str] | None = Query()` only reads bracket-less
+        // repeated params (`sections=advisors&sections=alerts`). Axios's default
+        // serializer emits `sections[]=…`, which the backend ignores (binds None →
+        // "all sections"). `indexes: null` drops the brackets so the filter applies.
+        paramsSerializer: { indexes: null },
       });
       return data;
     },
