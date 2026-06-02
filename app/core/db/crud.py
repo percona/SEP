@@ -45,9 +45,8 @@ from app.core.exceptions import (
     HTTPNotFoundException,
 )
 from app.core.pagination import (
-    DEFAULT_PAGINATION_LIMIT,
-    DEFAULT_PAGINATION_OFFSET,
     PaginatedResponse,
+    Pagination,
 )
 from app.core.utils.fields import DatabaseDialect
 
@@ -212,24 +211,6 @@ class BaseManager:
             return [cls._get_column("created_at").desc()]
         return None
 
-    @staticmethod
-    def _validate_pagination(offset: int | None, limit: int | None) -> None:
-        """Validate pagination arguments.
-
-        :param offset: The zero-based starting offset for the query results,
-            or ``None`` when pagination is not requested.
-        :type offset: int | None
-        :param limit: The maximum number of records to return, ``0`` to disable
-            the limit (return all rows), or ``None`` when pagination is not
-            requested.
-        :type limit: int | None
-        :raises ValueError: If ``offset`` or ``limit`` is negative.
-        """
-        if offset is not None and offset < 0:
-            raise ValueError("offset must be greater than or equal to 0")
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be greater than or equal to 0")
-
     @classmethod
     async def _exec(
         cls,
@@ -250,7 +231,6 @@ class BaseManager:
         limit: int | None = None,
         **equal_filters: Any,
     ) -> TupleResult | ScalarResult:
-        cls._validate_pagination(offset, limit)
         ordering = cls._get_ordering()
         pagination_requested = offset is not None or limit is not None
 
@@ -563,8 +543,7 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         query_options: Sequence = (),
-        offset: int = DEFAULT_PAGINATION_OFFSET,
-        limit: int = DEFAULT_PAGINATION_LIMIT,
+        pagination: Pagination,
         **equal_filters: Any,
     ) -> PaginatedResponse[T]:
         """Return a paginated response for matching records.
@@ -578,33 +557,25 @@ class BaseManager:
         :type select_related: Sequence
         :param query_options: Additional SQLAlchemy query options to apply.
         :type query_options: Sequence
-        :param offset: The zero-based starting offset for the query results.
-        :type offset: int
-        :param limit: The maximum number of records to return.
-        :type limit: int
+        :param pagination: Validated offset/limit window for this page.
+        :type pagination: Pagination
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
         :return: A paginated response containing matching records and metadata.
         :rtype: PaginatedResponse[T]
         """
-        cls._validate_pagination(offset, limit)
         total = await cls.count(session, *whereclause, **equal_filters)
         items = await cls.list(
             session,
             *whereclause,
             select_related=select_related,
             query_options=query_options,
-            offset=offset,
-            limit=limit,
+            offset=pagination.offset,
+            limit=pagination.limit,
             **equal_filters,
         )
-        return PaginatedResponse(
-            items=items,
-            total=total,
-            offset=offset,
-            limit=limit,
-        )
+        return PaginatedResponse.from_pagination(items, total, pagination)
 
     @classmethod
     async def first(

@@ -39,6 +39,7 @@ __all__ = [
     "PaginatedResponse",
     "Pagination",
     "PaginationDep",
+    "fetch_all_dict_items",
     "fetch_all_items",
     "make_pagination_dep",
     "pagination_dep",
@@ -200,8 +201,38 @@ async def fetch_all_items(
     offset = 0
     while True:
         page = await get_page(Pagination(offset=offset, limit=page_size))
-        all_items.extend(page.items)
-        if not page.items or offset + len(page.items) >= page.total:
+        if not page.items:
             break
-        offset += page_size
+        all_items.extend(page.items)
+        offset += len(page.items)
+        if offset >= page.total or len(page.items) < page_size:
+            break
     return all_items
+
+
+async def fetch_all_dict_items(
+    fetch_page: Callable[[Pagination], Awaitable[dict[str, Any]]],
+    *,
+    page_size: int = MAX_PAGINATION_LIMIT,
+) -> list[Any]:
+    """Fetch every item from paginated dict responses (e.g. RemoteAPI payloads).
+
+    :param fetch_page: Async callable returning one paginated dict per window.
+    :type fetch_page: Callable[[Pagination], Awaitable[dict[str, Any]]]
+    :param page_size: ``limit`` used for each upstream request.
+    :type page_size: int
+    :return: All ``items`` across every page, in upstream order.
+    :rtype: list[Any]
+    """
+
+    async def get_page(pagination: Pagination) -> PaginatedResponse[Any]:
+        raw = await fetch_page(pagination)
+        if "total" not in raw:
+            raw = {**raw, "total": len(raw.get("items", []))}
+        if "offset" not in raw:
+            raw = {**raw, "offset": pagination.offset}
+        if "limit" not in raw:
+            raw = {**raw, "limit": pagination.limit}
+        return PaginatedResponse.model_validate(raw)
+
+    return await fetch_all_items(get_page, page_size=page_size)
