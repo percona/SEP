@@ -465,21 +465,21 @@ def upload_logging_setup(
     with the same name; without the guard each call would stack another
     FileHandler and another ContextFilter.
     """
-    d = Path(logging_dir).expanduser().resolve()
-    d.mkdir(parents=True, exist_ok=True)
+    real_logging_dir = Path(logging_dir).expanduser().resolve()
+    real_logging_dir.mkdir(parents=True, exist_ok=True)
     name = log_name.replace(".log", "")
     logger = logging.getLogger(name)
     logger.propagate = False
-    log_file = str(d / log_name)
+    log_file = str(real_logging_dir / log_name)
     if any(
-        isinstance(h, logging.FileHandler)
-        and getattr(h, "baseFilename", None) == log_file
-        for h in logger.handlers
+        isinstance(existing_handler, logging.FileHandler)
+        and getattr(existing_handler, "baseFilename", None) == log_file
+        for existing_handler in logger.handlers
     ):
         return logger
-    h = logging.FileHandler(log_file)
-    h.setFormatter(logging.Formatter(LOGGING_FORMAT))
-    logger.addHandler(h)
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(logging.Formatter(LOGGING_FORMAT))
+    logger.addHandler(file_handler)
     logger.setLevel(level)
     logging_set_host(alias, name)
     return logger
