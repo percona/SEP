@@ -29,6 +29,7 @@ from app.core.exceptions import (
     HTTPRedirectException,
     HTTPUnprocessableEntityException,
 )
+from app.core.pagination import fetch_all_dict_items
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.inventory.models import ServiceTypeEnum
@@ -384,10 +385,17 @@ async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
     """
     services = []
     for service_type in DIPPER_SCRIPT_BY_SERVICE_TYPE:
-        response = await inventory_api.get(
-            "/services/", params={"service_type": service_type.value, "limit": 0}
+        services.extend(
+            await fetch_all_dict_items(
+                lambda pagination, service_type=service_type: inventory_api.get(
+                    "/services/",
+                    params={
+                        "service_type": service_type.value,
+                        **pagination.as_params(),
+                    },
+                )
+            )
         )
-        services.extend(response["items"])
     logger.debug("Supported Dipper services: %s", services)
     return services
 

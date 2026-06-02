@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
@@ -222,11 +223,15 @@ async def alters_detail(
     task_data.update(parse_alters_task_args(meta))
 
     try:
-        response = await inventory_api.get(
-            "/services/",
-            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
+        services = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                "/services/",
+                params={
+                    "service_type": ServiceTypeEnum.MYSQL,
+                    **pagination.as_params(),
+                },
+            )
         )
-        services = response["items"]
     except HTTPException as exc:
         services = []
         logger.warning("Failed to get services: %s", exc)

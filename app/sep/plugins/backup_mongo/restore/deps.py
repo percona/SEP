@@ -25,6 +25,7 @@ from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.models import PaginatedResponse
+from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -625,26 +626,30 @@ async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
     ``parent == name``.
     """
     null_response, self_parent_response = await asyncio.gather(
-        tasks_api.get(
-            "/",
-            params={
-                "owner": TaskOwner.RESTORE_MONGO.value,
-                "parent_is_null": "true",
-                "limit": 0,
-            },
+        fetch_all_dict_items(
+            lambda pagination: tasks_api.get(
+                "/",
+                params={
+                    "owner": TaskOwner.RESTORE_MONGO.value,
+                    "parent_is_null": "true",
+                    **pagination.as_params(),
+                },
+            )
         ),
-        tasks_api.get(
-            "/",
-            params={
-                "owner": TaskOwner.RESTORE_MONGO.value,
-                "parent_is_null": "false",
-                "self_parent": "true",
-                "limit": 0,
-            },
+        fetch_all_dict_items(
+            lambda pagination: tasks_api.get(
+                "/",
+                params={
+                    "owner": TaskOwner.RESTORE_MONGO.value,
+                    "parent_is_null": "false",
+                    "self_parent": "true",
+                    **pagination.as_params(),
+                },
+            )
         ),
     )
-    null_parents = [Task.model_validate(item) for item in null_response["items"]]
-    self_parents = [Task.model_validate(item) for item in self_parent_response["items"]]
+    null_parents = [Task.model_validate(item) for item in null_response]
+    self_parents = [Task.model_validate(item) for item in self_parent_response]
     return null_parents + self_parents
 
 

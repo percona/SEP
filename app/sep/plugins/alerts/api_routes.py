@@ -35,12 +35,16 @@ import logging
 from fastapi import APIRouter, Query
 from fastapi.exceptions import HTTPException
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPNotFoundException,
 )
 from app.core.models import PaginatedResponse
+from app.core.pagination import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    Pagination,
+)
 from app.sep.deps import IsApiAuthenticated, SessionDep
 from app.sep.plugins.alerts.config import alerts_pmm_config
 from app.sep.plugins.alerts.crud import AlertBackupManager
@@ -97,7 +101,9 @@ async def alerts_api_list_backups(
         ``created_at`` descending.
     :rtype: PaginatedResponse[BackupSummary]
     """
-    page = await AlertBackupManager.list_paginated(session, offset=offset, limit=limit)
+    page = await AlertBackupManager.list_paginated(
+        session, pagination=Pagination(offset=offset, limit=limit)
+    )
     items = [
         BackupSummary(
             id=backup.id,

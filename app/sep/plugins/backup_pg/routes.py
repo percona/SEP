@@ -24,6 +24,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.connectivity import maybe_check_connectivity
@@ -145,11 +146,15 @@ async def pg_backups_detail(
     ).as_template_list()
 
     try:
-        response = await inventory_api.get(
-            "/services/",
-            params={"service_type": ServiceTypeEnum.POSTGRESQL, "limit": 0},
+        context["services"] = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                "/services/",
+                params={
+                    "service_type": ServiceTypeEnum.POSTGRESQL,
+                    **pagination.as_params(),
+                },
+            )
         )
-        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

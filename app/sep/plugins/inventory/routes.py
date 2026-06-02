@@ -31,6 +31,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException
+from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.config import sep_settings
@@ -104,8 +105,9 @@ async def node_list(
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
     """List Nodes."""
-    response = await inventory_api.get("/", params={"limit": 0})
-    context["inventory"] = response["items"]
+    context["inventory"] = await fetch_all_dict_items(
+        lambda pagination: inventory_api.get("/", params=pagination.as_params())
+    )
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
         session,
