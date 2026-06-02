@@ -39,10 +39,10 @@ from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPNotFoundException,
 )
-from app.core.models import PaginatedResponse
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
     DEFAULT_PAGINATION_OFFSET,
+    PaginatedResponse,
     Pagination,
 )
 from app.sep.deps import IsApiAuthenticated, SessionDep

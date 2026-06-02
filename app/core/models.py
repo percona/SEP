@@ -20,7 +20,6 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.core.pagination import PaginatedResponse
 from app.core.utils import to_uppercase, transform_dict_keys
 from app.core.utils.strings import lower_if_string
 
@@ -28,7 +27,6 @@ __all__ = [
     "BaseCaseInsensitiveModel",
     "BaseLowercaseModel",
     "BaseTransformFieldsModel",
-    "PaginatedResponse",
 ]
 
 

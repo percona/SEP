@@ -39,8 +39,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
 )
-from app.core.models import PaginatedResponse
-from app.core.pagination import PaginationDep
+from app.core.pagination import PaginatedResponse, PaginationDep
 from app.core.utils import utc_now
 from app.core.utils.fields import NonEmptyStr
 from app.tasks.celery import (

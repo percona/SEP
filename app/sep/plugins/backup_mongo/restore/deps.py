@@ -24,8 +24,7 @@ import yaml
 from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
-from app.core.models import PaginatedResponse
-from app.core.pagination import fetch_all_dict_items
+from app.core.pagination import fetch_all_dict_items, PaginatedResponse
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,

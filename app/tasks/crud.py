@@ -29,8 +29,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseManager, BaseSQLModelManager
 from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
-from app.core.models import PaginatedResponse
-from app.core.pagination import Pagination
+from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
 from app.tasks.models import (
     DispatchLock,

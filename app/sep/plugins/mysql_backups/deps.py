@@ -24,7 +24,7 @@ import yaml
 from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (

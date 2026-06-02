@@ -27,7 +27,7 @@ from aiohttp import ClientResponseError
 from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,

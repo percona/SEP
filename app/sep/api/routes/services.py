@@ -20,10 +20,9 @@ schema-driven service selectors without bypassing the SEP layer (see the
 non-bypass rule in ``app/sep/api/router.py``).
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse, PaginationDep
 from app.inventory.models import ServiceResponse, ServiceTypeEnum
 from app.sep.deps import InventoryAPI
 
@@ -33,9 +32,8 @@ router = APIRouter()
 @router.get("/", response_model=PaginatedResponse[ServiceResponse])
 async def list_services(
     inventory_api: InventoryAPI,
+    pagination: PaginationDep,
     service_type: ServiceTypeEnum | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[ServiceResponse]:
     """Return a paginated list of inventory services via the SEP gateway.
 
@@ -43,14 +41,12 @@ async def list_services(
     :type inventory_api: InventoryAPI
     :param service_type: Optional service type filter forwarded to inventory.
     :type service_type: ServiceTypeEnum | None
-    :param offset: Pagination offset; must be non-negative.
-    :type offset: int
-    :param limit: Pagination limit; must be non-negative.
-    :type limit: int
+    :param pagination: Validated pagination window for this request.
+    :type pagination: Pagination
     :return: Paginated services payload.
     :rtype: PaginatedResponse[ServiceResponse]
     """
-    params: dict[str, int | str] = {"offset": offset, "limit": limit}
+    params: dict[str, int | str] = pagination.as_params()
     if service_type is not None:
         params["service_type"] = service_type.value
     response = await inventory_api.get("/services/", params=params)
