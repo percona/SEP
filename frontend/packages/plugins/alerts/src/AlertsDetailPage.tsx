@@ -26,6 +26,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useAlertBackupDetail } from './hooks';
+import { formatTimestamp } from './utils';
 
 /**
  * Detail page rendered at /alerts/templates/backup/:backupId.
@@ -80,7 +81,7 @@ export function AlertsDetailPage() {
         Backup #{data.id}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Created: {data.created_at}
+        Created: {formatTimestamp(data.created_at)}
       </Typography>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>

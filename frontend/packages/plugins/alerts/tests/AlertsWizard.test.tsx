@@ -21,6 +21,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AlertsWizard } from '../src/AlertsWizard';
+import { formatTimestamp } from '../src/utils';
 import type { AlertBackupSummary, AlertTemplate, WizardMode } from '../src/types';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
@@ -86,8 +87,8 @@ const MOCK_TEMPLATES: AlertTemplate[] = [
 ];
 
 const MOCK_BACKUPS: AlertBackupSummary[] = [
-  { id: 1, created_at: '2026-05-28 10:00 UTC' },
-  { id: 2, created_at: '2026-05-27 10:00 UTC' },
+  { id: 1, created_at: '2026-05-28T10:00:00Z' },
+  { id: 2, created_at: '2026-05-27T10:00:00Z' },
 ];
 
 // ── Conditional branching tests ────────────────────────────────────────────────
@@ -147,7 +148,7 @@ describe('AlertsWizard conditional branching', () => {
     it('shows backup list', () => {
       renderWizard('restore', { backups: MOCK_BACKUPS });
       expect(screen.getByText('Backup #1')).toBeInTheDocument();
-      expect(screen.getByText('2026-05-28 10:00 UTC')).toBeInTheDocument();
+      expect(screen.getByText(formatTimestamp(MOCK_BACKUPS[0].created_at))).toBeInTheDocument();
     });
 
     it('restore button disabled until backup selected', () => {

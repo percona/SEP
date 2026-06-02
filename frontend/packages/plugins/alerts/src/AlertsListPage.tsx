@@ -38,6 +38,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import { useAlertBackups, useAlertsIndex } from './hooks';
 import { AlertsWizard } from './AlertsWizard';
 import type { AlertTemplate, WizardMode } from './types';
+import { formatTimestamp } from './utils';
 
 const SEVERITY_COLORS: Record<string, 'default' | 'info' | 'warning' | 'error'> = {
   info: 'info',
@@ -260,7 +261,7 @@ export function AlertsListPage() {
                 py: 0.5,
               }}
             >
-              <Typography variant="body2">{backup.created_at}</Typography>
+              <Typography variant="body2">{formatTimestamp(backup.created_at)}</Typography>
               <MuiLink component={Link} to={`backup/${backup.id}`} variant="body2">
                 View
               </MuiLink>

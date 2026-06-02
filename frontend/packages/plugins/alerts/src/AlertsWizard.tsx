@@ -39,6 +39,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import RemoveCircleIcon from '@mui/icons-material/RemoveCircle';
 import type { AlertBackupSummary, AlertTemplate, PushResult, WizardMode } from './types';
+import { formatTimestamp } from './utils';
 import { useDeletePagerDuty, usePushTemplates, useRestoreBackup, useSavePagerDuty } from './hooks';
 
 // ── Push flow ─────────────────────────────────────────────────────────────────
@@ -200,7 +201,10 @@ function RestoreFlow({ backups, onClose }: RestoreFlowProps) {
                     size="small"
                     inputProps={{ 'aria-label': `Backup ${b.id}` }}
                   />
-                  <ListItemText primary={`Backup #${b.id}`} secondary={b.created_at} />
+                  <ListItemText
+                    primary={`Backup #${b.id}`}
+                    secondary={formatTimestamp(b.created_at)}
+                  />
                 </ListItem>
               ))}
             </List>
@@ -296,7 +300,7 @@ function PagerDutyFlow({ configured, onClose }: PagerDutyFlowProps) {
         <TextField
           {...register('integrationKey', {
             required: 'Integration key is required',
-            minLength: { value: 1, message: 'Integration key cannot be empty' },
+            validate: (v) => v.trim().length > 0 || 'Integration key cannot be empty',
           })}
           label="PagerDuty Integration Key"
           fullWidth

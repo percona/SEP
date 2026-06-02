@@ -212,7 +212,9 @@ class BaseManager:
             # rows share a created_at — utc_now() has second resolution, so
             # ties are common and an unstable order can skip/duplicate rows
             # across pages (and differs across SQLite builds / Python versions).
-            return [cls._get_column("created_at").desc(), cls._get_column("id").asc()]
+            # Tie-break descending to keep the newest-first intent of the
+            # created_at DESC fallback (later-inserted rows sort first).
+            return [cls._get_column("created_at").desc(), cls._get_column("id").desc()]
         return None
 
     @staticmethod

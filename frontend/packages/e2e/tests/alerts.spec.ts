@@ -68,8 +68,8 @@ const MOCK_INDEX = {
   pmm_connected: true,
   pagerduty: { configured: false },
   recent_backups: [
-    { id: 1, created_at: '2026-05-28 10:00 UTC' },
-    { id: 2, created_at: '2026-05-27 08:00 UTC' },
+    { id: 1, created_at: '2026-05-28T10:00:00Z' },
+    { id: 2, created_at: '2026-05-27T08:00:00Z' },
   ],
 };
 
@@ -79,8 +79,8 @@ const MOCK_PUSH_RESULT = {
 
 const MOCK_BACKUPS_PAGE = {
   items: [
-    { id: 1, created_at: '2026-05-28 10:00 UTC' },
-    { id: 2, created_at: '2026-05-27 08:00 UTC' },
+    { id: 1, created_at: '2026-05-28T10:00:00Z' },
+    { id: 2, created_at: '2026-05-27T08:00:00Z' },
   ],
   total: 2,
   offset: 0,
@@ -93,7 +93,7 @@ const MOCK_PAGERDUTY_SAVE = { status: 'created' };
 
 const MOCK_BACKUP_DETAIL = {
   id: 1,
-  created_at: '2026-05-28 10:00 UTC',
+  created_at: '2026-05-28T10:00:00Z',
   templates: [{ name: 'MySQL Slow Queries', summary: 'Slow queries alert' }],
   rules: [{ title: 'MySQL Slow Queries' }],
   contact_points: [{ name: 'SEP PagerDuty', type: 'pagerduty' }],
@@ -190,7 +190,7 @@ test.describe('Alerts list page', () => {
   test('shows recent backups section', async ({ page }) => {
     await gotoAlerts(page);
     await expect(page.getByText('Recent Backups')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('2026-05-28 10:00 UTC')).toBeVisible();
+    await expect(page.getByText('5/28/2026, 10:00:00 AM')).toBeVisible();
   });
 
   test('Push Selected button disabled until template selected', async ({ page }) => {
@@ -261,7 +261,7 @@ test.describe('Restore flow (wizard branching)', () => {
     });
     await expect(page.getByText('Backup #1')).toBeVisible();
     // Scope to the dialog: the timestamp also shows in the list behind it.
-    await expect(page.getByRole('dialog').getByText('2026-05-28 10:00 UTC')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('5/28/2026, 10:00:00 AM')).toBeVisible();
   });
 
   test('restore button disabled until backup selected', async ({ page }) => {
