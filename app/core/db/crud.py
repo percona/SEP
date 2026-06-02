@@ -44,7 +44,11 @@ from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
 )
-from app.core.models import PaginatedResponse
+from app.core.pagination import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    PaginatedResponse,
+)
 from app.core.utils.fields import DatabaseDialect
 
 logger = logging.getLogger(__name__)
@@ -97,8 +101,6 @@ def _delete_builder(*args: P.args) -> _QueryBuilder:
 
 
 _DEFAULT_SELECT_QUERY_BUILDER = _select_builder()
-DEFAULT_PAGINATION_OFFSET = 0
-DEFAULT_PAGINATION_LIMIT = 50
 
 
 class BaseManager:
