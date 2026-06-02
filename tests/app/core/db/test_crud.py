@@ -26,12 +26,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
 from app.core.db import BaseSQLModel
-from app.core.db.crud import (
-    BaseSQLModelManager,
-    DEFAULT_PAGINATION_LIMIT,
-)
+from app.core.db.crud import BaseSQLModelManager
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.models import PaginatedResponse
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT, Pagination
 from app.core.utils import json_serializer
 
 MATCHING_ITEM_TOTAL = 3
@@ -223,34 +221,6 @@ class TestBaseSQLModelManagerPagination:
         assert result[0].name == "item-0"
 
     @pytest.mark.asyncio
-    async def test_list_negative_offset_raises_value_error(
-        self,
-        session: AsyncSession,
-    ) -> None:
-        """Assert negative offsets are rejected."""
-        with pytest.raises(
-            ValueError, match="offset must be greater than or equal to 0"
-        ):
-            await PaginationItemManager.list(
-                session,
-                offset=INVALID_PAGINATION_VALUE,
-            )
-
-    @pytest.mark.asyncio
-    async def test_list_negative_limit_raises_value_error(
-        self,
-        session: AsyncSession,
-    ) -> None:
-        """Assert negative limits are rejected."""
-        with pytest.raises(
-            ValueError, match="limit must be greater than or equal to 0"
-        ):
-            await PaginationItemManager.list(
-                session,
-                limit=INVALID_PAGINATION_VALUE,
-            )
-
-    @pytest.mark.asyncio
     async def test_list_paginated_returns_items_total_offset_and_limit(
         self,
         session: AsyncSession,
@@ -274,8 +244,7 @@ class TestBaseSQLModelManagerPagination:
         result = await PaginationItemManager.list_paginated(
             session,
             category="target",
-            offset=1,
-            limit=1,
+            pagination=Pagination(offset=1, limit=1),
         )
 
         assert isinstance(result, PaginatedResponse)
@@ -283,34 +252,6 @@ class TestBaseSQLModelManagerPagination:
         assert result.offset == 1
         assert result.limit == 1
         assert [item.name for item in result.items] == ["match-1"]
-
-    @pytest.mark.asyncio
-    async def test_list_paginated_negative_offset_raises_value_error(
-        self,
-        session: AsyncSession,
-    ) -> None:
-        """Assert paginated responses reject negative offsets."""
-        with pytest.raises(
-            ValueError, match="offset must be greater than or equal to 0"
-        ):
-            await PaginationItemManager.list_paginated(
-                session,
-                offset=INVALID_PAGINATION_VALUE,
-            )
-
-    @pytest.mark.asyncio
-    async def test_list_paginated_negative_limit_raises_value_error(
-        self,
-        session: AsyncSession,
-    ) -> None:
-        """Assert paginated responses reject negative limits."""
-        with pytest.raises(
-            ValueError, match="limit must be greater than or equal to 0"
-        ):
-            await PaginationItemManager.list_paginated(
-                session,
-                limit=INVALID_PAGINATION_VALUE,
-            )
 
     @pytest.mark.asyncio
     async def test_list_paginated_supports_select_related(
@@ -331,7 +272,7 @@ class TestBaseSQLModelManagerPagination:
         result = await PaginationItemManager.list_paginated(
             session,
             select_related=[PaginationItem.parent],
-            limit=SELECT_RELATED_PAGE_LIMIT,
+            pagination=Pagination(offset=0, limit=SELECT_RELATED_PAGE_LIMIT),
         )
 
         assert result.total == MATCHING_ITEM_TOTAL
@@ -364,7 +305,7 @@ class TestBaseSQLModelManagerPagination:
         result = await PaginationParentManager.list_paginated(
             session,
             select_related=[PaginationParent.items],
-            limit=1,
+            pagination=Pagination(offset=0, limit=1),
         )
 
         assert result.total == 1

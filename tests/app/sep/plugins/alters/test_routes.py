@@ -270,6 +270,12 @@ def test_alters_detail(
         },
     }
     created_task.data = mock_data
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     mock_task_api_dep.get.side_effect = [
         {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
         {"items": [], "total": 0, "offset": 0, "limit": 50},

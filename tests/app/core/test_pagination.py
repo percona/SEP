@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
     DEFAULT_PAGINATION_OFFSET,
+    fetch_all_dict_items,
     fetch_all_items,
     MAX_PAGINATION_LIMIT,
     PaginatedResponse,
@@ -156,6 +157,20 @@ class TestFetchAllItems:
         )
 
     @pytest.mark.asyncio
+    async def test_fetch_all_items_stops_on_short_page_despite_total(self) -> None:
+        """Stop when a page returns fewer items than page_size even if total is larger."""
+
+        async def get_page(_pagination: Pagination) -> PaginatedResponse[int]:
+            return PaginatedResponse[int](
+                items=[0],
+                total=100,
+                offset=0,
+                limit=PAGE_SIZE,
+            )
+
+        assert await fetch_all_items(get_page, page_size=PAGE_SIZE) == [0]
+
+    @pytest.mark.asyncio
     async def test_fetch_all_items_empty(self) -> None:
         """Return an empty list when the first page has no items."""
 
@@ -178,3 +193,30 @@ class TestFetchAllItems:
 
         with pytest.raises(ValueError, match="page_size must be at least 1"):
             await fetch_all_items(get_page, page_size=0)
+
+
+class TestFetchAllDictItems:
+    """Test dict-page fetch-all helper."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_dict_items(self) -> None:
+        """Concatenate items from validated paginated dict responses."""
+
+        async def fetch_page(pagination: Pagination) -> dict[str, object]:
+            if pagination.offset == 0:
+                return {
+                    "items": [0, 1],
+                    "total": TOTAL_ITEMS,
+                    "offset": 0,
+                    "limit": PAGE_SIZE,
+                }
+            return {
+                "items": [2, 3, 4],
+                "total": TOTAL_ITEMS,
+                "offset": 2,
+                "limit": PAGE_SIZE,
+            }
+
+        assert await fetch_all_dict_items(fetch_page, page_size=PAGE_SIZE) == list(
+            range(TOTAL_ITEMS)
+        )
