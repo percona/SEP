@@ -362,6 +362,11 @@ mysql_backups_schema = PluginSchema(
                     label="Lock DDL",
                     default=False,
                 ),
+                BoolField(
+                    name="xtrabackup_quiet",
+                    label="Quiet log (drop per-file copy lines)",
+                    default=False,
+                ),
                 ChoiceField(
                     name="xtrabackup_bin_cmd",
                     label="Backup binary",
