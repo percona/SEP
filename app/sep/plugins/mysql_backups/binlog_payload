@@ -1817,8 +1817,15 @@ class BinaryLogUpload(Upload):
 
 
 class S3UploadProvider:
+    """Upload to Amazon S3 bucket using boto3."""
 
     def __init__(self, settings: dict[str, Any], level: int) -> None:
+        """Initialize S3UploadProvider.
+
+        :param settings: Backup/server settings.
+        :param level: Logging level.
+        :raises BackupError: If S3_BUCKET not set.
+        """
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.s3_bucket = settings.get("S3_BUCKET")
@@ -1827,14 +1834,14 @@ class S3UploadProvider:
         self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
-        self.logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
+        self.logging_dir = Path(settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
 
         if self.s3_bucket is None:
             msg = "S3_BUCKET is not set."
             raise BackupError(msg)
 
         log_file = (
-            Path(self.logging_dir)
+            self.logging_dir
             / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
