@@ -1713,7 +1713,6 @@ class RsyncUploadProvider:
 
 
 class S3UploadProvider:
-    """Upload to Amazon S3 bucket using boto3."""
 
     def __init__(self, settings: dict[str, Any], level: int) -> None:
         """Initialize S3UploadProvider.
