@@ -95,6 +95,21 @@ class HTTPServiceUnavailableException(HTTPException):
         super().__init__(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
 
 
+class HTTPInternalServerErrorException(HTTPException):
+    """Define exception raised for internal server error (HTTP 500).
+
+    :param detail: A message providing additional details about the exception.
+        Defaults to "Internal Server Error".
+    :type detail: str
+    """
+
+    def __init__(self, detail: str = "Internal Server Error") -> None:
+        super().__init__(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+        )
+
+
 class HTTPGoneException(HTTPException):
     """Define exception raised for resource gone (HTTP 410).
 

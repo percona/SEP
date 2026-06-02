@@ -25,7 +25,10 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException
 
-from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPConflictException,
+)
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
@@ -653,19 +656,6 @@ def resolve_predecessor_specs(
     return resolved
 
 
-def resolve_predecessor_spec(
-    body: AltersCreate | AltersTaskWrite,
-) -> ChainedPredecessor:
-    """Resolve the effective chained-predecessor spec for the primary predecessor.
-
-    :param body: The alters create/write payload.
-    :type body: AltersCreate | AltersTaskWrite
-    :return: The first resolved ``ChainedPredecessor`` spec.
-    :rtype: ChainedPredecessor
-    """
-    return resolve_predecessor_specs(body)[0]
-
-
 _PRE_CHECKS_AUTO_FIRE_FAILED_MESSAGE = (
     "Task group was created, but automatic pre-checks could not be started. "
     "Run Pre-checks from the task detail page."
@@ -701,7 +691,7 @@ async def cascade_create_alters_group(
     """
     parent_payload = parent_task.model_dump()
     derived_specs = alters_schema.derived or []
-    predecessor_spec = resolve_predecessor_spec(body)
+    predecessor_spec = resolve_predecessor_specs(body)[0]
 
     created_names: list[str] = []
     predecessor_payload: dict[str, Any]

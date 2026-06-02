@@ -24,10 +24,13 @@ route for safety.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
-from app.core.exceptions import HTTPConflictException
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPInternalServerErrorException,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
@@ -196,9 +199,8 @@ async def alters_api_update(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Partial update failure; inconsistent task group: {failed}",
+        raise HTTPInternalServerErrorException(
+            f"Partial update failure; inconsistent task group: {failed}"
         )
 
     updated_task = await get_alters_task(updated_parent.name, tasks_api)
@@ -252,7 +254,6 @@ async def alters_api_delete(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Partial delete failure; orphaned tasks: {failed}",
+        raise HTTPInternalServerErrorException(
+            f"Partial delete failure; orphaned tasks: {failed}"
         )

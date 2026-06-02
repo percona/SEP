@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.exceptions import HTTPInternalServerErrorException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
@@ -297,9 +298,8 @@ async def alters_update(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Partial update failure; inconsistent task group: {failed}",
+        raise HTTPInternalServerErrorException(
+            f"Partial update failure; inconsistent task group: {failed}"
         )
 
     return RedirectResponse(
@@ -323,8 +323,7 @@ async def alters_delete(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Partial delete failure; orphaned tasks: {failed}",
+        raise HTTPInternalServerErrorException(
+            f"Partial delete failure; orphaned tasks: {failed}"
         )
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)

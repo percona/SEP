@@ -39,7 +39,6 @@ from app.sep.plugins.alters.deps import (
     get_alters_task_info,
     parse_alters_task_args,
     parse_single_arg,
-    resolve_predecessor_spec,
     resolve_predecessor_specs,
 )
 from app.sep.plugins.alters.models import AltersCreate, AltersTaskWrite
@@ -473,8 +472,8 @@ def test_alters_satellite_task_names():
     ]
 
 
-def test_resolve_predecessor_spec_halt_by_default():
-    """Test resolve_predecessor_spec defaults to on_failure halt."""
+def test_resolve_predecessor_specs_first_halts_by_default():
+    """Test first resolved predecessor defaults to on_failure halt."""
     body = AltersTaskWrite(
         task_name="t1",
         hostname="host1",
@@ -483,13 +482,13 @@ def test_resolve_predecessor_spec_halt_by_default():
         table_name="users",
         alter="ADD COLUMN x INT",
     )
-    spec = resolve_predecessor_spec(body)
+    spec = resolve_predecessor_specs(body)[0]
     assert spec.on_failure == "halt"
     assert spec.name_suffix == "-pre-checks"
 
 
-def test_resolve_predecessor_spec_continue_when_user_overrides():
-    """Test continue_on_pre_check_failure maps resolve_predecessor_spec to on_failure continue."""
+def test_resolve_predecessor_specs_first_continues_when_user_overrides():
+    """Test continue_on_pre_check_failure maps first predecessor to continue."""
     body = AltersTaskWrite(
         task_name="t1",
         hostname="host1",
@@ -499,7 +498,7 @@ def test_resolve_predecessor_spec_continue_when_user_overrides():
         alter="ADD COLUMN x INT",
         continue_on_pre_check_failure=True,
     )
-    spec = resolve_predecessor_spec(body)
+    spec = resolve_predecessor_specs(body)[0]
     assert spec.on_failure == "continue"
 
 
@@ -615,7 +614,7 @@ async def test_cascade_create_alters_group_rolls_back_on_task_post_failure():
 
 @pytest.mark.asyncio
 async def test_cascade_update_alters_group_halt_by_default(mocker):
-    """Test cascade_update uses resolve_predecessor_spec halt unless user opts into continue."""
+    """Test cascade_update uses first resolved predecessor halt by default."""
     tasks_api = AsyncMock(spec=RemoteAPI)
     body = AltersTaskWrite(
         task_name="t1",
@@ -647,7 +646,7 @@ async def test_cascade_update_alters_group_halt_by_default(mocker):
         body,
     )
 
-    assert captured_specs == [resolve_predecessor_spec(body)]
+    assert captured_specs == [resolve_predecessor_specs(body)[0]]
     assert captured_specs[0].on_failure == "halt"
 
 
@@ -686,7 +685,7 @@ async def test_cascade_update_alters_group_continue_on_pre_check_failure(mocker)
         body,
     )
 
-    assert captured_specs == [resolve_predecessor_spec(body)]
+    assert captured_specs == [resolve_predecessor_specs(body)[0]]
     assert captured_specs[0].on_failure == "continue"
 
 

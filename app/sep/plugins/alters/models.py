@@ -72,7 +72,7 @@ def normalize_alters_target_fields(data: Any) -> Any:
 
 
 class _AltersTargetFieldsMixin:
-    """Shared target-field normalization for Jinja forms and JSON write models."""
+    """Normalize target fields shared across Jinja form and JSON write payloads."""
 
     @model_validator(mode="before")
     @classmethod
