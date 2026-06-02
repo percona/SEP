@@ -897,12 +897,13 @@ def _run_trigger_jenkins_with_fake_curl(tmp_path, tag, *make_args):
             "Release",
         ),
         ("v0.13.0rc1", (), "Release", "Build"),
+        ("$(shell printf v0.13.0rc1)", (), "Build", "Release"),
     ],
 )
 def test_trigger_jenkins_routes_by_tag_prefix(
     tmp_path, tag, make_args, expected_job, unexpected_job
 ):
-    """SHA refs go to SEP/Build; v* tags stay on SEP/Release."""
+    """SHA refs go to Build; literal v* tags stay on Release."""
     curl_args = _run_trigger_jenkins_with_fake_curl(tmp_path, tag, *make_args)
 
     assert (
