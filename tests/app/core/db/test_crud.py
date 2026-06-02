@@ -28,8 +28,7 @@ from sqlmodel.pool import StaticPool
 from app.core.db import BaseSQLModel
 from app.core.db.crud import BaseSQLModelManager
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.models import PaginatedResponse
-from app.core.pagination import DEFAULT_PAGINATION_LIMIT, Pagination
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT, PaginatedResponse, Pagination
 from app.core.utils import json_serializer
 
 MATCHING_ITEM_TOTAL = 3

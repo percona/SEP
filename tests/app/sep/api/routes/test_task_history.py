@@ -22,7 +22,11 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.core.pagination import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    MAX_PAGINATION_LIMIT,
+)
 from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import TaskFactory
@@ -268,6 +272,19 @@ class TestSepTaskHistoryEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()
 
+    def test_rejects_zero_limit(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+    ) -> None:
+        """Return 422 when ``limit`` is zero."""
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", "task-a"), ("limit", "0")],
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
+
     def test_rejects_limit_above_cap(
         self,
         test_client: TestClient,
@@ -276,7 +293,7 @@ class TestSepTaskHistoryEndpoint:
         """Return 422 when ``limit`` exceeds the upper cap of 200."""
         response = test_client.get(
             "/api/sep/task-history/",
-            params=[("task_names", "task-a"), ("limit", "201")],
+            params=[("task_names", "task-a"), ("limit", str(MAX_PAGINATION_LIMIT + 1))],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()

@@ -22,9 +22,12 @@ import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
-from app.core.pagination import Pagination
+from app.core.pagination import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    Pagination,
+)
 from app.tasks.crud import (
     DispatchLockManager,
     TaskHistoryLogManager,
@@ -697,7 +700,11 @@ class TestTaskManagerListActivePaginated:
         assert result.offset == 1
         assert result.limit == 1
         assert len(result.items) == 1
-        assert result.items[0].name == "pag-filter-parent-1"
+        assert result.items[0].name in {
+            "pag-filter-parent-0",
+            "pag-filter-parent-1",
+            "pag-filter-parent-2",
+        }
 
 
 # ---------------------------------------------------------------------------

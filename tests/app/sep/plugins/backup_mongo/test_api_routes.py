@@ -22,6 +22,7 @@ import pytest
 from fastapi import HTTPException, status
 
 from app.core.exceptions import HTTPNotFoundException
+from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.sep.inventory import CreatedService
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.tasks.models import TaskBackendEnum, TaskOwner
@@ -261,6 +262,18 @@ class TestBackupMongoApiList:
             "/history/latest",
             json={"names": ["parent-backup-a", "parent-backup-b"]},
         )
+
+    @pytest.mark.parametrize(
+        "query",
+        ["limit=0", "limit=-1", f"limit={MAX_PAGINATION_LIMIT + 1}"],
+    )
+    def test_list_rejects_invalid_limit(
+        self, test_client, mock_task_api_dep, query: str
+    ) -> None:
+        """List endpoint returns 422 for invalid limits."""
+        response = test_client.get(f"{API_BASE}/?{query}")
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
 
 
 class TestBackupMongoApiCreate:

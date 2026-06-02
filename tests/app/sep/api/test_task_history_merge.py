@@ -15,7 +15,7 @@
 
 """Tests for merged task-history helpers."""
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.sep.api.task_history_merge import merge_task_history_pages
 
 TWO_MERGED_HISTORY_ROWS = 2
