@@ -41,7 +41,7 @@
 | app/core/settings\_override/api/models.py                                                                   |       11 |        0 |    100% |           |
 | app/core/settings\_override/api/routes.py                                                                   |      106 |       13 |     88% |107, 236, 267-270, 296, 337, 387, 469-482 |
 | app/core/settings\_override/cache.py                                                                        |       28 |        0 |    100% |           |
-| app/core/settings\_override/lifecycle.py                                                                    |       52 |        2 |     96% |   177-178 |
+| app/core/settings\_override/lifecycle.py                                                                    |       52 |        1 |     98% |       178 |
 | app/core/settings\_override/manager.py                                                                      |        5 |        0 |    100% |           |
 | app/core/settings\_override/models.py                                                                       |       19 |        0 |    100% |           |
 | app/core/settings\_override/proxy.py                                                                        |       20 |        0 |    100% |           |
@@ -181,7 +181,7 @@
 | app/sep/plugins/mysql\_backups/api\_routes.py                                                               |       37 |        0 |    100% |           |
 | app/sep/plugins/mysql\_backups/deps.py                                                                      |      124 |        6 |     95% |198, 261, 276, 279-280, 464 |
 | app/sep/plugins/mysql\_backups/models.py                                                                    |      136 |        3 |     98% |298, 332, 347 |
-| app/sep/plugins/mysql\_backups/restore/deps.py                                                              |       69 |       14 |     80% |73-75, 78-84, 103, 119, 204, 220-225, 258 |
+| app/sep/plugins/mysql\_backups/restore/deps.py                                                              |       69 |       11 |     84% |78-84, 103, 119, 204, 220-225, 258 |
 | app/sep/plugins/mysql\_backups/restore/models.py                                                            |       73 |        1 |     99% |       198 |
 | app/sep/plugins/mysql\_backups/restore/routes.py                                                            |       65 |        8 |     88% |141-142, 171-180, 217-219 |
 | app/sep/plugins/mysql\_backups/routes.py                                                                    |       77 |        6 |     92% |76, 180-181, 234-239 |
@@ -253,7 +253,7 @@
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      227 |       38 |     83% |141-145, 202, 223-230, 262, 318-319, 325, 369-370, 397-398, 440-441, 460, 591, 615, 628-642, 663-676, 692-693 |
 | app/tasks/settings/routes.py                                                                                |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                   | **17287** | **2090** | **88%** |           |
+| **TOTAL**                                                                                                   | **17287** | **2086** | **88%** |           |
 
 
 ## Setup coverage badge
