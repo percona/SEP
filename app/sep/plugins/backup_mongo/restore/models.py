@@ -16,7 +16,7 @@
 """Define models for the Restore plugin."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import (
     AliasChoices,
@@ -30,7 +30,12 @@ from pydantic import (
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.sep.plugins.backup_mongo.models import BackupType
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import (
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 
 class RestoreConfigRestore(BaseCaseInsensitiveModel):
@@ -398,6 +403,25 @@ class PbmForceResyncPayloadModel(BaseModel):
     hostname: NonEmptyStr
     credentials_path: NonEmptyStr | EmptyStrToNone = None
     service_name: NonEmptyStr | None = None
+
+
+class RestoreTaskGroupPayloads(NamedTuple):
+    """Represent TaskWrite payloads for all restore task legs.
+
+    :param config_task: Parent restore-config task payload.
+    :type config_task: TaskWrite
+    :param restore_task: Restore execution task payload.
+    :type restore_task: TaskWrite
+    :param pbm_list_task: pbm-list helper task payload.
+    :type pbm_list_task: TaskWrite
+    :param force_resync_task: Optional pbm-force-resync task payload.
+    :type force_resync_task: TaskWrite | None
+    """
+
+    config_task: TaskWrite
+    restore_task: TaskWrite
+    pbm_list_task: TaskWrite
+    force_resync_task: TaskWrite | None
 
 
 class RestoreDerivedTaskSummary(BaseModel):

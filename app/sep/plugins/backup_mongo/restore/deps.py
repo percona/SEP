@@ -52,6 +52,7 @@ from app.sep.plugins.backup_mongo.restore.models import (
     RestoreDerivedTaskSummary,
     RestoreLegPayloadModel,
     RestoreTaskDetailResponse,
+    RestoreTaskGroupPayloads,
     RestoreTaskLegModel,
     RestoreTaskResponse,
 )
@@ -327,7 +328,7 @@ async def _resolve_service_name(
 def build_restore_payloads(
     form: RestoreCreate,
     service_name: str | None,
-) -> tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]:
+) -> RestoreTaskGroupPayloads:
     """Build restore config, restore, list and optional force-resync payloads."""
     (
         config_payload,
@@ -344,7 +345,12 @@ def build_restore_payloads(
         if force_resync_payload is not None
         else None
     )
-    return config_task, restore_task, pbm_list_task, force_resync_task
+    return RestoreTaskGroupPayloads(
+        config_task=config_task,
+        restore_task=restore_task,
+        pbm_list_task=pbm_list_task,
+        force_resync_task=force_resync_task,
+    )
 
 
 async def build_restore_config_task_payload(
@@ -353,8 +359,7 @@ async def build_restore_config_task_payload(
 ) -> TaskWrite:
     """Build task payload for restore config operation in PBM format."""
     service_name = await _resolve_service_name(form, inventory_api)
-    config_task, _, _, _ = build_restore_payloads(form, service_name)
-    return config_task
+    return build_restore_payloads(form, service_name).config_task
 
 
 async def build_restore_task_payload(
@@ -363,8 +368,7 @@ async def build_restore_task_payload(
 ) -> TaskWrite:
     """Build task payload for a restore operation in PBM format."""
     service_name = await _resolve_service_name(form, inventory_api)
-    _, restore_task, _, _ = build_restore_payloads(form, service_name)
-    return restore_task
+    return build_restore_payloads(form, service_name).restore_task
 
 
 async def build_pbm_list_task_payload(
@@ -373,8 +377,7 @@ async def build_pbm_list_task_payload(
 ) -> TaskWrite:
     """Build task payload for pbm list command."""
     service_name = await _resolve_service_name(form, inventory_api)
-    _, _, pbm_list_task, _ = build_restore_payloads(form, service_name)
-    return pbm_list_task
+    return build_restore_payloads(form, service_name).pbm_list_task
 
 
 async def build_pbm_force_resync_task_payload(
@@ -465,8 +468,7 @@ async def build_restore_update_task_payload(
     :rtype: TaskWrite
     """
     service_name = await _resolve_service_name(form, inventory_api)
-    config_task, _, _, _ = build_restore_payloads(form, service_name)
-    return config_task
+    return build_restore_payloads(form, service_name).config_task
 
 
 async def update_restore_task_group(
@@ -489,29 +491,24 @@ async def update_restore_task_group(
     :rtype: Task
     """
     service_name = await _resolve_service_name(form, inventory_api)
-    (
-        config_payload,
-        restore_payload,
-        pbm_list_payload,
-        force_resync_payload,
-    ) = build_restore_payloads(form, service_name)
+    payloads = build_restore_payloads(form, service_name)
 
     await tasks_api.put(
         f"/{parent_task.name}",
-        json=config_payload.model_dump(),
+        json=payloads.config_task.model_dump(),
     )
     await tasks_api.put(
-        f"/{restore_payload.name}",
-        json=restore_payload.model_dump(),
+        f"/{payloads.restore_task.name}",
+        json=payloads.restore_task.model_dump(),
     )
     await tasks_api.put(
-        f"/{pbm_list_payload.name}",
-        json=pbm_list_payload.model_dump(),
+        f"/{payloads.pbm_list_task.name}",
+        json=payloads.pbm_list_task.model_dump(),
     )
-    if force_resync_payload is not None:
+    if payloads.force_resync_task is not None:
         await tasks_api.put(
-            f"/{force_resync_payload.name}",
-            json=force_resync_payload.model_dump(),
+            f"/{payloads.force_resync_task.name}",
+            json=payloads.force_resync_task.model_dump(),
         )
     return await get_restores_task(parent_task.name, tasks_api)
 
@@ -519,7 +516,7 @@ async def update_restore_task_group(
 async def build_restore_task_group(
     form: RestoreCreate,
     inventory_api: InventoryAPI,
-) -> tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]:
+) -> RestoreTaskGroupPayloads:
     """Build restore config, restore, list, and optional force-resync task payloads.
 
     Force-resync is only included for physical restores. The service name is
@@ -529,8 +526,8 @@ async def build_restore_task_group(
     :type form: RestoreCreate
     :param inventory_api: The Inventory API to look up services.
     :type inventory_api: InventoryAPI
-    :return: Config, restore, pbm-list, and optional force-resync ``TaskWrite`` payloads.
-    :rtype: tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]
+    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
+    :rtype: RestoreTaskGroupPayloads
     """
     service_name = await _resolve_service_name(form, inventory_api)
     return build_restore_payloads(form, service_name)
@@ -539,7 +536,7 @@ async def build_restore_task_group(
 async def build_restore_tasks(
     form: Annotated[RestoreCreate, Form()],
     inventory_api: InventoryAPI,
-) -> tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]:
+) -> RestoreTaskGroupPayloads:
     """Build restore task group payloads from an HTML form submission.
 
     Delegates to :func:`build_restore_task_group` after FastAPI form parsing.
@@ -548,8 +545,8 @@ async def build_restore_tasks(
     :type form: RestoreCreate
     :param inventory_api: The Inventory API to look up services.
     :type inventory_api: InventoryAPI
-    :return: Config, restore, pbm-list, and optional force-resync payloads.
-    :rtype: tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]
+    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
+    :rtype: RestoreTaskGroupPayloads
     """
     return await build_restore_task_group(form, inventory_api)
 
@@ -899,10 +896,7 @@ async def delete_restore_task_group(
         )
 
 
-RestoreTasks = Annotated[
-    tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None],
-    Depends(build_restore_tasks),
-]
+RestoreTasks = Annotated[RestoreTaskGroupPayloads, Depends(build_restore_tasks)]
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
