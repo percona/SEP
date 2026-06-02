@@ -209,12 +209,7 @@ class BaseManager:
         if cls.ordering is not None:
             return cls.ordering
         if issubclass(cls.Model, BaseSQLModel):
-            # Tie-break on the primary key so pagination is deterministic when
-            # rows share a created_at — utc_now() has second resolution, so
-            # ties are common and an unstable order can skip/duplicate rows
-            # across pages (and differs across SQLite builds / Python versions).
-            # Tie-break descending to keep the newest-first intent of the
-            # created_at DESC fallback (later-inserted rows sort first).
+            # Keep fallback ordering deterministic when created_at ties occur.
             return [cls._get_column("created_at").desc(), cls._get_column("id").desc()]
         return None
 
