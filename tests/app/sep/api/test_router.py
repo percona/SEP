@@ -1,0 +1,612 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define tests for the shared SEP API router at ``/api/plugins/``."""
+
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi import status
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+
+from app.sep.api.router import api_router, build_plugins_router, plugins_router
+from app.sep.config import Plugin, sep_settings
+from app.sep.deps import (
+    BEARER_REQUIRED_DETAIL,
+    get_api_authenticated_user,
+    get_current_user,
+    IsApiAuthenticated,
+    require_bearer_for_unsafe_methods,
+    validate_csrf,
+)
+from app.sep.main import sep_app
+
+
+class TestApiRouterComposition:
+    """Test the shape of the shared API router (prefixes, deps, inclusion)."""
+
+    def test_api_router_prefix(self) -> None:
+        """Assert the shared API router is mounted under ``/api``."""
+        assert api_router.prefix == "/api"
+
+    def test_api_router_declares_api_auth(self) -> None:
+        """Assert ``IsApiAuthenticated`` is declared at router level."""
+        assert IsApiAuthenticated in api_router.dependencies
+
+    def test_plugins_router_prefix(self) -> None:
+        """Assert the plugins sub-router carries the ``/plugins`` prefix."""
+        assert plugins_router.prefix == "/plugins"
+
+    def test_atw_router_registered_under_plugins(self) -> None:
+        """Assert the ATW schema route is resolvable under ``/plugins/atw``."""
+        plugin_paths = {
+            route.path for route in plugins_router.routes if hasattr(route, "path")
+        }
+        assert "/plugins/atw/schema" in plugin_paths
+
+    def test_checksums_router_registered_under_plugins(self) -> None:
+        """Assert the checksums schema route is resolvable under ``/plugins/checksums``."""
+        plugin_paths = {
+            route.path for route in plugins_router.routes if hasattr(route, "path")
+        }
+        assert "/plugins/checksums/schema" in plugin_paths
+
+    def test_checksums_router_has_checksums_tag(self) -> None:
+        """Assert routes contributed by the checksums sub-router expose the ``checksums`` tag."""
+        checksums_route_tags = [
+            route.tags
+            for route in plugins_router.routes
+            if hasattr(route, "path") and "checksums" in route.path
+        ]
+        assert checksums_route_tags
+        assert all("checksums" in tags for tags in checksums_route_tags)
+
+    def test_plugins_router_included_via_api_router(self) -> None:
+        """Assert checksums and inventory plugin schema routes resolve on ``sep_app``.
+
+        Both plugins mount under ``/api/plugins/{name}/schema`` on the composed
+        application router.
+        """
+        api_plugin_paths = {
+            route.path for route in sep_app.routes if hasattr(route, "path")
+        }
+        assert "/api/plugins/atw/schema" in api_plugin_paths
+        assert "/api/plugins/checksums/schema" in api_plugin_paths
+        assert "/api/plugins/inventory/schema" in api_plugin_paths
+
+
+class TestApiRouterAuthenticated:
+    """Test authenticated access to the shared API router."""
+
+    def test_checksums_schema_endpoint_returns_ok(
+        self, test_client: TestClient
+    ) -> None:
+        """Assert an authenticated GET on the checksums schema endpoint returns the schema."""
+        response = test_client.get("/api/plugins/checksums/schema")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json()["name"] == "checksums"
+
+    def test_unknown_plugin_returns_json_404(self, test_client: TestClient) -> None:
+        """Assert an authenticated GET on an unknown plugin returns JSON 404."""
+        response = test_client.get("/api/plugins/does-not-exist/")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.headers["content-type"].startswith("application/json")
+        assert "detail" in response.json()
+
+    def test_unknown_nested_subpath_under_checksums_returns_json_404(
+        self, test_client: TestClient
+    ) -> None:
+        """Assert a multi-segment path under the checksums plugin returns JSON 404.
+
+        A single-segment path like ``/{task_name}`` is caught by the detail
+        route, so use two segments to ensure no route matches.
+        """
+        response = test_client.get("/api/plugins/checksums/some/deeply/nested")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.headers["content-type"].startswith("application/json")
+        assert "detail" in response.json()
+
+
+class TestApiRouterUnauthenticated:
+    """Test unauthenticated access to the shared API router returns JSON 401."""
+
+    def test_unauthenticated_checksums_schema_returns_json_401(
+        self, unauthenticated_client: TestClient
+    ) -> None:
+        """Assert unauth GET on the checksums schema returns 401 JSON, not 303 redirect."""
+        response = unauthenticated_client.get(
+            "/api/plugins/checksums/schema", follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.headers["content-type"].startswith("application/json")
+        assert "detail" in response.json()
+
+    def test_unauthenticated_unknown_plugin_returns_json_404(
+        self, unauthenticated_client: TestClient
+    ) -> None:
+        """Assert an unauth GET on an unknown plugin returns JSON 404 via the handler."""
+        response = unauthenticated_client.get(
+            "/api/plugins/does-not-exist/", follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.headers["content-type"].startswith("application/json")
+        assert "detail" in response.json()
+
+
+@pytest.fixture
+def cookie_only_client(regular_user):
+    """Return a TestClient that has cookie auth but no Bearer override.
+
+    Overrides ``get_current_user``, ``get_api_authenticated_user`` and
+    ``validate_csrf`` so the request passes the existing auth/CSRF stack,
+    but deliberately leaves ``require_bearer_for_unsafe_methods`` unmocked
+    so the framework Bearer gate fires for mutating methods.
+    """
+    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+class TestPluginBearerGate:
+    """Exercise the framework-level Bearer gate on /api/plugins/* mutations."""
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("POST", "/api/plugins/snippets/refresh"),
+            ("PUT", "/api/plugins/snippets/snippet/approval"),
+            ("PATCH", "/api/plugins/snippets/approvals"),
+            ("DELETE", "/api/plugins/snippets/snippet/approval"),
+            ("POST", "/api/plugins/inventory/sync/"),
+            ("POST", "/api/plugins/dipper/"),
+            ("POST", "/api/plugins/checksums/"),
+            ("DELETE", "/api/plugins/checksums/some-task"),
+        ],
+    )
+    def test_cookie_only_mutation_is_rejected_with_401(
+        self, cookie_only_client: TestClient, method: str, path: str
+    ) -> None:
+        """Cookie-authenticated JSON mutations under /api/plugins/* return 401."""
+        response = cookie_only_client.request(method, path, json={})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+    def test_cookie_only_get_passes_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """Cookie-authenticated GET on /api/plugins/* is not blocked by the Bearer gate."""
+        response = cookie_only_client.get("/api/plugins/checksums/schema")
+        assert response.status_code != status.HTTP_401_UNAUTHORIZED
+
+    def test_bearer_mutation_passes_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """A Bearer header on a mutation bypasses the framework Bearer gate.
+
+        The downstream route may still 422/404/etc., but the response must
+        not be the framework Bearer-gate 401.
+        """
+        response = cookie_only_client.post(
+            "/api/plugins/snippets/refresh",
+            json={},
+            headers={"Authorization": "Bearer test-token"},
+        )
+        if response.status_code == status.HTTP_401_UNAUTHORIZED:
+            assert response.json().get("detail") != BEARER_REQUIRED_DETAIL
+
+    def test_malformed_json_cookie_only_still_401_before_body_parse(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """The Bearer gate fires before request-body validation.
+
+        Sending malformed JSON with cookie auth must return the Bearer-gate
+        401, not a 422 from body parsing.
+        """
+        response = cookie_only_client.post(
+            "/api/plugins/snippets/refresh",
+            content=b"{not-json",
+            headers={"content-type": "application/json"},
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+    def test_head_method_passes_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """HEAD requests are treated as safe and not Bearer-gated."""
+        response = cookie_only_client.head("/api/plugins/checksums/schema")
+        assert response.status_code != status.HTTP_401_UNAUTHORIZED
+
+    def test_options_method_passes_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """OPTIONS (CORS preflight) requests are not Bearer-gated."""
+        response = cookie_only_client.options("/api/plugins/checksums/schema")
+        assert response.status_code != status.HTTP_401_UNAUTHORIZED
+
+    def test_bearer_gate_is_on_plugins_router_only(self) -> None:
+        """The gate is wired into plugins_router, not the broader api_router.
+
+        Regression guard against accidentally Bearer-gating /api/sep/*
+        (dashboard, hosts, task-stats) which serve cookie-authenticated
+        React reads.
+        """
+        plugin_deps = [dep.dependency for dep in plugins_router.dependencies]
+        api_deps = [dep.dependency for dep in api_router.dependencies]
+        assert require_bearer_for_unsafe_methods in plugin_deps
+        assert require_bearer_for_unsafe_methods not in api_deps
+
+    def test_api_sep_get_routes_are_not_bearer_gated(
+        self,
+        cookie_only_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mocker,
+    ) -> None:
+        """Cookie-only GET on /api/sep/* is not blocked by the Bearer gate.
+
+        Regression guard: dashboard/hosts/task-stats serve cookie-auth
+        React reads; the response must succeed (200) under cookie-only
+        credentials. Upstream Tasks/Inventory and the SEP snippets count
+        are stubbed so the dashboard returns a deterministic payload
+        independent of any persisted snippet rows in the local SEP DB.
+        """
+        mock_inventory_api_dep.get.return_value = {"nodes": 0}
+        mock_task_api_dep.get.side_effect = [{"total": 0}, []]
+        mocker.patch(
+            "app.sep.api.routes.dashboard.SnippetManager.count",
+            new_callable=AsyncMock,
+            return_value=0,
+        )
+        response = cookie_only_client.get("/api/sep/dashboard/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "nodes": 0,
+            "tasks": 0,
+            "snippets": 0,
+            "targets": 0,
+        }
+
+    @pytest.mark.parametrize(
+        "method",
+        ["POST", "PUT", "PATCH", "DELETE"],
+    )
+    def test_all_unsafe_methods_return_same_detail_string(
+        self, cookie_only_client: TestClient, method: str
+    ) -> None:
+        """Every mutating method returns the exact same path-agnostic detail string.
+
+        Pins that the 401 body never leaks the request's method, path, or any
+        other ambient state. ``snippets/refresh`` accepts POST and
+        snippets-approval declares PUT/PATCH/DELETE — assert the detail only
+        when the gate actually fires (status 401), so method-mismatch responses
+        (405) are skipped without false-failing the test.
+        """
+        response = cookie_only_client.request(
+            method, "/api/plugins/snippets/snippet/approval", json={}
+        )
+        if response.status_code == status.HTTP_401_UNAUTHORIZED:
+            assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+    def test_detail_string_is_path_agnostic(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """The 401 detail is byte-identical across two unrelated plugin paths.
+
+        Regression guard for the PR-body promise that ``BEARER_REQUIRED_DETAIL``
+        is a single, path-agnostic constant — no f-string sneaks the plugin
+        name or route into the response body.
+        """
+        snippets_resp = cookie_only_client.post(
+            "/api/plugins/snippets/refresh", json={}
+        )
+        checksums_resp = cookie_only_client.post("/api/plugins/checksums/", json={})
+        assert snippets_resp.status_code == status.HTTP_401_UNAUTHORIZED
+        assert checksums_resp.status_code == status.HTTP_401_UNAUTHORIZED
+        assert (
+            snippets_resp.json()["detail"]
+            == checksums_resp.json()["detail"]
+            == BEARER_REQUIRED_DETAIL
+        )
+
+    def test_405_when_method_not_supported_does_not_leak_bearer_detail(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """A method-mismatch response under cookie-only auth is a vanilla 405.
+
+        Documents the trade-off of mounting the gate at router level: deps run
+        per-route after method resolution, so a wrong method on an existing
+        path returns 405 (not 401). The response body must not echo
+        ``BEARER_REQUIRED_DETAIL`` — that would imply the gate fired when it
+        did not. Asserting "neither 200 nor leaked-detail" is the contract.
+        """
+        response = cookie_only_client.request(
+            "PATCH", "/api/plugins/snippets/refresh", json={}
+        )
+        assert response.status_code != status.HTTP_200_OK
+        body = response.json() if response.content else {}
+        assert body.get("detail") != BEARER_REQUIRED_DETAIL
+
+    def test_404_for_unknown_plugin_path_does_not_leak_bearer_detail(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """Cookie-only POST on an unknown sub-path returns 404 with no Bearer detail.
+
+        Same path-existence trade-off as the 405 case: router-level deps don't
+        fire when no route matches, so the response is 404. Crucially the body
+        must NOT carry ``BEARER_REQUIRED_DETAIL`` — leaking it would imply the
+        path exists but is bearer-gated, the inverse of what 404 should signal.
+        """
+        response = cookie_only_client.post("/api/plugins/does-not-exist/foo", json={})
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        body = response.json() if response.content else {}
+        assert body.get("detail") != BEARER_REQUIRED_DETAIL
+
+    def test_trace_method_on_existing_path_does_not_succeed(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """``TRACE`` on an existing plugin path is never 200 under cookie-only auth.
+
+        Documents that the safe-method whitelist is GET/HEAD/OPTIONS only —
+        TRACE is excluded both because no route declares it (so the response is
+        405) and because the gate would 401 it if a future route did. Either
+        outcome must not be 200.
+        """
+        response = cookie_only_client.request("TRACE", "/api/plugins/checksums/schema")
+        assert response.status_code != status.HTTP_200_OK
+
+
+class TestApiRouterConfigDrivenLoop:
+    """Test the config-driven plugin mount loop."""
+
+    def test_plugin_with_api_router_path_is_mounted(self) -> None:
+        """Assert a plugin with ``api_router_path`` set produces mounted routes."""
+        plugin = Plugin(
+            name="Checksums",
+            module_name="checksums",
+            api_router_path="app.sep.plugins.checksums.api_routes.router",
+        )
+        router = build_plugins_router([plugin])
+        paths = {r.path for r in router.routes if hasattr(r, "path")}
+        assert any(p.startswith("/plugins/checksums/") for p in paths)
+
+    def test_plugin_without_api_router_path_is_not_mounted(self) -> None:
+        """Assert a plugin with ``api_router_path=None`` contributes no routes."""
+        plugin = Plugin(
+            name="Inventory",
+            module_name="inventory",
+            api_router_path=None,
+        )
+        router = build_plugins_router([plugin])
+        assert router.routes == []
+
+    def test_empty_plugins_iterable_produces_empty_router(self) -> None:
+        """Assert no plugins → no plugin routes (only the prefix)."""
+        router = build_plugins_router([])
+        assert router.prefix == "/plugins"
+        assert router.routes == []
+
+    def test_mounted_plugin_routes_carry_module_basename_tag(self) -> None:
+        """Assert each mounted plugin's routes carry ``tags=[module_basename]``."""
+        plugin = Plugin(
+            name="Dipper Data Collection",
+            module_name="dipper",
+            api_router_path="app.sep.plugins.dipper.api_routes.router",
+        )
+        router = build_plugins_router([plugin])
+        tagged = [
+            r.tags for r in router.routes if hasattr(r, "path") and "dipper" in r.path
+        ]
+        assert tagged
+        assert all("dipper" in tags for tags in tagged)
+
+    def test_invalid_api_router_path_module_raises(self) -> None:
+        """Assert a non-importable module path fails fast at Plugin construction.
+
+        With ``api_router_path`` typed as ``StrImportableAttribute | None``,
+        Pydantic validates the module component at model construction time so
+        the error surfaces before ``build_plugins_router`` is ever called.
+        """
+        with pytest.raises(ValidationError):
+            Plugin(
+                name="Ghost",
+                module_name="snippets",
+                api_router_path="app.does.not.exist.router",
+            )
+
+    def test_api_router_path_pointing_at_missing_attribute_raises(self) -> None:
+        """Assert pointing at a missing attribute fails fast at construction."""
+        plugin = Plugin(
+            name="Ghost",
+            module_name="snippets",
+            api_router_path="app.sep.plugins.snippets.api_routes.does_not_exist",
+        )
+        with pytest.raises(AttributeError):
+            build_plugins_router([plugin])
+
+    def test_colon_syntax_in_api_router_path_is_rejected(self) -> None:
+        """Assert colon-style ``module:attr`` paths are rejected.
+
+        ``import_var`` uses ``rsplit('.', 1)`` so colon syntax leaves the
+        module piece embedded in the attribute name and the import fails.
+        """
+        plugin = Plugin(
+            name="Bad",
+            module_name="checksums",
+            api_router_path="app.sep.plugins.checksums.api_routes:router",
+        )
+        with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
+            build_plugins_router([plugin])
+
+    def test_plugin_omitting_api_router_path_auto_derives_for_known_module(
+        self,
+    ) -> None:
+        """Assert convention auto-derive sets ``api_router_path`` for built-ins."""
+        for module, expected in (
+            ("archives", "app.sep.plugins.archives.api_routes.router"),
+            ("checksums", "app.sep.plugins.checksums.api_routes.router"),
+            ("dipper", "app.sep.plugins.dipper.api_routes.router"),
+            ("snippets", "app.sep.plugins.snippets.api_routes.router"),
+        ):
+            plugin = Plugin(name=module.title(), module_name=module)
+            assert plugin.api_router_path == expected
+
+    def test_plugin_omitting_api_router_path_stays_none_when_no_api_routes(
+        self,
+    ) -> None:
+        """Assert convention is silent when the plugin ships no ``api_routes`` module."""
+        plugin = Plugin(name="Alters", module_name="alters")
+        assert plugin.api_router_path is None
+
+    def test_explicit_null_api_router_path_opts_out(self) -> None:
+        """Assert explicit ``null`` input wins over convention auto-derive."""
+        plugin = Plugin.model_validate(
+            {
+                "name": "Checksums",
+                "module_name": "checksums",
+                "api_router_path": None,
+            }
+        )
+        assert plugin.api_router_path is None
+
+    def test_explicit_string_api_router_path_wins_over_convention(self) -> None:
+        """Assert explicit string wins over the conventional path."""
+        custom = "app.sep.plugins.dipper.api_routes.router"
+        plugin = Plugin(
+            name="Checksums",
+            module_name="checksums",
+            api_router_path=custom,
+        )
+        assert plugin.api_router_path == custom
+
+    def test_legacy_yaml_override_without_api_router_path_still_mounts_builtin_apis(
+        self,
+    ) -> None:
+        """Assert legacy operator overrides keep their JSON endpoints.
+
+        Mimic a legacy ``settings.yaml`` override that re-declares the
+        three built-in plugins with only ``name`` / ``module_name`` /
+        ``uri_path`` / ``css_class`` and no ``api_router_path``.
+        """
+        plugins = [
+            Plugin(
+                name="Snippet Manager",
+                module_name="snippets",
+                uri_path="/snippets",
+                css_class="snippets",
+            ),
+            Plugin(
+                name="Checksums",
+                module_name="checksums",
+                uri_path="/checksums",
+                css_class="checksums",
+            ),
+            Plugin(
+                name="Dipper Data Collection",
+                module_name="dipper",
+                uri_path="/dipper",
+                css_class="dipper",
+            ),
+        ]
+        router = build_plugins_router(plugins)
+        paths = {r.path for r in router.routes if hasattr(r, "path")}
+        assert any(p.startswith("/plugins/snippets/") for p in paths)
+        assert any(p.startswith("/plugins/checksums/") for p in paths)
+        assert any(p.startswith("/plugins/dipper/") for p in paths)
+
+    def test_build_plugins_router_skips_empty_string_path(self) -> None:
+        """Assert an empty-string ``api_router_path`` is treated as no-mount.
+
+        Defense-in-depth: even if a falsy non-None value reaches the loop
+        (e.g. programmatic construction bypassing Pydantic), no routes are
+        mounted and no confusing ``ValueError`` is raised by ``import_var``.
+        """
+        plugin = Plugin.model_construct(
+            name="Ghost",
+            module_name="app.sep.plugins.checksums",
+            api_router_path="",
+        )
+        router = build_plugins_router([plugin])
+        assert router.routes == []
+
+    def test_build_plugins_router_raises_type_error_for_non_router(self) -> None:
+        """Assert importing a non-``APIRouter`` attribute raises ``TypeError``.
+
+        The error must identify the offending plugin key and path so operators
+        can diagnose YAML misconfigurations without reading tracebacks from
+        ``include_router``.
+        """
+        plugin = Plugin(
+            name="Checksums",
+            module_name="checksums",
+            api_router_path="app.sep.config.Plugin",
+        )
+        with pytest.raises(TypeError, match="checksums"):
+            build_plugins_router([plugin])
+
+    def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
+        """Assert an explicit ``api_router_path`` with a non-importable module raises ``ValidationError``.
+
+        Errors should be caught at settings construction, not at application
+        startup when ``build_plugins_router`` is first called.
+        """
+        with pytest.raises(ValidationError):
+            Plugin(
+                name="Ghost",
+                module_name="checksums",
+                api_router_path="not.a.real.module.router",
+            )
+
+    def test_module_level_plugins_router_matches_settings(self) -> None:
+        """Assert module-level ``plugins_router`` mirrors ``sep_settings.PLUGINS``."""
+        expected_keys = {
+            plugin.module_name.split(".")[-1]
+            for plugin in sep_settings.PLUGINS
+            if plugin.api_router_path is not None
+        }
+        seen_prefixes = {
+            r.path.split("/")[2]
+            for r in plugins_router.routes
+            if hasattr(r, "path") and r.path.startswith("/plugins/")
+        }
+        assert expected_keys
+        assert seen_prefixes == expected_keys
+
+
+class TestApiRouterConfigDrivenLoopIntegration:
+    """Integration tests against ``sep_app`` for runtime mount/no-mount behavior."""
+
+    def test_sep_hosts_endpoint_unchanged(self) -> None:
+        """Assert ``/api/sep/hosts`` is still mounted on ``sep_app``."""
+        paths = {r.path for r in sep_app.routes if hasattr(r, "path")}
+        assert any(p.startswith("/api/sep/hosts") for p in paths)
+
+    def test_api_router_inherits_is_api_authenticated(
+        self, unauthenticated_client: TestClient
+    ) -> None:
+        """Assert plugin routes still 401 unauth — guard not bypassed by the loop."""
+        response = unauthenticated_client.get(
+            "/api/plugins/dipper/schema", follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_unmounted_plugin_returns_404(self, test_client: TestClient) -> None:
+        """Assert a plugin key with no settings entry returns 404."""
+        response = test_client.get("/api/plugins/not-a-real-plugin/schema")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
