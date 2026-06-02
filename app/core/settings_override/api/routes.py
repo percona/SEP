@@ -226,7 +226,7 @@ def build_settings_router(
     :type admin_dep: params.Depends
     :param mutation_deps: Optional list of FastAPI ``Depends(...)`` callables
         applied only to the state-changing endpoints (PATCH / DELETE). The
-        SEP wiring passes ``[RequireBearerAuth]`` so cookie sessions cannot
+        SEP wiring passes ``[RequireBearerForUnsafeMethods]`` so cookie sessions cannot
         mutate settings; the Tasks wiring leaves this empty because its
         admin dependency is bearer-only via ``OAuth2PasswordBearer``.
     :type mutation_deps: list[params.Depends] | None

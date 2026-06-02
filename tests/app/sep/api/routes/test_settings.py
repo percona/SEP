@@ -42,7 +42,7 @@ from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
     get_session,
-    require_bearer_auth,
+    require_bearer_for_unsafe_methods,
     validate_csrf,
 )
 from app.sep.main import sep_app
@@ -75,7 +75,7 @@ def api_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
-    sep_app.dependency_overrides[require_bearer_auth] = lambda: None
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -89,7 +89,7 @@ def api_non_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
-    sep_app.dependency_overrides[require_bearer_auth] = lambda: None
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
