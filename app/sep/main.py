@@ -244,6 +244,11 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     refresh fires no callbacks, the endpoint rebinders never dereference
     not-yet-built ``app.state``.
 
+    The clients are drained from ``app.state`` (not from the originals captured
+    at startup) on shutdown, so a client a rebind callback swapped in mid-run is
+    the one that gets closed -- the swapped-out original was already drained by
+    the rebinder.
+
     :param app: The FastAPI application instance.
     :type app: FastAPI
     :yield: None
@@ -251,24 +256,24 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     await sep_startup()
     async with sep_overrides_lifespan(app):
-        app.state.inventory_api = RemoteAPI(
+        app.state.inventory_api = await RemoteAPI(
             endpoint=sep_settings.INVENTORY_ENDPOINT,
             ssl_cafile=settings.SSL_CAFILE,
             ssl_keyfile=inventory_settings.SSL_KEYFILE,
             ssl_certfile=inventory_settings.SSL_CERTFILE,
-        )
-        app.state.tasks_api = RemoteAPI(
+        ).open()
+        app.state.tasks_api = await RemoteAPI(
             endpoint=sep_settings.TASKS_ENDPOINT,
             ssl_cafile=settings.SSL_CAFILE,
             ssl_keyfile=tasks_settings.SSL_KEYFILE,
             ssl_certfile=tasks_settings.SSL_CERTFILE,
-        )
-        async with (
-            app.state.inventory_api,
-            app.state.tasks_api,
-            default_lifespan(app),
-        ):
-            yield
+        ).open()
+        try:
+            async with default_lifespan(app):
+                yield
+        finally:
+            await app.state.tasks_api.__aexit__(None, None, None)
+            await app.state.inventory_api.__aexit__(None, None, None)
 
 
 lifespan = sep_lifespan

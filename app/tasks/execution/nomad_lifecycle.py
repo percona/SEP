@@ -138,6 +138,13 @@ class NomadLifecycle:
         (no network I/O), so it never blocks the lock for a meaningful duration;
         the old executor is drained *outside* the lock to keep shutdown's
         :meth:`__aexit__` from waiting on the drain.
+
+        :raises ValidationError: If the overridden config fingerprint cannot be
+            reconstructed into a :class:`NomadExecutor` (propagated from
+            :func:`normalize_nomad_config_value`).
+        :raises TypeError: If the effective ``NOMAD`` value is neither a mapping
+            nor a :class:`NomadExecutor` (also from
+            :func:`normalize_nomad_config_value`).
         """
         desired = self._desired()
         desired_config = desired.model_dump(mode="json")

@@ -74,11 +74,10 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
     fingerprint, so it is reconstructed into a usable :class:`NomadExecutor`;
     with no override the live YAML executor passes through unchanged. The
     un-entered executor drives only the config-built sync ``self.backend``
-    sub-client, which is all request-less readers (the worker, the cert-expiry
-    job, ``get_executor_for_task`` callers, payload transformation) need.
-    Request-scoped callers that need the live aiohttp session must use the
-    :data:`TaskExecutor` dependency, which reaches the entered executor held by
-    :class:`NomadLifecycle`.
+    sub-client, so it suffices for any request-less reader that does not touch
+    the live aiohttp session. Request-scoped callers that need the live session
+    must use the :data:`TaskExecutor` dependency, which reaches the entered
+    executor held by :class:`NomadLifecycle`.
 
     :param backend: The backend type to get an executor for.
     :type backend: TaskBackendEnum
