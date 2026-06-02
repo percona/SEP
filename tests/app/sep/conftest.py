@@ -37,6 +37,7 @@ from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
     get_inventory_api,
+    get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
     validate_csrf,
@@ -60,7 +61,7 @@ async def session_fixture() -> AsyncSession:
 
 
 @pytest.fixture
-def test_client(regular_user: CasdoorUser) -> TestClient:
+def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Yield an authenticated cookie-auth TestClient for the SEP app.
 
     Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
@@ -68,11 +69,18 @@ def test_client(regular_user: CasdoorUser) -> TestClient:
     Bearer gate. Plugin-local ``test_client`` overrides MUST
     mirror this override; see :func:`api_admin_client_no_bearer` for the
     negative-path fixture that leaves the gate intact.
+
+    ``get_session`` is overridden to the in-memory ``session`` so the
+    ``require_app_enabled`` route guard reads an isolated, empty ``appstate``
+    table (no rows -> every app enabled) instead of a shared, order-dependent
+    DB. Tests that exercise the disabled path override ``get_session`` again
+    with a session that carries an ``enabled=False`` row.
     """
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 

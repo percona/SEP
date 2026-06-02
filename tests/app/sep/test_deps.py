@@ -1344,6 +1344,7 @@ class TestGetToggleableAppKey:
     def test_returns_key_for_toggleable_configured_app(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """A configured, non-protected key resolves to itself."""
         monkeypatch.setattr(
             "app.sep.deps.sep_settings.PLUGINS",
             [
@@ -1354,10 +1355,14 @@ class TestGetToggleableAppKey:
         assert get_toggleable_app_key("snippets") == "snippets"
 
     def test_protected_key_raises_conflict(self) -> None:
+        """A protected key raises 409 -- it can never be toggled."""
         with pytest.raises(HTTPConflictException):
             get_toggleable_app_key("inventory")
 
-    def test_unknown_key_raises_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_unknown_key_raises_not_found(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unconfigured key raises 404."""
         monkeypatch.setattr(
             "app.sep.deps.sep_settings.PLUGINS",
             [Plugin(name="Snippet Manager", module_name="snippets")],

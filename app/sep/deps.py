@@ -451,6 +451,12 @@ def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None
     :data:`SessionDep` dependency. Callers must not invoke this factory for keys
     in :data:`PROTECTED_APP_KEYS` -- the mount loops enforce that skip.
 
+    A failed app-state read degrades to ENABLED rather than failing the request:
+    a configured plugin stays reachable when the DB is unreachable (or the
+    ``appstate`` table is missing), mirroring :func:`get_default_context`. This
+    is fail-open by design -- the gate is an operator convenience, not a security
+    boundary, so a transient DB fault must not 500 every guarded route.
+
     :param app_key: The plugin module key to gate on.
     :type app_key: str
     :return: A FastAPI dependency coroutine that raises 503 when disabled.
@@ -458,7 +464,16 @@ def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None
     """
 
     async def _gate(session: SessionDep) -> None:
-        if not await AppStateManager.is_enabled(session, app_key):
+        try:
+            enabled = await AppStateManager.is_enabled(session, app_key)
+        except SQLAlchemyError:
+            logger.warning(
+                "Could not read app state for '%s'; allowing the request.",
+                app_key,
+                exc_info=True,
+            )
+            return
+        if not enabled:
             raise HTTPServiceUnavailableException(
                 detail=f"App '{app_key}' is currently disabled.",
             )

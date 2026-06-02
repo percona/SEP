@@ -22,6 +22,7 @@
 // select is empty, while a muted "Select…" placeholder renders inside.
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Mock stubs ────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,10 @@ async function mockRoutes(page: Page) {
   await page.route('**/api/**', async (route) => {
     const req = route.request();
     const { pathname } = new URL(req.url());
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
+    }
 
     if (pathname.includes('/oauth/refresh')) {
       return route.fulfill({ json: MOCK_TOKEN });
