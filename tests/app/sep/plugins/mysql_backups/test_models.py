@@ -31,7 +31,7 @@ class TestXtrabackupQuietField:
 
     def test_accepts_true(self):
         """Field accepts True via case-insensitive key validation."""
-        config = BackupConfigAll.model_validate({"XTRABACKUP_QUIET": True})
+        config = BackupConfigAll.model_validate({"Xtrabackup_Quiet": True})
         assert config.xtrabackup_quiet is True
 
     def test_accepts_false_explicitly(self):

@@ -21,6 +21,7 @@ source text and recompiled — giving us the actual production pattern without
 pulling in the full dependency tree.
 """
 
+import ast
 import pathlib
 import re
 
@@ -33,19 +34,31 @@ _PAYLOAD_PATH = (
 
 
 def _extract_copy_line_re() -> re.Pattern:
-    """Extract and compile ``_COPY_LINE_RE`` from the payload source."""
+    """Extract and compile ``_COPY_LINE_RE`` from the payload source via AST.
+
+    Uses ``ast.parse`` rather than regex-on-source so that refactors to
+    string literal style, quoting, or line wrapping do not break this test.
+    """
     source = _PAYLOAD_PATH.read_text()
-    match = re.search(
-        r"_COPY_LINE_RE\s*=\s*re\.compile\(\s*"
-        r'r"([^"]+)"\s*r"([^"]+)"\s*\)',
-        source,
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "_COPY_LINE_RE"
+            and isinstance(node.value, ast.Call)
+            and node.value.args
+        ):
+            try:
+                pattern = ast.literal_eval(node.value.args[0])
+            except ValueError:
+                continue
+            return re.compile(pattern)
+    raise RuntimeError(
+        f"_COPY_LINE_RE not found in {_PAYLOAD_PATH}. "
+        "Has the constant been renamed or removed?"
     )
-    if match is None:
-        raise RuntimeError(
-            f"_COPY_LINE_RE not found in {_PAYLOAD_PATH}. "
-            "Has the constant been renamed or removed?"
-        )
-    return re.compile(match.group(1) + match.group(2))
 
 
 _COPY_LINE_RE = _extract_copy_line_re()
