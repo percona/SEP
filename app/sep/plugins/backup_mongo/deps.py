@@ -27,7 +27,7 @@ from aiohttp import ClientResponseError
 from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.pagination import PaginatedResponse
+from app.core.pagination import fetch_all_dict_items, PaginatedResponse
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -399,8 +399,8 @@ async def get_backup_mongo_api_task_responses(
     """Retrieve a page of backup task responses for the JSON API.
 
     Uses one filtered upstream task list plus one batch latest-status lookup per
-    page. When ``status`` is set, the upstream list uses ``limit=0`` so
-    ``total`` reflects the parent count after the status filter.
+    page. When ``status`` is set, walks parent-task pages with bounded ``limit``
+    and applies latest-status filtering in-memory before slicing.
 
     :param tasks_api: The TaskAPI instance used to query backup tasks.
     :type tasks_api: TaskAPI
@@ -437,11 +437,16 @@ async def get_backup_mongo_api_task_responses(
             limit=limit,
         )
 
-    response = await tasks_api.get(
-        "/",
-        params=_backup_parent_list_params(offset=0, limit=0),
+    parent_items = await fetch_all_dict_items(
+        lambda pagination: tasks_api.get(
+            "/",
+            params=_backup_parent_list_params(
+                offset=pagination.offset,
+                limit=pagination.limit,
+            ),
+        )
     )
-    parents = [Task.model_validate(item) for item in response["items"]]
+    parents = [Task.model_validate(item) for item in parent_items]
     status_map = await _fetch_latest_task_statuses_for_names(
         tasks_api,
         [task.name for task in parents],
