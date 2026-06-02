@@ -1182,26 +1182,25 @@ def run_binlog_process(server_data, lock_file, command_queue):
                         enable_backup = BaseBackup(server_data, "B")
                         enable_backup.textfile_collector_write_enable(alias, True, "upload")
                         LOGGER.info("Binlog upload starting ...")
-                        upload_log_level = LOGGER.getEffectiveLevel()
                         for upload_type in server_data.get("UPLOAD"):
                             if upload_type == "rsync":
                                 LOGGER.info("Binlog upload rsync ...")
                                 BinaryLogUpload(upload_type=upload_type,
                                                 upload_provider=RsyncUploadProvider,
                                                 settings=server_data,
-                                                level=upload_log_level).run()
+                                                logger=LOGGER).run()
                             elif upload_type == "s3":
                                 LOGGER.info("Binlog upload s3 ...")
                                 BinaryLogUpload(upload_type=upload_type,
                                                 upload_provider=S3UploadProvider,
                                                 settings=server_data,
-                                                level=upload_log_level).run()
+                                                logger=LOGGER).run()
                             elif upload_type == "gsutil":
                                 LOGGER.info("Binlog upload gs ...")
                                 BinaryLogUpload(upload_type=upload_type,
                                                 upload_provider=GSUploadProvider,
                                                 settings=server_data,
-                                                level=upload_log_level).run()
+                                                logger=LOGGER).run()
                             else:
                                 LOGGER.warning("Unsupported upload type: %r", upload_type)
                     last_upload_time = time.time()
@@ -1600,7 +1599,7 @@ class Upload(Backup):
         self.logger = upload_logging_setup(
             logging_dir, "upload-binlog.log", self.alias, logger.level
         )
-        self.upload_provider = upload_provider(settings, self.logger)
+        self.upload_provider = upload_provider(settings, self.logger.level)
         self.last_uploaded_number = 0
         self.last_to_upload_number = 0
         log_path = Path(logging_dir) / "upload-binlog.log"

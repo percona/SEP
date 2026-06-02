@@ -1425,7 +1425,7 @@ class Upload(Backup):
         self.logger = upload_logging_setup(
             logging_dir, "upload-xtrabackup.log", self.alias, logger.level
         )
-        self.upload_provider = upload_provider(settings, self.logger)
+        self.upload_provider = upload_provider(settings, self.logger.level)
         self.last_uploaded_number = 0
         self.last_to_upload_number = 0
         log_path = Path(logging_dir) / "upload-xtrabackup.log"
@@ -1721,6 +1721,7 @@ class S3UploadProvider:
         self.fake_s3_upload = settings.get("FAKE_S3_UPLOAD")
         self.s3_limit_rate = settings.get("S3_LIMIT_RATE")
         self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
+        self.awscli_s3_upload_extra_args = settings.get("AWSCLI_S3_UPLOAD_EXTRA_ARGS", {})
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
         self.logging_dir = Path(settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
@@ -1796,6 +1797,8 @@ class S3UploadProvider:
                     "StorageClass": self.s3_storage_class,
                     "ServerSideEncryption": "AES256",
                 }
+                if self.awscli_s3_upload_extra_args:
+                    extra_args.update(self.awscli_s3_upload_extra_args)
 
                 self.logger.info(
                     "Uploading %s to s3://%s/%s", local_path, self.bucket_name, key
@@ -2170,7 +2173,6 @@ class Xtrabackup(Backup):
                 self._save_disk_space()
 
         # Upload if needed
-        upload_log_level = LOGGER.getEffectiveLevel()
         for upload_type in self.upload_type:
             self.enable_upload(self.last_backup_dir)
             if upload_type == "rsync":
@@ -2178,21 +2180,21 @@ class Xtrabackup(Backup):
                     upload_type=upload_type,
                     upload_provider=RsyncUploadProvider,
                     settings=self.server_setting,
-                    level=upload_log_level,
+                    logger=LOGGER,
                 ).run()
             elif upload_type == "s3":
                 XtraBackupUpload(
                     upload_type=upload_type,
                     upload_provider=S3UploadProvider,
                     settings=self.server_setting,
-                    level=upload_log_level,
+                    logger=LOGGER,
                 ).run()
             elif upload_type == "gsutil":
                 XtraBackupUpload(
                     upload_type=upload_type,
                     upload_provider=GSUploadProvider,
                     settings=self.server_setting,
-                    level=upload_log_level,
+                    logger=LOGGER,
                 ).run()
             else:
                 self.logger.warning("Unsupported upload type: %r", upload_type)
