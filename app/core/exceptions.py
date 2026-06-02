@@ -72,6 +72,24 @@ class HTTPUnprocessableEntityException(HTTPException):
         )
 
 
+class HTTPInternalServerErrorException(HTTPException):
+    """Define exception raised for an internal server error (HTTP 500).
+
+    ``detail`` accepts a string or a JSON-serializable structure, matching
+    :class:`fastapi.HTTPException`, so callers can pass structured payloads
+    (e.g. orphaned-task lists from a partial cascade failure).
+
+    :param detail: Human-readable or structured error payload. Defaults to
+        ``"Internal Server Error"``.
+    :type detail: Any
+    """
+
+    def __init__(self, detail: Any = "Internal Server Error") -> None:
+        super().__init__(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail
+        )
+
+
 class HTTPBadGatewayException(HTTPException):
     """Define exception raised for bad gateway (HTTP 502).
 

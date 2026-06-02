@@ -21,6 +21,7 @@ import pytest
 import yaml
 
 from app.core.exceptions import HTTPNotFoundException
+from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.backup_pg.deps import (
     build_backup_task_payload,
@@ -174,6 +175,33 @@ def test_get_backups_task_info():
     assert result["backup_type"] == BackupType.PGBACKREST.name
 
 
+def test_get_backups_task_info_port_falls_back_to_meta():
+    """Test PORT missing from YAML falls back to the meta connectivity port."""
+    meta_port = 6543
+    fake_task_dict = {
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                CONNECTIVITY_META_PORT_KEY: meta_port,
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "HOST": "my-db-host",
+                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                            }
+                        ]
+                    }
+                ),
+            }
+        }
+    }
+
+    result = get_backups_task_info(fake_task_dict)
+
+    assert result["port"] == meta_port
+
+
 def test_parse_backup_task_data():
     """Test parsing backup task data for the backup_pg detail view."""
     expected_port = 5432
@@ -209,6 +237,34 @@ def test_parse_backup_task_data():
     assert result["host"] == "localhost"
     assert result["port"] == expected_port
     assert result["logging_dir"] == "/var/log/pgbackrest"
+
+
+def test_parse_backup_task_data_port_falls_back_to_meta():
+    """Test PORT missing from YAML falls back to the meta connectivity port."""
+    meta_port = 6543
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                CONNECTIVITY_META_PORT_KEY: meta_port,
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "HOST": "localhost",
+                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                            }
+                        ],
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["port"] == meta_port
 
 
 @pytest.mark.parametrize(
