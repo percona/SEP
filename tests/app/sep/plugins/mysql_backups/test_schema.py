@@ -15,6 +15,7 @@
 
 """Tests for the mysql_backups plugin schema."""
 
+from app.sep.plugins.framework.rules import F, FieldGate
 from app.sep.plugins.framework.schema import (
     Capabilities,
     ChoiceField,
@@ -117,6 +118,27 @@ class TestMysqlBackupsSchema:
             wire_shapes = [gate.when.to_dict() for gate in gates]
             assert wire_shapes == [{"not": {"contains": {"upload": provider}}}], (
                 f"unexpected forbidden gate on {name}: {wire_shapes}"
+            )
+
+    def test_mode_sections_carry_forbidden_gates(self):
+        """Mode sections gate themselves off when ``backup_type`` is not theirs.
+
+        Each mode section declares a single ``forbidden`` gate keyed off the
+        shared ``backup_type`` ChoiceField. Mode-owned bool fields rely on
+        this section-level gate rather than per-field gating — see the
+        module docstring for the rationale.
+        """
+        sections = {section.title: section for section in mysql_backups_schema.forms}
+        for title, owner_mode in [
+            ("Mydumper", "M"),
+            ("XtraBackup", "X"),
+            ("Binlog", "B"),
+        ]:
+            gates = sections[title].forbidden or []
+            wire_shapes = [gate.when.to_dict() for gate in gates]
+            expected = [FieldGate(when=F("backup_type") != owner_mode).when.to_dict()]
+            assert wire_shapes == expected, (
+                f"unexpected forbidden gate on {title} section: {wire_shapes}"
             )
 
     def test_schema_field_names_match_backup_create_attrs(self):

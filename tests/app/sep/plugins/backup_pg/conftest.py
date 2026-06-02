@@ -18,9 +18,13 @@
 import pytest
 import yaml
 
+from app.core.exceptions import HTTPConflictException
+from app.sep.deps import IsApiAuthenticated, RequireBearerForUnsafeMethods
 from app.sep.main import sep_app
+from app.sep.plugins.backup_pg.api_routes import router as backup_pg_api_router
 from app.sep.plugins.backup_pg.deps import (
-    build_backup_task_payload,
+    build_backup_task_payload_from_form,
+    check_create_has_no_conflicted_running_tasks,
     get_backups_index_context,
     get_backups_task,
 )
@@ -31,6 +35,14 @@ from tests.app.factories import TaskFactory
 
 if not any(route.path.startswith("/backup-pg") for route in sep_app.routes):
     sep_app.include_router(backup_pg_router, prefix="/backup-pg")
+
+if not any(route.path.startswith("/api/plugins/backup_pg") for route in sep_app.routes):
+    sep_app.include_router(
+        backup_pg_api_router,
+        prefix="/api/plugins/backup_pg",
+        tags=["backup_pg"],
+        dependencies=[IsApiAuthenticated, RequireBearerForUnsafeMethods],
+    )
 
 
 @pytest.fixture
@@ -95,6 +107,32 @@ def _mock_get_backups_task_dep(created_task: Task) -> None:
 
 
 @pytest.fixture
+def _mock_check_create_has_no_conflicted_running_tasks() -> None:
+    """Bypass the body-aware create-conflict guard for create-path tests."""
+    previous = sep_app.dependency_overrides.copy()
+    sep_app.dependency_overrides[check_create_has_no_conflicted_running_tasks] = (
+        lambda: None
+    )
+    yield
+    sep_app.dependency_overrides = previous
+
+
+@pytest.fixture
+def _mock_check_create_has_no_conflicted_running_tasks_raises() -> None:
+    """Force the body-aware create-conflict guard to raise HTTPConflictException."""
+
+    def raise_conflict() -> None:
+        raise HTTPConflictException("Task is already running or pending.")
+
+    previous = sep_app.dependency_overrides.copy()
+    sep_app.dependency_overrides[check_create_has_no_conflicted_running_tasks] = (
+        raise_conflict
+    )
+    yield
+    sep_app.dependency_overrides = previous
+
+
+@pytest.fixture
 def mock_build_backup_task_payload_dep() -> TaskWrite:
     """Mock the build_backup_task_payload dependency."""
     fake_task_write = TaskWrite(
@@ -103,6 +141,8 @@ def mock_build_backup_task_payload_dep() -> TaskWrite:
         owner=TaskOwner.BACKUP_PG,
         data={"task": "fake-task", "meta": {}, "payload": ""},
     )
-    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+    sep_app.dependency_overrides[build_backup_task_payload_from_form] = (
+        lambda: fake_task_write
+    )
     yield fake_task_write
     sep_app.dependency_overrides = {}
