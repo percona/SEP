@@ -15,12 +15,16 @@
 
 """Define tests for the app.sep.plugins.backup_mongo.restore.routes module."""
 
+from typing import Any
 from unittest.mock import AsyncMock
 
+import yaml
 from fastapi import status
 
 from app.sep.inventory import CreatedService
 from app.sep.plugins.backup_mongo.restore.models import RestoreCreate
+from app.tasks.models import TaskBackendEnum, TaskOwner
+from tests.app.factories import TaskFactory
 
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
 
@@ -69,3 +73,53 @@ def test_pbm_restores_update_full_form_dependency_chain_without_payload_override
     mock_task_api_dep.put.assert_awaited_once()
     posted = mock_task_api_dep.put.await_args.kwargs["json"]
     assert posted["data"]["meta"]["_service_name"] == mongo_service.name
+
+
+def test_pbm_restores_detail_tolerates_missing_backup_type(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+):
+    """GET detail returns 200 when config has no backupType."""
+    task = TaskFactory.build(
+        name="mongo-restore-task",
+        owner=TaskOwner.RESTORE_MONGO,
+        backend=TaskBackendEnum.PROXY,
+    ).model_dump(mode="json")
+    task["data"] = {
+        "task": "run-python",
+        "meta": {
+            "target": "mongo-restore-host",
+            "config": yaml.dump(
+                {
+                    "backupSource": "2026-04-29T10:00:00",
+                    "restore": {},
+                },
+                default_flow_style=False,
+            ),
+            "requirements": "packaging\nPyYAML",
+        },
+        "payload": "file:///plugins/backup_mongo/restore/restore_config_payload",
+    }
+
+    async def _mock_get(path: str, **kwargs: Any):
+        if path == "/mongo-restore-task":
+            return task
+        if path == "/":
+            return {"items": [task], "total": 1}
+        if path == "/hosts/":
+            return {}
+        if path == "/services/":
+            return {"items": []}
+        if path.startswith("/stats/"):
+            return {}
+        if path.endswith("/history/"):
+            return {"items": []}
+        raise AssertionError(f"Unexpected path: {path!r}, kwargs={kwargs!r}")
+
+    mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+    mock_inventory_api_dep.get = AsyncMock(return_value={"items": []})
+
+    response = test_client.get("/backup_mongo/restores/mongo-restore-task")
+
+    assert response.status_code == status.HTTP_200_OK

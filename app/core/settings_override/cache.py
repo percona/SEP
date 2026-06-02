@@ -19,17 +19,18 @@ __all__ = ["build_snapshot"]
 
 import logging
 from types import MappingProxyType
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import TypeAdapter, ValidationError
-from pydantic.fields import FieldInfo
+from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
-from app.core.settings_override.registry import is_hot_reloadable
-from app.core.utils.pydantic import CustomFieldMetadata
+from app.core.settings_override.registry import (
+    coerce_field_value,
+    is_hot_reloadable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ async def build_snapshot(
     rows = await SettingsOverrideManager.list(
         session, setting_class=setting_class, is_active=True
     )
-    snapshot: dict[str, Any] = {}
+    snapshot = {}
     for row in rows:
         field_info = settings_cls.model_fields.get(row.key)
         if field_info is None:
@@ -85,7 +86,7 @@ async def build_snapshot(
             )
             continue
         try:
-            snapshot[row.key] = _coerce_value(field_info, row.value)
+            snapshot[row.key] = coerce_field_value(field_info, row.value)
         except ValidationError as exc:
             logger.warning(
                 "Override for %s.%s failed type coercion: %s",
@@ -94,45 +95,3 @@ async def build_snapshot(
                 exc,
             )
     return MappingProxyType(snapshot)
-
-
-def _annotated_type(field_info: FieldInfo) -> Any:
-    """Reassemble the constraint-preserving annotated type for a field.
-
-    Constraint metadata attached to the field's annotation (e.g. ``Gt(0)`` from
-    ``PositiveInt``) is preserved by re-assembling an ``Annotated`` type from
-    ``field_info.annotation`` plus every non-:class:`CustomFieldMetadata` item
-    in ``field_info.metadata``. Without this, ``TypeAdapter(field_info.annotation)``
-    would accept values the original settings model rejects -- e.g. a negative
-    integer override for a ``PositiveInt`` field would silently load.
-
-    :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
-    :return: The field's annotation, wrapped in ``Annotated`` together with its
-        preserved constraint metadata when any constraints are present.
-    :rtype: Any
-    """
-    constraints = tuple(
-        item
-        for item in field_info.metadata
-        if not isinstance(item, CustomFieldMetadata)
-    )
-    if constraints:
-        return Annotated[(field_info.annotation, *constraints)]
-    return field_info.annotation
-
-
-def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
-    """Coerce a raw JSON-decoded value to the field's declared Python type.
-
-    :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
-    :param raw: The JSON-decoded value as stored on the override row.
-    :type raw: Any
-    :return: The validated Python value matching ``field_info.annotation``
-        plus its preserved constraint metadata.
-    :rtype: Any
-    :raises ValidationError: If ``raw`` cannot be coerced to the declared
-        type or violates a preserved constraint. Callers handle and log.
-    """
-    return TypeAdapter(_annotated_type(field_info)).validate_python(raw)

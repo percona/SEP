@@ -543,6 +543,19 @@ class FormSection(SchemaBaseModel):
     :param render_after_submit: Whether this section should render after the
         submit button instead of before it. Defaults to ``False``.
     :type render_after_submit: bool
+    :param forbidden: Optional gates that hide the entire section when any
+        of them fires. The schema-driven React renderer skips the section
+        and unregisters every child field from the form so stale values
+        do not ship in the submission payload. Gates may reference any
+        field declared in the plugin schema (including fields in other
+        sections). Defaults to ``None`` — sections render unconditionally.
+        Backend ``fail_when`` and conditional-rule validation on hidden
+        sections still applies: hidden-section children arrive in the
+        submitted payload as **absent** (not zeroed or defaulted), so
+        ``truthy``/``present`` predicates silently pass while
+        ``falsy``/``absent`` predicates see the children as missing.
+        Author ``fail_when`` rules accordingly.
+    :type forbidden: list[FieldGate] | None
     """
 
     title: NonEmptyStr
@@ -553,6 +566,7 @@ class FormSection(SchemaBaseModel):
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False
+    forbidden: list[FieldGate] | None = None
 
 
 class Column(SchemaBaseModel):
@@ -881,6 +895,22 @@ def _collect_basefield_gate_errors(
                 errors,
                 implicit_self_name=field.name,
             )
+
+
+def _collect_section_gate_errors(
+    section: "FormSection",
+    section_label: str,
+    declared_field_names: set[str],
+    errors: list[str],
+) -> None:
+    """Walk a ``FormSection``'s ``forbidden`` gates."""
+    for rule_index, gate in enumerate(section.forbidden or []):
+        _collect_reference_errors(
+            f"{section_label} forbidden[{rule_index}]",
+            gate.when.referenced_fields(),
+            declared_field_names,
+            errors,
+        )
 
 
 def _collect_cardinality_rule_errors(
@@ -1236,6 +1266,9 @@ class PluginSchema(SchemaBaseModel):
                         _collect_basefield_gate_errors(
                             field, declared_field_names, errors
                         )
+                    _collect_section_gate_errors(
+                        section, section_label, declared_field_names, errors
+                    )
                     _collect_cardinality_rule_errors(
                         section.cardinality_rules,
                         section_label,
@@ -1262,6 +1295,9 @@ class PluginSchema(SchemaBaseModel):
                 section_label = f"FormSection[{section_index}] {section.title!r}"
                 for field in section.fields:
                     _collect_basefield_gate_errors(field, declared_field_names, errors)
+                _collect_section_gate_errors(
+                    section, section_label, declared_field_names, errors
+                )
                 _collect_cardinality_rule_errors(
                     section.cardinality_rules,
                     section_label,

@@ -59,6 +59,7 @@ from tests.app.factories import TaskFactory
 
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
+PARENT_FILTER_TASK_COUNT = 3
 
 
 @pytest_asyncio.fixture
@@ -176,6 +177,63 @@ async def test_update_task_not_found(test_client):
     ).model_dump(mode="json")
     response = test_client.put("/nonexistent", json=payload)
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_latest_task_history_status_batch(test_client, session):
+    """Assert POST /history/latest returns latest status keyed by task name."""
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="route-latest-status")),
+    )
+    await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            execution_request={
+                "task": task.name,
+                "target": "localhost",
+                "meta": {},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+        ),
+    )
+    await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            status=TaskHistoryStatusEnum.RUNNING,
+            execution_request={
+                "task": task.name,
+                "target": "localhost",
+                "meta": {},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+        ),
+    )
+
+    response = test_client.post(
+        "/history/latest",
+        json={"names": [task.name, "route-latest-missing"]},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {
+        task.name: TaskHistoryStatusEnum.RUNNING.value,
+        "route-latest-missing": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_latest_task_history_status_rejects_too_many_names(test_client) -> None:
+    """Assert POST /history/latest rejects more than 200 task names."""
+    response = test_client.post(
+        "/history/latest",
+        json={"names": [f"task-{index}" for index in range(201)]},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 @pytest.mark.asyncio
@@ -1441,6 +1499,109 @@ async def test_list_tasks_filter_with_pagination(test_client, session):
     assert data["total"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["name"] == "backup-1"
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_parent_is_null_filter(test_client, session):
+    """Assert parent_is_null query param filters on data.parent."""
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-parent",
+                data={"backup_type": "pbm_config"},
+            )
+        ),
+    )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-child",
+                data={"backup_type": "pbm_logical", "parent": "route-parent"},
+            )
+        ),
+    )
+
+    response = test_client.get("/", params={"parent_is_null": True})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "route-parent"
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_backup_type_filter_with_pagination(test_client, session):
+    """Assert backup_type and pagination params compose on GET /."""
+    for index in range(PARENT_FILTER_TASK_COUNT):
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=f"route-pbm-config-{index}",
+                    data={"backup_type": "pbm_config"},
+                )
+            ),
+        )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-pbm-logical",
+                data={"backup_type": "pbm_logical", "parent": "route-pbm-config-0"},
+            )
+        ),
+    )
+
+    common_params = {"parent_is_null": True, "backup_type": "pbm_config"}
+    page_1 = test_client.get("/", params={**common_params, "offset": 0, "limit": 1})
+    page_2 = test_client.get("/", params={**common_params, "offset": 1, "limit": 1})
+    page_3 = test_client.get("/", params={**common_params, "offset": 2, "limit": 1})
+
+    assert page_2.status_code == status.HTTP_200_OK
+    data = page_2.json()
+    assert data["total"] == PARENT_FILTER_TASK_COUNT
+    assert data["offset"] == 1
+    assert data["limit"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["data"]["backup_type"] == "pbm_config"
+    paginated_names = {
+        page_1.json()["items"][0]["name"],
+        page_2.json()["items"][0]["name"],
+        page_3.json()["items"][0]["name"],
+    }
+    assert paginated_names == {
+        f"route-pbm-config-{index}" for index in range(PARENT_FILTER_TASK_COUNT)
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_self_parent_filter(test_client, session):
+    """Assert self_parent query param keeps rows where parent equals task name."""
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-self-parent",
+                data={"backup_type": "pbm_logical", "parent": "route-self-parent"},
+            )
+        ),
+    )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-child-parent",
+                data={"backup_type": "pbm_logical", "parent": "route-self-parent"},
+            )
+        ),
+    )
+
+    response = test_client.get("/", params={"self_parent": True})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "route-self-parent"
 
 
 @pytest.mark.asyncio

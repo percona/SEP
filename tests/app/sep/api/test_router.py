@@ -15,6 +15,8 @@
 
 """Define tests for the shared SEP API router at ``/api/plugins/``."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -255,16 +257,23 @@ class TestPluginBearerGate:
         cookie_only_client: TestClient,
         mock_task_api_dep,
         mock_inventory_api_dep,
+        mocker,
     ) -> None:
         """Cookie-only GET on /api/sep/* is not blocked by the Bearer gate.
 
         Regression guard: dashboard/hosts/task-stats serve cookie-auth
         React reads; the response must succeed (200) under cookie-only
-        credentials. Upstream Tasks/Inventory calls are stubbed so the
-        dashboard returns a deterministic payload.
+        credentials. Upstream Tasks/Inventory and the SEP snippets count
+        are stubbed so the dashboard returns a deterministic payload
+        independent of any persisted snippet rows in the local SEP DB.
         """
         mock_inventory_api_dep.get.return_value = {"nodes": 0}
         mock_task_api_dep.get.side_effect = [{"total": 0}, []]
+        mocker.patch(
+            "app.sep.api.routes.dashboard.SnippetManager.count",
+            new_callable=AsyncMock,
+            return_value=0,
+        )
         response = cookie_only_client.get("/api/sep/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -365,7 +374,7 @@ class TestPluginBearerGate:
 
 
 class TestApiRouterConfigDrivenLoop:
-    """Test the config-driven plugin mount loop (SEP-1109)."""
+    """Test the config-driven plugin mount loop."""
 
     def test_plugin_with_api_router_path_is_mounted(self) -> None:
         """Assert a plugin with ``api_router_path`` set produces mounted routes."""
@@ -492,7 +501,7 @@ class TestApiRouterConfigDrivenLoop:
     ) -> None:
         """Assert legacy operator overrides keep their JSON endpoints.
 
-        Mimic a pre-SEP-1109 ``settings.yaml`` override that re-declares the
+        Mimic a legacy ``settings.yaml`` override that re-declares the
         three built-in plugins with only ``name`` / ``module_name`` /
         ``uri_path`` / ``css_class`` and no ``api_router_path``.
         """
