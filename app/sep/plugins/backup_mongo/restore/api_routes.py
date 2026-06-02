@@ -34,6 +34,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.restore.deps import (
+    _backup_type_from_parent,
     build_restore_mongo_api_detail_response,
     build_restore_mongo_api_task_response,
     build_restore_task_group,
@@ -42,13 +43,12 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     get_restore_mongo_api_task_responses,
     get_restore_mongo_task_status,
     get_restores_task,
-    restore_create_from_write,
-    restore_update_form_from_write,
     RestoreParentTask,
     UnprotectedRestoreParentTask,
     update_restore_task_group,
 )
 from app.sep.plugins.backup_mongo.restore.models import (
+    RestoreCreate,
     RestoreExecuteWrite,
     RestoreExecutionResponse,
     RestoreTaskDetailResponse,
@@ -104,7 +104,10 @@ async def restore_mongo_api_create(
     logger.debug(
         "Create backup_mongo restore task group (JSON path): %s", body.task_name
     )
-    form = restore_create_from_write(body)
+    form = RestoreCreate.model_validate(
+        body.model_dump(mode="json"),
+        from_attributes=False,
+    )
     (
         config_task,
         restore_task,
@@ -138,7 +141,15 @@ async def restore_mongo_api_update(
     child leg (restore, pbm-list, optional force-resync) in place.
     """
     logger.debug("Update backup_mongo restore task (JSON path): %s", parent_task.name)
-    form = restore_update_form_from_write(body, parent_task)
+    form = RestoreCreate.model_validate(
+        body.model_dump(mode="json"),
+        from_attributes=False,
+    ).model_copy(
+        update={
+            "task_name": parent_task.name,
+            "backup_type": _backup_type_from_parent(parent_task),
+        }
+    )
     updated_task = await update_restore_task_group(
         tasks_api,
         parent_task,

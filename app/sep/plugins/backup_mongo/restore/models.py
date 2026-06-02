@@ -281,6 +281,125 @@ class RestoreTaskWrite(BaseModel):
     credentials_path: str | None = None
 
 
+class RestoreTaskLegModel(BaseModel):
+    """Represent an internal descriptor for one restore task leg.
+
+    :param name: The task name for this leg.
+    :type name: NonEmptyStr
+    :param payload_name: The payload file name consumed by ``run-python``.
+    :type payload_name: NonEmptyStr
+    :param target: The target host where this task executes.
+    :type target: NonEmptyStr
+    :param config_yaml: YAML config content passed in task metadata.
+    :type config_yaml: str
+    :param requirements: Newline-separated Python requirements for this leg.
+    :type requirements: str
+    :param parent: Optional parent task name for child legs.
+    :type parent: NonEmptyStr | None
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    name: NonEmptyStr
+    payload_name: NonEmptyStr
+    target: NonEmptyStr
+    config_yaml: str
+    requirements: str = ""
+    parent: NonEmptyStr | None = None
+    service_name: NonEmptyStr | None = None
+
+
+class RestoreConfigPayloadModel(BaseModel):
+    """Represent typed inputs for the restore-config leg payload.
+
+    :param task_name: The parent restore task name.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for execution.
+    :type hostname: NonEmptyStr
+    :param backup_source: Backup name or timestamp to restore from.
+    :type backup_source: NonEmptyStr
+    :param backup_type: Backup type for restore execution.
+    :type backup_type: BackupType
+    :param restore: Optional restore-specific PBM options.
+    :type restore: RestoreConfigRestore | None
+    :param credentials_path: Optional path to MongoDB URI credentials.
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    backup_source: NonEmptyStr
+    backup_type: BackupType
+    restore: RestoreConfigRestore | None = None
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
+    service_name: NonEmptyStr | None = None
+
+
+class RestoreLegPayloadModel(BaseModel):
+    """Represent typed inputs for the restore execution leg payload.
+
+    :param task_name: The parent restore task name.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for execution.
+    :type hostname: NonEmptyStr
+    :param backup_source: Backup name or timestamp to restore from.
+    :type backup_source: NonEmptyStr
+    :param backup_type: Backup type for restore execution.
+    :type backup_type: BackupType
+    :param credentials_path: Optional path to MongoDB URI credentials.
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    backup_source: NonEmptyStr
+    backup_type: BackupType
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
+    service_name: NonEmptyStr | None = None
+
+
+class PbmListPayloadModel(BaseModel):
+    """Represent typed inputs for the pbm-list helper leg payload.
+
+    :param task_name: The parent restore task name.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for execution.
+    :type hostname: NonEmptyStr
+    :param credentials_path: Optional path to MongoDB URI credentials.
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
+    service_name: NonEmptyStr | None = None
+
+
+class PbmForceResyncPayloadModel(BaseModel):
+    """Represent typed inputs for the pbm-force-resync helper leg payload.
+
+    :param task_name: The parent restore task name.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for execution.
+    :type hostname: NonEmptyStr
+    :param credentials_path: Optional path to MongoDB URI credentials.
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
+    service_name: NonEmptyStr | None = None
+
+
 class RestoreDerivedTaskSummary(BaseModel):
     """Represent one child task in a restore task group detail response.
 
