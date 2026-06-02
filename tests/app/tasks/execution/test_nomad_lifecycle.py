@@ -151,3 +151,13 @@ def test_get_request_executor_falls_back_without_holder() -> None:
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
     result = get_request_executor(request, TaskBackendEnum.NOMAD)
     assert result is tasks_settings.NOMAD
+
+
+def test_get_request_executor_falls_back_when_holder_not_started() -> None:
+    """A holder present but never entered falls back to the request-less read."""
+    holder = NomadLifecycle(FastAPI())  # never entered -> ``current`` raises
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(nomad_lifecycle=holder))
+    )
+    result = get_request_executor(request, TaskBackendEnum.NOMAD)
+    assert result is tasks_settings.NOMAD

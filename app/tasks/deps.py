@@ -100,8 +100,8 @@ def get_request_executor(
     For NOMAD, returns the live **entered** executor owned by
     :class:`NomadLifecycle` (``app.state.nomad_lifecycle``) so routes that
     stream logs or list files use an open aiohttp session. When no holder is
-    present (e.g. a unit test without the Tasks lifespan), falls back to the
-    request-less :func:`get_executor`. Other backends defer to
+    present (e.g. a unit test without the Tasks lifespan) or the holder is not
+    started, falls back to the request-less :func:`get_executor`. Other backends defer to
     :func:`get_executor` unchanged.
 
     :param request: The incoming request, injected by FastAPI.
@@ -115,7 +115,13 @@ def get_request_executor(
     if backend == TaskBackendEnum.NOMAD:
         holder = getattr(request.app.state, "nomad_lifecycle", None)
         if holder is not None:
-            return holder.current
+            try:
+                return holder.current
+            except RuntimeError:
+                # Holder present but not started (e.g. a stale holder left on
+                # app.state post-shutdown); degrade to the request-less executor
+                # instead of failing the request.
+                pass
     return get_executor(backend)
 
 
