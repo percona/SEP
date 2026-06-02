@@ -27,7 +27,7 @@ from app.sep.connectivity import (
 )
 from app.sep.main import sep_app
 from app.sep.plugins.backup_pg.deps import (
-    build_backup_task_payload,
+    build_backup_task_payload_from_form,
     get_backups_index_context,
 )
 from app.tasks.models import (
@@ -127,7 +127,9 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
         },
     )
 
-    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+    sep_app.dependency_overrides[build_backup_task_payload_from_form] = (
+        lambda: fake_task_write
+    )
 
     response = test_client.post(
         "/backup-pg/", data=backup_create.model_dump(), follow_redirects=False
@@ -354,3 +356,26 @@ def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
     assert "/mysql_backups/pg_periodic_task" not in response.text
 
     sep_app.dependency_overrides = {}
+
+
+def test_jinja_routes_marked_deprecated_in_openapi(test_client):
+    """Each migrated Jinja route is marked ``deprecated`` in the OpenAPI schema.
+
+    Regression for SEP-1063: the React ``backup_pg`` plugin replaces these
+    routes; the OpenAPI marker tells API consumers to stop integrating against
+    them while they remain mounted through Wave 3.
+    """
+    spec = test_client.get("/openapi.json").json()
+
+    expected = [
+        ("/backup-pg/", "get"),
+        ("/backup-pg/", "post"),
+        ("/backup-pg/{task_name}", "get"),
+        ("/backup-pg/{task_name}", "post"),
+        ("/backup-pg/{task_name}/delete", "post"),
+    ]
+    for path, method in expected:
+        operation = spec["paths"][path][method]
+        assert operation.get("deprecated") is True, (
+            f"{method.upper()} {path} missing deprecated=true in OpenAPI spec"
+        )
