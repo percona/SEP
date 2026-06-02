@@ -27,13 +27,9 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
-from app.core.exceptions import (
-    HTTPConflictException,
-    HTTPInternalServerErrorException,
-)
+from app.core.exceptions import HTTPInternalServerErrorException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
-    check_for_conflicted_running_tasks,
     get_username_mapping,
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -49,8 +45,8 @@ from app.sep.plugins.alters.deps import (
     cascade_delete_alters_group,
     cascade_update_alters_group,
     DeletableAltersParent,
+    EditableAltersParent,
     ensure_alters_group_update_preserves_names,
-    ensure_alters_update_addresses_parent,
     get_alters_api_task_responses,
     get_alters_task,
     get_alters_task_status,
@@ -160,7 +156,7 @@ async def alters_api_create(
 
 @router.put("/{task_name}", response_model=AltersTaskResponse)
 async def alters_api_update(
-    task_name: str,
+    parent_task: EditableAltersParent,
     body: AltersTaskWrite,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
@@ -176,11 +172,6 @@ async def alters_api_update(
         intentional.
     :type check_connectivity: bool
     """
-    parent_task = await resolve_alters_parent_task(task_name, tasks_api)
-    ensure_alters_update_addresses_parent(task_name, parent_task)
-    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
-    if parent_task.protected:
-        raise HTTPConflictException("Cannot edit a protected task.")
     ensure_alters_group_update_preserves_names(parent_task.name, body.task_name)
 
     logger.debug("Update alters task group (JSON path): %s", parent_task.name)

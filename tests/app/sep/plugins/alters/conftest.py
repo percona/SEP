@@ -31,16 +31,15 @@ from tests.app.sep.conftest import (  # noqa: F401
 
 @pytest.fixture
 def _mock_check_for_conflicted_running_tasks(mocker: MockerFixture) -> None:
-    """Mock running-task guard for Depends and direct handler calls."""
+    """Mock running-task guard for alters deps (JSON update/delete DI)."""
 
     async def _noop(*_args: object, **_kwargs: object) -> None:
         return None
 
-    for target in (
-        "app.sep.plugins.alters.api_routes.check_for_conflicted_running_tasks",
+    mocker.patch(
         "app.sep.plugins.alters.deps.check_for_conflicted_running_tasks",
-    ):
-        mocker.patch(target, side_effect=_noop)
+        side_effect=_noop,
+    )
     previous = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = lambda: None
     yield
@@ -59,11 +58,10 @@ def _mock_check_for_conflicted_running_tasks_raises(
     async def _raise(*_args: object, **_kwargs: object) -> None:
         raise_conflict()
 
-    for target in (
-        "app.sep.plugins.alters.api_routes.check_for_conflicted_running_tasks",
+    mocker.patch(
         "app.sep.plugins.alters.deps.check_for_conflicted_running_tasks",
-    ):
-        mocker.patch(target, side_effect=_raise)
+        side_effect=_raise,
+    )
     previous = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = raise_conflict
     yield raise_conflict

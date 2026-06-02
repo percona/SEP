@@ -925,6 +925,33 @@ async def get_unprotected_alters_task(
 UnprotectedAltersTask = Annotated[Task, Depends(get_unprotected_alters_task)]
 
 
+async def get_editable_alters_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Return the parent alters task or raise when update is not allowed.
+
+    Resolves satellite path parameters to the parent execute task, ensures the
+    URL targets the parent, blocks running/pending executions, and rejects
+    protected tasks — the same gates as :func:`get_unprotected_alters_task` plus
+    :func:`check_for_conflicted_running_tasks`.
+
+    :param task_name: The requested task name (parent or satellite).
+    :type task_name: str
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :raises HTTPConflictException: If the parent is running/pending or protected.
+    :return: The editable parent task.
+    :rtype: Task
+    """
+    parent_task = await get_unprotected_alters_task(task_name, tasks_api)
+    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
+    return parent_task
+
+
+EditableAltersParent = Annotated[Task, Depends(get_editable_alters_parent_task)]
+
+
 async def get_deletable_alters_parent_task(
     task_name: str,
     tasks_api: TaskAPI,
