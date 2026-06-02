@@ -30,6 +30,7 @@ Apply once at router construction:
 """
 
 import logging
+import warnings
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -62,11 +63,12 @@ class DeprecatedJinja2Route(APIRoute):
         original_route_handler = super().get_route_handler()
 
         async def custom_route_handler(request: Request) -> Response:
-            logger.warning(
-                "Jinja2 plugin route %s is deprecated; use the JSON API "
-                "equivalent under /api/plugins/",
-                request.url.path,
+            message = (
+                f"Jinja2 plugin route {request.url.path} is deprecated; "
+                "use the JSON API equivalent under /api/plugins/"
             )
+            logger.warning(message)
+            warnings.warn(message, DeprecationWarning, stacklevel=2)
             response = await original_route_handler(request)
             response.headers["Deprecation"] = "true"
             return response

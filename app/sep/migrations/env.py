@@ -26,6 +26,7 @@ from alembic import context
 from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
 from app.sep.migrations._discovery import discover_plugin_migrations_and_models
+from app.core.settings_override.models import *
 from app.sep.models import *
 from app.sep.snippets.models import *
 

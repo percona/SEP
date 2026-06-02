@@ -13,7 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the restores plugin."""
+"""Define legacy Jinja routes for the restores plugin.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/plugins/backup_mongo/restores/`` and the React UI at
+``/backups/mongodb/restores`` (``frontend/packages/plugins/backup_mongo``).
+Every response from this router carries the RFC 8594 ``Deprecation: true``
+header and emits a WARNING on hit; the routes remain mounted for Wave 1 cutover
+and will be removed in Wave 3.
+"""
 
 import logging
 from typing import Annotated, Any
@@ -43,10 +51,11 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     RestoresTask,
     RestoreTasks,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 
@@ -54,14 +63,19 @@ def _build_task_urls(
     task_name: str, task_config: dict[str, Any], request: Request
 ) -> dict[str, str | None]:
     """Build URLs for task action buttons."""
+    backup_type = task_config.get("backupType")
     sync_config_url = request.url_for("pbm_restores_execute", task_name=task_name)
-    restore_task_name = f"{task_name}-{task_config.get('backupType')}"
-    restore_url = request.url_for("pbm_restores_execute", task_name=restore_task_name)
+    restore_url = None
+    if backup_type:
+        restore_task_name = f"{task_name}-{backup_type}"
+        restore_url = request.url_for(
+            "pbm_restores_execute", task_name=restore_task_name
+        )
     pbm_list_task_name = f"{task_name}-pbm-list"
     pbm_list_url = request.url_for("pbm_restores_execute", task_name=pbm_list_task_name)
 
     force_resync_url = None
-    if BackupType(task_config.get("backupType")) == BackupType.PBM_PHYSICAL:
+    if backup_type == BackupType.PBM_PHYSICAL.value:
         force_resync_task_name = f"{task_name}-pbm-force-resync"
         force_resync_url = request.url_for(
             "pbm_restores_execute", task_name=force_resync_task_name
@@ -81,17 +95,19 @@ async def _fetch_running_tasks(
     tasks_api: TaskAPI,
 ) -> list[dict[str, Any]]:
     """Fetch running tasks for parent and child tasks."""
+    backup_type = task_config.get("backupType")
     response = await tasks_api.get(
         f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
     running_tasks = response["items"]
 
-    restore_task_name = f"{task_name}-{task_config.get('backupType')}"
-    response = await tasks_api.get(
-        f"/{restore_task_name}/history/",
-        params={"status": TaskHistoryStatusEnum.RUNNING},
-    )
-    running_tasks += response["items"]
+    if backup_type:
+        restore_task_name = f"{task_name}-{backup_type}"
+        response = await tasks_api.get(
+            f"/{restore_task_name}/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        )
+        running_tasks += response["items"]
 
     pbm_list_task_name = f"{task_name}-pbm-list"
     response = await tasks_api.get(
@@ -100,7 +116,7 @@ async def _fetch_running_tasks(
     )
     running_tasks += response["items"]
 
-    if BackupType(task_config.get("backupType")) == BackupType.PBM_PHYSICAL:
+    if backup_type == BackupType.PBM_PHYSICAL.value:
         force_resync_task_name = f"{task_name}-pbm-force-resync"
         response = await tasks_api.get(
             f"/{force_resync_task_name}/history/",
@@ -117,6 +133,7 @@ async def _fetch_task_history(
     tasks_api: TaskAPI,
 ) -> dict[str, list[dict[str, Any]]]:
     """Fetch history for child tasks."""
+    backup_type = task_config.get("backupType")
     pbm_list_task_name = f"{task_name}-pbm-list"
 
     try:
@@ -125,7 +142,7 @@ async def _fetch_task_history(
     except HTTPException:
         history_pbm_list = []
 
-    if BackupType(task_config.get("backupType")) == BackupType.PBM_PHYSICAL:
+    if backup_type == BackupType.PBM_PHYSICAL.value:
         force_resync_task_name = f"{task_name}-pbm-force-resync"
         try:
             response = await tasks_api.get(f"/{force_resync_task_name}/history/")
@@ -241,6 +258,7 @@ async def restores_detail(
     parsed_task_data = parse_restore_task_data(task.model_dump())
 
     urls = _build_task_urls(task.name, task_config, request)
+    backup_type = task_config.get("backupType")
 
     task_data = {
         "name": task.name,
@@ -250,7 +268,7 @@ async def restores_detail(
         "last_updated_by": task.last_updated_by,
         "hostname": meta["target"],
         "meta": meta,
-        "restore_type": BackupType(task_config.get("backupType")).name,
+        "restore_type": BackupType(backup_type).name if backup_type else None,
         "backup_source": task_config.get("backupSource"),
         "delete_url": request.url_for("pbm_restores_delete", task_name=task.name),
         "is_edit_enabled": not task.protected,

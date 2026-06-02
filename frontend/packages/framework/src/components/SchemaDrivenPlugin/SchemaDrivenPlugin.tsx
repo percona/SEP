@@ -34,11 +34,13 @@ import {
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
 import { PluginListPage } from './PluginListPage';
 import { PluginCreatePage } from './PluginCreatePage';
-import { PluginDetailPage } from './PluginDetailPage';
+import { PluginDetailPage, type TaskExecuteAction } from './PluginDetailPage';
 import { PluginSchedulePage } from './PluginSchedulePage';
 
 interface SchemaDrivenPluginProps {
   pluginName: string;
+  /** Absolute list route prefix when the plugin is not mounted under ``/plugins/{name}``. */
+  routeBase?: string;
   mockSchema?: PluginSchema;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -52,6 +54,16 @@ interface SchemaDrivenPluginProps {
   browseOnly?: boolean;
   /** Keys to hide from the generic detail field dump (nested relations, etc.). */
   suppressDetailKeys?: string[];
+  /** Replace the default Execute button on single-task detail pages. */
+  getTaskExecuteActions?: (task: Record<string, unknown>) => TaskExecuteAction[] | undefined;
+  /** Task names whose execution history should appear on the Logs tab. */
+  getTaskHistoryNames?: (task: Record<string, unknown>) => string[] | undefined;
+  /** Extra overview content on single-task detail pages. */
+  renderTaskDetailChildren?: (args: {
+    task: Record<string, unknown>;
+    pluginName: string;
+    schema: PluginSchema;
+  }) => ReactNode;
   /** Hide multi-entity tab bar (e.g. inventory uses breadcrumbs instead). */
   hideEntityTabs?: boolean;
   /**
@@ -177,12 +189,16 @@ function PluginEditPage({
 
 export function SchemaDrivenPlugin({
   pluginName,
+  routeBase,
   mockSchema,
   mockTasks,
   mockEntityItems,
   listOnly = false,
   browseOnly = false,
   suppressDetailKeys,
+  getTaskExecuteActions,
+  getTaskHistoryNames,
+  renderTaskDetailChildren,
   hideEntityTabs = false,
   allowListEntityDelete = false,
   renderEntityDetailChildren,
@@ -311,9 +327,13 @@ export function SchemaDrivenPlugin({
             <PluginDetailPage
               schema={schema}
               pluginName={pluginName}
+              routeBase={routeBase}
               mockTasks={mockTasks}
               browseOnly={browseOnly}
               suppressDetailKeys={suppressDetailKeys}
+              getTaskExecuteActions={getTaskExecuteActions}
+              getTaskHistoryNames={getTaskHistoryNames}
+              renderTaskDetailChildren={renderTaskDetailChildren}
               renderEntityDetailChildren={renderEntityDetailChildren}
               allowListEntityDelete={allowListEntityDelete}
             />

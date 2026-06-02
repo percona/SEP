@@ -18,13 +18,16 @@
 from collections.abc import Awaitable, Callable
 
 import pytest
+import yaml
 from fastapi import HTTPException, status
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.deps import (
+    _backup_type_from_parent,
     _resolve_service_name,
     build_pbm_force_resync_task_payload,
     build_pbm_list_task_payload,
@@ -33,7 +36,8 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     build_restore_tasks,
 )
 from app.sep.plugins.backup_mongo.restore.models import RestoreCreate
-from app.tasks.models import TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from tests.app.factories import TaskFactory
 
 EXPECTED_PHYSICAL_RESTORE_TUPLE_LEN = 4
 
@@ -44,6 +48,33 @@ DISPATCH_FUNCTIONS: list[DispatchFn] = [
     build_pbm_list_task_payload,
     build_pbm_force_resync_task_payload,
 ]
+
+
+def _restore_parent_task(*, config: str) -> Task:
+    task = TaskFactory.build(
+        name="restore-parent",
+        owner=TaskOwner.RESTORE_MONGO,
+        backend=TaskBackendEnum.PROXY,
+    )
+    return task.model_copy(
+        update={"data": {**task.data, "meta": {"config": config}}},
+    )
+
+
+def test_backup_type_from_parent_returns_backup_type() -> None:
+    """Parse backupType from the parent restore config YAML."""
+    config = yaml.dump({"backupType": BackupType.PBM_LOGICAL.value})
+    assert _backup_type_from_parent(_restore_parent_task(config=config)) == (
+        BackupType.PBM_LOGICAL
+    )
+
+
+def test_backup_type_from_parent_raises_when_backup_type_missing() -> None:
+    """Return 404 instead of KeyError when backupType is absent from config."""
+    with pytest.raises(HTTPNotFoundException) as exc_info:
+        _backup_type_from_parent(_restore_parent_task(config=yaml.dump({})))
+
+    assert exc_info.value.detail == "Task 'restore-parent' has no backupType in config"
 
 
 @pytest.mark.asyncio

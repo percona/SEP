@@ -27,7 +27,10 @@ __all__ = [
     "ColumnFormat",
     "DateTimeField",
     "DerivedTask",
+    "DetailField",
     "DetailHighlightLanguage",
+    "DetailSection",
+    "DetailView",
     "FileField",
     "FloatField",
     "FormSection",
@@ -52,9 +55,16 @@ from collections import Counter
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+    StringConstraints,
+)
 
-from app.core.utils.fields import EnumFieldMixin, NonEmptyStr
+from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, StrippedNonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.rules import (
     CardinalityRule,
@@ -532,6 +542,19 @@ class FormSection(SchemaBaseModel):
     :param render_after_submit: Whether this section should render after the
         submit button instead of before it. Defaults to ``False``.
     :type render_after_submit: bool
+    :param forbidden: Optional gates that hide the entire section when any
+        of them fires. The schema-driven React renderer skips the section
+        and unregisters every child field from the form so stale values
+        do not ship in the submission payload. Gates may reference any
+        field declared in the plugin schema (including fields in other
+        sections). Defaults to ``None`` — sections render unconditionally.
+        Backend ``fail_when`` and conditional-rule validation on hidden
+        sections still applies: hidden-section children arrive in the
+        submitted payload as **absent** (not zeroed or defaulted), so
+        ``truthy``/``present`` predicates silently pass while
+        ``falsy``/``absent`` predicates see the children as missing.
+        Author ``fail_when`` rules accordingly.
+    :type forbidden: list[FieldGate] | None
     """
 
     title: NonEmptyStr
@@ -542,6 +565,7 @@ class FormSection(SchemaBaseModel):
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False
+    forbidden: list[FieldGate] | None = None
 
 
 class Column(SchemaBaseModel):
@@ -576,10 +600,18 @@ class ListView(SchemaBaseModel):
         ``"-lastRun"``). The unprefixed key must match one of the declared
         column keys. Defaults to ``None``.
     :type default_sort: NonEmptyStr | None
+    :param overview_hidden_fields: Additional task-level keys to suppress
+        from the auto-rendered "extras" loop on the plugin detail Overview
+        tab. The framework always hides a baseline set of internal fields
+        (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,
+        ``last_updated_by``, ``connectivity_warning``); any keys listed here
+        are merged with that baseline. Defaults to ``[]``.
+    :type overview_hidden_fields: list[str]
     """
 
     columns: list[Column]
     default_sort: NonEmptyStr | None = None
+    overview_hidden_fields: list[StrippedNonEmptyStr] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_default_sort_references_column(self) -> Self:
@@ -608,6 +640,88 @@ class ListView(SchemaBaseModel):
         return self
 
 
+DetailPath = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        pattern=(
+            r"^[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])*"
+            r"(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])*)*$"
+        ),
+    ),
+]
+
+
+class DetailField(SchemaBaseModel):
+    """Declare one labelled field rendered inside a :class:`DetailSection`.
+
+    :param path: Dotted path into the task record (for example
+        ``"data.meta.command"``). Each segment must be a Python identifier,
+        optionally followed by one or more ``[N]`` array indices.
+    :type path: DetailPath
+    :param label: Human-readable label rendered alongside the resolved value.
+    :type label: NonEmptyStr
+    :param highlight: Optional syntax-highlighter hint. Defaults to ``None``.
+    :type highlight: DetailHighlightLanguage | None
+    """
+
+    path: DetailPath
+    label: NonEmptyStr
+    highlight: DetailHighlightLanguage | None = None
+
+
+class DetailSection(SchemaBaseModel):
+    """Declare one titled section inside a :class:`DetailView`.
+
+    :param title: Heading rendered above the section's fields.
+    :type title: NonEmptyStr
+    :param fields: Ordered list of fields rendered inside the section. An
+        empty list is valid; the frontend hides the section when every
+        field resolves to an empty value.
+    :type fields: list[DetailField]
+    """
+
+    title: NonEmptyStr
+    fields: list[DetailField]
+
+
+class DetailView(SchemaBaseModel):
+    """Declare the per-section detail-page layout for a task-style plugin.
+
+    Mirrors the role of :attr:`PluginSchema.list_view` for the list table:
+    the React framework reads ``detail_view`` to render the task detail
+    page's section cards instead of inferring structure from the runtime
+    ``task.data`` shape.
+
+    :param sections: Ordered list of sections rendered on the detail page.
+        An empty list is valid; the frontend renders no section cards.
+        Section titles must be unique within a view so the React key can
+        be derived from the title without positional disambiguation.
+    :type sections: list[DetailSection]
+    """
+
+    sections: list[DetailSection]
+
+    @field_validator("sections", mode="after")
+    @classmethod
+    def _validate_unique_section_titles(
+        cls, value: list[DetailSection]
+    ) -> list[DetailSection]:
+        """Reject duplicate ``DetailSection.title`` values within a view.
+
+        :param value: The validated ``sections`` list.
+        :type value: list[DetailSection]
+        :return: The input ``value`` unchanged when all titles are unique.
+        :rtype: list[DetailSection]
+        :raises ValueError: When two or more sections share a title.
+        """
+        counts = Counter(section.title for section in value)
+        duplicates = sorted(title for title, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(f"Duplicate DetailSection title values: {duplicates}")
+        return value
+
+
 class DerivedTask(SchemaBaseModel):
     """Represent a sibling task derived from a parent during cascade operations.
 
@@ -616,8 +730,11 @@ class DerivedTask(SchemaBaseModel):
     is created first, then for each ``DerivedTask`` the parent payload is
     deep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``
     are applied to ``data["meta"]["args"]`` as literal :meth:`str.replace`
-    calls in dict insertion order, and ``data["parent"]`` is set to the
-    parent's name when ``parent_link`` is true.
+    calls in dict insertion order, ``payload_substitutions`` are applied to
+    ``data["payload"]`` as literal :meth:`str.replace` calls in dict insertion
+    order, ``data_overrides`` entries are assigned directly onto ``data`` as
+    literal key/value pairs in iteration order, and ``data["parent"]`` is set
+    to the parent's name when ``parent_link`` is true.
 
     :param name_suffix: String appended to the parent's ``name`` to form the
         derived task's name (for example ``"-dry-run"``).
@@ -627,6 +744,18 @@ class DerivedTask(SchemaBaseModel):
         pair is applied once via :meth:`str.replace` in dict insertion order.
         Defaults to ``None`` (no substitutions).
     :type arg_substitutions: dict[str, str] | None
+    :param payload_substitutions: Optional ordered mapping of literal substring
+        replacements applied to ``data["payload"]``. Each ``(old, new)``
+        pair is applied once via :meth:`str.replace` in dict insertion order.
+        Defaults to ``None`` (no substitutions).
+    :type payload_substitutions: dict[str, str] | None
+    :param data_overrides: Optional mapping of literal key→value pairs
+        assigned directly onto ``data`` after substitutions run. Each
+        pair becomes ``data[key] = value`` in iteration order. Use this
+        for plugin-specific identity fields (e.g. ``{"backup_type":
+        "pbm_logical"}``) that the framework should not name itself.
+        Defaults to ``None``.
+    :type data_overrides: dict[str, Any] | None
     :param parent_link: When true, set ``data["parent"]`` on the derived
         payload to the parent's ``name``. Defaults to ``True``.
     :type parent_link: bool
@@ -634,6 +763,8 @@ class DerivedTask(SchemaBaseModel):
 
     name_suffix: NonEmptyStr
     arg_substitutions: dict[str, str] | None = None
+    payload_substitutions: dict[str, str] | None = None
+    data_overrides: dict[str, Any] | None = None
     parent_link: bool = True
 
 
@@ -682,11 +813,24 @@ class Capabilities(SchemaBaseModel):
     :param scheduling: Whether the plugin supports scheduling tasks on a
         periodic interval. Defaults to ``False``.
     :type scheduling: bool
+    :param stats: Whether the plugin supports rendering the aggregated
+        execution statistics card on its detail page. Defaults to
+        ``False``.
+    :type stats: bool
+    :param pii_anonymization: Whether the plugin wires ``anonymize_mask``
+        into task execution and the React detail page should surface which
+        PII entities are anonymized. This is a UI-rendering gate — the
+        anonymization always happens when configured; this flag controls
+        whether the detail view renders the "PII Anonymization" section.
+        Defaults to ``False``.
+    :type pii_anonymization: bool
     """
 
     chaining: bool = False
     alert_on_fail: bool = False
     scheduling: bool = False
+    stats: bool = False
+    pii_anonymization: bool = False
 
 
 def _collect_reference_errors(
@@ -750,6 +894,22 @@ def _collect_basefield_gate_errors(
                 errors,
                 implicit_self_name=field.name,
             )
+
+
+def _collect_section_gate_errors(
+    section: "FormSection",
+    section_label: str,
+    declared_field_names: set[str],
+    errors: list[str],
+) -> None:
+    """Walk a ``FormSection``'s ``forbidden`` gates."""
+    for rule_index, gate in enumerate(section.forbidden or []):
+        _collect_reference_errors(
+            f"{section_label} forbidden[{rule_index}]",
+            gate.when.referenced_fields(),
+            declared_field_names,
+            errors,
+        )
 
 
 def _collect_cardinality_rule_errors(
@@ -872,6 +1032,12 @@ class PluginSchema(SchemaBaseModel):
     :param list_view: List-view configuration when ``entities`` is unset
         (single-entity / task plugins). Ignored when ``entities`` is set.
     :type list_view: ListView | None
+    :param detail_view: Optional declarative layout for the task detail page's
+        section cards (task-style plugins only; ignored when ``entities`` is
+        set). Optional at the model layer for backwards compatibility. A
+        forward-looking guard refuses to load a plugin that sets
+        ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
+    :type detail_view: DetailView | None
     :param entities: Optional list of CRUD entities for multi-resource plugins.
         When non-empty, the React shell renders one list/create/detail flow
         per entity. Defaults to ``None`` (legacy single-entity mode).
@@ -903,11 +1069,36 @@ class PluginSchema(SchemaBaseModel):
     forms: list[FormSection] = Field(default_factory=list)
     capabilities: Capabilities | None = None
     list_view: ListView | None = None
+    detail_view: DetailView | None = None
     entities: list[PluginEntitySchema] | None = None
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
     derived: list[DerivedTask] | None = None
     predecessors: list[ChainedPredecessor] | None = None
+
+    @model_validator(mode="after")
+    def _validate_detail_view_required_for_task_type(self) -> Self:
+        """Refuse to load a task-style plugin that omits ``detail_view``.
+
+        The field is optional at the model layer for backwards compatibility
+        with legacy plugin schemas that do not yet declare a ``task_type``.
+        Once a plugin opts into the shared task API by setting ``task_type``,
+        the React framework can no longer infer the detail-page section
+        layout from the runtime ``task.data`` shape, so the schema must
+        declare it. Use ``DetailView(sections=[])`` to opt out of rendering
+        any section cards.
+
+        :return: The validated plugin schema instance.
+        :rtype: PluginSchema
+        :raises ValueError: When ``task_type`` is set and ``detail_view``
+            is unset.
+        """
+        if self.task_type is not None and self.detail_view is None:
+            raise ValueError(
+                "PluginSchema.detail_view is required when task_type is set "
+                "(declare DetailView(sections=[]) to render no section cards)"
+            )
+        return self
 
     @field_validator("derived", mode="after")
     @classmethod
@@ -1074,6 +1265,9 @@ class PluginSchema(SchemaBaseModel):
                         _collect_basefield_gate_errors(
                             field, declared_field_names, errors
                         )
+                    _collect_section_gate_errors(
+                        section, section_label, declared_field_names, errors
+                    )
                     _collect_cardinality_rule_errors(
                         section.cardinality_rules,
                         section_label,
@@ -1100,6 +1294,9 @@ class PluginSchema(SchemaBaseModel):
                 section_label = f"FormSection[{section_index}] {section.title!r}"
                 for field in section.fields:
                     _collect_basefield_gate_errors(field, declared_field_names, errors)
+                _collect_section_gate_errors(
+                    section, section_label, declared_field_names, errors
+                )
                 _collect_cardinality_rule_errors(
                     section.cardinality_rules,
                     section_label,

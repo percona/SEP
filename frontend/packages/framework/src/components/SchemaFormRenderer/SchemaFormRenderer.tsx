@@ -37,6 +37,7 @@ import type { PluginCapabilities } from '@sep/api';
 import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
 import { FieldRenderer } from './fields';
 import { useConditionalField } from './hooks/useConditionalField';
+import { useConditionalSection } from './hooks/useConditionalSection';
 import { useCardinalityRules } from './hooks/useCardinalityRules';
 import { useFailRules } from './hooks/useFailRules';
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard';
@@ -100,6 +101,12 @@ const SectionRenderer = memo(function SectionRenderer({
   idx,
   violations,
 }: SectionRendererProps) {
+  const { isHidden } = useConditionalSection(section);
+
+  if (isHidden) {
+    return null;
+  }
+
   const sectionContent = (
     <>
       {section.description && (
@@ -288,7 +295,14 @@ function SchemaFormBody({
           </Box>
         )}
 
-        <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ mt: 1 }}>
+        <Button
+          type="submit"
+          variant="contained"
+          size="large"
+          loading={loading}
+          loadingPosition="start"
+          sx={{ mt: 1 }}
+        >
           {submitLabel}
         </Button>
 

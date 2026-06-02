@@ -20,6 +20,9 @@ from typing import ClassVar
 from pydantic import NonNegativeInt
 
 from app.core.config import BaseYamlSettings
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field
 from app.sep.middleware.messages.models import MessageLevel
 
 MESSAGE_NOTSET_LEVEL = 0
@@ -27,6 +30,14 @@ MESSAGE_NOTSET_LEVEL = 0
 
 class MessagesSettings(BaseYamlSettings):
     """Define configuration options for the messages middleware.
+
+    Wrapped in :class:`OverridableSettingsProxy` below, which defers
+    validation to first attribute access. ``app.sep.main.sep_lifespan``
+    calls ``messages_settings._resolve()`` at startup to restore the
+    fail-fast validation the pre-proxy eager ``MessagesSettings()``
+    construction provided -- removing or relocating that call regresses to
+    lazy validation, surfacing config errors at first request instead of
+    startup.
 
     :cvar SETTINGS_PREFIXES: The prefixes for snippets related settings in the
         configuration file. Set to `["SEP", "MESSAGES"]`.
@@ -38,7 +49,9 @@ class MessagesSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "MESSAGES"]
-    LEVEL: MessageLevel | NonNegativeInt = MESSAGE_NOTSET_LEVEL
+    LEVEL: MessageLevel | NonNegativeInt = hot_field(MESSAGE_NOTSET_LEVEL)
 
 
-messages_settings = MessagesSettings()
+messages_settings: MessagesSettings = OverridableSettingsProxy(
+    MessagesSettings, setting_class=SettingClassEnum.MESSAGES_SETTINGS
+)

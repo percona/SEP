@@ -445,14 +445,20 @@ def test_stable_via_github_api_errors_without_gh(monkeypatch, capsys):
 # --- _create_dev_version_bump_pr GH_TOKEN swap -----------------------------
 
 
-def _patch_dev_pr_runner(monkeypatch, observed_tokens):
-    """Patch ``_run`` to record ``GH_TOKEN`` at the time ``gh pr create`` runs."""
+def _patch_dev_pr_runner(monkeypatch, observed_tokens, observed_argvs=None):
+    """Patch ``_run`` to record ``GH_TOKEN`` at the time ``gh pr create`` runs.
+
+    When ``observed_argvs`` is provided, the full argv of every ``gh pr create``
+    invocation is appended to it as a ``list`` (one entry per call).
+    """
     monkeypatch.setattr(release, "_bump_version", lambda *_a, **_kw: None)
     monkeypatch.setattr(release, "_gh_available", lambda: True)
 
     def runner(cmd, *, check=True, capture=False):
         if tuple(cmd[:3]) == ("gh", "pr", "create"):
             observed_tokens.append(os.environ.get("GH_TOKEN"))
+            if observed_argvs is not None:
+                observed_argvs.append(list(cmd))
         return subprocess.CompletedProcess(
             args=cmd,
             returncode=0,
@@ -487,6 +493,22 @@ def test_dev_pr_keeps_gh_token_when_pr_token_unset(monkeypatch):
 
     assert observed == ["pat-token"]
     assert os.environ["GH_TOKEN"] == "pat-token"
+
+
+def test_dev_pr_passes_skip_test_label(monkeypatch):
+    """``gh pr create`` is invoked with ``--label skip-test``."""
+    monkeypatch.setenv("GH_TOKEN", "pat-token")
+    monkeypatch.delenv("GH_PR_TOKEN", raising=False)
+    observed_tokens: list[str | None] = []
+    observed_argvs: list[list[str]] = []
+    _patch_dev_pr_runner(monkeypatch, observed_tokens, observed_argvs)
+
+    release._create_dev_version_bump_pr("0.12.0", "v0.12.0")
+
+    assert len(observed_argvs) == 1
+    argv = observed_argvs[0]
+    assert "--label" in argv
+    assert argv[argv.index("--label") + 1] == "skip-test"
 
 
 # --- cmd_rc dev-version-bump call-site -------------------------------------

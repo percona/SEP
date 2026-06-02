@@ -22,12 +22,25 @@ import yaml
 
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.mysql_backups.deps import (
+    _extract_backup_type_from_task,
     build_backup_task_payload,
     get_backups_task,
     get_backups_task_info,
+    get_backups_task_status,
+    parse_backup_task_data,
 )
-from app.sep.plugins.mysql_backups.models import BackupCreate, BackupType
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.plugins.mysql_backups.models import (
+    BackupCreate,
+    BackupType,
+    UploadProvider,
+)
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 
 @pytest.mark.asyncio
@@ -50,6 +63,12 @@ from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
             "xtrabackup_payload",
             "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
             "localhost",
+        ),
+        (
+            BackupType.BINLOG,
+            "binlog_payload",
+            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
+            "10.0.0.5",
         ),
     ],
 )
@@ -83,10 +102,14 @@ async def test_build_backup_task_payload(
         "task_name": "test_task",
         "backup_type": backup_type,
         "hostname": "test_host",
+        "upload": [UploadProvider.S3, UploadProvider.RSYNC],
         "s3_bucket": "my-test-bucket",
         "rsync_path": "/rsync",
+        "encrypt": True,
         "encryption_recipient": faker.email(),
     }
+    if backup_type == BackupType.BINLOG:
+        form_data["binlog_alternative_host"] = "10.0.0.5"
     backup_create = BackupCreate(**form_data)
 
     task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
@@ -110,10 +133,12 @@ async def test_build_backup_task_payload(
     server_config = server_list[0]
 
     assert server_config["HOST"] == expected_host
-    if backup_type == BackupType.MYDUMPER:
-        assert server_config["BACKUP_TYPE"] == BackupType.MYDUMPER.value
+    assert server_config["BACKUP_TYPE"] == backup_type.value
+
+    if backup_type == BackupType.BINLOG:
+        assert cfg["ALL_SERVERS"]["BINLOG_ALTERNATIVE_HOST"] == "10.0.0.5"
     else:
-        assert server_config["BACKUP_TYPE"] == BackupType.XTRABACKUP.value
+        assert "BINLOG_ALTERNATIVE_HOST" not in cfg["ALL_SERVERS"]
 
     assert "s3" in server_config["UPLOAD"]
     assert "rsync" in server_config["UPLOAD"]
@@ -137,6 +162,8 @@ async def test_build_backup_task_payload_raises_for_invalid_backup_type(
         task_name="test_task",
         hostname="test_host",
         backup_type="invalid",
+        upload=[UploadProvider.S3],
+        s3_bucket="bkt",
     )
 
     with pytest.raises(ValueError, match="Invalid Backup Type"):
@@ -195,3 +222,228 @@ def test_get_backups_task_info():
     assert result["port"] == server_port
     assert result["upload"] == "S3, RSYNC"
     assert result["backup_type"] == BackupType.XTRABACKUP.name
+
+
+@pytest.mark.parametrize(
+    ("all_servers", "expected_alt_host"),
+    [
+        (
+            {
+                "BINLOG_ALTERNATIVE_HOST": "10.0.0.5",
+                "BINLOG_PREFIX": "binlog",
+            },
+            "10.0.0.5",
+        ),
+        (
+            {"BINLOG_PREFIX": "binlog"},
+            None,
+        ),
+    ],
+)
+def test_parse_backup_task_data(all_servers: dict, expected_alt_host: str | None):
+    """Round-trip the binlog alt host from persisted YAML on the edit form path."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1-mysql",
+                                "HOST": "10.0.0.5",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.BINLOG.value,
+                                "UPLOAD": ["gsutil"],
+                            }
+                        ],
+                        "ALL_SERVERS": all_servers,
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["name"] == "test_task"
+    assert result["hostname"] == "host.example.com"
+    assert result["backup_type"] == BackupType.BINLOG.value
+    assert result["service_id"] is None
+    assert result["host"] == "10.0.0.5"
+    assert result["binlog_alternative_host"] == expected_alt_host
+
+
+@pytest.mark.parametrize(
+    ("upload_providers", "all_servers", "expected_result"),
+    [
+        (
+            ["s3"],
+            {
+                "S3_BUCKET": "my-bucket",
+                "S3_STORAGE_CLASS": "STANDARD_IA",
+                "SKIP_S3_SAFETY_CHECK": True,
+            },
+            {
+                "s3_bucket": "my-bucket",
+                "s3_storage_class": "STANDARD_IA",
+                "skip_s3_safety_check": True,
+            },
+        ),
+        (
+            ["s3"],
+            {},
+            {
+                "s3_bucket": None,
+                "s3_storage_class": None,
+                "skip_s3_safety_check": False,
+            },
+        ),
+        (
+            ["gsutil"],
+            {"GS_BUCKET": "my-gs-bucket"},
+            {"gs_bucket": "my-gs-bucket"},
+        ),
+        (
+            ["gsutil"],
+            {},
+            {"gs_bucket": None},
+        ),
+        (
+            ["rsync"],
+            {"RSYNC_PATH": "/mnt/backups"},
+            {"rsync_path": "/mnt/backups"},
+        ),
+        (
+            ["rsync"],
+            {},
+            {"rsync_path": None},
+        ),
+        (
+            ["S3"],
+            {"S3_BUCKET": "case-insensitive"},
+            {"s3_bucket": "case-insensitive"},
+        ),
+    ],
+)
+def test_parse_backup_task_data_storage_targets(
+    upload_providers: list[str],
+    all_servers: dict,
+    expected_result: dict,
+):
+    """Round-trip S3/GSUTIL/RSYNC storage-target keys from persisted YAML on the edit form path."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1-mysql",
+                                "HOST": "10.0.0.5",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.XTRABACKUP.value,
+                                "UPLOAD": upload_providers,
+                            }
+                        ],
+                        "ALL_SERVERS": all_servers,
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    for key, value in expected_result.items():
+        assert result[key] == value
+
+
+def test_parse_backup_task_data_without_all_servers():
+    """parse_backup_task_data handles a YAML config with no ALL_SERVERS block."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1-mysql",
+                                "HOST": "10.0.0.5",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.BINLOG.value,
+                                "UPLOAD": ["gsutil"],
+                            }
+                        ],
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["name"] == "test_task"
+    assert result["hostname"] == "host.example.com"
+    assert result["host"] == "10.0.0.5"
+    assert result["binlog_alternative_host"] is None
+
+
+def _task_with_raw_config(raw_config: str) -> Task:
+    """Build a minimal Task whose YAML config is the given raw string."""
+    return Task(
+        name="t",
+        owner=TaskOwner.BACKUPS,
+        data={"meta": {"config": raw_config}},
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_config",
+    [
+        "- just\n- a\n- list\n",
+        "scalar",
+        "SERVER_LIST: not-a-list\n",
+        "SERVER_LIST:\n  - just-a-string\n",
+        "SERVER_LIST: []\n",
+        ": invalid : yaml :",
+    ],
+)
+def test_extract_backup_type_handles_non_dict_yaml(raw_config: str):
+    """Malformed/non-dict YAML must return ``None`` instead of raising."""
+    assert _extract_backup_type_from_task(_task_with_raw_config(raw_config)) is None
+
+
+@pytest.mark.asyncio
+async def test_get_backups_task_status_returns_first_history_row():
+    """Pin reliance on ``BaseSQLModelManager._get_ordering`` default ``created_at DESC``.
+
+    The Tasks history endpoint has no ``order_by`` query param. If the
+    default ordering ever flips, this test breaks loudly so we notice
+    instead of silently returning a stale status.
+    """
+    tasks_api = AsyncMock()
+    tasks_api.get.return_value = {
+        "items": [
+            {
+                "status": TaskHistoryStatusEnum.SUCCESS.value,
+                "created_at": "2026-05-22T10:00:00Z",
+            },
+            {
+                "status": TaskHistoryStatusEnum.FAILED.value,
+                "created_at": "2026-05-21T10:00:00Z",
+            },
+        ]
+    }
+
+    result = await get_backups_task_status("t", tasks_api)
+
+    assert result == TaskHistoryStatusEnum.SUCCESS
+    tasks_api.get.assert_awaited_once_with(
+        "/t/history/", params={"limit": 1, "offset": 0}
+    )

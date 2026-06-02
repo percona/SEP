@@ -22,13 +22,20 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from celery.utils.log import get_task_logger
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Request, status
 from nomad.api.exceptions import BaseNomadException
 
 from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
-from app.tasks.config import tasks_settings
+from app.core.exceptions import HTTPBadGatewayException, HTTPGoneException
+from app.core.settings_override.lifecycle import (
+    ProxyEntry,
+    settings_override_refresher,
+)
+from app.core.settings_override.models import SettingClassEnum
+from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.connectivity.routes import router as connectivity_router
+from app.tasks.db import get_async_session_maker
 from app.tasks.db.seed import (
     init_tasks_db,
     verify_taskhistory_execution_request_is_jsonb,
@@ -36,6 +43,7 @@ from app.tasks.db.seed import (
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.periodic.routes import router as periodic_router
 from app.tasks.routes import router as tasks_router
+from app.tasks.settings.routes import router as settings_router
 
 logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
@@ -51,12 +59,25 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     :param app: The FastAPI application instance.
     :type app: FastAPI
-    :yield: None
+    :return: An async context manager yielding ``None`` for the lifespan duration.
     :rtype: AsyncGenerator[None, None]
     """
     await init_tasks_db()
     await verify_taskhistory_execution_request_is_jsonb()
-    async with default_lifespan(app), tasks_settings.NOMAD:
+    async with (
+        settings_override_refresher(
+            get_async_session_maker,
+            {
+                SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
+                    tasks_settings, TasksSettings
+                )
+            },
+            settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
+            enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+        ),
+        default_lifespan(app),
+        tasks_settings.NOMAD,
+    ):
         yield
 
 
@@ -65,6 +86,7 @@ tasks_app = create_app(
     tasks_router,
     periodic_router,
     connectivity_router,
+    settings_router,
     lifespan=lifespan,
     backend_cors_origins=tasks_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,
@@ -125,15 +147,14 @@ async def task_data_not_found_handler(
         status.HTTP_410_GONE,
         json.dumps(payload, default=str),
     )
-    raise HTTPException(status_code=status.HTTP_410_GONE, detail=payload)
+    raise HTTPGoneException(detail=payload)
 
 
 @tasks_app.exception_handler(BaseNomadException)
 async def nomad_exception_handler(_: Request, exc: BaseNomadException) -> None:
     """Handle exceptions raised by Nomad."""
     logger.exception("Error getting a response from Nomad", exc_info=exc)
-    raise HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
+    raise HTTPBadGatewayException(
         detail="Failed to get a response from Nomad, make sure the agent is online.",
     )
 

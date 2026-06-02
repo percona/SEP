@@ -45,26 +45,50 @@ import {
   useDeletePluginTask,
   usePluginEntityDetail,
   usePluginTask,
+  type DetailSection,
   type PluginEntitySchema,
   type PluginSchema,
 } from '@sep/api';
+import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
-import { useExecuteTask, useTaskHistoryByName } from '../../hooks';
+import { useExecuteTask, useTaskHistoryByNames } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
+import { resolvePluginRouteBase } from './routeBase';
+import { StatsCard } from './StatsCard';
 
 const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
+
+/** One executable target on a plugin task detail action bar. */
+export interface TaskExecuteAction {
+  label: string;
+  taskName: string;
+  testId?: string;
+  confirmMessage?: string;
+}
 
 export interface PluginDetailPageProps {
   schema: PluginSchema;
   pluginName: string;
+  /** Absolute list route prefix when the plugin is not mounted under ``/plugins/{name}``. */
+  routeBase?: string;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
   /** Hide edit/delete (browse-only mode for multi-entity plugins). */
   browseOnly?: boolean;
   /** Omit these keys from the auto-rendered detail section (e.g. nested relations shown elsewhere). */
   suppressDetailKeys?: string[];
+  /** Replace the default single Execute button with plugin-specific execute targets. */
+  getTaskExecuteActions?: (task: Record<string, unknown>) => TaskExecuteAction[] | undefined;
+  /** Task names whose execution history should appear on the Logs tab. */
+  getTaskHistoryNames?: (task: Record<string, unknown>) => string[] | undefined;
+  /** Extra content below the overview cards on single-task detail pages. */
+  renderTaskDetailChildren?: (args: {
+    task: Record<string, unknown>;
+    pluginName: string;
+    schema: PluginSchema;
+  }) => ReactNode;
   /** Extra content under the main detail card (e.g. child entity tables). */
   renderEntityDetailChildren?: (args: {
     entityName: string;
@@ -160,11 +184,12 @@ function EntityDetailField({
   );
 }
 
-// Fields hidden from the auto-rendered "extras" loop on the Overview tab.
-// Numeric `id`, internal worker plumbing (`backend`, `protected`), and
-// timestamps already shown in the list_view columns. The `data` payload is
-// rendered as the structured "Execution" section.
-const OVERVIEW_HIDDEN_FIELDS = new Set([
+// Framework baseline: numeric `id`, internal worker plumbing (`backend`, `protected`), and
+// timestamps already shown in list_view columns. The `data` payload is rendered via
+// schema-declared ``detail_view`` sections. Plugin schemas can extend this via
+// ``list_view.overview_hidden_fields``. The PII fields are handled by the dedicated
+// "PII Anonymization" capability-gated section.
+const BASELINE_OVERVIEW_HIDDEN_FIELDS = [
   'id',
   'backend',
   'protected',
@@ -172,7 +197,9 @@ const OVERVIEW_HIDDEN_FIELDS = new Set([
   'updated_at',
   'last_updated_by',
   'connectivity_warning',
-]);
+  'anonymize_mask',
+  'anonymized_entities',
+] as const;
 
 function formatLabel(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -187,32 +214,6 @@ function SectionCard({ title, children }: { title: string; children: React.React
       {children}
     </Paper>
   );
-}
-
-interface ExecutionData {
-  command?: unknown;
-  args?: unknown;
-  target?: unknown;
-}
-
-export function pickExecutionData(task: Record<string, unknown>): ExecutionData | null {
-  // Backend task model nests the executed command under `data.meta` (see
-  // e.g. `app/sep/plugins/checksums/deps.py`). Older flows may put the
-  // same keys at `data.*` directly, so check both for forward-compat.
-  const data = task.data;
-  if (!data || typeof data !== 'object') {
-    return null;
-  }
-  const dataObj = data as { meta?: unknown } & ExecutionData;
-  const meta =
-    dataObj.meta && typeof dataObj.meta === 'object' ? (dataObj.meta as ExecutionData) : null;
-  const command = meta?.command ?? dataObj.command;
-  const args = meta?.args ?? dataObj.args;
-  const target = meta?.target ?? dataObj.target;
-  if (command === undefined && args === undefined && target === undefined) {
-    return null;
-  }
-  return { command, args, target };
 }
 
 export function resolveTabFromSplat(splat: string | undefined): 'overview' | 'logs' {
@@ -254,18 +255,56 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
 interface OverviewTabProps {
   schema: PluginSchema;
   task: Record<string, unknown>;
+  hiddenFields?: string[];
+  children?: ReactNode;
 }
 
-function OverviewTab({ schema, task }: OverviewTabProps) {
-  const execution = pickExecutionData(task);
+function DetailViewSectionCard({
+  section,
+  task,
+}: {
+  section: DetailSection;
+  task: Record<string, unknown>;
+}) {
+  // Match EntityDetailField's own empty-value rule (undefined / null / '')
+  // so a section hides entirely when every field would have rendered blank,
+  // and so 0 / false still render as legitimate values.
+  const resolved = section.fields
+    .map((field) => ({ field, value: resolvePath(task, field.path) }))
+    .filter(({ value }) => value !== undefined && value !== null && value !== '');
+  if (resolved.length === 0) {
+    return null;
+  }
+  return (
+    <SectionCard title={section.title}>
+      {resolved.map(({ field, value }, idx) => (
+        <EntityDetailField
+          key={`${field.path}:${field.label}:${idx}`}
+          label={field.label}
+          value={value}
+          highlightLanguage={field.highlight}
+        />
+      ))}
+    </SectionCard>
+  );
+}
+
+function OverviewTab({ schema, task, hiddenFields = [], children }: OverviewTabProps) {
   const connectivityWarning = task.connectivity_warning;
   const columns = schema.list_view!.columns;
+  const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
+
+  const suppressedFields = useMemo(
+    () =>
+      new Set([...BASELINE_OVERVIEW_HIDDEN_FIELDS, ...(schemaHiddenFields ?? []), ...hiddenFields]),
+    [schemaHiddenFields, hiddenFields],
+  );
 
   // Extra fields beyond the schema's list_view columns, excluding internal
   // noise. Lets future plugin schemas surface fields without listing them
   // in `list_view.columns` (which is meant for the table view).
   const extraEntries = Object.entries(task).filter(
-    ([key]) => !columns.some((c) => c.key === key) && !OVERVIEW_HIDDEN_FIELDS.has(key),
+    ([key]) => !columns.some((c) => c.key === key) && !suppressedFields.has(key),
   );
 
   return (
@@ -290,30 +329,52 @@ function OverviewTab({ schema, task }: OverviewTabProps) {
         ))}
       </SectionCard>
 
-      {execution && (
-        <SectionCard title="Execution">
-          {execution.command !== undefined && (
-            <TaskOverviewDetailField label="Command" value={execution.command} />
-          )}
-          {execution.args !== undefined && (
-            <TaskOverviewDetailField label="Args" value={execution.args} />
-          )}
-          {execution.target !== undefined && (
-            <TaskOverviewDetailField label="Target" value={execution.target} />
+      {schema.capabilities?.stats && (
+        <StatsCard
+          taskName={
+            typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined
+          }
+        />
+      )}
+
+      {schema.capabilities?.pii_anonymization && (
+        <SectionCard title="PII Anonymization">
+          {Array.isArray(task.anonymized_entities) && task.anonymized_entities.length > 0 ? (
+            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+              {(task.anonymized_entities as string[]).map((entity) => (
+                <Chip
+                  key={entity}
+                  label={entity.replace(/_/g, ' ')}
+                  size="small"
+                  data-testid="pii-entity-chip"
+                />
+              ))}
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No PII entities configured for anonymization.
+            </Typography>
           )}
         </SectionCard>
       )}
+
+      {schema.detail_view?.sections.map((section, idx) => (
+        <DetailViewSectionCard key={`${section.title}:${idx}`} section={section} task={task} />
+      ))}
+
+      {children}
     </>
   );
 }
 
 interface LogsTabProps {
-  taskName: string;
+  taskNames: string[];
 }
 
-function LogsTab({ taskName }: LogsTabProps) {
-  const historyQuery = useTaskHistoryByName(taskName);
+function LogsTab({ taskNames }: LogsTabProps) {
+  const historyQuery = useTaskHistoryByNames(taskNames);
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
+  const logsTaskName = logsEntry?.task?.name ?? taskNames[0] ?? 'task';
 
   return (
     <>
@@ -326,7 +387,7 @@ function LogsTab({ taskName }: LogsTabProps) {
           <TaskHistoryTable
             data={historyQuery.data?.items ?? []}
             isLoading={historyQuery.isLoading}
-            hideTaskNameColumn
+            hideTaskNameColumn={taskNames.length <= 1}
             onViewLogs={setLogsEntry}
           />
         </Paper>
@@ -334,7 +395,7 @@ function LogsTab({ taskName }: LogsTabProps) {
 
       <Dialog open={logsEntry !== null} onClose={() => setLogsEntry(null)} fullWidth maxWidth="lg">
         <DialogTitle>
-          Logs — {taskName}
+          Logs — {logsTaskName}
           {logsEntry?.id !== null && logsEntry?.id !== undefined ? ` #${logsEntry.id}` : ''}
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0 }}>
@@ -354,27 +415,44 @@ function LogsTab({ taskName }: LogsTabProps) {
 interface ActionBarProps {
   schema: PluginSchema;
   pluginName: string;
+  routeBase: string;
   taskName: string;
+  executeActions?: TaskExecuteAction[];
 }
 
-function ActionBar({ schema, pluginName, taskName }: ActionBarProps) {
+function ActionBar({ schema, pluginName, routeBase, taskName, executeActions }: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeletePluginTask(pluginName);
   const executeTask = useExecuteTask(pluginName);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [executeConfirmOpen, setExecuteConfirmOpen] = useState(false);
+  const [pendingExecute, setPendingExecute] = useState<TaskExecuteAction | null>(null);
+
+  const resolvedExecuteActions =
+    executeActions ??
+    ([
+      {
+        label: 'Execute',
+        taskName,
+        testId: 'plugin-task-execute',
+      },
+    ] satisfies TaskExecuteAction[]);
 
   const handleExecute = async () => {
+    if (!pendingExecute) {
+      return;
+    }
     try {
-      await executeTask.mutateAsync({ taskName });
-      enqueueSnackbar(`${schema.display_name} task "${taskName}" started`, { variant: 'success' });
+      await executeTask.mutateAsync({ taskName: pendingExecute.taskName });
+      enqueueSnackbar(`${schema.display_name} task "${pendingExecute.taskName}" started`, {
+        variant: 'success',
+      });
     } catch (e) {
       enqueueSnackbar(e instanceof Error ? e.message : 'Failed to execute task', {
         variant: 'error',
       });
     } finally {
-      setExecuteConfirmOpen(false);
+      setPendingExecute(null);
     }
   };
 
@@ -385,7 +463,7 @@ function ActionBar({ schema, pluginName, taskName }: ActionBarProps) {
       // Anchor to the plugin root explicitly. Relative `..` chains depend
       // on which tab the user is on (Overview vs. Logs renders a deeper
       // sub-route via nested `<Routes>`), so use an absolute path.
-      navigate(`/plugins/${pluginName}`);
+      navigate(routeBase);
     } catch (e) {
       enqueueSnackbar(e instanceof Error ? e.message : 'Failed to delete task', {
         variant: 'error',
@@ -404,22 +482,25 @@ function ActionBar({ schema, pluginName, taskName }: ActionBarProps) {
           <Button
             variant="outlined"
             startIcon={<ScheduleIcon />}
-            onClick={() => navigate(`/plugins/${pluginName}/schedule`)}
+            onClick={() => navigate(`${routeBase}/schedule`)}
             data-testid="plugin-task-schedule"
           >
             Schedule
           </Button>
         )}
 
-        <Button
-          variant="outlined"
-          startIcon={<PlayArrowIcon />}
-          onClick={() => setExecuteConfirmOpen(true)}
-          disabled={executeTask.isPending}
-          data-testid="plugin-task-execute"
-        >
-          Execute
-        </Button>
+        {resolvedExecuteActions.map((action) => (
+          <Button
+            key={`${action.taskName}-${action.label}`}
+            variant="outlined"
+            startIcon={<PlayArrowIcon />}
+            onClick={() => setPendingExecute(action)}
+            disabled={executeTask.isPending}
+            data-testid={action.testId ?? 'plugin-task-execute'}
+          >
+            {action.label}
+          </Button>
+        ))}
 
         <Tooltip title={editBlocked}>
           <span>
@@ -448,15 +529,18 @@ function ActionBar({ schema, pluginName, taskName }: ActionBarProps) {
         </Button>
       </Stack>
 
-      <Dialog open={executeConfirmOpen} onClose={() => setExecuteConfirmOpen(false)}>
-        <DialogTitle>Execute {schema.display_name} task?</DialogTitle>
+      <Dialog open={pendingExecute !== null} onClose={() => setPendingExecute(null)}>
+        <DialogTitle>
+          {pendingExecute?.label ?? 'Execute'} {schema.display_name} task?
+        </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to execute the task {taskName} now?
+            {pendingExecute?.confirmMessage ??
+              `Are you sure you want to execute the task ${pendingExecute?.taskName ?? taskName} now?`}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setExecuteConfirmOpen(false)} disabled={executeTask.isPending}>
+          <Button onClick={() => setPendingExecute(null)} disabled={executeTask.isPending}>
             Cancel
           </Button>
           <Button
@@ -465,7 +549,7 @@ function ActionBar({ schema, pluginName, taskName }: ActionBarProps) {
             disabled={executeTask.isPending}
             data-testid="plugin-task-execute-confirm"
           >
-            Execute
+            {pendingExecute?.label ?? 'Execute'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -498,10 +582,14 @@ function ActionBar({ schema, pluginName, taskName }: ActionBarProps) {
 export function PluginDetailPage({
   schema,
   pluginName,
+  routeBase: routeBaseProp,
   mockTasks,
   mockEntityItems,
   browseOnly = false,
   suppressDetailKeys = [],
+  getTaskExecuteActions,
+  getTaskHistoryNames,
+  renderTaskDetailChildren,
   renderEntityDetailChildren,
   detailEntityName,
   detailIdParam,
@@ -509,6 +597,7 @@ export function PluginDetailPage({
   hideDetailChrome = false,
   allowListEntityDelete = false,
 }: PluginDetailPageProps) {
+  const routeBase = resolvePluginRouteBase(pluginName, routeBaseProp);
   const params = useParams<Record<string, string | undefined>>();
   const id = (detailIdParam && params[detailIdParam]) ?? params.id;
   const entityName = detailEntityName ?? params.entityName;
@@ -699,7 +788,8 @@ export function PluginDetailPage({
                 !listView.columns.some((c) => c.key === key) &&
                 key !== 'id' &&
                 key !== '_actions' &&
-                !suppressDetailKeys.includes(key),
+                !suppressDetailKeys.includes(key) &&
+                !(listView.overview_hidden_fields ?? []).includes(key),
             )
             .map(([key, value]) => (
               <EntityDetailField
@@ -747,12 +837,15 @@ export function PluginDetailPage({
   }
 
   const taskName = typeof task.name === 'string' ? task.name : id;
-  const detailBase = `/plugins/${pluginName}/task/${encodeURIComponent(id)}`;
+  const detailBase = `${routeBase}/task/${encodeURIComponent(id)}`;
+  const taskExecuteActions = getTaskExecuteActions?.(task as Record<string, unknown>);
+  const taskHistoryNames =
+    getTaskHistoryNames?.(task as Record<string, unknown>) ?? (taskName ? [taskName] : []);
 
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-        <IconButton onClick={() => navigate(`/plugins/${pluginName}`)} aria-label="Back to list">
+        <IconButton onClick={() => navigate(routeBase)} aria-label="Back to list">
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="overline" color="text.secondary">
@@ -776,7 +869,13 @@ export function PluginDetailPage({
         )}
       </Box>
 
-      <ActionBar schema={schema} pluginName={pluginName} taskName={taskName} />
+      <ActionBar
+        schema={schema}
+        pluginName={pluginName}
+        routeBase={routeBase}
+        taskName={taskName}
+        executeActions={taskExecuteActions}
+      />
 
       <Tabs value={tabValue} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Overview" value="overview" component={Link} to={detailBase} replace />
@@ -784,8 +883,19 @@ export function PluginDetailPage({
       </Tabs>
 
       <Routes>
-        <Route index element={<OverviewTab schema={schema} task={task} />} />
-        <Route path="logs" element={<LogsTab taskName={taskName} />} />
+        <Route
+          index
+          element={
+            <OverviewTab schema={schema} task={task} hiddenFields={suppressDetailKeys}>
+              {renderTaskDetailChildren?.({
+                task: task as Record<string, unknown>,
+                pluginName,
+                schema,
+              })}
+            </OverviewTab>
+          }
+        />
+        <Route path="logs" element={<LogsTab taskNames={taskHistoryNames} />} />
       </Routes>
     </Box>
   );

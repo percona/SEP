@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
+import requests.exceptions
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -58,6 +59,7 @@ from tests.app.factories import TaskFactory
 
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
+PARENT_FILTER_TASK_COUNT = 3
 
 
 @pytest_asyncio.fixture
@@ -175,6 +177,63 @@ async def test_update_task_not_found(test_client):
     ).model_dump(mode="json")
     response = test_client.put("/nonexistent", json=payload)
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_latest_task_history_status_batch(test_client, session):
+    """Assert POST /history/latest returns latest status keyed by task name."""
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="route-latest-status")),
+    )
+    await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            execution_request={
+                "task": task.name,
+                "target": "localhost",
+                "meta": {},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+        ),
+    )
+    await TaskHistoryManager.save(
+        session,
+        TaskHistory(
+            task_id=task.id,
+            status=TaskHistoryStatusEnum.RUNNING,
+            execution_request={
+                "task": task.name,
+                "target": "localhost",
+                "meta": {},
+                "tracking": {"allocation_id": None, "evaluation_id": None},
+            },
+        ),
+    )
+
+    response = test_client.post(
+        "/history/latest",
+        json={"names": [task.name, "route-latest-missing"]},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {
+        task.name: TaskHistoryStatusEnum.RUNNING.value,
+        "route-latest-missing": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_latest_task_history_status_rejects_too_many_names(test_client) -> None:
+    """Assert POST /history/latest rejects more than 200 task names."""
+    response = test_client.post(
+        "/history/latest",
+        json={"names": [f"task-{index}" for index in range(201)]},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 @pytest.mark.asyncio
@@ -828,11 +887,11 @@ async def test_sync_task_history_populates_has_logs(
 class TestSyncTaskHistoryChainDispatch:
     """Cover chain dispatch and sync-lock semantics on POST /history/{id}/sync/.
 
-    Regression for SEP-1093: when the SEP log-stream SSE finishes and posts
-    to the sync route, the route must claim the celery sync lock, save the
-    terminal status, and dispatch any chained task. Without these, the
-    celery ``sync_running_tasks`` periodic loses the race against the HTTP
-    route and the chain is silently dropped.
+    When the SEP log-stream SSE finishes and posts to the sync route, the
+    route must claim the celery sync lock, save the terminal status, and
+    dispatch any chained task. Without these, the celery
+    ``sync_running_tasks`` periodic loses the race against the HTTP route
+    and the chain is silently dropped.
     """
 
     async def _seed_chain_target(self, session: AsyncSession) -> Task:
@@ -1273,6 +1332,35 @@ async def test_get_executor_hosts(test_client, mock_executor):
 
 
 @pytest.mark.asyncio
+async def test_get_executor_hosts_nomad_returns_non_json(test_client, mock_executor):
+    """Assert /hosts/ returns 502 JSON when executor raises JSONDecodeError."""
+    mock_executor.get_hosts.side_effect = requests.exceptions.JSONDecodeError(
+        "Expecting value", "doc", 0
+    )
+    response = test_client.get("/hosts/")
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert "detail" in body
+    assert body["detail"].startswith("Executor backend unreachable:")
+
+
+@pytest.mark.asyncio
+async def test_get_executor_hosts_nomad_unreachable(test_client, mock_executor):
+    """Assert /hosts/ returns 502 JSON when executor raises ConnectionError."""
+    mock_executor.get_hosts.side_effect = requests.exceptions.ConnectionError(
+        "Connection refused"
+    )
+    response = test_client.get("/hosts/")
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert "detail" in body
+    assert body["detail"].startswith("Executor backend unreachable:")
+    assert "Connection refused" in body["detail"]
+
+
+@pytest.mark.asyncio
 async def test_transform_payload_proxy_backend(test_client):
     """Assert transforming a payload with PROXY backend calls parse_payload."""
     with patch(
@@ -1411,6 +1499,109 @@ async def test_list_tasks_filter_with_pagination(test_client, session):
     assert data["total"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["name"] == "backup-1"
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_parent_is_null_filter(test_client, session):
+    """Assert parent_is_null query param filters on data.parent."""
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-parent",
+                data={"backup_type": "pbm_config"},
+            )
+        ),
+    )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-child",
+                data={"backup_type": "pbm_logical", "parent": "route-parent"},
+            )
+        ),
+    )
+
+    response = test_client.get("/", params={"parent_is_null": True})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "route-parent"
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_backup_type_filter_with_pagination(test_client, session):
+    """Assert backup_type and pagination params compose on GET /."""
+    for index in range(PARENT_FILTER_TASK_COUNT):
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=f"route-pbm-config-{index}",
+                    data={"backup_type": "pbm_config"},
+                )
+            ),
+        )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-pbm-logical",
+                data={"backup_type": "pbm_logical", "parent": "route-pbm-config-0"},
+            )
+        ),
+    )
+
+    common_params = {"parent_is_null": True, "backup_type": "pbm_config"}
+    page_1 = test_client.get("/", params={**common_params, "offset": 0, "limit": 1})
+    page_2 = test_client.get("/", params={**common_params, "offset": 1, "limit": 1})
+    page_3 = test_client.get("/", params={**common_params, "offset": 2, "limit": 1})
+
+    assert page_2.status_code == status.HTTP_200_OK
+    data = page_2.json()
+    assert data["total"] == PARENT_FILTER_TASK_COUNT
+    assert data["offset"] == 1
+    assert data["limit"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["data"]["backup_type"] == "pbm_config"
+    paginated_names = {
+        page_1.json()["items"][0]["name"],
+        page_2.json()["items"][0]["name"],
+        page_3.json()["items"][0]["name"],
+    }
+    assert paginated_names == {
+        f"route-pbm-config-{index}" for index in range(PARENT_FILTER_TASK_COUNT)
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_self_parent_filter(test_client, session):
+    """Assert self_parent query param keeps rows where parent equals task name."""
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-self-parent",
+                data={"backup_type": "pbm_logical", "parent": "route-self-parent"},
+            )
+        ),
+    )
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="route-child-parent",
+                data={"backup_type": "pbm_logical", "parent": "route-self-parent"},
+            )
+        ),
+    )
+
+    response = test_client.get("/", params={"self_parent": True})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "route-self-parent"
 
 
 @pytest.mark.asyncio
@@ -1587,7 +1778,7 @@ async def test_execute_task_name_refreshes_execution_request_before_annotation(
 ):
     """Assert the STARTED annotation fires against a loaded ``execution_request``.
 
-    Regression for SEP-1017. Exercise the full
+    Exercise the full
     ``POST /execute/{task_name}`` → ``_dispatch_queue_item`` →
     ``schedule_annotation(result, "STARTED")`` flow with a real session
     and a fake executor whose ``dispatch_task`` runs the real
@@ -2150,9 +2341,9 @@ class TestPreExecutionConnectivityCheck:
 class TestSyncTaskHistoryRealSession:
     """Integration coverage for POST /history/{id}/sync/ with a real session.
 
-    Regression for SEP-1035: a real HTTP POST must open a fresh writer
-    session, forward it to executor.sync_task_history, and let the Nomad
-    executor's _persist_nomad_task_logs append chunks to taskhistory_log.
+    A real HTTP POST must open a fresh writer session, forward it to
+    ``executor.sync_task_history``, and let the Nomad executor's
+    ``_persist_nomad_task_logs`` append chunks to ``taskhistory_log``.
     """
 
     async def test_sync_running_persists_logs_via_writer_session(

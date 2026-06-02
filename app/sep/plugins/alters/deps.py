@@ -93,7 +93,7 @@ async def build_alters_task_payload(
     :type form: AltersCreate
     :param inventory_api: The Inventory API to get entities from.
     :type inventory_api: InventoryAPI
-    :return: A fully constructed `TaskWrite` object containing all the necessary
+    :return: A fully constructed ``TaskWrite`` object containing all the necessary
         commands and parameters for the Alters task execution.
     :rtype: TaskWrite
     """
@@ -103,8 +103,6 @@ async def build_alters_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    schema_name: str
-    table_name: str
     if form.schema_id and form.table_id:
         schema = await get_created_entity(
             inventory_api,
@@ -309,8 +307,8 @@ def alters_executor_matches_service_host(
     """Return whether the task executor is the same host as the MySQL service.
 
     Same rule as the alters detail page (pre-checks confirm dialog): resolve
-    `target` via Nomad `/hosts/` (node name → address) and compare to
-    `extract_service_info` host (inventory and/or DSN in `args`).
+    ``target`` via Nomad ``/hosts/`` (node name → address) and compare to
+    ``extract_service_info`` host (inventory and/or DSN in ``args``).
 
     :param meta: Task ``meta`` (``target``, ``_service_host``, ``args``, etc.).
     :type meta: dict[str, Any]

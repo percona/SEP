@@ -29,6 +29,10 @@ from app.sep.plugins.framework.schema import (
     ColumnFormat,
     DateTimeField,
     DerivedTask,
+    DetailField,
+    DetailHighlightLanguage,
+    DetailSection,
+    DetailView,
     FileField,
     FloatField,
     FormSection,
@@ -46,6 +50,10 @@ from app.sep.plugins.framework.schema import (
     TextAreaField,
     YamlField,
 )
+
+
+def _minimal_detail_view() -> DetailView:
+    return DetailView(sections=[])
 
 
 def _minimal_list_view() -> ListView:
@@ -124,6 +132,18 @@ _CHECKSUMS_LIKE_SCHEMA = PluginSchema(
             ),
         ],
         default_sort="-lastRun",
+    ),
+    detail_view=DetailView(
+        sections=[
+            DetailSection(
+                title="Execution",
+                fields=[
+                    DetailField(path="data.meta.command", label="Command"),
+                    DetailField(path="data.meta.args", label="Args"),
+                    DetailField(path="data.meta.target", label="Target"),
+                ],
+            ),
+        ],
     ),
 )
 
@@ -214,7 +234,12 @@ def test_plugin_schema_constructs_with_all_capabilities_on():
         name="caps",
         display_name="Caps",
         forms=[],
-        capabilities=Capabilities(chaining=True, alert_on_fail=True, scheduling=True),
+        capabilities=Capabilities(
+            chaining=True,
+            alert_on_fail=True,
+            scheduling=True,
+            stats=True,
+        ),
         list_view=_minimal_list_view(),
     )
 
@@ -222,6 +247,67 @@ def test_plugin_schema_constructs_with_all_capabilities_on():
     assert schema.capabilities.chaining is True
     assert schema.capabilities.alert_on_fail is True
     assert schema.capabilities.scheduling is True
+    assert schema.capabilities.stats is True
+
+
+def test_capabilities_stats_defaults_to_false():
+    """Default value of ``stats`` flag must be ``False`` for backward compat."""
+    caps = Capabilities()
+    assert caps.stats is False
+
+
+def test_capabilities_stats_accepts_true():
+    """``stats=True`` is a valid construction."""
+    caps = Capabilities(stats=True)
+    assert caps.stats is True
+
+
+def test_capabilities_serialization_round_trip_includes_stats():
+    """``stats`` survives ``model_dump`` / ``model_validate`` round trip."""
+    dumped = Capabilities(stats=True).model_dump()
+    assert dumped["stats"] is True
+    restored = Capabilities.model_validate({"stats": True})
+    assert restored.stats is True
+
+
+def test_capabilities_omitted_stats_in_payload_defaults_false():
+    """Payload missing the ``stats`` key validates to ``False``."""
+    caps = Capabilities.model_validate({})
+    assert caps.stats is False
+
+
+def test_dipper_schema_stats_capability_defaults_false():
+    """Dipper plugin schema must not opt into the stats card."""
+    from app.sep.plugins.dipper.schema import dipper_schema
+
+    assert dipper_schema.capabilities is not None
+    assert dipper_schema.capabilities.stats is False
+
+
+def test_capabilities_pii_anonymization_defaults_to_false():
+    """Default value of ``pii_anonymization`` flag must be ``False`` for backward compat."""
+    caps = Capabilities()
+    assert caps.pii_anonymization is False
+
+
+def test_capabilities_pii_anonymization_accepts_true():
+    """``pii_anonymization=True`` is a valid construction."""
+    caps = Capabilities(pii_anonymization=True)
+    assert caps.pii_anonymization is True
+
+
+def test_capabilities_serialization_round_trip_includes_pii_anonymization():
+    """``pii_anonymization`` survives ``model_dump`` / ``model_validate`` round trip."""
+    dumped = Capabilities(pii_anonymization=True).model_dump()
+    assert dumped["pii_anonymization"] is True
+    restored = Capabilities.model_validate({"pii_anonymization": True})
+    assert restored.pii_anonymization is True
+
+
+def test_capabilities_omitted_pii_anonymization_in_payload_defaults_false():
+    """Payload missing the ``pii_anonymization`` key validates to ``False``."""
+    caps = Capabilities.model_validate({})
+    assert caps.pii_anonymization is False
 
 
 @pytest.mark.parametrize(
@@ -460,6 +546,7 @@ def test_plugin_schema_accepts_snake_case_python_construction():
             ),
         ],
         list_view=_minimal_list_view(),
+        detail_view=_minimal_detail_view(),
     )
 
     assert schema.display_name == "P"
@@ -489,6 +576,7 @@ def test_plugin_schema_accepts_snake_case_json_input():
                 },
             ],
             "list_view": {"columns": [{"key": "id", "label": "ID"}]},
+            "detail_view": {"sections": []},
         },
     )
 
@@ -499,7 +587,7 @@ def test_plugin_schema_accepts_snake_case_json_input():
 
 
 def test_plugin_schema_rejects_camel_case_json_input():
-    """Reject camelCase JSON input — alias generator was removed in SEP-1071."""
+    """Reject camelCase JSON input — alias generator is intentionally absent."""
     with pytest.raises(ValidationError):
         PluginSchema.model_validate(
             {
@@ -646,6 +734,57 @@ def test_list_view_rejects_double_dash_prefix():
             columns=[Column(key="id", label="ID")],
             default_sort="--id",
         )
+
+
+# ── ListView.overview_hidden_fields ──────────────────────────────────────
+
+
+def test_list_view_overview_hidden_fields_defaults_to_empty():
+    """``overview_hidden_fields`` defaults to ``[]`` when omitted."""
+    view = ListView(columns=[Column(key="id", label="ID")])
+
+    assert view.overview_hidden_fields == []
+
+
+def test_list_view_overview_hidden_fields_accepts_non_empty_strings():
+    """``overview_hidden_fields`` accepts a list of non-empty strings."""
+    view = ListView(
+        columns=[Column(key="id", label="ID")],
+        overview_hidden_fields=["foo", "bar_baz"],
+    )
+
+    assert view.overview_hidden_fields == ["foo", "bar_baz"]
+
+
+def test_list_view_overview_hidden_fields_rejects_empty_string():
+    """``overview_hidden_fields`` rejects entries that are empty strings."""
+    with pytest.raises(ValidationError):
+        ListView(
+            columns=[Column(key="id", label="ID")],
+            overview_hidden_fields=[""],
+        )
+
+
+@pytest.mark.parametrize("bad_value", ["", " ", "  ", "\t", "\n"])
+def test_list_view_overview_hidden_fields_rejects_blank_entries(bad_value):
+    """``overview_hidden_fields`` rejects blank entries (empty, whitespace-only)."""
+    with pytest.raises(ValidationError):
+        ListView(
+            columns=[Column(key="id", label="ID")],
+            overview_hidden_fields=[bad_value],
+        )
+
+
+def test_list_view_overview_hidden_fields_round_trip():
+    """``overview_hidden_fields`` survives serialisation and ``model_validate``."""
+    original = ListView(
+        columns=[Column(key="id", label="ID")],
+        overview_hidden_fields=["internal_key"],
+    )
+    dumped = original.model_dump()
+    rehydrated = ListView.model_validate(dumped)
+
+    assert rehydrated.overview_hidden_fields == ["internal_key"]
 
 
 # ── Discriminated-union rejection ────────────────────────────────────────
@@ -1014,7 +1153,7 @@ class TestSchemaTier2ReferenceResolution:
             )
 
     def test_hyphenated_basefield_self_target_rejected(self) -> None:
-        """Edge case #27 — implicit self target also enforces the rule."""
+        """Edge case — implicit self target also enforces the rule."""
         with pytest.raises(ValidationError, match="no hyphens"):
             PluginSchema(
                 name="t",
@@ -1056,6 +1195,92 @@ class TestSchemaTier2ReferenceResolution:
                 list_view=_minimal_list_view(),
             )
 
+    # ── SEP-1276: FormSection-level visibility gates ────────────────────
+
+    def test_unknown_field_in_section_forbidden_rejected(self) -> None:
+        """Section ``forbidden`` referencing a missing field is rejected."""
+        with pytest.raises(ValidationError, match="unknown field 'NOT_THERE'"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="Mode",
+                        fields=[StringField(name="x", label="X")],
+                        forbidden=[FieldGate(when=F("NOT_THERE") == "v")],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
+    def test_section_forbidden_referencing_own_child_field_accepted(self) -> None:
+        """Section gate referencing one of its own fields validates clean."""
+        schema = PluginSchema(
+            name="t",
+            display_name="T",
+            forms=[
+                FormSection(
+                    title="Mode",
+                    fields=[StringField(name="own", label="O")],
+                    forbidden=[FieldGate(when=F("own") == "off")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.forms[0].forbidden is not None
+
+    def test_section_forbidden_referencing_sibling_section_field_accepted(
+        self,
+    ) -> None:
+        """Section gate referencing a field in another section validates clean.
+
+        Mirrors ``BaseField`` cross-section semantics — the resolver walks the
+        plugin-wide field-name set, not just the section's own children.
+        """
+        schema = PluginSchema(
+            name="t",
+            display_name="T",
+            forms=[
+                FormSection(
+                    title="Shared",
+                    fields=[StringField(name="backup_type", label="B")],
+                ),
+                FormSection(
+                    title="Mode",
+                    fields=[StringField(name="mode_field", label="M")],
+                    forbidden=[FieldGate(when=F("backup_type") != "M")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.forms[1].forbidden is not None
+
+    def test_hyphenated_field_in_section_gate_rejected(self) -> None:
+        """Section gate referencing a hyphenated field name is rejected.
+
+        Conditional rules must use valid Python identifiers (no hyphens) so
+        that ``getattr`` lookups at predicate-eval time succeed.
+        """
+        with pytest.raises(ValidationError, match="no hyphens"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="Shared",
+                        fields=[StringField(name="hy-phen", label="H")],
+                    ),
+                    FormSection(
+                        title="Mode",
+                        fields=[StringField(name="x", label="X")],
+                        forbidden=[FieldGate(when=truthy("hy-phen"))],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
 
 # ── DerivedTask primitive and PluginSchema.derived (SEP-1074) ────────────
 
@@ -1069,6 +1294,8 @@ class TestDerivedTask:
 
         assert spec.name_suffix == "-dry-run"
         assert spec.arg_substitutions is None
+        assert spec.payload_substitutions is None
+        assert spec.data_overrides is None
         assert spec.parent_link is True
 
     def test_derived_task_empty_suffix_rejected(self) -> None:
@@ -1088,6 +1315,8 @@ class TestDerivedTask:
         spec = DerivedTask(
             name_suffix="-dry-run",
             arg_substitutions={"--execute": "--dry-run"},
+            payload_substitutions={"pbm_config": "pbm_logical"},
+            data_overrides={"backup_type": "pbm_logical"},
             parent_link=False,
         )
         dumped = spec.model_dump(mode="json")
@@ -1095,6 +1324,8 @@ class TestDerivedTask:
         assert dumped == {
             "name_suffix": "-dry-run",
             "arg_substitutions": {"--execute": "--dry-run"},
+            "payload_substitutions": {"pbm_config": "pbm_logical"},
+            "data_overrides": {"backup_type": "pbm_logical"},
             "parent_link": False,
         }
         reparsed = DerivedTask.model_validate(dumped)
@@ -1380,3 +1611,224 @@ class TestPluginSchemaPredecessorsField:
 
         assert schema.derived is not None
         assert schema.predecessors is not None
+
+
+# ── DetailView ──────────────────────────────────────────────────────────
+
+
+def test_detail_view_round_trip_through_json():
+    """Round-trip ``DetailView`` through snake_case JSON with a highlight hint."""
+    detail_view = DetailView(
+        sections=[
+            DetailSection(
+                title="Execution",
+                fields=[
+                    DetailField(
+                        path="data.meta.command",
+                        label="Command",
+                        highlight=DetailHighlightLanguage.SQL,
+                    ),
+                    DetailField(path="data.meta.args", label="Args"),
+                ],
+            ),
+        ],
+    )
+
+    dumped = detail_view.model_dump(mode="json", by_alias=True)
+
+    assert dumped == {
+        "sections": [
+            {
+                "title": "Execution",
+                "fields": [
+                    {
+                        "path": "data.meta.command",
+                        "label": "Command",
+                        "highlight": "sql",
+                    },
+                    {
+                        "path": "data.meta.args",
+                        "label": "Args",
+                        "highlight": None,
+                    },
+                ],
+            },
+        ],
+    }
+    assert DetailView.model_validate(dumped) == detail_view
+
+
+@pytest.mark.parametrize(
+    "valid_path",
+    [
+        "foo",
+        "data.meta.command",
+        "data.items[0].name",
+        "a[0][1].b",
+        "_private.field",
+        "x1.y2.z3",
+    ],
+)
+def test_detail_field_path_validator_accepts_valid_paths(valid_path):
+    """Accept identifier-shape segments with optional ``[N]`` indices."""
+    field = DetailField(path=valid_path, label="L")
+
+    assert field.path == valid_path
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        ".foo",
+        "foo.",
+        "..foo",
+        "foo..bar",
+        "1foo",
+        "foo.bar baz",
+        "data-meta",
+        "[0].foo",
+        "foo[].bar",
+        "foo.bar[",
+        "foo.[0]",
+        "foo bar",
+    ],
+)
+def test_detail_field_path_validator_rejects_invalid_paths(invalid_path):
+    """Reject non-identifier segments, empty segments, and trailing/leading dots."""
+    with pytest.raises(ValidationError):
+        DetailField(path=invalid_path, label="L")
+
+
+@pytest.mark.parametrize(
+    "invalid_segment_path",
+    [
+        "data.123bad",
+        "data.ok[0].9bad",
+        "data.meta.[0]",
+    ],
+)
+def test_detail_field_path_validator_rejects_invalid_identifier_segments(
+    invalid_segment_path,
+):
+    """Reject dotted paths containing non-identifier segments."""
+    with pytest.raises(ValidationError):
+        DetailField(path=invalid_segment_path, label="L")
+
+
+def test_detail_section_accepts_empty_fields_list():
+    """Allow a section with no fields (frontend hides it at render time)."""
+    section = DetailSection(title="Heading", fields=[])
+
+    assert section.fields == []
+
+
+def test_plugin_schema_task_type_requires_detail_view():
+    """Refuse to construct a task-style plugin without ``detail_view``."""
+    with pytest.raises(ValidationError, match="detail_view is required"):
+        PluginSchema(
+            name="task-plugin",
+            display_name="Task Plugin",
+            task_type="some-root-task",
+            forms=[],
+            list_view=_minimal_list_view(),
+        )
+
+
+def test_plugin_schema_task_type_with_empty_detail_view_sections_allowed():
+    """Allow ``DetailView(sections=[])`` as the opt-out form for task-style plugins."""
+    schema = PluginSchema(
+        name="task-plugin",
+        display_name="Task Plugin",
+        task_type="some-root-task",
+        forms=[],
+        list_view=_minimal_list_view(),
+        detail_view=DetailView(sections=[]),
+    )
+
+    assert schema.detail_view is not None
+    assert schema.detail_view.sections == []
+
+
+def test_plugin_schema_without_task_type_allows_missing_detail_view():
+    """Legacy plugins with no ``task_type`` can still omit ``detail_view``."""
+    schema = PluginSchema(
+        name="legacy",
+        display_name="Legacy",
+        forms=[],
+        list_view=_minimal_list_view(),
+    )
+
+    assert schema.task_type is None
+    assert schema.detail_view is None
+
+
+def test_plugin_schema_detail_view_round_trips_through_json():
+    """Round-trip a task-style ``PluginSchema`` carrying a populated ``detail_view``."""
+    schema = PluginSchema(
+        name="task-plugin",
+        display_name="Task Plugin",
+        task_type="root-task",
+        forms=[],
+        list_view=_minimal_list_view(),
+        detail_view=DetailView(
+            sections=[
+                DetailSection(
+                    title="Execution",
+                    fields=[
+                        DetailField(path="data.meta.command", label="Command"),
+                    ],
+                ),
+            ],
+        ),
+    )
+
+    dumped = schema.model_dump(mode="json", by_alias=True)
+    rehydrated = PluginSchema.model_validate(dumped)
+
+    assert rehydrated.detail_view == schema.detail_view
+
+
+class TestDetailViewReviewFixes:
+    """Cover review fixes layered on top of the initial DetailView landing.
+
+    Groups the section-title uniqueness validator and the
+    ``DetailHighlightLanguage`` ↔ frontend literal sync guard.
+    """
+
+    def test_detail_view_rejects_duplicate_section_titles(self) -> None:
+        """Reject two sections with the same title within one ``DetailView``."""
+        with pytest.raises(ValidationError) as exc:
+            DetailView(
+                sections=[
+                    DetailSection(
+                        title="Execution",
+                        fields=[
+                            DetailField(path="data.meta.command", label="Command"),
+                        ],
+                    ),
+                    DetailSection(
+                        title="Execution",
+                        fields=[
+                            DetailField(path="data.meta.args", label="Args"),
+                        ],
+                    ),
+                ],
+            )
+
+        assert "Duplicate DetailSection title" in str(exc.value)
+
+    def test_detail_highlight_language_membership_is_synced_with_frontend(
+        self,
+    ) -> None:
+        """Guard ``DetailHighlightLanguage`` membership against silent backend drift.
+
+        The TypeScript ``DetailField.highlight`` type in
+        ``frontend/packages/api/src/types/plugin-schema.ts`` is hand-maintained
+        as ``'sql' | 'json'``. If a new enum value is added here without
+        updating the frontend literal, this test fails and forces the author
+        to sync both sides.
+        """
+        assert {member.value for member in DetailHighlightLanguage} == {
+            "sql",
+            "json",
+        }

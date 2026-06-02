@@ -486,11 +486,27 @@ class TaskResponse(TaskBase, BaseSQLModel):
     :type created_by: str | None
     :param last_updated_by: The user ID of the user who last modified the task.
     :type last_updated_by: str | None
+    :param anonymized_entities: Sorted list of PII entity names derived from
+        ``anonymize_mask`` (or from the owner's configured defaults when the
+        mask is ``None``). Each name is the raw ``PIIEntity`` member name
+        (e.g. ``"EMAIL_ADDRESS"``). Read-only; computed on serialisation.
+    :type anonymized_entities: list[str]
     """
 
     deleted_at: UTCDatetime | None
     created_by: str | None
     last_updated_by: str | None
+
+    @computed_field
+    @property
+    def anonymized_entities(self) -> list[str]:
+        """Return sorted PII entity names decoded from ``anonymize_mask``."""
+        entities = (
+            PIIEntity.decode_selection(self.anonymize_mask)
+            if self.anonymize_mask is not None
+            else anonymizer_settings.DEFAULT_ENTITIES[self.owner]
+        )
+        return sorted(entity.name for entity in entities)
 
 
 class TaskWrite(TaskBase):
@@ -1045,6 +1061,22 @@ class TaskStats(BaseModel):
                 last_seconds=self._raw["durations"].pop(),
                 total_seconds=sum(self._raw["durations"]),
             )
+
+
+LATEST_HISTORY_STATUS_NAMES_MAX = 200
+
+
+class TaskHistoryLatestStatusRequest(BaseModel):
+    """Define request body for batch latest-history status lookup.
+
+    :param names: Task names to resolve latest non-null history statuses for.
+    :type names: list[str]
+    """
+
+    names: list[str] = Field(
+        default_factory=list,
+        max_length=LATEST_HISTORY_STATUS_NAMES_MAX,
+    )
 
 
 class TransformPayloadRequest(BaseModel):

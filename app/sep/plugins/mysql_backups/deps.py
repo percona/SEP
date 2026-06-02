@@ -15,6 +15,7 @@
 
 """Define dependencies for the Backups plugin."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -23,6 +24,7 @@ import yaml
 from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
+from app.core.models import PaginatedResponse
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -45,12 +47,13 @@ from app.sep.plugins.mysql_backups.models import (
     BackupConfigAll,
     BackupConfigServer,
     BackupCreate,
+    BackupResponse,
     BackupType,
-    UploadProvider,
 )
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -58,21 +61,14 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 
-async def build_backup_task_payload(
-    form: Annotated[BackupCreate, Form()],
+async def build_backup_task_payload_from_model(
+    form: BackupCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the backup task payload from form.
+    """Build a ``TaskWrite`` from a validated ``BackupCreate`` instance.
 
-    Build the payload for a Backups task to be executed.
-
-    :param form: The form data for the Backups creation.
-    :type form: BackupCreate
-    :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object containing all the necessary
-        configuration to create the Backup task.
-    :rtype: TaskWrite
+    Shared between the form-bound FastAPI dependency
+    :func:`build_backup_task_payload` and direct JSON-path callers.
     """
     service = await get_created_entity(
         inventory_api,
@@ -93,13 +89,7 @@ async def build_backup_task_payload(
         by_alias=True,
     )
 
-    upload_providers = []
-    if form.s3_bucket:
-        upload_providers.append(UploadProvider.S3)
-    if form.gs_bucket:
-        upload_providers.append(UploadProvider.GSUTIL)
-    if form.rsync_path:
-        upload_providers.append(UploadProvider.RSYNC)
+    upload_providers = list(form.upload)
 
     server_config = {
         "alias": form.alias or service.node.address,
@@ -162,6 +152,22 @@ async def build_backup_task_payload(
     )
 
 
+async def build_backup_task_payload(
+    form: Annotated[BackupCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the backup task payload from form.
+
+    :param form: The form data for the Backups creation.
+    :type form: BackupCreate
+    :param inventory_api: The Inventory API to get entities from.
+    :type inventory_api: InventoryAPI
+    :return: A fully constructed ``TaskWrite`` object.
+    :rtype: TaskWrite
+    """
+    return await build_backup_task_payload_from_model(form, inventory_api)
+
+
 def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     """Parse backup task data for editing.
 
@@ -193,17 +199,25 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
             "encryption_recipient"
         )
 
-    upload_providers = server_config.get("UPLOAD", [])
+    upload_providers = {
+        provider.upper()
+        for provider in server_config.get("UPLOAD", [])
+        if isinstance(provider, str)
+    }
     if "S3" in upload_providers:
-        result["s3_bucket"] = all_servers_config.get("s3_bucket")
-        result["s3_storage_class"] = all_servers_config.get("s3_storage_class")
+        result["s3_bucket"] = all_servers_config.get("S3_BUCKET")
+        result["s3_storage_class"] = all_servers_config.get("S3_STORAGE_CLASS")
         result["skip_s3_safety_check"] = all_servers_config.get(
-            "skip_s3_safety_check", False
+            "SKIP_S3_SAFETY_CHECK", False
         )
     if "GSUTIL" in upload_providers:
-        result["gs_bucket"] = all_servers_config.get("gs_bucket")
+        result["gs_bucket"] = all_servers_config.get("GS_BUCKET")
     if "RSYNC" in upload_providers:
-        result["rsync_path"] = all_servers_config.get("rsync_path")
+        result["rsync_path"] = all_servers_config.get("RSYNC_PATH")
+
+    result["binlog_alternative_host"] = all_servers_config.get(
+        "BINLOG_ALTERNATIVE_HOST"
+    )
 
     for key, value in all_servers_config.items():
         if key.lower() not in result:
@@ -237,6 +251,165 @@ async def get_backups_task(
 
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
+
+
+def _extract_backup_type_from_task(task: Task) -> BackupType | None:  # noqa: PLR0911
+    """Read ``BACKUP_TYPE`` out of the task's YAML config, if present."""
+    meta = task.data.get("meta") if task.data else None
+    raw_config = meta.get("config") if meta else None
+    if not raw_config:
+        return None
+    try:
+        config = yaml.safe_load(raw_config)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(config, dict):
+        return None
+    server_list = config.get("SERVER_LIST")
+    if not isinstance(server_list, list) or not server_list:
+        return None
+    first = server_list[0]
+    if not isinstance(first, dict):
+        return None
+    raw_type = first.get("BACKUP_TYPE")
+    if raw_type is None:
+        return None
+    try:
+        return BackupType(raw_type)
+    except ValueError:
+        return None
+
+
+def build_mysql_backups_api_task_response(
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+) -> BackupResponse:
+    """Build a ``BackupResponse`` for the JSON API.
+
+    :param task: The backups task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A validated backup task API response object.
+    :rtype: BackupResponse
+    """
+    hostname = None
+    if task.data:
+        meta = task.data.get("meta") or {}
+        hostname = meta.get("target")
+    return BackupResponse(
+        **task.model_dump(),
+        backup_type=_extract_backup_type_from_task(task),
+        hostname=hostname,
+        status=status,
+    )
+
+
+def _extract_latest_task_status(
+    histories: list[dict[str, Any]],
+) -> TaskHistoryStatusEnum | None:
+    """Return the latest known status from a task history payload.
+
+    The Tasks history endpoint does not accept an ``order_by`` query-string
+    override; ``get_backups_task_status`` requests ``limit=1`` and relies on
+    ``BaseSQLModelManager``'s default ordering (``created_at DESC`` for
+    ``BaseSQLModel`` subclasses, see ``app/core/db/crud.py``) so the first
+    item is the newest run.
+    """
+    for history in histories:
+        if (raw_status := history.get("status")) is not None:
+            return TaskHistoryStatusEnum(raw_status)
+    return None
+
+
+async def get_backups_task_status(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> TaskHistoryStatusEnum | None:
+    """Fetch the latest execution status for a backups task.
+
+    The Tasks history endpoint does not accept a query-string ``order_by``
+    override, so this call relies on
+    ``BaseSQLModelManager._get_ordering`` (``app/core/db/crud.py``) returning
+    rows by ``created_at DESC`` for ``BaseSQLModel`` subclasses. Only
+    ``limit=1`` and ``offset=0`` are passed; if the manager default ever
+    flips, this call site silently returns the wrong status — covered
+    indirectly by the existing ``get_backups_task_status`` tests.
+
+    :param task_name: The task name.
+    :type task_name: str
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :return: The latest known status, or ``None`` if no history exists.
+    :rtype: TaskHistoryStatusEnum | None
+    """
+    response = await tasks_api.get(
+        f"/{task_name}/history/",
+        params={"limit": 1, "offset": 0},
+    )
+    return _extract_latest_task_status(response["items"])
+
+
+_STATUS_FETCH_CONCURRENCY = 10
+
+
+async def get_mysql_backups_api_task_responses(
+    tasks_api: TaskAPI,
+    status: TaskHistoryStatusEnum | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> PaginatedResponse[BackupResponse]:
+    """Retrieve a paginated page of backup task responses for the JSON API.
+
+    Concurrency for per-task history fetches is bounded by
+    :data:`_STATUS_FETCH_CONCURRENCY` so a large page cannot fan-out into
+    an unbounded burst of HTTPS calls to the Tasks API.
+
+    The ``status`` filter is applied client-side after the page is fetched
+    (the Tasks API does not yet expose a server-side latest-status filter).
+    When a filter is active, ``total`` reflects the count of items on the
+    *current page* after filtering — not the global count of matching
+    records — so pagination metadata stays consistent with the returned
+    ``items``. When no filter is active, ``total`` reflects the unfiltered
+    total reported by the Tasks API.
+
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: TaskAPI
+    :param status: Optional latest-history status filter (client-side).
+    :type status: TaskHistoryStatusEnum | None
+    :param offset: Zero-based start offset for the underlying Tasks listing.
+    :type offset: int
+    :param limit: Maximum rows to fetch from the Tasks API for this page.
+    :type limit: int
+    :return: Paginated backup task responses matching the filter.
+    :rtype: PaginatedResponse[BackupResponse]
+    """
+    params = {
+        "owner": TaskOwner.BACKUPS.value,
+        "offset": offset,
+        "limit": limit,
+    }
+    response = await tasks_api.get("/", params=params)
+    tasks = [Task.model_validate(task) for task in response["items"]]
+    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
+
+    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
+        async with sem:
+            return await get_backups_task_status(task.name, tasks_api)
+
+    task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
+    items = [
+        build_mysql_backups_api_task_response(task, status=task_status)
+        for task, task_status in zip(tasks, task_statuses, strict=True)
+        if status is None or task_status == status
+    ]
+    total = len(items) if status is not None else response.get("total", len(items))
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:

@@ -22,19 +22,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SnackbarProvider } from 'notistack';
 import type { PropsWithChildren } from 'react';
 import { StandaloneHostSelector } from './StandaloneHostSelector';
-import { apiClient } from '@sep/api';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@sep/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sep/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
+import { ApiError, apiClient } from '@sep/api';
 
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
-function makeResponse(
-  items: Array<{ id: string; name: string; address: string }>,
-  headers: Record<string, string> = {},
-) {
-  return { data: items, headers };
+function makeResponse(items: Array<{ id: string; name: string; address: string }>) {
+  return { data: items };
 }
 
 function makeClient() {
@@ -102,7 +100,9 @@ describe('StandaloneHostSelector', () => {
   });
 
   it('disables the input and shows error text when the endpoint rejects', async () => {
-    mocked.get.mockRejectedValueOnce(new Error('network error'));
+    mocked.get.mockRejectedValueOnce(
+      new ApiError({ kind: 'http', status: 502, message: 'network error' }),
+    );
     const client = makeClient();
     render(
       <Wrapper client={client}>
@@ -115,8 +115,8 @@ describe('StandaloneHostSelector', () => {
   });
 
   it('surfaces upstream Tasks-API failure via snackbar', async () => {
-    mocked.get.mockResolvedValueOnce(
-      makeResponse([], { 'x-sep-upstream-error': 'tasks unreachable' }),
+    mocked.get.mockRejectedValueOnce(
+      new ApiError({ kind: 'http', status: 502, message: 'tasks unreachable' }),
     );
 
     const client = makeClient();
@@ -155,6 +155,25 @@ describe('StandaloneHostSelector', () => {
 
     await user.click(screen.getByLabelText('Executor Host'));
     expect(await screen.findByText('No hosts available')).toBeInTheDocument();
+  });
+
+  it('refetches /api/sep/hosts/ when the dropdown is opened', async () => {
+    const hosts = [{ id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' }];
+    mocked.get.mockResolvedValue(makeResponse(hosts));
+
+    const client = makeClient();
+    render(
+      <Wrapper client={client}>
+        <StandaloneHostSelector value="" onChange={vi.fn()} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(1));
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText('Executor Host'));
+
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
   });
 
   it('shows "Loading hosts…" while the host list is loading', async () => {
