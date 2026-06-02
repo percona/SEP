@@ -15,7 +15,7 @@
 
 """Define the JSON API request and response models for the report plugin."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
 class ReportGenerateWrite(BaseModel):
@@ -41,13 +41,3 @@ class ReportGenerateWrite(BaseModel):
     until: str = "now"
     full: bool = True
     refresh: bool = False
-
-
-class ReportUploadResponse(BaseModel):
-    """Represent the ServiceNow upload response from ``POST /api/plugins/report/upload``.
-
-    The upstream upload endpoint returns a dynamic JSON object; this model
-    preserves all fields for OpenAPI typing and frontend consumption.
-    """
-
-    model_config = ConfigDict(extra="allow")

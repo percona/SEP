@@ -16,23 +16,23 @@
 """Define the JSON API router for the report plugin.
 
 Mounted at ``/api/plugins/report/`` via ``plugins_router`` in
-``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level. Route layout:
+``app/sep/api/router.py``. ``api_router`` applies session/Bearer auth;
+``plugins_router`` applies ``RequireBearerForUnsafeMethods`` on POST/PUT/PATCH/DELETE.
+Route layout:
 
 * ``GET /generate`` — return report data as JSON (cookie or Bearer)
-* ``POST /generate/pdf`` — generate report and return PDF bytes (Bearer required)
-* ``POST /upload`` — generate report, render PDF, upload to ServiceNow (Bearer required)
+* ``POST /generate/pdf`` — generate report and return PDF bytes
+* ``POST /upload`` — generate report, render PDF, upload to ServiceNow
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
-from app.sep.deps import RequireBearerAuth
 from app.sep.plugins.report.deps import IsUploadConfigured, RequiredPMMAPIDep
 from app.sep.plugins.report.models import REPORT_SECTIONS, ReportData
-from app.sep.plugins.report.schemas import ReportGenerateWrite, ReportUploadResponse
+from app.sep.plugins.report.schemas import ReportGenerateWrite
 from app.sep.plugins.report.service import (
     generate_pdf_report,
     generate_report,
@@ -47,11 +47,14 @@ def _filter_sections(sections: list[str] | None) -> list[str] | None:
 
     :param sections: Optional list of requested section names.
     :type sections: list[str] | None
-    :return: Filtered list, or ``None`` when no sections were requested.
+    :return: Filtered list, ``None`` when no sections were requested, or when
+        every requested name was invalid (falls back to all sections in
+        :func:`generate_report`).
     :rtype: list[str] | None
     """
     if sections:
-        return [s for s in sections if s in REPORT_SECTIONS]
+        filtered = [s for s in sections if s in REPORT_SECTIONS]
+        return filtered or None
     return sections
 
 
@@ -92,7 +95,7 @@ async def report_api_generate(
     )
 
 
-@router.post("/generate/pdf", dependencies=[RequireBearerAuth])
+@router.post("/generate/pdf")
 async def report_api_generate_pdf(
     pmm_api: RequiredPMMAPIDep,
     body: ReportGenerateWrite,
@@ -122,19 +125,19 @@ async def report_api_generate_pdf(
     )
 
 
-@router.post("/upload", dependencies=[RequireBearerAuth, IsUploadConfigured])
+@router.post("/upload", dependencies=[IsUploadConfigured])
 async def report_api_upload(
     pmm_api: RequiredPMMAPIDep,
     body: ReportGenerateWrite,
-) -> ReportUploadResponse:
+) -> dict[str, Any]:
     """Generate a report, convert to PDF, and upload to ServiceNow.
 
     :param pmm_api: The PMM API client.
     :type pmm_api: PMMRemoteAPI
     :param body: Report generation parameters.
     :type body: ReportGenerateWrite
-    :return: ServiceNow upload API response.
-    :rtype: ReportUploadResponse
+    :return: ServiceNow upload API response (passthrough JSON body).
+    :rtype: dict[str, Any]
     """
     report = await generate_report(
         pmm_api,
@@ -144,5 +147,4 @@ async def report_api_upload(
         refresh=body.refresh,
     )
     pdf_bytes = await generate_pdf_report(report)
-    result = await upload_pdf_report(report, pdf_bytes)
-    return ReportUploadResponse.model_validate(result)
+    return await upload_pdf_report(report, pdf_bytes)

@@ -138,7 +138,7 @@ async def report_generate_json(
     :rtype: JSONResponse
     """
     if sections:
-        sections = [s for s in sections if s in REPORT_SECTIONS]
+        sections = [s for s in sections if s in REPORT_SECTIONS] or None
     report = await generate_report(
         pmm_api, since=since, until=until, full=full, refresh=refresh, sections=sections
     )

@@ -27,7 +27,7 @@ from app.sep.plugins.report.deps import (
     require_pmm_api,
     require_upload_configured,
 )
-from tests.app.sep.plugins.report.test_routes import _make_report
+from tests.app.sep.plugins.report.conftest import make_report
 
 API_BASE = "/api/plugins/report"
 _API = "app.sep.plugins.report.api_routes"
@@ -51,7 +51,7 @@ class TestReportApiGenerate:
 
     def test_returns_200_with_json(self, test_client, mock_pmm_api):
         """Assert the JSON endpoint returns 200 with application/json."""
-        report = _make_report()
+        report = make_report()
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -64,7 +64,7 @@ class TestReportApiGenerate:
 
     def test_response_contains_report_data(self, test_client, mock_pmm_api):
         """Assert the JSON body includes expected top-level keys."""
-        report = _make_report()
+        report = make_report()
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -85,7 +85,7 @@ class TestReportApiGenerate:
 
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
         """Assert default query parameters are forwarded."""
-        report = _make_report()
+        report = make_report()
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -102,7 +102,7 @@ class TestReportApiGenerate:
 
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom query parameters are forwarded to generate_report."""
-        report = _make_report(full=True, refresh=True)
+        report = make_report(full=True, refresh=True)
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -126,7 +126,7 @@ class TestReportApiGenerate:
 
     def test_filters_valid_sections(self, test_client, mock_pmm_api):
         """Assert only valid section names are forwarded."""
-        report = _make_report()
+        report = make_report()
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -141,8 +141,8 @@ class TestReportApiGenerate:
         assert kwargs["sections"] == ["advisors", "storage"]
 
     def test_ignores_all_invalid_sections(self, test_client, mock_pmm_api):
-        """Assert sections list becomes empty when all names are invalid."""
-        report = _make_report()
+        """Assert all-invalid section names fall back to full report (``None``)."""
+        report = make_report()
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -154,11 +154,11 @@ class TestReportApiGenerate:
             )
 
         _, kwargs = mock_gen.call_args
-        assert kwargs["sections"] == []
+        assert kwargs["sections"] is None
 
     def test_metadata_in_json_response(self, test_client, mock_pmm_api):
         """Assert report metadata is present in the JSON response."""
-        report = _make_report()
+        report = make_report()
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -172,7 +172,7 @@ class TestReportApiGenerate:
 
     def test_full_flag_reflected_in_json(self, test_client, mock_pmm_api):
         """Assert the full flag value appears in the JSON body."""
-        report = _make_report(full=True)
+        report = make_report(full=True)
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -213,7 +213,7 @@ class TestReportApiGeneratePDF:
 
     def test_returns_200_with_pdf(self, test_client, mock_pmm_api):
         """Assert a generated report is returned as a PDF download."""
-        report = _make_report()
+        report = make_report()
         pdf_bytes = b"%PDF-1.4 fake content"
         with (
             patch(
@@ -235,7 +235,7 @@ class TestReportApiGeneratePDF:
 
     def test_content_disposition_header(self, test_client, mock_pmm_api):
         """Assert Content-Disposition header contains the expected filename."""
-        report = _make_report()
+        report = make_report()
         with (
             patch(
                 f"{_API}.generate_report",
@@ -256,7 +256,7 @@ class TestReportApiGeneratePDF:
 
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
         """Assert default since/until/full/refresh values are forwarded."""
-        report = _make_report()
+        report = make_report()
         with (
             patch(
                 f"{_API}.generate_report",
@@ -279,7 +279,7 @@ class TestReportApiGeneratePDF:
 
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom JSON body parameters are forwarded to generate_report."""
-        report = _make_report(full=True, refresh=True)
+        report = make_report(full=True, refresh=True)
         with (
             patch(
                 f"{_API}.generate_report",
@@ -344,7 +344,7 @@ class TestReportApiUpload:
 
     def test_returns_200_with_json(self, test_client, mock_pmm_api):
         """Assert a successful upload returns 200 with JSON."""
-        report = _make_report()
+        report = make_report()
         upload_result = {"status": "ok", "id": "12345"}
         with (
             patch(
@@ -372,7 +372,7 @@ class TestReportApiUpload:
 
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
         """Assert default JSON body parameters are forwarded."""
-        report = _make_report()
+        report = make_report()
         with (
             patch(
                 f"{_API}.generate_report",
@@ -400,7 +400,7 @@ class TestReportApiUpload:
 
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom JSON body parameters are forwarded to generate_report."""
-        report = _make_report(full=True, refresh=True)
+        report = make_report(full=True, refresh=True)
         with (
             patch(
                 f"{_API}.generate_report",
@@ -454,7 +454,7 @@ class TestReportApiUpload:
 
     def test_returns_500_on_upload_error(self, test_client, mock_pmm_api):
         """Assert 500 is returned when the upload service raises an exception."""
-        report = _make_report()
+        report = make_report()
         with (
             patch(
                 f"{_API}.generate_report",
@@ -484,7 +484,7 @@ class TestReportApiBearerAuthGate:
 
     def test_generate_with_cookie_only_returns_200(self, test_client, mock_pmm_api):
         """GET /generate accepts cookie-only auth."""
-        report = _make_report()
+        report = make_report()
         with patch(
             f"{_API}.generate_report",
             new_callable=AsyncMock,
@@ -494,16 +494,20 @@ class TestReportApiBearerAuthGate:
 
         assert response.status_code == status.HTTP_200_OK
 
-    def test_pdf_with_cookie_only_returns_401(self, test_client, mock_pmm_api):
-        """POST /generate/pdf without Bearer is rejected."""
-        response = test_client.post(f"{API_BASE}/generate/pdf", json={})
+    def test_pdf_with_cookie_only_returns_401(
+        self, api_admin_client_no_bearer, mock_pmm_api
+    ):
+        """POST /generate/pdf without Bearer is rejected by plugins_router gate."""
+        response = api_admin_client_no_bearer.post(f"{API_BASE}/generate/pdf", json={})
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_upload_with_cookie_only_returns_401(self, test_client, mock_pmm_api):
-        """POST /upload without Bearer is rejected."""
+    def test_upload_with_cookie_only_returns_401(
+        self, api_admin_client_no_bearer, mock_pmm_api
+    ):
+        """POST /upload without Bearer is rejected by plugins_router gate."""
         sep_app.dependency_overrides[require_upload_configured] = lambda: None
         try:
-            response = test_client.post(f"{API_BASE}/upload", json={})
+            response = api_admin_client_no_bearer.post(f"{API_BASE}/upload", json={})
             assert response.status_code == status.HTTP_401_UNAUTHORIZED
         finally:
             sep_app.dependency_overrides.pop(require_upload_configured, None)
