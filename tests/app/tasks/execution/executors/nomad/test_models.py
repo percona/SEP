@@ -315,7 +315,7 @@ class TestBackendProperty:
         joins paths as ``f"{address}/v1/..."``, so a trailing slash yields
         ``//v1/nodes``; Nomad 307-redirects that to an HTML body and python-nomad
         (no redirect following) calls ``.json()`` on it, raising
-        "Expecting value: line 1 column 1 (char 0)". The executor must strip the
+        ``Expecting value: line 1 column 1 (char 0)``. The executor must strip the
         slash so the request path stays single-slashed.
         """
         executor = _build_executor(endpoint="https://nomad.example:4646")
