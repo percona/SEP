@@ -874,6 +874,8 @@ def _run_trigger_jenkins_with_fake_curl(tmp_path, tag, *make_args):
         "JENKINS_API_TOKEN": "token",
         "JENKINS_URL": "https://jenkins.example",
         "JENKINS_USER": "user",
+        "WEBHOOK_AUTH_ENV": "",
+        "WEBHOOK_URL_ENV": "",
         "PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}",
     }
     subprocess.run(
