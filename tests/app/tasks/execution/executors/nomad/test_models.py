@@ -301,11 +301,28 @@ class TestBackendProperty:
         _ = executor.backend
         mock_nomad_cls.assert_called_once()
         call_kwargs = mock_nomad_cls.call_args[1]
-        assert str(call_kwargs["address"]) == "http://localhost:4646/"
+        assert call_kwargs["address"] == "http://localhost:4646"
         assert call_kwargs["secure"] is False
         assert call_kwargs["timeout"] == NOMAD_DEFAULT_TIMEOUT
         assert call_kwargs["verify"] is False
         assert call_kwargs["cert"] == ()
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_backend_strips_trailing_slash_from_endpoint(self, mock_nomad_cls):
+        """Strip the trailing slash off a host-only Nomad endpoint.
+
+        ``HttpUrl`` normalises a host-only URL by appending ``/``. python-nomad
+        joins paths as ``f"{address}/v1/..."``, so a trailing slash yields
+        ``//v1/nodes``; Nomad 307-redirects that to an HTML body and python-nomad
+        (no redirect following) calls ``.json()`` on it, raising
+        "Expecting value: line 1 column 1 (char 0)". The executor must strip the
+        slash so the request path stays single-slashed.
+        """
+        executor = _build_executor(endpoint="https://nomad.example:4646")
+        _ = executor.backend
+        address = mock_nomad_cls.call_args[1]["address"]
+        assert address == "https://nomad.example:4646"
+        assert not address.endswith("/")
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_backend_ssl_config_certfile_only(self, mock_nomad_cls):
@@ -1631,7 +1648,7 @@ class TestGetLogsForAllocation:
     ):
         """Assert producer offset tracks anonymized bytes, not Nomad bytes.
 
-        Regression test for SEP-817: when anonymization replaces raw bytes
+        Regression test: when anonymization replaces raw bytes
         with a shorter or longer string, the producer-space offset returned
         alongside the delta must track the post-anonymization byte length
         so the writer dedup window does not mix Nomad-space and

@@ -334,8 +334,18 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 cert = (self.ssl_certfile, self.ssl_keyfile)
             else:
                 cert = (self.ssl_certfile,)
+        # ``endpoint`` is a pydantic ``HttpUrl``, which normalises a host-only
+        # URL (e.g. ``https://nomad:4646``) by appending a trailing slash.
+        # python-nomad joins paths as ``f"{address}/v1/..."``, so the slash
+        # produces a double slash (``//v1/nodes``). Nomad's HTTP mux answers a
+        # double-slash path with a 307 redirect whose body is HTML, and
+        # python-nomad does not follow redirects, so ``.json()`` then fails with
+        # "Expecting value: line 1 column 1 (char 0)". (requests <= 2.33 happened
+        # to collapse the duplicate slash; 2.34 no longer does, which is why this
+        # only began surfacing in v0.13.) Strip the trailing slash so the request
+        # path is always single-slashed.
         return Nomad(
-            address=self.endpoint,
+            address=str(self.endpoint).rstrip("/"),
             secure=self.secure,
             timeout=self.timeout,
             verify=(self.secure and self.verify_ssl and self.ssl_cafile)
