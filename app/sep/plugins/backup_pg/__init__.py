@@ -13,4 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+from app.sep.plugins.backup_pg.api_routes import router as api_router
 from app.sep.plugins.backup_pg.routes import router
+
+__all__ = ["api_router", "router"]
