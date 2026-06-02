@@ -1182,25 +1182,26 @@ def run_binlog_process(server_data, lock_file, command_queue):
                         enable_backup = BaseBackup(server_data, "B")
                         enable_backup.textfile_collector_write_enable(alias, True, "upload")
                         LOGGER.info("Binlog upload starting ...")
+                        upload_log_level = LOGGER.getEffectiveLevel()
                         for upload_type in server_data.get("UPLOAD"):
                             if upload_type == "rsync":
                                 LOGGER.info("Binlog upload rsync ...")
                                 BinaryLogUpload(upload_type=upload_type,
                                                 upload_provider=RsyncUploadProvider,
                                                 settings=server_data,
-                                                logger=LOGGER).run()
+                                                level=upload_log_level).run()
                             elif upload_type == "s3":
                                 LOGGER.info("Binlog upload s3 ...")
                                 BinaryLogUpload(upload_type=upload_type,
                                                 upload_provider=S3UploadProvider,
                                                 settings=server_data,
-                                                logger=LOGGER).run()
+                                                level=upload_log_level).run()
                             elif upload_type == "gsutil":
                                 LOGGER.info("Binlog upload gs ...")
                                 BinaryLogUpload(upload_type=upload_type,
                                                 upload_provider=GSUploadProvider,
                                                 settings=server_data,
-                                                logger=LOGGER).run()
+                                                level=upload_log_level).run()
                             else:
                                 LOGGER.warning("Unsupported upload type: %r", upload_type)
                     last_upload_time = time.time()
@@ -1817,7 +1818,7 @@ class BinaryLogUpload(Upload):
 
 class S3UploadProvider:
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.s3_bucket = settings.get("S3_BUCKET")
@@ -1837,7 +1838,7 @@ class S3UploadProvider:
             / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
-        self.logger = upload_logging_setup(self.logging_dir, log_file.name, self.alias, logger.level)
+        self.logger = upload_logging_setup(self.logging_dir, log_file.name, self.alias, level)
 
         bucket_str = self.s3_bucket
         if bucket_str.startswith("s3://"):
@@ -1928,7 +1929,7 @@ class S3UploadProvider:
 
 class RsyncUploadProvider:
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.rsync_dir = settings.get("RSYNC_PATH")
@@ -1943,7 +1944,7 @@ class RsyncUploadProvider:
         )
         log_file = Path(logging_dir) / log_name
         self.log_stream = log_file.open("a")
-        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, logger.level)
+        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, level)
 
     def upload(self, source_dir: str, dest_dir: str) -> str:
         if not Path(RSYNC_BIN).exists():
@@ -1984,11 +1985,11 @@ class RsyncUploadProvider:
 class GSUploadProvider:
     """Google Cloud Storage upload."""
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
         """Initialize GSUploadProvider.
 
         :param settings: Backup/server settings.
-        :param logger: Logger instance.
+        :param level: Logging level.
         :raises BackupError: If GS_BUCKET not set.
         """
         host = settings.get("HOST", "localhost")
@@ -2006,7 +2007,7 @@ class GSUploadProvider:
         )
         log_file = os.path.join(logging_dir, log_name)
         self.log_stream = open(log_file, 'a')
-        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, logger.level)
+        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, level)
 
         bucket_str = self.gs_bucket
         if bucket_str.startswith("gs://"):
