@@ -212,8 +212,12 @@ ifndef TAG
 endif
 	@set -euo pipefail; \
 	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
-		echo "==> Triggering Jenkins release build for $(TAG)..."; \
-		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
+		case "$(TAG)" in \
+			v*) jenkins_job="Release" ;; \
+			*) jenkins_job="Build" ;; \
+		esac; \
+		echo "==> Triggering Jenkins $${jenkins_job} build for $(TAG)..."; \
+		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
 			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
 			--data-urlencode "releaseTag=$(TAG)" \
 			--data-urlencode "notifySlack=true" \
