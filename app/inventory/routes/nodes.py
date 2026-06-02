@@ -21,8 +21,7 @@ from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.exceptions import HTTPBadRequestException
-from app.core.models import PaginatedResponse
-from app.core.pagination import PaginationDep
+from app.core.pagination import PaginatedResponse, PaginationDep
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.crud import NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
