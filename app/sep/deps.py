@@ -40,6 +40,7 @@ from app.core.exceptions import (
     HTTPRedirectException,
 )
 from app.core.log import set_log_context
+from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
@@ -787,8 +788,10 @@ async def get_executor_hosts_context(
     :rtype: ExecutorHostsContext
     """
     try:
-        response = await inventory_api.get("/", params={"limit": 0})
-        display_names = {node["address"]: node["name"] for node in response["items"]}
+        nodes = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get("/", params=pagination.as_params())
+        )
+        display_names = {node["address"]: node["name"] for node in nodes}
     except (HTTPException, TypeError, KeyError, OSError):
         logger.warning(
             "Failed to fetch inventory nodes for display names", exc_info=True
@@ -864,10 +867,12 @@ async def get_tasks_context(
         if owner in {TaskOwner.BACKUP_PG}
         else ServiceTypeEnum.MYSQL
     )
-    response = await inventory_api.get(
-        "/services/", params={"service_type": service_type, "limit": 0}
+    services = await fetch_all_dict_items(
+        lambda pagination: inventory_api.get(
+            "/services/",
+            params={"service_type": service_type, **pagination.as_params()},
+        )
     )
-    services = response["items"]
 
     tasks = []
     history_tasks = []

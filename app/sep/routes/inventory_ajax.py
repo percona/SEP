@@ -25,6 +25,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.core.pagination import fetch_all_dict_items
 from app.sep.deps import InventoryAPI, IsAuthenticated
 from app.sep.utils.decorators import csrf_exempt
 
@@ -42,16 +43,19 @@ async def list_schemas(
     search: str | None = None,
 ) -> JSONResponse:
     """Return schemas for a service as JSON for AJAX dropdowns."""
-    params = {"limit": 0}
-    if search:
-        params["search"] = search
     try:
-        schemas = await inventory_api.get(
-            f"/services/{service_id}/schemas/", params=params
+        items = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                f"/services/{service_id}/schemas/",
+                params={
+                    **pagination.as_params(),
+                    **({"search": search} if search else {}),
+                },
+            )
         )
     except HTTPException:
         return JSONResponse([])
-    return JSONResponse([{"id": s["id"], "name": s["name"]} for s in schemas["items"]])
+    return JSONResponse([{"id": s["id"], "name": s["name"]} for s in items])
 
 
 @router.get("/schemas/{schema_id}/tables", dependencies=[IsAuthenticated])
@@ -63,11 +67,16 @@ async def list_tables(
     search: str | None = None,
 ) -> JSONResponse:
     """Return tables for a schema as JSON for AJAX dropdowns."""
-    params = {"limit": 0}
-    if search:
-        params["search"] = search
     try:
-        tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
+        items = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                f"/schemas/{schema_id}/tables/",
+                params={
+                    **pagination.as_params(),
+                    **({"search": search} if search else {}),
+                },
+            )
+        )
     except HTTPException:
         return JSONResponse([])
-    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in tables["items"]])
+    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in items])
