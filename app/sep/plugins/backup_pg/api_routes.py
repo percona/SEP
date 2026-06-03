@@ -26,16 +26,11 @@ mutations are rejected with 401 before reaching route logic).
 import logging
 from datetime import datetime, UTC
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from fastapi import status as http_status
 
-from app.core.db.crud import (
-    DEFAULT_PAGINATION_LIMIT,
-    DEFAULT_PAGINATION_OFFSET,
-    MAX_PAGINATION_LIMIT,
-)
 from app.core.exceptions import HTTPInternalServerErrorException
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse, PaginationDep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -70,9 +65,8 @@ schema_endpoint(router=router, plugin_schema=backup_pg_schema)
 @router.get("/", response_model=PaginatedResponse[BackupTaskResponse])
 async def backup_pg_api_list(
     tasks_api: TaskAPI,
+    pagination: PaginationDep,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=1, le=MAX_PAGINATION_LIMIT),
 ) -> PaginatedResponse[BackupTaskResponse]:
     """List pgBackRest backup tasks.
 
@@ -81,7 +75,9 @@ async def backup_pg_api_list(
     unbounded ``limit`` would amplify fan-out to the Tasks API.
     """
     return await get_backup_pg_api_task_responses(
-        tasks_api, status=status, offset=offset, limit=limit
+        tasks_api,
+        pagination=pagination,
+        status=status,
     )
 
 

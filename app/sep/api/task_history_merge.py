@@ -22,7 +22,6 @@ from datetime import datetime
 from typing import Any
 
 from app.core.pagination import (
-    DEFAULT_PAGINATION_LIMIT,
     DEFAULT_PAGINATION_OFFSET,
     PaginatedResponse,
     Pagination,
@@ -62,32 +61,29 @@ def _history_sort_key(entry: dict[str, Any]) -> float | int:
         return entry.get("id") or 0
 
 
-def _upstream_history_fetch_limit(offset: int, limit: int) -> int:
+def _upstream_history_fetch_limit(pagination: Pagination) -> int:
     """Return per-task upstream ``limit`` for a merged page window."""
-    return offset + limit
+    return pagination.offset + pagination.limit
 
 
 def merge_task_history_pages(
     pages: list[dict[str, Any]],
     *,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
+    pagination: Pagination,
 ) -> dict[str, Any]:
     """Merge upstream paginated history responses newest-first.
 
     Upstream callers should fetch each task from ``offset=0`` with a window
     large enough to cover the merged page (see
-    :func:`_upstream_history_fetch_limit`), then pass the client ``offset`` and
-    ``limit`` here so rows are sorted globally and sliced
-    ``[offset : offset + limit]``. ``total`` is the sum of upstream totals;
+    :func:`_upstream_history_fetch_limit`), then pass the client pagination
+    here so rows are sorted globally and sliced via
+    :meth:`Pagination.slice`. ``total`` is the sum of upstream totals;
     envelope ``offset`` / ``limit`` echo the client request.
 
     :param pages: Raw paginated payloads from ``GET /{task}/history/``.
     :type pages: list[dict[str, Any]]
-    :param offset: Zero-based offset into the merged, sorted result.
-    :type offset: int
-    :param limit: Page size applied after the global offset.
-    :type limit: int
+    :param pagination: Validated offset/limit window for the merged page.
+    :type pagination: Pagination
     :return: A paginated-response-shaped dict ready for validation.
     :rtype: dict[str, Any]
     """
@@ -96,13 +92,12 @@ def merge_task_history_pages(
         key=_history_sort_key,
         reverse=True,
     )
-    items = items[offset : offset + limit]
     total = sum(page.get("total", 0) for page in pages)
     return {
-        "items": items,
+        "items": pagination.slice(items),
         "total": total,
-        "offset": offset,
-        "limit": limit,
+        "offset": pagination.offset,
+        "limit": pagination.limit,
     }
 
 
@@ -129,23 +124,16 @@ async def fetch_merged_task_history(
     unique_names = normalize_task_history_names(task_names)
     params: dict[str, Any] = {
         "offset": DEFAULT_PAGINATION_OFFSET,
-        "limit": _upstream_history_fetch_limit(pagination.offset, pagination.limit),
+        "limit": _upstream_history_fetch_limit(pagination),
     }
     if status is not None:
         params["status"] = status.value
     pages = await asyncio.gather(
         *(tasks_api.get(f"/{name}/history/", params=params) for name in unique_names)
     )
-    merged = merge_task_history_pages(
-        pages, offset=pagination.offset, limit=pagination.limit
-    )
-    return PaginatedResponse[TaskHistoryResponse].model_validate(
-        {
-            "items": [
-                TaskHistoryResponse.model_validate(item) for item in merged["items"]
-            ],
-            "total": merged["total"],
-            "offset": merged["offset"],
-            "limit": merged["limit"],
-        }
+    merged = merge_task_history_pages(pages, pagination=pagination)
+    return PaginatedResponse.from_pagination(
+        [TaskHistoryResponse.model_validate(item) for item in merged["items"]],
+        merged["total"],
+        pagination,
     )

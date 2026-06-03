@@ -15,7 +15,11 @@
 
 """Tests for merged task-history helpers."""
 
-from app.core.pagination import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.core.pagination import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    Pagination,
+)
 from app.sep.api.task_history_merge import merge_task_history_pages
 
 TWO_MERGED_HISTORY_ROWS = 2
@@ -56,7 +60,7 @@ class TestMergeTaskHistoryPages:
                 "limit": 50,
             },
         ]
-        merged = merge_task_history_pages(pages)
+        merged = merge_task_history_pages(pages, pagination=Pagination())
         assert [item["id"] for item in merged["items"]] == [2, 1]
         assert merged["total"] == TWO_MERGED_HISTORY_ROWS
         assert merged["offset"] == DEFAULT_PAGINATION_OFFSET
@@ -78,11 +82,11 @@ class TestMergeTaskHistoryPages:
                 "limit": PROPAGATED_TEST_LIMIT,
             },
         ]
-        merged = merge_task_history_pages(
-            pages,
+        pagination = Pagination(
             offset=PROPAGATED_TEST_OFFSET,
             limit=PROPAGATED_TEST_LIMIT,
         )
+        merged = merge_task_history_pages(pages, pagination=pagination)
         assert merged["offset"] == PROPAGATED_TEST_OFFSET
         assert merged["limit"] == PROPAGATED_TEST_LIMIT
 
@@ -108,7 +112,10 @@ class TestMergeTaskHistoryPages:
                 "limit": MERGED_PAGE_TEST_LIMIT,
             },
         ]
-        merged = merge_task_history_pages(pages, limit=MERGED_PAGE_TEST_LIMIT)
+        merged = merge_task_history_pages(
+            pages,
+            pagination=Pagination(limit=MERGED_PAGE_TEST_LIMIT),
+        )
         assert [item["id"] for item in merged["items"]] == [4, 2]
         assert len(merged["items"]) == MERGED_PAGE_TEST_LIMIT
 
@@ -134,7 +141,10 @@ class TestMergeTaskHistoryPages:
                 "limit": 60,
             },
         ]
-        merged = merge_task_history_pages(pages, offset=2, limit=2)
+        merged = merge_task_history_pages(
+            pages,
+            pagination=Pagination(offset=2, limit=2),
+        )
         assert [item["id"] for item in merged["items"]] == [3, 1]
 
     def test_sums_upstream_totals(self) -> None:
@@ -143,5 +153,5 @@ class TestMergeTaskHistoryPages:
             {"items": [], "total": 3, "offset": 0, "limit": 50},
             {"items": [], "total": 5, "offset": 0, "limit": 50},
         ]
-        merged = merge_task_history_pages(pages)
+        merged = merge_task_history_pages(pages, pagination=Pagination())
         assert merged["total"] == SUMMED_UPSTREAM_TOTAL
