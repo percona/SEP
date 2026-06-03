@@ -73,9 +73,8 @@ async def backup_mongo_api_list(
     """List parent PBM backup config tasks."""
     return await get_backup_mongo_api_task_responses(
         tasks_api,
+        pagination=pagination,
         status=status,
-        offset=pagination.offset,
-        limit=pagination.limit,
     )
 
 

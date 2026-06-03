@@ -24,7 +24,7 @@ import yaml
 from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
-from app.core.pagination import PaginatedResponse
+from app.core.pagination import PaginatedResponse, Pagination
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -355,9 +355,9 @@ _STATUS_FETCH_CONCURRENCY = 10
 
 async def get_mysql_backups_api_task_responses(
     tasks_api: TaskAPI,
+    *,
+    pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = 0,
-    limit: int = 50,
 ) -> PaginatedResponse[BackupResponse]:
     """Retrieve a paginated page of backup task responses for the JSON API.
 
@@ -375,21 +375,17 @@ async def get_mysql_backups_api_task_responses(
 
     :param tasks_api: The Tasks API client.
     :type tasks_api: TaskAPI
+    :param pagination: Validated offset/limit window for this page.
+    :type pagination: Pagination
     :param status: Optional latest-history status filter (client-side).
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based start offset for the underlying Tasks listing.
-    :type offset: int
-    :param limit: Maximum rows to fetch from the Tasks API for this page.
-    :type limit: int
     :return: Paginated backup task responses matching the filter.
     :rtype: PaginatedResponse[BackupResponse]
     """
-    params = {
-        "owner": TaskOwner.BACKUPS.value,
-        "offset": offset,
-        "limit": limit,
-    }
-    response = await tasks_api.get("/", params=params)
+    response = await tasks_api.get(
+        "/",
+        params={"owner": TaskOwner.BACKUPS.value, **pagination.as_params()},
+    )
     tasks = [Task.model_validate(task) for task in response["items"]]
     sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
 
@@ -398,18 +394,15 @@ async def get_mysql_backups_api_task_responses(
             return await get_backups_task_status(task.name, tasks_api)
 
     task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
-    items = [
+    responses = [
         build_mysql_backups_api_task_response(task, status=task_status)
         for task, task_status in zip(tasks, task_statuses, strict=True)
         if status is None or task_status == status
     ]
-    total = len(items) if status is not None else response.get("total", len(items))
-    return PaginatedResponse(
-        items=items,
-        total=total,
-        offset=offset,
-        limit=limit,
+    total = (
+        len(responses) if status is not None else response.get("total", len(responses))
     )
+    return PaginatedResponse.from_pagination(responses, total, pagination)
 
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:

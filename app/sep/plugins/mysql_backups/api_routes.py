@@ -76,9 +76,8 @@ async def mysql_backups_api_list(
     """
     return await get_mysql_backups_api_task_responses(
         tasks_api,
+        pagination=pagination,
         status=status,
-        offset=pagination.offset,
-        limit=pagination.limit,
     )
 
 
