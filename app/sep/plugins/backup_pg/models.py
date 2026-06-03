@@ -82,6 +82,7 @@ class BackupCreate(BackupConfigAll):
     hostname: NonEmptyStr
     service_id: int
     backup_type: BackupType
+    stanza: NonEmptyStr
     alert_on_fail: bool = False
 
 
@@ -130,6 +131,10 @@ class BackupTaskWrite(BaseModel):
     :type pgbackrest_retention_archive: int | None
     :param pgbackrest_incremental_cycle: Cadence value for the INCR/FULL cycle.
     :type pgbackrest_incremental_cycle: int | str | None
+    :param stanza: The pgBackRest stanza name as configured in pgbackrest.conf on
+        the host.  Must match an existing stanza — this value is passed verbatim
+        as ``--stanza`` to every ``pgbackrest`` invocation.
+    :type stanza: NonEmptyStr
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -137,6 +142,7 @@ class BackupTaskWrite(BaseModel):
     task_name: NonEmptyStr
     hostname: NonEmptyStr
     service_id: int
+    stanza: NonEmptyStr
     alert_on_fail: bool = False
     logging_dir: str | None = None
     backup_dir: NonEmptyStr

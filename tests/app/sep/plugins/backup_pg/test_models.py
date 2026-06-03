@@ -44,6 +44,7 @@ def test_backup_task_write_accepts_minimal_payload() -> None:
         hostname="pg-host",
         service_id=1,
         backup_dir=SAMPLE_BACKUP_DIR,
+        stanza="sep-test",
     )
 
     assert body.task_name == "pg-task"
@@ -114,6 +115,7 @@ def test_backup_task_write_accepts_pgbackrest_backup_type() -> None:
         hostname="pg-host",
         service_id=1,
         backup_dir=SAMPLE_BACKUP_DIR,
+        stanza="sep-test",
         pgbackrest_backup_type=PgBackRestBackupType.DIFF,
     )
 
