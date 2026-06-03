@@ -827,7 +827,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             const hasDestFile = dstFileInput.value.trim() !== '';
             const hasDestTable = useManualInputDest
                 ? (destTableNameInput.value.trim() !== '')
-                : (destTableSelect.value !== '');
+                : (destTableSelect.value !== '' && destTableSelect.value !== '-1');
 
             if (hasDestFile) {
                 if (destManualInputContainer) destManualInputContainer.style.display = 'none';
@@ -1009,7 +1009,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
         const hasDestTable = useManualInputDest
             ? (destTableNameInput.value.trim() !== '')
-            : (destTableSelect.value !== '');
+            : (destTableSelect.value !== '' && destTableSelect.value !== '-1');
 
         if (hasDestTable) {
             dstFileContainer.classList.add('hidden');
@@ -1094,9 +1094,12 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             connectToSelect.value,
             schemaSelect.value,
             sourceTableSelect.value,
-            destTableSelect.value
         ];
-
+        // dest table at '-1' is only invalid when it's the active
+        // destination (enabled); a file/manual destination disables it
+        if (!destTableSelect.disabled) {
+            selectElementValues.push(destTableSelect.value);
+        }
         const hasInvalidValue = selectElementValues.includes("-1");
         editButton.disabled = !form.checkValidity() || hasInvalidValue;
     }
