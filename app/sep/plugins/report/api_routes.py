@@ -16,8 +16,9 @@
 """Define the JSON API router for the report plugin.
 
 Mounted at ``/api/plugins/report/`` via ``plugins_router`` in
-``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level and redeclared per route for safety. Route layout:
+``app/sep/api/router.py``. ``api_router`` applies session/Bearer auth;
+``plugins_router`` applies ``RequireBearerForUnsafeMethods`` on POST/PUT/PATCH/DELETE.
+Route layout:
 
 * ``GET  /config``          — return upload configuration status
 * ``GET  /generate/json``   — generate report and return as JSON
@@ -41,6 +42,22 @@ from app.sep.plugins.report.service import (
 )
 
 router = APIRouter()
+
+
+def _filter_sections(sections: list[str] | None) -> list[str] | None:
+    """Return only section names that exist in ``REPORT_SECTIONS``.
+
+    :param sections: Optional list of requested section names.
+    :type sections: list[str] | None
+    :return: Filtered list, ``None`` when no sections were requested, or when
+        every requested name was invalid (falls back to all sections in
+        :func:`generate_report`).
+    :rtype: list[str] | None
+    """
+    if sections:
+        filtered = [s for s in sections if s in REPORT_SECTIONS]
+        return filtered or None
+    return sections
 
 
 @router.get("/config", dependencies=[IsApiAuthenticated])
@@ -84,10 +101,13 @@ async def report_generate_json_api(
     :return: JSON response with the full report data.
     :rtype: JSONResponse
     """
-    if sections:
-        sections = [s for s in sections if s in REPORT_SECTIONS]
     report = await generate_report(
-        pmm_api, since=since, until=until, full=full, refresh=refresh, sections=sections
+        pmm_api,
+        since=since,
+        until=until,
+        full=full,
+        refresh=refresh,
+        sections=_filter_sections(sections),
     )
     return JSONResponse(content=report.model_dump(mode="json"))
 
