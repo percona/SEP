@@ -408,15 +408,32 @@ archives_schema = PluginSchema(
             error_fields=["source_table_id", "dest_table_id"],
             message="Source and Destination tables cannot be the same.",
         ),
-        # Validator 1b: same table names (truthy guards handle empty-string case;
-        # rstrip() semantics are NOT replicated — whitespace-only names are treated
-        # as present by the DSL evaluator, which is stricter than the legacy validator).
+        # Validator 1b: same destination identity (host + schema + table name).
+        # SEP-1305 / SEP-1303: a destination table that merely shares the source
+        # table's *name* is a self-archive only when it also resolves to the same
+        # host AND the same schema. An empty destination host/schema defaults to
+        # the source at execution time (deps._resolve_destination_host_and_db plus
+        # the payload script's dst→src fallback), so "no explicit dest host/schema"
+        # means "same host/schema". A populated dest_service_id / dest_host /
+        # dest_db_id / dest_db_name that differs is a distinct table. Whitespace-only
+        # manual values are treated as present (NOT stripped) by the DSL — the same
+        # stricter-than-legacy caveat as the original name-only check.
         FailRule(
             fail_when=all_(
                 truthy("source_db_name"),
                 truthy("source_table_name"),
                 truthy("dest_table_name"),
                 F("source_table_name") == F("dest_table_name"),
+                # Destination host resolves to the source host.
+                any_(
+                    all_(absent("dest_service_id"), falsy("dest_host")),
+                    F("dest_service_id") == F("service_id"),
+                ),
+                # Destination schema resolves to the source schema.
+                any_(
+                    all_(absent("dest_db_id"), falsy("dest_db_name")),
+                    F("dest_db_name") == F("source_db_name"),
+                ),
             ),
             error_fields=["source_table_name", "dest_table_name"],
             message="Source and Destination tables cannot be the same.",
