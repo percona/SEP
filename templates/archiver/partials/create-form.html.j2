@@ -446,16 +446,16 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                        max="65535" />
                             </label>
                         </div>
-                        <div class="field">
-                            <label for="dest_db_name" title="Destination database schema name.">
-                                Destination Schema
-                                <input type="text"
-                                       id="dest_db_name"
-                                       name="dest_db_name"
-                                       class="validate"
-                                       placeholder="schema_name" />
-                            </label>
-                        </div>
+                    </div>
+                    <div class="field" id="dest_schema_name_field" style="display: none;">
+                        <label for="dest_db_name" title="Destination database schema name.">
+                            Destination Schema
+                            <input type="text"
+                                   id="dest_db_name"
+                                   name="dest_db_name"
+                                   class="validate"
+                                   placeholder="schema_name" />
+                        </label>
                     </div>
                     <div class="field" id="dest_manual_input_container">
                         <label for="use_manual_input_dest"
@@ -564,6 +564,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const destHostInput = document.getElementById('dest_host');
     const destPortInput = document.getElementById('dest_port');
     const destDbNameInput = document.getElementById('dest_db_name');
+    const destSchemaNameField = document.getElementById('dest_schema_name_field');
     const destEls = {
         toggle: destManualInputToggle,
         serviceFieldsContainer: destServiceFieldsContainer,
@@ -721,19 +722,49 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         updateDestinationFieldset();
     }
 
-    destServiceSelect.addEventListener('change', function() {
-        populateDestSchemas(destServiceSelect, destDbSelect);
-        if (!this.value) {
-            destManualHostContainer.style.display = 'none';
-            setManualInputDestHost(false, true, destEls);
+    function setDestSchemaMode(useManualSchema) {
+        // dest_db_id (inventory) and dest_db_name (manual) are mutually
+        // exclusive; disabled controls aren't submitted, so disable the inactive one.
+        destSchemaNameField.style.display = useManualSchema ? 'block' : 'none';
+        destDbNameInput.disabled = !useManualSchema;
+        if (useManualSchema) {
+            destDbSelect.disabled = true;
         } else {
-            destManualHostContainer.style.display = 'block';
+            destDbSelect.disabled = destDbSelect.options.length <= 1;
         }
+    }
+
+    function applyDestHostMode() {
+        if (!destServiceSelect.value) {
+            // "Same as source / no remote destination": no remote host, but a
+            // manual destination schema on the same host is allowed (SEP-1302).
+            destManualHostContainer.style.display = 'none';
+            destManualInputToggle.checked = false;
+            destServiceFieldsContainer.style.display = 'none';
+            destManualInputFields.style.display = 'none';
+            destHostInput.disabled = true;
+            destHostInput.value = '';
+            destPortInput.disabled = true;
+            destPortInput.value = '';
+            setDestSchemaMode(true);
+        } else {
+            // Remote destination host selected: existing inventory/manual-host
+            // behavior; manual schema shown only in manual-host mode.
+            destManualHostContainer.style.display = 'block';
+            setManualInputDestHost(destManualInputToggle.checked, false, destEls);
+            setDestSchemaMode(destManualInputToggle.checked);
+        }
+    }
+
+    destServiceSelect.addEventListener('change', async function() {
+        await populateDestSchemas(destServiceSelect, destDbSelect);
+        applyDestHostMode();
     });
 
     if (destManualInputToggle) {
         destManualInputToggle.addEventListener('change', function() {
             setManualInputDestHost(this.checked, false, destEls);
+            setDestSchemaMode(this.checked);
         });
     }
 
@@ -1145,6 +1176,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
         updateCreateButtonState();
         updateDestinationFieldset();
+        applyDestHostMode();
         toggleSchemaAndTable();
         toggleSourceQueryInput();
         toggleDstFileContainer();

@@ -466,17 +466,17 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                        max="65535" />
                             </label>
                         </div>
-                        <div class="field">
-                            <label for="dest_db_name" title="Destination database schema name.">
-                                Destination Schema
-                                <input type="text"
-                                       id="dest_db_name"
-                                       name="dest_db_name"
-                                       class="validate"
-                                       value="{{ task.dest_db | default('', true) }}"
-                                       placeholder="schema_name" />
-                            </label>
-                        </div>
+                    </div>
+                    <div class="field" id="dest_schema_name_field" style="display: none;">
+                        <label for="dest_db_name" title="Destination database schema name.">
+                            Destination Schema
+                            <input type="text"
+                                   id="dest_db_name"
+                                   name="dest_db_name"
+                                   class="validate"
+                                   value="{{ task.dest_db | default('', true) }}"
+                                   placeholder="schema_name" />
+                        </label>
                     </div>
                     <div class="field" id="dest_manual_input_container">
                         <label for="use_manual_input_dest"
@@ -599,6 +599,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const destHostInput = document.getElementById('dest_host');
     const destPortInput = document.getElementById('dest_port');
     const destDbNameInput = document.getElementById('dest_db_name');
+    const destSchemaNameField = document.getElementById('dest_schema_name_field');
     const destEls = {
         toggle: destManualInputToggle,
         serviceFieldsContainer: destServiceFieldsContainer,
@@ -1213,7 +1214,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
       }
 
     async function initDest() {
-        if (source_data.dest_host || source_data.dest_db) {
+        // Same-as-source task with a manual destination schema on the same host:
+        // dest_db is set but no dest_host was persisted (SEP-1302).
+        if (source_data.dest_db && !source_data.dest_host) {
+            destServiceSelect.value = '';
+            applyDestHostMode();
+            destDbNameInput.value = source_data.dest_db;
+            return;
+        }
+        if (source_data.dest_host) {
             var services = await fetchServices('MYSQL');
             var found = false;
 
@@ -1248,29 +1257,64 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                     unknownLabel: 'Unknown schema: ' + source_data.dest_db,
                     schemas: schemas
                 });
+                setDestSchemaMode(false);
             } else {
                 destManualHostContainer.style.display = 'block';
                 setManualInputDestHost(true, true, destEls);
+                setDestSchemaMode(true);
                 if (source_data.dest_host) destHostInput.value = source_data.dest_host;
                 if (source_data.dest_port) destPortInput.value = source_data.dest_port;
                 if (source_data.dest_db) destDbNameInput.value = source_data.dest_db;
             }
+            return;
+        }
+        // No destination persisted → same-as-source default (empty schema input).
+        applyDestHostMode();
+    }
+
+    function setDestSchemaMode(useManualSchema) {
+        // dest_db_id (inventory) and dest_db_name (manual) are mutually
+        // exclusive; disabled controls aren't submitted, so disable the inactive one.
+        destSchemaNameField.style.display = useManualSchema ? 'block' : 'none';
+        destDbNameInput.disabled = !useManualSchema;
+        if (useManualSchema) {
+            destDbSelect.disabled = true;
+        } else {
+            destDbSelect.disabled = destDbSelect.options.length <= 1;
         }
     }
 
-    destServiceSelect.addEventListener('change', function() {
-        populateDestSchemas(destServiceSelect, destDbSelect, {matched: matched, unknownLabel: 'Unknown schema: ' + source_data.dest_db});
-        if (!this.value) {
+    function applyDestHostMode() {
+        if (!destServiceSelect.value) {
+            // "Same as source / no remote destination": no remote host, but a
+            // manual destination schema on the same host is allowed (SEP-1302).
             destManualHostContainer.style.display = 'none';
-            setManualInputDestHost(false, true, destEls);
+            destManualInputToggle.checked = false;
+            destServiceFieldsContainer.style.display = 'none';
+            destManualInputFields.style.display = 'none';
+            destHostInput.disabled = true;
+            destHostInput.value = '';
+            destPortInput.disabled = true;
+            destPortInput.value = '';
+            setDestSchemaMode(true);
         } else {
+            // Remote destination host selected: existing inventory/manual-host
+            // behavior; manual schema shown only in manual-host mode.
             destManualHostContainer.style.display = 'block';
+            setManualInputDestHost(destManualInputToggle.checked, false, destEls);
+            setDestSchemaMode(destManualInputToggle.checked);
         }
+    }
+
+    destServiceSelect.addEventListener('change', async function() {
+        await populateDestSchemas(destServiceSelect, destDbSelect, {matched: matched, unknownLabel: 'Unknown schema: ' + source_data.dest_db});
+        applyDestHostMode();
     });
 
     if (destManualInputToggle) {
         destManualInputToggle.addEventListener('change', function() {
             setManualInputDestHost(this.checked, false, destEls);
+            setDestSchemaMode(this.checked);
         });
     }
 
