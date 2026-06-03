@@ -1214,8 +1214,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
       }
 
     async function initDest() {
-        // Same-as-source task with a manual destination schema on the same host:
-        // dest_db is set but no dest_host was persisted (SEP-1302).
+        // Same-as-source task with a manual schema: dest_db set, dest_host empty.
         if (source_data.dest_db && !source_data.dest_host) {
             destServiceSelect.value = '';
             applyDestHostMode();
@@ -1268,7 +1267,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             }
             return;
         }
-        // No destination persisted → same-as-source default (empty schema input).
+        // No destination persisted: same-as-source default.
         applyDestHostMode();
     }
 
@@ -1286,8 +1285,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     function applyDestHostMode() {
         if (!destServiceSelect.value) {
-            // "Same as source / no remote destination": no remote host, but a
-            // manual destination schema on the same host is allowed (SEP-1302).
+            // Same as source: no remote host, but a manual schema is allowed.
             destManualHostContainer.style.display = 'none';
             destManualInputToggle.checked = false;
             destServiceFieldsContainer.style.display = 'none';
@@ -1298,8 +1296,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             destPortInput.value = '';
             setDestSchemaMode(true);
         } else {
-            // Remote destination host selected: existing inventory/manual-host
-            // behavior; manual schema shown only in manual-host mode.
+            // Remote host: manual schema is shown only in manual-host mode.
             destManualHostContainer.style.display = 'block';
             setManualInputDestHost(destManualInputToggle.checked, false, destEls);
             setDestSchemaMode(destManualInputToggle.checked);
@@ -1313,8 +1310,14 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     if (destManualInputToggle) {
         destManualInputToggle.addEventListener('change', function() {
-            setManualInputDestHost(this.checked, false, destEls);
-            setDestSchemaMode(this.checked);
+            if (this.checked) {
+                setManualInputDestHost(true, false, destEls);
+                setDestSchemaMode(true);
+            } else {
+                // Toggle-off clears the service, so reconcile the whole
+                // destination area; a stale inventory schema must not survive.
+                applyDestHostMode();
+            }
         });
     }
 
