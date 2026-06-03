@@ -129,6 +129,7 @@ _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
         "xtrabackup_replica_info",
         "xtrabackup_stop_replica",
         "xtrabackup_lock_ddl",
+        "xtrabackup_quiet",
     ),
     "B": (),
 }
