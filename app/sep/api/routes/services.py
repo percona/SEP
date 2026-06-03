@@ -24,6 +24,7 @@ from fastapi import APIRouter
 
 from app.core.pagination import PaginatedResponse, PaginationDep
 from app.inventory.models import ServiceResponse, ServiceTypeEnum
+from app.sep.api.models import InventorySelectorOption, proxy_inventory_selector
 from app.sep.deps import InventoryAPI
 
 router = APIRouter()
@@ -51,3 +52,32 @@ async def list_services(
         params["service_type"] = service_type.value
     response = await inventory_api.get("/services/", params=params)
     return PaginatedResponse[ServiceResponse].model_validate(response)
+
+
+@router.get("/{service_id}/schemas", response_model=list[InventorySelectorOption])
+async def list_service_schemas(
+    service_id: int,
+    inventory_api: InventoryAPI,
+    search: str | None = None,
+) -> list[InventorySelectorOption]:
+    """Return schemas for a service via the SEP gateway.
+
+    Proxies Inventory ``GET /services/{service_id}/schemas/`` for React
+    ``SchemaSelector`` components. Returns an empty list only when Inventory
+    responds with 404 (missing service); other HTTP errors propagate to the
+    global handler (matches legacy AJAX empty-selector UX for not-found only).
+
+    :param service_id: The inventory service ID whose schemas are listed.
+    :type service_id: int
+    :param inventory_api: The Inventory API client used to proxy the request.
+    :type inventory_api: InventoryAPI
+    :param search: Optional substring filter forwarded to inventory.
+    :type search: str | None
+    :return: Minimal id/name options for each schema on the service.
+    :rtype: list[InventorySelectorOption]
+    """
+    return await proxy_inventory_selector(
+        inventory_api,
+        f"/services/{service_id}/schemas/",
+        search,
+    )

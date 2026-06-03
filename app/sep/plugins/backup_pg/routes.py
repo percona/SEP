@@ -53,12 +53,20 @@ router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 
-@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.get(
+    "/",
+    dependencies=[IsAuthenticated],
+    response_class=HTMLResponse,
+    deprecated=True,
+)
 async def pg_backups_index(
     request: Request,
     context: BackupsIndexContext,
 ) -> HTMLResponse:
-    """Homepage of PG backups plugin."""
+    """Render the PG backups plugin index page.
+
+    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+    """
     return templates.TemplateResponse(
         request=request,
         name="backup_pg/index.html.j2",
@@ -67,7 +75,10 @@ async def pg_backups_index(
 
 
 @router.post(
-    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
+    "/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    response_class=HTMLResponse,
+    deprecated=True,
 )
 async def pg_backups_create(
     request: Request,
@@ -76,7 +87,10 @@ async def pg_backups_create(
     *,
     check_connectivity: CheckConnectivityFlag,
 ) -> RedirectResponse:
-    """Create new backups task."""
+    """Create new backups task.
+
+    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+    """
     logger.debug("Create backups task: %s", task)
     await task_api.post(
         "/",
@@ -95,7 +109,12 @@ async def pg_backups_create(
     )  # TODO: Custom redirect class  # noqa: TD002, TD003
 
 
-@router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.get(
+    "/{task_name}",
+    dependencies=[IsAuthenticated],
+    response_class=HTMLResponse,
+    deprecated=True,
+)
 async def pg_backups_detail(
     task: BackupsTask,
     request: Request,
@@ -104,7 +123,10 @@ async def pg_backups_detail(
     tasks_api: TaskAPI,
     executor_hosts_ctx: ExecutorHostsCtx,
 ) -> HTMLResponse:
-    """Retrieve backups task."""
+    """Retrieve backups task.
+
+    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+    """
     data = task.data
     meta = data["meta"]
     decoded_entities = task.anonymized_entities
@@ -175,6 +197,7 @@ async def pg_backups_detail(
     "/{task_name}",
     dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
+    deprecated=True,
 )
 async def pg_backups_execute(
     request: Request,
@@ -184,7 +207,10 @@ async def pg_backups_execute(
     chain_task_names: Annotated[list[str] | None, Form()] = None,
     chain_on_failure: Annotated[bool | None, Form()] = None,
 ) -> RedirectResponse:
-    """Execute backups task."""
+    """Execute backups task.
+
+    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+    """
     await tasks_api.post(
         f"/execute/{task.name}",
         json={
@@ -201,12 +227,15 @@ async def pg_backups_execute(
     "/{task_name}/delete",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
+    deprecated=True,
 )
 async def pg_backups_delete(
     task: BackupsTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
     """Delete backups task.
+
+    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
 
     :param task: The PG backups task to delete, resolved by the
         ``BackupsTask`` dependency from the ``task_name`` path param.
