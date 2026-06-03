@@ -83,13 +83,12 @@ def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
     }
     if leg.service_name is not None:
         meta["_service_name"] = leg.service_name
-    data: dict[str, Any] = {
+    data = {
         "task": "run-python",
         "meta": meta,
         "payload": f"file://{Path(__file__).parent / leg.payload_name}",
+        **({"parent": leg.parent} if leg.parent is not None else {}),
     }
-    if leg.parent is not None:
-        data["parent"] = leg.parent
     return TaskWrite(
         name=leg.name,
         backend=TaskBackendEnum.PROXY,
@@ -348,6 +347,11 @@ def restore_create_from_write(body: RestoreTaskWrite) -> RestoreCreate:
 
     ``service_id`` int→str coercion is handled by :class:`RestoreCreate`'s
     ``mode="before"`` validator when the dumped JSON body is re-validated.
+
+    :param body: The JSON request body for restore task creation.
+    :type body: RestoreTaskWrite
+    :return: A :class:`RestoreCreate` instance for payload construction.
+    :rtype: RestoreCreate
     """
     return RestoreCreate.model_validate(
         body.model_dump(mode="json"),
@@ -359,7 +363,18 @@ def restore_update_form_from_write(
     body: RestoreTaskWrite,
     parent_task: Task,
 ) -> RestoreCreate:
-    """Convert update JSON body, pinning task identity from the path parent."""
+    """Convert a restore update JSON body, pinning identity from the parent config.
+
+    The path parent task owns ``task_name`` and ``backup_type``; the request
+    body may only update restore parameters.
+
+    :param body: The JSON request body for restore task update.
+    :type body: RestoreTaskWrite
+    :param parent_task: The parent restore config task from the URL path.
+    :type parent_task: Task
+    :return: A :class:`RestoreCreate` instance for payload construction.
+    :rtype: RestoreCreate
+    """
     return restore_create_from_write(body).model_copy(
         update={
             "task_name": parent_task.name,

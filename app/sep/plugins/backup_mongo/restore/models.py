@@ -188,7 +188,7 @@ class RestoreConfig(BaseCaseInsensitiveModel):
 
 
 class RestoreCreate(BaseCaseInsensitiveModel):
-    """Model for creating a restore task (HTML form and shared payload input).
+    """Represent a restore-task creation request (HTML form and shared payload input).
 
     Kept alongside :class:`RestoreTaskWrite` because FastAPI form binding needs
     ``service_id: NonEmptyStr | EmptyStrToNone`` (empty form field → ``None``) and
@@ -464,7 +464,12 @@ class RestoreLegPayloadModel(BaseModel):
         )
 
     def payload_script_name(self) -> str:
-        """Return the Nomad payload script file for this leg's backup type."""
+        """Return the Nomad payload script file for this leg's backup type.
+
+        :return: Payload script basename (without path) for ``run-python``.
+        :rtype: str
+        :raises ValueError: If ``backup_type`` is not logical or physical PBM.
+        """
         backup_type_to_payload = {
             BackupType.PBM_LOGICAL: "pbm_logical_restore_payload",
             BackupType.PBM_PHYSICAL: "pbm_physical_restore_payload",
@@ -542,7 +547,7 @@ class PbmForceResyncPayloadModel(BaseModel):
 
 
 class RestoreLegPayloadModels(NamedTuple):
-    """Typed per-leg payload models before :class:`TaskWrite` assembly."""
+    """Represent typed per-leg payload models before :class:`TaskWrite` assembly."""
 
     config: RestoreConfigPayloadModel
     restore: RestoreLegPayloadModel
