@@ -666,3 +666,59 @@ test.describe('MySQL Backups – unhappy paths', () => {
     expect(posts[0]).not.toHaveProperty('skip_s3_safety_check');
   });
 });
+
+// ── multi_choice POST body regression (SEP-1293) ──────────────────────────────
+//
+// Guards the full data flow: schema → render → user interaction → POST body.
+// If the `multi_choice` discriminator breaks again the control won't render,
+// the user can't select a value, required validation blocks submit, and these
+// tests fail at the explicit `posts[0].upload` assertion — making the root
+// cause obvious rather than surfacing as a "row not visible" timeout.
+
+test.describe('MySQL Backups — multi_choice POST body (SEP-1293 regression)', () => {
+  test.beforeEach(() => {
+    tasks.length = 0;
+  });
+
+  test('multi_choice: single selection reaches the POST body', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    await mockMysqlBackupsRoutes(page, { capturePosts: posts });
+    await openCreateFormAndFillRequired(page, 'mc-single');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByRole('row', { name: /mc-single/ })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(posts).toHaveLength(1);
+    expect(posts[0].upload).toEqual(['S3']);
+    expect(posts[0]).toHaveProperty('s3_bucket', 'my-bucket');
+  });
+
+  test('multi_choice: multiple selections all reach the POST body', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    await mockMysqlBackupsRoutes(page, { capturePosts: posts });
+    // openCreateFormAndFillRequired already selects S3; add Rsync on top.
+    await openCreateFormAndFillRequired(page, 'mc-multi');
+    await page.locator('#mui-component-select-upload').click();
+    await page.getByRole('option', { name: 'Rsync' }).click();
+    await page.keyboard.press('Escape');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByRole('row', { name: /mc-multi/ })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(posts).toHaveLength(1);
+    expect(posts[0].upload).toContain('S3');
+    expect(posts[0].upload).toContain('RSYNC');
+  });
+});
