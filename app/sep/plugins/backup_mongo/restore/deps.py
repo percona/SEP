@@ -24,7 +24,7 @@ import yaml
 from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
-from app.core.pagination import fetch_all_dict_items, PaginatedResponse
+from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -697,9 +697,9 @@ def build_restore_mongo_api_task_response(
 
 async def get_restore_mongo_api_task_responses(
     tasks_api: TaskAPI,
+    *,
+    pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = 0,
-    limit: int = 50,
 ) -> PaginatedResponse[RestoreTaskResponse]:
     """Retrieve a page of restore task responses for the JSON API.
 
@@ -710,19 +710,17 @@ async def get_restore_mongo_api_task_responses(
 
     :param tasks_api: The TaskAPI instance used to query restore tasks.
     :type tasks_api: TaskAPI
+    :param pagination: Validated offset/limit window for this page.
+    :type pagination: Pagination
     :param status: Optional latest-history status filter for the list.
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based starting offset for the page slice.
-    :type offset: int
-    :param limit: Maximum items returned for the page.
-    :type limit: int
     :return: The paginated restore task responses matching the requested filters.
     :rtype: PaginatedResponse[RestoreTaskResponse]
     """
     parents = await _fetch_restore_parent_tasks(tasks_api)
 
     if status is None:
-        page_parents = parents[offset : offset + limit]
+        page_parents = pagination.slice(parents)
         status_map = await _fetch_latest_task_statuses_for_names(
             tasks_api,
             [task.name for task in page_parents],
@@ -734,12 +732,7 @@ async def get_restore_mongo_api_task_responses(
             )
             for task in page_parents
         ]
-        return PaginatedResponse[RestoreTaskResponse](
-            items=items,
-            total=len(parents),
-            offset=offset,
-            limit=limit,
-        )
+        return PaginatedResponse.from_pagination(items, len(parents), pagination)
 
     status_map = await _fetch_latest_task_statuses_for_names(
         tasks_api,
@@ -750,16 +743,15 @@ async def get_restore_mongo_api_task_responses(
         for task in parents
         if (task_status := status_map.get(task.name)) == status
     ]
-    page_pairs = task_status_pairs[offset : offset + limit]
+    page_pairs = pagination.slice(task_status_pairs)
     items = [
         build_restore_mongo_api_task_response(task, status=task_status)
         for task, task_status in page_pairs
     ]
-    return PaginatedResponse[RestoreTaskResponse](
-        items=items,
-        total=len(task_status_pairs),
-        offset=offset,
-        limit=limit,
+    return PaginatedResponse.from_pagination(
+        items,
+        len(task_status_pairs),
+        pagination,
     )
 
 

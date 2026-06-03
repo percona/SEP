@@ -27,6 +27,7 @@ from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPServiceUnavailableException,
 )
+from app.core.pagination import make_pagination_dep
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 from app.sep.deps import DefaultContext, SessionDep
 from app.sep.plugins.alerts.config import alerts_pmm_config
@@ -37,6 +38,9 @@ from app.sep.plugins.alerts.models import AlertBackup, AlertTemplate, ServiceTyp
 logger = logging.getLogger(__name__)
 
 PAGERDUTY_CONTACT_POINT_NAME = "SEP PagerDuty"
+
+BACKUPS_LIMIT_MAX = 100
+AlertsBackupsPaginationDep = make_pagination_dep(max_limit=BACKUPS_LIMIT_MAX)
 
 
 def find_pagerduty_contact_point(
