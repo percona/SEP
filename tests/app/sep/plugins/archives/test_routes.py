@@ -97,9 +97,8 @@ def _mock_get_archives_index_context_dep():
     sep_app.dependency_overrides[get_archives_index_context] = lambda: {
         "user": "default_user",
         "connectivity_check_default": True,
-        # SEP-1304: at least one executor host so the index renders the create
-        # form (gated by ``{% if executor_hosts|length >= 1 %}``), exercising the
-        # Destination File field markup guard below.
+        # An executor host is required for the index to render the create form,
+        # which exercises the dest_file markup guard asserted below.
         "executor_hosts": [{"value": "host1", "label": "host1"}],
         "services": [],
     }
@@ -116,10 +115,8 @@ def test_archives_index(
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert response.headers.get("deprecation") == "true"
-    # SEP-1304: regression guard that the Destination File field still renders in
-    # the create form. NOTE: this does NOT exercise the inline-JS gating fixed by
-    # this ticket -- ``name="dest_file"`` is always present in the server-rendered
-    # HTML; the JS only strips it at runtime. The fix is verified manually.
+    # Render guard only: name="dest_file" is always in the server HTML; the
+    # inline JS strips it at runtime, which this does not exercise.
     assert 'name="dest_file"' in response.text
 
 
@@ -367,8 +364,8 @@ def test_archives_detail(
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
     assert 'name="disable_bulk_insert"' in response.text
-    # SEP-1304: render-regression guard only (see note in test_archives_index);
-    # does not exercise the inline-JS gating this ticket fixes.
+    # Render guard only (see test_archives_index); does not exercise the
+    # inline-JS gating.
     assert 'name="dest_file"' in response.text
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
