@@ -471,6 +471,11 @@ mysql_backups_schema = PluginSchema(
                     default=False,
                     forbidden=_upload_excludes(_UPLOAD_S3),
                 ),
+                BoolField(
+                    name="upload_quiet",
+                    label="Quiet upload logs",
+                    default=False,
+                ),
                 StringField(
                     name="awscli_s3_upload_extra_args",
                     label="AWS S3 upload extra args",
