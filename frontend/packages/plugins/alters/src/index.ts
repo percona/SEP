@@ -15,23 +15,5 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { SxProps, Theme } from '@mui/material/styles';
-
-/** Matches backend ``DetailHighlightLanguage`` plus frontend-only ``yaml``. */
-export type DetailSyntaxLanguage = 'sql' | 'json' | 'yaml' | 'bash';
-
-/** Shared layout for syntax blocks and matching Suspense fallbacks (no prism/sql deps). */
-export const detailSyntaxBlockSx: SxProps<Theme> = {
-  fontFamily: "'Roboto Mono', ui-monospace, monospace",
-  fontSize: '0.8125rem',
-  lineHeight: 1.6,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-  p: 2,
-  mt: 0.5,
-  borderRadius: 1,
-  bgcolor: 'action.hover',
-  border: 1,
-  borderColor: 'divider',
-  overflowX: 'auto',
-};
+export { AltersPlugin } from './AltersPlugin';
+export { altersRoute, PLUGIN_NAME, PLUGIN_BASE_PATH } from './routes';

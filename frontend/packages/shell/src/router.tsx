@@ -28,6 +28,9 @@ const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 // Schema-driven plugins — each is a single lazy import
+const AltersPlugin = lazy(() =>
+  import('@sep/plugin-alters').then((m) => ({ default: m.AltersPlugin })),
+);
 const ChecksumsPlugin = lazy(() =>
   import('@sep/plugin-checksums').then((m) => ({ default: m.ChecksumsPlugin })),
 );
@@ -94,7 +97,7 @@ export const router = createBrowserRouter([
           { path: 'dipper/*', element: <DipperPlugin /> },
           { path: 'alerts/templates', element: <PlaceholderPage /> },
           { path: 'alerts/troubleshooting/*', element: <AlertTroubleshootingPlugin /> },
-          { path: 'schema-change/alters', element: <PlaceholderPage /> },
+          { path: 'schema-change/alters/*', element: <AltersPlugin /> },
           // Checksums — schema-driven plugin (handles its own sub-routes)
           { path: 'plugins/checksums/*', element: <ChecksumsPlugin /> },
           { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
