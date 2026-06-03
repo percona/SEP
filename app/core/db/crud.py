@@ -99,6 +99,7 @@ def _delete_builder(*args: P.args) -> _QueryBuilder:
 _DEFAULT_SELECT_QUERY_BUILDER = _select_builder()
 DEFAULT_PAGINATION_OFFSET = 0
 DEFAULT_PAGINATION_LIMIT = 50
+MAX_PAGINATION_LIMIT = 50
 
 
 class BaseManager:
