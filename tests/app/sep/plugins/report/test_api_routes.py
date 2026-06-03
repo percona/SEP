@@ -19,7 +19,6 @@ Mounted at ``/api/plugins/report/`` via ``plugins_router`` in
 ``app/sep/api/router.py``.
 """
 
-from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -32,23 +31,10 @@ from app.sep.plugins.report.deps import (
     require_pmm_api,
     require_upload_configured,
 )
-from app.sep.plugins.report.models import ReportData, ReportMetadata
+from tests.app.sep.plugins.report.conftest import make_report
 
 API_BASE = "/api/plugins/report"
-
-
-def _make_report(**overrides) -> ReportData:
-    """Build a minimal ``ReportData`` with sensible defaults."""
-    defaults = {
-        "metadata": ReportMetadata(
-            title="Weekly Health Report",
-            generated_at=datetime(2026, 3, 31, 12, 0, 0, tzinfo=UTC),
-            report_week="2026 - Week 14",
-            report_interval="now-7d to now",
-        ),
-    }
-    defaults.update(overrides)
-    return ReportData(**defaults)
+_API = "app.sep.plugins.report.api_routes"
 
 
 @pytest.fixture
@@ -89,9 +75,9 @@ class TestReportGenerateJsonApi:
     def test_returns_200_with_json(self, test_client, mock_pmm_api):
         """Assert the JSON endpoint returns 200 with application/json."""
         with patch(
-            "app.sep.plugins.report.api_routes.generate_report",
+            f"{_API}.generate_report",
             new_callable=AsyncMock,
-            return_value=_make_report(),
+            return_value=make_report(),
         ):
             response = test_client.get(self._JSON_URL)
 
@@ -99,12 +85,32 @@ class TestReportGenerateJsonApi:
         assert response.headers["content-type"] == "application/json"
         assert response.json()["metadata"]["title"] == "Weekly Health Report"
 
+    def test_response_contains_report_data(self, test_client, mock_pmm_api):
+        """Assert the JSON body includes expected top-level keys."""
+        with patch(
+            f"{_API}.generate_report",
+            new_callable=AsyncMock,
+            return_value=make_report(),
+        ):
+            response = test_client.get(self._JSON_URL)
+
+        data = response.json()
+        assert "metadata" in data
+        assert "advisors" in data
+        assert "alerts" in data
+        assert "backups" in data
+        assert "storage" in data
+        assert "uptime" in data
+        assert "inventory" in data
+        assert data["full"] is True
+        assert data["refresh"] is False
+
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
         """Assert default query parameters are forwarded."""
         with patch(
-            "app.sep.plugins.report.api_routes.generate_report",
+            f"{_API}.generate_report",
             new_callable=AsyncMock,
-            return_value=_make_report(),
+            return_value=make_report(),
         ) as mock_gen:
             test_client.get(self._JSON_URL)
 
@@ -118,9 +124,9 @@ class TestReportGenerateJsonApi:
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom query parameters are forwarded to generate_report."""
         with patch(
-            "app.sep.plugins.report.api_routes.generate_report",
+            f"{_API}.generate_report",
             new_callable=AsyncMock,
-            return_value=_make_report(full=True, refresh=True),
+            return_value=make_report(full=True, refresh=True),
         ) as mock_gen:
             test_client.get(
                 self._JSON_URL,
@@ -146,9 +152,9 @@ class TestReportGenerateJsonApi:
         Regression guard for the silently-inert section filter.
         """
         with patch(
-            "app.sep.plugins.report.api_routes.generate_report",
+            f"{_API}.generate_report",
             new_callable=AsyncMock,
-            return_value=_make_report(),
+            return_value=make_report(),
         ) as mock_gen:
             test_client.get(
                 self._JSON_URL,
@@ -161,9 +167,9 @@ class TestReportGenerateJsonApi:
     def test_filters_valid_sections(self, test_client, mock_pmm_api):
         """Assert only valid section names are forwarded."""
         with patch(
-            "app.sep.plugins.report.api_routes.generate_report",
+            f"{_API}.generate_report",
             new_callable=AsyncMock,
-            return_value=_make_report(),
+            return_value=make_report(),
         ) as mock_gen:
             test_client.get(
                 self._JSON_URL,
@@ -177,6 +183,48 @@ class TestReportGenerateJsonApi:
         _, kwargs = mock_gen.call_args
         assert kwargs["sections"] == ["advisors", "storage"]
 
+    def test_ignores_all_invalid_sections(self, test_client, mock_pmm_api):
+        """Assert all-invalid section names fall back to full report (``None``)."""
+        with patch(
+            f"{_API}.generate_report",
+            new_callable=AsyncMock,
+            return_value=make_report(),
+        ) as mock_gen:
+            test_client.get(
+                self._JSON_URL,
+                params=[("sections", "bogus"), ("sections", "invalid")],
+            )
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["sections"] is None
+
+    def test_metadata_in_json_response(self, test_client, mock_pmm_api):
+        """Assert report metadata is present in the JSON response."""
+        with patch(
+            f"{_API}.generate_report",
+            new_callable=AsyncMock,
+            return_value=make_report(),
+        ):
+            response = test_client.get(self._JSON_URL)
+
+        meta = response.json()["metadata"]
+        assert meta["title"] == "Weekly Health Report"
+        assert meta["report_week"] == "2026 - Week 14"
+
+    def test_full_flag_reflected_in_json(self, test_client, mock_pmm_api):
+        """Assert the full flag value appears in the JSON body."""
+        with patch(
+            f"{_API}.generate_report",
+            new_callable=AsyncMock,
+            return_value=make_report(full=True),
+        ):
+            response = test_client.get(
+                self._JSON_URL,
+                params={"full": "true"},
+            )
+
+        assert response.json()["full"] is True
+
     def test_returns_503_when_pmm_unavailable(self, test_client):
         """Assert 503 is returned when PMM is not configured."""
         sep_app.dependency_overrides[get_pmm_api] = lambda: None
@@ -185,6 +233,17 @@ class TestReportGenerateJsonApi:
             assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         finally:
             sep_app.dependency_overrides.pop(get_pmm_api, None)
+
+    def test_returns_500_on_generation_error(self, test_client, mock_pmm_api):
+        """Assert 500 is returned when report generation raises an exception."""
+        with patch(
+            f"{_API}.generate_report",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("collection failed"),
+        ):
+            response = test_client.get(self._JSON_URL)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_requires_authentication(self, unauthenticated_client):
         """Unauthenticated requests return 401."""
@@ -202,12 +261,12 @@ class TestReportGeneratePdfApi:
         pdf_bytes = b"%PDF-1.4 fake content"
         with (
             patch(
-                "app.sep.plugins.report.api_routes.generate_report",
+                f"{_API}.generate_report",
                 new_callable=AsyncMock,
-                return_value=_make_report(),
+                return_value=make_report(),
             ),
             patch(
-                "app.sep.plugins.report.api_routes.generate_pdf_report",
+                f"{_API}.generate_pdf_report",
                 new_callable=AsyncMock,
                 return_value=pdf_bytes,
             ),
@@ -221,16 +280,38 @@ class TestReportGeneratePdfApi:
         assert "Health_and_Security_Report_2026-03-31.pdf" in disposition
         assert disposition.startswith("attachment")
 
+    def test_passes_default_parameters(self, test_client, mock_pmm_api):
+        """Assert default form parameters are forwarded."""
+        with (
+            patch(
+                f"{_API}.generate_report",
+                new_callable=AsyncMock,
+                return_value=make_report(),
+            ) as mock_gen,
+            patch(
+                f"{_API}.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+        ):
+            test_client.post(self._PDF_URL)
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["since"] == "now-7d"
+        assert kwargs["until"] == "now"
+        assert kwargs["full"] is True
+        assert kwargs["refresh"] is False
+
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom form parameters are forwarded to generate_report."""
         with (
             patch(
-                "app.sep.plugins.report.api_routes.generate_report",
+                f"{_API}.generate_report",
                 new_callable=AsyncMock,
-                return_value=_make_report(),
+                return_value=make_report(),
             ) as mock_gen,
             patch(
-                "app.sep.plugins.report.api_routes.generate_pdf_report",
+                f"{_API}.generate_pdf_report",
                 new_callable=AsyncMock,
                 return_value=b"%PDF-1.4",
             ),
@@ -260,6 +341,17 @@ class TestReportGeneratePdfApi:
         finally:
             sep_app.dependency_overrides.pop(get_pmm_api, None)
 
+    def test_returns_500_on_generation_error(self, test_client, mock_pmm_api):
+        """Assert 500 is returned when report generation raises an exception."""
+        with patch(
+            f"{_API}.generate_report",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("collection failed"),
+        ):
+            response = test_client.post(self._PDF_URL)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
     def test_requires_authentication(self, unauthenticated_client):
         """Unauthenticated requests return 401."""
         response = unauthenticated_client.post(self._PDF_URL)
@@ -284,17 +376,17 @@ class TestReportUploadApi:
         upload_result = {"sys_id": "abc123", "status": "uploaded"}
         with (
             patch(
-                "app.sep.plugins.report.api_routes.generate_report",
+                f"{_API}.generate_report",
                 new_callable=AsyncMock,
-                return_value=_make_report(),
+                return_value=make_report(),
             ),
             patch(
-                "app.sep.plugins.report.api_routes.generate_pdf_report",
+                f"{_API}.generate_pdf_report",
                 new_callable=AsyncMock,
                 return_value=b"%PDF-1.4",
             ),
             patch(
-                "app.sep.plugins.report.api_routes.upload_pdf_report",
+                f"{_API}.upload_pdf_report",
                 new_callable=AsyncMock,
                 return_value=upload_result,
             ),
@@ -304,12 +396,145 @@ class TestReportUploadApi:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == upload_result
 
+    @pytest.mark.usefixtures("_mock_upload_configured")
+    def test_passes_default_parameters(self, test_client, mock_pmm_api):
+        """Assert default form parameters are forwarded."""
+        with (
+            patch(
+                f"{_API}.generate_report",
+                new_callable=AsyncMock,
+                return_value=make_report(),
+            ) as mock_gen,
+            patch(
+                f"{_API}.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+            patch(
+                f"{_API}.upload_pdf_report",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+        ):
+            test_client.post(self._UPLOAD_URL)
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["since"] == "now-7d"
+        assert kwargs["until"] == "now"
+        assert kwargs["full"] is True
+        assert kwargs["refresh"] is False
+
+    @pytest.mark.usefixtures("_mock_upload_configured")
+    def test_passes_custom_parameters(self, test_client, mock_pmm_api):
+        """Assert custom form parameters are forwarded to generate_report."""
+        with (
+            patch(
+                f"{_API}.generate_report",
+                new_callable=AsyncMock,
+                return_value=make_report(),
+            ) as mock_gen,
+            patch(
+                f"{_API}.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+            patch(
+                f"{_API}.upload_pdf_report",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+        ):
+            test_client.post(
+                self._UPLOAD_URL,
+                data={
+                    "since": "now-30d",
+                    "until": "now-1d",
+                    "full": "true",
+                    "refresh": "true",
+                },
+            )
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["since"] == "now-30d"
+        assert kwargs["until"] == "now-1d"
+        assert kwargs["full"] is True
+        assert kwargs["refresh"] is True
+
     def test_returns_503_when_upload_not_configured(self, test_client, mock_pmm_api):
         """Assert 503 when upload is not configured (default settings)."""
         response = test_client.post(self._UPLOAD_URL)
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
+    @pytest.mark.usefixtures("_mock_upload_configured")
+    def test_returns_503_when_pmm_unavailable(self, test_client):
+        """Assert 503 is returned when PMM is not configured."""
+        sep_app.dependency_overrides[get_pmm_api] = lambda: None
+        try:
+            response = test_client.post(self._UPLOAD_URL)
+            assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        finally:
+            sep_app.dependency_overrides.pop(get_pmm_api, None)
+
+    @pytest.mark.usefixtures("_mock_upload_configured")
+    def test_returns_500_on_upload_error(self, test_client, mock_pmm_api):
+        """Assert 500 is returned when the upload service raises an exception."""
+        with (
+            patch(
+                f"{_API}.generate_report",
+                new_callable=AsyncMock,
+                return_value=make_report(),
+            ),
+            patch(
+                f"{_API}.generate_pdf_report",
+                new_callable=AsyncMock,
+                return_value=b"%PDF-1.4",
+            ),
+            patch(
+                f"{_API}.upload_pdf_report",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("upload failed"),
+            ),
+        ):
+            response = test_client.post(self._UPLOAD_URL)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
     def test_requires_authentication(self, unauthenticated_client):
         """Unauthenticated requests return 401."""
         response = unauthenticated_client.post(self._UPLOAD_URL)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+class TestReportApiBearerAuthGate:
+    """Mutations require ``Authorization: Bearer``; reads accept cookie auth."""
+
+    def test_generate_json_with_cookie_only_returns_200(
+        self, test_client, mock_pmm_api
+    ):
+        """GET /generate/json accepts cookie-only auth."""
+        with patch(
+            f"{_API}.generate_report",
+            new_callable=AsyncMock,
+            return_value=make_report(),
+        ):
+            response = test_client.get(f"{API_BASE}/generate/json")
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_pdf_with_cookie_only_returns_401(
+        self, api_admin_client_no_bearer, mock_pmm_api
+    ):
+        """POST /generate/pdf without Bearer is rejected by plugins_router gate."""
+        response = api_admin_client_no_bearer.post(f"{API_BASE}/generate/pdf")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_upload_with_cookie_only_returns_401(
+        self, api_admin_client_no_bearer, mock_pmm_api
+    ):
+        """POST /upload without Bearer is rejected by plugins_router gate."""
+        sep_app.dependency_overrides[require_upload_configured] = lambda: None
+        try:
+            response = api_admin_client_no_bearer.post(f"{API_BASE}/upload")
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        finally:
+            sep_app.dependency_overrides.pop(require_upload_configured, None)
