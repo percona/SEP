@@ -69,6 +69,14 @@ class GeneratedTaskFactory(ModelFactory[TaskWrite]):
 class AltersCreateFactory(ModelFactory[AltersCreate]):
     """Define factory for AltersCreate instances."""
 
+    schema_id = 1
+    table_id = 2
+    schema_name = ""
+    table_name = ""
+    recursion_method = "processlist"
+    dsn_table = ""
+    continue_on_pre_check_failure = False
+
 
 class ArchivesCreateFactory(ModelFactory[ArchivesCreate]):
     """Define factory for ArchivesCreate instances."""

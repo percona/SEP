@@ -16,24 +16,41 @@
 """Define tests for the app.sep.plugins.alters.deps module."""
 
 import shlex
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
+from fastapi import HTTPException, status
 
+from app.core.requests.remote_api import RemoteAPI
 from app.sep.plugins.alters.deps import (
     _build_dsn_with_service,
+    _extract_latest_task_status,
     alters_executor_matches_service_host,
-    build_alters_task_payload,
-    build_pre_checks_task,
+    alters_satellite_task_names,
+    build_alters_api_task_response,
+    build_alters_task,
+    build_pre_checks_task_payload,
+    cascade_create_alters_group,
+    cascade_update_alters_group,
     extract_service_info,
+    get_alters_api_task_responses,
     get_alters_index_context,
     get_alters_task,
     get_alters_task_info,
     parse_alters_task_args,
     parse_single_arg,
+    resolve_predecessor_specs,
 )
-from app.sep.plugins.alters.models import AltersCreate
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.plugins.alters.models import AltersCreate, AltersTaskWrite
+from app.sep.plugins.alters.schema import alters_schema
+from app.sep.plugins.framework.schema import ChainedPredecessor
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 from tests.app.factories import (
     AltersCreateFactory,
     GeneratedTaskFactory,
@@ -73,7 +90,7 @@ def created_task() -> Task:
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload(
+async def test_build_alters_task(
     created_alters, created_service, created_schema, created_table, mock_remote_api
 ):
     """Test for building the alter task payload from form."""
@@ -84,7 +101,7 @@ async def test_build_alters_task_payload(
             created_table.model_dump(),
         ]
     )
-    generated_task = await build_alters_task_payload(created_alters, mock_remote_api)
+    generated_task = await build_alters_task(created_alters, mock_remote_api)
     assert isinstance(generated_task, TaskWrite)
     assert generated_task.owner == TaskOwner.ALTERS
 
@@ -196,6 +213,7 @@ async def test_build_pre_checks_task_filesystem_skip_flag(
             "meta": {
                 "command": "pt-online-schema-change",
                 "args": "--alter=x --execute",
+                "_command_line": "pt-online-schema-change --alter=x --execute",
                 "target": "db1",
                 "_schema_name": "db",
                 "_table_name": "t",
@@ -206,12 +224,14 @@ async def test_build_pre_checks_task_filesystem_skip_flag(
         backend=TaskBackendEnum.PROXY,
     )
     mock_remote_api.get = AsyncMock(return_value=nomad_hosts)
-    pre = await build_pre_checks_task(task, mock_remote_api)
+    pre = await build_pre_checks_task_payload(task, task_api=mock_remote_api)
     mock_remote_api.get.assert_awaited_once_with("/hosts/")
-    assert pre.name == "prechk-alter-pre-checks"
-    assert pre.data["parent"] == "prechk-alter"
+    assert pre.name == "prechk-alter"
+    assert "parent" not in pre.data
     assert pre.data["task"] == "run-python"
     assert "command" not in pre.data["meta"]
+    assert "args" not in pre.data["meta"]
+    assert "_command_line" not in pre.data["meta"]
     assert task.data["meta"]["command"] == "pt-online-schema-change"
     cfg = pre.data["meta"]["config"]
     if expect_skip_in_config:
@@ -245,7 +265,7 @@ async def test_build_pre_checks_task_mysql_config_file_in_yaml(mock_remote_api):
         backend=TaskBackendEnum.PROXY,
     )
     mock_remote_api.get = AsyncMock(return_value={"db1": "10.0.0.5"})
-    pre = await build_pre_checks_task(task, mock_remote_api)
+    pre = await build_pre_checks_task_payload(task, task_api=mock_remote_api)
     assert 'mysql_config_file: "/path/with space/my.cnf"' in pre.data["meta"]["config"]
 
 
@@ -288,7 +308,7 @@ def test_build_dsn_with_service_branches():
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload_schema_name_table_name(
+async def test_build_alters_task_schema_name_table_name(
     created_alters, created_service, mock_remote_api
 ):
     """Build payload using schema_name/table_name when schema/table IDs are omitted."""
@@ -297,14 +317,14 @@ async def test_build_alters_task_payload_schema_name_table_name(
     created_alters.schema_name = "manual_schema"
     created_alters.table_name = "manual_table"
     mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
-    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    task = await build_alters_task(created_alters, mock_remote_api)
     assert task.data["meta"]["_schema_name"] == "manual_schema"
     assert task.data["meta"]["_table_name"] == "manual_table"
     assert "D=manual_schema,t=manual_table" in task.data["meta"]["args"]
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload_requires_schema_and_table(
+async def test_build_alters_task_requires_schema_and_table(
     created_alters, created_service, mock_remote_api
 ):
     """Raise when neither IDs nor schema/table names are set."""
@@ -314,11 +334,11 @@ async def test_build_alters_task_payload_requires_schema_and_table(
     created_alters.table_name = ""
     mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
     with pytest.raises(ValueError, match="schema/table"):
-        await build_alters_task_payload(created_alters, mock_remote_api)
+        await build_alters_task(created_alters, mock_remote_api)
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload_dsn_recursion_defaults_empty_dsn_table(
+async def test_build_alters_task_dsn_recursion_defaults_empty_dsn_table(
     created_alters, created_service, created_schema, created_table, mock_remote_api
 ):
     """DSN recursion with blank dsn_table applies default D=percona,t=dsns in command."""
@@ -331,7 +351,7 @@ async def test_build_alters_task_payload_dsn_recursion_defaults_empty_dsn_table(
             created_table.model_dump(),
         ]
     )
-    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    task = await build_alters_task(created_alters, mock_remote_api)
     args = task.data["meta"]["args"]
     assert "D=percona,t=dsns" in args
     rec_arg = next(a for a in shlex.split(args) if a.startswith("--recursion-method="))
@@ -340,7 +360,7 @@ async def test_build_alters_task_payload_dsn_recursion_defaults_empty_dsn_table(
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_payload_print_arg_adds_progress(
+async def test_build_alters_task_print_arg_adds_progress(
     created_alters, created_service, created_schema, created_table, mock_remote_api
 ):
     """--progress is appended when print_arg is enabled."""
@@ -353,7 +373,7 @@ async def test_build_alters_task_payload_print_arg_adds_progress(
             created_table.model_dump(),
         ]
     )
-    task = await build_alters_task_payload(created_alters, mock_remote_api)
+    task = await build_alters_task(created_alters, mock_remote_api)
     assert "--progress=time,5" in task.data["meta"]["args"]
 
 
@@ -406,3 +426,494 @@ async def test_get_alters_index_context(mocker):
         TaskOwner.ALTERS,
         alert_on_fail_default=True,
     )
+
+
+EXPECTED_CASCADE_CREATE_POSTS = 4
+
+
+def _cascade_parent_task(name: str = "t1") -> TaskWrite:
+    """Return a minimal parent execute TaskWrite for cascade tests."""
+    return TaskWrite(
+        name=name,
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        target="host1",
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--execute",
+                "target": "host1",
+            },
+        },
+    )
+
+
+def _cascade_pre_checks_template() -> TaskWrite:
+    """Return a minimal pre-checks TaskWrite template for cascade tests."""
+    return TaskWrite(
+        name="ignored",
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        target="host1",
+        data={
+            "task": "run-python",
+            "meta": {"config": "schema: s\ntable: t"},
+            "payload": "file:///tmp/pre_checks.py",
+        },
+    )
+
+
+def test_alters_satellite_task_names():
+    """Test alters_satellite_task_names includes dry-run and pre-checks suffixes."""
+    assert alters_satellite_task_names("my-alter") == [
+        "my-alter-dry-run",
+        "my-alter-pre-checks",
+    ]
+
+
+def test_resolve_predecessor_specs_first_halts_by_default():
+    """Test first resolved predecessor defaults to on_failure halt."""
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+    )
+    spec = resolve_predecessor_specs(body)[0]
+    assert spec.on_failure == "halt"
+    assert spec.name_suffix == "-pre-checks"
+
+
+def test_resolve_predecessor_specs_first_continues_when_user_overrides():
+    """Test continue_on_pre_check_failure maps first predecessor to continue."""
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+        continue_on_pre_check_failure=True,
+    )
+    spec = resolve_predecessor_specs(body)[0]
+    assert spec.on_failure == "continue"
+
+
+@pytest.mark.asyncio
+async def test_cascade_create_alters_group_posts_three_tasks_and_chains():
+    """Test cascade_create_alters_group POSTs parent, dry-run, pre-checks, and chains execute."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+    )
+
+    await cascade_create_alters_group(
+        tasks_api,
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert tasks_api.post.await_args_list[-1] == call(
+        "/execute/t1-pre-checks",
+        json={"chain_task_names": ["t1"], "chain_on_failure": False},
+    )
+    assert len(tasks_api.post.await_args_list) == EXPECTED_CASCADE_CREATE_POSTS
+    tasks_api.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cascade_create_alters_group_continue_on_pre_check_failure():
+    """Test cascade_create_alters_group sets chain_on_failure when user opts into continue."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+        continue_on_pre_check_failure=True,
+    )
+
+    await cascade_create_alters_group(
+        tasks_api,
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert tasks_api.post.await_args_list[-1] == call(
+        "/execute/t1-pre-checks",
+        json={"chain_task_names": ["t1"], "chain_on_failure": True},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cascade_create_alters_group_keeps_tasks_when_execute_fails():
+    """Test execute failure returns a warning and does not roll back persisted tasks."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
+    tasks_api.post.side_effect = [None, None, None, exc]
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+    )
+
+    warning = await cascade_create_alters_group(
+        tasks_api,
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert warning is not None
+    tasks_api.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cascade_create_alters_group_rolls_back_on_task_post_failure():
+    """Test cascade_create_alters_group rolls back when a task POST fails."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
+    tasks_api.post.side_effect = [None, None, exc]
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+    )
+
+    with pytest.raises(HTTPException):
+        await cascade_create_alters_group(
+            tasks_api,
+            _cascade_parent_task(),
+            _cascade_pre_checks_template(),
+            body,
+        )
+
+    assert tasks_api.delete.await_args_list == [
+        call("/t1-dry-run"),
+        call("/t1"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cascade_update_alters_group_halt_by_default(mocker):
+    """Test cascade_update uses first resolved predecessor halt by default."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+    )
+    captured_specs: list = []
+    original_build = __import__(
+        "app.sep.plugins.framework.cascade", fromlist=["build_predecessor_payload"]
+    ).build_predecessor_payload
+
+    def _capture_build(parent_payload, pred_payload, spec):
+        captured_specs.append(spec)
+        return original_build(parent_payload, pred_payload, spec)
+
+    mocker.patch(
+        "app.sep.plugins.alters.deps.build_predecessor_payload",
+        side_effect=_capture_build,
+    )
+
+    await cascade_update_alters_group(
+        tasks_api,
+        "t1",
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert captured_specs == [resolve_predecessor_specs(body)[0]]
+    assert captured_specs[0].on_failure == "halt"
+
+
+@pytest.mark.asyncio
+async def test_cascade_update_alters_group_continue_on_pre_check_failure(mocker):
+    """Test cascade_update honors continue_on_pre_check_failure like create."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    body = AltersTaskWrite(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+        continue_on_pre_check_failure=True,
+    )
+    captured_specs: list = []
+    original_build = __import__(
+        "app.sep.plugins.framework.cascade", fromlist=["build_predecessor_payload"]
+    ).build_predecessor_payload
+
+    def _capture_build(parent_payload, pred_payload, spec):
+        captured_specs.append(spec)
+        return original_build(parent_payload, pred_payload, spec)
+
+    mocker.patch(
+        "app.sep.plugins.alters.deps.build_predecessor_payload",
+        side_effect=_capture_build,
+    )
+
+    await cascade_update_alters_group(
+        tasks_api,
+        "t1",
+        _cascade_parent_task(),
+        _cascade_pre_checks_template(),
+        body,
+    )
+
+    assert captured_specs == [resolve_predecessor_specs(body)[0]]
+    assert captured_specs[0].on_failure == "continue"
+
+
+@pytest.mark.asyncio
+async def test_cascade_update_pairs_predecessor_names_with_specs(mocker):
+    """Each predecessor PUT uses the matching schema spec, not a shared one."""
+    primary = (alters_schema.predecessors or [None])[0]
+    assert primary is not None
+    secondary = ChainedPredecessor(
+        name_suffix="-secondary",
+        on_failure="continue",
+        parent_link=True,
+    )
+    original_predecessors = alters_schema.predecessors
+    alters_schema.predecessors = [primary, secondary]
+    try:
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        body = AltersTaskWrite(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            schema_name="app",
+            table_name="users",
+            alter="ADD COLUMN x INT",
+        )
+        captured_specs: list[ChainedPredecessor] = []
+        original_build = __import__(
+            "app.sep.plugins.framework.cascade", fromlist=["build_predecessor_payload"]
+        ).build_predecessor_payload
+
+        def _capture_build(parent_payload, pred_payload, spec):
+            captured_specs.append(spec)
+            return original_build(parent_payload, pred_payload, spec)
+
+        mocker.patch(
+            "app.sep.plugins.alters.deps.build_predecessor_payload",
+            side_effect=_capture_build,
+        )
+        mocker.patch(
+            "app.sep.plugins.alters.deps.cascade_update_tasks",
+            new=AsyncMock(
+                return_value=__import__(
+                    "app.sep.plugins.framework.cascade", fromlist=["CascadeResult"]
+                ).CascadeResult()
+            ),
+        )
+
+        await cascade_update_alters_group(
+            tasks_api,
+            "t1",
+            _cascade_parent_task(),
+            _cascade_pre_checks_template(),
+            body,
+        )
+
+        assert captured_specs == resolve_predecessor_specs(body)
+        assert captured_specs[0].name_suffix == primary.name_suffix
+        assert captured_specs[1] is secondary
+        assert tasks_api.put.await_count == len(captured_specs)
+    finally:
+        alters_schema.predecessors = original_predecessors
+
+
+def test_extract_latest_task_status_unknown_status_returns_none() -> None:
+    """Unrecognised Tasks API status strings degrade to None instead of 500."""
+    assert _extract_latest_task_status([{"status": "future_status"}]) is None
+
+
+def test_extract_latest_task_status_known_status_returns_enum() -> None:
+    """Recognised status strings map to TaskHistoryStatusEnum."""
+    assert _extract_latest_task_status([{"status": "success"}]) == (
+        TaskHistoryStatusEnum.SUCCESS
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_alters_api_task_responses_fetches_statuses_in_parallel(mocker):
+    """List endpoint gathers latest history per parent task, not serial awaits."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    parent = TaskFactory.build(
+        name="parent-alter",
+        owner=TaskOwner.ALTERS,
+        data={"task": "run-command", "meta": {"target": "host1"}},
+    )
+    satellite = TaskFactory.build(
+        name="parent-alter-dry-run",
+        owner=TaskOwner.ALTERS,
+        data={
+            "task": "run-command",
+            "meta": {"target": "host1"},
+            "parent": "parent-alter",
+        },
+    )
+    tasks_api.get = AsyncMock(
+        return_value={
+            "items": [
+                parent.model_dump(mode="json"),
+                satellite.model_dump(mode="json"),
+            ],
+            "total": 2,
+            "offset": 0,
+            "limit": 50,
+        }
+    )
+    status_mock = mocker.patch(
+        "app.sep.plugins.alters.deps.get_alters_task_status",
+        new=AsyncMock(return_value=TaskHistoryStatusEnum.SUCCESS),
+    )
+
+    results = await get_alters_api_task_responses(tasks_api)
+
+    assert len(results) == 1
+    assert results[0].name == "parent-alter"
+    assert status_mock.await_count == 1
+    status_mock.assert_awaited_once_with("parent-alter", tasks_api)
+
+
+@pytest.mark.asyncio
+async def test_get_alters_api_task_responses_filters_by_status(mocker):
+    """Optional status filter applies after parallel history fetches."""
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    parent_a = TaskFactory.build(
+        name="alter-a",
+        owner=TaskOwner.ALTERS,
+        data={"task": "run-command", "meta": {"target": "host1"}},
+    )
+    parent_b = TaskFactory.build(
+        name="alter-b",
+        owner=TaskOwner.ALTERS,
+        data={"task": "run-command", "meta": {"target": "host2"}},
+    )
+    tasks_api.get = AsyncMock(
+        return_value={
+            "items": [
+                parent_a.model_dump(mode="json"),
+                parent_b.model_dump(mode="json"),
+            ],
+            "total": 2,
+            "offset": 0,
+            "limit": 50,
+        }
+    )
+
+    async def _status(
+        task_name: str, _tasks_api: RemoteAPI
+    ) -> TaskHistoryStatusEnum | None:
+        return (
+            TaskHistoryStatusEnum.SUCCESS
+            if task_name == "alter-a"
+            else TaskHistoryStatusEnum.FAILED
+        )
+
+    mocker.patch(
+        "app.sep.plugins.alters.deps.get_alters_task_status",
+        side_effect=_status,
+    )
+
+    results = await get_alters_api_task_responses(
+        tasks_api,
+        status=TaskHistoryStatusEnum.SUCCESS,
+    )
+
+    assert [task.name for task in results] == ["alter-a"]
+
+
+def _make_alters_task(
+    created_by: str | None = None, last_updated_by: str | None = None
+) -> Task:
+    return TaskFactory.build(
+        name="test-alter",
+        owner=TaskOwner.ALTERS,
+        backend=TaskBackendEnum.PROXY,
+        is_template=False,
+        protected=False,
+        alert_on_fail=False,
+        data={
+            "task": "run-command",
+            "meta": {
+                "command": "pt-online-schema-change",
+                "args": "--alter=ADD COLUMN x INT --execute",
+                "target": "host1",
+                "_schema_name": "test_schema",
+                "_table_name": "test_table",
+            },
+        },
+        created_by=created_by,
+        last_updated_by=last_updated_by,
+    )
+
+
+class TestBuildAltersApiTaskResponse:
+    """Tests for build_alters_api_task_response username mapping."""
+
+    def test_created_by_resolved_to_display_name_when_mapping_provided(self):
+        """Assert created_by is resolved when mapping contains the ID."""
+        task = _make_alters_task(created_by="uid-abc", last_updated_by=None)
+
+        result = build_alters_api_task_response(
+            task, username_mapping={"uid-abc": "Alice"}
+        )
+
+        assert result.created_by == "Alice"
+
+    def test_created_by_falls_back_to_raw_id_when_not_in_mapping(self):
+        """Assert created_by is preserved when the ID is not in the mapping."""
+        task = _make_alters_task(created_by="uid-unknown", last_updated_by=None)
+
+        result = build_alters_api_task_response(
+            task, username_mapping={"uid-other": "Bob"}
+        )
+
+        assert result.created_by == "uid-unknown"
+
+    def test_last_updated_by_resolved_to_display_name(self):
+        """Assert last_updated_by is also resolved via the mapping."""
+        task = _make_alters_task(created_by=None, last_updated_by="uid-xyz")
+
+        result = build_alters_api_task_response(
+            task, username_mapping={"uid-xyz": "Carol"}
+        )
+
+        assert result.last_updated_by == "Carol"
+
+    def test_username_mapping_none_preserves_raw_ids(self):
+        """Assert created_by and last_updated_by are unchanged when mapping is None."""
+        task = _make_alters_task(created_by="uid-123", last_updated_by="uid-456")
+
+        result = build_alters_api_task_response(task, username_mapping=None)
+
+        assert result.created_by == "uid-123"
+        assert result.last_updated_by == "uid-456"
