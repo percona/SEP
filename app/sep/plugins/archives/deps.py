@@ -259,7 +259,7 @@ async def _build_archives_payload(
                 "target": form.hostname,
                 "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
                 "_service_name": service.name,
-                # Source DB node for the PMM annotation, not the executor host (target).
+                # Source DB node name for PMM annotations (overrides TaskExecutionRequest.target).
                 "_pmm_node_name": service.node.name,
                 CONNECTIVITY_META_HOST_KEY: service.node.address,
                 CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
