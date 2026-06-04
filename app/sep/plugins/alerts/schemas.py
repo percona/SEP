@@ -195,3 +195,103 @@ class PagerDutyResponse(BaseModel):
     """
 
     status: Literal["created", "updated", "deleted"]
+
+
+class IndexTemplate(BaseModel):
+    """Represent a single alert template row on the index page.
+
+    :param name: The display name of the alert template.
+    :type name: str
+    :param service_type: The service category this template applies to.
+    :type service_type: str
+    :param expression: The PromQL expression backing the alert.
+    :type expression: str
+    :param default_threshold: The default numeric threshold for the UI.
+    :type default_threshold: float
+    :param severity: The severity level (``"info"``, ``"warning"``, ``"critical"``).
+    :type severity: str
+    :param description: A human-readable description of the alert.
+    :type description: str
+    :param summary: A short summary template for notifications.
+    :type summary: str
+    :param in_pmm: ``True`` when a template of this name is already present in PMM.
+    :type in_pmm: bool
+    """
+
+    name: str
+    service_type: str
+    expression: str
+    default_threshold: float
+    severity: str
+    description: str
+    summary: str
+    in_pmm: bool
+
+
+class IndexTemplateGroup(BaseModel):
+    """Group index templates by service type.
+
+    :param service_type: The service type identifier (e.g. ``"mysql"``).
+    :type service_type: str
+    :param label: The human-readable service type label (e.g. ``"MySQL"``).
+    :type label: str
+    :param templates: The templates belonging to this service type.
+    :type templates: list[IndexTemplate]
+    """
+
+    service_type: str
+    label: str
+    templates: list[IndexTemplate]
+
+
+class IndexPagerDutyStatus(BaseModel):
+    """Describe the PagerDuty contact-point status on the index page.
+
+    :param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.
+    :type configured: bool
+    :param uid: The contact point UID when configured, otherwise ``None``.
+    :type uid: str | None
+    """
+
+    configured: bool
+    uid: str | None = None
+
+
+class IndexBackupSummary(BaseModel):
+    """Represent a compact backup row for the index "recent backups" widget.
+
+    Leaner than :class:`BackupSummary` (no ``metadata``): the list page only
+    renders the id and timestamp, so the index payload omits the summary counts.
+
+    :param id: Primary key of the backup row.
+    :type id: int
+    :param created_at: UTC timestamp the backup was written.
+    :type created_at: datetime
+    """
+
+    id: int
+    created_at: datetime
+
+
+class IndexResponse(BaseModel):
+    """Describe the response body for ``GET /api/plugins/alerts/``.
+
+    Aggregate everything the React list page needs in a single call: the alert
+    templates grouped by service type, whether PMM is reachable, the PagerDuty
+    contact-point status, and the most recent backups.
+
+    :param groups: Alert templates grouped by service type. Only service types
+        with at least one template are included.
+    :type groups: list[IndexTemplateGroup]
+    :param pmm_connected: ``True`` when PMM is configured and reachable.
+    :type pmm_connected: bool
+    :param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.
+    :type pagerduty: IndexPagerDutyStatus | None
+    :param recent_backups: The most recent alert backups, newest first.
+    :type recent_backups: list[IndexBackupSummary]
+    """
+
+    groups: list[IndexTemplateGroup]
+    pmm_connected: bool
+    pagerduty: IndexPagerDutyStatus | None
+    recent_backups: list[IndexBackupSummary]
