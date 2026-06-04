@@ -187,10 +187,10 @@ async def _build_archives_payload(
     """Build the ``TaskWrite`` payload from a validated ``ArchivesCreate``.
 
     Shared core for both the form-bodied (Jinja2) and JSON-bodied (REST API)
-    entry points. SEP-1007: the two FastAPI dependency wrappers below remain
-    separate because mixing ``Form()`` and ``Body()`` parameter types in a
-    single route signature silently breaks request parsing; this helper holds
-    the body so the wrappers stay thin.
+    entry points. The two FastAPI dependency wrappers below remain separate
+    because mixing ``Form()`` and ``Body()`` parameter types in a single route
+    signature silently breaks request parsing; this helper holds the body so
+    the wrappers stay thin.
 
     :param form: The validated form/body model for the Archives creation.
     :type form: ArchivesCreate
@@ -259,6 +259,8 @@ async def _build_archives_payload(
                 "target": form.hostname,
                 "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
                 "_service_name": service.name,
+                # Source DB node for the PMM annotation, not the executor host (target).
+                "_pmm_node_name": service.node.name,
                 CONNECTIVITY_META_HOST_KEY: service.node.address,
                 CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
