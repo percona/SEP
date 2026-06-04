@@ -25,7 +25,7 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import NonEmptyStr, UTCDatetime
 
 
 class SourceEnum(StrEnum):
@@ -628,3 +628,85 @@ class TableDetailResponse(TableResponse):
     """
 
     database: Schema
+
+
+class HostSystemObservationBase(SQLModel):
+    """Define the base structure for host-level system observation data.
+
+    :param node_id: The foreign key referencing the node this observation belongs to.
+    :type node_id: int
+    :param os_version: The observed operating system version. Defaults to None.
+    :type os_version: str | None
+    :param installed_packages: Snapshot of installed packages. Defaults to None.
+    :type installed_packages: list[dict[str, Any]] | None
+    :param config: Snapshot of host configuration. Defaults to None.
+    :type config: dict[str, Any] | None
+    :param observed_at: When this observation was collected (domain provenance).
+    :type observed_at: UTCDatetime
+    """
+
+    node_id: int = SQLField(
+        foreign_key="node.id",
+        unique=True,
+        index=True,
+        ondelete="CASCADE",
+    )
+    os_version: str | None = None
+    installed_packages: list[dict[str, Any]] | None = SQLField(
+        default=None,
+        sa_column=Column(JSON),
+    )
+    config: dict[str, Any] | None = SQLField(
+        default=None,
+        sa_column=Column(JSON),
+    )
+    observed_at: UTCDatetime
+
+
+class HostSystemObservation(BaseSQLModel, HostSystemObservationBase, table=True):
+    """Store host-level system facts for a node (one snapshot per node).
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :type id: int | None
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: UTCDatetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: UTCDatetime | None
+    :param node_id: The unique identifier of the observed node. At most one observation
+        row per node.
+    :type node_id: int
+    :param os_version: The observed operating system version, if set.
+    :type os_version: str | None
+    :param installed_packages: Snapshot of installed packages, if set.
+    :type installed_packages: list[dict[str, Any]] | None
+    :param config: Snapshot of host configuration, if set.
+    :type config: dict[str, Any] | None
+    :param observed_at: When this observation was collected.
+    :type observed_at: UTCDatetime
+    """
+
+
+class HostSystemObservationWrite(HostSystemObservationBase):
+    """Define the model for writing host system observation data to the inventory.
+
+    :param node_id: The foreign key referencing the node. Defaults to None.
+    :type node_id: int | None
+    :param os_version: The observed operating system version. Defaults to None.
+    :type os_version: str | None
+    :param installed_packages: Snapshot of installed packages. Defaults to None.
+    :type installed_packages: list[dict[str, Any]] | None
+    :param config: Snapshot of host configuration. Defaults to None.
+    :type config: dict[str, Any] | None
+    :param observed_at: When this observation was collected.
+    :type observed_at: UTCDatetime
+    """
+
+    node_id: int | None = SQLField(
+        default=None,
+        foreign_key="node.id",
+        unique=True,
+        index=True,
+        ondelete="CASCADE",
+    )
