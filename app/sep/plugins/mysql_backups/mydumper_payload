@@ -2002,21 +2002,21 @@ class MyDumper(Backup):
                     upload_type=upload_type,
                     upload_provider=RsyncUploadProvider,
                     settings=self.server_setting,
-                    logger=LOGGER,
+                    logger=self.logger,
                 ).run()
             elif upload_type == "s3":
                 MyDumperUpload(
                     upload_type=upload_type,
                     upload_provider=S3UploadProvider,
                     settings=self.server_setting,
-                    logger=LOGGER,
+                    logger=self.logger,
                 ).run()
             elif upload_type == "gsutil":
                 MyDumperUpload(
                     upload_type=upload_type,
                     upload_provider=GSUploadProvider,
                     settings=self.server_setting,
-                    logger=LOGGER,
+                    logger=self.logger,
                 ).run()
             else:
                 self.logger.warning("Unsupported upload type: %r", upload_type)

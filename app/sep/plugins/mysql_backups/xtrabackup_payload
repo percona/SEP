@@ -1713,8 +1713,15 @@ class RsyncUploadProvider:
 
 
 class S3UploadProvider:
+    """Upload to Amazon S3 bucket using boto3."""
 
     def __init__(self, settings: dict[str, Any], level: int) -> None:
+        """Initialize S3UploadProvider.
+
+        :param settings: Backup/server settings.
+        :param level: Logging level.
+        :raises BackupError: If S3_BUCKET not set.
+        """
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.s3_bucket = settings.get("S3_BUCKET")
@@ -1846,8 +1853,15 @@ class S3UploadProvider:
         return f"s3://{self.bucket_name}/{full_prefix}"
 
 class GSUploadProvider:
+    """Google Cloud Storage upload using gcloud storage."""
 
     def __init__(self, settings: dict[str, Any], level: int) -> None:
+        """Initialize GSUploadProvider.
+
+        :param settings: Backup/server settings.
+        :param level: Logging level.
+        :raises BackupError: If GS_BUCKET not set.
+        """
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.gs_bucket = settings.get("GS_BUCKET")
@@ -2185,21 +2199,21 @@ class Xtrabackup(Backup):
                     upload_type=upload_type,
                     upload_provider=RsyncUploadProvider,
                     settings=self.server_setting,
-                    logger=LOGGER,
+                    logger=self.logger,
                 ).run()
             elif upload_type == "s3":
                 XtraBackupUpload(
                     upload_type=upload_type,
                     upload_provider=S3UploadProvider,
                     settings=self.server_setting,
-                    logger=LOGGER,
+                    logger=self.logger,
                 ).run()
             elif upload_type == "gsutil":
                 XtraBackupUpload(
                     upload_type=upload_type,
                     upload_provider=GSUploadProvider,
                     settings=self.server_setting,
-                    logger=LOGGER,
+                    logger=self.logger,
                 ).run()
             else:
                 self.logger.warning("Unsupported upload type: %r", upload_type)
