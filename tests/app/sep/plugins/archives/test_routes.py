@@ -97,6 +97,10 @@ def _mock_get_archives_index_context_dep():
     sep_app.dependency_overrides[get_archives_index_context] = lambda: {
         "user": "default_user",
         "connectivity_check_default": True,
+        # An executor host is required for the index to render the create form,
+        # which exercises the dest_file markup guard asserted below.
+        "executor_hosts": [{"value": "host1", "label": "host1"}],
+        "services": [],
     }
     yield
     sep_app.dependency_overrides = {}
@@ -111,6 +115,9 @@ def test_archives_index(
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert response.headers.get("deprecation") == "true"
+    # Render guard only: name="dest_file" is always in the server HTML; the
+    # inline JS strips it at runtime, which this does not exercise.
+    assert 'name="dest_file"' in response.text
 
 
 @pytest.mark.usefixtures("_mock_archives_task_payload")
@@ -452,6 +459,9 @@ def test_archives_detail(
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
     assert 'name="disable_bulk_insert"' in response.text
+    # Render guard only (see test_archives_index); does not exercise the
+    # inline-JS gating.
+    assert 'name="dest_file"' in response.text
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
