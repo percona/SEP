@@ -18,6 +18,7 @@
 __all__ = [
     "ProxyEntry",
     "ProxyRegistry",
+    "publish_snapshot",
     "refresh_all",
     "settings_override_refresher",
     "start_refresh_task",
@@ -31,6 +32,7 @@ from datetime import timedelta
 from typing import NamedTuple
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.cache import build_snapshot
@@ -40,6 +42,29 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 logger = logging.getLogger(__name__)
 
 SessionMakerFactory = Callable[[], async_sessionmaker]
+
+
+async def publish_snapshot(
+    proxy: OverridableSettingsProxy,
+    session: AsyncSession,
+    settings_cls: type[BaseYamlSettings],
+) -> None:
+    """Build a fresh snapshot for ``settings_cls`` and publish it through ``proxy``.
+
+    Public seam over :meth:`OverridableSettingsProxy._set_snapshot` so the
+    protected method's "background refresher + per-test fixtures only" contract
+    stays accurate while API handlers and the refresher itself can both publish
+    new snapshots through one named path.
+
+    :param proxy: The proxy whose snapshot is being replaced.
+    :type proxy: OverridableSettingsProxy
+    :param session: The async SQLModel session used to read override rows.
+    :type session: AsyncSession
+    :param settings_cls: The Pydantic settings class being snapshotted.
+    :type settings_cls: type[BaseYamlSettings]
+    """
+    snapshot = await build_snapshot(session, settings_cls)
+    proxy._set_snapshot(snapshot)  # noqa: SLF001
 
 
 class ProxyEntry(NamedTuple):
@@ -96,7 +121,7 @@ async def refresh_all(
     async with async_session_maker() as session:
         for setting_class, entry in proxies.items():
             try:
-                snapshot = await build_snapshot(session, entry.settings_cls)
+                await publish_snapshot(entry.proxy, session, entry.settings_cls)
             except Exception:
                 logger.exception(
                     "Failed to refresh overrides for %s; keeping previous snapshot",
@@ -107,7 +132,6 @@ async def refresh_all(
                 # ``manager.list(...)`` on the shared session.
                 await session.rollback()
                 continue
-            entry.proxy._set_snapshot(snapshot)  # noqa: SLF001
 
 
 async def start_refresh_task(

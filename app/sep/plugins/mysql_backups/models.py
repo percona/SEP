@@ -131,6 +131,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone = None
     xtrabackup_stop_replica: bool = False
     xtrabackup_lock_ddl: bool = False
+    xtrabackup_quiet: bool = False
     xtrabackup_bin_cmd: (
         Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     ) = None
@@ -140,6 +141,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     binlog_compress_cmd: NonEmptyStr | EmptyStrToNone = None
     binlog_cmd: NonEmptyStr | EmptyStrToNone = None
     binlog_run_all: bool = True
+    binlog_alternative_host: NonEmptyStr | EmptyStrToNone = None
     s3_bucket: NonEmptyStr | EmptyStrToNone = None
     s3_storage_class: NonEmptyStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
@@ -226,6 +228,8 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type xtrabackup_stop_replica: bool
     :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
     :type xtrabackup_lock_ddl: bool
+    :param xtrabackup_quiet: Whether to drop per-file copy progress lines from the backup log.
+    :type xtrabackup_quiet: bool
     :param xtrabackup_bin_cmd: Backup tool to use.
     :type xtrabackup_bin_cmd: Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     :param binlog_prefix: Prefix used in binlog backup naming.
@@ -276,7 +280,6 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     service_id: int
     backup_type: BackupType
     encryption_recipient: NonEmptyStr | EmptyStrToNone = None
-    binlog_alternative_host: NonEmptyStr | EmptyStrToNone = None
     alias: NonEmptyStr | EmptyStrToNone = None
     alert_on_fail: bool = False
     upload: list[UploadProvider] = Field(min_length=1)

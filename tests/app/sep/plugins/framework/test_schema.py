@@ -284,6 +284,32 @@ def test_dipper_schema_stats_capability_defaults_false():
     assert dipper_schema.capabilities.stats is False
 
 
+def test_capabilities_pii_anonymization_defaults_to_false():
+    """Default value of ``pii_anonymization`` flag must be ``False`` for backward compat."""
+    caps = Capabilities()
+    assert caps.pii_anonymization is False
+
+
+def test_capabilities_pii_anonymization_accepts_true():
+    """``pii_anonymization=True`` is a valid construction."""
+    caps = Capabilities(pii_anonymization=True)
+    assert caps.pii_anonymization is True
+
+
+def test_capabilities_serialization_round_trip_includes_pii_anonymization():
+    """``pii_anonymization`` survives ``model_dump`` / ``model_validate`` round trip."""
+    dumped = Capabilities(pii_anonymization=True).model_dump()
+    assert dumped["pii_anonymization"] is True
+    restored = Capabilities.model_validate({"pii_anonymization": True})
+    assert restored.pii_anonymization is True
+
+
+def test_capabilities_omitted_pii_anonymization_in_payload_defaults_false():
+    """Payload missing the ``pii_anonymization`` key validates to ``False``."""
+    caps = Capabilities.model_validate({})
+    assert caps.pii_anonymization is False
+
+
 @pytest.mark.parametrize(
     ("field_cls", "field_type", "extra_kwargs"),
     [
@@ -1169,6 +1195,92 @@ class TestSchemaTier2ReferenceResolution:
                 list_view=_minimal_list_view(),
             )
 
+    # ── SEP-1276: FormSection-level visibility gates ────────────────────
+
+    def test_unknown_field_in_section_forbidden_rejected(self) -> None:
+        """Section ``forbidden`` referencing a missing field is rejected."""
+        with pytest.raises(ValidationError, match="unknown field 'NOT_THERE'"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="Mode",
+                        fields=[StringField(name="x", label="X")],
+                        forbidden=[FieldGate(when=F("NOT_THERE") == "v")],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
+    def test_section_forbidden_referencing_own_child_field_accepted(self) -> None:
+        """Section gate referencing one of its own fields validates clean."""
+        schema = PluginSchema(
+            name="t",
+            display_name="T",
+            forms=[
+                FormSection(
+                    title="Mode",
+                    fields=[StringField(name="own", label="O")],
+                    forbidden=[FieldGate(when=F("own") == "off")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.forms[0].forbidden is not None
+
+    def test_section_forbidden_referencing_sibling_section_field_accepted(
+        self,
+    ) -> None:
+        """Section gate referencing a field in another section validates clean.
+
+        Mirrors ``BaseField`` cross-section semantics — the resolver walks the
+        plugin-wide field-name set, not just the section's own children.
+        """
+        schema = PluginSchema(
+            name="t",
+            display_name="T",
+            forms=[
+                FormSection(
+                    title="Shared",
+                    fields=[StringField(name="backup_type", label="B")],
+                ),
+                FormSection(
+                    title="Mode",
+                    fields=[StringField(name="mode_field", label="M")],
+                    forbidden=[FieldGate(when=F("backup_type") != "M")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.forms[1].forbidden is not None
+
+    def test_hyphenated_field_in_section_gate_rejected(self) -> None:
+        """Section gate referencing a hyphenated field name is rejected.
+
+        Conditional rules must use valid Python identifiers (no hyphens) so
+        that ``getattr`` lookups at predicate-eval time succeed.
+        """
+        with pytest.raises(ValidationError, match="no hyphens"):
+            PluginSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="Shared",
+                        fields=[StringField(name="hy-phen", label="H")],
+                    ),
+                    FormSection(
+                        title="Mode",
+                        fields=[StringField(name="x", label="X")],
+                        forbidden=[FieldGate(when=truthy("hy-phen"))],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
 
 # ── DerivedTask primitive and PluginSchema.derived (SEP-1074) ────────────
 
@@ -1712,11 +1824,12 @@ class TestDetailViewReviewFixes:
 
         The TypeScript ``DetailField.highlight`` type in
         ``frontend/packages/api/src/types/plugin-schema.ts`` is hand-maintained
-        as ``'sql' | 'json'``. If a new enum value is added here without
+        as ``'sql' | 'json' | 'bash'``. If a new enum value is added here without
         updating the frontend literal, this test fails and forces the author
         to sync both sides.
         """
         assert {member.value for member in DetailHighlightLanguage} == {
             "sql",
             "json",
+            "bash",
         }

@@ -46,7 +46,7 @@ from app.sep.plugins.checksums.models import (
     ChecksumTaskResponse,
     ChecksumTaskWrite,
 )
-from app.sep.plugins.framework import ConnectivityWarning
+from app.sep.plugins.framework import ConnectivityWarning, extract_latest_task_status
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -445,16 +445,6 @@ async def get_checksums_task_names_by_status(
     }
 
 
-def _extract_latest_task_status(
-    histories: Iterable[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
-    for history in histories:
-        if (status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(status)
-    return None
-
-
 async def get_checksums_task_status(
     task_name: str,
     tasks_api: TaskAPI,
@@ -469,7 +459,7 @@ async def get_checksums_task_status(
     :rtype: TaskHistoryStatusEnum | None
     """
     response = await tasks_api.get(f"/{task_name}/history/")
-    return _extract_latest_task_status(response["items"])
+    return extract_latest_task_status(response["items"])
 
 
 def build_checksums_api_task_response(

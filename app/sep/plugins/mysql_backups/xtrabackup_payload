@@ -39,6 +39,15 @@ from pymysql import Error, InternalError, OperationalError, ProgrammingError
 
 BYTES_PER_MB = 1024**2
 
+# Matches xtrabackup per-file copy progress lines emitted during the backup
+# data phase.  Anchored at ^ so it cannot fire on mid-line content.  The
+# .ibd extension constraint prevents "Copying" that appears in error or
+# summary messages from being incorrectly dropped.
+_COPY_LINE_RE = re.compile(
+    r"^\[\d+\][\s\t]+(NT:\s+Copying\s+\S+\.ibd\s+to\s+\S+|NT:\s+Finished copying\s+\S+\.ibd"
+    r"|\.\.\.\S+\.ibd:\s+\d+%\s+copied)\s*$"
+)
+
 BACKUP_DIR_REGEX = {
     "X": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$",
     "I": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}_incrementals$",
@@ -2018,6 +2027,7 @@ class Xtrabackup(Backup):
         self.xtrabackup_stop_replica = server_data.get('XTRABACKUP_STOP_REPLICA', False)
         self.xtrabackup_lock_ddl = server_data.get('XTRABACKUP_LOCK_DDL', False)
         self.xtrabackup_lock_ddl_timeout = server_data.get('XTRABACKUP_LOCK_DDL_TIMEOUT', 60)
+        self.xtrabackup_quiet = server_data.get('XTRABACKUP_QUIET', False)
         self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', 'xtrabackup')
 
         # Upload options to keep backward-compatibility
@@ -2343,9 +2353,12 @@ class Xtrabackup(Backup):
         xb_log_stream = open(self.xb_log_file, 'a')
         backup_proc = subprocess.Popen(xtrabackup_cmd, shell=self.cmd_shell, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in backup_proc.stdout:
+            decoded = line.decode()
+            if self.xtrabackup_quiet and _COPY_LINE_RE.match(decoded):
+                continue
             if self.logging_stdout:
-                sys.stdout.write(line.decode())
-            xb_log_stream.write(line.decode())
+                sys.stdout.write(decoded)
+            xb_log_stream.write(decoded)
         backup_proc.wait()
         backup_proc.communicate()
         if backup_proc.returncode != 0:

@@ -382,6 +382,156 @@ describe('SchemaFormRenderer — multichoice required', () => {
   });
 });
 
+describe('SchemaFormRenderer — multichoice empty-state placeholder', () => {
+  it('renders "Select…" placeholder when nothing is selected', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Select…')).toBeVisible();
+  });
+
+  it('does NOT render placeholder when at least one value is selected', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={vi.fn()}
+        defaultValues={{ upload: ['S3'] }}
+      />,
+    );
+    expect(screen.queryByText('Select…')).toBeNull();
+    expect(screen.getByText('S3')).toBeVisible();
+  });
+});
+
+describe('SchemaFormRenderer — choice (select mode) empty-state placeholder', () => {
+  it('renders "Select…" when >3 choices and no value is chosen', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'region',
+            label: 'Region',
+            choices: [
+              { label: 'us-east-1', value: 'us-east-1' },
+              { label: 'us-west-2', value: 'us-west-2' },
+              { label: 'eu-west-1', value: 'eu-west-1' },
+              { label: 'ap-south-1', value: 'ap-south-1' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Select…')).toBeVisible();
+  });
+
+  it('radio-mode branch (≤3 choices) does NOT add a placeholder', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'mode',
+            label: 'Mode',
+            choices: [
+              { label: 'Fast', value: 'fast' },
+              { label: 'Slow', value: 'slow' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.queryByText('Select…')).toBeNull();
+  });
+});
+
+describe('SchemaFormRenderer — multichoice empty-state label shrink', () => {
+  it('floats the label above when nothing is selected (no overlap with placeholder)', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multichoice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    // MUI renders the label text in both <label> and the notched <legend>; pick the <label>.
+    const labelRoot = screen.getAllByText('Upload providers')[0].closest('label');
+    expect(labelRoot).toHaveAttribute('data-shrink', 'true');
+    expect(labelRoot).toHaveClass('MuiInputLabel-shrink');
+  });
+});
+
+describe('SchemaFormRenderer — choice (select mode) empty-state label shrink', () => {
+  it('floats the label above on empty >3-choice select', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'region',
+            label: 'Region',
+            choices: [
+              { label: 'us-east-1', value: 'us-east-1' },
+              { label: 'us-west-2', value: 'us-west-2' },
+              { label: 'eu-west-1', value: 'eu-west-1' },
+              { label: 'ap-south-1', value: 'ap-south-1' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    const labelRoot = screen.getAllByText('Region')[0].closest('label');
+    expect(labelRoot).toHaveAttribute('data-shrink', 'true');
+    expect(labelRoot).toHaveClass('MuiInputLabel-shrink');
+  });
+});
+
 describe('SchemaFormRenderer — file required', () => {
   it('blocks submission when a required file field is empty', async () => {
     const user = userEvent.setup();
@@ -421,10 +571,10 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
           },
         });
       }
-      if (url === '/inventory-api/services/1/schemas') {
+      if (url === '/sep/services/1/schemas') {
         return Promise.resolve({ data: [{ id: 11, name: 'app_production' }] });
       }
-      if (url === '/inventory-api/services/2/schemas') {
+      if (url === '/sep/services/2/schemas') {
         return Promise.resolve({ data: [{ id: 21, name: 'app_staging' }] });
       }
       return Promise.resolve({ data: [] });
@@ -1498,5 +1648,152 @@ describe('SchemaFormRenderer — unsaved changes guard', () => {
       router.navigate('/other');
     });
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+});
+
+// ── Section-level visibility gates (SEP-1276) ────────────────────────────
+//
+// Mirrors the MySQL Backups Mydumper/XtraBackup/Binlog regression: a
+// FormSection declares a ``forbidden`` gate keyed off a controller field
+// elsewhere in the form (in production, ``backup_type``). The section,
+// its header, and every child field must disappear from the DOM when the
+// gate fires, and the children must be unregistered from RHF so stale
+// defaults do not ship in the submission payload.
+//
+// Mode-owned bool fields are intentionally not field-gated in the
+// MySQL Backups schema (module docstring): ``_field_is_present(False)``
+// is ``True``, so a per-field ``forbidden=[when != mode]`` would reject
+// the legitimate default-False. The whole point of section-level gating
+// is to cover those bool fields too — the tests below pin that behaviour
+// by hiding a section whose child is a bool with default ``false``.
+
+describe('SchemaFormRenderer — section-level visibility', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Mode',
+      fields: [
+        {
+          type: 'choice',
+          name: 'backup_type',
+          label: 'Backup Type',
+          choices: [
+            { label: 'Mydumper backup', value: 'M' },
+            { label: 'XtraBackup backup', value: 'X' },
+          ],
+        },
+      ],
+    },
+    {
+      title: 'Mydumper',
+      forbidden: [{ when: { not_equals: { backup_type: 'M' } } }],
+      fields: [
+        { type: 'string', name: 'mydumper_extra_args', label: 'Mydumper extra args' },
+        // Mode-owned bool — has no field-level forbidden gate by design.
+        {
+          type: 'bool',
+          name: 'mydumper_dump_triggers',
+          label: 'Dump triggers',
+          default: false,
+        },
+      ],
+    },
+    {
+      title: 'XtraBackup',
+      forbidden: [{ when: { not_equals: { backup_type: 'X' } } }],
+      fields: [
+        { type: 'string', name: 'xtrabackup_extra_args', label: 'XtraBackup extra args' },
+        {
+          type: 'bool',
+          name: 'xtrabackup_kill_queries',
+          label: 'Kill blocking queries',
+          default: false,
+        },
+      ],
+    },
+  ];
+
+  it('hides every mode section when the controller is unset (initial form load)', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.queryByText('Mydumper')).toBeNull();
+    expect(screen.queryByText('XtraBackup')).toBeNull();
+    expect(screen.queryByLabelText('Mydumper extra args')).toBeNull();
+    expect(screen.queryByLabelText('Dump triggers')).toBeNull();
+    expect(screen.queryByLabelText('XtraBackup extra args')).toBeNull();
+    expect(screen.queryByLabelText('Kill blocking queries')).toBeNull();
+  });
+
+  it('shows only the matching mode section after picking a backup type', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    await user.click(screen.getByTestId('radio-option-M'));
+
+    expect(await screen.findByText('Mydumper')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Mydumper extra args')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Dump triggers')).toBeInTheDocument();
+    expect(screen.queryByText('XtraBackup')).toBeNull();
+    expect(screen.queryByLabelText('XtraBackup extra args')).toBeNull();
+    expect(screen.queryByLabelText('Kill blocking queries')).toBeNull();
+  });
+
+  it('excludes hidden-section children (incl. mode-owned bools) from the submit payload', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        defaultValues={{
+          backup_type: 'M',
+          mydumper_extra_args: 'preserved',
+          xtrabackup_extra_args: 'should-not-ship',
+          xtrabackup_kill_queries: true,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ backup_type: 'M', mydumper_extra_args: 'preserved' });
+    expect(payload).not.toHaveProperty('xtrabackup_extra_args');
+    expect(payload).not.toHaveProperty('xtrabackup_kill_queries');
+  });
+
+  it('drops stale values when the user toggles mode then submits immediately', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    // Pick XtraBackup, type a value, then flip to Mydumper before submitting.
+    await user.click(screen.getByTestId('radio-option-X'));
+    const xtraInput = await screen.findByLabelText('XtraBackup extra args');
+    await user.type(xtraInput, 'leaked');
+    await user.click(screen.getByTestId('radio-option-M'));
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ backup_type: 'M' });
+    expect(payload).not.toHaveProperty('xtrabackup_extra_args');
+    expect(payload).not.toHaveProperty('xtrabackup_kill_queries');
+  });
+
+  it('re-mounts a section with schema defaults after toggling away and back', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    // Show Mydumper, type a value, hide via XtraBackup, then re-show Mydumper.
+    await user.click(screen.getByTestId('radio-option-M'));
+    const mydumperInput = await screen.findByLabelText('Mydumper extra args');
+    await user.type(mydumperInput, 'old-value');
+    await user.click(screen.getByTestId('radio-option-X'));
+    expect(screen.queryByLabelText('Mydumper extra args')).toBeNull();
+    await user.click(screen.getByTestId('radio-option-M'));
+
+    const reshown = await screen.findByLabelText('Mydumper extra args');
+    expect((reshown as HTMLInputElement).value).toBe('');
   });
 });

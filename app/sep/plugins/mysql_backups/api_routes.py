@@ -24,13 +24,16 @@ import logging
 from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.core.db.crud import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    MAX_PAGINATION_LIMIT,
+)
 from app.core.models import PaginatedResponse
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
     IsApiAuthenticated,
-    RequireBearerAuth,
     TaskAPI,
 )
 from app.sep.plugins.framework.api import schema_endpoint
@@ -54,8 +57,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=mysql_backups_schema)
-
-MAX_PAGINATION_LIMIT = 50
 
 
 @router.get("/", response_model=PaginatedResponse[BackupResponse])
@@ -90,7 +91,7 @@ async def mysql_backups_api_detail(
     "/",
     response_model=BackupResponse,
     status_code=http_status.HTTP_201_CREATED,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
+    dependencies=[IsApiAuthenticated],
 )
 async def mysql_backups_api_create(
     body: BackupCreate,
@@ -109,7 +110,7 @@ async def mysql_backups_api_create(
     "/{task_name}/execute",
     response_model=BackupExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated, HasNoConflictedRunningTasks],
+    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
 )
 async def mysql_backups_api_execute(
     task: BackupsTask,
@@ -129,7 +130,7 @@ async def mysql_backups_api_execute(
 @router.delete(
     "/{task_name}",
     status_code=http_status.HTTP_204_NO_CONTENT,
-    dependencies=[RequireBearerAuth, IsApiAuthenticated],
+    dependencies=[IsApiAuthenticated],
 )
 async def mysql_backups_api_delete(
     task: BackupsTask,

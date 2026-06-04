@@ -335,7 +335,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             else:
                 cert = (self.ssl_certfile,)
         return Nomad(
-            address=self.endpoint,
+            address=str(self.endpoint).rstrip("/"),
             secure=self.secure,
             timeout=self.timeout,
             verify=(self.secure and self.verify_ssl and self.ssl_cafile)

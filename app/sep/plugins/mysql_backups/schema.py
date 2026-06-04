@@ -23,8 +23,8 @@ Field gating is uniformly schema-declared:
   while the gating predicate matches — the default value never trips it.
   We use ``forbidden=[when != mode]`` (not ``requires=[when == mode]``)
   for per-mode gating because the framework's ``requires=`` semantics
-  (``rules.py:1442-1449``) mean "when predicate true, the field MUST be
-  present"; using it for mode gating would make every X-mode field
+  (``_evaluate_field_gate_requires`` in ``rules.py``) mean "when predicate
+  true, the field MUST be present"; using it for mode gating would make every X-mode field
   mandatory in X mode, which is incorrect: these fields are optional
   within their mode and only forbidden outside it.
 - Schema-level :class:`FailRule` entries (``_MODE_BOOL_FAIL_RULES``) layer
@@ -129,6 +129,7 @@ _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
         "xtrabackup_replica_info",
         "xtrabackup_stop_replica",
         "xtrabackup_lock_ddl",
+        "xtrabackup_quiet",
     ),
     "B": (),
 }
@@ -215,6 +216,7 @@ mysql_backups_schema = PluginSchema(
         FormSection(
             title="Mydumper",
             collapsible=True,
+            forbidden=_mydumper_forbidden,
             fields=[
                 IntegerField(
                     name="mydumper_daily_purge",
@@ -251,6 +253,7 @@ mysql_backups_schema = PluginSchema(
         FormSection(
             title="XtraBackup",
             collapsible=True,
+            forbidden=_xtrabackup_forbidden,
             fields=[
                 IntegerField(
                     name="xtrabackup_copies",
@@ -360,6 +363,11 @@ mysql_backups_schema = PluginSchema(
                     label="Lock DDL",
                     default=False,
                 ),
+                BoolField(
+                    name="xtrabackup_quiet",
+                    label="Quiet log (drop per-file copy lines)",
+                    default=False,
+                ),
                 ChoiceField(
                     name="xtrabackup_bin_cmd",
                     label="Backup binary",
@@ -375,6 +383,7 @@ mysql_backups_schema = PluginSchema(
         FormSection(
             title="Binlog",
             collapsible=True,
+            forbidden=_binlog_forbidden,
             fields=[
                 StringField(
                     name="binlog_prefix",

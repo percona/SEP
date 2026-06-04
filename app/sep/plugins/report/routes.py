@@ -39,7 +39,12 @@ router = APIRouter()
 templates = sep_settings.TEMPLATES
 
 
-@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+@router.get(
+    "/",
+    dependencies=[IsAuthenticated],
+    response_class=HTMLResponse,
+    deprecated=True,
+)
 async def report_index(request: Request, context: ReportIndexContext) -> HTMLResponse:
     """Render the report plugin landing page."""
     return templates.TemplateResponse(request, "report/index.html.j2", context)
@@ -49,6 +54,7 @@ async def report_index(request: Request, context: ReportIndexContext) -> HTMLRes
     "/generate",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=HTMLResponse,
+    deprecated=True,
 )
 async def report_generate(
     request: Request,
@@ -103,6 +109,7 @@ async def report_generate(
     "/generate/json",
     dependencies=[IsAuthenticated],
     response_class=JSONResponse,
+    deprecated=True,
 )
 async def report_generate_json(
     pmm_api: RequiredPMMAPIDep,
@@ -131,7 +138,7 @@ async def report_generate_json(
     :rtype: JSONResponse
     """
     if sections:
-        sections = [s for s in sections if s in REPORT_SECTIONS]
+        sections = [s for s in sections if s in REPORT_SECTIONS] or None
     report = await generate_report(
         pmm_api, since=since, until=until, full=full, refresh=refresh, sections=sections
     )
@@ -141,6 +148,7 @@ async def report_generate_json(
 @router.post(
     "/generate/pdf",
     dependencies=[IsAuthenticated, IsCsrfValidated],
+    deprecated=True,
 )
 async def report_generate_pdf(
     pmm_api: RequiredPMMAPIDep,
@@ -181,6 +189,7 @@ async def report_generate_pdf(
     "/upload",
     dependencies=[IsAuthenticated, IsCsrfValidated, IsUploadConfigured],
     response_class=JSONResponse,
+    deprecated=True,
 )
 async def report_upload(
     pmm_api: RequiredPMMAPIDep,

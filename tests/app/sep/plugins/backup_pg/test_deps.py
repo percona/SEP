@@ -21,6 +21,7 @@ import pytest
 import yaml
 
 from app.core.exceptions import HTTPNotFoundException
+from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.backup_pg.deps import (
     build_backup_task_payload,
@@ -174,6 +175,33 @@ def test_get_backups_task_info():
     assert result["backup_type"] == BackupType.PGBACKREST.name
 
 
+def test_get_backups_task_info_port_falls_back_to_meta():
+    """Test PORT missing from YAML falls back to the meta connectivity port."""
+    meta_port = 6543
+    fake_task_dict = {
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                CONNECTIVITY_META_PORT_KEY: meta_port,
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "HOST": "my-db-host",
+                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                            }
+                        ]
+                    }
+                ),
+            }
+        }
+    }
+
+    result = get_backups_task_info(fake_task_dict)
+
+    assert result["port"] == meta_port
+
+
 def test_parse_backup_task_data():
     """Test parsing backup task data for the backup_pg detail view."""
     expected_port = 5432
@@ -192,7 +220,7 @@ def test_parse_backup_task_data():
                             }
                         ],
                         "ALL_SERVERS": {
-                            "logging_dir": "/var/log/pgbackrest",
+                            "LOGGING_DIR": "/var/log/pgbackrest",
                         },
                     }
                 ),
@@ -209,6 +237,120 @@ def test_parse_backup_task_data():
     assert result["host"] == "localhost"
     assert result["port"] == expected_port
     assert result["logging_dir"] == "/var/log/pgbackrest"
+
+
+def test_parse_backup_task_data_port_falls_back_to_meta():
+    """Test PORT missing from YAML falls back to the meta connectivity port."""
+    meta_port = 6543
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                CONNECTIVITY_META_PORT_KEY: meta_port,
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "HOST": "localhost",
+                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                            }
+                        ],
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["port"] == meta_port
+
+
+@pytest.mark.parametrize(
+    ("upload_providers", "all_servers", "expected_result"),
+    [
+        (
+            ["s3"],
+            {
+                "S3_BUCKET": "my-bucket",
+                "S3_STORAGE_CLASS": "STANDARD_IA",
+                "SKIP_S3_SAFETY_CHECK": True,
+            },
+            {
+                "s3_bucket": "my-bucket",
+                "s3_storage_class": "STANDARD_IA",
+                "skip_s3_safety_check": True,
+            },
+        ),
+        (
+            ["s3"],
+            {},
+            {
+                "s3_bucket": None,
+                "s3_storage_class": None,
+                "skip_s3_safety_check": False,
+            },
+        ),
+        (
+            ["gsutil"],
+            {"GS_BUCKET": "my-gs-bucket"},
+            {"gs_bucket": "my-gs-bucket"},
+        ),
+        (
+            ["gsutil"],
+            {},
+            {"gs_bucket": None},
+        ),
+        (
+            ["rsync"],
+            {"RSYNC_PATH": "/mnt/backups"},
+            {"rsync_path": "/mnt/backups"},
+        ),
+        (
+            ["rsync"],
+            {},
+            {"rsync_path": None},
+        ),
+        (
+            ["S3"],
+            {"S3_BUCKET": "case-insensitive"},
+            {"s3_bucket": "case-insensitive"},
+        ),
+    ],
+)
+def test_parse_backup_task_data_storage_targets(
+    upload_providers: list[str],
+    all_servers: dict,
+    expected_result: dict,
+):
+    """Round-trip S3/GSUTIL/RSYNC fields from persisted YAML on the edit-form path."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "HOST": "localhost",
+                                "PORT": 5432,
+                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                                "UPLOAD": upload_providers,
+                            }
+                        ],
+                        "ALL_SERVERS": all_servers,
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    for key, value in expected_result.items():
+        assert result[key] == value
 
 
 def test_parse_backup_task_data_without_all_servers():

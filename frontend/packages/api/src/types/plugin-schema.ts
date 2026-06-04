@@ -222,6 +222,13 @@ export interface FormSection {
   cardinality_rules?: CardinalityRule[];
   /** Predicate-only invariants scoped to this section. */
   fail_when?: FailRule[];
+  /**
+   * Section-level visibility gates. When any gate fires the entire section
+   * is hidden and every child field is unregistered from react-hook-form
+   * so stale values do not ship in the submission payload.
+   * Gates may reference any field in the plugin schema.
+   */
+  forbidden?: FieldGate[];
 }
 
 // ── List view ───────────────────────────────────────────────────────────
@@ -248,6 +255,7 @@ export interface PluginCapabilities {
   alert_on_fail?: boolean;
   scheduling?: boolean;
   stats?: boolean;
+  pii_anonymization?: boolean;
 }
 
 // ── Detail view (task-style plugins) ────────────────────────────────────
@@ -258,7 +266,7 @@ export interface DetailField {
   path: string;
   label: string;
   /** Optional syntax-highlighter hint. */
-  highlight?: 'sql' | 'json';
+  highlight?: 'sql' | 'json' | 'bash';
 }
 
 /** One titled section rendered on the task detail page. */
@@ -282,7 +290,7 @@ export interface PluginEntitySchema {
   forms: FormSection[];
   list_view: ListView;
   /** Optional detail-view syntax hints keyed by field name. */
-  detail_highlights?: Partial<Record<string, 'sql' | 'json'>>;
+  detail_highlights?: Partial<Record<string, 'sql' | 'json' | 'bash'>>;
 }
 
 // ── Top-level schema ────────────────────────────────────────────────────
