@@ -53,6 +53,9 @@ const AlertTroubleshootingPlugin = lazy(() =>
     default: m.AlertTroubleshootingPlugin,
   })),
 );
+const AlertsPlugin = lazy(() =>
+  import('@sep/plugin-alerts').then((m) => ({ default: m.AlertsPlugin })),
+);
 const TasksPlugin = lazy(() =>
   import('@sep/plugin-tasks').then((m) => ({ default: m.TasksPlugin })),
 );
@@ -96,7 +99,7 @@ export const router = createBrowserRouter([
           { path: 'snippets/*', element: <SnippetsPlugin /> },
           { path: 'atw/*', element: <AtwPlugin /> },
           { path: 'dipper/*', element: <DipperPlugin /> },
-          { path: 'alerts/templates', element: <PlaceholderPage /> },
+          { path: 'alerts/templates/*', element: <AlertsPlugin /> },
           { path: 'alerts/troubleshooting/*', element: <AlertTroubleshootingPlugin /> },
           { path: 'schema-change/alters/*', element: <AltersPlugin /> },
           // Checksums — schema-driven plugin (handles its own sub-routes)
