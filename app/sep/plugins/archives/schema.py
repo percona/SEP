@@ -408,15 +408,25 @@ archives_schema = PluginSchema(
             error_fields=["source_table_id", "dest_table_id"],
             message="Source and Destination tables cannot be the same.",
         ),
-        # Validator 1b: same table names (truthy guards handle empty-string case;
-        # rstrip() semantics are NOT replicated — whitespace-only names are treated
-        # as present by the DSL evaluator, which is stricter than the legacy validator).
+        # Validator 1b: same destination identity (host + schema + table name).
+        # Empty destination host/schema falls back to source at execution time, so
+        # self-archive is detected only when host, schema, and table name all match.
         FailRule(
             fail_when=all_(
                 truthy("source_db_name"),
                 truthy("source_table_name"),
                 truthy("dest_table_name"),
                 F("source_table_name") == F("dest_table_name"),
+                # Destination host resolves to the source host.
+                any_(
+                    all_(absent("dest_service_id"), falsy("dest_host")),
+                    F("dest_service_id") == F("service_id"),
+                ),
+                # Destination schema resolves to the source schema.
+                any_(
+                    all_(absent("dest_db_id"), falsy("dest_db_name")),
+                    F("dest_db_name") == F("source_db_name"),
+                ),
             ),
             error_fields=["source_table_name", "dest_table_name"],
             message="Source and Destination tables cannot be the same.",
