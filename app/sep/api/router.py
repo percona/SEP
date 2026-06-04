@@ -36,6 +36,7 @@ from fastapi import APIRouter
 from app.core.utils import import_var
 from app.sep.api.routes.dashboard import router as dashboard_router
 from app.sep.api.routes.hosts import router as hosts_router
+from app.sep.api.routes.schemas import router as schemas_router
 from app.sep.api.routes.services import router as services_router
 from app.sep.api.routes.settings import router as settings_router
 from app.sep.api.routes.task_history import router as task_history_router
@@ -81,6 +82,7 @@ api_router.include_router(plugins_router)
 api_router.include_router(dashboard_router, prefix="/sep/dashboard", tags=["sep"])
 api_router.include_router(hosts_router, prefix="/sep/hosts", tags=["sep"])
 api_router.include_router(services_router, prefix="/sep/services", tags=["sep"])
+api_router.include_router(schemas_router, prefix="/sep/schemas", tags=["sep"])
 api_router.include_router(settings_router, prefix="/sep/admin/settings", tags=["sep"])
 api_router.include_router(task_stats_router, prefix="/sep/task-stats", tags=["sep"])
 api_router.include_router(task_history_router, prefix="/sep/task-history", tags=["sep"])

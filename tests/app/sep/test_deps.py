@@ -56,7 +56,6 @@ from app.sep.deps import (
     get_tasks_index_context,
     get_username_mapping,
     is_bearer_authenticated,
-    require_bearer_auth,
     require_bearer_for_unsafe_methods,
 )
 from app.sep.exceptions import LoginRedirectException
@@ -1184,57 +1183,6 @@ class TestMakeRequestHelper:
         Many call sites consume this state; the refactor must preserve it.
         """
         assert isinstance(_make_request().state.messages, OrderedDict)
-
-
-class TestRequireBearerAuth:
-    """Exercise the method-agnostic ``require_bearer_auth`` dependency.
-
-    Mirrors :class:`TestRequireBearerForUnsafeMethods` but exercises the
-    unconditional variant that does not short-circuit on safe methods.
-    """
-
-    @pytest.mark.asyncio
-    async def test_passes_when_bearer_present(self) -> None:
-        """A request carrying ``Bearer ...`` returns ``None`` without raising."""
-        request = _make_request(method="POST", authorization="Bearer abc")
-        assert await require_bearer_auth(request) is None
-
-    @pytest.mark.asyncio
-    async def test_raises_when_no_authorization_header(self) -> None:
-        """A missing Authorization header raises 401 with the shared detail string."""
-        request = _make_request(method="POST")
-        with pytest.raises(HTTPUnauthorizedException) as exc_info:
-            await require_bearer_auth(request)
-        assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
-
-    @pytest.mark.asyncio
-    async def test_raises_when_empty_authorization(self) -> None:
-        """An empty Authorization header is not a Bearer credential."""
-        request = _make_request(method="POST", authorization="")
-        with pytest.raises(HTTPUnauthorizedException) as exc_info:
-            await require_bearer_auth(request)
-        assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
-
-    @pytest.mark.asyncio
-    async def test_raises_when_basic_scheme(self) -> None:
-        """Non-Bearer schemes are rejected even when an Authorization header is set."""
-        request = _make_request(method="POST", authorization="Basic abc")
-        with pytest.raises(HTTPUnauthorizedException):
-            await require_bearer_auth(request)
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS", "DELETE"])
-    async def test_raises_regardless_of_method(self, method: str) -> None:
-        """Unlike the unsafe-methods variant, this guard never short-circuits on method.
-
-        ``require_bearer_auth`` is method-agnostic; safe methods do **not**
-        bypass the gate. The method-aware sibling
-        ``require_bearer_for_unsafe_methods`` exists precisely so the framework
-        layer can whitelist GET/HEAD/OPTIONS.
-        """
-        request = _make_request(method=method)
-        with pytest.raises(HTTPUnauthorizedException):
-            await require_bearer_auth(request)
 
 
 class TestBearerHeaderEdgeCases:
