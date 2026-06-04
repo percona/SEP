@@ -169,9 +169,10 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
 
         For the manual-source path the destination is the *same* table only
         when its host, schema, and table name all resolve to the source. An
-        absent/empty destination host or schema falls back to the source at
-        execution time (see ``deps._resolve_destination_host_and_db`` and the
-        payload script), so a populated-but-differing
+        absent, empty, or whitespace-only destination host or schema falls back
+        to the source at execution time (see
+        ``deps._resolve_destination_host_and_db`` and the payload script), so a
+        populated-but-differing
         ``dest_service_id``/``dest_host``/``dest_db_id``/``dest_db_name`` marks
         a distinct table and is accepted.
 
@@ -185,17 +186,26 @@ class ArchivesCreate(BaseCaseInsensitiveModel):
         elif (
             (source_table := self.source_table_name.rstrip())
             and (dest_table := self.dest_table_name.rstrip())
-            and bool(self.source_db_name.rstrip())
+            and (source_db := self.source_db_name.rstrip())
             and source_table == dest_table
-            # Destination host resolves to the source host.
+            # Destination host resolves to the source host. An absent or
+            # whitespace-only ``dest_host`` is stripped to empty by the runtime
+            # resolver and falls back to the source, so it counts as the source
+            # host here too -- mirroring the strip-aware presence test in
+            # ``validate_dest_host_exclusivity``.
             and (
-                (self.dest_service_id is None and not self.dest_host)
+                (
+                    self.dest_service_id is None
+                    and not (self.dest_host and self.dest_host.strip())
+                )
                 or self.dest_service_id == self.service_id
             )
-            # Destination schema resolves to the source schema.
+            # Destination schema resolves to the source schema. The resolver
+            # rstrips ``dest_db_name``, so a whitespace-only value also falls
+            # back to the source schema.
             and (
-                (self.dest_db_id is None and not self.dest_db_name)
-                or self.dest_db_name == self.source_db_name
+                (dest_db := self.dest_db_name.rstrip()) == source_db
+                or (self.dest_db_id is None and not dest_db)
             )
         ):
             raise ValueError("Source and Destination tables cannot be the same.")

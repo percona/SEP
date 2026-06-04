@@ -547,6 +547,26 @@ class TestArchivesCreateSameTableIdentity:
         )
         assert form.dest_db_id == INVENTORY_DEST_SCHEMA_ID
 
+    def test_whitespace_only_dest_host_same_table_rejected(self):
+        """Whitespace-only dest host strips to empty at runtime → resolves to source.
+
+        The runtime resolver does ``(dest_host or "").strip()``, so a
+        whitespace-only host falls back to the source host. The validator must
+        treat it as the source host and reject the self-archive, not accept it.
+        """
+        with pytest.raises(ValidationError, match="cannot be the same"):
+            ArchivesCreate(**self._base_kwargs(dest_host="   "))
+
+    def test_whitespace_only_dest_schema_same_table_rejected(self):
+        """Whitespace-only dest schema strips to empty at runtime → resolves to source.
+
+        The runtime resolver does ``dest_db_name.rstrip()``, so a
+        whitespace-only schema falls back to the source schema and must be
+        rejected as a self-archive.
+        """
+        with pytest.raises(ValidationError, match="cannot be the same"):
+            ArchivesCreate(**self._base_kwargs(dest_db_name="   "))
+
     def test_same_inventory_table_ids_still_rejected(self):
         """The inventory table-id branch is unchanged: same ids → rejected."""
         with pytest.raises(ValidationError, match="cannot be the same"):
