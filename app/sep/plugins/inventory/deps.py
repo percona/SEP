@@ -37,6 +37,11 @@ from app.tasks.config import tasks_settings
 
 INVENTORY_PLUGIN_ENTITY_NAMES = frozenset({"nodes", "services", "schemas", "tables"})
 
+# Single source of truth for the read-only system-observation sub-resource
+# segment, shared by the proxy route decorators and the forwarded-path helper
+# so the inbound and forwarded paths cannot drift apart.
+SYSTEM_OBSERVATION_SEGMENT = "system-observation"
+
 
 class InventorySyncTriggerWrite(BaseModel):
     """Carry the optional JSON body for the ad-hoc inventory sync trigger.
@@ -358,7 +363,9 @@ def inventory_system_observation_path(entity: str, item_id: int) -> str:
     :return: Path relative to the inventory API root.
     :rtype: str
     """
-    return f"{inventory_service_detail_path(entity, item_id)}/system-observation"
+    return (
+        f"{inventory_service_detail_path(entity, item_id)}/{SYSTEM_OBSERVATION_SEGMENT}"
+    )
 
 
 def _parse_positive_int_parent_id(value: Any, *, field_name: str) -> int:

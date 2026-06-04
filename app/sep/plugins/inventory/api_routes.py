@@ -65,6 +65,7 @@ from app.sep.plugins.inventory.deps import (
     InventorySyncTriggerWrite,
     require_inventory_plugin_entity,
     SyncersDep,
+    SYSTEM_OBSERVATION_SEGMENT,
     unwrap_inventory_plugin_list_payload,
 )
 from app.sep.plugins.inventory.models import (
@@ -197,7 +198,7 @@ async def inventory_create_entity(
     return await inventory_api.post(inv_path, json=body)
 
 
-@router.get("/nodes/{node_id:int}/system-observation")
+@router.get(f"/nodes/{{node_id:int}}/{SYSTEM_OBSERVATION_SEGMENT}")
 async def inventory_node_system_observation(
     node_id: int,
     inventory_api: InventoryAPI,
@@ -220,7 +221,7 @@ async def inventory_node_system_observation(
     return await inventory_api.get(inventory_system_observation_path("nodes", node_id))
 
 
-@router.get("/services/{service_id:int}/system-observation")
+@router.get(f"/services/{{service_id:int}}/{SYSTEM_OBSERVATION_SEGMENT}")
 async def inventory_service_system_observation(
     service_id: int,
     inventory_api: InventoryAPI,
