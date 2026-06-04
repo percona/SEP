@@ -88,8 +88,9 @@ class ArchivesCreate(ConditionalRulesModel, BaseCaseInsensitiveModel):
         used; 0 means bulk insert remains enabled, and 1 means bulk insert is
         disabled.
     :type disable_bulk_insert: int | None
-    :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
-        If set, dest_table and dest_file must not be set, and vice versa.
+    :param delete_data: Optional integer flag (0 or 1). When set to 1, source
+        rows are deleted without being written to any destination; dest_table
+        and dest_file must not be set, and vice versa.
     :type delete_data: int | None
     :param dest_service_id: Optional; The Inventory ID of the destination database service.
     :type dest_service_id: int | EmptyStrToNone
@@ -133,7 +134,14 @@ class ArchivesCreate(ConditionalRulesModel, BaseCaseInsensitiveModel):
         None, ge=0, le=1, description="Optional flag to disable bulk insert."
     )
     delete_data: int | None = Field(
-        None, ge=0, le=1, description="Optional flag to delete data."
+        None,
+        ge=0,
+        le=1,
+        title="Delete Without Archiving",
+        description=(
+            "Delete source rows without writing them to any destination; "
+            "destination fields must be left unset."
+        ),
     )
     dest_service_id: int | EmptyStrToNone = None
     dest_host: str | None = None
@@ -219,8 +227,9 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
         insert. If ``None``, the setting is left unset so existing/default behavior is
         preserved.
     :type disable_bulk_insert: int | None
-    :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
-        If set, dest_table and dest_file must not be set, and vice versa.
+    :param delete_data: Optional integer flag (0 or 1). When set to 1, source
+        rows are deleted without being written to any destination; dest_table
+        and dest_file must not be set, and vice versa.
     :type delete_data: int | None
     :param dest_host: Optional; The destination host address.
     :type dest_host: NonEmptyStr | None
@@ -256,7 +265,14 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
         description="Optional flag to disable bulk insert; set to 0 or 1",
     )
     delete_data: int | None = Field(
-        None, ge=0, le=1, description="Optional flag to delete data."
+        None,
+        ge=0,
+        le=1,
+        title="Delete Without Archiving",
+        description=(
+            "Delete source rows without writing them to any destination; "
+            "destination fields must be left unset."
+        ),
     )
     dest_host: NonEmptyStr | None = None
     dest_port: int | None = None
