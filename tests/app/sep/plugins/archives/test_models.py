@@ -540,7 +540,7 @@ class TestArchivesCreateSameTableIdentity:
 
         The validator cannot resolve an inventory ``dest_db_id`` to a schema
         name, so it treats the destination schema as distinct — an accepted
-        limitation documented in the plan's edge-case table.
+        limitation tracked by SEP-1310.
         """
         form = ArchivesCreate(
             **self._base_kwargs(dest_service_id=1, dest_db_id=INVENTORY_DEST_SCHEMA_ID)
