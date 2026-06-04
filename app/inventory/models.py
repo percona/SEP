@@ -710,3 +710,66 @@ class HostSystemObservationWrite(HostSystemObservationBase):
         index=True,
         ondelete="CASCADE",
     )
+
+
+class ServiceSystemObservationBase(SQLModel):
+    """Define the base structure for service-level system observation data.
+
+    :param service_id: The foreign key referencing the service this observation belongs
+        to.
+    :type service_id: int
+    :param db_engine_version: The observed database engine version. Defaults to None.
+    :type db_engine_version: str | None
+    :param observed_at: When this observation was collected (domain provenance).
+    :type observed_at: UTCDatetime
+    """
+
+    service_id: int = SQLField(
+        foreign_key="service.id",
+        unique=True,
+        index=True,
+        ondelete="CASCADE",
+    )
+    db_engine_version: str | None = None
+    observed_at: UTCDatetime
+
+
+class ServiceSystemObservation(BaseSQLModel, ServiceSystemObservationBase, table=True):
+    """Store service-level system facts (one snapshot per service).
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :type id: int | None
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :type created_at: UTCDatetime
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :type updated_at: UTCDatetime | None
+    :param service_id: The unique identifier of the observed service. At most one
+        observation row per service.
+    :type service_id: int
+    :param db_engine_version: The observed database engine version, if set.
+    :type db_engine_version: str | None
+    :param observed_at: When this observation was collected.
+    :type observed_at: UTCDatetime
+    """
+
+
+class ServiceSystemObservationWrite(ServiceSystemObservationBase):
+    """Define the model for writing service system observation data to the inventory.
+
+    :param service_id: The foreign key referencing the service. Defaults to None.
+    :type service_id: int | None
+    :param db_engine_version: The observed database engine version. Defaults to None.
+    :type db_engine_version: str | None
+    :param observed_at: When this observation was collected.
+    :type observed_at: UTCDatetime
+    """
+
+    service_id: int | None = SQLField(
+        default=None,
+        foreign_key="service.id",
+        unique=True,
+        index=True,
+        ondelete="CASCADE",
+    )
