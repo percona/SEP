@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { ApiError, apiClient } from '@sep/api';
 
 const INVENTORY_BASE = '/plugins/inventory';
 
@@ -27,6 +27,58 @@ export interface Syncer {
 
 export interface SyncStatus {
   is_running: boolean;
+}
+
+/**
+ * Host- or service-level system facts collected by the syncer (SEP-1299 model).
+ * ``installed_packages`` and ``config`` are arbitrary JSON blobs whose exact
+ * shape is owned upstream, so they stay loosely typed and are rendered
+ * defensively by the panel.
+ */
+export interface SystemObservation {
+  os_version?: string | null;
+  db_engine_version?: string | null;
+  installed_packages?: unknown;
+  config?: unknown;
+  observed_at?: string | null;
+  [key: string]: unknown;
+}
+
+export type SystemObservationEntity = 'nodes' | 'services';
+
+/**
+ * Fetch the system observation for a node or service through the inventory
+ * plugin gateway. The upstream returns HTTP 404 when nothing has been
+ * collected yet; that is the expected "not collected" signal rather than a
+ * failure, so it is normalized to ``null`` (an empty state) instead of an
+ * error. All other failures propagate to React Query as usual.
+ */
+export function useSystemObservation(
+  entity: SystemObservationEntity,
+  id: string | number | undefined,
+  enabled = true,
+) {
+  return useQuery<SystemObservation | null>({
+    queryKey: ['inventory', 'system-observation', entity, id],
+    queryFn: async () => {
+      try {
+        const { data } = await apiClient.get<SystemObservation>(
+          `${INVENTORY_BASE}/${entity}/${id}/system-observation`,
+        );
+        return data;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    // Inventory PKs are integers and the proxy route is typed ``:int``; only
+    // fire for a numeric id so a non-numeric value can never produce a 422
+    // that masquerades as a generic error instead of the 404 empty state.
+    enabled: enabled && id !== undefined && id !== null && /^\d+$/.test(String(id)),
+    staleTime: 60_000,
+  });
 }
 
 export function useAvailableSyncers() {

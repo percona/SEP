@@ -23,7 +23,7 @@ implemented in ``app.sep.plugins.inventory.deps``; see
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import status
+from fastapi import HTTPException, status
 
 from app.sep.crud import SyncItemManager
 from app.sep.deps import BEARER_REQUIRED_DETAIL
@@ -632,4 +632,85 @@ class TestInventorySyncStatus:
     def test_requires_authentication(self, unauthenticated_client):
         """Without API auth the status endpoint returns 401."""
         response = unauthenticated_client.get("/api/plugins/inventory/sync/status/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+class TestInventorySystemObservation:
+    """Tests for the read-only system-observation proxy routes.
+
+    Cover both the host (node) and service endpoints across the
+    facts-present (200) and not-collected (404) paths. The 404 originates in
+    the inventory sub-app and must propagate unchanged so the React panel can
+    render its empty state instead of an error toast.
+    """
+
+    @pytest.mark.parametrize(
+        ("url", "inventory_path"),
+        [
+            (
+                "/api/plugins/inventory/nodes/3/system-observation",
+                "/3/system-observation",
+            ),
+            (
+                "/api/plugins/inventory/services/9/system-observation",
+                "/services/9/system-observation",
+            ),
+        ],
+    )
+    def test_system_observation_present_returns_200(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        url: str,
+        inventory_path: str,
+    ):
+        """Ensure a present observation proxies through with HTTP 200 and forwards the sub-resource path."""
+        payload = {
+            "os_version": "Ubuntu 22.04",
+            "db_engine_version": "8.0.36",
+            "installed_packages": {"openssl": "3.0.2"},
+            "config": {"max_connections": 100},
+            "observed_at": "2026-06-01T12:00:00Z",
+        }
+        mock_inventory_api_dep.get.return_value = payload
+        response = test_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == payload
+        mock_inventory_api_dep.get.assert_awaited_once_with(inventory_path)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/api/plugins/inventory/nodes/3/system-observation",
+            "/api/plugins/inventory/services/9/system-observation",
+        ],
+    )
+    def test_system_observation_not_collected_passes_through_404(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        url: str,
+    ):
+        """Ensure an upstream 404 (not collected yet) propagates as HTTP 404."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No system observation",
+        )
+        response = test_client.get(url)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/api/plugins/inventory/nodes/3/system-observation",
+            "/api/plugins/inventory/services/9/system-observation",
+        ],
+    )
+    def test_system_observation_requires_authentication(
+        self,
+        unauthenticated_client,
+        url: str,
+    ):
+        """Without API auth the system-observation endpoints return 401."""
+        response = unauthenticated_client.get(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

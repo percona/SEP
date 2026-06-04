@@ -37,6 +37,7 @@ import {
   pathThroughPairIndex,
   type NestedInventoryPair,
 } from './inventoryNestedPaths';
+import { SystemFactsPanel } from './SystemFactsPanel';
 
 const ENTITY_NAMES = new Set(['nodes', 'services', 'schemas', 'tables']);
 
@@ -627,6 +628,10 @@ export function renderInventoryDetailChildren({
 }): ReactNode {
   const prefix = inventoryMountPrefix(pathname);
   const blocks: ReactNode[] = [];
+
+  if ((entityName === 'nodes' || entityName === 'services') && isIdLike(record.id)) {
+    blocks.push(<SystemFactsPanel key="system-facts" entity={entityName} id={record.id} />);
+  }
 
   if (entityName === 'nodes' && isRecordArray(record.services) && prefix) {
     const lv = listViewFor(schema, 'services');

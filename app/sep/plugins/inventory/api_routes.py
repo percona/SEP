@@ -58,6 +58,7 @@ from app.sep.plugins.inventory.deps import (
     inventory_service_create_path,
     inventory_service_detail_path,
     inventory_service_list_path,
+    inventory_system_observation_path,
     InventoryAvailableSyncersDep,
     InventoryPluginJsonObjectBody,
     InventorySyncStatusResponse,
@@ -194,6 +195,53 @@ async def inventory_create_entity(
     entity = require_inventory_plugin_entity(entity)
     inv_path = inventory_service_create_path(entity, body)
     return await inventory_api.post(inv_path, json=body)
+
+
+@router.get("/nodes/{node_id:int}/system-observation")
+async def inventory_node_system_observation(
+    node_id: int,
+    inventory_api: InventoryAPI,
+) -> Any:
+    """Proxy the host-level system observation for a node (read-only).
+
+    Forwards to the inventory sub-app's ``/{node_id}/system-observation``
+    endpoint (SEP-1301) via ``InventoryAPI``. This three-segment literal path
+    cannot collide with the two-segment ``/{entity}/{item_id:int}`` detail
+    matcher. An upstream HTTP 404 — the "not collected yet" signal —
+    propagates unchanged for the React panel to render as an empty state.
+
+    :param node_id: Primary key of the node.
+    :type node_id: int
+    :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
+    :type inventory_api: InventoryAPI
+    :return: The host-level system observation payload.
+    :rtype: Any
+    """
+    return await inventory_api.get(inventory_system_observation_path("nodes", node_id))
+
+
+@router.get("/services/{service_id:int}/system-observation")
+async def inventory_service_system_observation(
+    service_id: int,
+    inventory_api: InventoryAPI,
+) -> Any:
+    """Proxy the service-level system observation for a service (read-only).
+
+    Forwards to the inventory sub-app's
+    ``/services/{service_id}/system-observation`` endpoint (SEP-1301) via
+    ``InventoryAPI``. An upstream HTTP 404 propagates unchanged so the React
+    panel renders its "not collected yet" empty state.
+
+    :param service_id: Primary key of the service.
+    :type service_id: int
+    :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
+    :type inventory_api: InventoryAPI
+    :return: The service-level system observation payload.
+    :rtype: Any
+    """
+    return await inventory_api.get(
+        inventory_system_observation_path("services", service_id)
+    )
 
 
 @router.get("/{entity}/{item_id:int}")
