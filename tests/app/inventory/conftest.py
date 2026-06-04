@@ -17,6 +17,7 @@
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -29,7 +30,14 @@ from app.core.utils import json_serializer
 from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
-from app.inventory.models import Node, Schema, Service, Table
+from app.inventory.models import (  # noqa: F401 — register all inventory tables
+    HostSystemObservation,
+    Node,
+    Schema,
+    Service,
+    ServiceSystemObservation,
+    Table,
+)
 from app.models import CasdoorUser
 from tests.app.factories import (
     NodeWriteFactory,
@@ -48,6 +56,14 @@ async def session_fixture() -> AsyncSession:
         json_serializer=json_serializer,
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_foreign_keys(
+        dbapi_connection: object,
+        _connection_record: object,
+    ) -> None:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")  # type: ignore[union-attr]
+
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
