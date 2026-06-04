@@ -3488,8 +3488,9 @@ export interface components {
      *         disabled.
      *     :type disable_bulk_insert: int | None
      *     :param delete_data: Optional integer flag (0 or 1). When set to 1, source
-     *         rows are deleted without being written to any destination; dest_table
-     *         and dest_file must not be set, and vice versa.
+     *         rows are deleted without being written to any destination; the
+     *         destination table/file fields (dest_table_id, dest_table_name,
+     *         dest_file) must not be set, and vice versa.
      *     :type delete_data: int | None
      *     :param dest_service_id: Optional; The Inventory ID of the destination database service.
      *     :type dest_service_id: int | EmptyStrToNone
@@ -3565,7 +3566,7 @@ export interface components {
       DISABLE_BULK_INSERT?: number | null;
       /**
        * Delete Without Archiving
-       * @description Delete source rows without writing them to any destination; destination fields must be left unset.
+       * @description Delete source rows without writing them to any destination; the destination table/file fields must be left unset.
        */
       DELETE_DATA?: number | null;
       /** Dest Service Id */

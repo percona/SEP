@@ -89,8 +89,9 @@ class ArchivesCreate(ConditionalRulesModel, BaseCaseInsensitiveModel):
         disabled.
     :type disable_bulk_insert: int | None
     :param delete_data: Optional integer flag (0 or 1). When set to 1, source
-        rows are deleted without being written to any destination; dest_table
-        and dest_file must not be set, and vice versa.
+        rows are deleted without being written to any destination; the
+        destination table/file fields (dest_table_id, dest_table_name,
+        dest_file) must not be set, and vice versa.
     :type delete_data: int | None
     :param dest_service_id: Optional; The Inventory ID of the destination database service.
     :type dest_service_id: int | EmptyStrToNone
@@ -140,7 +141,7 @@ class ArchivesCreate(ConditionalRulesModel, BaseCaseInsensitiveModel):
         title="Delete Without Archiving",
         description=(
             "Delete source rows without writing them to any destination; "
-            "destination fields must be left unset."
+            "the destination table/file fields must be left unset."
         ),
     )
     dest_service_id: int | EmptyStrToNone = None
@@ -208,7 +209,7 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :param dest_file: Optional; The destination file path.
         Must be None if dest_table_id is set.
     :type dest_file: NonEmptyStr | None
-    :param swp_table_suffix: Optional; Date suffix for the swap table.
+    :param swap_drop: Integer field (0-2) indicating the swap/drop behavior.
     :type swap_drop: int
     :param swp_table_suffix: Optional; Date suffix for the swap table.
     :type swp_table_suffix: date | None
@@ -271,7 +272,7 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
         title="Delete Without Archiving",
         description=(
             "Delete source rows without writing them to any destination; "
-            "destination fields must be left unset."
+            "the destination table/file fields must be left unset."
         ),
     )
     dest_host: NonEmptyStr | None = None

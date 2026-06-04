@@ -381,7 +381,7 @@ archives_schema = PluginSchema(
                 BoolField(
                     name="delete_data",
                     label="Delete Without Archiving",
-                    description="Source rows are deleted without being written to any destination; the Destination fields are disabled.",
+                    description="Source rows are deleted without being written to any destination; the Destination Table/File fields are disabled.",
                 ),
             ],
         ),
