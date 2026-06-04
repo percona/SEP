@@ -48,6 +48,8 @@ describe('downloadBlob', () => {
     const anchor = clickSpy.mock.instances[0] as HTMLAnchorElement;
     expect(anchor.href).toContain('blob:mock-url');
     expect(anchor.download).toBe('report.pdf');
+    // The anchor is hidden so it never affects layout or focus order.
+    expect(anchor.style.display).toBe('none');
     // Anchor is removed after the click; nothing lingers in the DOM.
     expect(document.querySelector('a')).toBeNull();
   });
