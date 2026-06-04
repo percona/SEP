@@ -117,7 +117,7 @@ while [[ -n $* ]]; do
     esac
 done
 
-export PGDATABASE="$DBNAME_ARG"
+export PGDATABASE="${DBNAME_ARG:-postgres}"
 
 PSQL="psql"
 

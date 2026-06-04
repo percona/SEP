@@ -26,7 +26,7 @@ if [[ ${1:-} == --dbname=* ]]; then
 elif [[ ${1:-} == --dbname ]]; then
     DBNAME="${2:-postgres}"
 fi
-export PGDATABASE="$DBNAME"
+export PGDATABASE="${DBNAME:-postgres}"
 
 PSQL="psql"
 
