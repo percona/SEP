@@ -409,15 +409,8 @@ archives_schema = PluginSchema(
             message="Source and Destination tables cannot be the same.",
         ),
         # Validator 1b: same destination identity (host + schema + table name).
-        # SEP-1305 / SEP-1303: a destination table that merely shares the source
-        # table's *name* is a self-archive only when it also resolves to the same
-        # host AND the same schema. An empty destination host/schema defaults to
-        # the source at execution time (deps._resolve_destination_host_and_db plus
-        # the payload script's dst→src fallback), so "no explicit dest host/schema"
-        # means "same host/schema". A populated dest_service_id / dest_host /
-        # dest_db_id / dest_db_name that differs is a distinct table. Whitespace-only
-        # manual values are treated as present (NOT stripped) by the DSL — the same
-        # stricter-than-legacy caveat as the original name-only check.
+        # Empty destination host/schema falls back to source at execution time, so
+        # self-archive is detected only when host, schema, and table name all match.
         FailRule(
             fail_when=all_(
                 truthy("source_db_name"),
