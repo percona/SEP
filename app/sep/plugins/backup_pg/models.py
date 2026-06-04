@@ -17,9 +17,9 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
@@ -37,6 +37,17 @@ class PgBackRestBackupType(EnumFieldMixin, StrEnum):
 
     INCR = "incr"
     DIFF = "diff"
+
+
+SafeStanza = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+    ),
+]
+"""Define a safe pgBackRest stanza name."""
 
 
 class BackupConfigAll(BaseCaseInsensitiveModel):
@@ -82,7 +93,7 @@ class BackupCreate(BackupConfigAll):
     hostname: NonEmptyStr
     service_id: int
     backup_type: BackupType
-    stanza: NonEmptyStr
+    stanza: SafeStanza
     alert_on_fail: bool = False
 
 
@@ -134,7 +145,7 @@ class BackupTaskWrite(BaseModel):
     :param stanza: The pgBackRest stanza name as configured in pgbackrest.conf on
         the host.  Must match an existing stanza — this value is passed verbatim
         as ``--stanza`` to every ``pgbackrest`` invocation.
-    :type stanza: NonEmptyStr
+    :type stanza: SafeStanza
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -142,7 +153,7 @@ class BackupTaskWrite(BaseModel):
     task_name: NonEmptyStr
     hostname: NonEmptyStr
     service_id: int
-    stanza: NonEmptyStr
+    stanza: SafeStanza
     alert_on_fail: bool = False
     logging_dir: str | None = None
     backup_dir: NonEmptyStr
