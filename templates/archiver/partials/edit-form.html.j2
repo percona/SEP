@@ -808,7 +808,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
 
     function updateDestinationFieldset() {
-        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
+        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1') {
             destinationContainer.classList.add('hidden');
             if (destManualInputContainer) destManualInputContainer.style.display = 'none';
             destTableSelect.disabled = true;
