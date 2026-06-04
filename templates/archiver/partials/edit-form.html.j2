@@ -1290,7 +1290,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         if (matched.destTableId === "-2") {
             setManualInputDest(true, true);
         }
-        updateCreateButtonState();
         updateDestinationFieldset();
         toggleSchemaAndTable();
         toggleSourceQueryInput();
@@ -1300,5 +1299,10 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         toggleWhereInput();
         togglePurgeOptionsContainer();
         toggleOptionalInputNames();
+        // Compute the Save button state last, after the destination toggles
+        // have settled destTableSelect's enabled/disabled state. Running it
+        // earlier counts the still-enabled placeholder ("-1") dest table and
+        // leaves Save wrongly disabled on load for an existing task.
+        updateCreateButtonState();
     });
 </script>
