@@ -823,7 +823,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
 
     function updateDestinationFieldset() {
-        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
+        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1') {
             destinationContainer.classList.add('hidden');
             if (destManualInputContainer) destManualInputContainer.style.display = 'none';
             destTableSelect.disabled = true;
@@ -840,7 +840,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             const hasDestFile = dstFileInput.value.trim() !== '';
             const hasDestTable = useManualInputDest
                 ? (destTableNameInput.value.trim() !== '')
-                : (destTableSelect.value !== '');
+                : (destTableSelect.value !== '' && destTableSelect.value !== '-1');
 
             if (hasDestFile) {
                 if (destManualInputContainer) destManualInputContainer.style.display = 'none';
@@ -1025,7 +1025,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
         const hasDestTable = useManualInputDest
             ? (destTableNameInput.value.trim() !== '')
-            : (destTableSelect.value !== '');
+            : (destTableSelect.value !== '' && destTableSelect.value !== '-1');
 
         if (hasDestTable) {
             dstFileContainer.classList.add('hidden');
