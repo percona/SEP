@@ -17,7 +17,7 @@
 
 from datetime import datetime
 from enum import auto, IntEnum, StrEnum
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, FutureDatetime, model_validator
 
@@ -108,6 +108,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     mydumper_desync_pxc: bool = False
     mydumper_use_numa: bool = False
     mydumper_extra_args: str | EmptyStrToNone = None
+    mydumper_verbose: Annotated[int, Field(ge=0, le=3)] | EmptyStrToNone = None
     use_ftwrl_guardian: bool = False
     xtrabackup_copies: int | EmptyStrToNone = None
     xtrabackup_kill_queries: bool = False
@@ -190,6 +191,9 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type mydumper_use_numa: bool
     :param mydumper_extra_args: Additional command-line arguments for mydumper.
     :type mydumper_extra_args: str | EmptyStrToNone
+    :param mydumper_verbose: mydumper log verbosity level (0 silent … 3 info).
+        Unset falls back to the payload default of ``3``.
+    :type mydumper_verbose: int | EmptyStrToNone
     :param use_ftwrl_guardian: Whether to use FTWRL guardian to manage locks during backup.
     :type use_ftwrl_guardian: bool
     :param xtrabackup_copies: Number of backup copies for xtrabackup.
