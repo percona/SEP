@@ -598,6 +598,33 @@ def test_archives_create_form_renders_dest_schema_name_field(test_client):
     assert 'name="dest_db_name"' in response.text
 
 
+def test_archives_create_form_renders_delete_data_label(test_client):
+    """Verify GET /archives/ renders the delete_data toggle with its disambiguated label.
+
+    The legacy Jinja create form is still reachable via a direct ``/archives``
+    URL (deprecated route), so its misleading ``DELETE_DATA`` label must read as
+    "Delete Without Archiving" to match the React form and avoid the data-loss
+    confusion.
+    """
+    sep_app.dependency_overrides[get_archives_index_context] = lambda: {
+        "user": "default_user",
+        "connectivity_check_default": True,
+        "csrf_token": "test-csrf",
+        "services": [],
+        "executor_hosts": [{"value": "host1", "label": "Host 1"}],
+        "tasks": [],
+        "history_tasks": [],
+    }
+    try:
+        response = test_client.get("/archives/")
+    finally:
+        sep_app.dependency_overrides.pop(get_archives_index_context, None)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "Delete Without Archiving" in response.text
+    assert "DELETE_DATA" not in response.text
+
+
 @pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
 def test_archives_detail_same_as_source_rehydrates_dest_schema(
     test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
