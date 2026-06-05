@@ -1001,3 +1001,159 @@ class TestTaskHistoryLogManagerIdsWithChunks:
         result = await TaskHistoryLogManager.ids_with_chunks(session, [history.id])
 
         assert result == {history.id}
+
+
+# ---------------------------------------------------------------------------
+# TaskHistoryLogManager.list_stream_keys / iter_chunks_reverse
+# ---------------------------------------------------------------------------
+
+
+class TestTaskHistoryLogManagerStreamKeysAndReverse:
+    """Test ``list_stream_keys`` and ``iter_chunks_reverse``."""
+
+    @pytest.mark.asyncio
+    async def test_list_stream_keys_returns_distinct_pairs(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert distinct ``(source, stream)`` pairs are returned in order."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_chunk(session, history.id, payload=b"stdout-a")
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDERR,
+            new_bytes=b"stderr-a",
+            force_flush=True,
+            producer_offset_after=8,
+        )
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="prepare",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"stdout-b",
+            force_flush=True,
+            producer_offset_after=8,
+        )
+
+        keys = await TaskHistoryLogManager.list_stream_keys(session, history.id)
+
+        assert keys == [
+            ("prepare", TaskLogType.STDOUT),
+            ("run-script", TaskLogType.STDERR),
+            ("run-script", TaskLogType.STDOUT),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_list_stream_keys_source_filter(self, session: AsyncSession) -> None:
+        """Assert ``source`` limits pairs to the matching step."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_chunk(session, history.id, payload=b"stdout-a")
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="prepare",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"stdout-b",
+            force_flush=True,
+            producer_offset_after=8,
+        )
+
+        keys = await TaskHistoryLogManager.list_stream_keys(
+            session, history.id, source="run-script"
+        )
+
+        assert keys == [("run-script", TaskLogType.STDOUT)]
+
+    @pytest.mark.asyncio
+    async def test_list_stream_keys_empty_when_no_chunks(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert an empty list is returned when no chunk rows exist."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+
+        keys = await TaskHistoryLogManager.list_stream_keys(session, history.id)
+
+        assert keys == []
+
+    @pytest.mark.asyncio
+    async def test_iter_chunks_reverse_yields_newest_first_per_stream(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert chunks are yielded in descending ``start_offset`` order."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"first",
+            force_flush=True,
+            producer_offset_after=5,
+        )
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"second",
+            force_flush=True,
+            producer_offset_after=11,
+        )
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDERR,
+            new_bytes=b"err",
+            force_flush=True,
+            producer_offset_after=3,
+        )
+
+        chunks = [
+            chunk
+            async for chunk in TaskHistoryLogManager.iter_chunks_reverse(
+                session,
+                history.id,
+                source="run-script",
+                stream=TaskLogType.STDOUT,
+            )
+        ]
+
+        assert [chunk.content for chunk in chunks] == ["second", "first"]
+        assert [chunk.start_offset for chunk in chunks] == [5, 0]
+
+    @pytest.mark.asyncio
+    async def test_iter_chunks_reverse_orders_streams_before_offsets(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert global ordering is ``(source, stream, start_offset DESC)``."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_chunk(session, history.id, payload=b"stdout")
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDERR,
+            new_bytes=b"stderr",
+            force_flush=True,
+            producer_offset_after=6,
+        )
+
+        chunks = [
+            chunk
+            async for chunk in TaskHistoryLogManager.iter_chunks_reverse(
+                session, history.id
+            )
+        ]
+
+        assert [(chunk.source, chunk.stream, chunk.content) for chunk in chunks] == [
+            ("run-script", TaskLogType.STDERR, "stderr"),
+            ("run-script", TaskLogType.STDOUT, "stdout"),
+        ]
