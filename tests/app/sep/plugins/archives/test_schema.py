@@ -70,6 +70,17 @@ class TestArchivesSchemaStructure:
         }
         assert expected.issubset(all_names), f"Missing fields: {expected - all_names}"
 
+    def test_delete_data_label_and_description(self):
+        """Assert delete_data is labelled to disambiguate purge-vs-archive."""
+        field = next(
+            f
+            for section in archives_schema.forms
+            for f in section.fields
+            if f.name == "delete_data"
+        )
+        assert field.label == "Delete Without Archiving"
+        assert "without being written to any destination" in field.description
+
 
 class TestArchivesSchemaEndpoint:
     """HTTP-level checks for GET /api/plugins/archives/schema."""
@@ -87,6 +98,9 @@ class TestArchivesSchemaEndpoint:
         assert body["name"] == "archives"
         assert body["capabilities"]["stats"] is True
         assert body["capabilities"]["chaining"] is True
+        fields = [f for form in body["forms"] for f in form["fields"]]
+        delete_data = next(f for f in fields if f["name"] == "delete_data")
+        assert delete_data["label"] == "Delete Without Archiving"
 
 
 class TestArchivesSchemaFieldGates:
@@ -150,7 +164,7 @@ class TestArchivesSchemaFailRules:
 
     def test_source_query_missing_sources_fail_rule(self):
         """FailRule fires when source_query absent and no IDs/names are provided."""
-        all_fail_whens: list[dict] = []
+        all_fail_whens = []
         for section in archives_schema.forms:
             if section.fail_when:
                 all_fail_whens.extend(r.fail_when.to_dict() for r in section.fail_when)
@@ -187,7 +201,7 @@ class TestArchivesSchemaFailRules:
 
     def test_dest_required_fail_rule_present(self):
         """FailRule fires when no dest and not SWAP_DROP and not delete_data."""
-        all_fail_rules: list = []
+        all_fail_rules = []
         for section in archives_schema.forms:
             if section.fail_when:
                 all_fail_rules.extend(section.fail_when)
@@ -202,7 +216,7 @@ class TestArchivesSchemaFailRules:
 
     def test_same_table_id_fail_rule_present(self):
         """FailRule fires when source_table_id == dest_table_id (both present)."""
-        all_fail_rules: list = []
+        all_fail_rules = []
         for section in archives_schema.forms:
             if section.fail_when:
                 all_fail_rules.extend(section.fail_when)
@@ -216,7 +230,7 @@ class TestArchivesSchemaFailRules:
 
     def test_same_table_id_fail_rule_wire_format(self):
         """FailRule for same IDs must use all_equal wire shape."""
-        all_fail_rules: list = []
+        all_fail_rules = []
         for section in archives_schema.forms:
             if section.fail_when:
                 all_fail_rules.extend(section.fail_when)
@@ -239,7 +253,7 @@ class TestArchivesSchemaFailRules:
 
     def test_dest_service_id_and_host_mutual_exclusion_fail_rule(self):
         """FailRule for dest_service_id + dest_host conflict is present."""
-        all_fail_rules: list = []
+        all_fail_rules = []
         for section in archives_schema.forms:
             if section.fail_when:
                 all_fail_rules.extend(section.fail_when)
@@ -256,7 +270,7 @@ class TestArchivesSchemaFailRules:
 
     def test_swap_archive_drop_forbids_dest_host_fail_rule(self):
         """FailRule fires when swap_drop==2 and dest host is set."""
-        all_fail_rules: list = []
+        all_fail_rules = []
         for section in archives_schema.forms:
             if section.fail_when:
                 all_fail_rules.extend(section.fail_when)
