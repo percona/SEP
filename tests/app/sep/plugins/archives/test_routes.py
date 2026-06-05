@@ -97,6 +97,10 @@ def _mock_get_archives_index_context_dep():
     sep_app.dependency_overrides[get_archives_index_context] = lambda: {
         "user": "default_user",
         "connectivity_check_default": True,
+        # An executor host is required for the index to render the create form,
+        # which exercises the dest_file markup guard asserted below.
+        "executor_hosts": [{"value": "host1", "label": "host1"}],
+        "services": [],
     }
     yield
     sep_app.dependency_overrides = {}
@@ -111,6 +115,9 @@ def test_archives_index(
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert response.headers.get("deprecation") == "true"
+    # Render guard only: name="dest_file" is always in the server HTML; the
+    # inline JS strips it at runtime, which this does not exercise.
+    assert 'name="dest_file"' in response.text
 
 
 @pytest.mark.usefixtures("_mock_archives_task_payload")
@@ -262,6 +269,101 @@ def test_archives_update_accepts_empty_dest_port(
     mock_task_api_dep.put.assert_awaited_once()
 
 
+def test_archives_create_same_as_source_with_manual_dest_schema(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+    created_schema,
+    created_table,
+):
+    """POST /archives/ with same-as-source host and a manual destination schema.
+
+    With no ``dest_service_id`` and no ``dest_host`` but a typed ``dest_db_name``,
+    the posted purge config must carry ``DEST_DB`` (archive to a different schema
+    on the same host) and omit ``DEST_HOST`` entirely. Goes through the real
+    form-binding chain (no ``build_archives_task_payload`` override).
+    """
+    created_archives = ArchivesCreate(
+        alias="arch_same_host_manual_schema",
+        hostname="source_db",
+        service_id=created_service.id,
+        source_db_id=created_schema.id,
+        source_table_id=created_table.id,
+        swap_drop=SwapDropEnum.SWAP_DROP,
+        dest_db_name="archive_db",
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/archives/",
+        data=created_archives.model_dump(exclude_none=True),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    mock_task_api_dep.post.assert_awaited_once()
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    purge_config = yaml.safe_load(posted["data"]["meta"]["config"])
+    purge_item = purge_config["PURGE_LIST"][0]
+    assert purge_item["DEST_DB"] == "archive_db"
+    assert "DEST_HOST" not in purge_item
+
+
+def test_archives_update_same_as_source_with_manual_dest_schema(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    created_service,
+    created_schema,
+    created_table,
+):
+    """POST /archives/{task_name}/update with same-as-source + manual dest schema.
+
+    The update route shares the form-binding chain, so the same same-host
+    manual-schema path has to reach ``DEST_DB`` (and omit ``DEST_HOST``) on the
+    PUT payload too.
+    """
+    created_archives = ArchivesCreate(
+        alias="arch_update_same_host_manual_schema",
+        hostname="source_db",
+        service_id=created_service.id,
+        source_db_id=created_schema.id,
+        source_table_id=created_table.id,
+        swap_drop=SwapDropEnum.SWAP_DROP,
+        dest_db_name="archive_db",
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    mock_task_api_dep.put.return_value = AsyncMock()
+
+    response = test_client.post(
+        f"/archives/{created_archives.alias}/update",
+        data=created_archives.model_dump(exclude_none=True),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    mock_task_api_dep.put.assert_awaited_once()
+    put_payload = mock_task_api_dep.put.await_args.kwargs["json"]
+    purge_config = yaml.safe_load(put_payload["data"]["meta"]["config"])
+    purge_item = purge_config["PURGE_LIST"][0]
+    assert purge_item["DEST_DB"] == "archive_db"
+    assert "DEST_HOST" not in purge_item
+
+
 def test_archives_create_skips_connectivity_check_when_opted_out(
     test_client, mock_task_api_dep, created_archives
 ):
@@ -357,6 +459,9 @@ def test_archives_detail(
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
     assert 'name="disable_bulk_insert"' in response.text
+    # Render guard only (see test_archives_index); does not exercise the
+    # inline-JS gating.
+    assert 'name="dest_file"' in response.text
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
@@ -465,6 +570,85 @@ def test_archives_detail_with_remote_destination(
     assert "3307" in response.text
     # Remote database should be displayed
     assert "remote_db" in response.text
+
+
+def test_archives_create_form_renders_dest_schema_name_field(test_client):
+    """GET /archives/ renders the standalone manual destination-schema field.
+
+    The ``dest_db_name`` input lives in its own ``#dest_schema_name_field``
+    container (decoupled from the manual-host block) so it can be shown when the
+    destination host is the same as the source.
+    """
+    sep_app.dependency_overrides[get_archives_index_context] = lambda: {
+        "user": "default_user",
+        "connectivity_check_default": True,
+        "csrf_token": "test-csrf",
+        "services": [],
+        "executor_hosts": [{"value": "host1", "label": "Host 1"}],
+        "tasks": [],
+        "history_tasks": [],
+    }
+    try:
+        response = test_client.get("/archives/")
+    finally:
+        sep_app.dependency_overrides.pop(get_archives_index_context, None)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert 'id="dest_schema_name_field"' in response.text
+    assert 'name="dest_db_name"' in response.text
+
+
+@pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
+def test_archives_detail_same_as_source_rehydrates_dest_schema(
+    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
+):
+    """Edit form rehydrates a same-as-source task's manual destination schema.
+
+    A task saved with a destination schema but no destination host (``DEST_DB``
+    set, ``DEST_HOST`` absent) must render the standalone
+    ``#dest_schema_name_field`` container with the saved schema pre-filled.
+    """
+    mock_meta_config = yaml.dump(
+        {
+            "ALL": {
+                "SOURCE_HOST": "127.0.0.1",
+                "SOURCE_PORT": 3306,
+            },
+            "PURGE_LIST": [
+                {
+                    "ALIAS": "test_same_host_manual_schema",
+                    "SOURCE_DB": "source_db",
+                    "SOURCE_TABLE": "source_table",
+                    "DEST_TABLE": "dest_table",
+                    "DEST_DB": "archive_db",
+                    "SWAP_DROP": 1,
+                }
+            ],
+        }
+    )
+
+    mock_data = {
+        "meta": {
+            "config": mock_meta_config,
+            "target": "mock_target",
+        },
+        "hostname": "mock_nomad_host_name",
+    }
+    created_task.data = mock_data
+    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_task_api_dep.get.side_effect = [
+        {"127.0.0.1": "localhost"},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+        [],
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+    ]
+    response = test_client.get(f"/archives/{created_task.name}")
+    assert response.status_code == status.HTTP_200_OK
+    # The manual destination-schema field is its own container...
+    assert 'id="dest_schema_name_field"' in response.text
+    # ...and the saved schema name is server-rendered into that input.
+    assert re.search(r'id="dest_db_name"[^>]*value="archive_db"', response.text)
 
 
 @pytest.mark.usefixtures(

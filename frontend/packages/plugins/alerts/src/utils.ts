@@ -15,14 +15,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback } from 'react';
-import { downloadBlob } from '../utils/downloadBlob';
-
-export type DownloadLog = (filename: string, text: string) => void;
-
-export function useLogDownload(): DownloadLog {
-  return useCallback((filename: string, text: string) => {
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    downloadBlob(blob, filename);
-  }, []);
+/**
+ * Format an ISO timestamp into a human-readable, locale-aware string.
+ *
+ * Falls back to the raw value when it cannot be parsed as a date so callers
+ * never render `Invalid Date`.
+ */
+export function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

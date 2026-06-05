@@ -15,14 +15,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback } from 'react';
-import { downloadBlob } from '../utils/downloadBlob';
+import { Route, Routes } from 'react-router-dom';
+import { AlertsListPage } from './AlertsListPage';
+import { AlertsDetailPage } from './AlertsDetailPage';
 
-export type DownloadLog = (filename: string, text: string) => void;
-
-export function useLogDownload(): DownloadLog {
-  return useCallback((filename: string, text: string) => {
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    downloadBlob(blob, filename);
-  }, []);
+/**
+ * Alerts plugin entry point.
+ *
+ * Routes:
+ *   /alerts/templates/              → alert templates list + push/restore/PagerDuty wizard
+ *   /alerts/templates/backup/:backupId → backup detail view
+ */
+export function AlertsPlugin() {
+  return (
+    <Routes>
+      <Route index element={<AlertsListPage />} />
+      <Route path="backup/:backupId" element={<AlertsDetailPage />} />
+    </Routes>
+  );
 }
