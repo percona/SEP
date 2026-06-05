@@ -15,6 +15,8 @@
 
 """Define test fixtures for inventory tests."""
 
+import sqlite3
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import event
@@ -59,10 +61,10 @@ async def session_fixture() -> AsyncSession:
 
     @event.listens_for(engine.sync_engine, "connect")
     def _enable_sqlite_foreign_keys(
-        dbapi_connection: object,
+        dbapi_connection: sqlite3.Connection,
         _connection_record: object,
     ) -> None:
-        dbapi_connection.execute("PRAGMA foreign_keys=ON")  # type: ignore[union-attr]
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
