@@ -1981,6 +1981,101 @@ class TestListFiles:
         assert "subdir" in result
         assert result["subdir"].is_dir is True
 
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_no_filesystem_returns_empty_dict(self, mock_nomad_cls):
+        """Assert list_files returns {} when allocation has no filesystem (prestart 404)."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = status.HTTP_404_NOT_FOUND
+        mock_response.raise_for_status = MagicMock()
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(executor, "_request", return_value=mock_ctx_manager):
+            result = await executor.list_files(queue_item, "/alloc/data")
+
+        assert result == {}
+        mock_response.raise_for_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_non_404_http_errors_propagate(self, mock_nomad_cls):
+        """Assert list_files propagates non-404 HTTP errors (Nomad outage must surface)."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = status.HTTP_500_INTERNAL_SERVER_ERROR
+        mock_response.raise_for_status = MagicMock(
+            side_effect=ClientError("server error")
+        )
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx_manager),
+            pytest.raises(ClientError),
+        ):
+            await executor.list_files(queue_item, "/alloc/data")
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_auth_error_propagates(self, mock_nomad_cls):
+        """Assert list_files propagates 403 — auth errors must not be silently dropped."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = status.HTTP_403_FORBIDDEN
+        mock_response.raise_for_status = MagicMock(side_effect=ClientError("forbidden"))
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx_manager),
+            pytest.raises(ClientError),
+        ):
+            await executor.list_files(queue_item, "/alloc/data")
+
 
 class TestParsePayload:
     """Test NomadExecutor.parse_payload."""
@@ -2488,3 +2583,41 @@ class TestNomadTaskStatesToExecutionEvents:
         assert out[0].event_type == "Setup"
         assert "Downloading Artifacts" in out[0].description
         assert out[0].step == "step1"
+
+    def test_prestart_artifact_download_failure_event_extracted(self):
+        """Assert 'Failed Artifact Download' prestart event surfaces as ExecutionEvent."""
+        task_states = {
+            "step1": {
+                "Events": [
+                    {
+                        "Type": "Failed Artifact Download",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "Failed to download artifact: connection refused",
+                    },
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == 1
+        assert events[0].event_type == "Failed Artifact Download"
+        assert "connection refused" in events[0].description
+        assert events[0].step == "step1"
+
+    def test_prestart_setup_failure_event_extracted(self):
+        """Assert 'Setup Failure' prestart event surfaces as ExecutionEvent."""
+        task_states = {
+            "step1": {
+                "Events": [
+                    {
+                        "Type": "Setup Failure",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "failed to setup alloc: artifact download failed",
+                    },
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == 1
+        assert events[0].event_type == "Setup Failure"
+        assert "artifact download failed" in events[0].description
+        assert events[0].step == "step1"

@@ -1842,6 +1842,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         async with self._request(
             "GET", f"/v1/client/fs/ls/{alloc_id}", params={"path": path}
         ) as response:
+            if response.status == status.HTTP_404_NOT_FOUND:
+                logger.debug(
+                    "Allocation %r has no filesystem (prestart failure); returning empty files",
+                    alloc_id,
+                )
+                return {}
             response.raise_for_status()
             files = await response.json()
         return {
