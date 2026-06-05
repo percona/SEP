@@ -17,6 +17,7 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
+import { downloadBlob } from '@sep/framework';
 import type { ReportConfig, ReportData, ReportParams, UploadResult } from './types';
 
 // The PDF and upload endpoints do not accept a `sections` filter (the backend
@@ -65,19 +66,7 @@ export function useDownloadPdf() {
         responseType: 'blob',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-      const url = URL.createObjectURL(data);
-      try {
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = 'Health_and_Security_Report.pdf';
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-      } finally {
-        // Defer revocation: Safari and Firefox can race the anchor-triggered
-        // download if the blob URL is revoked in the same tick as .click().
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-      }
+      downloadBlob(data, 'Health_and_Security_Report.pdf');
     },
   });
 }
