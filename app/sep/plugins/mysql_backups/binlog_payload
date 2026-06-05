@@ -1792,7 +1792,7 @@ class S3UploadProvider:
         self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
-        self.upload_quiet: bool = settings.get("UPLOAD_QUIET", False)
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         self.logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
 
         if self.s3_bucket is None:
