@@ -166,8 +166,81 @@ async def seeded_backup(session: AsyncSession) -> AlertBackup:
     return await AlertBackupManager.create(session, backup)
 
 
+class TestAlertsIndexApi:
+    """Tests for the ``GET /`` index endpoint backing the React list page."""
+
+    def test_index_returns_groups_status_and_backups(
+        self, api_client, mock_pmm_api, seeded_backup
+    ):
+        """Aggregate templates, PMM connectivity, PagerDuty status, and backups."""
+        mock_pmm_api.list_contact_points.return_value = []
+
+        response = api_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        # Only the GENERIC service type has templates in the fixture; empty
+        # groups are filtered out.
+        assert [g["service_type"] for g in data["groups"]] == ["generic"]
+        generic = data["groups"][0]
+        assert generic["label"] == "Generic"
+        assert {t["name"] for t in generic["templates"]} == {"High CPU", "Disk Full"}
+        # present_names is an empty set (PMM reachable, nothing pushed yet).
+        assert all(t["in_pmm"] is False for t in generic["templates"])
+        assert data["pmm_connected"] is True
+        assert data["pagerduty"] == {"configured": False, "uid": None}
+        assert [b["id"] for b in data["recent_backups"]] == [seeded_backup.id]
+
+    def test_index_marks_templates_present_in_pmm(self, api_client, mock_pmm_api):
+        """Flag ``in_pmm`` for templates whose names are already present in PMM."""
+        mock_pmm_api.list_contact_points.return_value = []
+        sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
+
+        response = api_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        present = {
+            t["name"]: t["in_pmm"] for t in response.json()["groups"][0]["templates"]
+        }
+        assert present == {"High CPU": True, "Disk Full": False}
+
+    def test_index_reports_configured_pagerduty(self, api_client, mock_pmm_api):
+        """Surface the PagerDuty UID when a SEP contact point exists."""
+        mock_pmm_api.list_contact_points.return_value = [
+            ContactPoint(
+                uid="cp-1",
+                name="SEP PagerDuty",
+                type="pagerduty",
+                settings={"integrationKey": "k"},
+            ),
+        ]
+
+        response = api_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["pagerduty"] == {"configured": True, "uid": "cp-1"}
+
+    @pytest.mark.usefixtures("_mock_pmm_unavailable")
+    def test_index_degrades_when_pmm_unavailable(self, api_client):
+        """Report ``pmm_connected=False`` and null PagerDuty when PMM is down."""
+        sep_app.dependency_overrides[get_alert_templates] = lambda: _ALERT_TEMPLATES
+
+        response = api_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["pmm_connected"] is False
+        assert data["pagerduty"] is None
+        assert all(t["in_pmm"] is False for g in data["groups"] for t in g["templates"])
+
+
 class TestApiAuthentication:
     """Assert each JSON endpoint requires authentication."""
+
+    def test_index_requires_auth(self, unauthenticated_api_client):
+        """Reject unauthenticated GET / with 401."""
+        response = unauthenticated_api_client.get(f"{API_BASE}/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_list_backups_requires_auth(self, unauthenticated_api_client):
         """Reject unauthenticated GET /backups with 401."""

@@ -24,7 +24,11 @@ import logging
 from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.core.db.crud import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    MAX_PAGINATION_LIMIT,
+)
 from app.core.models import PaginatedResponse
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
@@ -53,8 +57,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=mysql_backups_schema)
-
-MAX_PAGINATION_LIMIT = 50
 
 
 @router.get("/", response_model=PaginatedResponse[BackupResponse])
