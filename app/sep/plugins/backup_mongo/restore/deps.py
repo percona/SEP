@@ -818,6 +818,37 @@ UnprotectedRestoreParentTask = Annotated[
 ]
 
 
+async def update_restore_task_from_body(
+    body: RestoreTaskWrite,
+    parent_task: UnprotectedRestoreParentTask,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+) -> Task:
+    """Update a restore task group from a JSON API request body.
+
+    Converts the body to :class:`RestoreCreate` with identity pinned from the
+    path parent, then delegates to :func:`update_restore_task_group`.
+
+    :param body: The JSON request body for restore task update.
+    :type body: RestoreTaskWrite
+    :param parent_task: The unprotected parent restore config task from the URL path.
+    :type parent_task: Task
+    :param tasks_api: The TaskAPI instance used to update tasks.
+    :type tasks_api: TaskAPI
+    :param inventory_api: The Inventory API to look up services.
+    :type inventory_api: InventoryAPI
+    :return: The refreshed parent restore config task.
+    :rtype: Task
+    """
+    form = restore_update_form_from_write(body, parent_task)
+    return await update_restore_task_group(
+        tasks_api,
+        parent_task,
+        form,
+        inventory_api,
+    )
+
+
 async def delete_restore_task_group(
     tasks_api: TaskAPI,
     parent_task: Task,
@@ -851,6 +882,7 @@ RestoreTaskGroupFromBody = Annotated[
     RestoreTaskGroupPayloads,
     Depends(build_restore_task_group_from_body),
 ]
+RestoreUpdateTaskFromBody = Annotated[Task, Depends(update_restore_task_from_body)]
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
