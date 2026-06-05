@@ -16,6 +16,7 @@
 """Define tests for the app.sep.plugins.backup_mongo.restore.deps module."""
 
 from collections.abc import Awaitable, Callable
+from unittest.mock import AsyncMock
 
 import pytest
 import yaml
@@ -33,10 +34,12 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     build_pbm_list_task_payload,
     build_restore_config_task_payload,
     build_restore_task_group,
+    build_restore_task_group_from_body,
     build_restore_task_payload,
     build_restore_tasks,
+    update_restore_task_from_body,
 )
-from app.sep.plugins.backup_mongo.restore.models import RestoreCreate
+from app.sep.plugins.backup_mongo.restore.models import RestoreCreate, RestoreTaskWrite
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import TaskFactory
 
@@ -87,7 +90,7 @@ async def test_dispatch_includes_service_name_when_service_id_set(
     restore_create: RestoreCreate,
     mongo_service: CreatedService,
 ):
-    """All four mongo restore dispatch functions inject _service_name when service_id is set."""
+    """Inject _service_name into meta when service_id is set across restore dispatch functions."""
     mocker.patch(
         "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
         return_value=mongo_service,
@@ -280,4 +283,77 @@ async def test_restore_task_group_yaml_golden_strings(
     assert (
         force_resync_task.data["meta"]["config"]
         == "credentials_path: /tmp/creds.yaml\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_restore_task_group_from_body_delegates(
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+    restore_task_write: RestoreTaskWrite,
+) -> None:
+    """Convert body to form then build task group payloads."""
+    expected_payloads = mocker.Mock()
+    restore_create_from_write = mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.restore_create_from_write",
+        return_value=restore_create,
+    )
+    build_restore_task_group_mock = mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.build_restore_task_group",
+        new_callable=AsyncMock,
+        return_value=expected_payloads,
+    )
+
+    result = await build_restore_task_group_from_body(
+        restore_task_write, mock_remote_api
+    )
+
+    assert result is expected_payloads
+    restore_create_from_write.assert_called_once_with(restore_task_write)
+    build_restore_task_group_mock.assert_awaited_once_with(
+        restore_create,
+        mock_remote_api,
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_restore_task_from_body_delegates(
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+    restore_task_write: RestoreTaskWrite,
+) -> None:
+    """Pin form identity from parent then update the full task group."""
+    parent_task = _restore_parent_task(
+        config=yaml.dump({"backupType": BackupType.PBM_LOGICAL.value}),
+    )
+    tasks_api = mocker.Mock()
+    restore_update_form_from_write = mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.restore_update_form_from_write",
+        return_value=restore_create,
+    )
+    update_restore_task_group = mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.update_restore_task_group",
+        new_callable=AsyncMock,
+        return_value=parent_task,
+    )
+
+    result = await update_restore_task_from_body(
+        restore_task_write,
+        parent_task,
+        tasks_api,
+        mock_remote_api,
+    )
+
+    assert result is parent_task
+    restore_update_form_from_write.assert_called_once_with(
+        restore_task_write,
+        parent_task,
+    )
+    update_restore_task_group.assert_awaited_once_with(
+        tasks_api,
+        parent_task,
+        restore_create,
+        mock_remote_api,
     )
