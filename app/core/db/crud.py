@@ -202,13 +202,15 @@ class BaseManager:
         """Return the ordering for SELECT queries.
 
         :return: The explicit manager ordering or the default ``created_at``
-            descending fallback for ``BaseSQLModel`` models.
+            descending fallback (tie-broken by primary key) for
+            ``BaseSQLModel`` models.
         :rtype: Iterable[ColumnExpressionOrStrLabelArgument] | None
         """
         if cls.ordering is not None:
             return cls.ordering
         if issubclass(cls.Model, BaseSQLModel):
-            return [cls._get_column("created_at").desc()]
+            # Keep fallback ordering deterministic when created_at ties occur.
+            return [cls._get_column("created_at").desc(), cls._get_column("id").desc()]
         return None
 
     @staticmethod

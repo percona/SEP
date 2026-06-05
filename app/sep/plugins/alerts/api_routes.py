@@ -22,6 +22,7 @@ OpenAPI surface is explicit and survives changes to the parent router.
 
 Route layout:
 
+* ``GET /``                         — index payload for the React list page
 * ``GET /backups``                  — list recent alert backups
 * ``GET /backups/{backup_id}``      — detail of a single backup
 * ``POST /push``                    — push selected templates + rules to PMM
@@ -49,7 +50,9 @@ from app.sep.plugins.alerts.deps import (
     ensure_pagerduty_notification_route,
     find_pagerduty_contact_point,
     PAGERDUTY_CONTACT_POINT_NAME,
+    PagerDutyStatusDep,
     PMMPresentNamesDep,
+    RecentBackupsDep,
     RequiredAlertFolderDep,
     RequiredPMMAPIDep,
 )
@@ -62,6 +65,11 @@ from app.sep.plugins.alerts.schemas import (
     BackupDetailRule,
     BackupDetailTemplate,
     BackupSummary,
+    IndexBackupSummary,
+    IndexPagerDutyStatus,
+    IndexResponse,
+    IndexTemplate,
+    IndexTemplateGroup,
     PagerDutyRequest,
     PagerDutyResponse,
     PushItemResult,
@@ -76,6 +84,75 @@ router = APIRouter()
 
 
 _BACKUPS_LIMIT_MAX = 100
+
+
+@router.get("/", dependencies=[IsApiAuthenticated])
+async def alerts_api_index(
+    alert_templates: AlertTemplatesDep,
+    present_names: PMMPresentNamesDep,
+    recent_backups: RecentBackupsDep,
+    pagerduty_status: PagerDutyStatusDep,
+) -> IndexResponse:
+    """Return everything the React list page needs in a single call.
+
+    Mirror the data assembled for the deprecated Jinja index view
+    (:func:`app.sep.plugins.alerts.deps.get_alerts_index_context`) as JSON:
+    alert templates grouped by service type, PMM connectivity, the PagerDuty
+    contact-point status, and the most recent backups.
+
+    ``present_names`` is ``None`` when PMM is unconfigured or unreachable, which
+    is the same signal used to drive ``pmm_connected`` and per-template
+    ``in_pmm`` flags so the UI degrades gracefully.
+
+    :param alert_templates: Local alert templates grouped by service type.
+    :type alert_templates: AlertTemplatesDep
+    :param present_names: Template names already present in PMM, or ``None`` when
+        PMM is unreachable.
+    :type present_names: set[str] | None
+    :param recent_backups: The most recent alert backups, newest first.
+    :type recent_backups: list[AlertBackup]
+    :param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM
+        is unreachable.
+    :type pagerduty_status: dict[str, Any] | None
+    :return: The aggregated index payload.
+    :rtype: IndexResponse
+    """
+    pmm_connected = present_names is not None
+    groups = [
+        IndexTemplateGroup(
+            service_type=service_type.value,
+            label=service_type.label,
+            templates=[
+                IndexTemplate(
+                    name=template.name,
+                    service_type=template.service_type.value,
+                    expression=template.expression,
+                    default_threshold=template.default_threshold,
+                    severity=template.severity.value,
+                    description=template.description,
+                    summary=template.summary,
+                    in_pmm=present_names is not None and template.name in present_names,
+                )
+                for template in templates
+            ],
+        )
+        for service_type, templates in alert_templates.items()
+        if templates
+    ]
+    pagerduty = (
+        IndexPagerDutyStatus(**pagerduty_status)
+        if pagerduty_status is not None
+        else None
+    )
+    return IndexResponse(
+        groups=groups,
+        pmm_connected=pmm_connected,
+        pagerduty=pagerduty,
+        recent_backups=[
+            IndexBackupSummary(id=backup.id, created_at=backup.created_at)
+            for backup in recent_backups
+        ],
+    )
 
 
 @router.get("/backups", dependencies=[IsApiAuthenticated])

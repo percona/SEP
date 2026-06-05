@@ -17,6 +17,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
+import { downloadBlob } from '../utils/downloadBlob';
 
 export interface TaskFileDownloadParams {
   taskHistoryId: number;
@@ -35,19 +36,7 @@ export function useTaskFileDownload() {
       });
       const name = path.split('/').filter(Boolean).pop() ?? path;
       const suggestedName = isDir ? `${name}.tar.gz` : name;
-      const url = URL.createObjectURL(data);
-      try {
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = suggestedName;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-      } finally {
-        // Defer revocation: Safari and Firefox can race the anchor-triggered
-        // download if the blob URL is revoked in the same tick as .click().
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-      }
+      downloadBlob(data, suggestedName);
     },
   });
 }
