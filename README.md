@@ -146,9 +146,9 @@
 | app/sep/plugins/backup\_mongo/deps.py                                                                       |      183 |       60 |     67% |83, 106-119, 146-172, 235, 307-308, 374, 440-459, 492-511, 521-522, 597, 635-637, 670 |
 | app/sep/plugins/backup\_mongo/models.py                                                                     |      129 |        0 |    100% |           |
 | app/sep/plugins/backup\_mongo/restore/api\_routes.py                                                        |       44 |        0 |    100% |           |
-| app/sep/plugins/backup\_mongo/restore/deps.py                                                               |      258 |       58 |     78% |77-90, 107, 109-111, 150, 213, 344-365, 395, 457-458, 498-499, 740-754, 769-770, 839, 937-948, 983 |
-| app/sep/plugins/backup\_mongo/restore/models.py                                                             |       72 |        0 |    100% |           |
-| app/sep/plugins/backup\_mongo/restore/routes.py                                                             |      141 |       36 |     74% |70-71, 79-80, 105-110, 120-125, 142-143, 146-151, 172, 196, 214, 245-246, 252, 289-290, 295-296, 317-318, 348-357, 396-398 |
+| app/sep/plugins/backup\_mongo/restore/deps.py                                                               |      218 |       41 |     81% |222, 289-310, 340, 400-401, 439, 674-688, 703-704, 773, 868-879, 914 |
+| app/sep/plugins/backup\_mongo/restore/models.py                                                             |      141 |        7 |     95% |53-55, 57, 60-64, 479 |
+| app/sep/plugins/backup\_mongo/restore/routes.py                                                             |      140 |       36 |     74% |70-71, 79-80, 105-110, 120-125, 142-143, 146-151, 172, 195, 213, 244-245, 251, 288-289, 294-295, 316-317, 347-356, 395-397 |
 | app/sep/plugins/backup\_mongo/restore/schema.py                                                             |        5 |        0 |    100% |           |
 | app/sep/plugins/backup\_mongo/routes.py                                                                     |       83 |       35 |     58% |66, 147-208, 229-238, 252-255 |
 | app/sep/plugins/backup\_mongo/schema.py                                                                     |        9 |        0 |    100% |           |
@@ -223,7 +223,7 @@
 | app/sep/sync/models.py                                                                                      |      348 |       49 |     86% |77-84, 98, 100, 119, 267-269, 330, 390-391, 537, 567, 583, 603, 708, 722, 742-743, 823, 837, 859-860, 954, 978-980, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py                                                                       |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                        |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       20 |     78% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       19 |     80% |83-87, 107-110, 121, 176-184, 232, 236-252, 344 |
 | app/sep/tasks.py                                                                                            |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                 |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                      |       20 |        0 |    100% |           |
@@ -259,7 +259,7 @@
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      227 |       38 |     83% |141-145, 202, 223-230, 262, 318-319, 325, 369-370, 397-398, 440-441, 460, 591, 615, 628-642, 663-676, 692-693 |
 | app/tasks/settings/routes.py                                                                                |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                   | **17686** | **2115** | **88%** |           |
+| **TOTAL**                                                                                                   | **17714** | **2104** | **88%** |           |
 
 
 ## Setup coverage badge
