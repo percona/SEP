@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sep/api": "workspace:*"
+    "@sep/api": "workspace:*",
+    "@sep/framework": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

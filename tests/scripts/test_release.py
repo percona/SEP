@@ -859,6 +859,66 @@ def test_prep_passes_head_sha_to_internal_jenkins(monkeypatch):
     ) in run_cmds
 
 
+def _run_trigger_jenkins_with_fake_curl(tmp_path, tag, *make_args):
+    """Run the real Makefile target and return recorded curl arguments."""
+    curl_args = tmp_path / "curl-args.txt"
+    fake_curl = tmp_path / "curl"
+    fake_curl.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$CURL_ARGS_FILE"\n',
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+    env = {
+        **os.environ,
+        "CURL_ARGS_FILE": str(curl_args),
+        "JENKINS_API_TOKEN": "token",
+        "JENKINS_URL": "https://jenkins.example",
+        "JENKINS_USER": "user",
+        "WEBHOOK_AUTH_ENV": "",
+        "WEBHOOK_URL_ENV": "",
+        "PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}",
+    }
+    subprocess.run(
+        ["make", "trigger-jenkins", f"TAG={tag}", *make_args],
+        cwd=_PROJECT_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return curl_args.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("tag", "make_args", "expected_job", "unexpected_job"),
+    [
+        (
+            "deadbeefcafe1234",
+            ("PUSH_IMAGE_DOCKER=false",),
+            "Build",
+            "Release",
+        ),
+        ("v0.13.0rc1", (), "Release", "Build"),
+        ("$(shell printf v0.13.0rc1)", (), "Build", "Release"),
+    ],
+)
+def test_trigger_jenkins_routes_by_tag_prefix(
+    tmp_path, tag, make_args, expected_job, unexpected_job
+):
+    """SHA refs go to Build; literal v* tags stay on Release."""
+    curl_args = _run_trigger_jenkins_with_fake_curl(tmp_path, tag, *make_args)
+
+    assert (
+        f"https://jenkins.example/job/SEP/job/{expected_job}/buildWithParameters"
+        in curl_args
+    )
+    assert (
+        f"https://jenkins.example/job/SEP/job/{unexpected_job}/buildWithParameters"
+        not in curl_args
+    )
+    assert f"releaseTag={tag}" in curl_args
+
+
 def test_prep_via_github_api_errors_without_gh(monkeypatch, capsys):
     """cmd_prep with ``--sign-via-github-api`` aborts when gh is not installed."""
     runner = _FakeRunner(_make_prep_preconditions(branch="main"))
