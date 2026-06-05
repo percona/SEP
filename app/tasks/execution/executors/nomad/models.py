@@ -1844,7 +1844,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         ) as response:
             if response.status == status.HTTP_404_NOT_FOUND:
                 alloc_status = alloc.get("ClientStatus", "")
-                if alloc_status in ("failed", "lost"):
+                if alloc_status in (
+                    NomadAllocStatusEnum.FAILED,
+                    NomadAllocStatusEnum.LOST,
+                ):
                     logger.debug(
                         "Allocation %r has no filesystem (prestart failure); returning empty files",
                         alloc_id,

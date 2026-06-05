@@ -2056,9 +2056,15 @@ class TestListFiles:
         mock_response.raise_for_status.assert_called_once()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error_status",
+        [status.HTTP_500_INTERNAL_SERVER_ERROR, status.HTTP_403_FORBIDDEN],
+    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_list_files_non_404_http_errors_propagate(self, mock_nomad_cls):
-        """Assert list_files propagates non-404 HTTP errors (Nomad outage must surface)."""
+    async def test_list_files_non_404_http_errors_propagate(
+        self, mock_nomad_cls, error_status
+    ):
+        """Assert list_files propagates non-404 HTTP errors (outage/auth errors must surface)."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
@@ -2073,41 +2079,8 @@ class TestListFiles:
         )
 
         mock_response = AsyncMock()
-        mock_response.status = status.HTTP_500_INTERNAL_SERVER_ERROR
-        mock_response.raise_for_status = MagicMock(
-            side_effect=ClientError("server error")
-        )
-
-        mock_ctx_manager = AsyncMock()
-        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
-
-        with (
-            patch.object(executor, "_request", return_value=mock_ctx_manager),
-            pytest.raises(ClientError),
-        ):
-            await executor.list_files(queue_item, "/alloc/data")
-
-    @pytest.mark.asyncio
-    @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_list_files_auth_error_propagates(self, mock_nomad_cls):
-        """Assert list_files propagates 403 — auth errors must not be silently dropped."""
-        mock_backend = MagicMock()
-        mock_nomad_cls.return_value = mock_backend
-        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
-
-        executor = _build_executor()
-        queue_item = _build_queue_item(
-            tracking={
-                "allocation_id": "alloc-1",
-                "evaluation_id": "eval-1",
-                "job_id": "job-1",
-            }
-        )
-
-        mock_response = AsyncMock()
-        mock_response.status = status.HTTP_403_FORBIDDEN
-        mock_response.raise_for_status = MagicMock(side_effect=ClientError("forbidden"))
+        mock_response.status = error_status
+        mock_response.raise_for_status = MagicMock(side_effect=ClientError("error"))
 
         mock_ctx_manager = AsyncMock()
         mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
