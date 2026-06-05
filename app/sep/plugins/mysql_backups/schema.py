@@ -129,6 +129,7 @@ _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
         "xtrabackup_replica_info",
         "xtrabackup_stop_replica",
         "xtrabackup_lock_ddl",
+        "xtrabackup_quiet",
     ),
     "B": (),
 }
@@ -367,6 +368,11 @@ mysql_backups_schema = PluginSchema(
                 BoolField(
                     name="xtrabackup_lock_ddl",
                     label="Lock DDL",
+                    default=False,
+                ),
+                BoolField(
+                    name="xtrabackup_quiet",
+                    label="Quiet log (drop per-file copy lines)",
                     default=False,
                 ),
                 ChoiceField(

@@ -275,6 +275,88 @@ def test_parse_backup_task_data(all_servers: dict, expected_alt_host: str | None
     assert result["binlog_alternative_host"] == expected_alt_host
 
 
+class TestParseBackupTaskDataXtrabackupQuiet:
+    """Tests for XTRABACKUP_QUIET round-trip through ``parse_backup_task_data``."""
+
+    def _make_task_dict(self, all_servers: dict) -> dict:
+        return {
+            "name": "test_task",
+            "data": {
+                "meta": {
+                    "target": "host.example.com",
+                    "config": yaml.dump(
+                        {
+                            "SERVER_LIST": [
+                                {
+                                    "ALIAS": "db1-mysql",
+                                    "HOST": "10.0.0.5",
+                                    "PORT": 3306,
+                                    "BACKUP_TYPE": BackupType.XTRABACKUP.value,
+                                }
+                            ],
+                            "ALL_SERVERS": all_servers,
+                        }
+                    ),
+                }
+            },
+        }
+
+    @pytest.mark.parametrize(
+        ("all_servers", "expected"),
+        [
+            ({"XTRABACKUP_QUIET": True}, True),
+            ({"XTRABACKUP_QUIET": False}, False),
+            # Absent key: legacy tasks pre-date the field; form must render unchecked.
+            ({}, None),
+            # YAML null value behaves identically to absent key.
+            ({"XTRABACKUP_QUIET": None}, None),
+        ],
+    )
+    def test_xtrabackup_quiet_round_trips(
+        self, all_servers: dict, expected: bool | None
+    ):
+        """XTRABACKUP_QUIET round-trips from persisted YAML to the edit-form dict."""
+        result = parse_backup_task_data(self._make_task_dict(all_servers))
+        assert result["xtrabackup_quiet"] == expected
+
+    def test_missing_all_servers_section_returns_none(self):
+        """When ``ALL_SERVERS`` is absent, ``xtrabackup_quiet`` is ``None``.
+
+        Guards the legacy-task path where the config YAML pre-dates the
+        ``ALL_SERVERS`` section entirely.
+        """
+        task_dict = {
+            "name": "legacy_task",
+            "data": {
+                "meta": {
+                    "target": "host.example.com",
+                    "config": yaml.dump(
+                        {
+                            "SERVER_LIST": [
+                                {
+                                    "ALIAS": "db1",
+                                    "HOST": "10.0.0.5",
+                                    "PORT": 3306,
+                                    "BACKUP_TYPE": BackupType.XTRABACKUP.value,
+                                }
+                            ]
+                        }
+                    ),
+                }
+            },
+        }
+        result = parse_backup_task_data(task_dict)
+        assert result["xtrabackup_quiet"] is None
+
+    def test_other_fields_are_unaffected(self):
+        """Adding xtrabackup_quiet must not clobber adjacent fields in the result."""
+        result = parse_backup_task_data(
+            self._make_task_dict({"XTRABACKUP_QUIET": True, "BINLOG_PREFIX": "bp"})
+        )
+        assert result["xtrabackup_quiet"] is True
+        assert result["binlog_prefix"] == "bp"
+
+
 @pytest.mark.parametrize(
     ("upload_providers", "all_servers", "expected_result"),
     [

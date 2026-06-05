@@ -132,6 +132,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone = None
     xtrabackup_stop_replica: bool = False
     xtrabackup_lock_ddl: bool = False
+    xtrabackup_quiet: bool = False
     xtrabackup_bin_cmd: (
         Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     ) = None
@@ -231,6 +232,8 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type xtrabackup_stop_replica: bool
     :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
     :type xtrabackup_lock_ddl: bool
+    :param xtrabackup_quiet: Whether to drop per-file copy progress lines from the backup log.
+    :type xtrabackup_quiet: bool
     :param xtrabackup_bin_cmd: Backup tool to use.
     :type xtrabackup_bin_cmd: Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     :param binlog_prefix: Prefix used in binlog backup naming.
