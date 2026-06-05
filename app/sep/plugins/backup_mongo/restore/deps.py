@@ -481,6 +481,26 @@ async def build_restore_tasks(
     return await build_restore_task_group(form, inventory_api)
 
 
+async def build_restore_task_group_from_body(
+    body: RestoreTaskWrite,
+    inventory_api: InventoryAPI,
+) -> RestoreTaskGroupPayloads:
+    """Build restore task group payloads from a JSON API request body.
+
+    Delegates to :func:`build_restore_task_group` after converting the body
+    to :class:`RestoreCreate`.
+
+    :param body: The JSON request body for restore task creation.
+    :type body: RestoreTaskWrite
+    :param inventory_api: The Inventory API to look up services.
+    :type inventory_api: InventoryAPI
+    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
+    :rtype: RestoreTaskGroupPayloads
+    """
+    form = restore_create_from_write(body)
+    return await build_restore_task_group(form, inventory_api)
+
+
 def restore_child_task_names(parent_name: str, backup_type: BackupType) -> list[str]:
     """Return child task names for a parent restore config task.
 
@@ -827,6 +847,10 @@ async def delete_restore_task_group(
 
 
 RestoreTasks = Annotated[RestoreTaskGroupPayloads, Depends(build_restore_tasks)]
+RestoreTaskGroupFromBody = Annotated[
+    RestoreTaskGroupPayloads,
+    Depends(build_restore_task_group_from_body),
+]
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
