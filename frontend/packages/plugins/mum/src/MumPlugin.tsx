@@ -79,6 +79,8 @@ export function MumPlugin() {
   const stdoutBufferRef = useRef('');
   const stderrBufferRef = useRef('');
   const esRef = useRef<EventSource | null>(null);
+  const usersStreamGenRef = useRef(0);
+  const rolesStreamGenRef = useRef(0);
 
   const listBusy = listBusyCount > 0;
   const [rolesBusy, setRolesBusy] = useState(false);
@@ -112,6 +114,7 @@ export function MumPlugin() {
   }
 
   const stopStreaming = useCallback(() => {
+    usersStreamGenRef.current++;
     if (esRef.current) {
       esRef.current.close();
       esRef.current = null;
@@ -127,54 +130,83 @@ export function MumPlugin() {
     (historyId: string) => {
       if (!historyId) { setStreamError('Missing execution history ID.'); return; }
       stopStreaming();
+      const gen = usersStreamGenRef.current;
       setStreamError(null);
       setIsStreaming(true);
       stdoutBufferRef.current = '';
       stderrBufferRef.current = '';
 
-      try {
-        const token = getToken();
-        const streamUrl = `/stream-logs/${encodeURIComponent(historyId)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-        const es = new EventSource(streamUrl);
-        esRef.current = es;
+      let retries = 0;
+      const MAX_RETRIES = 8;
+      const RETRY_DELAY = 2000;
 
-        es.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data as string) as Record<string, unknown>;
-            const { msg, type, step } = data;
-            if (step === 'run-script' && typeof msg === 'string') {
-              if (type === 'stdout') {
-                stdoutBufferRef.current += msg;
-                const arr = extractJsonArray(stdoutBufferRef.current);
-                if (arr) {
-                  setUsersData(arr as UserRow[]);
-                  setStreamError(null);
-                  stopStreaming();
+      const connect = () => {
+        if (usersStreamGenRef.current !== gen) return;
+        try {
+          const token = getToken();
+          const streamUrl = `/stream-logs/${encodeURIComponent(historyId)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+          const es = new EventSource(streamUrl);
+          esRef.current = es;
+
+          es.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data as string) as Record<string, unknown>;
+              const { msg, type, step } = data;
+              if (step === 'run-script' && typeof msg === 'string') {
+                if (type === 'stdout') {
+                  stdoutBufferRef.current += msg;
+                  const arr = extractJsonArray(stdoutBufferRef.current);
+                  if (arr) {
+                    setUsersData(arr as UserRow[]);
+                    setStreamError(null);
+                    stopStreaming();
+                  }
+                } else if (type === 'stderr') {
+                  stderrBufferRef.current += msg;
                 }
-              } else if (type === 'stderr') {
-                stderrBufferRef.current += msg;
               }
+            } catch (_) { /* ignore non-JSON */ }
+          };
+
+          es.addEventListener('finish', () => {
+            if (esRef.current !== es) return;
+            const arr = extractJsonArray(stdoutBufferRef.current);
+            if (arr) {
+              setUsersData(arr as UserRow[]);
+              stopStreaming();
+            } else if (retries < MAX_RETRIES) {
+              retries++;
+              es.close();
+              esRef.current = null;
+              stdoutBufferRef.current = '';
+              stderrBufferRef.current = '';
+              setTimeout(connect, RETRY_DELAY);
+            } else {
+              const errDetail = stderrBufferRef.current.trim();
+              stopStreaming();
+              setStreamError(errDetail || 'Could not parse output JSON.');
             }
-          } catch (_) { /* ignore non-JSON */ }
-        };
+          });
 
-        es.addEventListener('finish', () => {
-          if (esRef.current !== es) return;
-          stopStreaming();
-          const arr = extractJsonArray(stdoutBufferRef.current);
-          if (arr) {
-            setUsersData(arr as UserRow[]);
-          } else {
-            const errDetail = stderrBufferRef.current.trim();
-            setStreamError(errDetail || 'Could not parse output JSON.');
-          }
-        });
+          es.onerror = () => {
+            if (usersStreamGenRef.current !== gen || esRef.current !== es) return;
+            es.close();
+            esRef.current = null;
+            if (retries < MAX_RETRIES) {
+              retries++;
+              setTimeout(connect, RETRY_DELAY);
+            } else {
+              stopStreaming();
+              setStreamError('Stream failed.');
+            }
+          };
+        } catch (e) {
+          setStreamError(String((e as Error)?.message ?? e));
+          setIsStreaming(false);
+        }
+      };
 
-        es.onerror = () => { if (esRef.current === es) { setStreamError('Stream failed.'); stopStreaming(); } };
-      } catch (e) {
-        setStreamError(String((e as Error)?.message ?? e));
-        setIsStreaming(false);
-      }
+      connect();
     },
     [stopStreaming],
   );
@@ -185,56 +217,89 @@ export function MumPlugin() {
   const streamListRoles = useCallback((historyId: string) => {
     if (!historyId) { setRolesStreamError('Missing execution history ID.'); return; }
     if (rolesEsRef.current) { rolesEsRef.current.close(); rolesEsRef.current = null; }
+    rolesStreamGenRef.current++;
+    const gen = rolesStreamGenRef.current;
     setRolesStreamError(null);
     setIsRolesStreaming(true);
     rolesStdoutBufferRef.current = '';
     rolesStderrBufferRef.current = '';
 
-    try {
-      const token = getToken();
-      const streamUrl = `/stream-logs/${encodeURIComponent(historyId)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-      const es = new EventSource(streamUrl);
-      rolesEsRef.current = es;
+    let retries = 0;
+    const MAX_RETRIES = 8;
+    const RETRY_DELAY = 2000;
 
-      const stopRoles = () => {
-        es.close();
-        rolesEsRef.current = null;
-        setIsRolesStreaming(false);
-      };
+    const connect = () => {
+      if (rolesStreamGenRef.current !== gen) return;
+      try {
+        const token = getToken();
+        const streamUrl = `/stream-logs/${encodeURIComponent(historyId)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+        const es = new EventSource(streamUrl);
+        rolesEsRef.current = es;
 
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data as string) as Record<string, unknown>;
-          const { msg, type, step } = data;
-          if (step === 'run-script' && typeof msg === 'string') {
-            if (type === 'stdout') {
-              rolesStdoutBufferRef.current += msg;
-              const arr = extractJsonArray(rolesStdoutBufferRef.current);
-              if (arr) { setRolesData(arr as RoleRow[]); setRolesStreamError(null); stopRoles(); }
-            } else if (type === 'stderr') {
-              rolesStderrBufferRef.current += msg;
-            }
+        const stopRoles = () => {
+          rolesStreamGenRef.current++;
+          if (rolesEsRef.current === es) {
+            es.close();
+            rolesEsRef.current = null;
           }
-        } catch (_) { /* ignore */ }
-      };
+          setIsRolesStreaming(false);
+        };
 
-      es.addEventListener('finish', () => {
-        if (rolesEsRef.current !== es) return;
-        stopRoles();
-        const arr = extractJsonArray(rolesStdoutBufferRef.current);
-        if (arr) {
-          setRolesData(arr as RoleRow[]);
-        } else {
-          const errDetail = rolesStderrBufferRef.current.trim();
-          setRolesStreamError(errDetail || 'Could not parse output JSON.');
-        }
-      });
+        es.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data as string) as Record<string, unknown>;
+            const { msg, type, step } = data;
+            if (step === 'run-script' && typeof msg === 'string') {
+              if (type === 'stdout') {
+                rolesStdoutBufferRef.current += msg;
+                const arr = extractJsonArray(rolesStdoutBufferRef.current);
+                if (arr) { setRolesData(arr as RoleRow[]); setRolesStreamError(null); stopRoles(); }
+              } else if (type === 'stderr') {
+                rolesStderrBufferRef.current += msg;
+              }
+            }
+          } catch (_) { /* ignore */ }
+        };
 
-      es.onerror = () => { if (rolesEsRef.current === es) { setRolesStreamError('Stream failed.'); stopRoles(); } };
-    } catch (e) {
-      setRolesStreamError(String((e as Error)?.message ?? e));
-      setIsRolesStreaming(false);
-    }
+        es.addEventListener('finish', () => {
+          if (rolesEsRef.current !== es) return;
+          const arr = extractJsonArray(rolesStdoutBufferRef.current);
+          if (arr) {
+            setRolesData(arr as RoleRow[]);
+            stopRoles();
+          } else if (retries < MAX_RETRIES) {
+            retries++;
+            es.close();
+            rolesEsRef.current = null;
+            rolesStdoutBufferRef.current = '';
+            rolesStderrBufferRef.current = '';
+            setTimeout(connect, RETRY_DELAY);
+          } else {
+            const errDetail = rolesStderrBufferRef.current.trim();
+            stopRoles();
+            setRolesStreamError(errDetail || 'Could not parse output JSON.');
+          }
+        });
+
+        es.onerror = () => {
+          if (rolesStreamGenRef.current !== gen || rolesEsRef.current !== es) return;
+          es.close();
+          rolesEsRef.current = null;
+          if (retries < MAX_RETRIES) {
+            retries++;
+            setTimeout(connect, RETRY_DELAY);
+          } else {
+            stopRoles();
+            setRolesStreamError('Stream failed.');
+          }
+        };
+      } catch (e) {
+        setRolesStreamError(String((e as Error)?.message ?? e));
+        setIsRolesStreaming(false);
+      }
+    };
+
+    connect();
   }, []);
   // [MUM-REPLACE] end
 
