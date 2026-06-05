@@ -222,6 +222,7 @@ async def test_build_archives_task_payload(
     assert "file://" in generated_task.data["payload"]
 
     assert generated_task.data["meta"]["_service_name"] == created_service.name
+    assert generated_task.data["meta"]["_pmm_node_name"] == created_service.node.name
 
     purge_config_yaml = generated_task.data["meta"]["config"]
     assert created_archives.alias in purge_config_yaml
