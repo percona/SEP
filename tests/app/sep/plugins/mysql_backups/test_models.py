@@ -74,7 +74,7 @@ class TestUploadQuietField:
 
     def test_accepts_true(self):
         """Field accepts True via case-insensitive key validation."""
-        config = BackupConfigAll.model_validate({"UPLOAD_QUIET": True})
+        config = BackupConfigAll.model_validate({"Upload_Quiet": True})
         assert config.upload_quiet is True
 
     def test_accepts_false_explicitly(self):
