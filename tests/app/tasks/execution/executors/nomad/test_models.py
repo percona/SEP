@@ -1987,7 +1987,10 @@ class TestListFiles:
         """Assert list_files returns {} when allocation has no filesystem (prestart 404)."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
-        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "ClientStatus": "failed",
+        }
 
         executor = _build_executor()
         queue_item = _build_queue_item(
@@ -2011,6 +2014,46 @@ class TestListFiles:
 
         assert result == {}
         mock_response.raise_for_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_404_non_failed_alloc_propagates(self, mock_nomad_cls):
+        """Assert list_files raises on 404 when alloc status is not failed/lost.
+
+        A 404 on a completed allocation means the output path is misconfigured —
+        that error must surface, not be swallowed.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "ClientStatus": "complete",
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = status.HTTP_404_NOT_FOUND
+        mock_response.raise_for_status = MagicMock(side_effect=ClientError("not found"))
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx_manager),
+            pytest.raises(ClientError),
+        ):
+            await executor.list_files(queue_item, "/alloc/data")
+
+        mock_response.raise_for_status.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
