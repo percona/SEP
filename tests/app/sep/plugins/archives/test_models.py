@@ -24,6 +24,8 @@ MAX_VALID_PORT = 65535
 MIN_VALID_PORT = 1
 SAMPLE_DEST_SERVICE_ID = 2
 SAMPLE_DEST_PORT = 3307
+OTHER_DEST_SERVICE_ID = 7
+INVENTORY_DEST_SCHEMA_ID = 99
 
 
 class TestArchivesCreateDestinationValidation:
@@ -473,3 +475,108 @@ class TestArchivesCreateEmptyStringCoercion:
                 dest_port="abc",
             )
         assert "valid integer" in str(exc_info.value)
+
+
+class TestArchivesCreateSameTableIdentity:
+    """Verify the manual-source same-table rule uses full destination identity.
+
+    A destination table is the *same* table only when host, schema, and table
+    name all match. All cases use the manual-source path (``source_db_name`` /
+    ``source_table_name``), which is the only path the name-based branch of
+    ``validate_tables_are_different`` runs on.
+    """
+
+    @staticmethod
+    def _base_kwargs(**overrides: object) -> dict[str, object]:
+        """Return manual-source kwargs that pass every validator but the name check.
+
+        The destination table name equals the source table name, so the
+        accept/reject outcome is driven solely by the destination host/schema
+        identity supplied via ``overrides``.
+        """
+        return {
+            "alias": "t",
+            "hostname": "h",
+            "service_id": 1,
+            "source_db_name": "sbtest",
+            "source_table_name": "sbtest5",
+            "swap_drop": SwapDropEnum.PURGE_ONLY,
+            "where": "id > 1",
+            "dest_table_name": "sbtest5",
+            **overrides,
+        }
+
+    def test_same_host_same_schema_same_table_rejected(self):
+        """No explicit dest host/schema → defaults to source → genuine self-archive."""
+        with pytest.raises(ValidationError, match="cannot be the same"):
+            ArchivesCreate(**self._base_kwargs())
+
+    def test_explicit_same_host_and_schema_same_table_rejected(self):
+        """Explicit dest host and schema that equal the source → self-archive."""
+        with pytest.raises(ValidationError, match="cannot be the same"):
+            ArchivesCreate(
+                **self._base_kwargs(dest_service_id=1, dest_db_name="sbtest")
+            )
+
+    def test_different_dest_service_same_table_accepted(self):
+        """Different inventory destination host, same table name → accepted (the bug)."""
+        form = ArchivesCreate(
+            **self._base_kwargs(dest_service_id=OTHER_DEST_SERVICE_ID)
+        )
+        assert form.dest_service_id == OTHER_DEST_SERVICE_ID
+
+    def test_manual_different_dest_host_same_table_accepted(self):
+        """Different manual destination host, same table name → accepted."""
+        form = ArchivesCreate(**self._base_kwargs(dest_host="other-host"))
+        assert form.dest_host == "other-host"
+
+    def test_same_host_different_schema_name_accepted(self):
+        """Same host, different manual schema name, same table → accepted."""
+        form = ArchivesCreate(**self._base_kwargs(dest_db_name="sbtest_archived"))
+        assert form.dest_db_name == "sbtest_archived"
+
+    def test_same_host_inventory_dest_schema_accepted(self):
+        """Same host, inventory destination schema (unresolvable to a name) → accepted.
+
+        The validator cannot resolve an inventory ``dest_db_id`` to a schema
+        name, so it treats the destination schema as distinct — an accepted
+        limitation tracked by SEP-1310.
+        """
+        form = ArchivesCreate(
+            **self._base_kwargs(dest_service_id=1, dest_db_id=INVENTORY_DEST_SCHEMA_ID)
+        )
+        assert form.dest_db_id == INVENTORY_DEST_SCHEMA_ID
+
+    def test_whitespace_only_dest_host_same_table_rejected(self):
+        """Whitespace-only dest host strips to empty at runtime → resolves to source.
+
+        The runtime resolver does ``(dest_host or "").strip()``, so a
+        whitespace-only host falls back to the source host. The validator must
+        treat it as the source host and reject the self-archive, not accept it.
+        """
+        with pytest.raises(ValidationError, match="cannot be the same"):
+            ArchivesCreate(**self._base_kwargs(dest_host="   "))
+
+    def test_whitespace_only_dest_schema_same_table_rejected(self):
+        """Whitespace-only dest schema strips to empty at runtime → resolves to source.
+
+        The runtime resolver does ``dest_db_name.rstrip()``, so a
+        whitespace-only schema falls back to the source schema and must be
+        rejected as a self-archive.
+        """
+        with pytest.raises(ValidationError, match="cannot be the same"):
+            ArchivesCreate(**self._base_kwargs(dest_db_name="   "))
+
+    def test_same_inventory_table_ids_still_rejected(self):
+        """The inventory table-id branch is unchanged: same ids → rejected."""
+        with pytest.raises(ValidationError, match="cannot be the same"):
+            ArchivesCreate(
+                alias="t",
+                hostname="h",
+                service_id=1,
+                source_db_id=1,
+                source_table_id=5,
+                swap_drop=SwapDropEnum.PURGE_ONLY,
+                where="id > 1",
+                dest_table_id=5,
+            )
