@@ -248,6 +248,13 @@ mysql_backups_schema = PluginSchema(
                     label="Extra args",
                     forbidden=_mydumper_forbidden,
                 ),
+                IntegerField(
+                    name="mydumper_verbose",
+                    label="Verbose level",
+                    forbidden=_mydumper_forbidden,
+                    ge=0,
+                    le=3,
+                ),
             ],
         ),
         FormSection(

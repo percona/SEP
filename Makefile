@@ -214,11 +214,16 @@ ifndef TAG
 	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z [PUSH_IMAGE_DOCKER=false] [WEBHOOK_URL_ENV=... WEBHOOK_AUTH_ENV=...])
 endif
 	@set -euo pipefail; \
+	tag='$(value TAG)'; \
 	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
-		echo "==> Triggering Jenkins release build for $(TAG)..."; \
-		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
+		case "$${tag}" in \
+			v*) jenkins_job="Release" ;; \
+			*) jenkins_job="Build" ;; \
+		esac; \
+		echo "==> Triggering Jenkins $${jenkins_job} build for $${tag}..."; \
+		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
 			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=$(TAG)" \
+			--data-urlencode "releaseTag=$${tag}" \
 			--data-urlencode "notifySlack=true" \
 			--data-urlencode "pushImage=true" \
 			--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
@@ -227,7 +232,7 @@ endif
 				$(PYTHON) scripts/post_jira_webhook.py \
 					--url-env "$(WEBHOOK_URL_ENV)" \
 					--auth-env "$(WEBHOOK_AUTH_ENV)" \
-					--version-tag "$(TAG)" || true; \
+					--version-tag "$${tag}" || true; \
 			fi; \
 		else \
 			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \

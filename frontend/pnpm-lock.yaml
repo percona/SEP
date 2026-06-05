@@ -646,6 +646,9 @@ importers:
       '@sep/api':
         specifier: workspace:*
         version: link:../../api
+      '@sep/framework':
+        specifier: workspace:*
+        version: link:../../framework
       '@tanstack/react-query':
         specifier: ^5.75.0
         version: 5.100.9(react@19.2.6)

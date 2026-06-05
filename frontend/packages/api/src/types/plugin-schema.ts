@@ -120,7 +120,7 @@ export interface ChoiceField extends BaseField {
 }
 
 export interface MultiChoiceField extends BaseField {
-  type: 'multichoice';
+  type: 'multi_choice';
   choices: Array<{ label: string; value: string }>;
   min_items?: number;
   max_items?: number;
