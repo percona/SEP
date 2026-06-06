@@ -43,11 +43,17 @@ from app.sep.plugins.backup_mongo.deps import (
 )
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
+    PbmForceResyncPayloadModel,
+    PbmListPayloadModel,
+    restore_leg_payload_models_from_form,
     RestoreConfig,
-    RestoreConfigRestore,
+    RestoreConfigPayloadModel,
     RestoreCreate,
     RestoreDerivedTaskSummary,
+    RestoreLegPayloadModel,
     RestoreTaskDetailResponse,
+    RestoreTaskGroupPayloads,
+    RestoreTaskLegModel,
     RestoreTaskResponse,
     RestoreTaskWrite,
 )
@@ -68,48 +74,114 @@ logger = logging.getLogger(__name__)
 RESTORE_CONFIG_PAYLOAD_MARKER = "pbm_restore_config_payload"
 
 
-def _parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
-    """Parse mongod location map from YAML string.
-
-    Expects a YAML object (mapping). Returns None and logs a warning if the input
-    is invalid YAML or does not parse to a dictionary.
-    """
-    try:
-        mongod_location_map = yaml.safe_load(location_map_str)
-    except yaml.YAMLError:
-        logger.warning("Failed to parse mongod location map YAML: %s", location_map_str)
-        return None
-    if mongod_location_map is None:
-        return None
-    if isinstance(mongod_location_map, dict):
-        return mongod_location_map
-    logger.warning(
-        "Mongod location map must be a dictionary/mapping, got: %s",
-        type(mongod_location_map),
+def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
+    """Build TaskWrite from typed leg descriptor."""
+    meta = {
+        "target": leg.target,
+        "config": leg.config_yaml,
+        "requirements": leg.requirements,
+    }
+    if leg.service_name is not None:
+        meta["_service_name"] = leg.service_name
+    data = {
+        "task": "run-python",
+        "meta": meta,
+        "payload": f"file://{Path(__file__).parent / leg.payload_name}",
+        **({"parent": leg.parent} if leg.parent is not None else {}),
+    }
+    return TaskWrite(
+        name=leg.name,
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.RESTORE_MONGO,
+        data=data,
     )
-    return None
 
 
-def _build_restore_config_dict(form: RestoreCreate) -> dict[str, Any]:
-    """Build restore configuration dictionary from form data in PBM format."""
-    field_mapping = {
-        "batchSize": form.restore_batch_size,
-        "numInsertionWorkers": form.restore_num_insertion_workers,
-        "numParallelCollections": form.restore_num_parallel_collections,
-        "numDownloadWorkers": form.restore_num_download_workers,
-        "maxDownloadBufferMb": form.restore_max_download_buffer_mb,
-        "downloadChunkMb": form.restore_download_chunk_mb,
-    }
-    restore_config_dict = {
-        key: value for key, value in field_mapping.items() if value is not None
-    }
-    if form.restore_mongod_location:
-        restore_config_dict["mongodLocation"] = form.restore_mongod_location
-    if form.restore_mongod_location_map:
-        location_map = _parse_mongod_location_map(form.restore_mongod_location_map)
-        if location_map is not None:
-            restore_config_dict["mongodLocationMap"] = location_map
-    return restore_config_dict
+def _build_restore_config_leg(
+    payload: RestoreConfigPayloadModel,
+) -> RestoreTaskLegModel:
+    """Build typed task leg for restore-config task."""
+    restore_config = RestoreConfig(
+        restore=payload.restore,
+        backup_source=payload.backup_source,
+        backup_type=payload.backup_type,
+        credentials_path=payload.credentials_path,
+    )
+    return RestoreTaskLegModel(
+        name=payload.task_name,
+        payload_name=RESTORE_CONFIG_PAYLOAD_MARKER,
+        target=payload.hostname,
+        requirements="packaging\nPyYAML",
+        config_yaml=yaml.dump(
+            restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
+            default_flow_style=False,
+            allow_unicode=True,
+        ),
+        service_name=payload.service_name,
+    )
+
+
+def _build_restore_leg(payload: RestoreLegPayloadModel) -> RestoreTaskLegModel:
+    """Build typed task leg for restore execution task."""
+    restore_config = RestoreConfig(
+        restore=None,  # Restore options already synced by config leg.
+        backup_source=payload.backup_source,
+        backup_type=payload.backup_type,
+        credentials_path=payload.credentials_path,
+    )
+    return RestoreTaskLegModel(
+        name=f"{payload.task_name}-{payload.backup_type}",
+        payload_name=payload.payload_script_name(),
+        target=payload.hostname,
+        requirements="packaging\nPyYAML",
+        config_yaml=yaml.dump(
+            restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
+            default_flow_style=False,
+            allow_unicode=True,
+        ),
+        parent=payload.task_name,
+        service_name=payload.service_name,
+    )
+
+
+def _build_pbm_list_leg(payload: PbmListPayloadModel) -> RestoreTaskLegModel:
+    """Build typed task leg for pbm-list helper task."""
+    config_dict = (
+        {"credentials_path": payload.credentials_path}
+        if payload.credentials_path
+        else {}
+    )
+    return RestoreTaskLegModel(
+        name=f"{payload.task_name}-pbm-list",
+        payload_name="pbm_list_payload",
+        target=payload.hostname,
+        config_yaml=yaml.dump(config_dict, default_flow_style=False)
+        if config_dict
+        else "",
+        parent=payload.task_name,
+        service_name=payload.service_name,
+    )
+
+
+def _build_pbm_force_resync_leg(
+    payload: PbmForceResyncPayloadModel,
+) -> RestoreTaskLegModel:
+    """Build typed task leg for pbm-force-resync helper task."""
+    config_dict = (
+        {"credentials_path": payload.credentials_path}
+        if payload.credentials_path
+        else {}
+    )
+    return RestoreTaskLegModel(
+        name=f"{payload.task_name}-pbm-force-resync",
+        payload_name="pbm_force_resync_payload",
+        target=payload.hostname,
+        config_yaml=yaml.dump(config_dict, default_flow_style=False)
+        if config_dict
+        else "",
+        parent=payload.task_name,
+        service_name=payload.service_name,
+    )
 
 
 async def _resolve_service_name(
@@ -152,154 +224,26 @@ async def _resolve_service_name(
     return service.name
 
 
-def _build_restore_config_task(
-    form: RestoreCreate, service_name: str | None
-) -> TaskWrite:
-    """Build the restore-config TaskWrite using a pre-resolved ``service_name``."""
-    restore_config_dict = _build_restore_config_dict(form)
+def build_restore_payloads(
+    form: RestoreCreate,
+    service_name: str | None,
+) -> RestoreTaskGroupPayloads:
+    """Build restore config, restore, list and optional force-resync payloads."""
+    leg_models = restore_leg_payload_models_from_form(form, service_name)
 
-    restore_config = RestoreConfig(
-        restore=RestoreConfigRestore.model_validate(restore_config_dict)
-        if restore_config_dict
-        else None,
-        backup_source=form.backup_source,
-        backup_type=form.backup_type,
-        credentials_path=form.credentials_path or None,
+    config_task = _task_write_from_leg(_build_restore_config_leg(leg_models.config))
+    restore_task = _task_write_from_leg(_build_restore_leg(leg_models.restore))
+    pbm_list_task = _task_write_from_leg(_build_pbm_list_leg(leg_models.pbm_list))
+    force_resync_task = (
+        _task_write_from_leg(_build_pbm_force_resync_leg(leg_models.force_resync))
+        if leg_models.force_resync is not None
+        else None
     )
-
-    requirements = "packaging\nPyYAML"
-    payload_path = Path(__file__).parent / "pbm_restore_config_payload"
-
-    meta = {
-        "config": yaml.dump(
-            restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            default_flow_style=False,
-            allow_unicode=True,
-        ),
-        "target": form.hostname,
-        "requirements": requirements,
-    }
-    if service_name is not None:
-        meta["_service_name"] = service_name
-
-    return TaskWrite(
-        name=form.task_name,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORE_MONGO,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": f"file://{payload_path}",
-        },
-    )
-
-
-def _build_restore_task(form: RestoreCreate, service_name: str | None) -> TaskWrite:
-    """Build the restore TaskWrite using a pre-resolved ``service_name``."""
-    restore_config = RestoreConfig(
-        restore=None,  # Restore options are already synced in config task
-        backup_source=form.backup_source,
-        backup_type=form.backup_type,
-        credentials_path=form.credentials_path or None,
-    )
-
-    backup_type_to_payload = {
-        BackupType.PBM_LOGICAL: "pbm_logical_restore_payload",
-        BackupType.PBM_PHYSICAL: "pbm_physical_restore_payload",
-    }
-
-    payload_name = backup_type_to_payload.get(form.backup_type)
-    if not payload_name:
-        raise ValueError(f"Invalid Backup Type {form.backup_type} for restore")
-
-    requirements = "packaging\nPyYAML"
-
-    payload_path = Path(__file__).parent / payload_name
-
-    meta = {
-        "config": yaml.dump(
-            restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            default_flow_style=False,
-            allow_unicode=True,
-        ),
-        "target": form.hostname,
-        "requirements": requirements,
-    }
-    if service_name is not None:
-        meta["_service_name"] = service_name
-
-    return TaskWrite(
-        name=f"{form.task_name}-{form.backup_type}",
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORE_MONGO,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": f"file://{payload_path}",
-            "parent": form.task_name,
-        },
-    )
-
-
-def _build_pbm_list_task(form: RestoreCreate, service_name: str | None) -> TaskWrite:
-    """Build the pbm-list TaskWrite using a pre-resolved ``service_name``."""
-    payload_path = Path(__file__).parent / "pbm_list_payload"
-    config_dict = (
-        {"credentials_path": form.credentials_path} if form.credentials_path else {}
-    )
-
-    meta = {
-        "target": form.hostname,
-        "config": yaml.dump(config_dict, default_flow_style=False)
-        if config_dict
-        else "",
-        "requirements": "",
-    }
-    if service_name is not None:
-        meta["_service_name"] = service_name
-
-    return TaskWrite(
-        name=f"{form.task_name}-pbm-list",
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORE_MONGO,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": f"file://{payload_path}",
-            "parent": form.task_name,
-        },
-    )
-
-
-def _build_pbm_force_resync_task(
-    form: RestoreCreate, service_name: str | None
-) -> TaskWrite:
-    """Build the pbm-force-resync TaskWrite using a pre-resolved ``service_name``."""
-    payload_path = Path(__file__).parent / "pbm_force_resync_payload"
-    config_dict = (
-        {"credentials_path": form.credentials_path} if form.credentials_path else {}
-    )
-
-    meta = {
-        "target": form.hostname,
-        "config": yaml.dump(config_dict, default_flow_style=False)
-        if config_dict
-        else "",
-        "requirements": "",
-    }
-    if service_name is not None:
-        meta["_service_name"] = service_name
-
-    return TaskWrite(
-        name=f"{form.task_name}-pbm-force-resync",
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORE_MONGO,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": f"file://{payload_path}",
-            "parent": form.task_name,
-        },
+    return RestoreTaskGroupPayloads(
+        config_task=config_task,
+        restore_task=restore_task,
+        pbm_list_task=pbm_list_task,
+        force_resync_task=force_resync_task,
     )
 
 
@@ -309,7 +253,7 @@ async def build_restore_config_task_payload(
 ) -> TaskWrite:
     """Build task payload for restore config operation in PBM format."""
     service_name = await _resolve_service_name(form, inventory_api)
-    return _build_restore_config_task(form, service_name)
+    return build_restore_payloads(form, service_name).config_task
 
 
 async def build_restore_task_payload(
@@ -318,7 +262,7 @@ async def build_restore_task_payload(
 ) -> TaskWrite:
     """Build task payload for a restore operation in PBM format."""
     service_name = await _resolve_service_name(form, inventory_api)
-    return _build_restore_task(form, service_name)
+    return build_restore_payloads(form, service_name).restore_task
 
 
 async def build_pbm_list_task_payload(
@@ -327,7 +271,7 @@ async def build_pbm_list_task_payload(
 ) -> TaskWrite:
     """Build task payload for pbm list command."""
     service_name = await _resolve_service_name(form, inventory_api)
-    return _build_pbm_list_task(form, service_name)
+    return build_restore_payloads(form, service_name).pbm_list_task
 
 
 async def build_pbm_force_resync_task_payload(
@@ -336,7 +280,8 @@ async def build_pbm_force_resync_task_payload(
 ) -> TaskWrite:
     """Build task payload for pbm config --force-resync command (physical restores only)."""
     service_name = await _resolve_service_name(form, inventory_api)
-    return _build_pbm_force_resync_task(form, service_name)
+    payload = PbmForceResyncPayloadModel.from_form(form, service_name)
+    return _task_write_from_leg(_build_pbm_force_resync_leg(payload))
 
 
 def _parse_restore_config_options(restore_config: dict[str, Any]) -> dict[str, Any]:
@@ -398,12 +343,10 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def restore_create_from_write(body: RestoreTaskWrite) -> RestoreCreate:
-    """Convert a :class:`RestoreTaskWrite` body into a :class:`RestoreCreate` model.
+    """Convert a :class:`RestoreTaskWrite` JSON body into :class:`RestoreCreate`.
 
-    The ``service_id`` coercion (int from the JSON shape → str for the
-    form shape) is owned by ``RestoreCreate``'s
-    ``mode="before"`` model validator, so this helper is a single
-    ``model_validate`` call against the dumped body.
+    ``service_id`` int→str coercion is handled by :class:`RestoreCreate`'s
+    ``mode="before"`` validator when the dumped JSON body is re-validated.
 
     :param body: The JSON request body for restore task creation.
     :type body: RestoreTaskWrite
@@ -455,7 +398,7 @@ async def build_restore_update_task_payload(
     :rtype: TaskWrite
     """
     service_name = await _resolve_service_name(form, inventory_api)
-    return _build_restore_config_task(form, service_name)
+    return build_restore_payloads(form, service_name).config_task
 
 
 async def update_restore_task_group(
@@ -478,27 +421,24 @@ async def update_restore_task_group(
     :rtype: Task
     """
     service_name = await _resolve_service_name(form, inventory_api)
-    config_payload = _build_restore_config_task(form, service_name)
-    restore_payload = _build_restore_task(form, service_name)
-    pbm_list_payload = _build_pbm_list_task(form, service_name)
+    payloads = build_restore_payloads(form, service_name)
 
     await tasks_api.put(
         f"/{parent_task.name}",
-        json=config_payload.model_dump(),
+        json=payloads.config_task.model_dump(),
     )
     await tasks_api.put(
-        f"/{restore_payload.name}",
-        json=restore_payload.model_dump(),
+        f"/{payloads.restore_task.name}",
+        json=payloads.restore_task.model_dump(),
     )
     await tasks_api.put(
-        f"/{pbm_list_payload.name}",
-        json=pbm_list_payload.model_dump(),
+        f"/{payloads.pbm_list_task.name}",
+        json=payloads.pbm_list_task.model_dump(),
     )
-    if form.backup_type == BackupType.PBM_PHYSICAL:
-        force_resync_payload = _build_pbm_force_resync_task(form, service_name)
+    if payloads.force_resync_task is not None:
         await tasks_api.put(
-            f"/{force_resync_payload.name}",
-            json=force_resync_payload.model_dump(),
+            f"/{payloads.force_resync_task.name}",
+            json=payloads.force_resync_task.model_dump(),
         )
     return await get_restores_task(parent_task.name, tasks_api)
 
@@ -506,7 +446,7 @@ async def update_restore_task_group(
 async def build_restore_task_group(
     form: RestoreCreate,
     inventory_api: InventoryAPI,
-) -> tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]:
+) -> RestoreTaskGroupPayloads:
     """Build restore config, restore, list, and optional force-resync task payloads.
 
     Force-resync is only included for physical restores. The service name is
@@ -516,23 +456,17 @@ async def build_restore_task_group(
     :type form: RestoreCreate
     :param inventory_api: The Inventory API to look up services.
     :type inventory_api: InventoryAPI
-    :return: Config, restore, pbm-list, and optional force-resync ``TaskWrite`` payloads.
-    :rtype: tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]
+    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
+    :rtype: RestoreTaskGroupPayloads
     """
     service_name = await _resolve_service_name(form, inventory_api)
-    config_task = _build_restore_config_task(form, service_name)
-    restore_task = _build_restore_task(form, service_name)
-    pbm_list_task = _build_pbm_list_task(form, service_name)
-    force_resync_task = None
-    if form.backup_type == BackupType.PBM_PHYSICAL:
-        force_resync_task = _build_pbm_force_resync_task(form, service_name)
-    return config_task, restore_task, pbm_list_task, force_resync_task
+    return build_restore_payloads(form, service_name)
 
 
 async def build_restore_tasks(
     form: Annotated[RestoreCreate, Form()],
     inventory_api: InventoryAPI,
-) -> tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]:
+) -> RestoreTaskGroupPayloads:
     """Build restore task group payloads from an HTML form submission.
 
     Delegates to :func:`build_restore_task_group` after FastAPI form parsing.
@@ -541,8 +475,8 @@ async def build_restore_tasks(
     :type form: RestoreCreate
     :param inventory_api: The Inventory API to look up services.
     :type inventory_api: InventoryAPI
-    :return: Config, restore, pbm-list, and optional force-resync payloads.
-    :rtype: tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None]
+    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
+    :rtype: RestoreTaskGroupPayloads
     """
     return await build_restore_task_group(form, inventory_api)
 
@@ -892,10 +826,7 @@ async def delete_restore_task_group(
         )
 
 
-RestoreTasks = Annotated[
-    tuple[TaskWrite, TaskWrite, TaskWrite, TaskWrite | None],
-    Depends(build_restore_tasks),
-]
+RestoreTasks = Annotated[RestoreTaskGroupPayloads, Depends(build_restore_tasks)]
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 

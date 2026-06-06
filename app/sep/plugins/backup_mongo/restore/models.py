@@ -15,9 +15,11 @@
 
 """Define models for the Restore plugin."""
 
+import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple, Self
 
+import yaml
 from pydantic import (
     AliasChoices,
     BaseModel,
@@ -30,7 +32,36 @@ from pydantic import (
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.sep.plugins.backup_mongo.models import BackupType
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import (
+    TaskBackendEnum,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
+    """Parse mongod location map from YAML string.
+
+    Expects a YAML object (mapping). Returns None and logs a warning if the input
+    is invalid YAML or does not parse to a dictionary.
+    """
+    try:
+        mongod_location_map = yaml.safe_load(location_map_str)
+    except yaml.YAMLError:
+        logger.warning("Failed to parse mongod location map YAML: %s", location_map_str)
+        return None
+    if mongod_location_map is None:
+        return None
+    if isinstance(mongod_location_map, dict):
+        return mongod_location_map
+    logger.warning(
+        "Mongod location map must be a dictionary/mapping, got: %s",
+        type(mongod_location_map),
+    )
+    return None
 
 
 class RestoreConfigRestore(BaseCaseInsensitiveModel):
@@ -157,7 +188,13 @@ class RestoreConfig(BaseCaseInsensitiveModel):
 
 
 class RestoreCreate(BaseCaseInsensitiveModel):
-    """Model for creating a restore task.
+    """Represent a restore-task creation request (HTML form and shared payload input).
+
+    Kept alongside :class:`RestoreTaskWrite` because FastAPI form binding needs
+    ``service_id: NonEmptyStr | EmptyStrToNone`` (empty form field → ``None``) and
+    optional restore ints with ``EmptyStrToNone``, while the JSON API uses
+    ``service_id: int | None`` and plain optional ints. Collapsing to one model would
+    break empty-string form semantics unless a dedicated form adapter is proven.
 
     :param hostname: The hostname of the machine to restore to.
     :type hostname: NonEmptyStr
@@ -229,11 +266,43 @@ class RestoreCreate(BaseCaseInsensitiveModel):
         return data
 
 
+def restore_config_restore_from_form(
+    form: RestoreCreate,
+) -> RestoreConfigRestore | None:
+    """Build :class:`RestoreConfigRestore` from flat restore form fields."""
+    field_mapping = {
+        "batchSize": form.restore_batch_size,
+        "numInsertionWorkers": form.restore_num_insertion_workers,
+        "numParallelCollections": form.restore_num_parallel_collections,
+        "numDownloadWorkers": form.restore_num_download_workers,
+        "maxDownloadBufferMb": form.restore_max_download_buffer_mb,
+        "downloadChunkMb": form.restore_download_chunk_mb,
+    }
+    restore_config_dict = {
+        key: value for key, value in field_mapping.items() if value is not None
+    }
+    if form.restore_mongod_location:
+        restore_config_dict["mongodLocation"] = form.restore_mongod_location
+    if form.restore_mongod_location_map:
+        location_map = parse_mongod_location_map(form.restore_mongod_location_map)
+        if location_map is not None:
+            restore_config_dict["mongodLocationMap"] = location_map
+    if not restore_config_dict:
+        return None
+    return RestoreConfigRestore.model_validate(restore_config_dict)
+
+
 class RestoreTaskWrite(BaseModel):
     """Represent a JSON request body for creating a restore task group.
 
-    Mirrors :class:`RestoreCreate`. POST always creates a parent config task plus
-    restore, pbm-list, and optional force-resync children.
+    Mirrors :class:`RestoreCreate` field-for-field with JSON-native types (notably
+    ``service_id: int | None``). Routes convert via
+    :func:`~app.sep.plugins.backup_mongo.restore.deps.restore_create_from_write`
+    before building task payloads. See :class:`RestoreCreate` for why both models
+    remain.
+
+    POST always creates a parent config task plus restore, pbm-list, and optional
+    force-resync children.
 
     :param task_name: The name of the task to be created.
     :type task_name: NonEmptyStr
@@ -279,6 +348,246 @@ class RestoreTaskWrite(BaseModel):
     restore_mongod_location: str | None = None
     restore_mongod_location_map: str | None = None
     credentials_path: str | None = None
+
+
+class RestoreTaskLegModel(BaseModel):
+    """Represent an internal descriptor for one restore task leg.
+
+    :param name: The task name for this leg.
+    :type name: NonEmptyStr
+    :param payload_name: The payload file name consumed by ``run-python``.
+    :type payload_name: NonEmptyStr
+    :param target: The target host where this task executes.
+    :type target: NonEmptyStr
+    :param config_yaml: YAML config content passed in task metadata.
+    :type config_yaml: str
+    :param requirements: Newline-separated Python requirements for this leg.
+    :type requirements: str
+    :param parent: Optional parent task name for child legs.
+    :type parent: NonEmptyStr | None
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    name: NonEmptyStr
+    payload_name: NonEmptyStr
+    target: NonEmptyStr
+    config_yaml: str
+    requirements: str = ""
+    parent: NonEmptyStr | None = None
+    service_name: NonEmptyStr | None = None
+
+
+class RestoreConfigPayloadModel(BaseModel):
+    """Represent typed inputs for the restore-config leg payload.
+
+    :param task_name: The parent restore task name.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for execution.
+    :type hostname: NonEmptyStr
+    :param backup_source: Backup name or timestamp to restore from.
+    :type backup_source: NonEmptyStr
+    :param backup_type: Backup type for restore execution.
+    :type backup_type: BackupType
+    :param restore: Optional restore-specific PBM options.
+    :type restore: RestoreConfigRestore | None
+    :param credentials_path: Optional path to MongoDB URI credentials.
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    backup_source: NonEmptyStr
+    backup_type: BackupType
+    restore: RestoreConfigRestore | None = None
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
+    service_name: NonEmptyStr | None = None
+
+    @classmethod
+    def from_form(
+        cls,
+        form: RestoreCreate,
+        service_name: str | None,
+    ) -> Self:
+        """Build restore-config leg inputs from a :class:`RestoreCreate` form."""
+        return cls(
+            task_name=form.task_name,
+            hostname=form.hostname,
+            backup_source=form.backup_source,
+            backup_type=form.backup_type,
+            restore=restore_config_restore_from_form(form),
+            credentials_path=form.credentials_path or None,
+            service_name=service_name,
+        )
+
+
+class RestoreLegPayloadModel(BaseModel):
+    """Represent typed inputs for the restore execution leg payload.
+
+    :param task_name: The parent restore task name.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for execution.
+    :type hostname: NonEmptyStr
+    :param backup_source: Backup name or timestamp to restore from.
+    :type backup_source: NonEmptyStr
+    :param backup_type: Backup type for restore execution.
+    :type backup_type: BackupType
+    :param credentials_path: Optional path to MongoDB URI credentials.
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    backup_source: NonEmptyStr
+    backup_type: BackupType
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
+    service_name: NonEmptyStr | None = None
+
+    @classmethod
+    def from_form(
+        cls,
+        form: RestoreCreate,
+        service_name: str | None,
+    ) -> Self:
+        """Build restore execution leg inputs from a :class:`RestoreCreate` form."""
+        return cls(
+            task_name=form.task_name,
+            hostname=form.hostname,
+            backup_source=form.backup_source,
+            backup_type=form.backup_type,
+            credentials_path=form.credentials_path or None,
+            service_name=service_name,
+        )
+
+    def payload_script_name(self) -> str:
+        """Return the Nomad payload script file for this leg's backup type.
+
+        :return: Payload script basename (without path) for ``run-python``.
+        :rtype: str
+        :raises ValueError: If ``backup_type`` is not logical or physical PBM.
+        """
+        backup_type_to_payload = {
+            BackupType.PBM_LOGICAL: "pbm_logical_restore_payload",
+            BackupType.PBM_PHYSICAL: "pbm_physical_restore_payload",
+        }
+        payload_name = backup_type_to_payload.get(self.backup_type)
+        if payload_name is None:
+            raise ValueError(f"Invalid Backup Type {self.backup_type} for restore")
+        return payload_name
+
+
+class PbmListPayloadModel(BaseModel):
+    """Represent typed inputs for the pbm-list helper leg payload.
+
+    :param task_name: The parent restore task name.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for execution.
+    :type hostname: NonEmptyStr
+    :param credentials_path: Optional path to MongoDB URI credentials.
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
+    service_name: NonEmptyStr | None = None
+
+    @classmethod
+    def from_form(
+        cls,
+        form: RestoreCreate,
+        service_name: str | None,
+    ) -> Self:
+        """Build pbm-list leg inputs from a :class:`RestoreCreate` form."""
+        return cls(
+            task_name=form.task_name,
+            hostname=form.hostname,
+            credentials_path=form.credentials_path or None,
+            service_name=service_name,
+        )
+
+
+class PbmForceResyncPayloadModel(BaseModel):
+    """Represent typed inputs for the pbm-force-resync helper leg payload.
+
+    :param task_name: The parent restore task name.
+    :type task_name: NonEmptyStr
+    :param hostname: The target hostname for execution.
+    :type hostname: NonEmptyStr
+    :param credentials_path: Optional path to MongoDB URI credentials.
+    :type credentials_path: NonEmptyStr | EmptyStrToNone
+    :param service_name: Optional PMM service name annotation.
+    :type service_name: NonEmptyStr | None
+    """
+
+    task_name: NonEmptyStr
+    hostname: NonEmptyStr
+    credentials_path: NonEmptyStr | EmptyStrToNone = None
+    service_name: NonEmptyStr | None = None
+
+    @classmethod
+    def from_form(
+        cls,
+        form: RestoreCreate,
+        service_name: str | None,
+    ) -> Self:
+        """Build pbm-force-resync leg inputs from a :class:`RestoreCreate` form."""
+        return cls(
+            task_name=form.task_name,
+            hostname=form.hostname,
+            credentials_path=form.credentials_path or None,
+            service_name=service_name,
+        )
+
+
+class RestoreLegPayloadModels(NamedTuple):
+    """Represent typed per-leg payload models before :class:`TaskWrite` assembly."""
+
+    config: RestoreConfigPayloadModel
+    restore: RestoreLegPayloadModel
+    pbm_list: PbmListPayloadModel
+    force_resync: PbmForceResyncPayloadModel | None
+
+
+def restore_leg_payload_models_from_form(
+    form: RestoreCreate,
+    service_name: str | None,
+) -> RestoreLegPayloadModels:
+    """Build all per-leg payload models from restore form input."""
+    force_resync = None
+    if form.backup_type == BackupType.PBM_PHYSICAL:
+        force_resync = PbmForceResyncPayloadModel.from_form(form, service_name)
+    return RestoreLegPayloadModels(
+        config=RestoreConfigPayloadModel.from_form(form, service_name),
+        restore=RestoreLegPayloadModel.from_form(form, service_name),
+        pbm_list=PbmListPayloadModel.from_form(form, service_name),
+        force_resync=force_resync,
+    )
+
+
+class RestoreTaskGroupPayloads(NamedTuple):
+    """Represent TaskWrite payloads for all restore task legs.
+
+    :param config_task: Parent restore-config task payload.
+    :type config_task: TaskWrite
+    :param restore_task: Restore execution task payload.
+    :type restore_task: TaskWrite
+    :param pbm_list_task: pbm-list helper task payload.
+    :type pbm_list_task: TaskWrite
+    :param force_resync_task: Optional pbm-force-resync task payload.
+    :type force_resync_task: TaskWrite | None
+    """
+
+    config_task: TaskWrite
+    restore_task: TaskWrite
+    pbm_list_task: TaskWrite
+    force_resync_task: TaskWrite | None
 
 
 class RestoreDerivedTaskSummary(BaseModel):

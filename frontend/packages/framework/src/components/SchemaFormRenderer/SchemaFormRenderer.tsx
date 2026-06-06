@@ -51,7 +51,7 @@ function fieldDefault(field: PluginField): unknown {
     case 'integer':
     case 'float':
       return field.default ?? '';
-    case 'multichoice':
+    case 'multi_choice':
       return field.default ?? [];
     case 'file':
       return undefined;
