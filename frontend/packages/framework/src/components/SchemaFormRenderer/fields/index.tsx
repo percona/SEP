@@ -72,7 +72,7 @@ export function FieldRenderer({ field }: FieldRendererProps) {
       return <BoolField field={field} />;
     case 'choice':
       return <ChoiceField field={field} />;
-    case 'multichoice':
+    case 'multi_choice':
       return <MultiChoiceField field={field} />;
     case 'textarea':
       return <TextAreaField field={field} />;
