@@ -16,7 +16,7 @@
  */
 
 import { useState } from 'react';
-import { Button, ButtonGroup, CircularProgress, IconButton, Menu, MenuItem } from '@mui/material';
+import { Button, ButtonGroup, CircularProgress, Menu, MenuItem } from '@mui/material';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ApiError } from '@sep/api';
@@ -54,7 +54,7 @@ export function SyncControl() {
 
   return (
     <>
-      <ButtonGroup variant="contained" size="small" disabled={isDisabled}>
+      <ButtonGroup variant="outlined" size="small" disabled={isDisabled}>
         <Button
           aria-label="Sync all configured syncers"
           startIcon={
@@ -65,18 +65,15 @@ export function SyncControl() {
           Sync all
         </Button>
         {showDropdown && (
-          // ButtonGroup disabled does not propagate to IconButton — must set explicitly.
-          <IconButton
-            size="small"
+          <Button
             aria-label="Select a syncer"
             aria-haspopup="true"
             aria-expanded={Boolean(anchorEl)}
-            disabled={isDisabled}
             onClick={(e) => setAnchorEl(e.currentTarget)}
-            sx={{ borderRadius: 0 }}
+            sx={{ px: 1, minWidth: 0 }}
           >
             <ExpandMoreIcon fontSize="small" />
-          </IconButton>
+          </Button>
         )}
       </ButtonGroup>
       {showDropdown && (
