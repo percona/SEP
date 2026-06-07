@@ -51,15 +51,6 @@ def restore_create_no_service() -> RestoreCreate:
 
 
 @pytest.fixture
-def restore_task_write(
-    restore_create: RestoreCreate,
-    mongo_service: CreatedService,
-) -> RestoreTaskWrite:
+def restore_task_write(restore_create: RestoreCreate) -> RestoreTaskWrite:
     """Sample RestoreTaskWrite JSON body aligned with restore_create."""
-    return RestoreTaskWrite(
-        task_name=restore_create.task_name,
-        hostname=restore_create.hostname,
-        service_id=mongo_service.id,
-        backup_type=restore_create.backup_type,
-        backup_source=restore_create.backup_source,
-    )
+    return RestoreTaskWrite.model_validate(restore_create.model_dump(mode="json"))
