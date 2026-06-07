@@ -29,6 +29,7 @@ from fastapi import status as http_status
 from app.core.models import PaginatedResponse
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
+    InventoryAPI,
     IsApiAuthenticated,
     TaskAPI,
 )
@@ -42,7 +43,9 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     get_restores_task,
     RestoreParentTask,
     RestoreTaskGroupFromBody,
-    RestoreUpdateTaskFromBody,
+    RestoreUpdateFormFromBody,
+    UnprotectedRestoreParentTask,
+    update_restore_task_group,
 )
 from app.sep.plugins.backup_mongo.restore.models import (
     RestoreExecuteWrite,
@@ -115,15 +118,23 @@ async def restore_mongo_api_create(
     dependencies=[HasNoConflictedRunningTasks],
 )
 async def restore_mongo_api_update(
-    updated_task: RestoreUpdateTaskFromBody,
+    parent_task: UnprotectedRestoreParentTask,
+    form: RestoreUpdateFormFromBody,
     tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
 ) -> RestoreTaskResponse:
     """Update a restore task from a JSON payload request body.
 
     PUTs the parent config payload to the config task name and refreshes each
     child leg (restore, pbm-list, optional force-resync) in place.
     """
-    logger.debug("Update backup_mongo restore task (JSON path): %s", updated_task.name)
+    logger.debug("Update backup_mongo restore task (JSON path): %s", parent_task.name)
+    updated_task = await update_restore_task_group(
+        tasks_api,
+        parent_task,
+        form,
+        inventory_api,
+    )
     task_status = await get_restore_mongo_task_status(updated_task.name, tasks_api)
     return build_restore_mongo_api_task_response(updated_task, status=task_status)
 

@@ -37,7 +37,7 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     build_restore_task_group_from_body,
     build_restore_task_payload,
     build_restore_tasks,
-    update_restore_task_from_body,
+    build_restore_update_form_from_body,
 )
 from app.sep.plugins.backup_mongo.restore.models import RestoreCreate, RestoreTaskWrite
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
@@ -318,42 +318,24 @@ async def test_build_restore_task_group_from_body_delegates(
 
 
 @pytest.mark.asyncio
-async def test_update_restore_task_from_body_delegates(
+async def test_build_restore_update_form_from_body_delegates(
     mocker,
-    mock_remote_api,
     restore_create: RestoreCreate,
     restore_task_write: RestoreTaskWrite,
 ) -> None:
-    """Pin form identity from parent then update the full task group."""
+    """Convert update body to form with identity pinned from path parent."""
     parent_task = _restore_parent_task(
         config=yaml.dump({"backupType": BackupType.PBM_LOGICAL.value}),
     )
-    tasks_api = mocker.Mock()
     restore_update_form_from_write = mocker.patch(
         "app.sep.plugins.backup_mongo.restore.deps.restore_update_form_from_write",
         return_value=restore_create,
     )
-    update_restore_task_group = mocker.patch(
-        "app.sep.plugins.backup_mongo.restore.deps.update_restore_task_group",
-        new_callable=AsyncMock,
-        return_value=parent_task,
-    )
 
-    result = await update_restore_task_from_body(
-        restore_task_write,
-        parent_task,
-        tasks_api,
-        mock_remote_api,
-    )
+    result = await build_restore_update_form_from_body(restore_task_write, parent_task)
 
-    assert result is parent_task
+    assert result is restore_create
     restore_update_form_from_write.assert_called_once_with(
         restore_task_write,
         parent_task,
-    )
-    update_restore_task_group.assert_awaited_once_with(
-        tasks_api,
-        parent_task,
-        restore_create,
-        mock_remote_api,
     )
