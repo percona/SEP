@@ -484,6 +484,7 @@ async def stream_task_history_logs(
     task_history: TaskHistoryWithTaskDep,
     offsets: LogsOffsetsDep,
     step: str | None = None,
+    tail: Annotated[int | None, Query(ge=1)] = None,
 ) -> StreamingResponse:
     """Stream a task history's logs."""
     logger.debug("Requesting logs for task history %s", task_history.id)
@@ -499,7 +500,11 @@ async def stream_task_history_logs(
 
         async def _stream_finished_logs() -> AsyncGenerator[str, None]:
             async for log in iter_task_history_logs(
-                session, task_history, offsets, source=step
+                session,
+                task_history,
+                offsets,
+                source=step,
+                tail_lines=tail,
             ):
                 yield log.model_dump_json() + "\n"
 

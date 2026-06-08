@@ -395,6 +395,96 @@ async def test_iter_task_history_logs_tail_multibyte_boundary(
     assert combined == "\u00e9\u00e9\u00e9tail\ndone\n"
 
 
+@pytest.mark.asyncio
+async def test_iter_task_history_logs_tail_none_returns_full_stream(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert omitting ``tail_lines`` keeps the pre-tail full-stream behaviour."""
+    history = created_task_with_history
+    payload = "".join(f"line{i}\n" for i in range(10)).encode()
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        force_flush=True,
+        producer_offset_after=len(payload),
+    )
+
+    history = await _reload(session, history)
+    logs_without_tail = await _collect(iter_task_history_logs(session, history))
+    logs_explicit_none = await _collect(
+        iter_task_history_logs(session, history, tail_lines=None)
+    )
+
+    assert logs_without_tail == logs_explicit_none
+    combined = "".join(log.msg for log in logs_without_tail)
+    assert combined == payload.decode()
+    assert "line0" in combined
+    assert "line9" in combined
+
+
+@pytest.mark.asyncio
+async def test_iter_task_history_logs_tail_spans_multiple_chunks(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert tail offsets are resolved across several chunk rows."""
+    history = created_task_with_history
+    for index in range(6):
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=f"line{index}\n".encode(),
+            force_flush=True,
+            producer_offset_after=(index + 1) * len(f"line{index}\n".encode()),
+        )
+
+    history = await _reload(session, history)
+    logs = await _collect(iter_task_history_logs(session, history, tail_lines=3))
+    combined = "".join(log.msg for log in logs)
+    lines = [line for line in combined.split("\n") if line]
+
+    assert lines == ["line3", "line4", "line5"]
+
+
+@pytest.mark.asyncio
+async def test_iter_task_history_logs_tail_respects_source_filter(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert ``source`` limits tail computation to the matching step."""
+    history = created_task_with_history
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"run0\nrun1\nrun2\n",
+        force_flush=True,
+        producer_offset_after=18,
+    )
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="prepare",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"prep0\nprep1\nprep2\n",
+        force_flush=True,
+        producer_offset_after=18,
+    )
+
+    history = await _reload(session, history)
+    logs = await _collect(
+        iter_task_history_logs(session, history, source="run-script", tail_lines=2)
+    )
+    combined = "".join(log.msg for log in logs)
+
+    assert combined == "run1\nrun2\n"
+    assert "prep" not in combined
+
+
 def test_decompress_legacy_logs_handles_corrupted_blob():
     """Assert a garbled base64/gzip/JSON blob returns an empty dict.
 
