@@ -361,7 +361,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             <span class="label">Disable Bulk Insert</span>
                         </label>
                     </div>
-                    {% set delete_data_title = "Enable to delete the rows after they are archived." %}
+                    {% set delete_data_title = "Source rows are deleted without being written to any destination; the Destination Table/File fields are disabled." %}
                     <label id="delete_data_container"
                            for="delete_data"
                            class="checkbox"
@@ -375,7 +375,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                             <span class="material-symbols-outlined checked">check_box</span>
                         </div>
-                        <span class="label">DELETE_DATA</span>
+                        <span class="label">Delete Without Archiving</span>
                     </label>
                 </fieldset>
                 <br>
@@ -446,16 +446,16 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                        max="65535" />
                             </label>
                         </div>
-                        <div class="field">
-                            <label for="dest_db_name" title="Destination database schema name.">
-                                Destination Schema
-                                <input type="text"
-                                       id="dest_db_name"
-                                       name="dest_db_name"
-                                       class="validate"
-                                       placeholder="schema_name" />
-                            </label>
-                        </div>
+                    </div>
+                    <div class="field" id="dest_schema_name_field" style="display: none;">
+                        <label for="dest_db_name" title="Destination database schema name.">
+                            Destination Schema
+                            <input type="text"
+                                   id="dest_db_name"
+                                   name="dest_db_name"
+                                   class="validate"
+                                   placeholder="schema_name" />
+                        </label>
                     </div>
                     <div class="field" id="dest_manual_input_container">
                         <label for="use_manual_input_dest"
@@ -564,6 +564,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     const destHostInput = document.getElementById('dest_host');
     const destPortInput = document.getElementById('dest_port');
     const destDbNameInput = document.getElementById('dest_db_name');
+    const destSchemaNameField = document.getElementById('dest_schema_name_field');
     const destEls = {
         toggle: destManualInputToggle,
         serviceFieldsContainer: destServiceFieldsContainer,
@@ -721,19 +722,53 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         updateDestinationFieldset();
     }
 
-    destServiceSelect.addEventListener('change', function() {
-        populateDestSchemas(destServiceSelect, destDbSelect);
-        if (!this.value) {
-            destManualHostContainer.style.display = 'none';
-            setManualInputDestHost(false, true, destEls);
+    function setDestSchemaMode(useManualSchema) {
+        // dest_db_id (inventory) and dest_db_name (manual) are mutually
+        // exclusive; disabled controls aren't submitted, so disable the inactive one.
+        destSchemaNameField.style.display = useManualSchema ? 'block' : 'none';
+        destDbNameInput.disabled = !useManualSchema;
+        if (useManualSchema) {
+            destDbSelect.disabled = true;
         } else {
-            destManualHostContainer.style.display = 'block';
+            destDbSelect.disabled = destDbSelect.options.length <= 1;
         }
+    }
+
+    function applyDestHostMode() {
+        if (!destServiceSelect.value) {
+            // Same as source: no remote host, but a manual schema is allowed.
+            destManualHostContainer.style.display = 'none';
+            destManualInputToggle.checked = false;
+            destServiceFieldsContainer.style.display = 'none';
+            destManualInputFields.style.display = 'none';
+            destHostInput.disabled = true;
+            destHostInput.value = '';
+            destPortInput.disabled = true;
+            destPortInput.value = '';
+            setDestSchemaMode(true);
+        } else {
+            // Remote host: manual schema is shown only in manual-host mode.
+            destManualHostContainer.style.display = 'block';
+            setManualInputDestHost(destManualInputToggle.checked, false, destEls);
+            setDestSchemaMode(destManualInputToggle.checked);
+        }
+    }
+
+    destServiceSelect.addEventListener('change', async function() {
+        await populateDestSchemas(destServiceSelect, destDbSelect);
+        applyDestHostMode();
     });
 
     if (destManualInputToggle) {
         destManualInputToggle.addEventListener('change', function() {
-            setManualInputDestHost(this.checked, false, destEls);
+            if (this.checked) {
+                setManualInputDestHost(true, false, destEls);
+                setDestSchemaMode(true);
+            } else {
+                // Toggle-off clears the service, so reconcile the whole
+                // destination area; a stale inventory schema must not survive.
+                applyDestHostMode();
+            }
         });
     }
 
@@ -788,7 +823,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
 
     function updateDestinationFieldset() {
-        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1' || prgPurgeCheckbox.checked) {
+        if (prgPurgeCheckbox.checked || swapDropSelect.value === '1') {
             destinationContainer.classList.add('hidden');
             if (destManualInputContainer) destManualInputContainer.style.display = 'none';
             destTableSelect.disabled = true;
@@ -805,7 +840,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             const hasDestFile = dstFileInput.value.trim() !== '';
             const hasDestTable = useManualInputDest
                 ? (destTableNameInput.value.trim() !== '')
-                : (destTableSelect.value !== '');
+                : (destTableSelect.value !== '' && destTableSelect.value !== '-1');
 
             if (hasDestFile) {
                 if (destManualInputContainer) destManualInputContainer.style.display = 'none';
@@ -990,7 +1025,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
         const hasDestTable = useManualInputDest
             ? (destTableNameInput.value.trim() !== '')
-            : (destTableSelect.value !== '');
+            : (destTableSelect.value !== '' && destTableSelect.value !== '-1');
 
         if (hasDestTable) {
             dstFileContainer.classList.add('hidden');
@@ -1145,6 +1180,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
         updateCreateButtonState();
         updateDestinationFieldset();
+        applyDestHostMode();
         toggleSchemaAndTable();
         toggleSourceQueryInput();
         toggleDstFileContainer();

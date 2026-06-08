@@ -16,7 +16,14 @@
 """Define database operations for the Inventory API."""
 
 from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager
-from app.inventory.models import Node, Schema, Service, Table
+from app.inventory.models import (
+    HostSystemObservation,
+    Node,
+    Schema,
+    Service,
+    ServiceSystemObservation,
+    Table,
+)
 
 
 class NodeManager(BaseSQLModelManager):
@@ -81,3 +88,41 @@ class TableManager(BaseSQLModelChildManager):
     Model = Table
     ParentManager = SchemaManager
     connected_by = "schema_id"
+
+
+class HostSystemObservationManager(BaseSQLModelChildManager):
+    """Manage host system observation operations.
+
+    :ivar Model: The SQLModel class this manager is responsible for
+        (`HostSystemObservation`).
+    :vartype Model: type[HostSystemObservation]
+    :ivar ParentManager: The manager class responsible for handling the parent model
+        (`NodeManager`).
+    :vartype ParentManager: type[NodeManager]
+    :ivar connected_by: The field name that connects the child model to the parent
+        model (`node_id`).
+    :vartype connected_by: str
+    """
+
+    Model = HostSystemObservation
+    ParentManager = NodeManager
+    connected_by = "node_id"
+
+
+class ServiceSystemObservationManager(BaseSQLModelChildManager):
+    """Manage service system observation operations.
+
+    :ivar Model: The SQLModel class this manager is responsible for
+        (`ServiceSystemObservation`).
+    :vartype Model: type[ServiceSystemObservation]
+    :ivar ParentManager: The manager class responsible for handling the parent model
+        (`ServiceManager`).
+    :vartype ParentManager: type[ServiceManager]
+    :ivar connected_by: The field name that connects the child model to the parent
+        model (`service_id`).
+    :vartype connected_by: str
+    """
+
+    Model = ServiceSystemObservation
+    ParentManager = ServiceManager
+    connected_by = "service_id"

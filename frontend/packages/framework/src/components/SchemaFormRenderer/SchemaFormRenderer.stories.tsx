@@ -106,7 +106,7 @@ const MULTI_SECTION_SCHEMA: FormSection[] = [
       },
       { type: 'bool', name: 'dryRun', label: 'Dry run', default: true },
       {
-        type: 'multichoice',
+        type: 'multi_choice',
         name: 'tags',
         label: 'Tags',
         choices: [
@@ -449,7 +449,7 @@ export const ArchivesSourceXor: Story = {
 };
 
 /**
- * Empty-state placeholder for `multichoice` and `choice` (select-mode).
+ * Empty-state placeholder for `multi_choice` and `choice` (select-mode).
  * Confirms the floating label sits above and a muted "Select…" affordance
  * is visible inside the control when no value is chosen (SEP-1278).
  */
@@ -462,7 +462,7 @@ export const EmptyChoicePlaceholder: Story = {
           'Both controls below render a muted "Select…" placeholder when no value is selected.',
         fields: [
           {
-            type: 'multichoice',
+            type: 'multi_choice',
             name: 'upload',
             label: 'Upload providers',
             choices: [
