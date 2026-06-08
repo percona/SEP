@@ -960,7 +960,7 @@ class TestResolveDestinationHostAndDb:
 
 
 class TestBuildArchivesPayloadSelfArchiveGuard:
-    """Test the post-resolution self-archive guard in ``_build_archives_payload``."""
+    """Tests for the post-resolution self-archive guard in ``_build_archives_payload``."""
 
     @pytest.mark.asyncio
     async def test_dest_db_id_resolves_to_same_schema_raises(
