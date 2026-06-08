@@ -419,7 +419,7 @@ class TestUpsertServiceSystemObservation:
     def test_upsert_idempotent_no_conflict_on_second_put(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Second PUT with same payload returns 200 without unique-constraint error."""
+        """Return 200 on a repeat PUT with the same payload (no unique-constraint error)."""
         payload = ServiceSystemObservationWriteFactory.build()
         json_payload = payload.model_dump(mode="json")
         first = test_client.put(
@@ -437,7 +437,7 @@ class TestUpsertServiceSystemObservation:
         service: Service,
         service_observation: ServiceSystemObservation,
     ) -> None:
-        """PUT on an existing observation updates in place — same DB row, same id."""
+        """Update an existing observation in place on PUT — same DB row, same id."""
         payload = ServiceSystemObservationWriteFactory.build(db_engine_version="5.7.44")
         response = test_client.put(
             f"/services/{service.id}/system-observation",
