@@ -1820,6 +1820,7 @@ class S3UploadProvider:
                         dict(
                             item.split("=", 1)
                             for item in self.awscli_s3_upload_extra_args.split()
+                            if "=" in item
                         )
                     )
 
