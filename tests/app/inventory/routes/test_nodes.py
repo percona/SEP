@@ -19,8 +19,12 @@ from starlette import status
 from starlette.testclient import TestClient
 
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
-from app.inventory.models import Node, Service, SourceEnum
-from tests.app.factories import NodeWriteFactory, ServiceWriteFactory
+from app.inventory.models import HostSystemObservation, Node, Service, SourceEnum
+from tests.app.factories import (
+    HostSystemObservationWriteFactory,
+    NodeWriteFactory,
+    ServiceWriteFactory,
+)
 
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -369,3 +373,127 @@ class TestCreateServiceForNode:
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestRetrieveHostSystemObservation:
+    """Test GET /{node_id}/system-observation endpoint."""
+
+    def test_retrieve_host_system_observation(
+        self,
+        test_client: TestClient,
+        node: Node,
+        host_observation: HostSystemObservation,
+    ) -> None:
+        """Return host observation with all fields for a node that has one."""
+        response = test_client.get(f"/{node.id}/system-observation")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["node_id"] == node.id
+        assert data["os_version"] == host_observation.os_version
+        assert "observed_at" in data
+        assert "id" in data
+
+    def test_retrieve_host_system_observation_404_when_no_observation(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return 404 when node exists but no observation has been collected yet."""
+        response = test_client.get(f"/{node.id}/system-observation")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_host_system_observation_404_when_node_not_found(
+        self, test_client: TestClient
+    ) -> None:
+        """Return 404 when the node ID does not exist."""
+        response = test_client.get("/99999/system-observation")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestUpsertHostSystemObservation:
+    """Test PUT /{node_id}/system-observation endpoint."""
+
+    def test_upsert_creates_new_observation(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Create a new observation when none exists and return 200."""
+        payload = HostSystemObservationWriteFactory.build()
+        response = test_client.put(
+            f"/{node.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["node_id"] == node.id
+        assert data["os_version"] == payload.os_version
+        assert "id" in data
+
+    def test_upsert_updates_existing_observation(
+        self,
+        test_client: TestClient,
+        node: Node,
+        host_observation: HostSystemObservation,
+    ) -> None:
+        """Update existing observation in place and return 200 with updated fields."""
+        payload = HostSystemObservationWriteFactory.build(os_version="Debian 12")
+        response = test_client.put(
+            f"/{node.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["os_version"] == "Debian 12"
+        assert response.json()["id"] == host_observation.id
+
+    def test_upsert_idempotent_no_conflict_on_second_put(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Second PUT with same payload returns 200 without unique-constraint error."""
+        payload = HostSystemObservationWriteFactory.build()
+        json_payload = payload.model_dump(mode="json")
+        first = test_client.put(f"/{node.id}/system-observation", json=json_payload)
+        assert first.status_code == status.HTTP_200_OK
+        second = test_client.put(f"/{node.id}/system-observation", json=json_payload)
+        assert second.status_code == status.HTTP_200_OK
+
+    def test_upsert_preserves_same_id_across_updates(
+        self,
+        test_client: TestClient,
+        node: Node,
+        host_observation: HostSystemObservation,
+    ) -> None:
+        """PUT on an existing observation updates in place — same DB row, same id."""
+        payload = HostSystemObservationWriteFactory.build(os_version="Rocky Linux 9")
+        response = test_client.put(
+            f"/{node.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["id"] == host_observation.id
+
+    def test_upsert_404_when_node_not_found(self, test_client: TestClient) -> None:
+        """Return 404 when the node ID does not exist."""
+        payload = HostSystemObservationWriteFactory.build()
+        response = test_client.put(
+            "/99999/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_upsert_422_missing_observed_at(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return 422 when required field observed_at is absent."""
+        data = HostSystemObservationWriteFactory.build().model_dump(mode="json")
+        del data["observed_at"]
+        response = test_client.put(f"/{node.id}/system-observation", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_upsert_422_when_all_observation_fields_are_none(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return 422 when os_version, installed_packages, and config are all None."""
+        base = HostSystemObservationWriteFactory.build()
+        data = base.model_dump(mode="json")
+        data["os_version"] = None
+        data["installed_packages"] = None
+        data["config"] = None
+        response = test_client.put(f"/{node.id}/system-observation", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

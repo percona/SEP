@@ -21,12 +21,14 @@ from fastapi import APIRouter, Query, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.models import PaginatedResponse
 from app.core.utils.fields import NonEmptyStr
-from app.inventory.crud import NodeManager, ServiceManager
+from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
 from app.inventory.models import (
+    HostSystemObservationResponse,
+    HostSystemObservationWrite,
     Node,
     NodeResponse,
     NodeWrite,
@@ -108,6 +110,35 @@ async def delete_node(session: SessionDep, node: NodeDep) -> None:
     """Delete Node."""
     logger.debug("Deleting node %s", node.id)
     await NodeManager.delete(session, node)
+
+
+@router.get("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def retrieve_host_system_observation(
+    session: SessionDep,
+    node: NodeDep,
+) -> HostSystemObservationResponse:
+    """Retrieve host system observation for a node."""
+    obs = await HostSystemObservationManager.first(session, node_id=node.id)
+    if obs is None:
+        raise HTTPNotFoundException(
+            detail="No system observation found for this node",
+        )
+    return obs
+
+
+@router.put("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def upsert_host_system_observation(
+    session: SessionDep,
+    node: NodeDep,
+    data: HostSystemObservationWrite,
+) -> HostSystemObservationResponse:
+    """Upsert host system observation for a node."""
+    existing = await HostSystemObservationManager.first(session, node_id=node.id)
+    if existing:
+        return await HostSystemObservationManager.update(
+            session, existing, data, node_id=node.id
+        )
+    return await HostSystemObservationManager.create(session, data, node_id=node.id)
 
 
 @router.get("/{node_id}/services/", dependencies=[IsAuthenticatedDep])

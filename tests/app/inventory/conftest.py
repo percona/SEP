@@ -29,10 +29,17 @@ from starlette.testclient import TestClient
 from app.api.deps import get_current_user
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
+from app.inventory.crud import (
+    HostSystemObservationManager,
+    NodeManager,
+    SchemaManager,
+    ServiceManager,
+    ServiceSystemObservationManager,
+    TableManager,
+)
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
-from app.inventory.models import (  # noqa: F401 — register all inventory tables
+from app.inventory.models import (
     HostSystemObservation,
     Node,
     Schema,
@@ -42,8 +49,10 @@ from app.inventory.models import (  # noqa: F401 — register all inventory tabl
 )
 from app.models import CasdoorUser
 from tests.app.factories import (
+    HostSystemObservationWriteFactory,
     NodeWriteFactory,
     SchemaWriteFactory,
+    ServiceSystemObservationWriteFactory,
     ServiceWriteFactory,
     TableWriteFactory,
 )
@@ -121,4 +130,26 @@ async def second_table(session: AsyncSession, schema: Schema, table: Table) -> T
         session,
         TableWriteFactory.build(name="inventory_test_table_two"),
         schema_id=schema.id,
+    )
+
+
+@pytest_asyncio.fixture
+async def host_observation(session: AsyncSession, node: Node) -> HostSystemObservation:
+    """Create a host system observation for the node."""
+    return await HostSystemObservationManager.create(
+        session,
+        HostSystemObservationWriteFactory.build(),
+        node_id=node.id,
+    )
+
+
+@pytest_asyncio.fixture
+async def service_observation(
+    session: AsyncSession, service: Service
+) -> ServiceSystemObservation:
+    """Create a service system observation for the service."""
+    return await ServiceSystemObservationManager.create(
+        session,
+        ServiceSystemObservationWriteFactory.build(),
+        service_id=service.id,
     )
