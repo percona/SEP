@@ -25,7 +25,7 @@
 | app/core/celery/utils.py                                                                                    |       30 |       21 |     30% |    80-124 |
 | app/core/config.py                                                                                          |      193 |        6 |     97% |393, 427, 470, 544, 557, 598 |
 | app/core/db/config.py                                                                                       |       17 |        0 |    100% |           |
-| app/core/db/crud.py                                                                                         |      269 |       29 |     89% |193, 328-345, 363, 368, 385, 387, 498-513, 771-773, 836, 1076-1080 |
+| app/core/db/crud.py                                                                                         |      269 |       28 |     90% |193, 328-345, 363, 368, 385, 387, 498-513, 771-773, 836, 1076-1077 |
 | app/core/db/models.py                                                                                       |       14 |        0 |    100% |           |
 | app/core/db/sql\_types.py                                                                                   |       37 |        0 |    100% |           |
 | app/core/db/utils.py                                                                                        |       54 |        4 |     93% |76, 191, 220, 223 |
@@ -61,11 +61,11 @@
 | app/core/utils/strings.py                                                                                   |       24 |        3 |     88% |     64-69 |
 | app/inventory/config.py                                                                                     |       11 |        0 |    100% |           |
 | app/inventory/constants.py                                                                                  |        2 |        0 |    100% |           |
-| app/inventory/crud.py                                                                                       |       16 |        0 |    100% |           |
+| app/inventory/crud.py                                                                                       |       24 |        0 |    100% |           |
 | app/inventory/db.py                                                                                         |        7 |        1 |     86% |        40 |
 | app/inventory/deps.py                                                                                       |       24 |        3 |     88% |     38-40 |
 | app/inventory/main.py                                                                                       |       28 |        9 |     68% |39-42, 73-74, 78-82 |
-| app/inventory/models.py                                                                                     |       71 |        0 |    100% |           |
+| app/inventory/models.py                                                                                     |       89 |        0 |    100% |           |
 | app/inventory/routes/nodes.py                                                                               |       42 |        0 |    100% |           |
 | app/inventory/routes/schemas.py                                                                             |       38 |        0 |    100% |           |
 | app/inventory/routes/services.py                                                                            |       43 |        2 |     95% |  142, 151 |
@@ -223,7 +223,7 @@
 | app/sep/sync/models.py                                                                                      |      348 |       49 |     86% |77-84, 98, 100, 119, 267-269, 330, 390-391, 537, 567, 583, 603, 708, 722, 742-743, 823, 837, 859-860, 954, 978-980, 1085-1086, 1161, 1305-1307, 1316, 1361-1362, 1365, 1371-1373, 1378-1384, 1388 |
 | app/sep/sync/syncers/mysql/payload.py                                                                       |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                        |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       22 |     76% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 291-294, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                 |       93 |       20 |     78% |83-87, 107-110, 121, 176-184, 236-252, 291-294, 344 |
 | app/sep/tasks.py                                                                                            |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                 |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                      |       20 |        0 |    100% |           |
@@ -259,7 +259,7 @@
 | app/tasks/periodic/routes.py                                                                                |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                         |      227 |       38 |     83% |141-145, 202, 223-230, 262, 318-319, 325, 369-370, 397-398, 440-441, 460, 591, 615, 628-642, 663-676, 692-693 |
 | app/tasks/settings/routes.py                                                                                |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                   | **17724** | **2107** | **88%** |           |
+| **TOTAL**                                                                                                   | **17750** | **2104** | **88%** |           |
 
 
 ## Setup coverage badge
