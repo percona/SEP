@@ -122,6 +122,10 @@ class BackupTaskWrite(BaseModel):
     :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the PostgreSQL service.
     :type service_id: int
+    :param stanza: The pgBackRest stanza name as configured in pgbackrest.conf on
+        the host. Must match an existing stanza — this value is passed verbatim
+        as ``--stanza`` to every ``pgbackrest`` invocation.
+    :type stanza: SafeStanza
     :param alert_on_fail: If True, fire a PMM alert on task failure.
     :type alert_on_fail: bool
     :param logging_dir: Optional directory used by the payload for logs.
@@ -142,10 +146,6 @@ class BackupTaskWrite(BaseModel):
     :type pgbackrest_retention_archive: int | None
     :param pgbackrest_incremental_cycle: Cadence value for the INCR/FULL cycle.
     :type pgbackrest_incremental_cycle: int | str | None
-    :param stanza: The pgBackRest stanza name as configured in pgbackrest.conf on
-        the host.  Must match an existing stanza — this value is passed verbatim
-        as ``--stanza`` to every ``pgbackrest`` invocation.
-    :type stanza: SafeStanza
     """
 
     model_config = ConfigDict(extra="forbid")
