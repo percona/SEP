@@ -39,7 +39,7 @@ const MOCK_USER = {
 
 // Single mocked plugin slug — `mysql_backups` — so we reuse the registered
 // shell route. The schema shape inside is bespoke for this regression suite:
-// one empty required multichoice, one empty 4-option choice (select), and
+// one empty required multi_choice, one empty 4-option choice (select), and
 // one gated choice that re-mounts when S3 is added/removed from upload.
 const MOCK_SCHEMA = {
   name: 'mysql_backups',
@@ -50,7 +50,7 @@ const MOCK_SCHEMA = {
       title: 'SEP-1278 coverage',
       fields: [
         {
-          type: 'multichoice',
+          type: 'multi_choice',
           name: 'upload',
           label: 'Upload providers',
           required: true,
@@ -146,7 +146,14 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
     await mockRoutes(page);
   });
 
-  test('multichoice: empty state shows placeholder and shrunk label', async ({ page }) => {
+  test('multi_choice (SEP-1293): wire type renders the multi-select control', async ({ page }) => {
+    await openCreateForm(page);
+    // MOCK_SCHEMA uses type: 'multi_choice'. If FieldRenderer fell through to null
+    // (wrong discriminator), this element would never mount.
+    await expect(page.locator('#mui-component-select-upload')).toBeVisible();
+  });
+
+  test('multi_choice: empty state shows placeholder and shrunk label', async ({ page }) => {
     await openCreateForm(page);
 
     const label = page.locator('label#upload-label');
@@ -192,7 +199,7 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
   test('validation error keeps the label shrunk and notch open', async ({ page }) => {
     await openCreateForm(page);
 
-    // Submit with nothing filled — required multichoice trips RHF validation.
+    // Submit with nothing filled — required multi_choice trips RHF validation.
     await page
       .getByRole('button', { name: /submit|create|save|run/i })
       .last()
@@ -234,7 +241,7 @@ test.describe('SEP-1278 — empty-state placeholder + shrunk label', () => {
     await expect(label).toHaveAttribute('data-shrink', 'true');
   });
 
-  test('populated multichoice renders selected labels', async ({ page }) => {
+  test('populated multi_choice renders selected labels', async ({ page }) => {
     await openCreateForm(page);
 
     await page.locator('#mui-component-select-upload').click();

@@ -33,6 +33,7 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import ScienceIcon from '@mui/icons-material/Science';
 import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
+import { ROUTES } from '@sep/shared';
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { SvgIconProps } from '@mui/material';
 
@@ -53,21 +54,32 @@ export interface NavItem {
 // Navigation matching SEP's plugin-based sidebar. Each `appKey` is the backend
 // plugin module key consumed by `GET /api/apps/` to drive enable/disable.
 // Backup sub-items use percona-ui's database-specific icons.
+//
+// URL convention (see SEP-1270): every `to:` here is sourced from the shared
+// `ROUTES` map. router.tsx keeps its own `path` literals and is not wired to
+// ROUTES, so when a plugin is migrated to React update BOTH the router route
+// and the matching ROUTES entry together — never hardcode a path string here.
+// Drift between the two is what made the sidebar point at PlaceholderPage /
+// NotFoundPage (the regression this ticket fixed for MySQL & Archive); the
+// `sidebar-navigation` e2e spec now guards against it. Paths follow three families:
+//   • /plugins/<name>  — schema-driven plugins (checksums, mysql_backups, archives)
+//   • /backups/<db>    — domain-grouped backup plugins (mongodb, postgresql)
+//   • bare top-level   — cross-cutting tools (inventory, tasks, snippets, atw, dipper)
 const defaultNavItems: NavItem[] = [
-  { title: 'Dashboard', icon: DashboardIcon, to: '/' },
-  { title: 'Inventory', icon: DnsIcon, to: '/inventory' },
-  { title: 'Tasks', icon: AssignmentIcon, to: '/tasks', appKey: 'tasks' },
-  { title: 'Snippets', icon: CodeIcon, to: '/snippets', appKey: 'snippets' },
-  { title: 'Collect Diagnostic Data', icon: SupportAgentIcon, to: '/atw', appKey: 'atw' },
+  { title: 'Dashboard', icon: DashboardIcon, to: ROUTES.dashboard },
+  { title: 'Inventory', icon: DnsIcon, to: ROUTES.inventory },
+  { title: 'Tasks', icon: AssignmentIcon, to: ROUTES.tasks, appKey: 'tasks' },
+  { title: 'Snippets', icon: CodeIcon, to: ROUTES.snippets, appKey: 'snippets' },
+  { title: 'Collect Diagnostic Data', icon: SupportAgentIcon, to: ROUTES.atw, appKey: 'atw' },
   {
     title: 'Alerts',
     icon: NotificationsActiveIcon,
     children: [
-      { title: 'Templates', icon: DescriptionIcon, to: '/alerts/templates', appKey: 'alerts' },
+      { title: 'Templates', icon: DescriptionIcon, to: ROUTES.alertTemplates, appKey: 'alerts' },
       {
         title: 'Troubleshooting',
         icon: TroubleshootIcon,
-        to: '/alerts/troubleshooting',
+        to: ROUTES.alertTroubleshooting,
         appKey: 'alert_troubleshooting',
       },
     ],
@@ -75,23 +87,21 @@ const defaultNavItems: NavItem[] = [
   {
     title: 'Schema Change',
     icon: StorageIcon,
-    children: [
-      { title: 'Alters', icon: TableChartIcon, to: '/schema-change/alters', appKey: 'alters' },
-    ],
+    children: [{ title: 'Alters', icon: TableChartIcon, to: ROUTES.schemaAlters, appKey: 'alters' }],
   },
-  { title: 'Checksums', icon: CheckCircleIcon, to: '/plugins/checksums', appKey: 'checksums' },
+  { title: 'Checksums', icon: CheckCircleIcon, to: ROUTES.checksums, appKey: 'checksums' },
   {
     title: 'Backups',
     icon: BackupIcon,
     children: [
-      { title: 'MySQL', icon: MySqlIcon, to: '/backups/mysql', appKey: 'mysql_backups' },
-      { title: 'MongoDB', icon: MongoIcon, to: '/backups/mongodb', appKey: 'backup_mongo' },
-      { title: 'PostgreSQL', icon: PostgreSqlIcon, to: '/backups/postgresql', appKey: 'backup_pg' },
+      { title: 'MySQL', icon: MySqlIcon, to: ROUTES.mysqlBackups, appKey: 'mysql_backups' },
+      { title: 'MongoDB', icon: MongoIcon, to: ROUTES.backupsMongodb, appKey: 'backup_mongo' },
+      { title: 'PostgreSQL', icon: PostgreSqlIcon, to: ROUTES.backupsPostgresql, appKey: 'backup_pg' },
     ],
   },
-  { title: 'Archive', icon: ArchiveIcon, to: '/archive', appKey: 'archives' },
-  { title: 'Dipper Data Collection', icon: ScienceIcon, to: '/dipper', appKey: 'dipper' },
-  { title: 'Reports', icon: BarChartIcon, to: '/reports', appKey: 'report' },
+  { title: 'Archive', icon: ArchiveIcon, to: ROUTES.archive, appKey: 'archives' },
+  { title: 'Dipper Data Collection', icon: ScienceIcon, to: ROUTES.dipper, appKey: 'dipper' },
+  { title: 'Reports', icon: BarChartIcon, to: ROUTES.reports, appKey: 'report' },
 ];
 
 /**

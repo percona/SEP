@@ -129,6 +129,7 @@ _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
         "xtrabackup_replica_info",
         "xtrabackup_stop_replica",
         "xtrabackup_lock_ddl",
+        "xtrabackup_quiet",
     ),
     "B": (),
 }
@@ -247,6 +248,13 @@ mysql_backups_schema = PluginSchema(
                     label="Extra args",
                     forbidden=_mydumper_forbidden,
                 ),
+                IntegerField(
+                    name="mydumper_verbose",
+                    label="Verbose level",
+                    forbidden=_mydumper_forbidden,
+                    ge=0,
+                    le=3,
+                ),
             ],
         ),
         FormSection(
@@ -362,6 +370,11 @@ mysql_backups_schema = PluginSchema(
                     label="Lock DDL",
                     default=False,
                 ),
+                BoolField(
+                    name="xtrabackup_quiet",
+                    label="Quiet log (drop per-file copy lines)",
+                    default=False,
+                ),
                 ChoiceField(
                     name="xtrabackup_bin_cmd",
                     label="Backup binary",
@@ -464,6 +477,11 @@ mysql_backups_schema = PluginSchema(
                     label="Skip S3 safety check",
                     default=False,
                     forbidden=_upload_excludes(_UPLOAD_S3),
+                ),
+                BoolField(
+                    name="upload_quiet",
+                    label="Quiet upload logs",
+                    default=False,
                 ),
                 StringField(
                     name="awscli_s3_upload_extra_args",
