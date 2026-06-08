@@ -42,6 +42,29 @@ TAIL_SCAN_MAX_BYTES = 64 * 1024 * 1024
 NEWLINE_BYTE = ord("\n")
 
 
+def _line_starts(content: bytes) -> list[int]:
+    r"""Return byte offsets where each line begins.
+
+    Lines are delimited by ``\n``. A single trailing newline closes the final
+    line without starting an extra empty one (GNU ``tail -n`` semantics).
+
+    :param content: UTF-8 encoded log bytes.
+    :type content: bytes
+    :return: Byte offsets at which each line in ``content`` begins.
+    :rtype: list[int]
+    """
+    if not content:
+        return []
+
+    starts = [0]
+    for index, byte in enumerate(content):
+        if byte == NEWLINE_BYTE:
+            next_start = index + 1
+            if next_start < len(content):
+                starts.append(next_start)
+    return starts
+
+
 def byte_offset_for_last_n_lines(content: bytes, line_count: int) -> int:
     r"""Return the byte offset where the last ``line_count`` lines begin.
 
@@ -60,17 +83,125 @@ def byte_offset_for_last_n_lines(content: bytes, line_count: int) -> int:
     if line_count <= 0 or not content:
         return 0
 
-    line_starts = [0]
-    for index, byte in enumerate(content):
-        if byte == NEWLINE_BYTE:
-            next_start = index + 1
-            if next_start < len(content):
-                line_starts.append(next_start)
-
-    total_lines = len(line_starts)
+    starts = _line_starts(content)
+    total_lines = len(starts)
     if line_count >= total_lines:
         return 0
-    return line_starts[total_lines - line_count]
+    return starts[total_lines - line_count]
+
+
+def _apply_reverse_tail_chunk(
+    content_bytes: bytes,
+    chunk_start_offset: int,
+    lines_remaining: int,
+    tail_byte_offset: int | None,
+) -> tuple[int, int | None, bool]:
+    """Update tail-scan state after processing one chunk in reverse order.
+
+    :param content_bytes: UTF-8 encoded chunk content.
+    :type content_bytes: bytes
+    :param chunk_start_offset: The user-facing byte offset where the chunk begins.
+    :type chunk_start_offset: int
+    :param lines_remaining: Trailing lines still to locate.
+    :type lines_remaining: int
+    :param tail_byte_offset: The tail offset found so far, if any.
+    :type tail_byte_offset: int | None
+    :return: Updated ``lines_remaining``, ``tail_byte_offset``, and whether to stop.
+    :rtype: tuple[int, int | None, bool]
+    """
+    if b"\n" not in content_bytes:
+        if content_bytes:
+            lines_remaining -= 1
+            if lines_remaining == 0:
+                tail_byte_offset = chunk_start_offset
+        return lines_remaining, tail_byte_offset, False
+
+    if lines_remaining == 0:
+        starts = _line_starts(content_bytes)
+        if starts:
+            tail_byte_offset = chunk_start_offset + starts[-1]
+        return lines_remaining, tail_byte_offset, True
+
+    chunk_line_count = len(_line_starts(content_bytes))
+    if chunk_line_count >= lines_remaining:
+        intra = byte_offset_for_last_n_lines(content_bytes, lines_remaining)
+        tail_byte_offset = chunk_start_offset + intra
+        return lines_remaining, tail_byte_offset, True
+    return lines_remaining - chunk_line_count, tail_byte_offset, False
+
+
+async def _compute_stream_tail_offset(
+    session: AsyncSession,
+    task_history_id: int,
+    stream_source: str,
+    stream: TaskLogType,
+    tail_lines: int,
+) -> int:
+    """Scan one stream's chunks newest-first and return its tail byte offset.
+
+    :param session: The SQLAlchemy asynchronous session.
+    :type session: AsyncSession
+    :param task_history_id: The ``TaskHistory`` identifier.
+    :type task_history_id: int
+    :param stream_source: The execution step name.
+    :type stream_source: str
+    :param stream: The log stream being scanned.
+    :type stream: TaskLogType
+    :param tail_lines: Number of trailing lines to retain.
+    :type tail_lines: int
+    :return: The tail byte offset for the stream.
+    :rtype: int
+    """
+    lines_remaining = tail_lines
+    tail_byte_offset: int | None = None
+    chunks_scanned = 0
+    bytes_scanned = 0
+    oldest_scanned_start: int | None = None
+
+    async for chunk in TaskHistoryLogManager.iter_chunks_reverse(
+        session,
+        task_history_id,
+        source=stream_source,
+        stream=stream,
+    ):
+        if (
+            chunks_scanned >= TAIL_SCAN_MAX_CHUNKS
+            or bytes_scanned >= TAIL_SCAN_MAX_BYTES
+        ):
+            logger.debug(
+                "taskhistory_log tail scan budget exhausted",
+                extra={
+                    "event": "taskhistory_log_tail_scan_budget",
+                    "task_history_id": task_history_id,
+                    "source": stream_source,
+                    "stream": stream.value,
+                    "chunks_scanned": chunks_scanned,
+                    "bytes_scanned": bytes_scanned,
+                },
+            )
+            if tail_byte_offset is None and oldest_scanned_start is not None:
+                tail_byte_offset = oldest_scanned_start
+            break
+
+        chunks_scanned += 1
+        content_bytes = chunk.content.encode("utf-8")
+        bytes_scanned += len(content_bytes)
+        oldest_scanned_start = (
+            chunk.start_offset
+            if oldest_scanned_start is None
+            else min(oldest_scanned_start, chunk.start_offset)
+        )
+
+        lines_remaining, tail_byte_offset, done = _apply_reverse_tail_chunk(
+            content_bytes,
+            chunk.start_offset,
+            lines_remaining,
+            tail_byte_offset,
+        )
+        if done:
+            break
+
+    return 0 if tail_byte_offset is None else tail_byte_offset
 
 
 async def compute_tail_offsets_from_chunks(
@@ -102,55 +233,13 @@ async def compute_tail_offsets_from_chunks(
         session, task_history_id, source=source
     )
     for stream_source, stream in stream_keys:
-        lines_remaining = tail_lines
-        tail_byte_offset: int | None = None
-        chunks_scanned = 0
-        bytes_scanned = 0
-        oldest_scanned_start: int | None = None
-
-        async for chunk in TaskHistoryLogManager.iter_chunks_reverse(
+        tail_byte_offset = await _compute_stream_tail_offset(
             session,
             task_history_id,
-            source=stream_source,
-            stream=stream,
-        ):
-            if (
-                chunks_scanned >= TAIL_SCAN_MAX_CHUNKS
-                or bytes_scanned >= TAIL_SCAN_MAX_BYTES
-            ):
-                logger.debug(
-                    "taskhistory_log tail scan budget exhausted",
-                    extra={
-                        "event": "taskhistory_log_tail_scan_budget",
-                        "task_history_id": task_history_id,
-                        "source": stream_source,
-                        "stream": stream.value,
-                        "chunks_scanned": chunks_scanned,
-                        "bytes_scanned": bytes_scanned,
-                    },
-                )
-                if tail_byte_offset is None and oldest_scanned_start is not None:
-                    tail_byte_offset = oldest_scanned_start
-                break
-
-            chunks_scanned += 1
-            content_bytes = chunk.content.encode("utf-8")
-            bytes_scanned += len(content_bytes)
-            oldest_scanned_start = (
-                chunk.start_offset
-                if oldest_scanned_start is None
-                else min(oldest_scanned_start, chunk.start_offset)
-            )
-
-            newline_count = content_bytes.count(b"\n")
-            if newline_count >= lines_remaining:
-                intra = byte_offset_for_last_n_lines(content_bytes, lines_remaining)
-                tail_byte_offset = chunk.start_offset + intra
-                break
-            lines_remaining -= newline_count
-
-        if tail_byte_offset is None:
-            tail_byte_offset = 0
+            stream_source,
+            stream,
+            tail_lines,
+        )
         if tail_byte_offset > 0:
             tail_offsets.setdefault(stream_source, {})[stream] = tail_byte_offset
 

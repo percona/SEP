@@ -451,6 +451,71 @@ async def test_iter_task_history_logs_tail_spans_multiple_chunks(
 
 
 @pytest.mark.asyncio
+async def test_iter_task_history_logs_tail_final_chunk_without_trailing_newline(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert tail respects the final unterminated line in the newest chunk."""
+    history = created_task_with_history
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"line7\nline8\n",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"line9",
+        force_flush=True,
+        producer_offset_after=17,
+    )
+
+    history = await _reload(session, history)
+    logs = await _collect(iter_task_history_logs(session, history, tail_lines=2))
+    combined = "".join(log.msg for log in logs)
+    lines = [line for line in combined.split("\n") if line]
+
+    assert lines == ["line8", "line9"]
+
+
+@pytest.mark.asyncio
+async def test_iter_task_history_logs_tail_last_line_spans_chunks(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert tail finds the start of a logical line split across chunk rows."""
+    history = created_task_with_history
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"line7\nline8-part",
+        force_flush=True,
+        producer_offset_after=16,
+    )
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"Brest",
+        force_flush=True,
+        producer_offset_after=21,
+    )
+
+    history = await _reload(session, history)
+    logs = await _collect(iter_task_history_logs(session, history, tail_lines=1))
+    combined = "".join(log.msg for log in logs)
+
+    assert combined == "line8-partBrest"
+
+
+@pytest.mark.asyncio
 async def test_iter_task_history_logs_tail_respects_source_filter(
     session: AsyncSession, created_task_with_history: TaskHistory
 ):
