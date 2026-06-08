@@ -55,9 +55,11 @@ export type LogTailLineChoice = (typeof LOG_TAIL_LINE_OPTIONS)[number]['value'];
 
 const LOG_TAIL_STORAGE_KEY = 'sep.taskLogViewer.tail';
 
+const DEFAULT_LOG_TAIL_CHOICE = '1000' satisfies LogTailLineChoice;
+
 function readStoredLogTailChoice(): LogTailLineChoice {
   if (globalThis.localStorage === undefined) {
-    return String(DEFAULT_LOG_TAIL_LINES);
+    return DEFAULT_LOG_TAIL_CHOICE;
   }
   const stored = globalThis.localStorage.getItem(LOG_TAIL_STORAGE_KEY);
   if (stored === 'all') {
@@ -66,7 +68,7 @@ function readStoredLogTailChoice(): LogTailLineChoice {
   if (stored === '100' || stored === '1000' || stored === '5000') {
     return stored;
   }
-  return String(DEFAULT_LOG_TAIL_LINES);
+  return DEFAULT_LOG_TAIL_CHOICE;
 }
 
 function logTailChoiceToParam(choice: LogTailLineChoice): number | undefined {
