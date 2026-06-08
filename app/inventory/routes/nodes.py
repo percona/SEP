@@ -21,7 +21,7 @@ from fastapi import APIRouter, Query, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
+from app.core.exceptions import HTTPBadRequestException
 from app.core.models import PaginatedResponse
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
@@ -118,12 +118,7 @@ async def retrieve_host_system_observation(
     node: NodeDep,
 ) -> HostSystemObservationResponse:
     """Retrieve host system observation for a node."""
-    obs = await HostSystemObservationManager.first(session, node_id=node.id)
-    if obs is None:
-        raise HTTPNotFoundException(
-            detail="No system observation found for this node",
-        )
-    return obs
+    return await HostSystemObservationManager.get_or_404(session, node_id=node.id)
 
 
 @router.put("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
@@ -134,10 +129,12 @@ async def upsert_host_system_observation(
 ) -> HostSystemObservationResponse:
     """Upsert host system observation for a node."""
     data.node_id = node.id
-    existing = await HostSystemObservationManager.first(session, node_id=node.id)
-    if existing:
-        return await HostSystemObservationManager.update(session, existing, data)
-    return await HostSystemObservationManager.create(session, data)
+    obs, created = await HostSystemObservationManager.get_or_create(
+        session, data, filter_include={"node_id"}
+    )
+    if not created:
+        obs = await HostSystemObservationManager.update(session, obs, data)
+    return obs
 
 
 @router.get("/{node_id}/services/", dependencies=[IsAuthenticatedDep])

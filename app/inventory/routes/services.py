@@ -22,7 +22,6 @@ from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.exceptions import HTTPNotFoundException
 from app.core.models import PaginatedResponse
 from app.inventory.crud import (
     SchemaManager,
@@ -109,12 +108,9 @@ async def retrieve_service_system_observation(
     service: ServiceDep,
 ) -> ServiceSystemObservationResponse:
     """Retrieve service system observation for a service."""
-    obs = await ServiceSystemObservationManager.first(session, service_id=service.id)
-    if obs is None:
-        raise HTTPNotFoundException(
-            detail="No system observation found for this service",
-        )
-    return obs
+    return await ServiceSystemObservationManager.get_or_404(
+        session, service_id=service.id
+    )
 
 
 @router.put("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
@@ -125,12 +121,12 @@ async def upsert_service_system_observation(
 ) -> ServiceSystemObservationResponse:
     """Upsert service system observation for a service."""
     data.service_id = service.id
-    existing = await ServiceSystemObservationManager.first(
-        session, service_id=service.id
+    obs, created = await ServiceSystemObservationManager.get_or_create(
+        session, data, filter_include={"service_id"}
     )
-    if existing:
-        return await ServiceSystemObservationManager.update(session, existing, data)
-    return await ServiceSystemObservationManager.create(session, data)
+    if not created:
+        obs = await ServiceSystemObservationManager.update(session, obs, data)
+    return obs
 
 
 @router.get("/{service_id}/schemas/", dependencies=[IsAuthenticatedDep])
