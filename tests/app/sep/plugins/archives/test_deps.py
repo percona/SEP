@@ -1296,6 +1296,40 @@ class TestBuildArchivesPayloadSelfArchiveGuard:
             await _build_archives_payload(form, mock_remote_api)
 
     @pytest.mark.asyncio
+    @pytest.mark.asyncio
+    async def test_mixed_case_table_name_raises(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Mixed-case dest_table_name matches source on case-insensitive MySQL servers."""
+        form = ArchivesCreate(
+            alias="self-archive-case-insensitive",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=None,
+            dest_table_name=created_table.name.upper(),
+            dest_file=None,
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await _build_archives_payload(form, mock_remote_api)
+
+    @pytest.mark.asyncio
     async def test_source_query_path_skips_self_archive_check(
         self, created_service, mock_remote_api
     ):

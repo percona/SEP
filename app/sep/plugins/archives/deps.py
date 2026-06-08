@@ -214,8 +214,10 @@ def _assert_not_self_archive(
     if (
         effective_dest_host == source_host
         and effective_dest_port == source_port
-        and effective_dest_db == source_data.get("source_db")
-        and dest_tables["dest_table"] == source_data["source_table"]
+        and (effective_dest_db or "").casefold()
+        == (source_data.get("source_db") or "").casefold()
+        and dest_tables["dest_table"].casefold()
+        == source_data["source_table"].casefold()
     ):
         raise HTTPUnprocessableEntityException(
             detail="Source and Destination tables cannot be the same."
