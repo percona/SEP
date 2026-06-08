@@ -534,7 +534,7 @@ async def test_delete_node(
     ]
 
     await syncer.delete_node(created_node)
-    mock_remote_api.delete.assert_awaited_once_with(f"/{created_node.id}")
+    mock_remote_api.delete.assert_awaited_once_with(f"/nodes/{created_node.id}")
     mock_remote_api.delete.reset_mock()
     await syncer.delete_service(created_service)
     mock_remote_api.delete.assert_awaited_once_with(f"/services/{created_service.id}")

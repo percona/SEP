@@ -517,7 +517,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         }
         params = {key: value for key, value in params.items() if value is not None}
         params["limit"] = 0
-        response = await self.inventory_api.get("/", params=params)
+        response = await self.inventory_api.get("/nodes/", params=params)
         return [
             CreatedNode.model_validate(node_data) for node_data in response["items"]
         ]
@@ -534,7 +534,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The retrieved CreatedNode instance.
         :rtype: CreatedNode
         """
-        return CreatedNode.model_validate(await self.inventory_api.get(f"/{node_id}"))
+        return CreatedNode.model_validate(
+            await self.inventory_api.get(f"/nodes/{node_id}")
+        )
 
     @alru_cache
     async def get_inventory_service(self, service_id: int) -> CreatedService:
@@ -623,7 +625,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.NODE,
             created_node,
         ):
-            await self.inventory_api.delete(f"/{created_node.id}")
+            await self.inventory_api.delete(f"/nodes/{created_node.id}")
 
     async def delete_service(self, created_service: CreatedService) -> None:
         """Delete a service from the inventory system.
@@ -744,7 +746,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         logger.info("Updating node %s: %r", created_node.id, updated_node)
         return CreatedNode.model_validate(
             await self.inventory_api.put(
-                f"/{created_node.id}",
+                f"/nodes/{created_node.id}",
                 json=updated_node.model_dump(exclude={"services"}),
             ),
         )

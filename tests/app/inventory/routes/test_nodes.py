@@ -31,11 +31,11 @@ OFFSET_BEYOND_TOTAL = 999
 
 
 class TestListNodes:
-    """Test the GET / endpoint."""
+    """Test the GET /nodes/ endpoint."""
 
     def test_list_nodes_empty(self, test_client: TestClient) -> None:
         """Return an empty paginated response when no nodes exist."""
-        response = test_client.get("/")
+        response = test_client.get("/nodes/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["items"] == []
@@ -47,10 +47,10 @@ class TestListNodes:
         """Return a list of nodes with services loaded."""
         payload1 = NodeWriteFactory.build()
         payload2 = NodeWriteFactory.build()
-        test_client.post("/", json=payload1.model_dump(mode="json"))
-        test_client.post("/", json=payload2.model_dump(mode="json"))
+        test_client.post("/nodes/", json=payload1.model_dump(mode="json"))
+        test_client.post("/nodes/", json=payload2.model_dump(mode="json"))
 
-        response = test_client.get("/")
+        response = test_client.get("/nodes/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["items"]) == CREATED_NODE_COUNT
@@ -63,10 +63,10 @@ class TestListNodes:
             source=SourceEnum.PMM, external_id="pmm-node"
         )
         plain_payload = NodeWriteFactory.build()
-        test_client.post("/", json=pmm_payload.model_dump(mode="json"))
-        test_client.post("/", json=plain_payload.model_dump(mode="json"))
+        test_client.post("/nodes/", json=pmm_payload.model_dump(mode="json"))
+        test_client.post("/nodes/", json=plain_payload.model_dump(mode="json"))
 
-        response = test_client.get("/", params={"source": "pmm"})
+        response = test_client.get("/nodes/", params={"source": "pmm"})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["items"]) == 1
@@ -76,10 +76,10 @@ class TestListNodes:
         """Return only nodes matching the given external_id filter."""
         matching = NodeWriteFactory.build(source=SourceEnum.PMM, external_id="abc")
         other = NodeWriteFactory.build(source=SourceEnum.PMM, external_id="xyz")
-        test_client.post("/", json=matching.model_dump(mode="json"))
-        test_client.post("/", json=other.model_dump(mode="json"))
+        test_client.post("/nodes/", json=matching.model_dump(mode="json"))
+        test_client.post("/nodes/", json=other.model_dump(mode="json"))
 
-        response = test_client.get("/", params={"external_id": "abc"})
+        response = test_client.get("/nodes/", params={"external_id": "abc"})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["items"]) == 1
@@ -89,10 +89,10 @@ class TestListNodes:
         """Return only nodes matching the given node_type filter."""
         generic = NodeWriteFactory.build(type="generic")
         remote = NodeWriteFactory.build(type="remote")
-        test_client.post("/", json=generic.model_dump(mode="json"))
-        test_client.post("/", json=remote.model_dump(mode="json"))
+        test_client.post("/nodes/", json=generic.model_dump(mode="json"))
+        test_client.post("/nodes/", json=remote.model_dump(mode="json"))
 
-        response = test_client.get("/", params={"node_type": "generic"})
+        response = test_client.get("/nodes/", params={"node_type": "generic"})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["items"]) == 1
@@ -102,7 +102,7 @@ class TestListNodes:
         self, test_client: TestClient, node: Node
     ) -> None:
         """Return empty items when offset is beyond total."""
-        response = test_client.get("/", params={"offset": OFFSET_BEYOND_TOTAL})
+        response = test_client.get("/nodes/", params={"offset": OFFSET_BEYOND_TOTAL})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["items"] == []
@@ -111,7 +111,7 @@ class TestListNodes:
 
     def test_list_nodes_custom_limit(self, test_client: TestClient, node: Node) -> None:
         """Return limited items while total remains unchanged."""
-        response = test_client.get("/", params={"limit": 1})
+        response = test_client.get("/nodes/", params={"limit": 1})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["items"]) == 1
@@ -125,10 +125,12 @@ class TestListNodes:
         """Return filtered total with pagination params."""
         generic = NodeWriteFactory.build(type="generic")
         remote = NodeWriteFactory.build(type="remote")
-        test_client.post("/", json=generic.model_dump(mode="json"))
-        test_client.post("/", json=remote.model_dump(mode="json"))
+        test_client.post("/nodes/", json=generic.model_dump(mode="json"))
+        test_client.post("/nodes/", json=remote.model_dump(mode="json"))
 
-        response = test_client.get("/", params={"node_type": "generic", "limit": 1})
+        response = test_client.get(
+            "/nodes/", params={"node_type": "generic", "limit": 1}
+        )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["total"] == 1
@@ -136,11 +138,11 @@ class TestListNodes:
 
 
 class TestRetrieveNode:
-    """Test the GET /{node_id} endpoint."""
+    """Test the GET /nodes/{node_id} endpoint."""
 
     def test_retrieve_node(self, test_client: TestClient, node: Node) -> None:
         """Return a node with its services list."""
-        response = test_client.get(f"/{node.id}")
+        response = test_client.get(f"/nodes/{node.id}")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["id"] == node.id
@@ -148,24 +150,24 @@ class TestRetrieveNode:
 
     def test_retrieve_node_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent node ID."""
-        response = test_client.get("/99999")
+        response = test_client.get("/nodes/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestCreateNode:
-    """Test the POST / endpoint."""
+    """Test the POST /nodes/ endpoint."""
 
     def test_create_node(self, test_client: TestClient) -> None:
         """Create a node and return 201 with the new ID."""
         payload = NodeWriteFactory.build()
-        response = test_client.post("/", json=payload.model_dump(mode="json"))
+        response = test_client.post("/nodes/", json=payload.model_dump(mode="json"))
         assert response.status_code == status.HTTP_201_CREATED
         assert "id" in response.json()
 
     def test_create_node_with_source(self, test_client: TestClient) -> None:
         """Create a node with source and external_id."""
         payload = NodeWriteFactory.build(source=SourceEnum.PMM, external_id="ext-123")
-        response = test_client.post("/", json=payload.model_dump(mode="json"))
+        response = test_client.post("/nodes/", json=payload.model_dump(mode="json"))
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
         assert data["source"] == "pmm"
@@ -176,11 +178,11 @@ class TestCreateNode:
     ) -> None:
         """Return 409 when creating a node with duplicate (external_id, source)."""
         payload = NodeWriteFactory.build(source=SourceEnum.PMM, external_id="dup-ext")
-        response = test_client.post("/", json=payload.model_dump(mode="json"))
+        response = test_client.post("/nodes/", json=payload.model_dump(mode="json"))
         assert response.status_code == status.HTTP_201_CREATED
 
         payload2 = NodeWriteFactory.build(source=SourceEnum.PMM, external_id="dup-ext")
-        response2 = test_client.post("/", json=payload2.model_dump(mode="json"))
+        response2 = test_client.post("/nodes/", json=payload2.model_dump(mode="json"))
         assert response2.status_code == status.HTTP_409_CONFLICT
 
     def test_create_node_external_id_without_source(
@@ -191,52 +193,54 @@ class TestCreateNode:
         data = payload.model_dump(mode="json")
         data["external_id"] = "some-id"
         data["source"] = None
-        response = test_client.post("/", json=data)
+        response = test_client.post("/nodes/", json=data)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class TestUpdateNode:
-    """Test the PUT /{node_id} endpoint."""
+    """Test the PUT /nodes/{node_id} endpoint."""
 
     def test_update_node(self, test_client: TestClient, node: Node) -> None:
         """Update a node name and return 200."""
         payload = NodeWriteFactory.build(name="updated-name")
-        response = test_client.put(f"/{node.id}", json=payload.model_dump(mode="json"))
+        response = test_client.put(
+            f"/nodes/{node.id}", json=payload.model_dump(mode="json")
+        )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["name"] == "updated-name"
 
     def test_update_node_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent node ID."""
         payload = NodeWriteFactory.build()
-        response = test_client.put("/99999", json=payload.model_dump(mode="json"))
+        response = test_client.put("/nodes/99999", json=payload.model_dump(mode="json"))
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestDeleteNode:
-    """Test the DELETE /{node_id} endpoint."""
+    """Test the DELETE /nodes/{node_id} endpoint."""
 
     def test_delete_node(self, test_client: TestClient, node: Node) -> None:
         """Delete a node and confirm it is gone."""
-        response = test_client.delete(f"/{node.id}")
+        response = test_client.delete(f"/nodes/{node.id}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
-        response = test_client.get(f"/{node.id}")
+        response = test_client.get(f"/nodes/{node.id}")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_delete_node_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent node ID."""
-        response = test_client.delete("/99999")
+        response = test_client.delete("/nodes/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestListServicesByNode:
-    """Test the GET /{node_id}/services/ endpoint."""
+    """Test the GET /nodes/{node_id}/services/ endpoint."""
 
     def test_list_services_by_node_empty(
         self, test_client: TestClient, node: Node
     ) -> None:
         """Return an empty paginated response when the node has no services."""
-        response = test_client.get(f"/{node.id}/services/")
+        response = test_client.get(f"/nodes/{node.id}/services/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["items"] == []
@@ -248,7 +252,7 @@ class TestListServicesByNode:
         self, test_client: TestClient, node: Node, service: Service
     ) -> None:
         """Return services with schemas loaded for a node."""
-        response = test_client.get(f"/{node.id}/services/")
+        response = test_client.get(f"/nodes/{node.id}/services/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["items"]) == 1
@@ -261,7 +265,7 @@ class TestListServicesByNode:
     ) -> None:
         """Return only services matching the given service_type filter."""
         response = test_client.get(
-            f"/{node.id}/services/",
+            f"/nodes/{node.id}/services/",
             params={"service_type": service.type.value},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -271,7 +275,7 @@ class TestListServicesByNode:
 
     def test_list_services_by_node_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent node ID."""
-        response = test_client.get("/99999/services/")
+        response = test_client.get("/nodes/99999/services/")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_list_services_by_node_custom_offset(
@@ -279,7 +283,7 @@ class TestListServicesByNode:
     ) -> None:
         """Return empty items when offset is beyond total."""
         response = test_client.get(
-            f"/{node.id}/services/", params={"offset": OFFSET_BEYOND_TOTAL}
+            f"/nodes/{node.id}/services/", params={"offset": OFFSET_BEYOND_TOTAL}
         )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -291,7 +295,7 @@ class TestListServicesByNode:
         self, test_client: TestClient, node: Node, service: Service
     ) -> None:
         """Return limited items while total remains unchanged."""
-        response = test_client.get(f"/{node.id}/services/", params={"limit": 1})
+        response = test_client.get(f"/nodes/{node.id}/services/", params={"limit": 1})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["items"]) == 1
@@ -300,13 +304,13 @@ class TestListServicesByNode:
 
 
 class TestCreateServiceForNode:
-    """Test the POST /{node_id}/services/ endpoint."""
+    """Test the POST /nodes/{node_id}/services/ endpoint."""
 
     def test_create_service_for_node(self, test_client: TestClient, node: Node) -> None:
         """Create a service for a node and return 201."""
         payload = ServiceWriteFactory.build()
         response = test_client.post(
-            f"/{node.id}/services/",
+            f"/nodes/{node.id}/services/",
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_201_CREATED
@@ -318,7 +322,7 @@ class TestCreateServiceForNode:
         """Return 400 when service has external_id but node has no source."""
         payload = ServiceWriteFactory.build(external_id="svc-ext-123")
         response = test_client.post(
-            f"/{node.id}/services/",
+            f"/nodes/{node.id}/services/",
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -330,19 +334,21 @@ class TestCreateServiceForNode:
         node_payload = NodeWriteFactory.build(
             source=SourceEnum.PMM, external_id="node-ext"
         )
-        node_resp = test_client.post("/", json=node_payload.model_dump(mode="json"))
+        node_resp = test_client.post(
+            "/nodes/", json=node_payload.model_dump(mode="json")
+        )
         node_id = node_resp.json()["id"]
 
         svc_payload = ServiceWriteFactory.build(external_id="svc-dup")
         response = test_client.post(
-            f"/{node_id}/services/",
+            f"/nodes/{node_id}/services/",
             json=svc_payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_201_CREATED
 
         svc_payload2 = ServiceWriteFactory.build(external_id="svc-dup")
         response2 = test_client.post(
-            f"/{node_id}/services/",
+            f"/nodes/{node_id}/services/",
             json=svc_payload2.model_dump(mode="json"),
         )
         assert response2.status_code == status.HTTP_409_CONFLICT
@@ -353,14 +359,14 @@ class TestCreateServiceForNode:
         """Return 409 when creating a service with duplicate (port, node_id)."""
         svc_payload = ServiceWriteFactory.build(port=3306)
         response = test_client.post(
-            f"/{node.id}/services/",
+            f"/nodes/{node.id}/services/",
             json=svc_payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_201_CREATED
 
         svc_payload2 = ServiceWriteFactory.build(port=3306)
         response2 = test_client.post(
-            f"/{node.id}/services/",
+            f"/nodes/{node.id}/services/",
             json=svc_payload2.model_dump(mode="json"),
         )
         assert response2.status_code == status.HTTP_409_CONFLICT
@@ -369,14 +375,14 @@ class TestCreateServiceForNode:
         """Return 404 for a nonexistent node ID."""
         payload = ServiceWriteFactory.build()
         response = test_client.post(
-            "/99999/services/",
+            "/nodes/99999/services/",
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestRetrieveHostSystemObservation:
-    """Test GET /{node_id}/system-observation endpoint."""
+    """Test GET /nodes/{node_id}/system-observation endpoint."""
 
     def test_retrieve_host_system_observation(
         self,
@@ -385,7 +391,7 @@ class TestRetrieveHostSystemObservation:
         host_observation: HostSystemObservation,
     ) -> None:
         """Return host observation with all fields for a node that has one."""
-        response = test_client.get(f"/{node.id}/system-observation")
+        response = test_client.get(f"/nodes/{node.id}/system-observation")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["node_id"] == node.id
@@ -397,19 +403,19 @@ class TestRetrieveHostSystemObservation:
         self, test_client: TestClient, node: Node
     ) -> None:
         """Return 404 when node exists but no observation has been collected yet."""
-        response = test_client.get(f"/{node.id}/system-observation")
+        response = test_client.get(f"/nodes/{node.id}/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_retrieve_host_system_observation_404_when_node_not_found(
         self, test_client: TestClient
     ) -> None:
         """Return 404 when the node ID does not exist."""
-        response = test_client.get("/99999/system-observation")
+        response = test_client.get("/nodes/99999/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestUpsertHostSystemObservation:
-    """Test PUT /{node_id}/system-observation endpoint."""
+    """Test PUT /nodes/{node_id}/system-observation endpoint."""
 
     def test_upsert_creates_new_observation(
         self, test_client: TestClient, node: Node
@@ -417,7 +423,7 @@ class TestUpsertHostSystemObservation:
         """Create a new observation when none exists and return 200."""
         payload = HostSystemObservationWriteFactory.build()
         response = test_client.put(
-            f"/{node.id}/system-observation",
+            f"/nodes/{node.id}/system-observation",
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_200_OK
@@ -433,10 +439,12 @@ class TestUpsertHostSystemObservation:
         host_observation: HostSystemObservation,
     ) -> None:
         """Update existing observation in place and return 200 with updated fields."""
-        test_client.post("/", json=NodeWriteFactory.build().model_dump(mode="json"))
+        test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
         payload = HostSystemObservationWriteFactory.build(os_version="Debian 12")
         response = test_client.put(
-            f"/{node.id}/system-observation",
+            f"/nodes/{node.id}/system-observation",
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_200_OK
@@ -449,9 +457,13 @@ class TestUpsertHostSystemObservation:
         """Second PUT with same payload returns 200 without unique-constraint error."""
         payload = HostSystemObservationWriteFactory.build()
         json_payload = payload.model_dump(mode="json")
-        first = test_client.put(f"/{node.id}/system-observation", json=json_payload)
+        first = test_client.put(
+            f"/nodes/{node.id}/system-observation", json=json_payload
+        )
         assert first.status_code == status.HTTP_200_OK
-        second = test_client.put(f"/{node.id}/system-observation", json=json_payload)
+        second = test_client.put(
+            f"/nodes/{node.id}/system-observation", json=json_payload
+        )
         assert second.status_code == status.HTTP_200_OK
 
     def test_upsert_preserves_same_id_across_updates(
@@ -463,7 +475,7 @@ class TestUpsertHostSystemObservation:
         """PUT on an existing observation updates in place — same DB row, same id."""
         payload = HostSystemObservationWriteFactory.build(os_version="Rocky Linux 9")
         response = test_client.put(
-            f"/{node.id}/system-observation",
+            f"/nodes/{node.id}/system-observation",
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_200_OK
@@ -473,7 +485,7 @@ class TestUpsertHostSystemObservation:
         """Return 404 when the node ID does not exist."""
         payload = HostSystemObservationWriteFactory.build()
         response = test_client.put(
-            "/99999/system-observation",
+            "/nodes/99999/system-observation",
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -484,7 +496,7 @@ class TestUpsertHostSystemObservation:
         """Return 422 when required field observed_at is absent."""
         data = HostSystemObservationWriteFactory.build().model_dump(mode="json")
         del data["observed_at"]
-        response = test_client.put(f"/{node.id}/system-observation", json=data)
+        response = test_client.put(f"/nodes/{node.id}/system-observation", json=data)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_upsert_422_when_all_observation_fields_are_none(
@@ -496,5 +508,5 @@ class TestUpsertHostSystemObservation:
         data["os_version"] = None
         data["installed_packages"] = None
         data["config"] = None
-        response = test_client.put(f"/{node.id}/system-observation", json=data)
+        response = test_client.put(f"/nodes/{node.id}/system-observation", json=data)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

@@ -41,7 +41,7 @@ from app.inventory.models import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["nodes"])
+router = APIRouter(prefix="/nodes", tags=["nodes"])
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])

@@ -322,7 +322,7 @@ def inventory_service_list_path(entity: str) -> str:
     :rtype: str
     """
     if entity == "nodes":
-        return "/"
+        return "/nodes/"
     return f"/{entity}/"
 
 
@@ -337,7 +337,7 @@ def inventory_service_detail_path(entity: str, item_id: int) -> str:
     :rtype: str
     """
     if entity == "nodes":
-        return f"/{item_id}"
+        return f"/nodes/{item_id}"
     return f"/{entity}/{item_id}"
 
 
@@ -395,7 +395,7 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
     :raises HTTPNotFoundException: When ``entity`` is unknown.
     """
     if entity == "nodes":
-        return "/"
+        return "/nodes/"
     if entity == "services":
         node_id = body.get("node_id")
         if node_id is None:
@@ -403,7 +403,7 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
                 "node_id is required to create a service",
             )
         parsed_node_id = _parse_positive_int_parent_id(node_id, field_name="node_id")
-        return f"/{parsed_node_id}/services/"
+        return f"/nodes/{parsed_node_id}/services/"
     if entity == "schemas":
         service_id = body.get("service_id")
         if service_id is None:

@@ -87,7 +87,7 @@ async def list_hosts(
         raise HTTPBadGatewayException(detail=str(detail)) from exc
 
     try:
-        inventory_response = await inventory_api.get("/", params={"limit": 0})
+        inventory_response = await inventory_api.get("/nodes/", params={"limit": 0})
         display_names = address_to_name_index(
             (node["name"], node["address"]) for node in inventory_response["items"]
         )
