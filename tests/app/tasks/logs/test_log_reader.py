@@ -277,6 +277,9 @@ def test_byte_offset_for_last_n_lines():
     assert byte_offset_for_last_n_lines(content, 2) == len(b"line0\n")
     assert byte_offset_for_last_n_lines(content, 3) == 0
     assert byte_offset_for_last_n_lines(content, 10) == 0
+    assert byte_offset_for_last_n_lines(b"line9", 1) == 0
+    assert byte_offset_for_last_n_lines(b"line8\nline9", 1) == len(b"line8\n")
+    assert byte_offset_for_last_n_lines(b"line8\nline9\n", 1) == len(b"line8\n")
 
 
 @pytest.mark.asyncio

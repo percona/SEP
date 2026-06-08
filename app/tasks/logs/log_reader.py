@@ -42,27 +42,52 @@ TAIL_SCAN_MAX_BYTES = 64 * 1024 * 1024
 NEWLINE_BYTE = ord("\n")
 
 
-def _line_starts(content: bytes) -> list[int]:
-    r"""Return byte offsets where each line begins.
-
-    Lines are delimited by ``\n``. A single trailing newline closes the final
-    line without starting an extra empty one (GNU ``tail -n`` semantics).
+def _line_count(content: bytes) -> int:
+    r"""Return the number of lines in ``content`` (GNU ``tail -n`` semantics).
 
     :param content: UTF-8 encoded log bytes.
     :type content: bytes
-    :return: Byte offsets at which each line in ``content`` begins.
-    :rtype: list[int]
+    :return: Number of lines in ``content``.
+    :rtype: int
     """
     if not content:
-        return []
+        return 0
 
-    starts = [0]
+    count = 1
     for index, byte in enumerate(content):
         if byte == NEWLINE_BYTE:
             next_start = index + 1
             if next_start < len(content):
-                starts.append(next_start)
-    return starts
+                count += 1
+    return count
+
+
+def _nth_line_start_from_end(content: bytes, n: int) -> int:
+    r"""Return the byte offset where the ``n``\ th line from the end begins.
+
+    ``n=1`` is the last line. Lines use GNU ``tail -n`` semantics.
+
+    :param content: UTF-8 encoded log bytes.
+    :type content: bytes
+    :param n: Which line to locate, counting from the end.
+    :type n: int
+    :return: Byte offset at which the requested line begins.
+    :rtype: int
+    """
+    if n <= 0 or not content:
+        return 0
+
+    lines_seen = 0
+    index = len(content)
+    while index > 0:
+        index -= 1
+        if content[index] == NEWLINE_BYTE:
+            next_start = index + 1
+            if next_start < len(content):
+                lines_seen += 1
+                if lines_seen == n:
+                    return next_start
+    return 0
 
 
 def byte_offset_for_last_n_lines(content: bytes, line_count: int) -> int:
@@ -73,6 +98,8 @@ def byte_offset_for_last_n_lines(content: bytes, line_count: int) -> int:
     fewer than ``line_count`` lines exist, returns ``0`` so the full content is
     included.
 
+    Scans backwards and stops once the target line boundary is found.
+
     :param content: UTF-8 encoded log bytes.
     :type content: bytes
     :param line_count: Number of trailing lines to retain.
@@ -82,12 +109,7 @@ def byte_offset_for_last_n_lines(content: bytes, line_count: int) -> int:
     """
     if line_count <= 0 or not content:
         return 0
-
-    starts = _line_starts(content)
-    total_lines = len(starts)
-    if line_count >= total_lines:
-        return 0
-    return starts[total_lines - line_count]
+    return _nth_line_start_from_end(content, line_count)
 
 
 def _apply_reverse_tail_chunk(
@@ -117,12 +139,12 @@ def _apply_reverse_tail_chunk(
         return lines_remaining, tail_byte_offset, False
 
     if lines_remaining == 0:
-        starts = _line_starts(content_bytes)
-        if starts:
-            tail_byte_offset = chunk_start_offset + starts[-1]
+        last_line_start = _nth_line_start_from_end(content_bytes, 1)
+        if content_bytes:
+            tail_byte_offset = chunk_start_offset + last_line_start
         return lines_remaining, tail_byte_offset, True
 
-    chunk_line_count = len(_line_starts(content_bytes))
+    chunk_line_count = _line_count(content_bytes)
     if chunk_line_count >= lines_remaining:
         intra = byte_offset_for_last_n_lines(content_bytes, lines_remaining)
         tail_byte_offset = chunk_start_offset + intra
