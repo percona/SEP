@@ -1056,6 +1056,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
         schemaNameField.style.display = enabled ? 'flex' : 'none';
         tableNameField.style.display = enabled ? 'flex' : 'none';
+        schemaNameInput.disabled = !enabled;
+        tableNameInput.disabled = !enabled;
         if (enabled) {
             schemaSelect.value = "";
             tableSelect.value = "";
