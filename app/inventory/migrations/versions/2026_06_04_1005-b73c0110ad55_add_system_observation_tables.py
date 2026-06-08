@@ -61,7 +61,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('service_id', sa.Integer(), nullable=False),
-        sa.Column('db_engine_version', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column('db_engine_version', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column('observed_at', sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(['service_id'], ['service.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),

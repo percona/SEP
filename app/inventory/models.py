@@ -662,6 +662,28 @@ class HostSystemObservationBase(SQLModel):
     )
     observed_at: UTCDatetime
 
+    @model_validator(mode="after")
+    def validate_at_least_one_observation_field(self) -> Self:
+        """Ensure that at least one of os_version, installed_packages, or config is set.
+
+        Validates that at least one of `os_version`, `installed_packages`, or
+        `config` is provided.
+
+        :return: The validated instance.
+        :rtype: Self
+        :raises ValueError: If `os_version`, `installed_packages`, and `config`
+            are all unset.
+        """
+        if (
+            self.os_version is None
+            and self.installed_packages is None
+            and self.config is None
+        ):
+            raise ValueError(
+                "At least one of os_version, installed_packages, or config must be set",
+            )
+        return self
+
 
 class HostSystemObservation(BaseSQLModel, HostSystemObservationBase, table=True):
     """Store host-level system facts for a node (one snapshot per node).
@@ -718,8 +740,8 @@ class ServiceSystemObservationBase(SQLModel):
     :param service_id: The foreign key referencing the service this observation belongs
         to.
     :type service_id: int
-    :param db_engine_version: The observed database engine version. Defaults to None.
-    :type db_engine_version: str | None
+    :param db_engine_version: The observed database engine version.
+    :type db_engine_version: NonEmptyStr
     :param observed_at: When this observation was collected (domain provenance).
     :type observed_at: UTCDatetime
     """
@@ -730,7 +752,7 @@ class ServiceSystemObservationBase(SQLModel):
         index=True,
         ondelete="CASCADE",
     )
-    db_engine_version: str | None = None
+    db_engine_version: NonEmptyStr
     observed_at: UTCDatetime
 
 
@@ -748,8 +770,8 @@ class ServiceSystemObservation(BaseSQLModel, ServiceSystemObservationBase, table
     :param service_id: The unique identifier of the observed service. At most one
         observation row per service.
     :type service_id: int
-    :param db_engine_version: The observed database engine version, if set.
-    :type db_engine_version: str | None
+    :param db_engine_version: The observed database engine version.
+    :type db_engine_version: NonEmptyStr
     :param observed_at: When this observation was collected.
     :type observed_at: UTCDatetime
     """
@@ -760,8 +782,8 @@ class ServiceSystemObservationWrite(ServiceSystemObservationBase):
 
     :param service_id: The foreign key referencing the service. Defaults to None.
     :type service_id: int | None
-    :param db_engine_version: The observed database engine version. Defaults to None.
-    :type db_engine_version: str | None
+    :param db_engine_version: The observed database engine version.
+    :type db_engine_version: NonEmptyStr
     :param observed_at: When this observation was collected.
     :type observed_at: UTCDatetime
     """
