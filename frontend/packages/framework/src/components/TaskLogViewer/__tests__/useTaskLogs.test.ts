@@ -60,6 +60,48 @@ describe('useTaskLogs', () => {
     expect(mock.pending[0].requestHeaders.authorization).toBe(`Bearer ${TEST_TOKEN}`);
   });
 
+  it('includes ?tail= when tail is set', async () => {
+    renderHook(() => useTaskLogs(42, 1000));
+    await flushPromises();
+
+    const [url] = mock.fetchSpy.mock.calls[0];
+    const urlStr = typeof url === 'string' ? url : (url as URL).href;
+    expect(urlStr).toBe('/stream-logs/42?tail=1000');
+  });
+
+  it('omits tail query param when tail is undefined (All)', async () => {
+    renderHook(() => useTaskLogs(42, undefined));
+    await flushPromises();
+
+    const [url] = mock.fetchSpy.mock.calls[0];
+    const urlStr = typeof url === 'string' ? url : (url as URL).href;
+    expect(urlStr).toBe('/stream-logs/42');
+  });
+
+  it('opens a fresh fetch when tail changes', async () => {
+    const { rerender } = renderHook(({ tail }: { tail?: number }) => useTaskLogs(1, tail), {
+      initialProps: { tail: 1000 as number | undefined },
+    });
+    await flushPromises();
+
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(1);
+    let urlStr =
+      typeof mock.fetchSpy.mock.calls[0][0] === 'string'
+        ? mock.fetchSpy.mock.calls[0][0]
+        : (mock.fetchSpy.mock.calls[0][0] as URL).href;
+    expect(urlStr).toBe('/stream-logs/1?tail=1000');
+
+    rerender({ tail: 5000 });
+    await flushPromises();
+
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(2);
+    urlStr =
+      typeof mock.fetchSpy.mock.calls[1][0] === 'string'
+        ? mock.fetchSpy.mock.calls[1][0]
+        : (mock.fetchSpy.mock.calls[1][0] as URL).href;
+    expect(urlStr).toBe('/stream-logs/1?tail=5000');
+  });
+
   it('omits Authorization header when no token is available', async () => {
     _tokenProvider = () => null;
     renderHook(() => useTaskLogs(42));
