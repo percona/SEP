@@ -318,7 +318,7 @@ def inventory_service_list_path(entity: str) -> str:
 
     :param entity: One of ``nodes``, ``services``, ``schemas``, or ``tables``.
     :type entity: str
-    :return: Path relative to the inventory API root (``/`` for nodes).
+    :return: Path relative to the inventory API root (``/nodes/`` for nodes).
     :rtype: str
     """
     if entity == "nodes":
