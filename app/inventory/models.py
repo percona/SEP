@@ -728,7 +728,6 @@ class HostSystemObservationWrite(HostSystemObservationBase):
     node_id: int | None = SQLField(
         default=None,
         foreign_key="node.id",
-        unique=True,
         index=True,
         ondelete="CASCADE",
     )
@@ -791,7 +790,6 @@ class ServiceSystemObservationWrite(ServiceSystemObservationBase):
     service_id: int | None = SQLField(
         default=None,
         foreign_key="service.id",
-        unique=True,
         index=True,
         ondelete="CASCADE",
     )
