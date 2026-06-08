@@ -109,4 +109,31 @@ describe('SettingRow', () => {
     );
     expect(screen.queryByRole('button', { name: 'Reset to default' })).not.toBeInTheDocument();
   });
+
+  it('shows a read-only note (not a duplicated value) for complex fields', () => {
+    renderRow(
+      makeSetting({
+        key: 'NESTED_CFG',
+        reload: 'not_overridable',
+        is_complex: true,
+        value: { a: 1 },
+      }),
+    );
+    expect(screen.getByText(/nested editing not yet supported/)).toBeInTheDocument();
+    // The value appears once (Current column), not duplicated in the edit column.
+    expect(screen.getAllByText('{"a":1}')).toHaveLength(1);
+  });
+
+  it('truncates long values behind a "View more" modal that pretty-prints JSON', async () => {
+    const value = { items: Array.from({ length: 40 }, (_, i) => `entry-${i}`) };
+    renderRow(makeSetting({ key: 'BIG_LIST', reload: 'not_overridable', value }));
+
+    const viewMore = screen.getByRole('button', { name: 'View more…' });
+    await userEvent.click(viewMore);
+
+    const dialog = await screen.findByRole('dialog');
+    // Pretty-printed: indented across multiple lines inside the <pre>.
+    expect(dialog.querySelector('pre')?.textContent).toContain('  "items"');
+    expect(dialog.querySelector('pre')?.textContent).toContain('entry-39');
+  });
 });

@@ -34,9 +34,9 @@ import {
 
 import { useNotification } from '../../contexts/notification';
 import SettingEditField from './SettingEditField';
+import SettingValueDisplay from './SettingValueDisplay';
 import {
   type EditValue,
-  formatSettingValue,
   isEditable,
   isSaveable,
   toInitialEditValue,
@@ -122,7 +122,7 @@ export default function SettingRow({ setting }: SettingRowProps) {
       data-testid={`setting-row-${setting.key}`}
     >
       {/* Key + reload indicator + help */}
-      <Grid size={{ xs: 12, md: 4 }}>
+      <Grid size={{ xs: 12, md: 4 }} sx={{ minWidth: 0 }}>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
             {setting.key}
@@ -150,21 +150,15 @@ export default function SettingRow({ setting }: SettingRowProps) {
       </Grid>
 
       {/* Current value */}
-      <Grid size={{ xs: 12, md: 3 }}>
+      <Grid size={{ xs: 12, md: 3 }} sx={{ minWidth: 0 }}>
         <Typography variant="caption" color="text.secondary" display="block">
           Current
         </Typography>
-        <Typography
-          variant="body2"
-          sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
-          data-testid={`setting-value-${setting.key}`}
-        >
-          {formatSettingValue(setting.value)}
-        </Typography>
+        <SettingValueDisplay value={setting.value} settingKey={setting.key} />
       </Grid>
 
       {/* Edit control + actions */}
-      <Grid size={{ xs: 12, md: 5 }}>
+      <Grid size={{ xs: 12, md: 5 }} sx={{ minWidth: 0 }}>
         {editable ? (
           <Stack spacing={1}>
             <SettingEditField
@@ -192,8 +186,11 @@ export default function SettingRow({ setting }: SettingRowProps) {
             </Stack>
           </Stack>
         ) : setting.is_complex ? (
-          // Nested submodels: read-only value + "not yet supported" note.
-          <SettingEditField setting={setting} value={edit} onChange={handleChange} disabled />
+          // Nested submodels aren't editable yet; value is shown in the Current
+          // column, so don't duplicate it here — just explain why it's read-only.
+          <Typography variant="caption" color="text.secondary">
+            Read-only (nested editing not yet supported)
+          </Typography>
         ) : (
           // NOT_OVERRIDABLE scalars get no edit affordance; value shown above.
           <Typography variant="caption" color="text.secondary">

@@ -99,6 +99,20 @@ export function formatSettingValue(value: unknown): string {
 }
 
 /**
+ * Format a value for the "view more" modal, pretty-printing objects/arrays
+ * onto multiple indented lines so a `<pre>` block renders readable JSON.
+ */
+export function formatSettingValuePretty(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value, null, 2);
+  }
+  return formatSettingValue(value);
+}
+
+/**
  * Seed the edit state from a setting's current value. Secrets always start
  * empty — the redacted literal must never be pre-loaded into the input, or the
  * admin could accidentally PATCH `**********` back as the real secret.
