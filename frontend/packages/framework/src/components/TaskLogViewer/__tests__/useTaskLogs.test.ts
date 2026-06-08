@@ -327,4 +327,23 @@ describe('useTaskLogs', () => {
     // New stream has no data; stale message must not appear
     expect(result.current.textByStep).toEqual({});
   });
+
+  it('does not write state from a stale aborted stream after tail changes', async () => {
+    const { rerender, result } = renderHook(({ tail }) => useTaskLogs(1, tail), {
+      initialProps: { tail: 1000 as number | undefined },
+    });
+    await flushPromises();
+
+    const firstHandle = mock.pending[0];
+
+    rerender({ tail: 100 });
+    await flushPromises();
+
+    act(() => {
+      firstHandle.pushMessage({ msg: 'stale', step: 's', type: 'stdout', offset: 1 });
+    });
+    await flushPromises();
+
+    expect(result.current.textByStep).toEqual({});
+  });
 });
