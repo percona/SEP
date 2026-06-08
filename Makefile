@@ -166,13 +166,13 @@ test: venv
 
 
 test-unit: venv
-	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} -m unit tests/
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} -m unit tests/unit/
 
 test-integration: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app -m "integration or not (unit or contract)" tests/
 
 test-contract: venv
-	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} -m contract tests/ \
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} -m contract tests/contract/ \
 		|| [ "$$?" -eq 5 ]
 
 pnpm-audit:
