@@ -124,16 +124,13 @@ async def upsert_service_system_observation(
     data: ServiceSystemObservationWrite,
 ) -> ServiceSystemObservationResponse:
     """Upsert service system observation for a service."""
+    data.service_id = service.id
     existing = await ServiceSystemObservationManager.first(
         session, service_id=service.id
     )
     if existing:
-        return await ServiceSystemObservationManager.update(
-            session, existing, data, service_id=service.id
-        )
-    return await ServiceSystemObservationManager.create(
-        session, data, service_id=service.id
-    )
+        return await ServiceSystemObservationManager.update(session, existing, data)
+    return await ServiceSystemObservationManager.create(session, data)
 
 
 @router.get("/{service_id}/schemas/", dependencies=[IsAuthenticatedDep])

@@ -398,10 +398,15 @@ class TestUpsertServiceSystemObservation:
     def test_upsert_updates_existing_observation(
         self,
         test_client: TestClient,
+        node: Node,
         service: Service,
         service_observation: ServiceSystemObservation,
     ) -> None:
         """Update existing observation in place and return 200 with updated fields."""
+        test_client.post(
+            f"/{node.id}/services/",
+            json=ServiceWriteFactory.build().model_dump(mode="json"),
+        )
         payload = ServiceSystemObservationWriteFactory.build(db_engine_version="8.4.0")
         response = test_client.put(
             f"/services/{service.id}/system-observation",

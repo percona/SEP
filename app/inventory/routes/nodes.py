@@ -133,12 +133,11 @@ async def upsert_host_system_observation(
     data: HostSystemObservationWrite,
 ) -> HostSystemObservationResponse:
     """Upsert host system observation for a node."""
+    data.node_id = node.id
     existing = await HostSystemObservationManager.first(session, node_id=node.id)
     if existing:
-        return await HostSystemObservationManager.update(
-            session, existing, data, node_id=node.id
-        )
-    return await HostSystemObservationManager.create(session, data, node_id=node.id)
+        return await HostSystemObservationManager.update(session, existing, data)
+    return await HostSystemObservationManager.create(session, data)
 
 
 @router.get("/{node_id}/services/", dependencies=[IsAuthenticatedDep])

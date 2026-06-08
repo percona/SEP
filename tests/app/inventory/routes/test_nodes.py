@@ -433,6 +433,7 @@ class TestUpsertHostSystemObservation:
         host_observation: HostSystemObservation,
     ) -> None:
         """Update existing observation in place and return 200 with updated fields."""
+        test_client.post("/", json=NodeWriteFactory.build().model_dump(mode="json"))
         payload = HostSystemObservationWriteFactory.build(os_version="Debian 12")
         response = test_client.put(
             f"/{node.id}/system-observation",
