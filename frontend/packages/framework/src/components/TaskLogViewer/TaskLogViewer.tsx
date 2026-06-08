@@ -97,7 +97,11 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
   const running = isRunningStatus(taskStatus);
   const [logTailChoice, setLogTailChoice] = useState<LogTailLineChoice>(readStoredLogTailChoice);
   const tailLines = logTailChoiceToParam(logTailChoice);
-  const { textByStep, stepOrder, finishStatus, error } = useTaskLogs(taskHistoryId, tailLines);
+  const effectiveTailLines = running ? undefined : tailLines;
+  const { textByStep, stepOrder, finishStatus, error } = useTaskLogs(
+    taskHistoryId,
+    effectiveTailLines,
+  );
   const { eventsByStep, stepOrder: eventStepOrder } = useExecutionEvents(taskHistoryId, running);
 
   const [topTab, setTopTab] = useState<TopTab>('stdout');
@@ -275,27 +279,36 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
         </Tabs>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ pr: 1 }}>
           {badgeStatus && <StatusBadge status={badgeStatus} />}
-          <FormControl size="small" sx={{ minWidth: 96 }}>
-            <Select
-              value={logTailChoice}
-              onChange={(event) => handleLogTailChange(event.target.value as LogTailLineChoice)}
-              aria-label="Log lines to show"
-              renderValue={(value) => (
-                <Typography variant="body2" component="span">
-                  {value === 'all' ? 'All lines' : `Last ${value}`}
-                </Typography>
-              )}
-              sx={{
-                '& .MuiSelect-select': { py: 0.75, display: 'flex', alignItems: 'center' },
-              }}
-            >
-              {LOG_TAIL_LINE_OPTIONS.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label === 'All' ? 'All lines' : `Last ${option.label}`}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Tooltip
+            title={
+              running
+                ? 'Line cap applies to finished task logs only'
+                : 'Limit how many lines are loaded from the server'
+            }
+          >
+            <FormControl size="small" sx={{ minWidth: 96 }} disabled={running}>
+              <Select
+                value={logTailChoice}
+                onChange={(event) => handleLogTailChange(event.target.value as LogTailLineChoice)}
+                aria-label="Log lines to show"
+                disabled={running}
+                renderValue={(value) => (
+                  <Typography variant="body2" component="span">
+                    {value === 'all' ? 'All lines' : `Last ${value}`}
+                  </Typography>
+                )}
+                sx={{
+                  '& .MuiSelect-select': { py: 0.75, display: 'flex', alignItems: 'center' },
+                }}
+              >
+                {LOG_TAIL_LINE_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label === 'All' ? 'All lines' : `Last ${option.label}`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Tooltip>
           <FormControlLabel
             control={
               <Switch size="small" checked={wrap} onChange={(_, checked) => setWrap(checked)} />

@@ -106,10 +106,23 @@ describe('TaskLogViewer', () => {
     await waitFor(() => expect(screen.getByTestId('log-output').textContent).toBe('line-1\n'));
   });
 
-  it('requests tail=1000 by default on mount', async () => {
+  it('omits tail param for running tasks', async () => {
     render(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    expect(logFetchUrls()[0]).toBe('/stream-logs/7');
+    expect(getTailSelect()).toHaveTextContent('Last 1000');
+    expect(getTailSelect()).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('requests tail=1000 by default for finished tasks', async () => {
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="SUCCESS" />
       </QueryWrapper>,
     );
     await flushPromises();
@@ -118,12 +131,12 @@ describe('TaskLogViewer', () => {
     expect(getTailSelect()).toHaveTextContent('Last 1000');
   });
 
-  it('restores the tail choice from localStorage', async () => {
+  it('restores the tail choice from localStorage for finished tasks', async () => {
     globalThis.localStorage.setItem('sep.taskLogViewer.tail', '5000');
 
     render(
       <QueryWrapper>
-        <TaskLogViewer taskHistoryId="3" taskStatus="RUNNING" />
+        <TaskLogViewer taskHistoryId="3" taskStatus="SUCCESS" />
       </QueryWrapper>,
     );
     await flushPromises();
@@ -132,10 +145,10 @@ describe('TaskLogViewer', () => {
     expect(getTailSelect()).toHaveTextContent('Last 5000');
   });
 
-  it('omits tail param when All lines is selected', async () => {
+  it('omits tail param when All lines is selected for finished tasks', async () => {
     render(
       <QueryWrapper>
-        <TaskLogViewer taskHistoryId="5" taskStatus="RUNNING" />
+        <TaskLogViewer taskHistoryId="5" taskStatus="SUCCESS" />
       </QueryWrapper>,
     );
     await flushPromises();
@@ -149,10 +162,10 @@ describe('TaskLogViewer', () => {
     expect(logFetchUrls().at(-1)).toBe('/stream-logs/5');
   });
 
-  it('reconnects with a new tail when the line cap changes', async () => {
+  it('reconnects with a new tail when the line cap changes for finished tasks', async () => {
     render(
       <QueryWrapper>
-        <TaskLogViewer taskHistoryId="8" taskStatus="RUNNING" />
+        <TaskLogViewer taskHistoryId="8" taskStatus="SUCCESS" />
       </QueryWrapper>,
     );
     await flushPromises();
@@ -166,10 +179,10 @@ describe('TaskLogViewer', () => {
     expect(globalThis.localStorage.getItem('sep.taskLogViewer.tail')).toBe('100');
   });
 
-  it('clears displayed logs when the line cap changes', async () => {
+  it('clears displayed logs when the line cap changes for finished tasks', async () => {
     render(
       <QueryWrapper>
-        <TaskLogViewer taskHistoryId="11" taskStatus="RUNNING" />
+        <TaskLogViewer taskHistoryId="11" taskStatus="SUCCESS" />
       </QueryWrapper>,
     );
     await flushPromises();

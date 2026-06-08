@@ -486,7 +486,11 @@ async def stream_task_history_logs(
     step: str | None = None,
     tail: Annotated[int | None, Query(ge=1)] = None,
 ) -> StreamingResponse:
-    """Stream a task history's logs."""
+    """Stream a task history's logs.
+
+    ``tail`` limits output to the last N lines per stream for finished histories
+    only. It is ignored while the task is ``RUNNING`` (live executor stream).
+    """
     logger.debug("Requesting logs for task history %s", task_history.id)
     if task_history.status == TaskHistoryStatusEnum.PENDING:
         raise HTTPConflictException("Task history is pending.")
