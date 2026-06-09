@@ -20,7 +20,8 @@ import logging
 from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.pagination import PaginatedResponse, PaginationDep
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import TableManager
 from app.inventory.deps import SessionDep, TableDep
 from app.inventory.models import Table, TableDetailResponse, TableResponse, TableWrite

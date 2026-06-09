@@ -27,7 +27,7 @@ from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPServiceUnavailableException,
 )
-from app.core.pagination import make_pagination_dep
+from app.core.pagination.deps import make_pagination_dep
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 from app.sep.deps import DefaultContext, SessionDep
 from app.sep.plugins.alerts.config import alerts_pmm_config

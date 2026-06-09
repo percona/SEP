@@ -21,7 +21,8 @@ from fastapi import APIRouter, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.pagination import PaginatedResponse, PaginationDep
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import SchemaManager, TableManager
 from app.inventory.deps import SchemaDep, SessionDep
 from app.inventory.models import (

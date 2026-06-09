@@ -22,7 +22,8 @@ non-bypass rule in ``app/sep/api/router.py``).
 
 from fastapi import APIRouter
 
-from app.core.pagination import PaginatedResponse, PaginationDep
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.inventory.models import ServiceResponse, ServiceTypeEnum
 from app.sep.api.models import InventorySelectorOption, proxy_inventory_selector
 from app.sep.deps import InventoryAPI

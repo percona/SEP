@@ -26,7 +26,8 @@ import logging
 from fastapi import APIRouter
 from fastapi import status as http_status
 
-from app.core.pagination import PaginatedResponse, PaginationDep
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,

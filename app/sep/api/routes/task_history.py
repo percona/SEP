@@ -24,7 +24,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.core.pagination import PaginatedResponse, PaginationDep
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.sep.api.task_history_merge import (
     fetch_merged_task_history,
     normalize_task_history_names,

@@ -13,16 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define shared offset/limit pagination models and FastAPI dependencies."""
+"""Define shared offset/limit pagination models and fetch helpers."""
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Generic, TYPE_CHECKING, TypeVar
+from typing import Any, Generic, TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
-from fastapi import Depends, Query
 from pydantic import BaseModel, Field
 
 T = TypeVar("T")
@@ -31,19 +30,6 @@ U = TypeVar("U")
 MAX_PAGINATION_LIMIT = 200
 DEFAULT_PAGINATION_OFFSET = 0
 DEFAULT_PAGINATION_LIMIT = 50
-
-__all__ = [
-    "DEFAULT_PAGINATION_LIMIT",
-    "DEFAULT_PAGINATION_OFFSET",
-    "MAX_PAGINATION_LIMIT",
-    "PaginatedResponse",
-    "Pagination",
-    "PaginationDep",
-    "fetch_all_dict_items",
-    "fetch_all_items",
-    "make_pagination_dep",
-    "pagination_dep",
-]
 
 
 class Pagination(BaseModel):
@@ -116,63 +102,20 @@ class PaginatedResponse(BaseModel, Generic[T]):
             limit=pagination.limit,
         )
 
-    def map_items(self, fn: Callable[[T], U]) -> PaginatedResponse[U]:
+    def map_items(self, func: Callable[[T], U]) -> PaginatedResponse[U]:
         """Transform page items while preserving pagination metadata.
 
-        :param fn: Callable applied to each item on the current page.
-        :type fn: Callable[[T], U]
+        :param func: Callable applied to each item on the current page.
+        :type func: Callable[[T], U]
         :return: A paginated response with transformed items and unchanged metadata.
         :rtype: PaginatedResponse[U]
         """
         return PaginatedResponse(
-            items=[fn(item) for item in self.items],
+            items=[func(item) for item in self.items],
             total=self.total,
             offset=self.offset,
             limit=self.limit,
         )
-
-
-def pagination_dep(
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(
-        default=DEFAULT_PAGINATION_LIMIT,
-        ge=1,
-        le=MAX_PAGINATION_LIMIT,
-    ),
-) -> Pagination:
-    """Parse and validate offset/limit query parameters for list endpoints.
-
-    :param offset: The zero-based starting offset for the query results.
-    :type offset: int
-    :param limit: The maximum number of records to return.
-    :type limit: int
-    :return: A validated pagination window.
-    :rtype: Pagination
-    """
-    return Pagination(offset=offset, limit=limit)
-
-
-PaginationDep = Annotated[Pagination, Depends(pagination_dep)]
-
-
-def make_pagination_dep(
-    max_limit: int = MAX_PAGINATION_LIMIT,
-) -> Annotated[Pagination, Depends[Any]]:
-    """Return a FastAPI dependency type alias with a custom ``limit`` upper bound.
-
-    :param max_limit: Maximum allowed value for the ``limit`` query parameter.
-    :type max_limit: int
-    :return: An annotated dependency type that parses offset/limit query parameters.
-    :rtype: Annotated[Pagination, Depends[Any]]
-    """
-
-    def _pagination_dep(
-        offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-        limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=1, le=max_limit),
-    ) -> Pagination:
-        return Pagination(offset=offset, limit=limit)
-
-    return Annotated[Pagination, Depends(_pagination_dep)]
 
 
 async def fetch_all_items(
