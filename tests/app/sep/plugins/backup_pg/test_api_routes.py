@@ -79,6 +79,7 @@ def build_backup_write_body(
     hostname: str = "pg-host",
     service_id: int = 1,
     backup_dir: str = "/var/lib/pgbackrest",
+    stanza: str = "sep-test",
     **kwargs: Any,
 ) -> dict:
     """Build a valid BackupTaskWrite-compatible request body."""
@@ -87,6 +88,7 @@ def build_backup_write_body(
         "hostname": hostname,
         "service_id": service_id,
         "backup_dir": backup_dir,
+        "stanza": stanza,
         "pgbackrest_backup_type": "incr",
         **kwargs,
     }
@@ -416,6 +418,17 @@ class TestBackupPgApiCreate:
         """POST returns 422 when the now-required ``backup_dir`` is omitted."""
         body = build_backup_write_body()
         del body["backup_dir"]
+
+        response = test_client.post(f"{API_BASE}/", json=body, headers=BEARER_HEADERS)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_create_returns_422_when_stanza_missing(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ) -> None:
+        """POST returns 422 when the required ``stanza`` field is omitted."""
+        body = build_backup_write_body()
+        del body["stanza"]
 
         response = test_client.post(f"{API_BASE}/", json=body, headers=BEARER_HEADERS)
 
