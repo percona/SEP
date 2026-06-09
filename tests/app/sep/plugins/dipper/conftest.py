@@ -15,8 +15,29 @@
 
 """Define fixtures for dipper plugin tests."""
 
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.main import sep_app
+from app.sep.plugins.dipper.deps import get_pmm_api
 from tests.app.sep.conftest import (  # noqa: F401
     mock_inventory_api_dep,
     mock_task_api_dep,
     test_client,
 )
+
+
+@pytest.fixture
+def mock_pmm_api_dep() -> AsyncMock:
+    """Override the Dipper ``get_pmm_api`` dependency with a mock PMM client.
+
+    Tests set ``.get_nodes`` / ``.get_services`` return values (or side effects)
+    per case. To exercise the unconfigured path, override ``get_pmm_api`` to
+    return ``None`` directly instead of using this fixture.
+    """
+    mock = AsyncMock(spec=PMMRemoteAPI)
+    sep_app.dependency_overrides[get_pmm_api] = lambda: mock
+    yield mock
+    sep_app.dependency_overrides = {}
