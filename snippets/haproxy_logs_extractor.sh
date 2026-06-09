@@ -143,7 +143,10 @@ if ! [[ $MINUTES_ARG =~ ^[0-9]+$ ]] || [ "$MINUTES_ARG" -le 0 ]; then
 fi
 
 HAPROXY_LOG="${LOG_FILE_ARG:-$DEFAULT_HAPROXY_LOG}"
-
+if [[ "$HAPROXY_LOG" =~ [\`\$] ]]; then
+    echo "Error: --log-file contains unsupported characters."
+    exit 1
+fi
 if [ ! -f "$HAPROXY_LOG" ]; then
     echo "Error: HAProxy log file not found at '$HAPROXY_LOG'."
     echo "Please ensure the file exists and the path is correct."
@@ -162,9 +165,17 @@ if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2>/dev/null); then
     exit 1
 fi
 
-if [[ $OUTPUT_MODE == "file" ]]; then
-    OUTPUT_FILE="haproxy_logs_${INPUT_EPOCH}.log"
-fi
+case "$OUTPUT_MODE" in
+    stdout)
+        ;;
+    file)
+        OUTPUT_FILE="haproxy_logs_${INPUT_EPOCH}.log"
+        ;;
+    *)
+        echo "Error: --output must be 'stdout' or 'file'."
+        usage
+        ;;
+esac
 
 START_EPOCH=$((INPUT_EPOCH - (MINUTES_ARG * 60)))
 END_EPOCH=$((INPUT_EPOCH + (MINUTES_ARG * 60)))
@@ -187,9 +198,9 @@ BEGIN {
 {
     log_epoch = 0;
 
-    # Try ISO 8601 (first 19 chars: YYYY-MM-DDTHH:MM:SS)
-    ts = substr(\$0, 1, 19);
-    cmd = \"date -d \\\"\" ts \"\\\" +%s 2>/dev/null\";
+    # Try ISO 8601 / RFC3339 (first field, may include fractional seconds + timezone)
+    ts = $1;
+    cmd = "date -d \"" ts "\" +%s 2>/dev/null";
     cmd | getline log_epoch;
     close(cmd);
 
