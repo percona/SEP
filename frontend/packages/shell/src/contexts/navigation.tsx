@@ -87,7 +87,9 @@ const defaultNavItems: NavItem[] = [
   {
     title: 'Schema Change',
     icon: StorageIcon,
-    children: [{ title: 'Alters', icon: TableChartIcon, to: ROUTES.schemaAlters, appKey: 'alters' }],
+    children: [
+      { title: 'Alters', icon: TableChartIcon, to: ROUTES.schemaAlters, appKey: 'alters' },
+    ],
   },
   { title: 'Checksums', icon: CheckCircleIcon, to: ROUTES.checksums, appKey: 'checksums' },
   {
@@ -96,7 +98,12 @@ const defaultNavItems: NavItem[] = [
     children: [
       { title: 'MySQL', icon: MySqlIcon, to: ROUTES.mysqlBackups, appKey: 'mysql_backups' },
       { title: 'MongoDB', icon: MongoIcon, to: ROUTES.backupsMongodb, appKey: 'backup_mongo' },
-      { title: 'PostgreSQL', icon: PostgreSqlIcon, to: ROUTES.backupsPostgresql, appKey: 'backup_pg' },
+      {
+        title: 'PostgreSQL',
+        icon: PostgreSqlIcon,
+        to: ROUTES.backupsPostgresql,
+        appKey: 'backup_pg',
+      },
     ],
   },
   { title: 'Archive', icon: ArchiveIcon, to: ROUTES.archive, appKey: 'archives' },
