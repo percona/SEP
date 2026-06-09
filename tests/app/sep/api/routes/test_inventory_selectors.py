@@ -85,14 +85,13 @@ class TestSepServiceSchemasEndpoint:
         response = test_client.get("/api/sep/services/10/schemas")
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
-    def test_list_schemas_empty_when_response_has_no_items(
+    def test_list_schemas_rejects_invalid_upstream_envelope(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
-        """Return empty list when inventory returns a non-dict or missing items."""
+        """Fail when inventory returns a payload missing required pagination fields."""
         mock_inventory_api_dep.get.return_value = None
         response = test_client.get("/api/sep/services/10/schemas")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class TestSepSchemaTablesEndpoint:
@@ -159,11 +158,10 @@ class TestSepSchemaTablesEndpoint:
         response = test_client.get("/api/sep/schemas/5/tables")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_list_tables_empty_when_response_has_no_items(
+    def test_list_tables_rejects_invalid_upstream_envelope(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
-        """Return empty list when inventory returns a non-dict or missing items."""
+        """Fail when inventory returns a payload missing required pagination fields."""
         mock_inventory_api_dep.get.return_value = {}
         response = test_client.get("/api/sep/schemas/5/tables")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR

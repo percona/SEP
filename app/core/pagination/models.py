@@ -21,12 +21,14 @@ from collections.abc import (  # noqa: TC003 — validate_call resolves these at
     Awaitable,
     Callable,
 )
-from typing import Any, Generic, NotRequired, TYPE_CHECKING, TypedDict, TypeVar
+from typing import Any, Generic, TYPE_CHECKING, TypedDict, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from pydantic import BaseModel, Field, PositiveInt, validate_call
+
+from app.core.utils import run_pydantic_type_validator
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -37,22 +39,22 @@ DEFAULT_PAGINATION_LIMIT = 50
 
 
 class PaginatedDictPage(TypedDict):
-    """Raw paginated upstream API page before envelope normalization.
+    """Raw paginated upstream API page.
 
     :param items: Rows returned for the current page.
     :type items: list[Any]
-    :param total: Total matching rows across all pages (filled in when omitted).
-    :type total: int | None
-    :param offset: Zero-based offset for this page (filled in when omitted).
-    :type offset: int | None
-    :param limit: Page size for this request (filled in when omitted).
-    :type limit: int | None
+    :param total: Total matching rows across all pages.
+    :type total: int
+    :param offset: Zero-based offset for this page.
+    :type offset: int
+    :param limit: Page size for this request.
+    :type limit: int
     """
 
     items: list[Any]
-    total: NotRequired[int]
-    offset: NotRequired[int]
-    limit: NotRequired[int]
+    total: int
+    offset: int
+    limit: int
 
 
 class Pagination(BaseModel):
@@ -187,13 +189,7 @@ async def fetch_all_dict_items(
 
     async def get_page(pagination: Pagination) -> PaginatedResponse[Any]:
         raw = await fetch_page(pagination)
-        envelope: dict[str, Any] = dict(raw)
-        if "total" not in envelope:
-            envelope["total"] = len(envelope.get("items", []))
-        if "offset" not in envelope:
-            envelope["offset"] = pagination.offset
-        if "limit" not in envelope:
-            envelope["limit"] = pagination.limit
-        return PaginatedResponse.model_validate(envelope)
+        page = run_pydantic_type_validator(PaginatedDictPage, raw)
+        return PaginatedResponse.model_validate(page)
 
     return await fetch_all_items(get_page, page_size=page_size)

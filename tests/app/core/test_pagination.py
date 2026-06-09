@@ -221,3 +221,13 @@ class TestFetchAllDictItems:
         assert await fetch_all_dict_items(fetch_page, page_size=PAGE_SIZE) == list(
             range(TOTAL_ITEMS)
         )
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_dict_items_rejects_incomplete_page(self) -> None:
+        """Reject upstream pages missing required pagination envelope fields."""
+
+        async def fetch_page(_pagination: Pagination) -> PaginatedDictPage:
+            return {"items": [0, 1]}  # type: ignore[typeddict-item]
+
+        with pytest.raises(ValidationError):
+            await fetch_all_dict_items(fetch_page)

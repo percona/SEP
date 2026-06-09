@@ -15,12 +15,10 @@
 
 """Shared Pydantic models and helpers for SEP JSON API routes."""
 
-from typing import Any
-
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 
-from app.core.pagination import fetch_all_dict_items, Pagination
+from app.core.pagination import fetch_all_dict_items, PaginatedDictPage, Pagination
 from app.sep.deps import InventoryAPI
 
 
@@ -55,19 +53,14 @@ async def proxy_inventory_selector(
     """
     try:
 
-        async def fetch_page(pagination: Pagination) -> dict[str, Any]:
-            raw = await inventory_api.get(
+        async def fetch_page(pagination: Pagination) -> PaginatedDictPage:
+            return await inventory_api.get(
                 url,
                 params={
                     **pagination.model_dump(),
                     **({"search": search} if search else {}),
                 },
             )
-            if not isinstance(raw, dict):
-                raw = {}
-            if "items" not in raw:
-                raw = {**raw, "items": []}
-            return raw
 
         items = await fetch_all_dict_items(fetch_page)
     except HTTPException as exc:
