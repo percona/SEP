@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 const BACKUPS_ROUTE = '/backups/mongodb/backups';
 const RESTORES_ROUTE = '/backups/mongodb/restores';
@@ -245,6 +246,10 @@ async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promis
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {
