@@ -20,10 +20,13 @@ from typing import Any, ClassVar
 
 from pydantic import field_validator, ValidationError
 
-from app.core.alerts.models import AlertService, BaseAlertProvider
+from app.core.alerts.models import Alert, AlertService, BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
 from app.core.config import BaseYamlSettings
-from app.core.utils.lazy import LazyProxy
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field, materialize_via_owning_model
+from app.core.utils.fields import NonEmptyStr
 
 
 class AlertProviderEnum(Enum):
@@ -47,9 +50,11 @@ class AlertSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["ALERTING"]
-    PROVIDERS: set[BaseAlertProvider] = set()
-    SOURCE_PREFIX: str = ""
-    SOURCE_SUFFIX: str = ""
+    PROVIDERS: set[BaseAlertProvider] = hot_field(
+        set(), materializer=materialize_via_owning_model
+    )
+    SOURCE_PREFIX: str = hot_field("")
+    SOURCE_SUFFIX: str = hot_field("")
 
     @field_validator("PROVIDERS", mode="before")
     @classmethod
@@ -77,16 +82,48 @@ class AlertSettings(BaseYamlSettings):
         return providers
 
 
-alert_settings: AlertSettings = LazyProxy(AlertSettings)
+alert_settings: AlertSettings = OverridableSettingsProxy(
+    AlertSettings, setting_class=SettingClassEnum.ALERT_SETTINGS
+)
 
 
-def _create_alert_service() -> AlertService:
-    """Create an :class:`AlertService` from the current alert settings."""
-    return AlertService(
-        providers=alert_settings.PROVIDERS,
-        source_prefix=alert_settings.SOURCE_PREFIX,
-        source_suffix=alert_settings.SOURCE_SUFFIX,
-    )
+class LiveAlertService:
+    """Dispatch alerts through providers read from the live alert settings.
+
+    Builds a fresh :class:`AlertService` from ``alert_settings`` on every
+    :meth:`trigger` / :meth:`resolve`, so a DB-backed override of ``PROVIDERS``,
+    ``SOURCE_PREFIX`` or ``SOURCE_SUFFIX`` takes effect at runtime without a
+    restart. The captured-at-construction :class:`AlertService` it wraps stays a
+    pure, separately-testable model.
+    """
+
+    def _build(self) -> AlertService:
+        """Build an :class:`AlertService` from the current alert settings.
+
+        :return: An alert service bound to the live providers and source affixes.
+        :rtype: AlertService
+        """
+        return AlertService(
+            providers=alert_settings.PROVIDERS,
+            source_prefix=alert_settings.SOURCE_PREFIX,
+            source_suffix=alert_settings.SOURCE_SUFFIX,
+        )
+
+    async def trigger(self, alert: Alert) -> None:
+        """Trigger an alert through the currently-configured providers.
+
+        :param alert: The alert to trigger.
+        :type alert: Alert
+        """
+        await self._build().trigger(alert)
+
+    async def resolve(self, dedup_key: NonEmptyStr) -> None:
+        """Resolve an alert through the currently-configured providers.
+
+        :param dedup_key: The deduplication key of the alert to resolve.
+        :type dedup_key: NonEmptyStr
+        """
+        await self._build().resolve(dedup_key)
 
 
-alert_service: AlertService = LazyProxy(_create_alert_service)
+alert_service = LiveAlertService()
