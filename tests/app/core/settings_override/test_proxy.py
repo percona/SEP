@@ -141,6 +141,22 @@ def test_missing_attribute_raises_attribute_error(
         proxy.does_not_exist  # noqa: B018
 
 
+def test_snapshot_returns_premerged_nested_model(
+    proxy: OverridableSettingsProxy[_Sample],
+) -> None:
+    """A pre-merged nested model stored in the snapshot is returned verbatim.
+
+    Confirms the proxy needs no nested-awareness: the snapshot-time merge
+    stores the merged Pydantic copy under the top-level key, and the existing
+    ``if name in snapshot`` read path returns it directly.
+    """
+    expected_count = 99
+    merged = _Sample(name="merged", count=expected_count)
+    proxy._set_snapshot({"name": merged})
+    assert proxy.name is merged
+    assert proxy.name.count == expected_count
+
+
 def test_per_class_isolation_with_unknown_field() -> None:
     """Attribute access for a key absent from both snapshot and wrapped class raises.
 

@@ -97,9 +97,7 @@ describe('SchemaSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() =>
-      expect(mocked.get).toHaveBeenCalledWith('/inventory-api/services/7/schemas'),
-    );
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/services/7/schemas'));
   });
 
   it('resets value when parent service changes', async () => {

@@ -147,11 +147,12 @@ async def test_refresh_all_rolls_back_session_between_proxies(
     async def _fail_first(
         session: object,
         settings_cls: type,
+        base_settings: object = None,
     ) -> object:
         call_count["n"] += 1
         if call_count["n"] == 1:
             raise RuntimeError("first proxy explodes mid-cycle")
-        return await real_build_snapshot(session, settings_cls)
+        return await real_build_snapshot(session, settings_cls, base_settings)
 
     monkeypatch.setattr(
         "app.core.settings_override.lifecycle.build_snapshot", _fail_first

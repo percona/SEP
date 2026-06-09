@@ -47,7 +47,7 @@ from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field, materialize_template
+from app.core.settings_override.registry import hot_field, materialize_template, nested_overridable_field
 from app.core.utils import (
     deep_dict_update,
     slugify,
@@ -91,6 +91,11 @@ class Plugin(BaseCaseInsensitiveModel):
     :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
     :type sidebar: bool
+    :param enabled: Whether the plugin ships enabled. Read only at first-startup
+        seed time to set the initial :class:`app.sep.models.AppState` row;
+        defaults to ``True`` so every plugin already in ``settings.yaml`` keeps
+        shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
+    :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
         JSON ``APIRouter`` instance (e.g. ``"app.sep.plugins.checksums.api_routes.router"``).
         When set, the router is mounted under ``/api/plugins/{key}`` by the
@@ -110,6 +115,7 @@ class Plugin(BaseCaseInsensitiveModel):
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
+    enabled: bool = True
     api_router_path: StrImportableAttribute | None = None
 
     def __eq__(self, other: Any) -> bool:
@@ -471,10 +477,12 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
-    SESSION: SessionOptions = SessionOptions()
-    SESSION_REFRESH: SessionOptions = SessionOptions(
-        COOKIE_NAME="refreshToken",
-        PATH="/api/oauth",
+    SESSION: SessionOptions = nested_overridable_field(SessionOptions())
+    SESSION_REFRESH: SessionOptions = nested_overridable_field(
+        SessionOptions(
+            COOKIE_NAME="refreshToken",
+            PATH="/api/oauth",
+        )
     )
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")

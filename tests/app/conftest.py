@@ -15,11 +15,14 @@
 
 """Define test fixtures."""
 
+import inspect
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+import aioresponses.core
 import pytest
+from aiohttp import ClientResponse
 from faker import Faker
 from pytest_mock import MockerFixture
 
@@ -42,6 +45,22 @@ from tests.app.factories import (
     CreatedTableFactory,
     OAuthTokenFactory,
 )
+
+# aiohttp 3.14 made ``stream_writer`` a required arg of ``ClientResponse``, but
+# aioresponses (<=0.7.8) still constructs mocks without it. Default it here until
+# aioresponses ships a fix; guarded on the param so it's a no-op on aiohttp < 3.14.
+if "stream_writer" in inspect.signature(ClientResponse.__init__).parameters:
+
+    class _StubStreamWriter:
+        # aioresponses passes writer=None, so ClientResponse reads output_size.
+        output_size: int = 0
+
+    class _CompatClientResponse(ClientResponse):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            kwargs.setdefault("stream_writer", _StubStreamWriter())
+            super().__init__(*args, **kwargs)
+
+    aioresponses.core.ClientResponse = _CompatClientResponse
 
 
 @pytest.fixture(scope="session", autouse=True)

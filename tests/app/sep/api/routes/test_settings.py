@@ -153,7 +153,7 @@ class TestSepSettingsList:
     async def test_lists_hot_and_not_overridable_entries(
         self, api_admin_client: TestClient
     ) -> None:
-        """A SEPSettings group exposes both HOT and NOT_OVERRIDABLE fields."""
+        """A SEPSettings group exposes HOT, NESTED_ONLY and NOT_OVERRIDABLE fields."""
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -165,6 +165,7 @@ class TestSepSettingsList:
         reloads = {entry["reload"] for entry in sep_entry["settings"]}
         assert reloads == {
             ReloadClassification.HOT.value,
+            ReloadClassification.NESTED_ONLY.value,
             ReloadClassification.NOT_OVERRIDABLE.value,
         }
 
@@ -535,6 +536,153 @@ class TestSepSettingsDelete:
             "/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+class TestSepSettingsNestedOverrides:
+    """Tests for ``__``-delimited nested overrides on ``SEPSettings.SESSION``."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_proxy_snapshot(self) -> Iterator[None]:
+        """Clear the global proxy snapshot after each nested test."""
+        yield
+        sep_settings._set_snapshot({})
+
+    async def test_patch_nested_override_persists_and_marks_parent(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """A nested PATCH persists, echoes the nested key, and marks the parent."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SESSION__SAMESITE": "strict"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body[0]["key"] == "SESSION__SAMESITE"
+        assert body[0]["value"] == "strict"
+        assert body[0]["has_override"] is True
+        # The parent reads back as having an override.
+        parent = api_admin_client.get("/api/sep/admin/settings/SEPSettings/SESSION")
+        assert parent.json()["has_override"] is True
+        # The nested leaf reads back its current value.
+        leaf = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SESSION__SAMESITE"
+        )
+        assert leaf.json()["value"] == "strict"
+
+    async def test_patch_nested_coerces_int_to_timedelta(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """``SESSION__MAX_AGE`` accepts a JSON int and coerces it to a timedelta."""
+        override_seconds = 7200
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SESSION__MAX_AGE": override_seconds},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert sep_settings.SESSION.MAX_AGE.total_seconds() == override_seconds
+
+    async def test_patch_nested_rejects_unknown_nested_field(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """An unknown nested leaf is rejected with ``unknown_nested_field``."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SESSION__BOGUS": 1},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(entry["type"] == "unknown_nested_field" for entry in detail)
+
+    async def test_patch_nested_rejects_not_overridable_parent(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """A nested key under a non-overridable parent is rejected as not_overridable."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"DATABASE__NAME": "other.db"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(entry["type"] == "not_overridable" for entry in detail)
+
+    async def test_patch_whole_parent_rejected_for_nested_only(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Replacing the whole NESTED_ONLY parent object is rejected."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SESSION": {"MAX_AGE": 3600}},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            entry["type"] == "not_overridable" and entry["loc"] == ["body", "SESSION"]
+            for entry in detail
+        )
+
+    async def test_delete_whole_parent_rejected_for_nested_only(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """DELETE on the whole NESTED_ONLY parent returns 422 (not 404)."""
+        response = api_admin_client.delete(
+            "/api/sep/admin/settings/SEPSettings/SESSION"
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(entry["type"] == "not_overridable" for entry in detail)
+
+    async def test_get_whole_parent_returns_merged_value(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """GET on the whole parent is allowed and returns the merged value."""
+        api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SESSION__SAMESITE": "strict"},
+        )
+        response = api_admin_client.get("/api/sep/admin/settings/SEPSettings/SESSION")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["value"]["SAMESITE"] == "strict"
+
+    async def test_delete_nested_override_clears_merged_value(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Deleting a nested override reverts the leaf to its YAML/env value (AC #3)."""
+        override_seconds = 7200
+        original = sep_settings.SESSION.MAX_AGE
+        api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SESSION__MAX_AGE": override_seconds},
+        )
+        assert sep_settings.SESSION.MAX_AGE.total_seconds() == override_seconds
+        response = api_admin_client.delete(
+            "/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert original == sep_settings.SESSION.MAX_AGE
+
+    async def test_delete_nested_override_idempotent_when_absent(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Deleting a never-set nested override still returns 204."""
+        response = api_admin_client.delete(
+            "/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    async def test_list_marks_parent_overridden_when_only_nested_rows_exist(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """The LIST ``has_override`` flag mirrors the runtime nested-row filter."""
+        api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SESSION__SAMESITE": "strict"},
+        )
+        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        session_entry = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, "SESSION"
+        )
+        assert session_entry["has_override"] is True
 
 
 @pytest.mark.asyncio

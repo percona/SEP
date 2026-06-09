@@ -38,8 +38,13 @@ async def test_default_context_footer_reflects_template_override(
         {"FOOTER_TEMPLATE": Template("$summary v$version OVERRIDE")}
     )
     mocker.patch("app.sep.deps.get_username_mapping", new=AsyncMock(return_value={}))
+    mocker.patch(
+        "app.sep.deps.AppStateManager.all_states", new=AsyncMock(return_value={})
+    )
     request = SimpleNamespace(state=SimpleNamespace(csrf_token="token"))
 
-    context = await get_default_context(request, regular_user, URL("http://test"))
+    context = await get_default_context(
+        request, regular_user, URL("http://test"), AsyncMock()
+    )
 
     assert context["footer_text"] == f"{__summary__} v{__version__} OVERRIDE"

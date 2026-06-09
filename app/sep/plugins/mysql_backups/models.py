@@ -17,7 +17,7 @@
 
 from datetime import datetime
 from enum import auto, IntEnum, StrEnum
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, FutureDatetime, model_validator
 
@@ -108,6 +108,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     mydumper_desync_pxc: bool = False
     mydumper_use_numa: bool = False
     mydumper_extra_args: str | EmptyStrToNone = None
+    mydumper_verbose: Annotated[int, Field(ge=0, le=3)] | EmptyStrToNone = None
     use_ftwrl_guardian: bool = False
     xtrabackup_copies: int | EmptyStrToNone = None
     xtrabackup_kill_queries: bool = False
@@ -131,6 +132,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone = None
     xtrabackup_stop_replica: bool = False
     xtrabackup_lock_ddl: bool = False
+    xtrabackup_quiet: bool = False
     xtrabackup_bin_cmd: (
         Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     ) = None
@@ -144,6 +146,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     s3_bucket: NonEmptyStr | EmptyStrToNone = None
     s3_storage_class: NonEmptyStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
+    upload_quiet: bool = False
     awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone = None
     gs_bucket: NonEmptyStr | EmptyStrToNone = None
     rsync_path: NonEmptyStr | EmptyStrToNone = None
@@ -189,6 +192,9 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type mydumper_use_numa: bool
     :param mydumper_extra_args: Additional command-line arguments for mydumper.
     :type mydumper_extra_args: str | EmptyStrToNone
+    :param mydumper_verbose: mydumper log verbosity level (0 silent … 3 info).
+        Unset falls back to the payload default of ``3``.
+    :type mydumper_verbose: int | EmptyStrToNone
     :param use_ftwrl_guardian: Whether to use FTWRL guardian to manage locks during backup.
     :type use_ftwrl_guardian: bool
     :param xtrabackup_copies: Number of backup copies for xtrabackup.
@@ -227,6 +233,8 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type xtrabackup_stop_replica: bool
     :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
     :type xtrabackup_lock_ddl: bool
+    :param xtrabackup_quiet: Whether to drop per-file copy progress lines from the backup log.
+    :type xtrabackup_quiet: bool
     :param xtrabackup_bin_cmd: Backup tool to use.
     :type xtrabackup_bin_cmd: Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
     :param binlog_prefix: Prefix used in binlog backup naming.
@@ -247,6 +255,8 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type s3_storage_class: NonEmptyStr | EmptyStrToNone
     :param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.
     :type skip_s3_safety_check: bool
+    :param upload_quiet: Whether to suppress per-file upload log entries. Errors are always logged.
+    :type upload_quiet: bool
     :param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).
         Example: "ChecksumAlgorithm=CRC32C".
     :type awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone

@@ -340,7 +340,12 @@ class TestArchivesApiConditionalRules422:
         )
 
     def test_same_source_dest_table_names_returns_422(self, test_client):
-        """Validator 1b: identical source_table_name and dest_table_name → 422."""
+        """Validator 1b: same host + same schema + same table name → 422.
+
+        ``build_valid_create_body`` leaves the destination host/schema unset, so
+        the destination defaults to the source host and schema — making this the
+        genuine self-archive case that must still be rejected.
+        """
         body = build_valid_create_body(
             source_db_id=None,
             source_table_id=None,
@@ -359,6 +364,40 @@ class TestArchivesApiConditionalRules422:
             or "source_table_name" in detail
             or "dest_table_name" in detail
         ), f"Expected 'same' or table-name field in 422 detail, got: {detail[:300]}"
+
+    def test_different_dest_host_same_table_name_allowed(
+        self,
+        test_client,
+        mock_inventory_api_dep_archives,
+        mock_tasks_api_dep,
+        created_service,
+    ):
+        """Allow a different destination host that reuses the source table name.
+
+        The destination is a distinct table, so the request is no longer
+        rejected as a self-archive. Mocks only the inventory (source-service
+        lookup) and tasks (post) boundaries so the real ``ArchivesCreate`` body
+        model — and thus Validator 1b — is exercised through FastAPI's body
+        parsing.
+        """
+        mock_inventory_api_dep_archives.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_tasks_api_dep.post.return_value = build_archive_task()
+        body = build_valid_create_body(
+            source_db_id=None,
+            source_table_id=None,
+            source_db_name="sbtest",
+            source_table_name="sbtest5",
+            dest_table_id=None,
+            dest_table_name="sbtest5",
+            dest_host="other-host",
+        )
+        response = test_client.post("/api/plugins/archives/", json=body)
+        assert response.status_code == status.HTTP_201_CREATED, (
+            f"Expected 201, got {response.status_code}: {response.text[:500]}"
+        )
+        assert "cannot be the same" not in response.text.lower()
 
     @pytest.mark.parametrize(
         ("field", "value"),

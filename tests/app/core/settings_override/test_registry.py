@@ -31,6 +31,7 @@ from app.core.settings_override.registry import (
     materialize_template,
     materialize_via_owning_model,
     MaterializerContext,
+    nested_overridable_field_names,
     ReloadClassification,
 )
 from app.core.utils.pydantic import field_with_metadata
@@ -156,6 +157,25 @@ def test_hot_field_names_tasks_settings() -> None:
     """``TasksSettings`` HOT fields include ``NOMAD`` after its promotion."""
     assert hot_field_names(TasksSettings) == frozenset(
         {"PRE_EXECUTION_CONNECTIVITY_CHECK", "STALENESS_THRESHOLD_SECONDS", "NOMAD"}
+    )
+
+
+def test_nested_overridable_field_names_sep_settings() -> None:
+    """``SEPSettings`` ships exactly the two NESTED_ONLY parents this ticket promotes."""
+    assert nested_overridable_field_names(SEPSettings) == frozenset(
+        {"SESSION", "SESSION_REFRESH"}
+    )
+
+
+def test_nested_overridable_field_names_tasks_settings() -> None:
+    """``SECURITY_HEADERS`` is the NESTED_ONLY parent on ``TasksSettings``.
+
+    ``NOMAD`` is HOT (whole-object override materializes a config fingerprint
+    that the lifecycle holder rebinds), so it is not in the NESTED_ONLY set even
+    though HOT also accepts per-child overrides.
+    """
+    assert nested_overridable_field_names(TasksSettings) == frozenset(
+        {"SECURITY_HEADERS"}
     )
 
 

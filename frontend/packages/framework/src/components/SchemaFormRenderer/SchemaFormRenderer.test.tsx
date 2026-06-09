@@ -71,9 +71,9 @@ describe('buildValidationRules', () => {
     expect(rules.max).toMatchObject({ value: 5 });
   });
 
-  it('emits a validate fn enforcing minItems/maxItems on multichoice', () => {
+  it('emits a validate fn enforcing minItems/maxItems on multi_choice', () => {
     const rules = buildValidationRules({
-      type: 'multichoice',
+      type: 'multi_choice',
       name: 'tags',
       label: 'Tags',
       choices: [{ label: 'A', value: 'a' }],
@@ -165,7 +165,7 @@ describe('SchemaFormRenderer — field rendering', () => {
           ],
         },
         {
-          type: 'multichoice',
+          type: 'multi_choice',
           name: 'tags',
           label: 'Tags',
           choices: [
@@ -315,7 +315,7 @@ describe('SchemaFormRenderer — validation + submission', () => {
   });
 });
 
-describe('SchemaFormRenderer — multichoice minItems', () => {
+describe('SchemaFormRenderer — multi_choice minItems', () => {
   it('blocks submission when selection count is below minItems', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
@@ -324,7 +324,7 @@ describe('SchemaFormRenderer — multichoice minItems', () => {
         title: 'Main',
         fields: [
           {
-            type: 'multichoice',
+            type: 'multi_choice',
             name: 'tags',
             label: 'Tags',
             choices: [
@@ -350,8 +350,8 @@ describe('SchemaFormRenderer — multichoice minItems', () => {
   });
 });
 
-describe('SchemaFormRenderer — multichoice required', () => {
-  it('blocks submission when a required multichoice has the default empty array', async () => {
+describe('SchemaFormRenderer — multi_choice required', () => {
+  it('blocks submission when a required multi_choice has the default empty array', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     const sections: FormSection[] = [
@@ -359,7 +359,7 @@ describe('SchemaFormRenderer — multichoice required', () => {
         title: 'Upload',
         fields: [
           {
-            type: 'multichoice',
+            type: 'multi_choice',
             name: 'upload',
             label: 'Upload providers',
             required: true,
@@ -382,14 +382,14 @@ describe('SchemaFormRenderer — multichoice required', () => {
   });
 });
 
-describe('SchemaFormRenderer — multichoice empty-state placeholder', () => {
+describe('SchemaFormRenderer — multi_choice empty-state placeholder', () => {
   it('renders "Select…" placeholder when nothing is selected', () => {
     const sections: FormSection[] = [
       {
         title: 'Upload',
         fields: [
           {
-            type: 'multichoice',
+            type: 'multi_choice',
             name: 'upload',
             label: 'Upload providers',
             choices: [
@@ -410,7 +410,7 @@ describe('SchemaFormRenderer — multichoice empty-state placeholder', () => {
         title: 'Upload',
         fields: [
           {
-            type: 'multichoice',
+            type: 'multi_choice',
             name: 'upload',
             label: 'Upload providers',
             choices: [
@@ -479,14 +479,14 @@ describe('SchemaFormRenderer — choice (select mode) empty-state placeholder', 
   });
 });
 
-describe('SchemaFormRenderer — multichoice empty-state label shrink', () => {
+describe('SchemaFormRenderer — multi_choice empty-state label shrink', () => {
   it('floats the label above when nothing is selected (no overlap with placeholder)', () => {
     const sections: FormSection[] = [
       {
         title: 'Upload',
         fields: [
           {
-            type: 'multichoice',
+            type: 'multi_choice',
             name: 'upload',
             label: 'Upload providers',
             choices: [
@@ -571,10 +571,10 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
           },
         });
       }
-      if (url === '/inventory-api/services/1/schemas') {
+      if (url === '/sep/services/1/schemas') {
         return Promise.resolve({ data: [{ id: 11, name: 'app_production' }] });
       }
-      if (url === '/inventory-api/services/2/schemas') {
+      if (url === '/sep/services/2/schemas') {
         return Promise.resolve({ data: [{ id: 21, name: 'app_staging' }] });
       }
       return Promise.resolve({ data: [] });
@@ -858,7 +858,7 @@ describe('SchemaFormRenderer — conditional visibility', () => {
       title: 'Upload',
       fields: [
         {
-          type: 'multichoice',
+          type: 'multi_choice',
           name: 'upload',
           label: 'Upload providers',
           choices: [
@@ -1795,5 +1795,108 @@ describe('SchemaFormRenderer — section-level visibility', () => {
 
     const reshown = await screen.findByLabelText('Mydumper extra args');
     expect((reshown as HTMLInputElement).value).toBe('');
+  });
+});
+
+// ── multi_choice discriminator regression (SEP-1293) ─────────────────────────
+//
+// Guards against future drift between the hand-maintained `MultiChoiceField.type`
+// literal in plugin-schema.ts and the switch branches that consume it. A wrong
+// literal silently falls through to `default: return null` — these tests make
+// that failure loud.
+
+describe('SchemaFormRenderer — multi_choice discriminator regression (SEP-1293)', () => {
+  it('renders the multi-select control for type: multi_choice', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [{ label: 'S3', value: 'S3' }],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(document.getElementById('mui-component-select-upload')).not.toBeNull();
+  });
+
+  it('renders nothing for the stale "multichoice" literal (old wrong discriminator)', () => {
+    // Cast bypasses TypeScript: simulates an outdated API response before clients update.
+    const sections = [
+      {
+        title: 'Upload',
+        fields: [{ type: 'multichoice', name: 'upload', label: 'Upload providers', choices: [] }],
+      },
+    ] as unknown as FormSection[];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(document.getElementById('mui-component-select-upload')).toBeNull();
+  });
+});
+
+describe('SchemaFormRenderer — multi_choice maxItems', () => {
+  it('blocks submission when selection count exceeds maxItems', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+              { label: 'GCS', value: 'GSUTIL' },
+            ],
+            max_items: 2,
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        defaultValues={{ upload: ['S3', 'RSYNC', 'GSUTIL'] }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Fix the highlighted fields/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('select-input-upload')).toHaveAttribute('aria-invalid', 'true'),
+    );
+  });
+});
+
+describe('SchemaFormRenderer — multi_choice default value', () => {
+  it('pre-selects a value from the field default', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            default: ['S3'],
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.queryByText('Select…')).toBeNull();
+    expect(screen.getByText('S3')).toBeVisible();
   });
 });

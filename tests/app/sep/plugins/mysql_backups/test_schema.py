@@ -96,7 +96,7 @@ class TestMysqlBackupsSchema:
 
         Each destination field declares a ``forbidden`` gate keyed off the
         ``upload`` MultiChoice via the ``Contains`` predicate. This pins the
-        SEP-1061 explicit-MultiChoice contract: the React renderer hides the
+        explicit-MultiChoice contract: the React renderer hides the
         field (and unregisters it from RHF) when the matching provider is
         not selected, and the backend's conditional-rule plan rejects a
         present value in the same case.
