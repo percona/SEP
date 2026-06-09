@@ -62,6 +62,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Remove ``SETTINGS`` and ``ALERT_SETTINGS`` from the setting_class constraint."""
+    # Discard override rows using the removed members first; otherwise the
+    # narrowed CHECK constraint rejects the existing data and the ALTER fails.
+    # Rolling this migration back intentionally drops the overrides it enabled.
+    op.execute(
+        "DELETE FROM settingoverride "
+        "WHERE setting_class IN ('SETTINGS', 'ALERT_SETTINGS')"
+    )
     with op.batch_alter_table("settingoverride", schema=None) as batch_op:
         batch_op.alter_column(
             "setting_class",
