@@ -273,26 +273,26 @@ def test_unwrap_inventory_plugin_list_payload_raises_502_for_bad_shape():
 
 
 def test_inventory_service_list_path_nodes_vs_collections():
-    """Ensure node list uses ``/`` and collection entities use a trailing slash."""
-    assert inventory_service_list_path("nodes") == "/"
+    """Ensure node list uses ``/nodes/`` and collection entities use a trailing slash."""
+    assert inventory_service_list_path("nodes") == "/nodes/"
     assert inventory_service_list_path("services") == "/services/"
 
 
 def test_inventory_service_detail_path_nodes_vs_collections():
-    """Ensure node detail omits the ``nodes`` segment in the inventory path."""
-    assert inventory_service_detail_path("nodes", 5) == "/5"
+    """Ensure node detail uses the ``/nodes/{id}`` path."""
+    assert inventory_service_detail_path("nodes", 5) == "/nodes/5"
     assert inventory_service_detail_path("services", 5) == "/services/5"
 
 
 def test_inventory_service_create_path_nodes_and_nested_entities():
     """Ensure POST paths match the inventory service nesting rules."""
-    assert inventory_service_create_path("nodes", {}) == "/"
+    assert inventory_service_create_path("nodes", {}) == "/nodes/"
     assert (
         inventory_service_create_path(
             "services",
             {"node_id": 9, "name": "x", "type": "mysql"},
         )
-        == "/9/services/"
+        == "/nodes/9/services/"
     )
     assert (
         inventory_service_create_path(

@@ -123,7 +123,7 @@ def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     mock_inventory_api_dep.get.assert_any_await(
-        "/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
+        "/nodes/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
     )
     mock_task_api_dep.get.assert_any_await("/inventory-sync/periodic/")
 

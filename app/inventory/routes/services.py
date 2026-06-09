@@ -23,7 +23,11 @@ from sqlmodel import col
 from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.inventory.crud import SchemaManager, ServiceManager
+from app.inventory.crud import (
+    SchemaManager,
+    ServiceManager,
+    ServiceSystemObservationManager,
+)
 from app.inventory.deps import ServiceDep, SessionDep
 from app.inventory.models import (
     Schema,
@@ -33,6 +37,8 @@ from app.inventory.models import (
     Service,
     ServiceDetailResponse,
     ServiceResponse,
+    ServiceSystemObservationResponse,
+    ServiceSystemObservationWrite,
     ServiceTypeEnum,
     ServiceWrite,
 )
@@ -92,6 +98,33 @@ async def delete_service(session: SessionDep, service: ServiceDep) -> None:
     """Delete Service."""
     logger.debug("Deleting service %s", service.id)
     await ServiceManager.delete(session, service)
+
+
+@router.get("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def retrieve_service_system_observation(
+    session: SessionDep,
+    service: ServiceDep,
+) -> ServiceSystemObservationResponse:
+    """Retrieve service system observation for a service."""
+    return await ServiceSystemObservationManager.get_or_404(
+        session, service_id=service.id
+    )
+
+
+@router.put("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def upsert_service_system_observation(
+    session: SessionDep,
+    service: ServiceDep,
+    data: ServiceSystemObservationWrite,
+) -> ServiceSystemObservationResponse:
+    """Upsert service system observation for a service."""
+    data.service_id = service.id
+    obs, created = await ServiceSystemObservationManager.get_or_create(
+        session, data, filter_include={"service_id"}
+    )
+    if not created:
+        obs = await ServiceSystemObservationManager.update(session, obs, data)
+    return obs
 
 
 @router.get("/{service_id}/schemas/", dependencies=[IsAuthenticatedDep])
