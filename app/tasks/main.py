@@ -29,6 +29,7 @@ from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPGoneException
 from app.core.settings_override.lifecycle import (
+    CallbackRegistry,
     ProxyEntry,
     settings_override_refresher,
 )
@@ -66,6 +67,16 @@ async def _reconcile_nomad(_: Mapping[str, object]) -> None:
     holder = getattr(tasks_app.state, "nomad_lifecycle", None)
     if holder is not None:
         await holder.reconcile()
+
+
+#: Rebind callbacks fired when a watched Tasks override changes value. Both the
+#: background refresher (for changes other processes wrote to the DB) and the
+#: settings-API PATCH/DELETE handlers (for changes this process wrote inline) fire
+#: these, so the live entered ``NomadExecutor`` rebinds either way. Published on
+#: ``tasks_app.state`` below so the handlers can reach it via ``request.app.state``.
+_OVERRIDE_REBIND_CALLBACKS: CallbackRegistry = {
+    (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): _reconcile_nomad,
+}
 
 
 @asynccontextmanager
@@ -106,9 +117,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             },
             settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
             enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
-            callbacks={
-                (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): _reconcile_nomad,
-            },
+            callbacks=_OVERRIDE_REBIND_CALLBACKS,
         ),
         default_lifespan(app),
         NomadLifecycle(tasks_app),
@@ -130,6 +139,11 @@ tasks_app = create_app(
     version=__version__,
     description=f"{__summary__} — task execution, history, periodic jobs, connectivity.",
 )
+# Publish the rebind registry on the sub-app's state (not the lifespan's ``app``
+# argument, which is the parent under the combined ``app.main:app``): requests
+# routed to ``/api/tasks`` resolve ``request.app`` to ``tasks_app``, so the
+# settings-API handlers find the registry there in both run modes.
+tasks_app.state.override_callbacks = _OVERRIDE_REBIND_CALLBACKS
 
 
 @tasks_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)

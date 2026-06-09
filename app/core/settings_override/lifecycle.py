@@ -22,6 +22,7 @@ __all__ = [
     "ProxyEntry",
     "ProxyRegistry",
     "RefreshCallback",
+    "fire_change_callbacks",
     "publish_snapshot",
     "refresh_all",
     "settings_override_refresher",
@@ -103,7 +104,7 @@ class ProxyEntry(NamedTuple):
 ProxyRegistry = dict[SettingClassEnum, ProxyEntry]
 
 
-async def _fire_change_callbacks(
+async def fire_change_callbacks(
     callbacks: CallbackRegistry,
     setting_class: SettingClassEnum,
     previous: Mapping[str, object],
@@ -115,6 +116,11 @@ async def _fire_change_callbacks(
     key)`` whose value differs and has a registered callback, awaits the
     callback. Each callback runs inside its own ``try/except`` so one failure
     neither aborts the cycle nor blocks the remaining callbacks.
+
+    Shared by the background refresher (:func:`refresh_all`, diffing the snapshot
+    it just rebuilt) and the settings-API PATCH/DELETE handlers (diffing the
+    snapshot they publish inline), so both publish paths deliver the same rebind
+    notifications.
 
     :param callbacks: The registered rebind callbacks keyed by
         ``(setting_class, key)``.
@@ -164,7 +170,7 @@ async def refresh_all(
 
     When ``callbacks`` is supplied, the snapshot in effect before each proxy's
     republish is diffed against the new one and the registered callback for any
-    changed ``(setting_class, key)`` is fired (see :func:`_fire_change_callbacks`).
+    changed ``(setting_class, key)`` is fired (see :func:`fire_change_callbacks`).
     A proxy whose republish failed is skipped without firing callbacks. The
     initial inline refresh in :func:`start_refresh_task` passes no callbacks, so
     startup seeding never triggers a rebind.
@@ -203,7 +209,7 @@ async def refresh_all(
                 await session.rollback()
                 continue
             if callbacks is not None and previous is not None:
-                await _fire_change_callbacks(
+                await fire_change_callbacks(
                     callbacks, setting_class, previous, entry.proxy.get_snapshot()
                 )
 

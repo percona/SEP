@@ -31,6 +31,7 @@ __all__ = [
     "coerce_nested_field_value",
     "dump_field_value",
     "field_materializer",
+    "fire_change_callbacks",
     "hot_field",
     "hot_field_names",
     "is_hot_reloadable",
@@ -53,6 +54,7 @@ __all__ = [
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
+    fire_change_callbacks,
     publish_snapshot,
     refresh_all,
     RefreshCallback,

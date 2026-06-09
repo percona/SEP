@@ -21,6 +21,7 @@ import pytest
 from fastapi import HTTPException, status
 from sqlalchemy.dialects.postgresql import JSON, JSONB
 
+from app.core.settings_override.models import SettingClassEnum
 from app.tasks.db.seed import verify_taskhistory_execution_request_is_jsonb
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.execution.executors.nomad.exceptions import (
@@ -31,6 +32,7 @@ from app.tasks.main import (
     _reconcile_nomad,
     task_data_not_found_detail,
     task_data_not_found_handler,
+    tasks_app,
     tasks_lifespan,
 )
 from app.tasks.main import lifespan as tasks_module_lifespan
@@ -44,6 +46,19 @@ def test_tasks_app_lifespan_is_always_set():
     ``"__main__"``, which would leave the lifespan as ``None``.
     """
     assert tasks_module_lifespan is tasks_lifespan
+
+
+def test_tasks_app_publishes_nomad_rebind_callback_on_state():
+    """The NOMAD rebind callback registry is published on ``tasks_app.state``.
+
+    The settings-API PATCH/DELETE handlers read the registry from
+    ``request.app.state.override_callbacks`` to fire the rebind inline; requests
+    routed to the mounted sub-app resolve ``request.app`` to ``tasks_app``, so the
+    registry must live on the module-level sub-app's state -- not the (parent)
+    ``app`` passed to ``tasks_lifespan`` under the combined ``app.main:app``.
+    """
+    callbacks = tasks_app.state.override_callbacks
+    assert callbacks[(SettingClassEnum.TASKS_SETTINGS, "NOMAD")] is _reconcile_nomad
 
 
 @pytest.mark.asyncio

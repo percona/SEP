@@ -219,6 +219,13 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ),
         (SettingClassEnum.SETTINGS, "PMM"): _invalidate_pmm_clients,
     }
+    # Publish the registry on the SEP sub-app's state (module-level ``sep_app``),
+    # not the ``app`` argument: under the combined ``app.main:app`` that argument
+    # is the parent, but requests to ``/api/sep/admin/settings`` resolve
+    # ``request.app`` to the mounted ``sep_app``, so the settings-API handlers must
+    # find the registry there to fire a rebind inline (without it the rebind would
+    # wait for -- and be missed by -- the next background refresh cycle).
+    sep_app.state.override_callbacks = callbacks
     async with settings_override_refresher(
         get_async_session_maker,
         {

@@ -427,3 +427,70 @@ class TestTasksSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["has_override"] is True
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsInlineRebind:
+    """Fire the registered rebind callbacks on an inline PATCH/DELETE.
+
+    The background refresher only fires a rebind callback when *it* observes a
+    snapshot diff (the snapshot before its ``publish_snapshot`` vs the one after).
+    But the PATCH/DELETE handlers publish the new snapshot inline, so by the next
+    refresh cycle the proxy already holds the new value and the cycle's diff is
+    empty -- the rebind never fires, and the live ``NomadExecutor`` held by
+    ``NomadLifecycle`` keeps serving the old config until restart. The handler
+    must therefore fire the registered callbacks for the keys it just changed.
+    """
+
+    @pytest.fixture(name="nomad_callback_spy")
+    def nomad_callback_spy_fixture(self) -> Iterator[AsyncMock]:
+        """Register a spy as the ``(TASKS_SETTINGS, NOMAD)`` callback on app state.
+
+        Reaches the handler via ``request.app.state.override_callbacks`` (the same
+        registry the lifespan publishes), starting from a clean proxy snapshot and
+        restoring the prior registry on teardown.
+        """
+        spy = AsyncMock()
+        original = getattr(tasks_app.state, "override_callbacks", None)
+        tasks_app.state.override_callbacks = {
+            (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): spy,
+        }
+        tasks_settings._set_snapshot({})
+        yield spy
+        tasks_app.state.override_callbacks = original
+        tasks_settings._set_snapshot({})
+
+    async def test_patch_nomad_fires_rebind_callback(
+        self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
+    ) -> None:
+        """PATCHing ``NOMAD`` fires its rebind callback inline, before any refresh cycle."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        nomad_callback_spy.assert_awaited_once()
+
+    async def test_patch_unrelated_key_does_not_fire_nomad_callback(
+        self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
+    ) -> None:
+        """PATCHing a non-``NOMAD`` key leaves the ``NOMAD`` rebind callback untouched."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"STALENESS_THRESHOLD_SECONDS": 4242},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        nomad_callback_spy.assert_not_awaited()
+
+    async def test_delete_nomad_override_fires_rebind_callback(
+        self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
+    ) -> None:
+        """Reverting a ``NOMAD`` override fires its rebind callback inline."""
+        admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+        )
+        nomad_callback_spy.reset_mock()
+        response = admin_test_client.delete("/admin/settings/TasksSettings/NOMAD")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        nomad_callback_spy.assert_awaited_once()

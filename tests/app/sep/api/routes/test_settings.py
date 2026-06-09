@@ -18,11 +18,11 @@
 from collections.abc import AsyncIterator, Iterator
 from string import Template
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from fastapi import status
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -45,7 +45,7 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
     validate_csrf,
 )
-from app.sep.main import sep_app
+from app.sep.main import sep_app, sep_overrides_lifespan
 from app.sep.middleware.messages.config import messages_settings
 from app.sep.snippets.config import snippets_settings
 
@@ -772,3 +772,77 @@ class TestSepSettingsSecondaryClasses:
             assert target_level == messages_settings.LEVEL
         finally:
             messages_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestSepSettingsInlineRebind:
+    """Fire the SEP rebind callbacks on an inline PATCH.
+
+    Same defect as the Tasks ``NOMAD`` rebind: the endpoint rebinders are fired
+    only on a refresher-observed snapshot diff, but the PATCH handler publishes
+    the new snapshot inline, so the next refresh cycle sees no change. The handler
+    must fire the registered callback for the changed key itself.
+    """
+
+    @pytest.fixture(name="endpoint_callback_spy")
+    def endpoint_callback_spy_fixture(self) -> Iterator[AsyncMock]:
+        """Register a spy as the ``(SEP_SETTINGS, INVENTORY_ENDPOINT)`` callback on state."""
+        spy = AsyncMock()
+        original = getattr(sep_app.state, "override_callbacks", None)
+        sep_app.state.override_callbacks = {
+            (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"): spy,
+        }
+        sep_settings._set_snapshot({})
+        yield spy
+        sep_app.state.override_callbacks = original
+        sep_settings._set_snapshot({})
+
+    async def test_patch_inventory_endpoint_fires_rebind_callback(
+        self, api_admin_client: TestClient, endpoint_callback_spy: AsyncMock
+    ) -> None:
+        """PATCHing ``INVENTORY_ENDPOINT`` fires its rebind callback inline."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"INVENTORY_ENDPOINT": "https://new-inventory.example.org"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        endpoint_callback_spy.assert_awaited_once()
+
+    async def test_patch_unrelated_key_does_not_fire_endpoint_callback(
+        self, api_admin_client: TestClient, endpoint_callback_spy: AsyncMock
+    ) -> None:
+        """PATCHing an unrelated SEP key leaves the endpoint rebinder untouched."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 17},
+        )
+        try:
+            assert response.status_code == status.HTTP_200_OK
+            endpoint_callback_spy.assert_not_awaited()
+        finally:
+            sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestSepOverridesLifespanWiring:
+    """Publish the rebind registry on ``sep_app.state`` from the overrides lifespan."""
+
+    async def test_lifespan_publishes_override_callbacks_on_sep_app_state(self) -> None:
+        """``sep_overrides_lifespan`` exposes the endpoint/PMM rebinders on state.
+
+        The handler reads ``request.app.state.override_callbacks``; for SEP routes
+        ``request.app`` resolves to the module-level ``sep_app`` mount, so the
+        registry must be published there -- not on the (parent) ``app`` argument
+        threaded through ``sep_overrides_lifespan`` under the combined app.
+        """
+        original = getattr(sep_app.state, "override_callbacks", None)
+        try:
+            async with sep_overrides_lifespan(FastAPI()):
+                keys = set(sep_app.state.override_callbacks)
+            assert keys == {
+                (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"),
+                (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
+                (SettingClassEnum.SETTINGS, "PMM"),
+            }
+        finally:
+            sep_app.state.override_callbacks = original
