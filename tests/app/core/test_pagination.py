@@ -15,6 +15,9 @@
 
 """Define tests for app.core.pagination."""
 
+import inspect
+from typing import get_args
+
 import pytest
 from pydantic import ValidationError
 
@@ -28,6 +31,7 @@ from app.core.pagination import (
     PaginatedResponse,
     Pagination,
 )
+from app.core.pagination.deps import make_pagination_dep
 
 TOTAL_ITEMS = 5
 PAGE_SIZE = 2
@@ -223,6 +227,23 @@ class TestFetchAllItems:
 
         with pytest.raises(ValidationError):
             await fetch_all_items(get_page, page_size=0)
+
+
+class TestMakePaginationDep:
+    """Test custom pagination dependency factory."""
+
+    def test_rejects_max_limit_above_global_cap(self) -> None:
+        """Fail fast when max_limit exceeds MAX_PAGINATION_LIMIT."""
+        with pytest.raises(ValueError, match="MAX_PAGINATION_LIMIT"):
+            make_pagination_dep(max_limit=MAX_PAGINATION_LIMIT + 1)
+
+    def test_clamps_default_limit_to_max_limit(self) -> None:
+        """Default limit must not exceed the factory cap."""
+        custom_cap = 10
+        alias = make_pagination_dep(max_limit=custom_cap)
+        dep = get_args(alias)[1].dependency
+        limit_default = inspect.signature(dep).parameters["limit"].default.default
+        assert limit_default == custom_cap
 
 
 class TestFetchAllDictItems:
