@@ -34,6 +34,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.models import BaseCaseInsensitiveModel
+from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
@@ -516,11 +517,12 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             "node_type": node_type,
         }
         params = {key: value for key, value in params.items() if value is not None}
-        params["limit"] = 0
-        response = await self.inventory_api.get("/nodes/", params=params)
-        return [
-            CreatedNode.model_validate(node_data) for node_data in response["items"]
-        ]
+        nodes = await fetch_all_dict_items(
+            lambda pagination: self.inventory_api.get(
+                "/nodes/", params={**params, **pagination.model_dump()}
+            )
+        )
+        return [CreatedNode.model_validate(node_data) for node_data in nodes]
 
     @alru_cache
     async def get_inventory_node(self, node_id: int) -> CreatedNode:
@@ -602,14 +604,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: A list of retrieved CreatedSchema instances.
         :rtype: list[CreatedSchema]
         """
-        response = await self.inventory_api.get(
-            f"/services/{service_id}/schemas/",
-            params={"include_tables": "true", "limit": 0},
+        schema_data = await fetch_all_dict_items(
+            lambda pagination: self.inventory_api.get(
+                f"/services/{service_id}/schemas/",
+                params={"include_tables": "true", **pagination.model_dump()},
+            )
         )
-        return [
-            CreatedSchema.model_validate(schema_data)
-            for schema_data in response["items"]
-        ]
+        return [CreatedSchema.model_validate(schema) for schema in schema_data]
 
     async def delete_node(self, created_node: CreatedNode) -> None:
         """Delete a node from the inventory system.

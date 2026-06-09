@@ -23,10 +23,11 @@ route for safety.
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from fastapi import status as http_status
 
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -67,13 +68,14 @@ router.include_router(restore_api_router, prefix="/restores")
 @router.get("/")
 async def backup_mongo_api_list(
     tasks_api: TaskAPI,
+    pagination: PaginationDep,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=0, le=200),
 ) -> PaginatedResponse[BackupTaskResponse]:
     """List parent PBM backup config tasks."""
     return await get_backup_mongo_api_task_responses(
-        tasks_api, status=status, offset=offset, limit=limit
+        tasks_api,
+        pagination=pagination,
+        status=status,
     )
 
 

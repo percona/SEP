@@ -34,6 +34,7 @@ from app.core.exceptions import (
     HTTPRedirectException,
     HTTPServiceUnavailableException,
 )
+from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.models import CasdoorUser
 from app.sep.config import Plugin, sep_settings
 from app.sep.crud import AppStateManager
@@ -1047,7 +1048,9 @@ class TestGetExecutorHostsContext:
         ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "db-replica"
-        mock_inventory_api.get.assert_called_once_with("/nodes/", params={"limit": 0})
+        mock_inventory_api.get.assert_called_once_with(
+            "/nodes/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
+        )
 
     @pytest.mark.asyncio
     async def test_returns_fallback_when_inventory_raises(self) -> None:

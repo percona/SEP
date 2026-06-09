@@ -23,6 +23,7 @@ from fastapi import HTTPException, status
 from pydantic import SecretStr
 
 from app.core.config import settings
+from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.deps import (
@@ -111,11 +112,19 @@ def created_table(created_schema) -> CreatedTable:
 @pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
 def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
     """Test listing nodes."""
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     mock_task_api_dep.get.return_value = []
     response = test_client.get("/inventory/")
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    mock_inventory_api_dep.get.assert_any_await("/nodes/", params={"limit": 0})
+    mock_inventory_api_dep.get.assert_any_await(
+        "/nodes/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
+    )
     mock_task_api_dep.get.assert_any_await("/inventory-sync/periodic/")
 
 
