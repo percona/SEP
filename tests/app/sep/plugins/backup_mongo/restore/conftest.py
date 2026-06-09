@@ -52,5 +52,5 @@ def restore_create_no_service() -> RestoreCreate:
 
 @pytest.fixture
 def restore_task_write(restore_create: RestoreCreate) -> RestoreTaskWrite:
-    """Sample RestoreTaskWrite JSON body aligned with restore_create."""
+    """Define a sample RestoreTaskWrite JSON body aligned with restore_create."""
     return RestoreTaskWrite.model_validate(restore_create.model_dump(mode="json"))
