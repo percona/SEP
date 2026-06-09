@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 const PLUGIN_ROUTE = '/plugins/archives';
 
@@ -92,6 +93,10 @@ async function mockArchivesApis(page: Page): Promise<void> {
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {

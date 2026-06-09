@@ -50,3 +50,5 @@ export type {
   PatchSettingVars,
   ResetSettingVars,
 } from './useSettings';
+export { useEnabledApps, ENABLED_APPS_QUERY_KEY } from './useEnabledApps';
+export type { EnabledApp } from './useEnabledApps';
