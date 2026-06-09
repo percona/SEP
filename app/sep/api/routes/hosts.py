@@ -89,7 +89,7 @@ async def list_hosts(
 
     try:
         nodes = await fetch_all_dict_items(
-            lambda pagination: inventory_api.get("/", params=pagination.as_params())
+            lambda pagination: inventory_api.get("/", params=pagination.model_dump())
         )
         display_names = address_to_name_index(
             (node["name"], node["address"]) for node in nodes

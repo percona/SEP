@@ -62,10 +62,6 @@ class Pagination(BaseModel):
         le=MAX_PAGINATION_LIMIT,
     )
 
-    def as_params(self) -> dict[str, int]:
-        """Return query parameters for forwarding pagination to upstream APIs."""
-        return {"offset": self.offset, "limit": self.limit}
-
     def slice(self, seq: Sequence[T]) -> list[T]:
         """Return the page slice of ``seq`` for this offset/limit window.
 

@@ -59,7 +59,7 @@ async def proxy_inventory_selector(
             raw = await inventory_api.get(
                 url,
                 params={
-                    **pagination.as_params(),
+                    **pagination.model_dump(),
                     **({"search": search} if search else {}),
                 },
             )

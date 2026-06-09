@@ -48,7 +48,7 @@ async def list_schemas(
             lambda pagination: inventory_api.get(
                 f"/services/{service_id}/schemas/",
                 params={
-                    **pagination.as_params(),
+                    **pagination.model_dump(),
                     **({"search": search} if search else {}),
                 },
             )
@@ -72,7 +72,7 @@ async def list_tables(
             lambda pagination: inventory_api.get(
                 f"/schemas/{schema_id}/tables/",
                 params={
-                    **pagination.as_params(),
+                    **pagination.model_dump(),
                     **({"search": search} if search else {}),
                 },
             )

@@ -173,7 +173,7 @@ async def pg_backups_detail(
                 "/services/",
                 params={
                     "service_type": ServiceTypeEnum.POSTGRESQL,
-                    **pagination.as_params(),
+                    **pagination.model_dump(),
                 },
             )
         )

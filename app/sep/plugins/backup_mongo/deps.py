@@ -356,7 +356,7 @@ def _backup_parent_list_params(pagination: Pagination) -> dict[str, Any]:
         "owner": TaskOwner.BACKUP_MONGO.value,
         "parent_is_null": "true",
         "backup_type": BackupType.PBM_CONFIG.value,
-        **pagination.as_params(),
+        **pagination.model_dump(),
     }
 
 

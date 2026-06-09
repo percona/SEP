@@ -391,7 +391,7 @@ async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
                     "/services/",
                     params={
                         "service_type": service_type.value,
-                        **pagination.as_params(),
+                        **pagination.model_dump(),
                     },
                 )
             )

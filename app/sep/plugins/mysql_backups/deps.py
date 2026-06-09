@@ -384,7 +384,7 @@ async def get_mysql_backups_api_task_responses(
     """
     response = await tasks_api.get(
         "/",
-        params={"owner": TaskOwner.BACKUPS.value, **pagination.as_params()},
+        params={"owner": TaskOwner.BACKUPS.value, **pagination.model_dump()},
     )
     tasks = [Task.model_validate(task) for task in response["items"]]
     sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)

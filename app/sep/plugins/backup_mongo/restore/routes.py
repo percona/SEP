@@ -315,7 +315,7 @@ async def restores_detail(
                 "/services/",
                 params={
                     "service_type": ServiceTypeEnum.MONGODB,
-                    **pagination.as_params(),
+                    **pagination.model_dump(),
                 },
             )
         )

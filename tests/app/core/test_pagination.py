@@ -60,10 +60,10 @@ class TestPaginationConstraints:
 class TestPaginationHelpers:
     """Test Pagination helper methods."""
 
-    def test_as_params(self) -> None:
-        """Return offset and limit as a query-param dict."""
+    def test_model_dump_for_query_params(self) -> None:
+        """Serialize offset and limit for forwarding to upstream APIs."""
         pagination = Pagination(offset=10, limit=25)
-        assert pagination.as_params() == {"offset": 10, "limit": 25}
+        assert pagination.model_dump() == {"offset": 10, "limit": 25}
 
     def test_slice_empty_sequence(self) -> None:
         """Return an empty list when the sequence is empty."""

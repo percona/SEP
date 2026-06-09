@@ -519,7 +519,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         params = {key: value for key, value in params.items() if value is not None}
         nodes = await fetch_all_dict_items(
             lambda pagination: self.inventory_api.get(
-                "/", params={**params, **pagination.as_params()}
+                "/", params={**params, **pagination.model_dump()}
             )
         )
         return [CreatedNode.model_validate(node_data) for node_data in nodes]
@@ -605,7 +605,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         schema_data = await fetch_all_dict_items(
             lambda pagination: self.inventory_api.get(
                 f"/services/{service_id}/schemas/",
-                params={"include_tables": "true", **pagination.as_params()},
+                params={"include_tables": "true", **pagination.model_dump()},
             )
         )
         return [CreatedSchema.model_validate(schema) for schema in schema_data]

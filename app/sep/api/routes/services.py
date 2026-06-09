@@ -47,7 +47,7 @@ async def list_services(
     :return: Paginated services payload.
     :rtype: PaginatedResponse[ServiceResponse]
     """
-    params: dict[str, int | str] = pagination.as_params()
+    params: dict[str, int | str] = pagination.model_dump()
     if service_type is not None:
         params["service_type"] = service_type.value
     response = await inventory_api.get("/services/", params=params)

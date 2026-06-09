@@ -95,7 +95,7 @@ async def get_dashboard_stats(
 
     async def _tasks() -> int:
         task_list: dict[str, Any] = await tasks_api.get(
-            "/", params=Pagination(offset=0, limit=1).as_params()
+            "/", params=Pagination(offset=0, limit=1).model_dump()
         )
         return int(task_list.get("total", 0))
 

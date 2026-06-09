@@ -771,7 +771,7 @@ async def get_executor_hosts_context(
     """
     try:
         nodes = await fetch_all_dict_items(
-            lambda pagination: inventory_api.get("/", params=pagination.as_params())
+            lambda pagination: inventory_api.get("/", params=pagination.model_dump())
         )
         display_names = {node["address"]: node["name"] for node in nodes}
     except (HTTPException, TypeError, KeyError, OSError):
@@ -852,7 +852,7 @@ async def get_tasks_context(
     services = await fetch_all_dict_items(
         lambda pagination: inventory_api.get(
             "/services/",
-            params={"service_type": service_type, **pagination.as_params()},
+            params={"service_type": service_type, **pagination.model_dump()},
         )
     )
 

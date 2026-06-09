@@ -178,7 +178,7 @@ async def mysql_backups_detail(
                 "/services/",
                 params={
                     "service_type": ServiceTypeEnum.MYSQL,
-                    **pagination.as_params(),
+                    **pagination.model_dump(),
                 },
             )
         )

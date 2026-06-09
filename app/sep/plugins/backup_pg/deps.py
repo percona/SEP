@@ -285,7 +285,7 @@ async def get_backup_pg_api_task_responses(
     """
     response = await tasks_api.get(
         "/",
-        params={"owner": TaskOwner.BACKUP_PG.value, **pagination.as_params()},
+        params={"owner": TaskOwner.BACKUP_PG.value, **pagination.model_dump()},
     )
     tasks = [Task.model_validate(item) for item in response["items"]]
     sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)

@@ -106,7 +106,7 @@ async def node_list(
 ) -> HTMLResponse:
     """List Nodes."""
     context["inventory"] = await fetch_all_dict_items(
-        lambda pagination: inventory_api.get("/", params=pagination.as_params())
+        lambda pagination: inventory_api.get("/", params=pagination.model_dump())
     )
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
