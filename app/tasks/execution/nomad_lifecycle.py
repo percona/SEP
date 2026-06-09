@@ -68,8 +68,8 @@ class NomadLifecycle:
     in ``app.state.nomad_lifecycle`` rather than in the override snapshot, which
     stores only a diff-stable config fingerprint. :meth:`reconcile` is wired as
     the ``(TASKS_SETTINGS, NOMAD)`` rebind callback by ``tasks_lifespan``; it
-    opens the new executor before swapping and drains the old one afterwards, so
-    in-flight requests reading :attr:`current` never observe a closed session.
+    opens the new executor before swapping and closes the old one afterwards, so
+    a reader resolving :attr:`current` after the swap sees the new open session.
 
     :param app: The FastAPI application whose ``state`` exposes the holder to
         request-scoped readers via ``get_executor``.
@@ -129,7 +129,7 @@ class NomadLifecycle:
 
         Opens the new executor first, swaps the reference (a GIL-atomic
         assignment, so readers of :attr:`current` see either the old or the new
-        executor but never a half-built one), then drains the old one. A no-op
+        executor but never a half-built one), then closes the old one. A no-op
         when the config is unchanged. A construction failure propagates to the
         refresher's per-cycle handler, leaving the old executor live.
 
@@ -137,8 +137,8 @@ class NomadLifecycle:
         atomic against a concurrent reconcile. This is safe because
         :meth:`NomadExecutor.__aenter__` only builds an aiohttp ``ClientSession``
         (no network I/O), so it never blocks the lock for a meaningful duration;
-        the old executor is drained *outside* the lock to keep shutdown's
-        :meth:`__aexit__` from waiting on the drain.
+        the old executor is closed *outside* the lock to keep shutdown's
+        :meth:`__aexit__` from waiting on the close.
 
         :raises ValidationError: If the overridden config fingerprint cannot be
             reconstructed into a :class:`NomadExecutor` (propagated from

@@ -97,7 +97,7 @@ def _make_remote_api_rebinder(
 
     The returned callback handles both deployment shapes. Under standalone
     ``sep_lifespan`` the client lives in ``app.state.<name>``: it is rebuilt on
-    the new endpoint and the old one drained. Under the combined ``app.main:app``
+    the new endpoint and the old one closed. Under the combined ``app.main:app``
     no ``app.state`` client exists -- ``get_*_client`` falls back to the
     registry-cached ``get_remote_api`` per request, which already key-misses to
     the new HOT endpoint -- so the callback only evicts any stale client left on
@@ -244,9 +244,9 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     refresh fires no callbacks, the endpoint rebinders never dereference
     not-yet-built ``app.state``.
 
-    The clients are drained from ``app.state`` (not from the originals captured
+    The clients are closed via ``app.state`` (not via the originals captured
     at startup) on shutdown, so a client a rebind callback swapped in mid-run is
-    the one that gets closed -- the swapped-out original was already drained by
+    the one that gets closed -- the swapped-out original was already closed by
     the rebinder.
 
     :param app: The FastAPI application instance.
