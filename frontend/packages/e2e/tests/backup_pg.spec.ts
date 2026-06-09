@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 const PLUGIN_ROUTE = '/backups/postgresql';
 
@@ -154,6 +155,10 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
         contentType: 'application/json',
         body: JSON.stringify(MOCK_USER),
       });
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname === '/api/plugins/backup_pg/schema') {

@@ -20,8 +20,9 @@ from uuid import uuid4
 
 import pytest
 
-from app.sep.crud import SyncInstanceManager, SyncItemManager
+from app.sep.crud import AppStateManager, SyncInstanceManager, SyncItemManager
 from app.sep.models import (
+    AppState,
     SyncInstance,
     SyncInventoryEntityTypeEnum,
     SyncItem,
@@ -333,3 +334,42 @@ class TestSyncInstanceManagerFinishHangingItems:
 
             mock_save_batch.assert_awaited_once_with(session)
             assert result == []
+
+
+class TestAppStateManager:
+    """Test suite for AppStateManager against a real session."""
+
+    @pytest.mark.asyncio
+    async def test_is_enabled_true_for_enabled_row(self, session) -> None:
+        """``is_enabled`` returns ``True`` when the row is enabled."""
+        session.add(AppState(app_key="snippets", enabled=True))
+        await session.commit()
+        assert await AppStateManager.is_enabled(session, "snippets") is True
+
+    @pytest.mark.asyncio
+    async def test_is_enabled_false_for_disabled_row(self, session) -> None:
+        """``is_enabled`` returns ``False`` when the row is disabled."""
+        session.add(AppState(app_key="snippets", enabled=False))
+        await session.commit()
+        assert await AppStateManager.is_enabled(session, "snippets") is False
+
+    @pytest.mark.asyncio
+    async def test_is_enabled_true_for_missing_row(self, session) -> None:
+        """A missing row is treated as enabled (active until explicitly disabled)."""
+        assert await AppStateManager.is_enabled(session, "snippets") is True
+
+    @pytest.mark.asyncio
+    async def test_all_states_returns_full_mapping(self, session) -> None:
+        """``all_states`` returns the full ``app_key`` -> ``enabled`` mapping."""
+        session.add(AppState(app_key="snippets", enabled=True))
+        session.add(AppState(app_key="checksums", enabled=False))
+        await session.commit()
+        assert await AppStateManager.all_states(session) == {
+            "snippets": True,
+            "checksums": False,
+        }
+
+    @pytest.mark.asyncio
+    async def test_all_states_empty_table(self, session) -> None:
+        """``all_states`` returns an empty mapping when no rows exist."""
+        assert await AppStateManager.all_states(session) == {}

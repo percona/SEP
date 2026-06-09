@@ -59,6 +59,8 @@ from app.sep.deps import (
     IsAuthenticated,
     IsCsrfValidated,
     IsNotAuthenticated,
+    PROTECTED_APP_KEYS,
+    require_app_enabled,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
@@ -71,7 +73,12 @@ from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
-JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/", "/api/sep/")
+JSON_API_PATH_PREFIXES: tuple[str, ...] = (
+    "/api/plugins/",
+    "/api/sep/",
+    "/api/admin/",
+    "/api/apps/",
+)
 
 
 async def sep_startup() -> None:
@@ -189,8 +196,14 @@ sep_app.add_middleware(messages.MessagesMiddleware)
 imported_plugins = set()
 for plugin in sep_settings.PLUGINS:
     router = import_var(plugin.router_path)
-    sep_app.include_router(router, prefix=plugin.uri_path)
-    imported_plugins.add(plugin.module_name.split(".")[-1])
+    plugin_key = plugin.module_name.split(".")[-1]
+    plugin_deps = (
+        []
+        if plugin_key in PROTECTED_APP_KEYS
+        else [Depends(require_app_enabled(plugin_key))]
+    )
+    sep_app.include_router(router, prefix=plugin.uri_path, dependencies=plugin_deps)
+    imported_plugins.add(plugin_key)
 
 _TASK_INFRA_PLUGINS = frozenset(
     {
@@ -261,13 +274,15 @@ async def internal_error_handler(
         "Internal Server Error. Please contact the administrators for help.",
         sticky=True,
     )
+    async with get_async_session_maker()() as session:
+        default_context = await get_default_context(request, user, base_url, session)
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         name="error.html.j2",
         context={
             "exception": "".join(format_exception(exc, limit=-1, chain=False)),
-            **await get_default_context(request, user, base_url),
+            **default_context,
         },
     )
 
@@ -295,13 +310,15 @@ async def custom_404_handler(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
         )
+    async with get_async_session_maker()() as session:
+        default_context = await get_default_context(request, user, base_url, session)
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_404_NOT_FOUND,
         name="404.html.j2",
         context={
             "exception": exc,
-            **await get_default_context(request, user, base_url),
+            **default_context,
         },
     )
 

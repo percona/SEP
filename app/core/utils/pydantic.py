@@ -17,6 +17,7 @@
 
 __all__ = [
     "CustomFieldMetadata",
+    "annotation_pydantic_class",
     "extract_model_from_instance",
     "loc_to_dot_sep",
     "run_pydantic_type_validator",
@@ -24,7 +25,8 @@ __all__ = [
 
 from collections.abc import Hashable
 from contextlib import suppress
-from typing import Any, NamedTuple, TypeVar
+from types import UnionType
+from typing import Any, get_args, get_origin, NamedTuple, TypeVar, Union
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic.fields import Field, FieldInfo
@@ -124,6 +126,30 @@ def field_with_metadata(
     field = Field(*args, **kwargs)
     field.metadata.extend(CustomFieldMetadata.from_dict(metadata or {}))
     return field
+
+
+def annotation_pydantic_class(annotation: Any) -> type[BaseModel] | None:
+    """Return the Pydantic ``BaseModel`` subclass referenced by ``annotation``, if any.
+
+    Unwraps ``X | None`` / ``Optional[X]`` and returns the first ``BaseModel``
+    subclass found in the type arguments. Returns ``None`` when the annotation
+    is a primitive, a generic container (``list[X]``, ``dict[K, V]``), or any
+    other non-BaseModel type -- those are not traversable by the nested-override
+    mechanism.
+
+    :param annotation: The Pydantic field annotation to inspect.
+    :type annotation: Any
+    :return: The referenced ``BaseModel`` subclass, or ``None``.
+    :rtype: type[BaseModel] | None
+    """
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    origin = get_origin(annotation)
+    if origin in {Union, UnionType}:
+        for arg in get_args(annotation):
+            if isinstance(arg, type) and issubclass(arg, BaseModel):
+                return arg
+    return None
 
 
 def run_pydantic_type_validator(validate_class: type[V], obj: Any) -> V:
