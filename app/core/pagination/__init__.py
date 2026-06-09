@@ -22,6 +22,7 @@ from app.core.pagination.models import (
     fetch_all_dict_items,
     fetch_all_items,
     MAX_PAGINATION_LIMIT,
+    PaginatedDictPage,
     PaginatedResponse,
     Pagination,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "DEFAULT_PAGINATION_LIMIT",
     "DEFAULT_PAGINATION_OFFSET",
     "MAX_PAGINATION_LIMIT",
+    "PaginatedDictPage",
     "PaginatedResponse",
     "Pagination",
     "PaginationDep",

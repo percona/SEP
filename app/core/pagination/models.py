@@ -21,7 +21,7 @@ from collections.abc import (  # noqa: TC003 — validate_call resolves these at
     Awaitable,
     Callable,
 )
-from typing import Any, Generic, TYPE_CHECKING, TypeVar
+from typing import Any, Generic, NotRequired, TYPE_CHECKING, TypedDict, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -34,6 +34,25 @@ U = TypeVar("U")
 MAX_PAGINATION_LIMIT = 200
 DEFAULT_PAGINATION_OFFSET = 0
 DEFAULT_PAGINATION_LIMIT = 50
+
+
+class PaginatedDictPage(TypedDict):
+    """Raw paginated upstream API page before envelope normalization.
+
+    :param items: Rows returned for the current page.
+    :type items: list[Any]
+    :param total: Total matching rows across all pages (filled in when omitted).
+    :type total: int | None
+    :param offset: Zero-based offset for this page (filled in when omitted).
+    :type offset: int | None
+    :param limit: Page size for this request (filled in when omitted).
+    :type limit: int | None
+    """
+
+    items: list[Any]
+    total: NotRequired[int]
+    offset: NotRequired[int]
+    limit: NotRequired[int]
 
 
 class Pagination(BaseModel):
@@ -152,14 +171,14 @@ async def fetch_all_items(
 
 @validate_call
 async def fetch_all_dict_items(
-    fetch_page: Callable[[Pagination], Awaitable[dict[str, Any]]],
+    fetch_page: Callable[[Pagination], Awaitable[PaginatedDictPage]],
     *,
     page_size: PositiveInt = MAX_PAGINATION_LIMIT,
 ) -> list[Any]:
     """Fetch every item from paginated dict responses (e.g. RemoteAPI payloads).
 
     :param fetch_page: Async callable returning one paginated dict per window.
-    :type fetch_page: Callable[[Pagination], Awaitable[dict[str, Any]]]
+    :type fetch_page: Callable[[Pagination], Awaitable[PaginatedDictPage]]
     :param page_size: ``limit`` used for each upstream request.
     :type page_size: PositiveInt
     :return: All ``items`` across every page, in upstream order.
@@ -168,12 +187,13 @@ async def fetch_all_dict_items(
 
     async def get_page(pagination: Pagination) -> PaginatedResponse[Any]:
         raw = await fetch_page(pagination)
-        if "total" not in raw:
-            raw = {**raw, "total": len(raw.get("items", []))}
-        if "offset" not in raw:
-            raw = {**raw, "offset": pagination.offset}
-        if "limit" not in raw:
-            raw = {**raw, "limit": pagination.limit}
-        return PaginatedResponse.model_validate(raw)
+        envelope: dict[str, Any] = dict(raw)
+        if "total" not in envelope:
+            envelope["total"] = len(envelope.get("items", []))
+        if "offset" not in envelope:
+            envelope["offset"] = pagination.offset
+        if "limit" not in envelope:
+            envelope["limit"] = pagination.limit
+        return PaginatedResponse.model_validate(envelope)
 
     return await fetch_all_items(get_page, page_size=page_size)

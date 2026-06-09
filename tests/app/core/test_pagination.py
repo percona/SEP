@@ -24,6 +24,7 @@ from app.core.pagination import (
     fetch_all_dict_items,
     fetch_all_items,
     MAX_PAGINATION_LIMIT,
+    PaginatedDictPage,
     PaginatedResponse,
     Pagination,
 )
@@ -202,7 +203,7 @@ class TestFetchAllDictItems:
     async def test_fetch_all_dict_items(self) -> None:
         """Concatenate items from validated paginated dict responses."""
 
-        async def fetch_page(pagination: Pagination) -> dict[str, object]:
+        async def fetch_page(pagination: Pagination) -> PaginatedDictPage:
             if pagination.offset == 0:
                 return {
                     "items": [0, 1],
