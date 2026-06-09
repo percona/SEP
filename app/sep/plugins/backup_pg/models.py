@@ -122,9 +122,7 @@ class BackupTaskWrite(BaseModel):
     :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the PostgreSQL service.
     :type service_id: int
-    :param stanza: The pgBackRest stanza name as configured in pgbackrest.conf on
-        the host. Must match an existing stanza — this value is passed verbatim
-        as ``--stanza`` to every ``pgbackrest`` invocation.
+    :param stanza: pgBackRest stanza name from pgbackrest.conf on the host (for example, ``sep-test``). Passed as ``--stanza`` to pgbackrest commands.
     :type stanza: SafeStanza
     :param alert_on_fail: If True, fire a PMM alert on task failure.
     :type alert_on_fail: bool
