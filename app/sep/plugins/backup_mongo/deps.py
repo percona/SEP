@@ -27,7 +27,7 @@ from aiohttp import ClientResponseError
 from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.models import PaginatedResponse
+from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -350,18 +350,13 @@ def build_backup_mongo_api_task_response(
     )
 
 
-def _backup_parent_list_params(
-    *,
-    offset: int,
-    limit: int,
-) -> dict[str, Any]:
+def _backup_parent_list_params(pagination: Pagination) -> dict[str, Any]:
     """Build upstream task-list query params for parent ``pbm_config`` rows."""
     return {
         "owner": TaskOwner.BACKUP_MONGO.value,
         "parent_is_null": "true",
         "backup_type": BackupType.PBM_CONFIG.value,
-        "offset": offset,
-        "limit": limit,
+        **pagination.model_dump(),
     }
 
 
@@ -392,31 +387,29 @@ def _gathered_task_status(
 
 async def get_backup_mongo_api_task_responses(
     tasks_api: TaskAPI,
+    *,
+    pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = 0,
-    limit: int = 50,
 ) -> PaginatedResponse[BackupTaskResponse]:
     """Retrieve a page of backup task responses for the JSON API.
 
     Uses one filtered upstream task list plus one batch latest-status lookup per
-    page. When ``status`` is set, the upstream list uses ``limit=0`` so
-    ``total`` reflects the parent count after the status filter.
+    page. When ``status`` is set, walks parent-task pages with bounded ``limit``
+    and applies latest-status filtering in-memory before slicing.
 
     :param tasks_api: The TaskAPI instance used to query backup tasks.
     :type tasks_api: TaskAPI
+    :param pagination: Validated offset/limit window for this page.
+    :type pagination: Pagination
     :param status: Optional latest-history status filter for the list.
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based starting offset for the page slice.
-    :type offset: int
-    :param limit: Maximum items returned for the page.
-    :type limit: int
     :return: The paginated backup task responses matching the requested filters.
     :rtype: PaginatedResponse[BackupTaskResponse]
     """
     if status is None:
         response = await tasks_api.get(
             "/",
-            params=_backup_parent_list_params(offset=offset, limit=limit),
+            params=_backup_parent_list_params(pagination),
         )
         parents = [Task.model_validate(item) for item in response["items"]]
         status_map = await _fetch_latest_task_statuses_for_names(
@@ -430,18 +423,19 @@ async def get_backup_mongo_api_task_responses(
             )
             for task in parents
         ]
-        return PaginatedResponse[BackupTaskResponse](
-            items=items,
-            total=response["total"],
-            offset=offset,
-            limit=limit,
+        return PaginatedResponse.from_pagination(
+            items,
+            response["total"],
+            pagination,
         )
 
-    response = await tasks_api.get(
-        "/",
-        params=_backup_parent_list_params(offset=0, limit=0),
+    parent_items = await fetch_all_dict_items(
+        lambda page_pagination: tasks_api.get(
+            "/",
+            params=_backup_parent_list_params(page_pagination),
+        )
     )
-    parents = [Task.model_validate(item) for item in response["items"]]
+    parents = [Task.model_validate(item) for item in parent_items]
     status_map = await _fetch_latest_task_statuses_for_names(
         tasks_api,
         [task.name for task in parents],
@@ -451,16 +445,15 @@ async def get_backup_mongo_api_task_responses(
         for task in parents
         if (task_status := status_map.get(task.name)) == status
     ]
-    page_pairs = task_status_pairs[offset : offset + limit]
+    page_pairs = pagination.slice(task_status_pairs)
     items = [
         build_backup_mongo_api_task_response(task, status=task_status)
         for task, task_status in page_pairs
     ]
-    return PaginatedResponse[BackupTaskResponse](
-        items=items,
-        total=len(task_status_pairs),
-        offset=offset,
-        limit=limit,
+    return PaginatedResponse.from_pagination(
+        items,
+        len(task_status_pairs),
+        pagination,
     )
 
 

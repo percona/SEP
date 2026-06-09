@@ -18,6 +18,7 @@
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 
+from app.core.pagination import fetch_all_dict_items, PaginatedDictPage, Pagination
 from app.sep.deps import InventoryAPI
 
 
@@ -50,14 +51,24 @@ async def proxy_inventory_selector(
     :return: Minimal selector options, or an empty list on Inventory 404.
     :rtype: list[InventorySelectorOption]
     """
-    params: dict[str, int | str] = {"limit": 0}
-    if search:
-        params["search"] = search
     try:
-        response = await inventory_api.get(url, params=params)
+
+        async def fetch_page(pagination: Pagination) -> PaginatedDictPage:
+            return await inventory_api.get(
+                url,
+                params={
+                    **pagination.model_dump(),
+                    **({"search": search} if search else {}),
+                },
+            )
+
+        items = await fetch_all_dict_items(fetch_page)
     except HTTPException as exc:
         if exc.status_code == status.HTTP_404_NOT_FOUND:
             return []
         raise
-    items = (response or {}).get("items", [])
-    return [InventorySelectorOption(id=item["id"], name=item["name"]) for item in items]
+    return [
+        InventorySelectorOption(id=item["id"], name=item["name"])
+        for item in items
+        if isinstance(item, dict)
+    ]
