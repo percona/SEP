@@ -158,7 +158,7 @@ class TestFetchAllItems:
         )
 
     @pytest.mark.asyncio
-    async def test_fetch_all_items_stops_on_short_page_despite_total(self) -> None:
+    async def test_fetch_all_items_stops_on_partial_page_despite_total(self) -> None:
         """Stop when a page returns fewer items than page_size even if total is larger."""
 
         async def get_page(_pagination: Pagination) -> PaginatedResponse[int]:
@@ -223,11 +223,32 @@ class TestFetchAllDictItems:
         )
 
     @pytest.mark.asyncio
-    async def test_fetch_all_dict_items_rejects_incomplete_page(self) -> None:
-        """Reject upstream pages missing required pagination envelope fields."""
+    async def test_fetch_all_dict_items_without_total(self) -> None:
+        """Walk every page when upstream omits total."""
+
+        async def fetch_page(pagination: Pagination) -> PaginatedDictPage:
+            if pagination.offset == 0:
+                return {
+                    "items": [0, 1],
+                    "offset": 0,
+                    "limit": PAGE_SIZE,
+                }
+            return {
+                "items": [2, 3, 4],
+                "offset": 2,
+                "limit": PAGE_SIZE,
+            }
+
+        assert await fetch_all_dict_items(fetch_page, page_size=PAGE_SIZE) == list(
+            range(TOTAL_ITEMS)
+        )
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_dict_items_rejects_invalid_items(self) -> None:
+        """Reject upstream pages whose ``items`` field is not a list."""
 
         async def fetch_page(_pagination: Pagination) -> PaginatedDictPage:
-            return {"items": [0, 1]}  # type: ignore[typeddict-item]
+            return {"items": "not-a-list"}  # type: ignore[typeddict-item]
 
         with pytest.raises(ValidationError):
             await fetch_all_dict_items(fetch_page)

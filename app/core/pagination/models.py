@@ -21,7 +21,7 @@ from collections.abc import (  # noqa: TC003 — validate_call resolves these at
     Awaitable,
     Callable,
 )
-from typing import Any, Generic, TYPE_CHECKING, TypedDict, TypeVar
+from typing import Any, Generic, NotRequired, TYPE_CHECKING, TypedDict, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -41,20 +41,47 @@ DEFAULT_PAGINATION_LIMIT = 50
 class PaginatedDictPage(TypedDict):
     """Raw paginated upstream API page.
 
+    Upstream may omit ``total``, ``offset``, or ``limit``; fetch helpers fill
+    those before walking pages (``total`` uses a high placeholder, never
+    ``len(items)`` alone).
+
     :param items: Rows returned for the current page.
     :type items: list[Any]
     :param total: Total matching rows across all pages.
-    :type total: int
+    :type total: NotRequired[int]
     :param offset: Zero-based offset for this page.
-    :type offset: int
+    :type offset: NotRequired[int]
     :param limit: Page size for this request.
-    :type limit: int
+    :type limit: NotRequired[int]
     """
 
     items: list[Any]
-    total: int
-    offset: int
-    limit: int
+    total: NotRequired[int]
+    offset: NotRequired[int]
+    limit: NotRequired[int]
+
+
+def _coerce_dict_page(
+    raw: Any,
+    pagination: Pagination,
+    page_size: int,
+) -> dict[str, Any]:
+    """Normalize a raw upstream payload into a paginated dict envelope."""
+    if isinstance(raw, list):
+        envelope: dict[str, Any] = {"items": raw}
+    elif isinstance(raw, dict):
+        envelope = dict(raw)
+    else:
+        envelope = {}
+    if "items" not in envelope:
+        envelope["items"] = []
+    if "offset" not in envelope:
+        envelope["offset"] = pagination.offset
+    if "limit" not in envelope:
+        envelope["limit"] = pagination.limit
+    if "total" not in envelope:
+        envelope["total"] = pagination.offset + len(envelope["items"]) + page_size
+    return envelope
 
 
 class Pagination(BaseModel):
@@ -165,8 +192,11 @@ async def fetch_all_items(
         if not page.items:
             break
         all_items.extend(page.items)
-        offset += len(page.items)
-        if offset >= page.total or len(page.items) < page_size:
+        page_item_count = len(page.items)
+        offset += page_item_count
+        if page_item_count != page_size:
+            break
+        if offset >= page.total:
             break
     return all_items
 
@@ -189,7 +219,8 @@ async def fetch_all_dict_items(
 
     async def get_page(pagination: Pagination) -> PaginatedResponse[Any]:
         raw = await fetch_page(pagination)
-        page = run_pydantic_type_validator(PaginatedDictPage, raw)
+        envelope = _coerce_dict_page(raw, pagination, page_size)
+        page = run_pydantic_type_validator(PaginatedDictPage, envelope)
         return PaginatedResponse.model_validate(page)
 
     return await fetch_all_items(get_page, page_size=page_size)
