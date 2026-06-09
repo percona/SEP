@@ -184,7 +184,7 @@ def _validate_patch_body(
         # Materializer-backed fields (PROVIDERS, FOOTER_TEMPLATE, NOMAD) produce
         # values that are not JSON-storable (a provider set, a Template, a
         # NomadExecutor); persist the raw JSON so build_snapshot re-materializes
-        # on load. Plain fields persist the coerced value as before.
+        # on load.
         to_apply.append((key, raw_value if materializer is not None else materialized))
 
     if errors:

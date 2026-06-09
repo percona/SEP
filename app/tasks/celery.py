@@ -791,9 +791,8 @@ async def _check_nomad_cert_expiry() -> None:
     from app.core.utils import utc_now
 
     # Runs in the Celery worker, which has no override refresher, so
-    # ``tasks_settings.NOMAD`` is always the real YAML ``NomadExecutor`` (never a
-    # fingerprint dict). If the worker later loads overrides, this read must move
-    # to the live executor owned by the lifecycle holder.
+    # ``tasks_settings.NOMAD`` is always the real YAML ``NomadExecutor``, never a
+    # fingerprint dict.
     nomad = tasks_settings.NOMAD
     warn_days = nomad.cert_expiry_warn_days
     now = utc_now()

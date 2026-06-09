@@ -118,8 +118,7 @@ def get_request_executor(
             try:
                 return holder.current
             except RuntimeError:
-                # Holder present but not started (e.g. a stale holder left on
-                # app.state post-shutdown); degrade to the request-less executor
+                # Stale holder left on app.state post-shutdown; degrade here
                 # instead of failing the request.
                 pass
     return get_executor(backend)

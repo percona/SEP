@@ -45,8 +45,6 @@ if TYPE_CHECKING:
 
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-    # Annotations only -- see app/core/settings_override/registry.py for the
-    # circular-import rationale.
     from app.core.config import BaseYamlSettings
 
 logger = logging.getLogger(__name__)

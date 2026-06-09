@@ -17,7 +17,7 @@
 
 import json
 import logging.config
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -50,6 +50,24 @@ logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
 
 
+async def _reconcile_nomad(_: Mapping[str, object]) -> None:
+    """Rebind the live Nomad executor when its override changed.
+
+    Registered as the ``(TASKS_SETTINGS, NOMAD)`` rebind callback by
+    :func:`tasks_lifespan`. :meth:`NomadLifecycle.__aexit__` clears the holder
+    before the override refresher task is cancelled, so a refresh cycle racing
+    shutdown can find ``tasks_app.state.nomad_lifecycle`` already gone; the
+    rebind is skipped in that window rather than raising a noisy callback error.
+
+    :param _: The new effective ``TasksSettings`` snapshot mapping. Unused -- the
+        holder reads the live ``NOMAD`` config itself when reconciling.
+    :type _: Mapping[str, object]
+    """
+    holder = getattr(tasks_app.state, "nomad_lifecycle", None)
+    if holder is not None:
+        await holder.reconcile()
+
+
 @asynccontextmanager
 async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage the Tasks API's lifespan.
@@ -76,13 +94,11 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with (
         settings_override_refresher(
             get_async_session_maker,
-            # ALERT_SETTINGS is intentionally NOT wired here. ``alert_settings``
-            # is a single shared module-level proxy; the SEP refresher
-            # (``sep_overrides_lifespan``) owns it. Wiring it here too would, in
-            # the combined ``app.main:app`` process, have both refreshers publish
-            # into the same proxy from their separate databases and clobber each
-            # other every cycle. Alert overrides are therefore loaded from the
-            # SEP database only.
+            # ALERT_SETTINGS is intentionally NOT wired here: ``alert_settings``
+            # is a single shared proxy owned by the SEP refresher. Wiring it here
+            # too would, in the combined ``app.main:app`` process, have both
+            # refreshers publish into it from their separate databases and clobber
+            # each other every cycle.
             {
                 SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
                     tasks_settings, TasksSettings
@@ -91,9 +107,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
             enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
             callbacks={
-                (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): (
-                    lambda _: tasks_app.state.nomad_lifecycle.reconcile()
-                ),
+                (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): _reconcile_nomad,
             },
         ),
         default_lifespan(app),
