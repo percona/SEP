@@ -30,7 +30,6 @@ from app.core.config import BaseYamlSettings
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.registry import (
-    _annotation_pydantic_class,
     _clear_cached_properties,
     _resolve_field_in_model,
     coerce_field_value,
@@ -38,6 +37,7 @@ from app.core.settings_override.registry import (
     is_hot_reloadable,
     is_nested_overridable_parent,
 )
+from app.core.utils.pydantic import annotation_pydantic_class
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +101,8 @@ async def build_snapshot(
     nested_groups = defaultdict(list)
     for row in rows:
         if "__" in row.key:
-            # Group on the case-folded prefix so mixed-case sibling rows for one
-            # parent (only reachable via direct DB insertion -- the API persists
-            # canonical keys) merge into a single group instead of clobbering
-            # each other when ``_apply_nested_group`` writes ``snapshot[parent]``.
+            # Case-fold the prefix so mixed-case sibling rows for one parent merge
+            # into a single group instead of clobbering each other.
             nested_groups[row.key.split("__", 1)[0].lower()].append(row)
             continue
         _apply_top_level_row(snapshot, settings_cls, setting_class, row)
@@ -190,9 +188,8 @@ def _apply_nested_group(
             prefix,
         )
         return
-    # Use the canonical (case-corrected) field name for classification and for
-    # the snapshot key, so case-insensitive prefixes (e.g. ``security_headers``)
-    # still resolve to the proxy attribute the reader looks up.
+    # Use the canonical field name so the snapshot key matches the proxy
+    # attribute the reader looks up.
     canonical_prefix, field_info = resolved_parent
     if not is_nested_overridable_parent(settings_cls, canonical_prefix):
         logger.warning(
@@ -201,7 +198,7 @@ def _apply_nested_group(
             canonical_prefix,
         )
         return
-    parent_cls = _annotation_pydantic_class(field_info.annotation)
+    parent_cls = annotation_pydantic_class(field_info.annotation)
     if parent_cls is None:
         logger.warning(
             "Nested override for non-model parent ignored: %s.%s",
@@ -228,10 +225,16 @@ def _apply_nested_group(
                 exc,
             )
             continue
-        sub_updates[chain[1:]] = value
+        # Rows are listed newest-first; keep the first value seen for each
+        # canonical sub-chain so the newest row wins deterministically when two
+        # raw keys resolve to the same leaf (e.g. a legacy non-canonical row
+        # alongside the canonical one).
+        sub_updates.setdefault(chain[1:], value)
     if not sub_updates:
         return
-    parent_value = _parent_base_value(field_info, canonical_prefix, base_settings)
+    parent_value = _parent_base_value(
+        snapshot, field_info, canonical_prefix, base_settings
+    )
     try:
         merged = _merge_into(parent_value, parent_cls, sub_updates)
     except ValidationError as exc:
@@ -246,16 +249,26 @@ def _apply_nested_group(
 
 
 def _parent_base_value(
+    snapshot: dict[str, Any],
     field_info: FieldInfo,
     prefix: str,
     base_settings: BaseModel | None,
 ) -> BaseModel | None:
     """Return the base parent instance to merge nested overrides onto.
 
-    Prefers the live YAML/env value from ``base_settings`` so leaves with no
-    override row keep their configured values; falls back to the field's
-    declared default when no resolved instance is available.
+    Resolution order:
 
+    1. A whole-object override already written to ``snapshot[prefix]`` by
+       :func:`_apply_top_level_row`, so a HOT parent's whole-object override is
+       not silently discarded when nested-leaf rows for the same parent are
+       merged on top of the YAML/env value afterwards.
+    2. The live YAML/env value from ``base_settings`` so leaves with no override
+       row keep their configured values.
+    3. The field's declared default, when no resolved instance is available.
+
+    :param snapshot: The in-progress snapshot mapping; consulted for a
+        whole-object override already stored under ``prefix``.
+    :type snapshot: dict[str, Any]
     :param field_info: The parent field's metadata.
     :type field_info: FieldInfo
     :param prefix: The parent field name.
@@ -266,6 +279,9 @@ def _parent_base_value(
         must be instantiated from the nested leaves alone.
     :rtype: BaseModel | None
     """
+    stored = snapshot.get(prefix)
+    if isinstance(stored, BaseModel):
+        return stored
     if base_settings is not None:
         value = getattr(base_settings, prefix, None)
         return value if isinstance(value, BaseModel) else None
@@ -328,7 +344,7 @@ def _build_nested_update(
         else:
             direct[head] = value
     for head, child_updates in deeper.items():
-        child_cls = _annotation_pydantic_class(
+        child_cls = annotation_pydantic_class(
             type(parent).model_fields[head].annotation
         )
         if child_cls is None:
@@ -379,7 +395,7 @@ def _instantiate_from_updates(
         else:
             fields[head] = value
     for head, child_updates in deeper.items():
-        child_cls = _annotation_pydantic_class(model_cls.model_fields[head].annotation)
+        child_cls = annotation_pydantic_class(model_cls.model_fields[head].annotation)
         if child_cls is None:
             continue
         # Layer deeper leaves on top of a same-batch whole-child override.

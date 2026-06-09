@@ -24,16 +24,22 @@ from pydantic import BaseModel, ValidationError
 from app.core.settings_override.registry import (
     _clear_cached_properties,
     _resolve_field_in_model,
+    chain_has_explicit_not_overridable,
     coerce_nested_field_value,
     is_hot_reloadable,
     is_nested_overridable_parent,
     nested_overridable_field,
     not_overridable_field,
-    parse_nested_key,
     resolve_nested_field,
 )
 from app.sep.config import SEPSettings, SessionOptions
 from app.tasks.config import TasksSettings
+
+
+class _Leaf(BaseModel):
+    """Leaf model nested under an explicitly not-overridable intermediate."""
+
+    VALUE: int = 1
 
 
 class _Inner(BaseModel):
@@ -41,6 +47,7 @@ class _Inner(BaseModel):
 
     BARE: int = 1
     LOCKED: int = not_overridable_field(2)
+    LOCKED_SUB: _Leaf = not_overridable_field(_Leaf())
 
 
 class _Outer(BaseModel):
@@ -59,21 +66,6 @@ class _CachedModel(BaseModel):
     def derived(self) -> int:
         """Return a value derived from ``value`` (memoised)."""
         return self.value * 10
-
-
-def test_parse_nested_key_splits_on_double_underscore() -> None:
-    """A ``__``-delimited key splits into its segments."""
-    assert parse_nested_key("SESSION__MAX_AGE") == ("SESSION", "MAX_AGE")
-
-
-def test_parse_nested_key_single_segment() -> None:
-    """A key with no delimiter yields a single-element tuple."""
-    assert parse_nested_key("SESSION") == ("SESSION",)
-
-
-def test_parse_nested_key_multi_level() -> None:
-    """A multi-level key splits into all of its segments."""
-    assert parse_nested_key("A__B__C") == ("A", "B", "C")
 
 
 def test_resolve_field_in_model_exact_match() -> None:
@@ -183,6 +175,37 @@ def test_coerce_nested_field_value_rejects_not_overridable_leaf() -> None:
     """A leaf explicitly marked ``not_overridable_field`` raises ``KeyError``."""
     with pytest.raises(KeyError):
         coerce_nested_field_value(_Outer, "NESTED__LOCKED", 9)
+
+
+def test_coerce_nested_field_value_rejects_not_overridable_intermediate() -> None:
+    """A leaf under an explicitly not-overridable *intermediate* raises ``KeyError``.
+
+    ``NESTED.LOCKED_SUB`` is marked ``not_overridable_field``; even though its
+    own ``VALUE`` leaf is unmarked, the intermediate marker must block the
+    override of any descendant.
+    """
+    with pytest.raises(KeyError):
+        coerce_nested_field_value(_Outer, "NESTED__LOCKED_SUB__VALUE", 9)
+
+
+def test_chain_has_explicit_not_overridable_flags_intermediate() -> None:
+    """The chain check reports a not-overridable intermediate, not only the leaf."""
+    assert chain_has_explicit_not_overridable(_Outer, "NESTED__LOCKED_SUB__VALUE")
+
+
+def test_chain_has_explicit_not_overridable_flags_leaf() -> None:
+    """The chain check reports an explicitly not-overridable leaf."""
+    assert chain_has_explicit_not_overridable(_Outer, "NESTED__LOCKED")
+
+
+def test_chain_has_explicit_not_overridable_false_for_open_path() -> None:
+    """A fully overridable path reports no explicit not-overridable segment."""
+    assert not chain_has_explicit_not_overridable(_Outer, "NESTED__BARE")
+
+
+def test_chain_has_explicit_not_overridable_false_for_unresolvable() -> None:
+    """An unresolvable path reports ``False`` (resolution failure surfaces elsewhere)."""
+    assert not chain_has_explicit_not_overridable(_Outer, "NESTED__BOGUS")
 
 
 def test_clear_cached_properties_removes_memo() -> None:

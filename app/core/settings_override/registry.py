@@ -18,6 +18,8 @@
 __all__ = [
     "FieldMetadata",
     "ReloadClassification",
+    "canonical_override_key",
+    "chain_has_explicit_not_overridable",
     "coerce_field_value",
     "coerce_nested_field_value",
     "dump_field_value",
@@ -31,9 +33,10 @@ __all__ = [
     "nested_overridable_field",
     "nested_overridable_field_names",
     "not_overridable_field",
-    "parse_nested_key",
+    "override_keys_for_rows",
     "resolve_nested_field",
     "resolve_nested_field_metadata",
+    "resolve_nested_value",
 ]
 
 import functools
@@ -50,7 +53,13 @@ from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from app.core.config import BaseYamlSettings
-from app.core.utils.pydantic import CustomFieldMetadata, field_with_metadata
+from app.core.settings_override.models import SettingOverride
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.utils.pydantic import (
+    annotation_pydantic_class,
+    CustomFieldMetadata,
+    field_with_metadata,
+)
 
 
 class ReloadClassification(StrEnum):
@@ -340,41 +349,6 @@ def nested_overridable_field_names(
     )
 
 
-def parse_nested_key(key: str) -> tuple[str, ...]:
-    """Split a ``__``-delimited override key into segments.
-
-    :param key: The raw override key (e.g. ``"SESSION__MAX_AGE"``).
-    :type key: str
-    :return: Tuple of segments (``("SESSION", "MAX_AGE")``).
-    :rtype: tuple[str, ...]
-    """
-    return tuple(key.split("__"))
-
-
-def _annotation_pydantic_class(annotation: Any) -> type[BaseModel] | None:
-    """Return the Pydantic ``BaseModel`` subclass referenced by ``annotation``, if any.
-
-    Unwraps ``X | None`` / ``Optional[X]`` and returns the first ``BaseModel``
-    subclass found in the type arguments. Returns ``None`` when the annotation
-    is a primitive, a generic container (``list[X]``, ``dict[K, V]``), or any
-    other non-BaseModel type -- those are not traversable by the nested-override
-    mechanism.
-
-    :param annotation: The Pydantic field annotation to inspect.
-    :type annotation: Any
-    :return: The referenced ``BaseModel`` subclass, or ``None``.
-    :rtype: type[BaseModel] | None
-    """
-    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-        return annotation
-    origin = typing.get_origin(annotation)
-    if origin in {Union, UnionType}:
-        for arg in typing.get_args(annotation):
-            if isinstance(arg, type) and issubclass(arg, BaseModel):
-                return arg
-    return None
-
-
 def _resolve_field_in_model(
     model_cls: type[BaseModel], segment: str
 ) -> tuple[str, FieldInfo] | None:
@@ -411,6 +385,45 @@ def _resolve_field_in_model(
     return None
 
 
+def _resolve_nested_segments(
+    settings_cls: type[BaseModel],
+    key: str,
+) -> list[tuple[str, FieldInfo]] | None:
+    """Resolve every ``__`` segment of ``key`` to its ``(canonical_name, FieldInfo)``.
+
+    Walks one segment at a time, descending into nested Pydantic models. Returns
+    ``None`` when any segment is unresolvable, the path hits a non-Pydantic
+    intermediate, or the key is empty. The list preserves order from the
+    top-level parent down to the leaf, so callers can inspect intermediate
+    fields (e.g. for an explicit ``not_overridable_field`` marker) and not just
+    the leaf.
+
+    :param settings_cls: The top-level Pydantic settings class.
+    :type settings_cls: type[BaseModel]
+    :param key: The ``__``-delimited override key.
+    :type key: str
+    :return: One ``(canonical_name, FieldInfo)`` per segment, or ``None``.
+    :rtype: list[tuple[str, FieldInfo]] | None
+    """
+    if not key:
+        return None
+    segments = key.split("__")
+    resolved_chain = []
+    current_cls = settings_cls
+    for i, seg in enumerate(segments):
+        resolved = _resolve_field_in_model(current_cls, seg)
+        if resolved is None:
+            return None
+        canonical, info = resolved
+        resolved_chain.append((canonical, info))
+        if i < len(segments) - 1:
+            next_cls = annotation_pydantic_class(info.annotation)
+            if next_cls is None:
+                return None
+            current_cls = next_cls
+    return resolved_chain
+
+
 def resolve_nested_field(
     settings_cls: type[BaseModel],
     key: str,
@@ -432,23 +445,33 @@ def resolve_nested_field(
     :return: ``((canonical_segment, ...), leaf_FieldInfo)`` or ``None``.
     :rtype: tuple[tuple[str, ...], FieldInfo] | None
     """
-    segments = parse_nested_key(key)
-    if not segments:
+    resolved = _resolve_nested_segments(settings_cls, key)
+    if resolved is None:
         return None
-    chain = []
-    current_cls = settings_cls
-    for i, seg in enumerate(segments):
-        resolved = _resolve_field_in_model(current_cls, seg)
-        if resolved is None:
-            return None
-        canonical, info = resolved
-        chain.append(canonical)
-        if i < len(segments) - 1:
-            next_cls = _annotation_pydantic_class(info.annotation)
-            if next_cls is None:
-                return None
-            current_cls = next_cls
-    return tuple(chain), info
+    return tuple(name for name, _ in resolved), resolved[-1][1]
+
+
+def chain_has_explicit_not_overridable(settings_cls: type[BaseModel], key: str) -> bool:
+    """Return whether any segment of a nested key is explicitly not-overridable.
+
+    Unlike checking only the resolved leaf, this walks every segment from the
+    top-level parent to the leaf and reports ``True`` if *any* of them carries an
+    explicit :func:`not_overridable_field` marker. An intermediate model marked
+    not-overridable therefore blocks overrides of its descendants, matching the
+    contract a reader would expect from the marker. Returns ``False`` for an
+    unresolvable key (the caller surfaces the resolution failure separately).
+
+    :param settings_cls: The top-level Pydantic settings class.
+    :type settings_cls: type[BaseModel]
+    :param key: The ``__``-delimited override key.
+    :type key: str
+    :return: ``True`` iff some segment is explicitly ``NOT_OVERRIDABLE``.
+    :rtype: bool
+    """
+    resolved = _resolve_nested_segments(settings_cls, key)
+    if resolved is None:
+        return False
+    return any(is_explicit_not_overridable(info) for _, info in resolved)
 
 
 def coerce_nested_field_value(
@@ -460,9 +483,10 @@ def coerce_nested_field_value(
 
     Combines :func:`resolve_nested_field` and :func:`coerce_field_value` so the
     cache and API layers have one entry point for the full nested-row coercion
-    contract. Leaves explicitly classified ``NOT_OVERRIDABLE`` are rejected by
-    raising :class:`KeyError`, matching the unresolvable-path contract so the
-    caller's existing ``except KeyError`` branch logs and skips uniformly.
+    contract. A path whose leaf *or any intermediate* is explicitly classified
+    ``NOT_OVERRIDABLE`` is rejected by raising :class:`KeyError`, matching the
+    unresolvable-path contract so the caller's existing ``except KeyError``
+    branch logs and skips uniformly.
 
     :param settings_cls: The top-level Pydantic settings class.
     :type settings_cls: type[BaseModel]
@@ -472,18 +496,113 @@ def coerce_nested_field_value(
     :type raw: Any
     :return: ``((canonical_segment, ...), coerced_value)``.
     :rtype: tuple[tuple[str, ...], Any]
-    :raises KeyError: If the path is unresolvable on ``settings_cls`` or the
-        resolved leaf is classified ``NOT_OVERRIDABLE``.
+    :raises KeyError: If the path is unresolvable on ``settings_cls`` or any
+        segment along it is explicitly classified ``NOT_OVERRIDABLE``.
     :raises ValidationError: If ``raw`` cannot be coerced to the leaf's type.
+    """
+    resolved = _resolve_nested_segments(settings_cls, key)
+    if resolved is None:
+        raise KeyError(key)
+    if any(is_explicit_not_overridable(info) for _, info in resolved):
+        raise KeyError(key)
+    chain = tuple(name for name, _ in resolved)
+    leaf_info = resolved[-1][1]
+    return chain, coerce_field_value(leaf_info, raw)
+
+
+def resolve_nested_value(
+    *,
+    settings_cls: type[BaseModel],
+    proxy: OverridableSettingsProxy,
+    key: str,
+) -> tuple[FieldInfo, Any]:
+    """Return the leaf field metadata and current value for a nested key.
+
+    Walks the proxy attribute chain segment by segment using the resolver's
+    canonical (case-corrected) names, so the returned value reflects the merged
+    snapshot copy when an override is active and the YAML/env value otherwise.
+
+    :param settings_cls: The Pydantic settings class the key belongs to.
+    :type settings_cls: type[BaseModel]
+    :param proxy: The proxy whose attribute chain yields the current value.
+    :type proxy: OverridableSettingsProxy
+    :param key: The ``__``-delimited nested key.
+    :type key: str
+    :return: A ``(leaf_FieldInfo, current_value)`` pair.
+    :rtype: tuple[FieldInfo, Any]
+    :raises KeyError: If ``key`` does not resolve to a nested field on
+        ``settings_cls``.
     """
     resolved = resolve_nested_field(settings_cls, key)
     if resolved is None:
         raise KeyError(key)
     chain, leaf_info = resolved
-    metadata = CustomFieldMetadata.field_to_dict(leaf_info)
-    if metadata.get("reload") == ReloadClassification.NOT_OVERRIDABLE:
-        raise KeyError(key)
-    return chain, coerce_field_value(leaf_info, raw)
+    current = proxy
+    for segment in chain:
+        # Optional intermediate may be None before any override; short-circuit
+        # instead of raising.
+        current = getattr(current, segment, None)
+    return leaf_info, current
+
+
+def canonical_override_key(settings_cls: type[BaseModel], key: str) -> str:
+    """Return the canonical ``__``-joined attribute path for a nested key.
+
+    Case-insensitive spellings of the same nested path (e.g.
+    ``security_headers__x_frame_options_deny`` and its uppercase form) collapse
+    to one deterministic key so DB rows, snapshot lookups, and DELETE/GET by key
+    all agree. Top-level keys and keys that do not resolve are returned
+    unchanged.
+
+    :param settings_cls: The Pydantic settings class the key belongs to.
+    :type settings_cls: type[BaseModel]
+    :param key: The override key, possibly ``__``-delimited.
+    :type key: str
+    :return: The canonical key, or ``key`` unchanged when not a resolvable
+        nested path.
+    :rtype: str
+    """
+    if "__" not in key:
+        return key
+    resolved = resolve_nested_field(settings_cls, key)
+    if resolved is None:
+        return key
+    chain, _ = resolved
+    return "__".join(chain)
+
+
+def override_keys_for_rows(
+    settings_cls: type[BaseModel],
+    rows: list[SettingOverride],
+) -> set[str]:
+    """Return the set of keys (and canonical prefixes) with active overrides.
+
+    Each row's own ``key`` is included; additionally, every ``__``-delimited row
+    contributes every canonical prefix of its resolved chain -- the top-level
+    parent, each intermediate sub-model path, and the canonical leaf key. This
+    lets a ``field_meta.key in override_keys`` lookup report ``has_override=True``
+    for a promoted parent or an intermediate sub-model when only deeper nested
+    rows exist, and keeps the flag correct when a row was stored under a
+    non-canonical casing.
+
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :type settings_cls: type[BaseModel]
+    :param rows: The active override rows for the class.
+    :type rows: list[SettingOverride]
+    :return: The set of keys and canonical prefixes carrying an override.
+    :rtype: set[str]
+    """
+    keys = {row.key for row in rows}
+    for row in rows:
+        if "__" not in row.key:
+            continue
+        resolved = resolve_nested_field(settings_cls, row.key)
+        if resolved is None:
+            continue
+        chain, _ = resolved
+        for i in range(1, len(chain) + 1):
+            keys.add("__".join(chain[:i]))
+    return keys
 
 
 def _clear_cached_properties(instance: BaseModel) -> None:

@@ -24,7 +24,11 @@ import pytest
 from pydantic import BaseModel, computed_field
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.settings_override.cache import _build_nested_update, build_snapshot
+from app.core.settings_override.cache import (
+    _build_nested_update,
+    _parent_base_value,
+    build_snapshot,
+)
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.sep.config import SEPSettings, SessionOptions
@@ -299,6 +303,34 @@ async def test_mixed_case_sibling_rows_merge_into_one_parent(
     merged = snapshot["SESSION"]
     assert timedelta(seconds=3600) == merged.MAX_AGE
     assert merged.SAMESITE == "strict"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_canonical_leaf_keeps_newest_row(
+    session: AsyncSession,
+) -> None:
+    """Two raw keys resolving to one canonical leaf resolve to the newest row.
+
+    The API persists canonical keys (the unique index then forbids duplicates),
+    but a differently-cased row inserted directly into the table can coexist with
+    a canonical one. The manager lists rows newest-first, so the merge must keep
+    the first-seen value -- the newest row wins deterministically rather than an
+    older row clobbering it.
+    """
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="session__max_age",
+        value=3600,
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION__MAX_AGE",
+        value=7200,
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    assert timedelta(seconds=7200) == snapshot["SESSION"].MAX_AGE
 
 
 @pytest.mark.asyncio
@@ -595,3 +627,26 @@ async def test_inherited_cached_property_cleared_on_merged_copy(
     )
     snapshot = await build_snapshot(session, TasksSettings, base_settings=base)
     assert "logger" not in snapshot["NOMAD"].__dict__
+
+
+def test_parent_base_value_prefers_whole_object_snapshot_entry() -> None:
+    """A whole-object override already in the snapshot is the base for nested merges.
+
+    When a HOT model parent has a whole-object override stored under its key, the
+    nested-group merge must layer leaves on top of *that* override rather than the
+    YAML/env value -- otherwise whole-object fields not touched by a leaf row are
+    silently reverted.
+    """
+    whole_object = SessionOptions(MAX_AGE=timedelta(seconds=111))
+    field_info = SEPSettings.model_fields["SESSION"]
+    result = _parent_base_value(
+        {"SESSION": whole_object}, field_info, "SESSION", base_settings=None
+    )
+    assert result is whole_object
+
+
+def test_parent_base_value_falls_back_to_field_default() -> None:
+    """With no snapshot entry and no base settings, the field default seeds the merge."""
+    field_info = SEPSettings.model_fields["SESSION"]
+    result = _parent_base_value({}, field_info, "SESSION", base_settings=None)
+    assert isinstance(result, SessionOptions)

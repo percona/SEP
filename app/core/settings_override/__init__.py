@@ -34,7 +34,6 @@ __all__ = [
     "nested_overridable_field",
     "nested_overridable_field_names",
     "not_overridable_field",
-    "parse_nested_key",
     "publish_snapshot",
     "refresh_all",
     "resolve_nested_field",
@@ -65,7 +64,6 @@ from app.core.settings_override.registry import (
     nested_overridable_field,
     nested_overridable_field_names,
     not_overridable_field,
-    parse_nested_key,
     ReloadClassification,
     resolve_nested_field,
 )

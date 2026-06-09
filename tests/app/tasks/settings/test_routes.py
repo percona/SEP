@@ -344,3 +344,55 @@ class TestTasksSettingsNestedOverrides:
             session, setting_class=SettingClassEnum.TASKS_SETTINGS
         )
         assert rows == []
+
+    async def test_delete_nested_under_non_overridable_parent_rejected(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """DELETE of a nested key under a non-nested-overridable parent returns 422.
+
+        ``DATABASE`` is not promoted to ``nested_overridable_field``, so
+        ``DATABASE__HOST`` must be rejected with the same ``not_overridable`` 422
+        the PATCH path returns -- not silently accepted with 204.
+        """
+        response = admin_test_client.delete(
+            "/admin/settings/TasksSettings/DATABASE__HOST"
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert "not_overridable" in types
+
+    async def test_patch_nested_under_non_overridable_parent_rejected(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """PATCH of a nested key under a non-nested-overridable parent returns 422.
+
+        Documents the DELETE/PATCH parity asserted above: both reject
+        ``DATABASE__HOST`` with ``not_overridable``.
+        """
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"DATABASE__HOST": "db.example"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert "not_overridable" in types
+
+    async def test_get_intermediate_parent_reports_has_override(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A multi-level override marks the intermediate sub-model ``has_override`` too.
+
+        Patching ``SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE`` must make
+        a GET of the intermediate ``SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY``
+        report ``has_override=True`` -- not only the top-level ``SECURITY_HEADERS``
+        parent.
+        """
+        admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE": 31536000},
+        )
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings/SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["has_override"] is True
