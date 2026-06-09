@@ -24,7 +24,6 @@ import { useAuth } from './contexts/auth';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
-const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
