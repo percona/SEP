@@ -276,7 +276,7 @@ def test_pg_backups_detail_uses_own_delete_route(
 ):
     """Test pg_backups_detail uses its own delete route.
 
-    Regression for SEP-1207: pg_backups_detail must use pg_backups_delete,
+    Regression guard: pg_backups_detail must use pg_backups_delete,
     not mysql_backups_delete, so the page renders even when mysql_backups
     plugin is disabled.
     """
@@ -312,7 +312,7 @@ def test_pg_backups_detail_uses_own_delete_route(
 def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
     """Test the index page links periodic tasks to its own detail route.
 
-    Regression for SEP-1207: the periodic-task rows on the PG backups index
+    Regression guard: the periodic-task rows on the PG backups index
     page must link to pg_backups_detail, not mysql_backups_detail, so the page
     renders even when the mysql_backups plugin is disabled.
     """
@@ -361,7 +361,7 @@ def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
 def test_jinja_routes_marked_deprecated_in_openapi(test_client):
     """Each migrated Jinja route is marked ``deprecated`` in the OpenAPI schema.
 
-    Regression for SEP-1063: the React ``backup_pg`` plugin replaces these
+    Regression guard: the React ``backup_pg`` plugin replaces these
     routes; the OpenAPI marker tells API consumers to stop integrating against
     them while they remain mounted through Wave 3.
     """

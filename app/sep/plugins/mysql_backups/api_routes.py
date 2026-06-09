@@ -59,7 +59,7 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=mysql_backups_schema)
 
 
-@router.get("/", response_model=PaginatedResponse[BackupResponse])
+@router.get("/")
 async def mysql_backups_api_list(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum | None = None,
@@ -77,7 +77,7 @@ async def mysql_backups_api_list(
     )
 
 
-@router.get("/{task_name}", response_model=BackupResponse)
+@router.get("/{task_name}")
 async def mysql_backups_api_detail(
     task: BackupsTask,
     tasks_api: TaskAPI,
@@ -89,7 +89,6 @@ async def mysql_backups_api_detail(
 
 @router.post(
     "/",
-    response_model=BackupResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated],
 )
@@ -108,7 +107,6 @@ async def mysql_backups_api_create(
 
 @router.post(
     "/{task_name}/execute",
-    response_model=BackupExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
 )
