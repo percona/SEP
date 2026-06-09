@@ -33,9 +33,14 @@ process_config_file() {
             line="$(echo "$line" | sed 's/^ *//;s/ *$//')"
             [[ $line =~ ^[[:space:]]*# ]] && continue
             if [[ $line =~ ^include[[:space:]]+(.+) ]]; then
-                included_file="${BASH_REMATCH[1]}"
-                included_file=$(eval echo "$included_file")
-                process_config_file "$included_file"
+                included_glob="${BASH_REMATCH[1]}"
+                if [[ $included_glob == *'$('* || $included_glob == *'`'* ]]; then
+                    continue
+                fi
+                included_glob=$(eval echo "$included_glob")
+                for included_file in $included_glob; do
+                    process_config_file "$included_file"
+                done
             fi
         done < "$file"
     fi
