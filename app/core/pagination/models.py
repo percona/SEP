@@ -17,12 +17,16 @@
 
 from __future__ import annotations
 
+from collections.abc import (  # noqa: TC003 — validate_call resolves these at runtime
+    Awaitable,
+    Callable,
+)
 from typing import Any, Generic, TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Sequence
+    from collections.abc import Sequence
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt, validate_call
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -118,24 +122,21 @@ class PaginatedResponse(BaseModel, Generic[T]):
         )
 
 
+@validate_call
 async def fetch_all_items(
     get_page: Callable[[Pagination], Awaitable[PaginatedResponse[T]]],
     *,
-    page_size: int = MAX_PAGINATION_LIMIT,
+    page_size: PositiveInt = MAX_PAGINATION_LIMIT,
 ) -> list[T]:
     """Fetch every item by walking paginated upstream responses.
 
     :param get_page: Async callable returning one page for the given window.
     :type get_page: Callable[[Pagination], Awaitable[PaginatedResponse[T]]]
     :param page_size: ``limit`` used for each upstream request.
-    :type page_size: int
+    :type page_size: PositiveInt
     :return: All items across every page, in upstream order.
     :rtype: list[T]
     """
-    if page_size < 1:
-        msg = "page_size must be at least 1"
-        raise ValueError(msg)
-
     all_items: list[T] = []
     offset = 0
     while True:
@@ -149,17 +150,18 @@ async def fetch_all_items(
     return all_items
 
 
+@validate_call
 async def fetch_all_dict_items(
     fetch_page: Callable[[Pagination], Awaitable[dict[str, Any]]],
     *,
-    page_size: int = MAX_PAGINATION_LIMIT,
+    page_size: PositiveInt = MAX_PAGINATION_LIMIT,
 ) -> list[Any]:
     """Fetch every item from paginated dict responses (e.g. RemoteAPI payloads).
 
     :param fetch_page: Async callable returning one paginated dict per window.
     :type fetch_page: Callable[[Pagination], Awaitable[dict[str, Any]]]
     :param page_size: ``limit`` used for each upstream request.
-    :type page_size: int
+    :type page_size: PositiveInt
     :return: All ``items`` across every page, in upstream order.
     :rtype: list[Any]
     """

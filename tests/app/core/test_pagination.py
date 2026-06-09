@@ -191,7 +191,7 @@ class TestFetchAllItems:
         async def get_page(_pagination: Pagination) -> PaginatedResponse[int]:
             raise AssertionError("get_page should not be called")
 
-        with pytest.raises(ValueError, match="page_size must be at least 1"):
+        with pytest.raises(ValidationError):
             await fetch_all_items(get_page, page_size=0)
 
 
