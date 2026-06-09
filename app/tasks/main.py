@@ -69,11 +69,8 @@ async def _reconcile_nomad(_: Mapping[str, object]) -> None:
         await holder.reconcile()
 
 
-#: Rebind callbacks fired when a watched Tasks override changes value. Both the
-#: background refresher (for changes other processes wrote to the DB) and the
-#: settings-API PATCH/DELETE handlers (for changes this process wrote inline) fire
-#: these, so the live entered ``NomadExecutor`` rebinds either way. Published on
-#: ``tasks_app.state`` below so the handlers can reach it via ``request.app.state``.
+#: Rebind callbacks for watched Tasks overrides, fired by both the background
+#: refresher and the settings-API handlers; published on ``tasks_app.state`` below.
 _OVERRIDE_REBIND_CALLBACKS: CallbackRegistry = {
     (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): _reconcile_nomad,
 }
@@ -139,10 +136,8 @@ tasks_app = create_app(
     version=__version__,
     description=f"{__summary__} — task execution, history, periodic jobs, connectivity.",
 )
-# Publish the rebind registry on the sub-app's state (not the lifespan's ``app``
-# argument, which is the parent under the combined ``app.main:app``): requests
-# routed to ``/api/tasks`` resolve ``request.app`` to ``tasks_app``, so the
-# settings-API handlers find the registry there in both run modes.
+# On the sub-app's state, not the lifespan's parent ``app``: requests to
+# ``/api/tasks`` resolve ``request.app`` to ``tasks_app``, where the handlers read it.
 tasks_app.state.override_callbacks = _OVERRIDE_REBIND_CALLBACKS
 
 
