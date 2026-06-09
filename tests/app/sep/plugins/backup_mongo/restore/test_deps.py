@@ -317,8 +317,7 @@ async def test_build_restore_task_group_from_body_delegates(
     )
 
 
-@pytest.mark.asyncio
-async def test_build_restore_update_form_from_body_delegates(
+def test_build_restore_update_form_from_body_delegates(
     mocker,
     restore_create: RestoreCreate,
     restore_task_write: RestoreTaskWrite,
@@ -332,7 +331,7 @@ async def test_build_restore_update_form_from_body_delegates(
         return_value=restore_create,
     )
 
-    result = await build_restore_update_form_from_body(restore_task_write, parent_task)
+    result = build_restore_update_form_from_body(restore_task_write, parent_task)
 
     assert result is restore_create
     restore_update_form_from_write.assert_called_once_with(

@@ -818,7 +818,7 @@ UnprotectedRestoreParentTask = Annotated[
 ]
 
 
-async def build_restore_update_form_from_body(
+def build_restore_update_form_from_body(
     body: RestoreTaskWrite,
     parent_task: UnprotectedRestoreParentTask,
 ) -> RestoreCreate:
