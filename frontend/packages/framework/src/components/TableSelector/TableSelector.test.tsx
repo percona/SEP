@@ -86,9 +86,7 @@ describe('TableSelector', () => {
         <Harness initialSchema={{ id: 42, name: 'app_prod' }} />
       </Wrapper>,
     );
-    await waitFor(() =>
-      expect(mocked.get).toHaveBeenCalledWith('/inventory-api/schemas/42/tables'),
-    );
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/schemas/42/tables'));
   });
 
   it('resets value when parent schema changes', async () => {

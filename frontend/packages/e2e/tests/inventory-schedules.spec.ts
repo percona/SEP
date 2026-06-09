@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 const SCHEDULE_ROUTE = '/inventory/schedule';
 const TASK_NAME = 'inventory-sync';
@@ -65,6 +66,10 @@ async function mockInventoryScheduleApis(page: Page) {
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     // Auth

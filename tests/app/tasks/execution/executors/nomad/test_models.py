@@ -301,11 +301,28 @@ class TestBackendProperty:
         _ = executor.backend
         mock_nomad_cls.assert_called_once()
         call_kwargs = mock_nomad_cls.call_args[1]
-        assert str(call_kwargs["address"]) == "http://localhost:4646/"
+        assert call_kwargs["address"] == "http://localhost:4646"
         assert call_kwargs["secure"] is False
         assert call_kwargs["timeout"] == NOMAD_DEFAULT_TIMEOUT
         assert call_kwargs["verify"] is False
         assert call_kwargs["cert"] == ()
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_backend_strips_trailing_slash_from_endpoint(self, mock_nomad_cls):
+        """Strip the trailing slash off a host-only Nomad endpoint.
+
+        ``HttpUrl`` normalises a host-only URL by appending ``/``. python-nomad
+        joins paths as ``f"{address}/v1/..."``, so a trailing slash yields
+        ``//v1/nodes``; Nomad 307-redirects that to an HTML body and python-nomad
+        (no redirect following) calls ``.json()`` on it, raising
+        ``Expecting value: line 1 column 1 (char 0)``. The executor must strip the
+        slash so the request path stays single-slashed.
+        """
+        executor = _build_executor(endpoint="https://nomad.example:4646")
+        _ = executor.backend
+        address = mock_nomad_cls.call_args[1]["address"]
+        assert address == "https://nomad.example:4646"
+        assert not address.endswith("/")
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_backend_ssl_config_certfile_only(self, mock_nomad_cls):
@@ -1631,7 +1648,7 @@ class TestGetLogsForAllocation:
     ):
         """Assert producer offset tracks anonymized bytes, not Nomad bytes.
 
-        Regression test for SEP-817: when anonymization replaces raw bytes
+        Regression test: when anonymization replaces raw bytes
         with a shorter or longer string, the producer-space offset returned
         alongside the delta must track the post-anonymization byte length
         so the writer dedup window does not mix Nomad-space and
@@ -1963,6 +1980,117 @@ class TestListFiles:
         assert ".hidden" not in result
         assert "subdir" in result
         assert result["subdir"].is_dir is True
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_no_filesystem_returns_empty_dict(self, mock_nomad_cls):
+        """Assert list_files returns {} when allocation has no filesystem (prestart 404)."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "ClientStatus": "failed",
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = status.HTTP_404_NOT_FOUND
+        mock_response.raise_for_status = MagicMock()
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(executor, "_request", return_value=mock_ctx_manager):
+            result = await executor.list_files(queue_item, "/alloc/data")
+
+        assert result == {}
+        mock_response.raise_for_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_404_non_failed_alloc_propagates(self, mock_nomad_cls):
+        """Assert list_files raises on 404 when alloc status is not failed/lost.
+
+        A 404 on a completed allocation means the output path is misconfigured —
+        that error must surface, not be swallowed.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "ClientStatus": "complete",
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = status.HTTP_404_NOT_FOUND
+        mock_response.raise_for_status = MagicMock(side_effect=ClientError("not found"))
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx_manager),
+            pytest.raises(ClientError),
+        ):
+            await executor.list_files(queue_item, "/alloc/data")
+
+        mock_response.raise_for_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error_status",
+        [status.HTTP_500_INTERNAL_SERVER_ERROR, status.HTTP_403_FORBIDDEN],
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_non_404_http_errors_propagate(
+        self, mock_nomad_cls, error_status
+    ):
+        """Assert list_files propagates non-404 HTTP errors (outage/auth errors must surface)."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = error_status
+        mock_response.raise_for_status = MagicMock(side_effect=ClientError("error"))
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx_manager),
+            pytest.raises(ClientError),
+        ):
+            await executor.list_files(queue_item, "/alloc/data")
 
 
 class TestParsePayload:
@@ -2471,3 +2599,41 @@ class TestNomadTaskStatesToExecutionEvents:
         assert out[0].event_type == "Setup"
         assert "Downloading Artifacts" in out[0].description
         assert out[0].step == "step1"
+
+    def test_prestart_artifact_download_failure_event_extracted(self):
+        """Assert 'Failed Artifact Download' prestart event surfaces as ExecutionEvent."""
+        task_states = {
+            "step1": {
+                "Events": [
+                    {
+                        "Type": "Failed Artifact Download",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "Failed to download artifact: connection refused",
+                    },
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == 1
+        assert events[0].event_type == "Failed Artifact Download"
+        assert "connection refused" in events[0].description
+        assert events[0].step == "step1"
+
+    def test_prestart_setup_failure_event_extracted(self):
+        """Assert 'Setup Failure' prestart event surfaces as ExecutionEvent."""
+        task_states = {
+            "step1": {
+                "Events": [
+                    {
+                        "Type": "Setup Failure",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "failed to setup alloc: artifact download failed",
+                    },
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == 1
+        assert events[0].event_type == "Setup Failure"
+        assert "artifact download failed" in events[0].description
+        assert events[0].step == "step1"

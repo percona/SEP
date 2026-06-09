@@ -32,6 +32,7 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     build_pbm_force_resync_task_payload,
     build_pbm_list_task_payload,
     build_restore_config_task_payload,
+    build_restore_task_group,
     build_restore_task_payload,
     build_restore_tasks,
 )
@@ -224,3 +225,59 @@ async def test_build_restore_tasks_logical_omits_force_resync(
     assert force_resync is None
     for task in populated_tasks:
         assert task.data["meta"]["_service_name"] == mongo_service.name
+
+
+@pytest.mark.asyncio
+async def test_restore_task_group_yaml_golden_strings(
+    mocker,
+    mock_remote_api,
+    mongo_service: CreatedService,
+) -> None:
+    """Keep per-leg meta.config YAML byte-identical."""
+    mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+    form = RestoreCreate(
+        hostname="mongo-restore-host",
+        task_name="mongo-restore-task",
+        service_id=str(mongo_service.id),
+        backup_type=BackupType.PBM_PHYSICAL,
+        backup_source="2026-04-29T10:00:00",
+        restore_batch_size=500,
+        restore_num_insertion_workers=10,
+        restore_mongod_location="custom/mongod",
+        restore_mongod_location_map="node1: /usr/bin/mongod\n",
+        credentials_path="/tmp/creds.yaml",
+    )
+
+    (
+        config_task,
+        restore_task,
+        pbm_list_task,
+        force_resync_task,
+    ) = await build_restore_task_group(form, mock_remote_api)
+
+    assert (
+        config_task.data["meta"]["config"] == "backupSource: '2026-04-29T10:00:00'\n"
+        "backupType: pbm_physical\n"
+        "credentials_path: /tmp/creds.yaml\n"
+        "restore:\n"
+        "  batchSize: 500\n"
+        "  downloadChunkMb: 32\n"
+        "  mongodLocation: custom/mongod\n"
+        "  mongodLocationMap:\n"
+        "    node1: /usr/bin/mongod\n"
+        "  numInsertionWorkers: 10\n"
+    )
+    assert (
+        restore_task.data["meta"]["config"] == "backupSource: '2026-04-29T10:00:00'\n"
+        "backupType: pbm_physical\n"
+        "credentials_path: /tmp/creds.yaml\n"
+    )
+    assert pbm_list_task.data["meta"]["config"] == "credentials_path: /tmp/creds.yaml\n"
+    assert force_resync_task is not None
+    assert (
+        force_resync_task.data["meta"]["config"]
+        == "credentials_path: /tmp/creds.yaml\n"
+    )
