@@ -18,7 +18,7 @@
 from starlette import status
 from starlette.testclient import TestClient
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import Schema, Service, Table
 from tests.app.factories import SchemaWriteFactory, TableWriteFactory
 

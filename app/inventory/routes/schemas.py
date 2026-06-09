@@ -17,12 +17,12 @@
 
 import logging
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import SchemaManager, TableManager
 from app.inventory.deps import SchemaDep, SessionDep
 from app.inventory.models import (
@@ -43,16 +43,14 @@ router = APIRouter(prefix="/schemas", tags=["schemas"])
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_schemas(
     session: SessionDep,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
+    pagination: PaginationDep,
 ) -> PaginatedResponse[SchemaResponse]:
     """List Schemas."""
     logger.debug("Listing schemas")
     return await SchemaManager.list_paginated(
         session,
         select_related=[Schema.tables],
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
     )
 
 
@@ -93,9 +91,8 @@ async def delete_schema(session: SessionDep, schema: SchemaDep) -> None:
 async def list_tables_by_schema(
     session: SessionDep,
     schema: SchemaDep,
+    pagination: PaginationDep,
     search: str | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[TableResponse]:
     """List Tables by Schema."""
     logger.debug("Listing tables for schema '%s'", schema.id)
@@ -105,8 +102,7 @@ async def list_tables_by_schema(
     return await TableManager.list_paginated(
         session,
         *whereclause,
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         schema_id=schema.id,
     )
 
