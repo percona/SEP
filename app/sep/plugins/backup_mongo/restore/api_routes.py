@@ -23,10 +23,11 @@ enforced at the ``api_router`` level; ``schema_endpoint`` pins
 
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from fastapi import status as http_status
 
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -36,15 +37,14 @@ from app.sep.deps import (
 from app.sep.plugins.backup_mongo.restore.deps import (
     build_restore_mongo_api_detail_response,
     build_restore_mongo_api_task_response,
-    build_restore_task_group,
     create_restore_task_group,
     delete_restore_task_group,
     get_restore_mongo_api_task_responses,
     get_restore_mongo_task_status,
     get_restores_task,
-    restore_create_from_write,
-    restore_update_form_from_write,
     RestoreParentTask,
+    RestoreTaskGroupFromBody,
+    RestoreUpdateFormFromBody,
     UnprotectedRestoreParentTask,
     update_restore_task_group,
 )
@@ -53,7 +53,6 @@ from app.sep.plugins.backup_mongo.restore.models import (
     RestoreExecutionResponse,
     RestoreTaskDetailResponse,
     RestoreTaskResponse,
-    RestoreTaskWrite,
 )
 from app.sep.plugins.backup_mongo.restore.schema import restore_mongo_schema
 from app.sep.plugins.framework.api import schema_endpoint
@@ -68,13 +67,14 @@ schema_endpoint(router=router, plugin_schema=restore_mongo_schema)
 @router.get("/")
 async def restore_mongo_api_list(
     tasks_api: TaskAPI,
+    pagination: PaginationDep,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=0, le=200),
 ) -> PaginatedResponse[RestoreTaskResponse]:
     """List parent PBM restore config tasks."""
     return await get_restore_mongo_api_task_responses(
-        tasks_api, status=status, offset=offset, limit=limit
+        tasks_api,
+        pagination=pagination,
+        status=status,
     )
 
 
@@ -92,9 +92,8 @@ async def restore_mongo_api_detail(
     status_code=http_status.HTTP_201_CREATED,
 )
 async def restore_mongo_api_create(
-    body: RestoreTaskWrite,
+    payloads: RestoreTaskGroupFromBody,
     tasks_api: TaskAPI,
-    inventory_api: InventoryAPI,
 ) -> RestoreTaskDetailResponse:
     """Create a restore task group from a JSON payload request body.
 
@@ -102,10 +101,9 @@ async def restore_mongo_api_create(
     force-resync child for physical restores. Rolls back on any failure.
     """
     logger.debug(
-        "Create backup_mongo restore task group (JSON path): %s", body.task_name
+        "Create backup_mongo restore task group (JSON path): %s",
+        payloads.config_task.name,
     )
-    form = restore_create_from_write(body)
-    payloads = await build_restore_task_group(form, inventory_api)
     await create_restore_task_group(
         tasks_api,
         payloads.config_task,
@@ -123,7 +121,7 @@ async def restore_mongo_api_create(
 )
 async def restore_mongo_api_update(
     parent_task: UnprotectedRestoreParentTask,
-    body: RestoreTaskWrite,
+    form: RestoreUpdateFormFromBody,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
 ) -> RestoreTaskResponse:
@@ -133,7 +131,6 @@ async def restore_mongo_api_update(
     child leg (restore, pbm-list, optional force-resync) in place.
     """
     logger.debug("Update backup_mongo restore task (JSON path): %s", parent_task.name)
-    form = restore_update_form_from_write(body, parent_task)
     updated_task = await update_restore_task_group(
         tasks_api,
         parent_task,

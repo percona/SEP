@@ -30,8 +30,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.core.utils.date_time import make_datetime_utc
