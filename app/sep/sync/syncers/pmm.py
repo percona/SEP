@@ -20,7 +20,7 @@ from types import TracebackType
 from typing import Any, ClassVar, Self
 
 from async_lru import alru_cache
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from app.core.config import PMMSettings, settings
 from app.inventory.models import SourceEnum
@@ -67,7 +67,7 @@ class PMMSyncer(BaseSyncer):
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
-    pmm: PMMSettings = settings.PMM
+    pmm: PMMSettings = Field(default_factory=lambda: settings.PMM)
     keepalive_api: bool = True
     _pmm_api: PMMRemoteAPI | None = None
 

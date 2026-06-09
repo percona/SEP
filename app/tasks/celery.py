@@ -386,7 +386,7 @@ async def dispatch_queue_item(
         instead of scheduling it as a fire-and-forget background task. Required
         from Celery contexts that drive the event loop via discrete
         ``celery.loop.run_until_complete(...)`` calls; the FastAPI default
-        (``False``) keeps the request path non-blocking. See SEP-1204.
+        (``False``) keeps the request path non-blocking.
     :type await_annotations: bool
     :return: The TaskHistory object post execution.
     :rtype: TaskHistory
@@ -637,7 +637,7 @@ async def maybe_dispatch_chain(
         call. Celery contexts (``sync_queue_item``) pass ``True`` so the chained
         STARTED annotation reaches PMM before the loop stops; the FastAPI sync
         route keeps the default ``False`` to avoid blocking the response on PMM
-        availability. See SEP-1204.
+        availability.
     :type await_annotations: bool
     """
     if not was_running:
@@ -790,6 +790,9 @@ async def _check_nomad_cert_expiry() -> None:
     from app.core.alerts.models import AlertSeverity
     from app.core.utils import utc_now
 
+    # Runs in the Celery worker, which has no override refresher, so
+    # ``tasks_settings.NOMAD`` is always the real YAML ``NomadExecutor``, never a
+    # fingerprint dict.
     nomad = tasks_settings.NOMAD
     warn_days = nomad.cert_expiry_warn_days
     now = utc_now()
