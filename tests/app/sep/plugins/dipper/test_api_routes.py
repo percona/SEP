@@ -324,6 +324,8 @@ class TestDipperFormSchemaEndpoint:
         """Unconfigured PMM (client is ``None``) keeps free-text fields and returns 200."""
         mock_inventory_api_dep.get = AsyncMock(return_value=build_fake_service())
         mock_task_api_dep.get = AsyncMock(return_value={})
+        sentinel = object()
+        previous = sep_app.dependency_overrides.get(get_pmm_api, sentinel)
         sep_app.dependency_overrides[get_pmm_api] = lambda: None
         try:
             response = test_client.get(
@@ -331,7 +333,10 @@ class TestDipperFormSchemaEndpoint:
                 params={"service_id": 1, "collector_type": "pmm"},
             )
         finally:
-            sep_app.dependency_overrides = {}
+            if previous is sentinel:
+                sep_app.dependency_overrides.pop(get_pmm_api, None)
+            else:
+                sep_app.dependency_overrides[get_pmm_api] = previous
 
         assert response.status_code == status.HTTP_200_OK
         by_name = self._fields_by_name(response)

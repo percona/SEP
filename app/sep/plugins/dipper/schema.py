@@ -166,6 +166,21 @@ def build_dipper_form_schema(
     the configured PMM inventory. Empty option lists keep the original
     ``StringField`` (a ``ChoiceField`` requires at least one option), so the form
     stays usable when PMM is unconfigured or unreachable.
+
+    :param script: The selected snippet whose parameters drive the form fields.
+    :type script: BaseSnippet
+    :param service_id: The inventory service the form targets.
+    :type service_id: int
+    :param collector_type: The Dipper collector type for the selected script.
+    :type collector_type: str
+    :param defaults: Optional per-field default values keyed by field name.
+    :type defaults: dict[str, str] | None
+    :param node_options: Optional PMM node names rendered as a ``node`` dropdown.
+    :type node_options: list[str] | None
+    :param service_options: Optional PMM service names rendered as a ``service`` dropdown.
+    :type service_options: list[str] | None
+    :return: The assembled plugin form schema.
+    :rtype: PluginSchema
     """
     options_by_field = {"node": node_options, "service": service_options}
     parameter_sections: dict[str, list[AnyField]] = {}

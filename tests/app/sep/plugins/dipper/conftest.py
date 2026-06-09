@@ -38,6 +38,11 @@ def mock_pmm_api_dep() -> AsyncMock:
     return ``None`` directly instead of using this fixture.
     """
     mock = AsyncMock(spec=PMMRemoteAPI)
+    sentinel = object()
+    previous = sep_app.dependency_overrides.get(get_pmm_api, sentinel)
     sep_app.dependency_overrides[get_pmm_api] = lambda: mock
     yield mock
-    sep_app.dependency_overrides = {}
+    if previous is sentinel:
+        sep_app.dependency_overrides.pop(get_pmm_api, None)
+    else:
+        sep_app.dependency_overrides[get_pmm_api] = previous
