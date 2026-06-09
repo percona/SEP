@@ -17,9 +17,10 @@
 
 __all__ = ["build_settings_router"]
 
+from collections.abc import Mapping
 from typing import Any
 
-from fastapi import APIRouter, params, status
+from fastapi import APIRouter, params, Request, status
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -36,7 +37,10 @@ from app.core.settings_override.api.models import (
     SettingsListResponse,
     SettingsPatch,
 )
-from app.core.settings_override.lifecycle import publish_snapshot
+from app.core.settings_override.lifecycle import (
+    fire_change_callbacks,
+    publish_snapshot,
+)
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
@@ -46,10 +50,12 @@ from app.core.settings_override.registry import (
     chain_has_explicit_not_overridable,
     coerce_field_value,
     dump_field_value,
+    field_materializer,
     FieldMetadata,
     is_hot_reloadable,
     is_nested_overridable_parent,
     iter_class_fields,
+    materialize_override_value,
     override_keys_for_rows,
     ReloadClassification,
     resolve_nested_field,
@@ -133,9 +139,14 @@ def _validate_patch_body(
     """Validate every key/value in a PATCH body for one settings class.
 
     Performs Phase A of the PATCH handler: each key is checked for existence
-    on ``settings_cls``, HOT classification, and Pydantic type/constraint
-    validation via :func:`coerce_field_value`. Errors are collected per-key;
-    if any are present the entire batch is rejected with HTTP 422.
+    on ``settings_cls``, HOT classification, and type/constraint validation via
+    :func:`materialize_override_value` (which routes materializer-backed fields
+    -- ``PROVIDERS``, ``FOOTER_TEMPLATE``, ``NOMAD`` -- through their declared
+    materializer so the API accepts the same payloads the snapshot loader does).
+    Errors are collected per-key; if any are present the entire batch is
+    rejected with HTTP 422. Materializer-backed fields persist the raw JSON (the
+    materialized value is not JSON-storable); plain fields persist the coerced
+    value.
 
     :param settings_cls: The Pydantic settings class to validate against.
     :type settings_cls: type[BaseYamlSettings]
@@ -178,8 +189,11 @@ def _validate_patch_body(
                 }
             )
             continue
+        materializer = field_materializer(settings_cls, key)
         try:
-            validated = coerce_field_value(field_info, raw_value)
+            materialized = materialize_override_value(
+                settings_cls, key, field_info, raw_value
+            )
         except ValidationError as exc:
             errors.extend(
                 {
@@ -190,7 +204,16 @@ def _validate_patch_body(
                 for entry in exc.errors()
             )
             continue
-        to_apply.append((key, validated))
+        except ValueError as exc:
+            errors.append(
+                {"loc": ["body", key], "msg": str(exc), "type": "value_error"}
+            )
+            continue
+        # Materializer-backed fields (PROVIDERS, FOOTER_TEMPLATE, NOMAD) produce
+        # values that are not JSON-storable (a provider set, a Template, a
+        # NomadExecutor); persist the raw JSON so build_snapshot re-materializes
+        # on load.
+        to_apply.append((key, raw_value if materializer is not None else materialized))
 
     if errors:
         raise HTTPUnprocessableEntityException(detail=errors)
@@ -280,6 +303,47 @@ def _validate_nested_key(
         return
     # Persist the canonical path so case-insensitive spellings collapse to one row.
     to_apply.append(("__".join(chain), validated))
+
+
+async def _fire_inline_rebind_callbacks(
+    request: Request,
+    setting_class: SettingClassEnum,
+    proxy: OverridableSettingsProxy,
+    previous: Mapping[str, object],
+) -> None:
+    """Fire rebind callbacks for keys this handler's inline publish just changed.
+
+    The background refresher fires rebind callbacks only on a snapshot diff it
+    computes itself (the snapshot before its ``publish_snapshot`` vs the one
+    after). The PATCH/DELETE handlers publish the new snapshot *inline*, so by
+    the refresher's next cycle the proxy already holds the new value and the
+    cycle's diff is empty -- a hot-reload target (the live ``NomadExecutor``, a
+    RemoteAPI client endpoint) would never rebind until restart. Firing here, off
+    the same ``previous``-vs-published diff, closes that gap for the process that
+    handled the request; the refresher still covers *other* processes.
+
+    The per-sub-app callback registry is published by the lifespan on
+    ``request.app.state.override_callbacks``. Requests routed to a mounted sub-app
+    resolve ``request.app`` to that sub-app, so the lifespan anchors the registry
+    on the sub-app's state. It is absent for unit tests that skip the lifespan, in
+    which case this is a no-op.
+
+    :param request: The incoming request; its ``app.state`` carries the sub-app's
+        rebind-callback registry.
+    :type request: Request
+    :param setting_class: The settings class whose snapshot was just republished.
+    :type setting_class: SettingClassEnum
+    :param proxy: The proxy holding the freshly-published snapshot.
+    :type proxy: OverridableSettingsProxy
+    :param previous: The snapshot in effect immediately before the inline publish.
+    :type previous: Mapping[str, object]
+    """
+    callbacks = getattr(request.app.state, "override_callbacks", None)
+    if not callbacks:
+        return
+    await fire_change_callbacks(
+        callbacks, setting_class, previous, proxy.get_snapshot()
+    )
 
 
 def build_settings_router(
@@ -413,6 +477,7 @@ def build_settings_router(
 
     @router.patch("/{setting_class}", dependencies=mutation_deps or [])
     async def patch_settings(
+        request: Request,
         setting_class: SettingClassEnum,
         body: SettingsPatch,
         session: session_dep,  # type: ignore[valid-type]
@@ -423,8 +488,13 @@ def build_settings_router(
         classification, type/constraint coercion) and collects per-key errors.
         If any key fails, the whole batch is rejected with a structured 422
         and nothing is written. Phase B persists every valid entry in a single
-        transaction, then refreshes the proxy snapshot once.
+        transaction, refreshes the proxy snapshot once, then fires the rebind
+        callbacks for any changed keys so a HOT target rebinds without waiting
+        for the next background refresh cycle.
 
+        :param request: The incoming request; its ``app.state`` carries the
+            sub-app's rebind-callback registry.
+        :type request: Request
         :param setting_class: The settings class the override targets.
         :type setting_class: SettingClassEnum
         :param body: The batch of ``{key: value, ...}`` overrides.
@@ -444,7 +514,9 @@ def build_settings_router(
             setting_class=setting_class,
             to_apply=to_apply,
         )
+        previous = proxy.get_snapshot()
         await publish_snapshot(proxy, session, settings_cls)
+        await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
         field_meta_by_key = _applied_field_meta(settings_cls, to_apply)
         return [
             _settings_response_from_field(
@@ -463,6 +535,7 @@ def build_settings_router(
         dependencies=mutation_deps or [],
     )
     async def delete_setting(
+        request: Request,
         setting_class: SettingClassEnum,
         key: str,
         session: session_dep,  # type: ignore[valid-type]
@@ -474,6 +547,13 @@ def build_settings_router(
         responds 409 -- the field cannot have an override row in the first
         place, so the operator's intent is unsatisfiable.
 
+        After republishing the snapshot, fires the rebind callbacks for the
+        reverted key so a HOT target rebinds to its restored value without
+        waiting for the next background refresh cycle.
+
+        :param request: The incoming request; its ``app.state`` carries the
+            sub-app's rebind-callback registry.
+        :type request: Request
         :param setting_class: The settings class the field belongs to.
         :type setting_class: SettingClassEnum
         :param key: The field name on the settings class.
@@ -494,7 +574,9 @@ def build_settings_router(
         await SettingsOverrideManager.delete_where(
             session, setting_class=setting_class, key=key
         )
+        previous = proxy.get_snapshot()
         await publish_snapshot(proxy, session, settings_cls)
+        await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
 
     return router
 

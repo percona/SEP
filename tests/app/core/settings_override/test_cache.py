@@ -18,12 +18,15 @@
 import logging
 from datetime import timedelta
 from functools import cached_property
+from string import Template
 from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel, computed_field
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.config import AlertSettings
+from app.core.alerts.models import BaseAlertProvider
 from app.core.settings_override.cache import (
     _build_nested_update,
     _parent_base_value,
@@ -85,12 +88,12 @@ async def test_non_hot_field_skipped_with_warning(
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="INVENTORY_ENDPOINT",
-        value="https://example.org/api",
+        key="PROXY_HEADERS",
+        value=True,
         is_active=True,
     )
     snapshot = await build_snapshot(session, SEPSettings)
-    assert "INVENTORY_ENDPOINT" not in snapshot
+    assert "PROXY_HEADERS" not in snapshot
     assert any("non-HOT" in r.getMessage() for r in caplog.records)
 
 
@@ -234,6 +237,86 @@ async def test_other_entries_remain_after_failure(session: AsyncSession) -> None
     assert snapshot == {"CONNECTIVITY_CHECK_DEFAULT": False}
 
 
+@pytest.mark.asyncio
+async def test_providers_materialized_via_owning_model(session: AsyncSession) -> None:
+    """``PROVIDERS`` snapshots a ``set`` of providers built by the before-validator."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.ALERT_SETTINGS,
+        key="PROVIDERS",
+        value=[{"PROVIDER": "pagerduty", "routing_key": "abc123"}],
+    )
+    snapshot = await build_snapshot(session, AlertSettings)
+    providers = snapshot["PROVIDERS"]
+    assert isinstance(providers, set)
+    assert all(isinstance(provider, BaseAlertProvider) for provider in providers)
+
+
+@pytest.mark.asyncio
+async def test_invalid_providers_value_logged_and_skipped(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A before-validator ``ValueError`` is caught, logged, and the row skipped."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.ALERT_SETTINGS,
+        key="PROVIDERS",
+        value=[{"routing_key": "no-provider-key"}],
+    )
+    snapshot = await build_snapshot(session, AlertSettings)
+    assert "PROVIDERS" not in snapshot
+    assert any("coercion" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_footer_template_materialized_to_template(session: AsyncSession) -> None:
+    """``FOOTER_TEMPLATE`` snapshots a ``Template`` without crashing the build."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="FOOTER_TEMPLATE",
+        value="$summary v$version",
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    assert isinstance(snapshot["FOOTER_TEMPLATE"], Template)
+    assert snapshot["FOOTER_TEMPLATE"].template == "$summary v$version"
+
+
+@pytest.mark.asyncio
+async def test_invalid_footer_template_value_logged_and_skipped(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A non-string ``FOOTER_TEMPLATE`` override is caught, logged, and skipped."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="FOOTER_TEMPLATE",
+        value=123,
+    )
+    snapshot = await build_snapshot(session, SEPSettings)
+    assert "FOOTER_TEMPLATE" not in snapshot
+    assert any("coercion" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_nomad_materialized_to_diff_stable_fingerprint(
+    session: AsyncSession,
+) -> None:
+    """``NOMAD`` snapshots a plain dict equal across two consecutive builds."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="NOMAD",
+        value={"endpoint": "https://nomad.example.org"},
+    )
+    first = await build_snapshot(session, TasksSettings)
+    second = await build_snapshot(session, TasksSettings)
+    assert isinstance(first["NOMAD"], dict)
+    assert first["NOMAD"] == second["NOMAD"]
+
+
 # --- Nested overrides -----------------------------------------------------
 
 
@@ -342,11 +425,11 @@ async def test_nested_override_falls_back_when_parent_not_overridable(
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="INVENTORY_ENDPOINT__SCHEME",
-        value="http",
+        key="DATABASE__NAME",
+        value="other.db",
     )
     snapshot = await build_snapshot(session, SEPSettings)
-    assert "INVENTORY_ENDPOINT" not in snapshot
+    assert "DATABASE" not in snapshot
     assert any("non-overridable parent" in r.getMessage() for r in caplog.records)
 
 

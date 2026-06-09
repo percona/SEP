@@ -22,7 +22,11 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.core.pagination import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    MAX_PAGINATION_LIMIT,
+)
 from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import TaskFactory
@@ -31,6 +35,8 @@ TWO_MERGED_HISTORY_ROWS = 2
 TWO_UNIQUE_TASK_NAMES = 2
 PROPAGATED_TEST_OFFSET = 5
 PROPAGATED_TEST_LIMIT = 10
+UPSTREAM_PAGES_PER_TASK = 2
+EXPECTED_PAGED_UPSTREAM_CALLS = TWO_UNIQUE_TASK_NAMES * UPSTREAM_PAGES_PER_TASK
 
 
 def _history_item(*, item_id: int, started_at: str, task_name: str) -> dict[str, Any]:
@@ -268,6 +274,19 @@ class TestSepTaskHistoryEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()
 
+    def test_rejects_zero_limit(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+    ) -> None:
+        """Return 422 when ``limit`` is zero."""
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", "task-a"), ("limit", "0")],
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
+
     def test_rejects_limit_above_cap(
         self,
         test_client: TestClient,
@@ -276,10 +295,88 @@ class TestSepTaskHistoryEndpoint:
         """Return 422 when ``limit`` exceeds the upper cap of 200."""
         response = test_client.get(
             "/api/sep/task-history/",
-            params=[("task_names", "task-a"), ("limit", "201")],
+            params=[("task_names", "task-a"), ("limit", str(MAX_PAGINATION_LIMIT + 1))],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()
+
+    def test_pages_upstream_when_merged_window_exceeds_max_limit(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+    ) -> None:
+        """Page each task upstream when offset + limit exceeds the Tasks API cap."""
+        large_offset = 151
+        large_limit = 50
+
+        async def _upstream_page(
+            url: str,
+            *,
+            params: dict[str, Any] | None = None,
+            **kwargs: Any,
+        ) -> dict[str, Any]:
+            assert params is not None
+            assert params["limit"] <= MAX_PAGINATION_LIMIT
+            offset = params["offset"]
+            limit = params["limit"]
+            name = url.removeprefix("/").removesuffix("/history/")
+            if offset == 0:
+                items = [
+                    _history_item(
+                        item_id=index,
+                        started_at=f"2026-06-{(index % 28) + 1:02d}T10:00:00+00:00",
+                        task_name=name,
+                    )
+                    for index in range(limit)
+                ]
+            else:
+                items = [
+                    _history_item(
+                        item_id=offset,
+                        started_at="2026-01-01T10:00:00+00:00",
+                        task_name=name,
+                    )
+                ]
+            return {
+                "items": items,
+                "total": 500,
+                "offset": offset,
+                "limit": limit,
+            }
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_upstream_page)
+
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[
+                ("task_names", "task-a"),
+                ("task_names", "task-b"),
+                ("offset", str(large_offset)),
+                ("limit", str(large_limit)),
+            ],
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert mock_task_api_dep.get.await_count == EXPECTED_PAGED_UPSTREAM_CALLS
+        first_page_params = {
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": MAX_PAGINATION_LIMIT,
+        }
+        second_page_params = {
+            "offset": MAX_PAGINATION_LIMIT,
+            "limit": large_offset + large_limit - MAX_PAGINATION_LIMIT,
+        }
+        mock_task_api_dep.get.assert_any_await(
+            "/task-a/history/", params=first_page_params
+        )
+        mock_task_api_dep.get.assert_any_await(
+            "/task-a/history/", params=second_page_params
+        )
+        mock_task_api_dep.get.assert_any_await(
+            "/task-b/history/", params=first_page_params
+        )
+        mock_task_api_dep.get.assert_any_await(
+            "/task-b/history/", params=second_page_params
+        )
 
 
 class TestSepTaskHistoryAuth:

@@ -152,6 +152,12 @@ def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
 def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     """Mock the InventoryAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
+    mock.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     sep_app.dependency_overrides[get_inventory_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides = {}
