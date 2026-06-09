@@ -49,6 +49,7 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import (
+    CreatedSchemaFactory,
     CreatedServiceFactory,
     CreatedTableFactory,
     MOCK_CREATED_SCHEMA_ID,
@@ -1116,8 +1117,6 @@ class TestBuildArchivesPayloadSelfArchiveGuard:
         self, created_service, created_schema, created_table, mock_remote_api
     ):
         """dest_db_id resolves to a different schema name: no self-archive."""
-        from tests.app.factories import CreatedSchemaFactory
-
         different_schema = CreatedSchemaFactory.build()
         different_schema.name = created_schema.name + "_archive"
 
