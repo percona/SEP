@@ -636,8 +636,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         :param source: Optional step filter; when set, only chunks for the given
             source are yielded.
         :type source: str | None
-        :return: An async generator yielding matching ``TaskHistoryLog`` chunk
-            rows, oldest first.
+        :yield: Matching ``TaskHistoryLog`` chunk rows, oldest first.
         :rtype: AsyncGenerator[TaskHistoryLog, None]
         """
         query = select(TaskHistoryLog).where(
@@ -685,7 +684,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         )
         if source is not None:
             query = query.where(col(TaskHistoryLog.source) == source)
-        result = await session.exec(query)
+        result = await cls._exec(session, query)
         return list(result.all())
 
     @classmethod
@@ -713,8 +712,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         :param stream: Optional stream filter; when set, only chunks for the
             given stream are yielded.
         :type stream: TaskLogType | None
-        :return: An async generator yielding matching ``TaskHistoryLog`` chunk
-            rows, newest first per stream.
+        :yield: Matching ``TaskHistoryLog`` chunk rows, newest first per stream.
         :rtype: AsyncGenerator[TaskHistoryLog, None]
         """
         query = select(TaskHistoryLog).where(
