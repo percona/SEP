@@ -16,6 +16,7 @@
  */
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useEnabledApps } from '@sep/api';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DnsIcon from '@mui/icons-material/Dns';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -41,9 +42,17 @@ export interface NavItem {
   icon: SvgIconComponent | ((props: SvgIconProps) => React.JSX.Element);
   to?: string;
   children?: NavItem[];
+  /**
+   * Backend plugin key (the last dotted segment of the plugin's
+   * ``MODULE_NAME``) used to hide this item when the app is disabled. Items
+   * without an `appKey` — parent groups, the Dashboard root, and the always-on
+   * Inventory app — render unconditionally.
+   */
+  appKey?: string;
 }
 
-// Navigation matching SEP's plugin-based sidebar.
+// Navigation matching SEP's plugin-based sidebar. Each `appKey` is the backend
+// plugin module key consumed by `GET /api/apps/` to drive enable/disable.
 // Backup sub-items use percona-ui's database-specific icons.
 //
 // URL convention (see SEP-1270): every `to:` here is sourced from the shared
@@ -59,36 +68,70 @@ export interface NavItem {
 const defaultNavItems: NavItem[] = [
   { title: 'Dashboard', icon: DashboardIcon, to: ROUTES.dashboard },
   { title: 'Inventory', icon: DnsIcon, to: ROUTES.inventory },
-  { title: 'Tasks', icon: AssignmentIcon, to: ROUTES.tasks },
-  { title: 'Snippets', icon: CodeIcon, to: ROUTES.snippets },
-  { title: 'Collect Diagnostic Data', icon: SupportAgentIcon, to: ROUTES.atw },
+  { title: 'Tasks', icon: AssignmentIcon, to: ROUTES.tasks, appKey: 'tasks' },
+  { title: 'Snippets', icon: CodeIcon, to: ROUTES.snippets, appKey: 'snippets' },
+  { title: 'Collect Diagnostic Data', icon: SupportAgentIcon, to: ROUTES.atw, appKey: 'atw' },
   {
     title: 'Alerts',
     icon: NotificationsActiveIcon,
     children: [
-      { title: 'Templates', icon: DescriptionIcon, to: ROUTES.alertTemplates },
-      { title: 'Troubleshooting', icon: TroubleshootIcon, to: ROUTES.alertTroubleshooting },
+      { title: 'Templates', icon: DescriptionIcon, to: ROUTES.alertTemplates, appKey: 'alerts' },
+      {
+        title: 'Troubleshooting',
+        icon: TroubleshootIcon,
+        to: ROUTES.alertTroubleshooting,
+        appKey: 'alert_troubleshooting',
+      },
     ],
   },
   {
     title: 'Schema Change',
     icon: StorageIcon,
-    children: [{ title: 'Alters', icon: TableChartIcon, to: ROUTES.schemaAlters }],
+    children: [
+      { title: 'Alters', icon: TableChartIcon, to: ROUTES.schemaAlters, appKey: 'alters' },
+    ],
   },
-  { title: 'Checksums', icon: CheckCircleIcon, to: ROUTES.checksums },
+  { title: 'Checksums', icon: CheckCircleIcon, to: ROUTES.checksums, appKey: 'checksums' },
   {
     title: 'Backups',
     icon: BackupIcon,
     children: [
-      { title: 'MySQL', icon: MySqlIcon, to: ROUTES.mysqlBackups },
-      { title: 'MongoDB', icon: MongoIcon, to: ROUTES.backupsMongodb },
-      { title: 'PostgreSQL', icon: PostgreSqlIcon, to: ROUTES.backupsPostgresql },
+      { title: 'MySQL', icon: MySqlIcon, to: ROUTES.mysqlBackups, appKey: 'mysql_backups' },
+      { title: 'MongoDB', icon: MongoIcon, to: ROUTES.backupsMongodb, appKey: 'backup_mongo' },
+      {
+        title: 'PostgreSQL',
+        icon: PostgreSqlIcon,
+        to: ROUTES.backupsPostgresql,
+        appKey: 'backup_pg',
+      },
     ],
   },
-  { title: 'Archive', icon: ArchiveIcon, to: ROUTES.archive },
-  { title: 'Dipper Data Collection', icon: ScienceIcon, to: ROUTES.dipper },
-  { title: 'Reports', icon: BarChartIcon, to: ROUTES.reports },
+  { title: 'Archive', icon: ArchiveIcon, to: ROUTES.archive, appKey: 'archives' },
+  { title: 'Dipper Data Collection', icon: ScienceIcon, to: ROUTES.dipper, appKey: 'dipper' },
+  { title: 'Reports', icon: BarChartIcon, to: ROUTES.reports, appKey: 'report' },
 ];
+
+/**
+ * Filter a navigation tree by the set of enabled app keys.
+ *
+ * An item is hidden when it carries an `appKey` that is not in `enabledKeys`.
+ * Items without an `appKey` (the Dashboard root, the Inventory app, parent
+ * groups) always render. A parent group is hidden once all of its children are
+ * hidden. The input is not mutated.
+ */
+export function filterNavByEnabledApps(items: NavItem[], enabledKeys: Set<string>): NavItem[] {
+  return items.reduce<NavItem[]>((acc, item) => {
+    if (item.children) {
+      const children = filterNavByEnabledApps(item.children, enabledKeys);
+      if (children.length > 0) {
+        acc.push({ ...item, children });
+      }
+    } else if (item.appKey === undefined || enabledKeys.has(item.appKey)) {
+      acc.push(item);
+    }
+    return acc;
+  }, []);
+}
 
 interface NavigationState {
   items: NavItem[];
@@ -99,7 +142,6 @@ interface NavigationState {
 const NavigationContext = createContext<NavigationState | null>(null);
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const [items] = useState<NavItem[]>(defaultNavItems);
   const [sidebarOpen, setSidebarOpen] = useState(
     () => window.matchMedia('(min-width: 900px)').matches,
   );
@@ -108,7 +150,19 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     setSidebarOpen((prev) => !prev);
   }, []);
 
-  // TODO: fetch from /api/plugins to get enabled plugins
+  // Filter the static nav by runtime app state. Until the query resolves (or if
+  // it fails), `data` is undefined and the full nav renders optimistically — a
+  // brief flash of the unfiltered nav is acceptable, and a fetch error must not
+  // strand the user with an empty sidebar.
+  const { data: apps } = useEnabledApps();
+  const items = useMemo<NavItem[]>(() => {
+    if (!apps) {
+      return defaultNavItems;
+    }
+    const enabledKeys = new Set(apps.filter((app) => app.enabled).map((app) => app.app_key));
+    return filterNavByEnabledApps(defaultNavItems, enabledKeys);
+  }, [apps]);
+
   const value = useMemo<NavigationState>(
     () => ({ items, sidebarOpen, toggleSidebar }),
     [items, sidebarOpen, toggleSidebar],

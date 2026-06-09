@@ -17,7 +17,7 @@
 
 import hmac
 import logging
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
@@ -25,6 +25,7 @@ import aiohttp
 from fastapi import Depends, HTTPException, Request, status
 from itsdangerous import BadSignature
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_user as get_current_user_api
@@ -38,6 +39,7 @@ from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPRedirectException,
+    HTTPServiceUnavailableException,
 )
 from app.core.log import set_log_context
 from app.core.requests import RemoteAPI
@@ -51,6 +53,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
     CONNECTIVITY_TARGET_KEY,
 )
+from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import (
@@ -407,12 +410,115 @@ async def get_username_mapping() -> dict[str, str]:
         return {}
 
 
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """Yield an asynchronous database session for FastAPI routes.
+
+    This function provides a dependency for FastAPI routes that yields an ``AsyncSession``
+    for interacting with the database. The session is properly closed after use.
+
+    :yield: An asynchronous session for database operations.
+    :rtype: AsyncSession
+    """
+    async_session_maker = get_async_session_maker()
+    async with async_session_maker() as session:
+        yield session
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+PROTECTED_APP_KEYS: frozenset[str] = frozenset({"inventory"})
+"""Apps that cannot be disabled at runtime.
+
+These are foundational to SEP and are excluded from every plugin-state
+mechanism: never seeded, never guarded, always present in the sidebar, and the
+toggle endpoint returns 409 for them. The frozenset is the single source of
+truth -- the seed, both mount loops, the default-context filter, and both
+admin endpoints all consult it.
+"""
+
+
+def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None]]:
+    """Build a route-level dependency that gates requests by app state.
+
+    Used as ``dependencies=[Depends(require_app_enabled(<key>))]`` on each
+    non-protected app's router at mount time. Raises
+    :class:`app.core.exceptions.HTTPServiceUnavailableException` (HTTP 503) when
+    the app is disabled in :class:`app.sep.models.AppState`.
+
+    The factory closure-captures ``app_key`` at router-mount time; the returned
+    coroutine is invoked per request and queries the DB via the standard
+    :data:`SessionDep` dependency. Callers must not invoke this factory for keys
+    in :data:`PROTECTED_APP_KEYS` -- the mount loops enforce that skip.
+
+    A failed app-state read degrades to ENABLED rather than failing the request:
+    a configured plugin stays reachable when the DB is unreachable (or the
+    ``appstate`` table is missing), mirroring :func:`get_default_context`. This
+    is fail-open by design -- the gate is an operator convenience, not a security
+    boundary, so a transient DB fault must not 500 every guarded route.
+
+    :param app_key: The plugin module key to gate on.
+    :type app_key: str
+    :return: A FastAPI dependency coroutine that raises 503 when disabled.
+    :rtype: Callable[[AsyncSession], Awaitable[None]]
+    """
+
+    async def _gate(session: SessionDep) -> None:
+        try:
+            enabled = await AppStateManager.is_enabled(session, app_key)
+        except SQLAlchemyError:
+            logger.warning(
+                "Could not read app state for '%s'; allowing the request.",
+                app_key,
+                exc_info=True,
+            )
+            return
+        if not enabled:
+            raise HTTPServiceUnavailableException(
+                detail=f"App '{app_key}' is currently disabled.",
+            )
+
+    return _gate
+
+
+def get_toggleable_app_key(app_key: str) -> str:
+    """Resolve a toggleable, configured app key.
+
+    :param app_key: The plugin key from the path parameter.
+    :type app_key: str
+    :return: The validated app key.
+    :rtype: str
+    :raises HTTPConflictException: If the key is protected and immutable.
+    :raises HTTPNotFoundException: If the key is not in configured plugins.
+    """
+    if app_key in PROTECTED_APP_KEYS:
+        raise HTTPConflictException(
+            detail=f"App '{app_key}' is protected and cannot be disabled.",
+        )
+    configured_keys = {
+        plugin.module_name.split(".")[-1] for plugin in sep_settings.PLUGINS
+    }
+    if app_key not in configured_keys:
+        raise HTTPNotFoundException(detail="App not found")
+    return app_key
+
+
+ToggleableAppKeyDep = Annotated[str, Depends(get_toggleable_app_key)]
+
+
 async def get_default_context(
     request: Request,
     user: CurrentUser,
     base_uri: BaseURL,
+    session: SessionDep,
 ) -> dict[str, Any]:
     """Return the default context for templates.
+
+    The sidebar ``plugins`` list is filtered by runtime app state: protected
+    apps always pass through; non-protected apps are shown unless an explicit
+    ``enabled=False`` :class:`app.sep.models.AppState` row hides them (a missing
+    row is treated as enabled). This is the single source of truth that drives
+    sidebar visibility.
 
     :param request: The HTTP request object.
     :type request: Request
@@ -420,14 +526,32 @@ async def get_default_context(
     :type user: User
     :param base_uri: The base URI of the application.
     :type base_uri: Any
+    :param session: The database session used to read app state.
+    :type session: AsyncSession
     :return: The default context.
     :rtype: dict[str, Any]
     """
+    try:
+        states = await AppStateManager.all_states(session)
+    except SQLAlchemyError:
+        # Error pages rebuild this context from a fresh session; keep them
+        # renderable when the DB is down.
+        logger.warning(
+            "Could not read app state; rendering all apps in the sidebar.",
+            exc_info=True,
+        )
+        states = {}
+    plugins = [
+        plugin
+        for plugin in sep_settings.PLUGINS
+        if (key := plugin.module_name.split(".")[-1]) in PROTECTED_APP_KEYS
+        or states.get(key, True)
+    ]
     return {
         "user": user,
         "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
         "base_uri": base_uri,
-        "plugins": sep_settings.PLUGINS,
+        "plugins": plugins,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "pmm_url": settings.PMM.frontend,
@@ -527,23 +651,6 @@ async def get_tasks_api(
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
-
-
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """Yield an asynchronous database session for FastAPI routes.
-
-    This function provides a dependency for FastAPI routes that yields an `AsyncSession`
-    for interacting with the database. The session is properly closed after use.
-
-    :yield: An asynchronous session for database operations.
-    :rtype: AsyncSession
-    """
-    async_session_maker = get_async_session_maker()
-    async with async_session_maker() as session:
-        yield session
-
-
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 async def get_created_entity(
@@ -967,11 +1074,13 @@ async def get_tasks_index_context(
         task_name = periodic_task.get("task")
         periodic_task["owner"] = task_owner_mapping.get(task_name)
     inventories = await inventory_api.get("/summary/")
-    plugins = sep_settings.PLUGINS
+    # Derive from the already-filtered plugin list so a disabled Task Manager
+    # does not leave the homepage rendering links into 503-returning routes.
+    plugins = default_context.get("plugins", [])
     is_task_manager_enabled = any(
         p.name == "Task Manager" and p.sidebar for p in plugins
     )
-    context = default_context or {}
+    context = default_context
     context.update(
         {
             **inventories,

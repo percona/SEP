@@ -22,6 +22,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
 from app.sep.models import (
+    AppState,
     SyncInstance,
     SyncInstanceWrite,
     SyncInventoryEntityTypeEnum,
@@ -265,3 +266,45 @@ class SyncInstanceManager(BaseSQLModelManager):
             item.status = SyncStatusEnum.FAILED
         await SyncItemManager.save_batch(session, *hanging_items)
         return hanging_items
+
+
+class AppStateManager(BaseSQLModelManager):
+    """Manage per-app runtime enable/disable state.
+
+    :ivar Model: The SQLModel class this manager is responsible for (``AppState``).
+    :vartype Model: type[AppState]
+    """
+
+    Model = AppState
+
+    @classmethod
+    async def all_states(cls, session: AsyncSession) -> dict[str, bool]:
+        """Return a mapping of ``app_key`` to ``enabled`` for every row.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :type session: AsyncSession
+        :return: A dictionary mapping each app key to its enabled state.
+        :rtype: dict[str, bool]
+        """
+        rows = await cls.values_list(session, ["app_key", "enabled"])
+        return dict(rows)
+
+    @classmethod
+    async def is_enabled(cls, session: AsyncSession, app_key: str) -> bool:
+        """Return whether the named app is currently enabled.
+
+        A missing row is treated as ENABLED: a configured plugin is active
+        until an operator explicitly disables it (which writes an
+        ``enabled=False`` row). This mirrors the pre-existing behaviour where a
+        plugin listed in ``settings.yaml`` is always reachable, and avoids a
+        window where a configured-but-unseeded plugin would 503.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :type session: AsyncSession
+        :param app_key: The app key to look up.
+        :type app_key: str
+        :return: ``True`` unless an ``enabled=False`` row exists for the key.
+        :rtype: bool
+        """
+        row = await cls.first(session, app_key=app_key)
+        return True if row is None else row.enabled

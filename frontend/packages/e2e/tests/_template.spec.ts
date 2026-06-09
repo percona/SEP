@@ -31,6 +31,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── TODO: update these constants for your plugin ──────────────────────────────
 
@@ -73,6 +74,10 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
     // Pass through Vite's internal module-serving paths
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {
