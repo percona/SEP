@@ -24,6 +24,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
@@ -172,11 +173,15 @@ async def mysql_backups_detail(
     context["executor_hosts_dict"] = executor_hosts_ctx.hosts
 
     try:
-        response = await inventory_api.get(
-            "/services/",
-            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
+        context["services"] = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                "/services/",
+                params={
+                    "service_type": ServiceTypeEnum.MYSQL,
+                    **pagination.model_dump(),
+                },
+            )
         )
-        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

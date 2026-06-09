@@ -33,19 +33,19 @@ Route layout:
 
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from fastapi.exceptions import HTTPException
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPNotFoundException,
 )
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
 from app.sep.deps import IsApiAuthenticated, SessionDep
 from app.sep.plugins.alerts.config import alerts_pmm_config
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.deps import (
+    AlertsBackupsPaginationDep,
     AlertTemplatesDep,
     ensure_pagerduty_notification_route,
     find_pagerduty_contact_point,
@@ -81,9 +81,6 @@ from app.sep.plugins.alerts.schemas import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-_BACKUPS_LIMIT_MAX = 100
 
 
 @router.get("/", dependencies=[IsApiAuthenticated])
@@ -158,23 +155,19 @@ async def alerts_api_index(
 @router.get("/backups", dependencies=[IsApiAuthenticated])
 async def alerts_api_list_backups(
     session: SessionDep,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=1, le=_BACKUPS_LIMIT_MAX),
+    pagination: AlertsBackupsPaginationDep,
 ) -> PaginatedResponse[BackupSummary]:
     """Return a paginated page of alert backups, newest first.
 
     :param session: The async database session.
     :type session: SessionDep
-    :param offset: Zero-based starting offset. Rejected with HTTP 422 if negative.
-    :type offset: int
-    :param limit: Maximum number of backups to return. Validated to the
-        range ``[1, 100]``; out-of-range values are rejected with HTTP 422.
-    :type limit: int
+    :param pagination: Validated offset/limit query parameters (``limit`` capped at 100).
+    :type pagination: Pagination
     :return: A paginated envelope of backup summaries ordered by
         ``created_at`` descending.
     :rtype: PaginatedResponse[BackupSummary]
     """
-    page = await AlertBackupManager.list_paginated(session, offset=offset, limit=limit)
+    page = await AlertBackupManager.list_paginated(session, pagination=pagination)
     items = [
         BackupSummary(
             id=backup.id,
@@ -183,12 +176,7 @@ async def alerts_api_list_backups(
         )
         for backup in page.items
     ]
-    return PaginatedResponse[BackupSummary](
-        items=items,
-        total=page.total,
-        offset=page.offset,
-        limit=page.limit,
-    )
+    return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
 @router.get("/backups/{backup_id}", dependencies=[IsApiAuthenticated])
