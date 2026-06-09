@@ -21,7 +21,9 @@ from collections.abc import (  # noqa: TC003 — validate_call resolves these at
     Awaitable,
     Callable,
 )
-from typing import Any, Generic, NotRequired, TYPE_CHECKING, TypedDict, TypeVar
+from typing import Any, Generic, NotRequired, TYPE_CHECKING, TypeVar
+
+from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
