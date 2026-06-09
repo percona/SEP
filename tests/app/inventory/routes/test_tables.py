@@ -18,7 +18,7 @@
 from starlette import status
 from starlette.testclient import TestClient
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import Schema, Table
 
 EXPECTED_TABLE_COUNT = 2

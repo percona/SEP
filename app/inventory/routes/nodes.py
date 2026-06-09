@@ -17,12 +17,12 @@
 
 import logging
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPBadRequestException
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.crud import NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
@@ -45,11 +45,10 @@ router = APIRouter(tags=["nodes"])
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_nodes(
     session: SessionDep,
+    pagination: PaginationDep,
     external_id: NonEmptyStr | None = None,
     source: SourceEnum | None = None,
     node_type: NonEmptyStr | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[NodeResponse]:
     """List Nodes from Inventory."""
     logger.debug(
@@ -60,8 +59,7 @@ async def list_nodes(
     return await NodeManager.list_paginated(
         session,
         select_related=[Node.services],
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         external_id=external_id,
         source=source,
         type=node_type,
@@ -114,9 +112,8 @@ async def delete_node(session: SessionDep, node: NodeDep) -> None:
 async def list_services_by_node(
     session: SessionDep,
     node: NodeDep,
+    pagination: PaginationDep,
     service_type: ServiceTypeEnum | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services by Node."""
     logger.debug(
@@ -127,8 +124,7 @@ async def list_services_by_node(
     return await ServiceManager.list_paginated(
         session,
         select_related=[Service.schemas],
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         node_id=node.id,
         type=service_type,
     )

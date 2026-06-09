@@ -284,7 +284,12 @@ def test_backups_detail(
             {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
         ]
     )
-    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     response = test_client.get(f"/mysql_backups/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert (
