@@ -31,7 +31,7 @@ from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.deps import get_executor, get_session
+from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.main import tasks_app
 from app.tasks.models import (
@@ -76,7 +76,7 @@ def test_client(
     """Create an authenticated test client for the app."""
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 

@@ -205,7 +205,7 @@ class TestListEndpoint:
 
     @pytest.mark.parametrize(
         "query",
-        ["offset=-1", "limit=0", "limit=-5", "limit=99999"],
+        ["offset=-1", "limit=0", "limit=-5", "limit=51", "limit=99999"],
     )
     def test_list_rejects_out_of_range_pagination(
         self, test_client, mock_task_api_dep, query

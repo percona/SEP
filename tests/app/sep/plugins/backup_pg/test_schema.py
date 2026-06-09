@@ -116,7 +116,7 @@ def test_pgbackrest_config_file_has_jinja_parity_default() -> None:
 def test_detail_view_renders_overview_with_host_and_port() -> None:
     """``detail_view`` declares an Overview section so the FE renders host/port.
 
-    PR #831's ``PluginDetailPage`` only renders fields declared by
+    The React ``PluginDetailPage`` only renders fields declared by
     ``detail_view``; without this block the new ``host`` + ``port`` fields on
     :class:`BackupTaskDetailResponse` would be dead data.
     """

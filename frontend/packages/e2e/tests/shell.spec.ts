@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Mock stubs ────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ const MOCK_PLUGIN_SCHEMA = {
  *   /api/plugins/:name/schema    -> minimal valid PluginSchema (renders heading)
  *   /api/sep/dashboard/          -> zero counts for dashboard stat cards
  *   /api/tasks/history/          -> empty paginated response (prevents refetchInterval crash)
+ *   /api/apps/                   -> every nav app enabled (renders the full sidebar)
  *   everything else              -> 200 [] (empty task list; sufficient for smoke assertions)
  */
 async function mockAuthenticatedApis(page: Page): Promise<void> {
@@ -108,6 +110,10 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
         contentType: 'application/json',
         body: JSON.stringify({ items: [], total: 0, offset: 0, limit: 5 }),
       });
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     // Default: empty success for plugin task lists and anything else

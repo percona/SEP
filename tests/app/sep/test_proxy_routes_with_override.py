@@ -32,6 +32,7 @@ exercised. The Tasks-side equivalent lives next to the Tasks app at
 ``tests/app/tasks/test_settings_override_integration.py``.
 """
 
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -39,7 +40,7 @@ import pytest_asyncio
 from fastapi import Request
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
@@ -53,6 +54,7 @@ from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
+    get_session,
     validate_csrf,
 )
 from app.sep.main import sep_app
@@ -123,9 +125,19 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
         "app.sep.plugins.snippets.routes.update_snippets",
         new=AsyncMock(return_value=None),
     )
+
+    async def _guard_session() -> AsyncIterator[AsyncSession]:
+        # The ``require_app_enabled("snippets")`` route guard reads ``appstate``
+        # via ``get_session``; point it at the in-memory store (all tables, no
+        # rows -> snippets enabled) so the gate is deterministic and never
+        # blocks on a shared, order-dependent DB.
+        async with override_session_maker() as guard_session:
+            yield guard_session
+
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_session] = _guard_session
     try:
         # Per tests/CLAUDE.md: never wrap TestClient(sep_app) in `with` --
         # that triggers ``sep_lifespan`` and queries the celery beat

@@ -17,7 +17,7 @@
 
 import json
 import logging.config
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -29,6 +29,7 @@ from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPGoneException
 from app.core.settings_override.lifecycle import (
+    CallbackRegistry,
     ProxyEntry,
     settings_override_refresher,
 )
@@ -41,6 +42,7 @@ from app.tasks.db.seed import (
     verify_taskhistory_execution_request_is_jsonb,
 )
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
+from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.periodic.routes import router as periodic_router
 from app.tasks.routes import router as tasks_router
 from app.tasks.settings.routes import router as settings_router
@@ -49,15 +51,48 @@ logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
 
 
+async def _reconcile_nomad(_: Mapping[str, object]) -> None:
+    """Rebind the live Nomad executor when its override changed.
+
+    Registered as the ``(TASKS_SETTINGS, NOMAD)`` rebind callback by
+    :func:`tasks_lifespan`. :meth:`NomadLifecycle.__aexit__` clears the holder
+    before the override refresher task is cancelled, so a refresh cycle racing
+    shutdown can find ``tasks_app.state.nomad_lifecycle`` already gone; the
+    rebind is skipped in that window rather than raising a noisy callback error.
+
+    :param _: The new effective ``TasksSettings`` snapshot mapping. Unused -- the
+        holder reads the live ``NOMAD`` config itself when reconciling.
+    :type _: Mapping[str, object]
+    """
+    holder = getattr(tasks_app.state, "nomad_lifecycle", None)
+    if holder is not None:
+        await holder.reconcile()
+
+
+#: Rebind callbacks for watched Tasks overrides, fired by both the background
+#: refresher and the settings-API handlers; published on ``tasks_app.state`` below.
+_OVERRIDE_REBIND_CALLBACKS: CallbackRegistry = {
+    (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): _reconcile_nomad,
+}
+
+
 @asynccontextmanager
 async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage the Tasks API's lifespan.
 
-    Initializes the Tasks database data and ensures that the CasdoorSDK, the
-    NomadExecutor, and any extra client sessions are properly managed during the
-    application's startup and shutdown phases.
+    Initializes the Tasks database data and starts the settings-override
+    refresher, the default lifespan, and the :class:`NomadLifecycle` holder that
+    owns the live entered ``NomadExecutor``.
 
-    :param app: The FastAPI application instance.
+    The holder is anchored to the module-level ``tasks_app`` rather than to
+    ``app``: when this lifespan runs under the combined ``app.main:app``,
+    ``app`` is the *parent* application, but requests routed to the mounted
+    ``/api/tasks`` sub-app resolve ``request.app`` to ``tasks_app`` -- so the
+    holder must live on ``tasks_app.state`` for ``get_request_executor`` to find
+    it in both standalone and mounted deployments.
+
+    :param app: The FastAPI application instance whose lifespan this manages
+        (``tasks_app`` standalone, the parent app when mounted).
     :type app: FastAPI
     :return: An async context manager yielding ``None`` for the lifespan duration.
     :rtype: AsyncGenerator[None, None]
@@ -67,16 +102,22 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with (
         settings_override_refresher(
             get_async_session_maker,
+            # ALERT_SETTINGS is intentionally NOT wired here: ``alert_settings``
+            # is a single shared proxy owned by the SEP refresher. Wiring it here
+            # too would, in the combined ``app.main:app`` process, have both
+            # refreshers publish into it from their separate databases and clobber
+            # each other every cycle.
             {
                 SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
                     tasks_settings, TasksSettings
-                )
+                ),
             },
             settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
             enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+            callbacks=_OVERRIDE_REBIND_CALLBACKS,
         ),
         default_lifespan(app),
-        tasks_settings.NOMAD,
+        NomadLifecycle(tasks_app),
     ):
         yield
 
@@ -95,6 +136,9 @@ tasks_app = create_app(
     version=__version__,
     description=f"{__summary__} — task execution, history, periodic jobs, connectivity.",
 )
+# On the sub-app's state, not the lifespan's parent ``app``: requests to
+# ``/api/tasks`` resolve ``request.app`` to ``tasks_app``, where the handlers read it.
+tasks_app.state.override_callbacks = _OVERRIDE_REBIND_CALLBACKS
 
 
 @tasks_app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
