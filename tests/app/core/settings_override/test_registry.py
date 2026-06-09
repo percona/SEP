@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from app.core.settings_override.registry import (
     hot_field_names,
     is_hot_reloadable,
+    nested_overridable_field_names,
     ReloadClassification,
 )
 from app.core.utils.pydantic import field_with_metadata
@@ -38,7 +39,7 @@ def test_is_hot_reloadable_true_for_marked_field() -> None:
 def test_is_hot_reloadable_false_for_unmarked_field() -> None:
     """A field on the model but not marked HOT is NOT_OVERRIDABLE.
 
-    ``INVENTORY_ENDPOINT`` is explicitly deferred to SEP-1037 -- guarding
+    ``INVENTORY_ENDPOINT`` is intentionally left unmarked -- guarding
     against accidental promotion here.
     """
     assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is False
@@ -65,6 +66,20 @@ def test_hot_field_names_tasks_settings() -> None:
     """``TasksSettings`` ships the two HOT fields this ticket promotes."""
     assert hot_field_names(TasksSettings) == frozenset(
         {"PRE_EXECUTION_CONNECTIVITY_CHECK", "STALENESS_THRESHOLD_SECONDS"}
+    )
+
+
+def test_nested_overridable_field_names_sep_settings() -> None:
+    """``SEPSettings`` ships exactly the two NESTED_ONLY parents this ticket promotes."""
+    assert nested_overridable_field_names(SEPSettings) == frozenset(
+        {"SESSION", "SESSION_REFRESH"}
+    )
+
+
+def test_nested_overridable_field_names_tasks_settings() -> None:
+    """``TasksSettings`` ships the two NESTED_ONLY parents this ticket promotes."""
+    assert nested_overridable_field_names(TasksSettings) == frozenset(
+        {"NOMAD", "SECURITY_HEADERS"}
     )
 
 

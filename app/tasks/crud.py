@@ -57,6 +57,7 @@ class TaskManager(BaseSQLModelManager):
     """
 
     Model = Task
+    ordering = [col(Task.created_at).desc(), col(Task.id).desc()]
 
     @classmethod
     def _append_list_active_data_filters(

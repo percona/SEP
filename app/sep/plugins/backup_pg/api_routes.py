@@ -63,7 +63,7 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=backup_pg_schema)
 
 
-@router.get("/", response_model=PaginatedResponse[BackupTaskResponse])
+@router.get("/")
 async def backup_pg_api_list(
     tasks_api: TaskAPI,
     pagination: PaginationDep,
@@ -82,7 +82,7 @@ async def backup_pg_api_list(
     )
 
 
-@router.get("/{task_name}", response_model=BackupTaskDetailResponse)
+@router.get("/{task_name}")
 async def backup_pg_api_detail(
     task_name: str,
     tasks_api: TaskAPI,
@@ -95,7 +95,6 @@ async def backup_pg_api_detail(
 @router.post(
     "/",
     status_code=http_status.HTTP_201_CREATED,
-    response_model=BackupTaskDetailResponse,
     dependencies=[HasNoConflictedRunningTasksOnCreate],
 )
 async def backup_pg_api_create(
@@ -121,7 +120,6 @@ async def backup_pg_api_create(
 @router.post(
     "/{task_name}/execute",
     status_code=http_status.HTTP_201_CREATED,
-    response_model=BackupExecutionResponse,
     dependencies=[HasNoConflictedRunningTasks],
 )
 async def backup_pg_api_execute(
