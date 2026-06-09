@@ -21,18 +21,21 @@ import pytest
 from fastapi import HTTPException, status
 from sqlalchemy.dialects.postgresql import JSON, JSONB
 
+from app.core.settings_override.models import SettingClassEnum
 from app.tasks.db.seed import verify_taskhistory_execution_request_is_jsonb
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
 )
-from app.tasks.main import lifespan as tasks_module_lifespan
 from app.tasks.main import (
+    _reconcile_nomad,
     task_data_not_found_detail,
     task_data_not_found_handler,
+    tasks_app,
     tasks_lifespan,
 )
+from app.tasks.main import lifespan as tasks_module_lifespan
 
 
 def test_tasks_app_lifespan_is_always_set():
@@ -43,6 +46,46 @@ def test_tasks_app_lifespan_is_always_set():
     ``"__main__"``, which would leave the lifespan as ``None``.
     """
     assert tasks_module_lifespan is tasks_lifespan
+
+
+def test_tasks_app_publishes_nomad_rebind_callback_on_state():
+    """The NOMAD rebind callback registry is published on ``tasks_app.state``.
+
+    The settings-API PATCH/DELETE handlers read the registry from
+    ``request.app.state.override_callbacks`` to fire the rebind inline; requests
+    routed to the mounted sub-app resolve ``request.app`` to ``tasks_app``, so the
+    registry must live on the module-level sub-app's state -- not the (parent)
+    ``app`` passed to ``tasks_lifespan`` under the combined ``app.main:app``.
+    """
+    callbacks = tasks_app.state.override_callbacks
+    assert callbacks[(SettingClassEnum.TASKS_SETTINGS, "NOMAD")] is _reconcile_nomad
+
+
+@pytest.mark.asyncio
+async def test_reconcile_nomad_rebinds_when_holder_present():
+    """The NOMAD rebind callback reconciles the live holder when one is set."""
+    holder = MagicMock()
+    holder.reconcile = AsyncMock()
+    app_mock = MagicMock()
+    app_mock.state.nomad_lifecycle = holder
+    with patch("app.tasks.main.tasks_app", app_mock):
+        await _reconcile_nomad({})
+    holder.reconcile.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_nomad_skips_when_holder_absent():
+    """The NOMAD rebind callback is a no-op when the holder was cleared.
+
+    During the shutdown race ``NomadLifecycle.__aexit__`` sets
+    ``tasks_app.state.nomad_lifecycle`` to ``None`` before the override refresher
+    task is cancelled, so a racing refresh cycle must skip the rebind rather than
+    raise ``AttributeError`` on ``None``.
+    """
+    app_mock = MagicMock()
+    app_mock.state.nomad_lifecycle = None
+    with patch("app.tasks.main.tasks_app", app_mock):
+        await _reconcile_nomad({})
 
 
 def test_task_data_not_found_detail_base_exception_without_structured_fields():
@@ -209,14 +252,14 @@ def _make_schema_check_engine_mock(dialect_name: str, columns):
 
 
 class TestVerifyTaskHistoryExecutionRequestIsJsonb:
-    """Test the SEP-988 startup schema validation guard."""
+    """Verify the startup guard asserting ``taskhistory.execution_request`` is JSONB."""
 
     @pytest.mark.asyncio
     async def test_raises_when_pg_column_is_plain_json(self):
         """Assert ``RuntimeError`` when PostgreSQL still reports plain ``JSON``.
 
-        Defend against a deploy that ships SEP-988 code without running the
-        Alembic migration that converts the column to ``jsonb``.
+        Defend against a deploy that ships the JSONB-dependent code without
+        running the Alembic migration that converts the column to ``jsonb``.
         """
         engine_mock, run_sync_mock = _make_schema_check_engine_mock(
             "postgresql",
@@ -245,7 +288,7 @@ class TestVerifyTaskHistoryExecutionRequestIsJsonb:
     async def test_is_noop_on_sqlite(self):
         """Assert the guard short-circuits on SQLite without inspecting the schema.
 
-        SEP-988's migration is a no-op on SQLite, and the JSONB type only
+        The JSONB migration is a no-op on SQLite, and the JSONB type only
         exists in the PostgreSQL dialect, so the function must return before
         running reflection.
         """

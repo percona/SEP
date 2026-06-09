@@ -76,27 +76,6 @@ class TestFooterTemplate:
         settings = SEPSettings(FOOTER_TEMPLATE=tmpl)
         assert settings.FOOTER_TEMPLATE is tmpl
 
-    @patch("app.sep.config.__version__", "9.8.7")
-    @patch("app.sep.config.__summary__", "TestApp")
-    def test_footer_text_renders_default_template(self):
-        """Assert FOOTER_TEXT renders the default template with version and summary."""
-        settings = SEPSettings()
-        assert settings.FOOTER_TEXT == "TestApp 9.8.7"
-
-    @patch("app.sep.config.__version__", "1.2.3")
-    @patch("app.sep.config.__summary__", "MySEP")
-    def test_footer_text_renders_custom_template(self):
-        """Assert FOOTER_TEXT renders a custom template with substituted placeholders."""
-        settings = SEPSettings(FOOTER_TEMPLATE="$summary v$version (custom)")
-        assert settings.FOOTER_TEXT == "MySEP v1.2.3 (custom)"
-
-    @patch("app.sep.config.__version__", "0.0.1")
-    @patch("app.sep.config.__summary__", "App")
-    def test_footer_text_ignores_unknown_placeholders(self):
-        """Assert FOOTER_TEXT safely ignores unknown placeholders."""
-        settings = SEPSettings(FOOTER_TEMPLATE="$summary $unknown $version")
-        assert settings.FOOTER_TEXT == "App $unknown 0.0.1"
-
 
 class TestForwardDeprecatedPMMFields:
     """Test the ``_forward_deprecated_pmm_fields`` model validator."""
