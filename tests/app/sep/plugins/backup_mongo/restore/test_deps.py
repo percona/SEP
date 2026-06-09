@@ -16,7 +16,6 @@
 """Define tests for the app.sep.plugins.backup_mongo.restore.deps module."""
 
 from collections.abc import Awaitable, Callable
-from unittest.mock import AsyncMock
 
 import pytest
 import yaml
@@ -287,54 +286,47 @@ async def test_restore_task_group_yaml_golden_strings(
 
 
 @pytest.mark.asyncio
-async def test_build_restore_task_group_from_body_delegates(
+async def test_build_restore_task_group_from_body_matches_form_path(
     mocker,
     mock_remote_api,
     restore_create: RestoreCreate,
     restore_task_write: RestoreTaskWrite,
+    mongo_service: CreatedService,
 ) -> None:
-    """Convert body to form then build task group payloads."""
-    expected_payloads = mocker.Mock()
-    restore_create_from_write = mocker.patch(
-        "app.sep.plugins.backup_mongo.restore.deps.restore_create_from_write",
-        return_value=restore_create,
-    )
-    build_restore_task_group_mock = mocker.patch(
-        "app.sep.plugins.backup_mongo.restore.deps.build_restore_task_group",
-        new_callable=AsyncMock,
-        return_value=expected_payloads,
+    """JSON body composer produces the same payloads as the form path."""
+    mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
     )
 
-    result = await build_restore_task_group_from_body(
-        restore_task_write, mock_remote_api
-    )
-
-    assert result is expected_payloads
-    restore_create_from_write.assert_called_once_with(restore_task_write)
-    build_restore_task_group_mock.assert_awaited_once_with(
-        restore_create,
+    from_body = await build_restore_task_group_from_body(
+        restore_task_write,
         mock_remote_api,
     )
+    from_form = await build_restore_task_group(restore_create, mock_remote_api)
+
+    assert from_body == from_form
+    assert from_body.config_task.name == restore_create.task_name
+    assert from_body.force_resync_task is None
 
 
-def test_build_restore_update_form_from_body_delegates(
-    mocker,
-    restore_create: RestoreCreate,
+def test_build_restore_update_form_from_body_pins_parent_identity(
     restore_task_write: RestoreTaskWrite,
 ) -> None:
-    """Convert update body to form with identity pinned from path parent."""
+    """Update composer keeps path parent task_name and backup_type."""
     parent_task = _restore_parent_task(
         config=yaml.dump({"backupType": BackupType.PBM_LOGICAL.value}),
     )
-    restore_update_form_from_write = mocker.patch(
-        "app.sep.plugins.backup_mongo.restore.deps.restore_update_form_from_write",
-        return_value=restore_create,
+    body = restore_task_write.model_copy(
+        update={
+            "task_name": "wrong-name",
+            "backup_type": BackupType.PBM_PHYSICAL,
+        },
     )
 
-    result = build_restore_update_form_from_body(restore_task_write, parent_task)
+    result = build_restore_update_form_from_body(body, parent_task)
 
-    assert result is restore_create
-    restore_update_form_from_write.assert_called_once_with(
-        restore_task_write,
-        parent_task,
-    )
+    assert result.task_name == parent_task.name
+    assert result.backup_type == BackupType.PBM_LOGICAL
+    assert result.hostname == body.hostname
+    assert result.backup_source == body.backup_source
