@@ -25,7 +25,6 @@ from types import MappingProxyType
 from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
-from pydantic.fields import FieldInfo
 
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
@@ -40,6 +39,7 @@ from app.core.settings_override.registry import (
 from app.core.utils.pydantic import annotation_pydantic_class
 
 if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
     from sqlmodel.ext.asyncio.session import AsyncSession
 
     from app.core.config import BaseYamlSettings

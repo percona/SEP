@@ -47,7 +47,11 @@ from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field, materialize_template, nested_overridable_field
+from app.core.settings_override.registry import (
+    hot_field,
+    materialize_template,
+    nested_overridable_field,
+)
 from app.core.utils import (
     deep_dict_update,
     slugify,
