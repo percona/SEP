@@ -148,8 +148,6 @@ async def dipper_api_form_schema(
             service.name,
             service.node.name if service.node else "",
         )
-        # Best-effort: populates node/service dropdowns from PMM inventory; an
-        # unconfigured/unreachable PMM yields empty lists and free-text fallback.
         node_options, service_options = await fetch_pmm_node_service_names(pmm_api)
     return build_dipper_form_schema(
         script,

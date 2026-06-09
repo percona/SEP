@@ -33,6 +33,7 @@ from app.core.exceptions import (
 from app.core.pagination import fetch_all_dict_items
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
+from app.core.utils.iterators import unique_everseen
 from app.inventory.models import ServiceTypeEnum
 from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.artifact_constants import (
@@ -410,15 +411,8 @@ def _dedupe_nonempty(names: Iterable[str]) -> list[str]:
     :return: The cleaned, de-duplicated list of names.
     :rtype: list[str]
     """
-    seen: set[str] = set()
-    cleaned: list[str] = []
-    for name in names:
-        stripped = (name or "").strip()
-        if not stripped or stripped in seen:
-            continue
-        seen.add(stripped)
-        cleaned.append(stripped)
-    return cleaned
+    stripped_names = ((name or "").strip() for name in names)
+    return list(unique_everseen(name for name in stripped_names if name))
 
 
 async def fetch_pmm_node_service_names(
