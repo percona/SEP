@@ -5,6 +5,7 @@
 # description: This script extracts a portion of the HAProxy log based on a given time and a specified number of minutes before and after that time. Supports both ISO 8601 (rsyslog default) and BSD syslog (Mmm DD HH:MM:SS) timestamp formats.
 # allow_extra_args: false
 # sudo: optional
+# service_type: haproxy
 # parameters:
 #  - name: time
 #    type: str

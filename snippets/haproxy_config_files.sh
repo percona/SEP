@@ -5,6 +5,7 @@
 # description: This script finds all HAProxy config files, including those referenced by include directives and conf.d directories, and displays their contents along with version and service status.
 # allow_extra_args: false
 # sudo: optional
+# service_type: haproxy
 # parameters: []
 # ---
 
