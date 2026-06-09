@@ -547,7 +547,7 @@ class TestGetCreatedNode:
 
         result = await get_created_node(mock_api, node.id)
         assert isinstance(result, CreatedNode)
-        mock_api.get.assert_called_once_with(f"/{node.id}")
+        mock_api.get.assert_called_once_with(f"/nodes/{node.id}")
 
 
 class TestGetCreatedSchema:
@@ -1049,7 +1049,7 @@ class TestGetExecutorHostsContext:
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "db-replica"
         mock_inventory_api.get.assert_called_once_with(
-            "/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
+            "/nodes/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
         )
 
     @pytest.mark.asyncio

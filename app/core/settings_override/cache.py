@@ -15,29 +15,34 @@
 
 """Build immutable override snapshots for a settings class."""
 
+from __future__ import annotations
+
 __all__ = ["build_snapshot"]
 
 import logging
 from collections import defaultdict
 from types import MappingProxyType
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
-from pydantic.fields import FieldInfo
-from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import BaseYamlSettings
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.registry import (
     _clear_cached_properties,
     _resolve_field_in_model,
-    coerce_field_value,
     coerce_nested_field_value,
     is_hot_reloadable,
     is_nested_overridable_parent,
+    materialize_override_value,
 )
 from app.core.utils.pydantic import annotation_pydantic_class
+
+if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.core.config import BaseYamlSettings
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +151,10 @@ def _apply_top_level_row(
         )
         return
     try:
-        snapshot[row.key] = coerce_field_value(field_info, row.value)
-    except ValidationError as exc:
+        snapshot[row.key] = materialize_override_value(
+            settings_cls, row.key, field_info, row.value
+        )
+    except ValueError as exc:
         logger.warning(
             "Override for %s.%s failed type coercion: %s",
             setting_class.name,

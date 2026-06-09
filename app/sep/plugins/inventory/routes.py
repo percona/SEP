@@ -106,7 +106,7 @@ async def node_list(
 ) -> HTMLResponse:
     """List Nodes."""
     context["inventory"] = await fetch_all_dict_items(
-        lambda pagination: inventory_api.get("/", params=pagination.model_dump())
+        lambda pagination: inventory_api.get("/nodes/", params=pagination.model_dump())
     )
     context["source_enum"] = SourceEnum
     context["sync_is_running"] = await SyncItemManager.sync_is_running(
@@ -274,7 +274,7 @@ async def node_create(
     node_data: Annotated[Node, Form()],
 ) -> RedirectResponse:
     """Create Node."""
-    await inventory_api.post("/", json=node_data.model_dump(exclude={"services"}))
+    await inventory_api.post("/nodes/", json=node_data.model_dump(exclude={"services"}))
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -284,7 +284,7 @@ async def node_delete(
     inventory_api: InventoryAPI,
 ) -> RedirectResponse:
     """Delete Node."""
-    await inventory_api.delete(f"/{node_id}")
+    await inventory_api.delete(f"/nodes/{node_id}")
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -461,7 +461,7 @@ async def service_create_for_node(
 ) -> RedirectResponse:
     """Create Service for Node."""
     await inventory_api.post(
-        f"/{node_id}/services/",
+        f"/nodes/{node_id}/services/",
         json=service_data.model_dump(exclude={"schemas"}),
     )
     return RedirectResponse(
