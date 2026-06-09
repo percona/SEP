@@ -114,6 +114,27 @@ def byte_offset_for_last_n_lines(content: bytes, line_count: int) -> int:
     return 0 if tail_offset is None else tail_offset
 
 
+def _utf8_byte_offset_to_char_index(text: str, byte_offset: int) -> int:
+    """Map a UTF-8 byte offset to a Python string index.
+
+    Legacy ``tracking["task_logs"]`` blobs are sliced as ``str`` values; tail
+    boundaries are computed on encoded bytes and must be converted before use.
+
+    :param text: The decoded log text.
+    :type text: str
+    :param byte_offset: Byte offset into ``text.encode("utf-8")``.
+    :type byte_offset: int
+    :return: Character index equivalent to ``byte_offset``.
+    :rtype: int
+    """
+    if byte_offset <= 0:
+        return 0
+    encoded = text.encode("utf-8")
+    if byte_offset >= len(encoded):
+        return len(text)
+    return len(encoded[:byte_offset].decode("utf-8"))
+
+
 async def _compute_stream_tail_offset(
     session: AsyncSession,
     task_history_id: int,
@@ -245,6 +266,9 @@ def compute_tail_offsets_legacy(
 ) -> TailOffsets:
     """Derive tail offsets from the legacy ``tracking["task_logs"]`` blob.
 
+    Offsets are character indices into each step's ``str`` log payload so
+    :func:`iter_legacy_blob` can slice ``msg[start:]`` correctly.
+
     :param task_history: The task history whose legacy logs should be inspected.
     :type task_history: TaskHistory
     :param tail_lines: Number of trailing lines to retain per stream.
@@ -266,8 +290,9 @@ def compute_tail_offsets_legacy(
             tail_byte_offset = byte_offset_for_last_n_lines(
                 msg.encode("utf-8"), tail_lines
             )
-            if tail_byte_offset > 0:
-                tail_offsets.setdefault(cur_step, {})[log_type] = tail_byte_offset
+            tail_char_offset = _utf8_byte_offset_to_char_index(msg, tail_byte_offset)
+            if tail_char_offset > 0:
+                tail_offsets.setdefault(cur_step, {})[log_type] = tail_char_offset
     return tail_offsets
 
 

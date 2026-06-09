@@ -374,6 +374,32 @@ async def test_iter_task_history_logs_tail_legacy_blob(
 
 
 @pytest.mark.asyncio
+async def test_iter_task_history_logs_tail_legacy_multibyte_boundary(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert legacy tail offsets map UTF-8 byte boundaries to ``str`` indices."""
+    history = created_task_with_history
+    msg = "ascii\n\u00e9\u00e9\u00e9tail\ndone\n"
+    legacy = {
+        "run-script": {
+            TaskLogType.STDOUT.value: msg,
+            TaskLogType.STDERR.value: "",
+        }
+    }
+    encoded = base64.b64encode(gzip.compress(json.dumps(legacy).encode())).decode()
+    history.execution_request.tracking["task_logs"] = encoded
+    saved = await TaskHistoryManager.save(
+        session, history, flag_modified_fields=["execution_request"]
+    )
+
+    history = await _reload(session, saved)
+    logs = await _collect(iter_task_history_logs(session, history, tail_lines=2))
+    combined = "".join(log.msg for log in logs if log.type == TaskLogType.STDOUT)
+
+    assert combined == "\u00e9\u00e9\u00e9tail\ndone\n"
+
+
+@pytest.mark.asyncio
 async def test_iter_task_history_logs_tail_multibyte_boundary(
     session: AsyncSession, created_task_with_history: TaskHistory
 ):
