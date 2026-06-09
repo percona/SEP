@@ -189,35 +189,34 @@ async def restores_create(
     task_api: TaskAPI,
 ) -> RedirectResponse:
     """Create new restores task."""
-    config_task, restore_task, pbm_list_task, force_resync_task = tasks
-    logger.debug("Create restores config task: %s", config_task)
-    logger.debug("Create restores task: %s", restore_task)
-    logger.debug("Create pbm list task: %s", pbm_list_task)
-    if force_resync_task:
-        logger.debug("Create pbm force-resync task: %s", force_resync_task)
+    logger.debug("Create restores config task: %s", tasks.config_task)
+    logger.debug("Create restores task: %s", tasks.restore_task)
+    logger.debug("Create pbm list task: %s", tasks.pbm_list_task)
+    if tasks.force_resync_task:
+        logger.debug("Create pbm force-resync task: %s", tasks.force_resync_task)
 
     await task_api.post(
         "/",
-        json=config_task.model_dump(),
+        json=tasks.config_task.model_dump(),
     )
 
     await task_api.post(
         "/",
-        json=restore_task.model_dump(),
+        json=tasks.restore_task.model_dump(),
     )
 
     await task_api.post(
         "/",
-        json=pbm_list_task.model_dump(),
+        json=tasks.pbm_list_task.model_dump(),
     )
 
-    if force_resync_task:
+    if tasks.force_resync_task:
         await task_api.post(
             "/",
-            json=force_resync_task.model_dump(),
+            json=tasks.force_resync_task.model_dump(),
         )
 
-    task_path = request.url_for("pbm_restores_detail", task_name=config_task.name)
+    task_path = request.url_for("pbm_restores_detail", task_name=tasks.config_task.name)
     return RedirectResponse(
         task_path,
         status_code=status.HTTP_303_SEE_OTHER,

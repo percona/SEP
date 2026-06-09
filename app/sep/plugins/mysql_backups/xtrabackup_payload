@@ -39,6 +39,15 @@ from pymysql import Error, InternalError, OperationalError, ProgrammingError
 
 BYTES_PER_MB = 1024**2
 
+# Matches xtrabackup per-file copy progress lines emitted during the backup
+# data phase.  Anchored at ^ so it cannot fire on mid-line content.  The
+# .ibd extension constraint prevents "Copying" that appears in error or
+# summary messages from being incorrectly dropped.
+_COPY_LINE_RE = re.compile(
+    r"^\[\d+\][\s\t]+(NT:\s+Copying\s+\S+\.ibd\s+to\s+\S+|NT:\s+Finished copying\s+\S+\.ibd"
+    r"|\.\.\.\S+\.ibd:\s+\d+%\s+copied)\s*$"
+)
+
 BACKUP_DIR_REGEX = {
     "X": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$",
     "I": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}_incrementals$",
@@ -1628,6 +1637,7 @@ class RsyncUploadProvider:
         self.alias = settings.get("ALIAS", host)
         self.rsync_dir = settings.get("RSYNC_PATH")
         self.backup_type = settings.get("BACKUP_TYPE")
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         if self.rsync_dir is None:
             msg = "RSYNC_PATH is not set."
             raise BackupError(msg)
@@ -1659,7 +1669,7 @@ class RsyncUploadProvider:
 
         cmd = [
             RSYNC_BIN,
-            "-avH",
+            "-aH" if self.upload_quiet else "-avH",
             "--numeric-ids",
             "--no-owner",
             "--no-group",
@@ -1697,6 +1707,7 @@ class S3UploadProvider:
         self.awscli_s3_upload_extra_args = settings.get('AWSCLI_S3_UPLOAD_EXTRA_ARGS')
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         self.logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
 
         if self.s3_bucket is None:
@@ -1776,9 +1787,10 @@ class S3UploadProvider:
                             arg_key, arg_value = arg.split("=", 1)
                             extra_args[arg_key] = arg_value
 
-                self.logger.info(
-                    "Uploading %s to s3://%s/%s", local_path, self.bucket_name, key
-                )
+                if not self.upload_quiet:
+                    self.logger.info(
+                        "Uploading %s to s3://%s/%s", local_path, self.bucket_name, key
+                    )
                 try:
                     self.s3.upload_file(
                         str(local_path), self.bucket_name, key, ExtraArgs=extra_args
@@ -1831,6 +1843,7 @@ class GSUploadProvider:
         self.alias = settings.get("ALIAS", host)
         self.gs_bucket = settings.get("GS_BUCKET")
         self.backup_type = settings.get('BACKUP_TYPE')
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         if self.gs_bucket is None:
             msg = 'GS_BUCKET is not set.'
             raise BackupError(msg)
@@ -1867,6 +1880,8 @@ class GSUploadProvider:
         )
         dest_path = f"gs://{self.bucket_name}/{full_prefix}"
         gs_cmd = [GCLOUD_BIN, 'storage', 'rsync', '-r', str(source_path), dest_path]
+        if self.upload_quiet:
+            gs_cmd.append("--verbosity=error")
         self.logger.info('Uploading backup...')
         self.logger.info('Running: %s', ' '.join(gs_cmd))
 
@@ -2018,6 +2033,7 @@ class Xtrabackup(Backup):
         self.xtrabackup_stop_replica = server_data.get('XTRABACKUP_STOP_REPLICA', False)
         self.xtrabackup_lock_ddl = server_data.get('XTRABACKUP_LOCK_DDL', False)
         self.xtrabackup_lock_ddl_timeout = server_data.get('XTRABACKUP_LOCK_DDL_TIMEOUT', 60)
+        self.xtrabackup_quiet = server_data.get('XTRABACKUP_QUIET', False)
         self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', 'xtrabackup')
 
         # Upload options to keep backward-compatibility
@@ -2343,9 +2359,12 @@ class Xtrabackup(Backup):
         xb_log_stream = open(self.xb_log_file, 'a')
         backup_proc = subprocess.Popen(xtrabackup_cmd, shell=self.cmd_shell, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in backup_proc.stdout:
+            decoded = line.decode()
+            if self.xtrabackup_quiet and _COPY_LINE_RE.match(decoded):
+                continue
             if self.logging_stdout:
-                sys.stdout.write(line.decode())
-            xb_log_stream.write(line.decode())
+                sys.stdout.write(decoded)
+            xb_log_stream.write(decoded)
         backup_proc.wait()
         backup_proc.communicate()
         if backup_proc.returncode != 0:

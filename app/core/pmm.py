@@ -37,10 +37,10 @@ _background_tasks = set()
 def execution_request_for_pmm_snapshot(queue_item: TaskHistory) -> TaskExecutionRequest:
     """Return the task execution request used to build a PMM annotation.
 
-    The deferred ``TaskHistory.execution_request`` (SEP-816) can raise
+    The deferred ``TaskHistory.execution_request`` can raise
     ``MissingGreenlet`` on async engines if read through the attribute after the load
     session has closed. When the column is already in memory, use the ORM
-    :attr:`loaded_value` (see SEP-1021); otherwise read ``queue_item.execution_request``.
+    :attr:`loaded_value`; otherwise read ``queue_item.execution_request``.
 
     :param queue_item: The task history record.
     :type queue_item: TaskHistory
@@ -116,9 +116,11 @@ async def annotate_task_event(
     """Create a PMM annotation for a task lifecycle event.
 
     Read ``_service_names`` (list) or ``_service_name`` (str) from the
-    task execution metadata. Accept primitives rather than an ORM
-    instance so the coroutine is safe to run after the originating
-    request session has closed (see SEP-1009).
+    task execution metadata. Read ``_pmm_node_name`` to override ``target``
+    as the PMM node name when the executor differs from the source node —
+    e.g. the archiver runs on a separate executor host. Accept primitives
+    rather than an ORM instance so the coroutine is safe to run after the
+    originating request session has closed.
 
     :param task_name: The task name (from ``TaskExecutionRequest.task``).
     :type task_name: str
@@ -135,9 +137,11 @@ async def annotate_task_event(
         single = safe_meta.get("_service_name")
         service_names = [single] if single else []
 
+    node_name = safe_meta.get("_pmm_node_name") or target
+
     await create_pmm_annotation(
         text=f"SEP {task_name} - {event}",
-        node_name=target,
+        node_name=node_name,
         tags=["sep", task_name, event.lower()],
         service_names=service_names,
     )
@@ -146,7 +150,7 @@ async def annotate_task_event(
 def _snapshot_for_annotation(queue_item: TaskHistory, event: str) -> dict[str, Any]:
     """Validate the precondition and snapshot kwargs for ``annotate_task_event``.
 
-    Enforce the SEP-1009/1017/1021 invariants exactly once: the deferred
+    Enforce the deferred-load and snapshot invariants exactly once: the deferred
     ``execution_request`` column must be loaded, the snapshot is taken from
     :attr:`loaded_value` when available (per :func:`execution_request_for_pmm_snapshot`),
     and ``meta`` is deep-copied so background callers observe the values at
@@ -189,7 +193,7 @@ def schedule_annotation(
 
     Snapshot the request fields synchronously so the background
     coroutine never touches ORM attributes after the originating
-    session has closed. See SEP-1009.
+    session has closed.
 
     Precondition: ``queue_item.execution_request`` must already be
     loaded. The column is declared ``deferred=True`` as a ``column_property``
@@ -203,7 +207,6 @@ def schedule_annotation(
     ``await session.refresh(obj, attribute_names=["execution_request"])``
     first (see ``app/tasks/routes.py`` and
     ``app/tasks/connectivity/service.py`` for the canonical pattern).
-    See SEP-1017.
 
     ``meta`` is deep-copied so the background task observes the values
     at scheduling time even if the originating request mutates nested
@@ -214,7 +217,7 @@ def schedule_annotation(
     drive the loop via discrete ``celery.loop.run_until_complete(...)``
     calls, prefer :func:`await_annotation` — fire-and-forget tasks
     scheduled here are abandoned when the outer coroutine returns and
-    never reach PMM. See SEP-1204.
+    never reach PMM.
 
     :param queue_item: The task history record.
     :type queue_item: TaskHistory
@@ -237,7 +240,7 @@ async def await_annotation(queue_item: TaskHistory, event: str) -> None:
     before the outer coroutine returns. Use this from Celery worker tasks
     that drive the event loop with ``celery.loop.run_until_complete(...)``:
     a fire-and-forget background task scheduled there is abandoned when the
-    outer coroutine returns and never reaches PMM (SEP-1204).
+    outer coroutine returns and never reaches PMM.
 
     ``annotate_task_event`` is internally bounded by
     ``settings.PMM.annotations_timeout``; errors are swallowed by

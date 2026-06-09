@@ -32,6 +32,11 @@
 #    label: Mask sensitive values
 #    description: Redact values for parameters whose names or contents look sensitive (password, passphrase, secret, primary_conninfo, archive_command, restore_command, ssl_passphrase_command).
 #    default: false
+#  - name: dbname
+#    type: str
+#    label: Target database
+#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    default: postgres
 # atw:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
@@ -41,12 +46,11 @@
 
 set -euo pipefail
 
-PSQL="psql"
-
 CONFIG_FILE_ARG=""
 AUTO_CONFIG_FILE_ARG=""
 DATA_DIR_ARG=""
 OUTPUT_ARG=""
+DBNAME_ARG="${PGDATABASE:-postgres}"
 MASK=0
 
 usage() {
@@ -61,13 +65,14 @@ Options:
   --auto-config-file <path>  Path to postgresql.auto.conf (defaults to data_directory).
   --data-dir <path>          PostgreSQL data directory override.
   --output <path>            Output tar.gz path (default: postgresql_configs_<epoch>.tar.gz).
+  --dbname <db>              Target database for psql (default: postgres).
   --mask                     Redact values for sensitive parameters.
   -h, --help                 Show this help message.
 EOS
     exit "${exit_code}"
 }
 
-if ! OPTS=$(getopt --options h --longoptions 'config-file:,auto-config-file:,data-dir:,output:,mask,help' -- "$@"); then
+if ! OPTS=$(getopt --options h --longoptions 'config-file:,auto-config-file:,data-dir:,output:,dbname:,mask,help' -- "$@"); then
     echo "Error parsing options" >&2
     usage 1
 fi
@@ -92,6 +97,10 @@ while [[ -n $* ]]; do
             OUTPUT_ARG="$2"
             shift 2
             ;;
+        --dbname)
+            DBNAME_ARG="$2"
+            shift 2
+            ;;
         --mask)
             MASK=1
             shift
@@ -107,6 +116,10 @@ while [[ -n $* ]]; do
             ;;
     esac
 done
+
+export PGDATABASE="${DBNAME_ARG:-postgres}"
+
+PSQL="psql"
 
 # Auto-detect config_file and data_directory via psql, then via the running
 # postgres process (-D <datadir>, --config-file=...), then via well-known

@@ -107,20 +107,15 @@ async def restore_mongo_api_create(
         "Create backup_mongo restore task group (JSON path): %s", body.task_name
     )
     form = restore_create_from_write(body)
-    (
-        config_task,
-        restore_task,
-        pbm_list_task,
-        force_resync_task,
-    ) = await build_restore_task_group(form, inventory_api)
+    payloads = await build_restore_task_group(form, inventory_api)
     await create_restore_task_group(
         tasks_api,
-        config_task,
-        restore_task,
-        pbm_list_task,
-        force_resync_task,
+        payloads.config_task,
+        payloads.restore_task,
+        payloads.pbm_list_task,
+        payloads.force_resync_task,
     )
-    task = await get_restores_task(config_task.name, tasks_api)
+    task = await get_restores_task(payloads.config_task.name, tasks_api)
     return await build_restore_mongo_api_detail_response(task, tasks_api)
 
 
