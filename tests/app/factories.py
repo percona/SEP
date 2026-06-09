@@ -15,13 +15,22 @@
 
 """Define reusable model factories for tests."""
 
+from datetime import datetime, UTC
+
 from polyfactory.factories.pydantic_factory import ModelFactory
 from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor import CasdoorSDK
-from app.inventory.models import NodeWrite, SchemaWrite, ServiceWrite, TableWrite
+from app.inventory.models import (
+    HostSystemObservationWrite,
+    NodeWrite,
+    SchemaWrite,
+    ServiceSystemObservationWrite,
+    ServiceWrite,
+    TableWrite,
+)
 from app.models import CasdoorUser
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.alters.models import AltersCreate
@@ -33,6 +42,7 @@ MOCK_CREATED_SERVICE_ID = 1
 MOCK_CREATED_SCHEMA_ID = 1
 MOCK_CREATED_TABLE_ID = 1
 MOCK_DESTINATION_TABLE_ID = 2
+MOCK_OBSERVED_AT = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 
 
 class CasdoorSDKFactory(ModelFactory[CasdoorSDK]):
@@ -106,6 +116,24 @@ class TableWriteFactory(ModelFactory[TableWrite]):
     """Define factory for TableWrite instances."""
 
     schema_id = None
+
+
+class HostSystemObservationWriteFactory(ModelFactory[HostSystemObservationWrite]):
+    """Define factory for HostSystemObservationWrite instances."""
+
+    node_id = None
+    os_version = "Ubuntu 22.04"
+    installed_packages = [{"name": "mysql-client", "version": "8.0.35"}]
+    config = {"kernel": "5.15.0"}
+    observed_at = MOCK_OBSERVED_AT
+
+
+class ServiceSystemObservationWriteFactory(ModelFactory[ServiceSystemObservationWrite]):
+    """Define factory for ServiceSystemObservationWrite instances."""
+
+    service_id = None
+    db_engine_version = "8.0.35"
+    observed_at = MOCK_OBSERVED_AT
 
 
 class CreatedNodeFactory(ModelFactory[CreatedNode]):

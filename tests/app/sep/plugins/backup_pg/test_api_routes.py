@@ -22,8 +22,8 @@ import pytest
 import yaml
 from fastapi import HTTPException, status
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT
 from app.core.exceptions import HTTPNotFoundException
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.inventory import CreatedNode, CreatedService

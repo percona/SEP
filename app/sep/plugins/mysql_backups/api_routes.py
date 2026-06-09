@@ -21,15 +21,11 @@ Mounted at ``/api/plugins/mysql_backups/`` via ``plugins_router`` in
 
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from fastapi import status as http_status
 
-from app.core.db.crud import (
-    DEFAULT_PAGINATION_LIMIT,
-    DEFAULT_PAGINATION_OFFSET,
-    MAX_PAGINATION_LIMIT,
-)
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import make_pagination_dep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -58,13 +54,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=mysql_backups_schema)
 
+MYSQL_BACKUPS_MAX_PAGINATION_LIMIT = 50
+MySQLBackupsPaginationDep = make_pagination_dep(
+    max_limit=MYSQL_BACKUPS_MAX_PAGINATION_LIMIT
+)
 
-@router.get("/", response_model=PaginatedResponse[BackupResponse])
+
+@router.get("/")
 async def mysql_backups_api_list(
     tasks_api: TaskAPI,
+    pagination: MySQLBackupsPaginationDep,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=1, le=MAX_PAGINATION_LIMIT),
 ) -> PaginatedResponse[BackupResponse]:
     """List MySQL backup tasks.
 
@@ -73,11 +73,13 @@ async def mysql_backups_api_list(
     would amplify fan-out to the Tasks API.
     """
     return await get_mysql_backups_api_task_responses(
-        tasks_api, status=status, offset=offset, limit=limit
+        tasks_api,
+        pagination=pagination,
+        status=status,
     )
 
 
-@router.get("/{task_name}", response_model=BackupResponse)
+@router.get("/{task_name}")
 async def mysql_backups_api_detail(
     task: BackupsTask,
     tasks_api: TaskAPI,
@@ -89,7 +91,6 @@ async def mysql_backups_api_detail(
 
 @router.post(
     "/",
-    response_model=BackupResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated],
 )
@@ -108,7 +109,6 @@ async def mysql_backups_api_create(
 
 @router.post(
     "/{task_name}/execute",
-    response_model=BackupExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
 )

@@ -32,10 +32,13 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     build_pbm_force_resync_task_payload,
     build_pbm_list_task_payload,
     build_restore_config_task_payload,
+    build_restore_task_group,
+    build_restore_task_group_from_body,
     build_restore_task_payload,
     build_restore_tasks,
+    build_restore_update_form_from_body,
 )
-from app.sep.plugins.backup_mongo.restore.models import RestoreCreate
+from app.sep.plugins.backup_mongo.restore.models import RestoreCreate, RestoreTaskWrite
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import TaskFactory
 
@@ -86,7 +89,7 @@ async def test_dispatch_includes_service_name_when_service_id_set(
     restore_create: RestoreCreate,
     mongo_service: CreatedService,
 ):
-    """All four mongo restore dispatch functions inject _service_name when service_id is set."""
+    """Inject _service_name into meta when service_id is set across restore dispatch functions."""
     mocker.patch(
         "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
         return_value=mongo_service,
@@ -224,3 +227,106 @@ async def test_build_restore_tasks_logical_omits_force_resync(
     assert force_resync is None
     for task in populated_tasks:
         assert task.data["meta"]["_service_name"] == mongo_service.name
+
+
+@pytest.mark.asyncio
+async def test_restore_task_group_yaml_golden_strings(
+    mocker,
+    mock_remote_api,
+    mongo_service: CreatedService,
+) -> None:
+    """Keep per-leg meta.config YAML byte-identical."""
+    mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+    form = RestoreCreate(
+        hostname="mongo-restore-host",
+        task_name="mongo-restore-task",
+        service_id=str(mongo_service.id),
+        backup_type=BackupType.PBM_PHYSICAL,
+        backup_source="2026-04-29T10:00:00",
+        restore_batch_size=500,
+        restore_num_insertion_workers=10,
+        restore_mongod_location="custom/mongod",
+        restore_mongod_location_map="node1: /usr/bin/mongod\n",
+        credentials_path="/tmp/creds.yaml",
+    )
+
+    (
+        config_task,
+        restore_task,
+        pbm_list_task,
+        force_resync_task,
+    ) = await build_restore_task_group(form, mock_remote_api)
+
+    assert (
+        config_task.data["meta"]["config"] == "backupSource: '2026-04-29T10:00:00'\n"
+        "backupType: pbm_physical\n"
+        "credentials_path: /tmp/creds.yaml\n"
+        "restore:\n"
+        "  batchSize: 500\n"
+        "  downloadChunkMb: 32\n"
+        "  mongodLocation: custom/mongod\n"
+        "  mongodLocationMap:\n"
+        "    node1: /usr/bin/mongod\n"
+        "  numInsertionWorkers: 10\n"
+    )
+    assert (
+        restore_task.data["meta"]["config"] == "backupSource: '2026-04-29T10:00:00'\n"
+        "backupType: pbm_physical\n"
+        "credentials_path: /tmp/creds.yaml\n"
+    )
+    assert pbm_list_task.data["meta"]["config"] == "credentials_path: /tmp/creds.yaml\n"
+    assert force_resync_task is not None
+    assert (
+        force_resync_task.data["meta"]["config"]
+        == "credentials_path: /tmp/creds.yaml\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_restore_task_group_from_body_matches_form_path(
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+    restore_task_write: RestoreTaskWrite,
+    mongo_service: CreatedService,
+) -> None:
+    """JSON body composer produces the same payloads as the form path."""
+    mocker.patch(
+        "app.sep.plugins.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+
+    from_body = await build_restore_task_group_from_body(
+        restore_task_write,
+        mock_remote_api,
+    )
+    from_form = await build_restore_task_group(restore_create, mock_remote_api)
+
+    assert from_body == from_form
+    assert from_body.config_task.name == restore_create.task_name
+    assert from_body.force_resync_task is None
+
+
+def test_build_restore_update_form_from_body_pins_parent_identity(
+    restore_task_write: RestoreTaskWrite,
+) -> None:
+    """Update composer keeps path parent task_name and backup_type."""
+    parent_task = _restore_parent_task(
+        config=yaml.dump({"backupType": BackupType.PBM_LOGICAL.value}),
+    )
+    body = restore_task_write.model_copy(
+        update={
+            "task_name": "wrong-name",
+            "backup_type": BackupType.PBM_PHYSICAL,
+        },
+    )
+
+    result = build_restore_update_form_from_body(body, parent_task)
+
+    assert result.task_name == parent_task.name
+    assert result.backup_type == BackupType.PBM_LOGICAL
+    assert result.hostname == body.hostname
+    assert result.backup_source == body.backup_source

@@ -71,7 +71,7 @@ export function buildValidationRules(field: PluginField): RegisterOptions {
       }
       break;
     }
-    case 'multichoice': {
+    case 'multi_choice': {
       const { min_items: minItems, max_items: maxItems, label } = field;
       if (minItems !== undefined || maxItems !== undefined) {
         rules.validate = (value: unknown) => {

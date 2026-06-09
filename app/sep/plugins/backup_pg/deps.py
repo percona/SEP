@@ -25,7 +25,7 @@ from fastapi import Depends, Form, HTTPException
 from fastapi.encoders import jsonable_encoder
 
 from app.core.exceptions import HTTPConflictException
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse, Pagination
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -256,9 +256,9 @@ def build_backup_pg_api_task_response(
 
 async def get_backup_pg_api_task_responses(
     tasks_api: TaskAPI,
+    *,
+    pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = 0,
-    limit: int = 50,
 ) -> PaginatedResponse[BackupTaskResponse]:
     """Retrieve a paginated page of backup_pg task responses for the JSON API.
 
@@ -276,21 +276,17 @@ async def get_backup_pg_api_task_responses(
 
     :param tasks_api: The TaskAPI instance used to query backup tasks.
     :type tasks_api: TaskAPI
+    :param pagination: Validated offset/limit window for this page.
+    :type pagination: Pagination
     :param status: Optional latest-history status filter (client-side).
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based start offset for the underlying Tasks listing.
-    :type offset: int
-    :param limit: Maximum rows to fetch from the Tasks API for this page.
-    :type limit: int
     :return: Paginated backup task responses matching the filter.
     :rtype: PaginatedResponse[BackupTaskResponse]
     """
-    params = {
-        "owner": TaskOwner.BACKUP_PG.value,
-        "offset": offset,
-        "limit": limit,
-    }
-    response = await tasks_api.get("/", params=params)
+    response = await tasks_api.get(
+        "/",
+        params={"owner": TaskOwner.BACKUP_PG.value, **pagination.model_dump()},
+    )
     tasks = [Task.model_validate(item) for item in response["items"]]
     sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
 
@@ -309,12 +305,7 @@ async def get_backup_pg_api_task_responses(
         if status is None or task_status == status
     ]
     total = len(items) if status is not None else response.get("total", len(items))
-    return PaginatedResponse[BackupTaskResponse](
-        items=items,
-        total=total,
-        offset=offset,
-        limit=limit,
-    )
+    return PaginatedResponse.from_pagination(items, total, pagination)
 
 
 async def build_backup_pg_api_detail_response(

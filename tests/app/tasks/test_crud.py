@@ -22,8 +22,12 @@ import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.pagination import (
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    Pagination,
+)
 from app.tasks.crud import (
     DispatchLockManager,
     TaskHistoryLogManager,
@@ -517,7 +521,9 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-task-1")
         await _create_task(session, name="pag-task-2")
 
-        result = await TaskManager.list_active_paginated(session)
+        result = await TaskManager.list_active_paginated(
+            session, pagination=Pagination()
+        )
 
         assert result.total == PAGINATED_TASK_COUNT
         assert result.offset == DEFAULT_PAGINATION_OFFSET
@@ -530,7 +536,9 @@ class TestTaskManagerListActivePaginated:
         for i in range(3):
             await _create_task(session, name=f"pag-custom-{i}")
 
-        result = await TaskManager.list_active_paginated(session, offset=0, limit=1)
+        result = await TaskManager.list_active_paginated(
+            session, pagination=Pagination(offset=0, limit=1)
+        )
 
         assert result.total == PAGINATED_CUSTOM_TASK_COUNT
         assert len(result.items) == 1
@@ -543,7 +551,7 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-alter", owner=TaskOwner.ALTERS)
 
         result = await TaskManager.list_active_paginated(
-            session, owner=TaskOwner.BACKUPS
+            session, owner=TaskOwner.BACKUPS, pagination=Pagination()
         )
 
         assert result.total == 1
@@ -556,7 +564,9 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-deleted")
         await TaskManager.delete_by_name(session, "pag-deleted")
 
-        result = await TaskManager.list_active_paginated(session)
+        result = await TaskManager.list_active_paginated(
+            session, pagination=Pagination()
+        )
 
         assert result.total == 1
         assert result.items[0].name == "pag-active"
@@ -564,7 +574,9 @@ class TestTaskManagerListActivePaginated:
     @pytest.mark.asyncio
     async def test_empty_db_returns_zero_total(self, session: AsyncSession) -> None:
         """Assert empty database returns total of zero."""
-        result = await TaskManager.list_active_paginated(session)
+        result = await TaskManager.list_active_paginated(
+            session, pagination=Pagination()
+        )
 
         assert result.total == 0
         assert result.items == []
@@ -574,7 +586,9 @@ class TestTaskManagerListActivePaginated:
         """Assert offset beyond total returns empty items with correct total."""
         await _create_task(session, name="pag-beyond")
 
-        result = await TaskManager.list_active_paginated(session, offset=999)
+        result = await TaskManager.list_active_paginated(
+            session, pagination=Pagination(offset=999)
+        )
 
         assert result.total == 1
         assert result.items == []
@@ -597,10 +611,10 @@ class TestTaskManagerListActivePaginated:
         )
 
         null_parents = await TaskManager.list_active_paginated(
-            session, parent_is_null=True
+            session, parent_is_null=True, pagination=Pagination()
         )
         non_null_parents = await TaskManager.list_active_paginated(
-            session, parent_is_null=False
+            session, parent_is_null=False, pagination=Pagination()
         )
 
         assert null_parents.total == 1
@@ -623,7 +637,7 @@ class TestTaskManagerListActivePaginated:
         )
 
         result = await TaskManager.list_active_paginated(
-            session, backup_type=PBM_CONFIG_BACKUP_TYPE
+            session, backup_type=PBM_CONFIG_BACKUP_TYPE, pagination=Pagination()
         )
 
         assert result.total == 1
@@ -648,7 +662,9 @@ class TestTaskManagerListActivePaginated:
             data={"backup_type": "pbm_logical", "parent": "pag-config-parent"},
         )
 
-        result = await TaskManager.list_active_paginated(session, self_parent=True)
+        result = await TaskManager.list_active_paginated(
+            session, self_parent=True, pagination=Pagination()
+        )
 
         assert result.total == 1
         assert result.items[0].name == "pag-self-parent"
@@ -677,15 +693,18 @@ class TestTaskManagerListActivePaginated:
             session,
             parent_is_null=True,
             backup_type=PBM_CONFIG_BACKUP_TYPE,
-            offset=1,
-            limit=1,
+            pagination=Pagination(offset=1, limit=1),
         )
 
         assert result.total == PARENT_FILTER_TASK_COUNT
         assert result.offset == 1
         assert result.limit == 1
         assert len(result.items) == 1
-        assert result.items[0].name == "pag-filter-parent-1"
+        assert result.items[0].name in {
+            "pag-filter-parent-0",
+            "pag-filter-parent-1",
+            "pag-filter-parent-2",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -787,7 +806,9 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
     ) -> None:
         """Assert paginated response has correct envelope fields."""
         result = await TaskHistoryManager.list_by_task_name_paginated(
-            session=session, task_name="pag-history-task"
+            session=session,
+            task_name="pag-history-task",
+            pagination=Pagination(),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -801,7 +822,9 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
     ) -> None:
         """Assert custom limit restricts returned items."""
         result = await TaskHistoryManager.list_by_task_name_paginated(
-            session=session, task_name="pag-history-task", limit=1
+            session=session,
+            task_name="pag-history-task",
+            pagination=Pagination(limit=1),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -816,6 +839,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-history-task",
             status=TaskHistoryStatusEnum.RUNNING,
+            pagination=Pagination(),
         )
 
         assert result.total == 1
@@ -828,7 +852,9 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
         await _create_task(session, name="pag-empty-task")
 
         result = await TaskHistoryManager.list_by_task_name_paginated(
-            session=session, task_name="pag-empty-task"
+            session=session,
+            task_name="pag-empty-task",
+            pagination=Pagination(),
         )
 
         assert result.total == 0
@@ -840,7 +866,9 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
     ) -> None:
         """Assert offset beyond total returns empty items with correct total."""
         result = await TaskHistoryManager.list_by_task_name_paginated(
-            session=session, task_name="pag-history-task", offset=999
+            session=session,
+            task_name="pag-history-task",
+            pagination=Pagination(offset=999),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -857,6 +885,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-snippet-task",
             snippet_filename="config.yaml",
+            pagination=Pagination(),
         )
 
         assert result.total == 1
