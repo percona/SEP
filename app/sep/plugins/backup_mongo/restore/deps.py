@@ -481,6 +481,26 @@ async def build_restore_tasks(
     return await build_restore_task_group(form, inventory_api)
 
 
+async def build_restore_task_group_from_body(
+    body: RestoreTaskWrite,
+    inventory_api: InventoryAPI,
+) -> RestoreTaskGroupPayloads:
+    """Build restore task group payloads from a JSON API request body.
+
+    Delegates to :func:`build_restore_task_group` after converting the body
+    to :class:`RestoreCreate`.
+
+    :param body: The JSON request body for restore task creation.
+    :type body: RestoreTaskWrite
+    :param inventory_api: The Inventory API to look up services.
+    :type inventory_api: InventoryAPI
+    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
+    :rtype: RestoreTaskGroupPayloads
+    """
+    form = restore_create_from_write(body)
+    return await build_restore_task_group(form, inventory_api)
+
+
 def restore_child_task_names(parent_name: str, backup_type: BackupType) -> list[str]:
     """Return child task names for a parent restore config task.
 
@@ -794,6 +814,26 @@ UnprotectedRestoreParentTask = Annotated[
 ]
 
 
+def build_restore_update_form_from_body(
+    body: RestoreTaskWrite,
+    parent_task: UnprotectedRestoreParentTask,
+) -> RestoreCreate:
+    """Build a restore update form from a JSON API request body.
+
+    Converts the body to :class:`RestoreCreate` with ``task_name`` and
+    ``backup_type`` pinned from the path parent. Does not mutate tasks; callers
+    pass the result to :func:`update_restore_task_group`.
+
+    :param body: The JSON request body for restore task update.
+    :type body: RestoreTaskWrite
+    :param parent_task: The unprotected parent restore config task from the URL path.
+    :type parent_task: Task
+    :return: A :class:`RestoreCreate` instance for payload construction.
+    :rtype: RestoreCreate
+    """
+    return restore_update_form_from_write(body, parent_task)
+
+
 async def delete_restore_task_group(
     tasks_api: TaskAPI,
     parent_task: Task,
@@ -823,6 +863,14 @@ async def delete_restore_task_group(
 
 
 RestoreTasks = Annotated[RestoreTaskGroupPayloads, Depends(build_restore_tasks)]
+RestoreTaskGroupFromBody = Annotated[
+    RestoreTaskGroupPayloads,
+    Depends(build_restore_task_group_from_body),
+]
+RestoreUpdateFormFromBody = Annotated[
+    RestoreCreate,
+    Depends(build_restore_update_form_from_body),
+]
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
