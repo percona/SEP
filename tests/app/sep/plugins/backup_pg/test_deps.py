@@ -56,6 +56,7 @@ async def test_build_backup_task_payload(
         task_name="test_task",
         hostname="test_host",
         backup_type=BackupType.PGBACKREST,
+        stanza="sep-test",
     )
 
     task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
@@ -78,13 +79,46 @@ async def test_build_backup_task_payload(
     assert len(server_list) == 1
     server_config = server_list[0]
 
-    assert server_config["ALIAS"] == "fake-address"
+    assert server_config["ALIAS"] == "sep-test"
     assert server_config["HOST"] == "localhost"
     assert server_config["BACKUP_TYPE"] == BackupType.PGBACKREST.value
     assert "PORT" not in server_config
 
     assert data["payload"] == "file://app/sep/plugins/backup_pg/payload"
     assert resolve_payload_reference(data["payload"]).is_file()
+
+
+@pytest.mark.asyncio
+async def test_build_backup_task_payload_uses_stanza_as_alias(
+    mocker,
+    mock_remote_api,
+    created_service: CreatedService,
+):
+    """Stanza value, not the node address, becomes the pgBackRest ALIAS."""
+    mocker.patch(
+        "app.sep.plugins.backup_pg.deps.get_created_entity",
+        return_value=created_service,
+    )
+    created_service.node = CreatedNode(
+        id=1,
+        address="10.30.50.162",
+        node_name="fake-node",
+    )
+
+    backup_create = BackupCreate(
+        service_id=created_service.id,
+        task_name="test_task",
+        hostname="test_host",
+        backup_type=BackupType.PGBACKREST,
+        stanza="my-custom-stanza",
+    )
+
+    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
+
+    cfg = yaml.safe_load(task_payload.data["meta"]["config"])
+    server_config = cfg["SERVER_LIST"][0]
+    assert server_config["ALIAS"] == "my-custom-stanza"
+    assert server_config["ALIAS"] != created_service.node.address
 
 
 @pytest.mark.asyncio
@@ -102,6 +136,7 @@ async def test_build_backup_task_payload_preserves_raw_backup_type(
         task_name="test_task",
         hostname="test_host",
         backup_type="INVALID_BACKUP_TYPE",
+        stanza="sep-test",
     )
 
     task_payload = await build_backup_task_payload(backup_create, mock_remote_api)

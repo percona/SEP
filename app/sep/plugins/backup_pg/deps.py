@@ -88,15 +88,15 @@ async def build_backup_task_payload(
             "hostname",
             "service_id",
             "backup_type",
+            "stanza",
         },
         by_alias=True,
     )
 
     server_config = {
-        "alias": service.node.address,
+        "alias": form.stanza,
         "backup_type": form.backup_type,
-        # for now only localhost allowed for X
-        "host": "localhost",  # service.node.address
+        "host": "localhost",
         "port": service.port,
     }
 
