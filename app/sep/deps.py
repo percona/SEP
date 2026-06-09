@@ -881,7 +881,9 @@ async def get_executor_hosts_context(
     """
     try:
         nodes = await fetch_all_dict_items(
-            lambda pagination: inventory_api.get("/", params=pagination.model_dump())
+            lambda pagination: inventory_api.get(
+                "/nodes/", params=pagination.model_dump()
+            )
         )
         display_names = {node["address"]: node["name"] for node in nodes}
     except (HTTPException, TypeError, KeyError, OSError):
