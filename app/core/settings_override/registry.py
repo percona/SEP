@@ -15,14 +15,19 @@
 
 """Classification registry and field-introspection helpers for setting overrides."""
 
+from __future__ import annotations
+
 __all__ = [
     "FieldMetadata",
+    "Materializer",
+    "MaterializerContext",
     "ReloadClassification",
     "canonical_override_key",
     "chain_has_explicit_not_overridable",
     "coerce_field_value",
     "coerce_nested_field_value",
     "dump_field_value",
+    "field_materializer",
     "field_reload_classification",
     "hot_field",
     "hot_field_names",
@@ -30,6 +35,10 @@ __all__ = [
     "is_hot_reloadable",
     "is_nested_overridable_parent",
     "iter_class_fields",
+    "materialize_fingerprint",
+    "materialize_override_value",
+    "materialize_template",
+    "materialize_via_owning_model",
     "nested_overridable_field",
     "nested_overridable_field_names",
     "not_overridable_field",
@@ -41,18 +50,17 @@ __all__ = [
 
 import functools
 import typing
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
+from string import Template
 from types import UnionType
-from typing import Annotated, Any, Union
+from typing import Annotated, Any, NamedTuple, TYPE_CHECKING, Union
 
 from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter
 from pydantic.errors import PydanticSchemaGenerationError
-from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
-from app.core.config import BaseYamlSettings
 from app.core.settings_override.models import SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils.pydantic import (
@@ -60,6 +68,14 @@ from app.core.utils.pydantic import (
     CustomFieldMetadata,
     field_with_metadata,
 )
+
+if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
+
+    # Imported only for annotations: the override substrate must not depend on
+    # the concrete settings classes at runtime, which lets ``app.core.config``
+    # import this module at top level without a circular import.
+    from app.core.config import BaseYamlSettings
 
 
 class ReloadClassification(StrEnum):
@@ -85,23 +101,65 @@ class ReloadClassification(StrEnum):
     NOT_OVERRIDABLE = "not_overridable"
 
 
-def hot_field(default: Any, **kwargs: Any) -> FieldInfo:
+class MaterializerContext(NamedTuple):
+    """Bundle the inputs a snapshot materializer may consult.
+
+    A materializer receives the whole context and uses only the members it
+    needs. :func:`app.core.settings_override.cache.build_snapshot` constructs
+    one per overridden HOT field whose declaration attached a materializer,
+    instead of calling :func:`coerce_field_value` directly.
+
+    :param settings_cls: The Pydantic settings class that owns the field.
+    :type settings_cls: type[BaseYamlSettings]
+    :param field_name: The name of the field being materialized.
+    :type field_name: str
+    :param field_info: The Pydantic field metadata for the field.
+    :type field_info: FieldInfo
+    :param raw: The raw, JSON-decoded value stored on the override row.
+    :type raw: Any
+    """
+
+    settings_cls: type[BaseYamlSettings]
+    field_name: str
+    field_info: FieldInfo
+    raw: Any
+
+
+Materializer = Callable[[MaterializerContext], Any]
+
+
+def hot_field(
+    default: Any, *, materializer: Materializer | None = None, **kwargs: Any
+) -> FieldInfo:
     """Declare a settings field as HOT-reloadable from a DB override.
 
     Thin wrapper over :func:`app.core.utils.pydantic.field_with_metadata` that
     attaches ``{"reload": ReloadClassification.HOT}`` so the field is picked up
-    by :func:`is_hot_reloadable` and snapshot building.
+    by :func:`is_hot_reloadable` and snapshot building. When ``materializer`` is
+    supplied it rides the same metadata channel under the ``"materializer"`` key
+    and :func:`app.core.settings_override.cache.build_snapshot` invokes it in
+    place of the default :func:`coerce_field_value` coercion -- used for fields
+    whose snapshot value cannot be produced by a plain ``TypeAdapter`` (a
+    before-validator must run, the type is not Pydantic-serialisable, or a plain
+    fingerprint must be stored for diff stability).
 
     :param default: The field's default value, passed positionally to ``Field``.
     :type default: Any
+    :param materializer: An optional callable that converts the raw override
+        value into the snapshot value. Receives a :class:`MaterializerContext`.
+    :type materializer: Materializer | None
     :param kwargs: Additional keyword arguments forwarded to ``Field``.
     :type kwargs: Any
     :return: A Pydantic field marked with the HOT reload classification.
     :rtype: FieldInfo
     """
-    return field_with_metadata(
-        default, metadata={"reload": ReloadClassification.HOT}, **kwargs
+    reload_metadata = {"reload": ReloadClassification.HOT}
+    metadata = (
+        {**reload_metadata, "materializer": materializer}
+        if materializer is not None
+        else reload_metadata
     )
+    return field_with_metadata(default, metadata=metadata, **kwargs)
 
 
 def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
@@ -248,6 +306,129 @@ def coerce_field_value(field_info: FieldInfo, raw: Any) -> Any:
         preserved constraint. Callers in the API layer map this to HTTP 422.
     """
     return _coerce_value(field_info, raw)
+
+
+def field_materializer(
+    settings_cls: type[BaseYamlSettings], field_name: str
+) -> Materializer | None:
+    """Return the materializer declared on a field, or ``None`` if none.
+
+    Reads the ``"materializer"`` entry attached by :func:`hot_field` through the
+    same custom-metadata channel :func:`is_hot_reloadable` reads ``"reload"``
+    from.
+
+    :param settings_cls: The Pydantic settings class to inspect.
+    :type settings_cls: type[BaseYamlSettings]
+    :param field_name: The name of the field to check.
+    :type field_name: str
+    :return: The declared :data:`Materializer`, or ``None`` when the field is
+        unknown or declares no materializer.
+    :rtype: Materializer | None
+    """
+    field = settings_cls.model_fields.get(field_name)
+    if field is None:
+        return None
+    return CustomFieldMetadata.field_to_dict(field).get("materializer")
+
+
+def materialize_via_owning_model(ctx: MaterializerContext) -> Any:
+    """Materialize a value by validating it through its owning settings class.
+
+    Runs the owning class's ``mode="before"`` validators (which a bare
+    ``TypeAdapter`` on the field annotation would not invoke) by validating a
+    single-key payload and reading the resulting attribute back. Only valid for
+    settings classes whose every other field is defaulted, so a one-key
+    ``model_validate`` succeeds.
+
+    :param ctx: The materialization context.
+    :type ctx: MaterializerContext
+    :return: The materialized value as the owning model produces it.
+    :rtype: Any
+    :raises ValidationError: If the owning model rejects the one-key payload.
+    :raises ValueError: If a ``mode="before"`` validator rejects ``raw``.
+    """
+    validated = ctx.settings_cls.model_validate({ctx.field_name: ctx.raw})
+    return getattr(validated, ctx.field_name)
+
+
+def materialize_template(ctx: MaterializerContext) -> Any:
+    """Materialize a :class:`string.Template` from a raw string override.
+
+    ``TypeAdapter(Template)`` raises :class:`PydanticSchemaGenerationError`, so a
+    ``Template`` field cannot use the default coercion path. A raw string is
+    wrapped in a ``Template``; an already-``Template`` value passes through. Any
+    other type is rejected -- otherwise a non-string override (e.g. ``1``) would
+    be published into the snapshot and crash the next ``safe_substitute`` read
+    with ``AttributeError``.
+
+    :param ctx: The materialization context.
+    :type ctx: MaterializerContext
+    :return: A :class:`string.Template` for the override.
+    :rtype: Any
+    :raises ValueError: If ``raw`` is neither a string nor a ``Template``.
+    """
+    if isinstance(ctx.raw, Template):
+        return ctx.raw
+    if isinstance(ctx.raw, str):
+        return Template(ctx.raw)
+    raise ValueError(
+        f"{ctx.field_name} override must be a string, got {type(ctx.raw).__name__}"
+    )
+
+
+def materialize_fingerprint(ctx: MaterializerContext) -> Any:
+    """Materialize a plain JSON config fingerprint instead of a live instance.
+
+    Coerces ``raw`` to the field's declared type, then stores only its
+    ``model_dump(mode="json")`` -- a plain dict carrying no private attributes.
+    Two snapshots built from the same override therefore compare equal, which a
+    live model instance with per-instance private attributes (a ``ContextVar``,
+    an aiohttp session) would not. The live resource is owned by a lifecycle
+    holder; the snapshot carries only the diff-stable config fingerprint.
+
+    :param ctx: The materialization context.
+    :type ctx: MaterializerContext
+    :return: A JSON-safe ``dict`` fingerprint of the coerced value.
+    :rtype: Any
+    :raises ValidationError: If ``raw`` cannot be coerced to the declared type.
+    """
+    return coerce_field_value(ctx.field_info, ctx.raw).model_dump(mode="json")
+
+
+def materialize_override_value(
+    settings_cls: type[BaseYamlSettings],
+    field_name: str,
+    field_info: FieldInfo,
+    raw: Any,
+) -> Any:
+    """Turn a raw override value into its typed snapshot value.
+
+    Routes through the field's declared materializer when present, otherwise the
+    default :func:`coerce_field_value` coercion. Shared by snapshot building
+    (:func:`app.core.settings_override.cache.build_snapshot`) and the settings
+    API PATCH validation so both accept exactly the same override payloads -- a
+    materializer-backed field (``PROVIDERS``, ``FOOTER_TEMPLATE``, ``NOMAD``)
+    would otherwise be accepted on snapshot load but rejected by the API.
+
+    :param settings_cls: The Pydantic settings class that owns the field.
+    :type settings_cls: type[BaseYamlSettings]
+    :param field_name: The name of the field being materialized.
+    :type field_name: str
+    :param field_info: The Pydantic field metadata for the field.
+    :type field_info: FieldInfo
+    :param raw: The raw, JSON-decoded override value.
+    :type raw: Any
+    :return: The materialized (or coerced) typed value.
+    :rtype: Any
+    :raises ValidationError: If coercion or the materializer's validation fails.
+    :raises ValueError: If a ``mode="before"`` validator rejects ``raw``.
+    """
+    materializer = field_materializer(settings_cls, field_name)
+    if materializer is not None:
+        return materializer(
+            MaterializerContext(settings_cls, field_name, field_info, raw)
+        )
+    return coerce_field_value(field_info, raw)
 
 
 def nested_overridable_field(default: Any, **kwargs: Any) -> FieldInfo:

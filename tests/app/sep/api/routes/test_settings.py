@@ -16,12 +16,13 @@
 """Tests for the SEP settings REST API at ``/api/sep/admin/settings``."""
 
 from collections.abc import AsyncIterator, Iterator
+from string import Template
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from fastapi import status
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -30,12 +31,13 @@ from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api import routes as settings_routes
+from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
-from app.sep.config import sep_settings
+from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -43,7 +45,7 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
     validate_csrf,
 )
-from app.sep.main import sep_app
+from app.sep.main import sep_app, sep_overrides_lifespan
 from app.sep.middleware.messages.config import messages_settings
 from app.sep.snippets.config import snippets_settings
 
@@ -243,6 +245,54 @@ class TestSepSettingsPatch:
         assert rows[0].key == "SYNC_REFRESH_TIME"
         assert rows[0].value == new_value
 
+    async def test_materializer_field_footer_template_is_patchable(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """A ``FOOTER_TEMPLATE`` override is accepted and stored as raw JSON.
+
+        Regression: ``FOOTER_TEMPLATE`` declares a materializer because
+        ``TypeAdapter(Template)`` raises ``PydanticSchemaGenerationError``; the
+        PATCH validation must route through the materializer (not the bare
+        coercion that returned HTTP 500) and persist the raw string so the
+        snapshot loader re-materializes it to a ``Template``.
+        """
+        raw_template = "$summary custom $version"
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"FOOTER_TEMPLATE": raw_template},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key="FOOTER_TEMPLATE",
+        )
+        assert len(rows) == 1
+        assert rows[0].value == raw_template
+
+        snapshot = await build_snapshot(override_session, SEPSettings)
+        assert isinstance(snapshot["FOOTER_TEMPLATE"], Template)
+        assert snapshot["FOOTER_TEMPLATE"].template == raw_template
+
+    async def test_materializer_field_footer_template_rejects_non_string(
+        self,
+        api_admin_client: TestClient,
+    ) -> None:
+        """A non-string ``FOOTER_TEMPLATE`` override is rejected with HTTP 422.
+
+        Regression: the materializer must reject a non-string payload (which
+        would otherwise be published and crash the next ``safe_substitute`` read)
+        and the API must surface it as 422, not 500.
+        """
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"FOOTER_TEMPLATE": 123},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     async def test_existing_override_is_updated(
         self,
         api_admin_client: TestClient,
@@ -347,7 +397,7 @@ class TestSepSettingsPatch:
         """Patching a NOT_OVERRIDABLE field returns 422 with ``type='not_overridable'``."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"INVENTORY_ENDPOINT": "https://attacker.example"},
+            json={"PROXY_HEADERS": True},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
@@ -377,7 +427,7 @@ class TestSepSettingsPatch:
             json={
                 "SYNC_REFRESH_TIME": 10,
                 "BOGUS_KEY": 1,
-                "INVENTORY_ENDPOINT": "https://example.com",
+                "PROXY_HEADERS": True,
                 "ARTIFACT_DOWNLOAD_TTL": -1,
             },
         )
@@ -474,7 +524,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Deleting a NOT_OVERRIDABLE field returns 409 — the row can't exist."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/INVENTORY_ENDPOINT"
+            "/api/sep/admin/settings/SEPSettings/PROXY_HEADERS"
         )
         assert response.status_code == status.HTTP_409_CONFLICT
 
@@ -550,7 +600,7 @@ class TestSepSettingsNestedOverrides:
         """A nested key under a non-overridable parent is rejected as not_overridable."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"INVENTORY_ENDPOINT__SCHEME": "http"},
+            json={"DATABASE__NAME": "other.db"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
@@ -722,3 +772,77 @@ class TestSepSettingsSecondaryClasses:
             assert target_level == messages_settings.LEVEL
         finally:
             messages_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestSepSettingsInlineRebind:
+    """Fire the SEP rebind callbacks on an inline PATCH.
+
+    Same defect as the Tasks ``NOMAD`` rebind: the endpoint rebinders are fired
+    only on a refresher-observed snapshot diff, but the PATCH handler publishes
+    the new snapshot inline, so the next refresh cycle sees no change. The handler
+    must fire the registered callback for the changed key itself.
+    """
+
+    @pytest.fixture(name="endpoint_callback_spy")
+    def endpoint_callback_spy_fixture(self) -> Iterator[AsyncMock]:
+        """Register a spy as the ``(SEP_SETTINGS, INVENTORY_ENDPOINT)`` callback on state."""
+        spy = AsyncMock()
+        original = getattr(sep_app.state, "override_callbacks", None)
+        sep_app.state.override_callbacks = {
+            (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"): spy,
+        }
+        sep_settings._set_snapshot({})
+        yield spy
+        sep_app.state.override_callbacks = original
+        sep_settings._set_snapshot({})
+
+    async def test_patch_inventory_endpoint_fires_rebind_callback(
+        self, api_admin_client: TestClient, endpoint_callback_spy: AsyncMock
+    ) -> None:
+        """PATCHing ``INVENTORY_ENDPOINT`` fires its rebind callback inline."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"INVENTORY_ENDPOINT": "https://new-inventory.example.org"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        endpoint_callback_spy.assert_awaited_once()
+
+    async def test_patch_unrelated_key_does_not_fire_endpoint_callback(
+        self, api_admin_client: TestClient, endpoint_callback_spy: AsyncMock
+    ) -> None:
+        """PATCHing an unrelated SEP key leaves the endpoint rebinder untouched."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 17},
+        )
+        try:
+            assert response.status_code == status.HTTP_200_OK
+            endpoint_callback_spy.assert_not_awaited()
+        finally:
+            sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestSepOverridesLifespanWiring:
+    """Publish the rebind registry on ``sep_app.state`` from the overrides lifespan."""
+
+    async def test_lifespan_publishes_override_callbacks_on_sep_app_state(self) -> None:
+        """``sep_overrides_lifespan`` exposes the endpoint/PMM rebinders on state.
+
+        The handler reads ``request.app.state.override_callbacks``; for SEP routes
+        ``request.app`` resolves to the module-level ``sep_app`` mount, so the
+        registry must be published there -- not on the (parent) ``app`` argument
+        threaded through ``sep_overrides_lifespan`` under the combined app.
+        """
+        original = getattr(sep_app.state, "override_callbacks", None)
+        try:
+            async with sep_overrides_lifespan(FastAPI()):
+                keys = set(sep_app.state.override_callbacks)
+            assert keys == {
+                (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"),
+                (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
+                (SettingClassEnum.SETTINGS, "PMM"),
+            }
+        finally:
+            sep_app.state.override_callbacks = original

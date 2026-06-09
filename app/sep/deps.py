@@ -28,6 +28,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app import __summary__, __version__
 from app.api.deps import get_current_user as get_current_user_api
 from app.api.deps import oauth2_scheme
 from app.core.alerts.config import alert_settings
@@ -556,7 +557,9 @@ async def get_default_context(
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "pmm_url": settings.PMM.frontend,
-        "footer_text": sep_settings.FOOTER_TEXT,
+        "footer_text": sep_settings.FOOTER_TEMPLATE.safe_substitute(
+            version=__version__, summary=__summary__
+        ),
         "user_id_to_username": await get_username_mapping(),
     }
 
@@ -878,7 +881,9 @@ async def get_executor_hosts_context(
     """
     try:
         nodes = await fetch_all_dict_items(
-            lambda pagination: inventory_api.get("/", params=pagination.model_dump())
+            lambda pagination: inventory_api.get(
+                "/nodes/", params=pagination.model_dump()
+            )
         )
         display_names = {node["address"]: node["name"] for node in nodes}
     except (HTTPException, TypeError, KeyError, OSError):
