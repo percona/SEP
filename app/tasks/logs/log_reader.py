@@ -40,54 +40,49 @@ TailOffsets = dict[str, dict[TaskLogType, int]]
 TAIL_SCAN_MAX_CHUNKS = 512
 TAIL_SCAN_MAX_BYTES = 64 * 1024 * 1024
 NEWLINE_BYTE = ord("\n")
+NEWLINE_BYTES = b"\n"
 
 
-def _line_count(content: bytes) -> int:
-    r"""Return the number of lines in ``content`` (GNU ``tail -n`` semantics).
+def _scan_tail_boundaries_in_bytes(
+    content: bytes,
+    base_offset: int,
+    lines_remaining: int,
+    *,
+    at_stream_end: bool,
+) -> tuple[int, int | None]:
+    r"""Count newline boundaries in ``content`` from the end toward the start.
 
-    :param content: UTF-8 encoded log bytes.
+    Treats ``content`` as the suffix of a logical stream. Only the final byte of
+    the whole stream may be a closing ``\n`` that does not start a new line (GNU
+    ``tail -n`` semantics). Returns once the ``lines_remaining``\ th boundary
+    from the end is found.
+
+    :param content: UTF-8 encoded bytes to scan (newest suffix first).
     :type content: bytes
-    :return: Number of lines in ``content``.
-    :rtype: int
+    :param base_offset: User-facing byte offset where ``content`` begins.
+    :type base_offset: int
+    :param lines_remaining: Trailing line boundaries still to locate.
+    :type lines_remaining: int
+    :param at_stream_end: Whether ``content`` ends at the logical stream end.
+    :type at_stream_end: bool
+    :return: Updated ``lines_remaining`` and tail offset if found.
+    :rtype: tuple[int, int | None]
     """
-    if not content:
-        return 0
+    search_end = len(content)
+    if at_stream_end and search_end > 0 and content[search_end - 1] == NEWLINE_BYTE:
+        at_stream_end = False
+        search_end -= 1
 
-    count = 1
-    for index, byte in enumerate(content):
-        if byte == NEWLINE_BYTE:
-            next_start = index + 1
-            if next_start < len(content):
-                count += 1
-    return count
+    while lines_remaining > 0 and search_end > 0:
+        newline_index = content.rfind(NEWLINE_BYTES, 0, search_end)
+        if newline_index < 0:
+            break
+        lines_remaining -= 1
+        if lines_remaining == 0:
+            return lines_remaining, base_offset + newline_index + 1
+        search_end = newline_index
 
-
-def _nth_line_start_from_end(content: bytes, n: int) -> int:
-    r"""Return the byte offset where the ``n``\ th line from the end begins.
-
-    ``n=1`` is the last line. Lines use GNU ``tail -n`` semantics.
-
-    :param content: UTF-8 encoded log bytes.
-    :type content: bytes
-    :param n: Which line to locate, counting from the end.
-    :type n: int
-    :return: Byte offset at which the requested line begins.
-    :rtype: int
-    """
-    if n <= 0 or not content:
-        return 0
-
-    lines_seen = 0
-    index = len(content)
-    while index > 0:
-        index -= 1
-        if content[index] == NEWLINE_BYTE:
-            next_start = index + 1
-            if next_start < len(content):
-                lines_seen += 1
-                if lines_seen == n:
-                    return next_start
-    return 0
+    return lines_remaining, None
 
 
 def byte_offset_for_last_n_lines(content: bytes, line_count: int) -> int:
@@ -109,47 +104,14 @@ def byte_offset_for_last_n_lines(content: bytes, line_count: int) -> int:
     """
     if line_count <= 0 or not content:
         return 0
-    return _nth_line_start_from_end(content, line_count)
 
-
-def _apply_reverse_tail_chunk(
-    content_bytes: bytes,
-    chunk_start_offset: int,
-    lines_remaining: int,
-    tail_byte_offset: int | None,
-) -> tuple[int, int | None, bool]:
-    """Update tail-scan state after processing one chunk in reverse order.
-
-    :param content_bytes: UTF-8 encoded chunk content.
-    :type content_bytes: bytes
-    :param chunk_start_offset: The user-facing byte offset where the chunk begins.
-    :type chunk_start_offset: int
-    :param lines_remaining: Trailing lines still to locate.
-    :type lines_remaining: int
-    :param tail_byte_offset: The tail offset found so far, if any.
-    :type tail_byte_offset: int | None
-    :return: Updated ``lines_remaining``, ``tail_byte_offset``, and whether to stop.
-    :rtype: tuple[int, int | None, bool]
-    """
-    if b"\n" not in content_bytes:
-        if content_bytes:
-            lines_remaining -= 1
-            if lines_remaining == 0:
-                tail_byte_offset = chunk_start_offset
-        return lines_remaining, tail_byte_offset, False
-
-    if lines_remaining == 0:
-        last_line_start = _nth_line_start_from_end(content_bytes, 1)
-        if content_bytes:
-            tail_byte_offset = chunk_start_offset + last_line_start
-        return lines_remaining, tail_byte_offset, True
-
-    chunk_line_count = _line_count(content_bytes)
-    if chunk_line_count >= lines_remaining:
-        intra = byte_offset_for_last_n_lines(content_bytes, lines_remaining)
-        tail_byte_offset = chunk_start_offset + intra
-        return lines_remaining, tail_byte_offset, True
-    return lines_remaining - chunk_line_count, tail_byte_offset, False
+    _, tail_offset = _scan_tail_boundaries_in_bytes(
+        content,
+        0,
+        line_count,
+        at_stream_end=True,
+    )
+    return 0 if tail_offset is None else tail_offset
 
 
 async def _compute_stream_tail_offset(
@@ -160,6 +122,10 @@ async def _compute_stream_tail_offset(
     tail_lines: int,
 ) -> int:
     """Scan one stream's chunks newest-first and return its tail byte offset.
+
+    Chunks are treated as one logical byte stream. Newline boundaries are
+    located by scanning backwards across chunk rows; GNU ``tail -n``'s
+    trailing-newline rule applies only to the final byte of the stream.
 
     :param session: The SQLAlchemy asynchronous session.
     :type session: AsyncSession
@@ -179,6 +145,7 @@ async def _compute_stream_tail_offset(
     chunks_scanned = 0
     bytes_scanned = 0
     oldest_scanned_start: int | None = None
+    at_stream_end = True
 
     async for chunk in TaskHistoryLogManager.iter_chunks_reverse(
         session,
@@ -214,13 +181,15 @@ async def _compute_stream_tail_offset(
             else min(oldest_scanned_start, chunk.start_offset)
         )
 
-        lines_remaining, tail_byte_offset, done = _apply_reverse_tail_chunk(
+        lines_remaining, found_offset = _scan_tail_boundaries_in_bytes(
             content_bytes,
             chunk.start_offset,
             lines_remaining,
-            tail_byte_offset,
+            at_stream_end=at_stream_end,
         )
-        if done:
+        at_stream_end = False
+        if found_offset is not None:
+            tail_byte_offset = found_offset
             break
 
     return 0 if tail_byte_offset is None else tail_byte_offset

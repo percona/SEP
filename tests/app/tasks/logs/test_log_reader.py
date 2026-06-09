@@ -519,6 +519,70 @@ async def test_iter_task_history_logs_tail_last_line_spans_chunks(
 
 
 @pytest.mark.asyncio
+async def test_iter_task_history_logs_tail_newline_only_chunk(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    r"""Assert a lone ``\\n`` chunk does not hide the preceding line (``b\\n``)."""
+    history = created_task_with_history
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"b",
+        force_flush=True,
+        producer_offset_after=1,
+    )
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"\n",
+        force_flush=True,
+        producer_offset_after=2,
+    )
+
+    history = await _reload(session, history)
+    logs = await _collect(iter_task_history_logs(session, history, tail_lines=1))
+    combined = "".join(log.msg for log in logs)
+
+    assert combined == "b\n"
+
+
+@pytest.mark.asyncio
+async def test_iter_task_history_logs_tail_mid_line_chunk_boundary(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert the oldest retained line is not truncated at a byte chunk boundary."""
+    history = created_task_with_history
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"abc",
+        force_flush=True,
+        producer_offset_after=3,
+    )
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"def\nlast\n",
+        force_flush=True,
+        producer_offset_after=12,
+    )
+
+    history = await _reload(session, history)
+    logs = await _collect(iter_task_history_logs(session, history, tail_lines=2))
+    combined = "".join(log.msg for log in logs)
+
+    assert combined == "abcdef\nlast\n"
+
+
+@pytest.mark.asyncio
 async def test_iter_task_history_logs_tail_respects_source_filter(
     session: AsyncSession, created_task_with_history: TaskHistory
 ):
