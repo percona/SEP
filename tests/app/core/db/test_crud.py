@@ -398,3 +398,27 @@ class TestBaseSQLModelManagerPagination:
         result = await PaginationItemByNameManager.list(session, limit=10)
 
         assert [item.name for item in result] == ["alpha", "beta", "zeta"]
+
+    @pytest.mark.asyncio
+    async def test_created_at_fallback_tie_breaks_on_primary_key(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert the ``created_at`` fallback tie-breaks deterministically on PK.
+
+        ``utc_now()`` has second resolution, so rows frequently share a
+        ``created_at``. The fallback ordering appends ``id DESC`` so ties resolve
+        deterministically (newest-inserted first) instead of relying on an
+        unstable order that can skip or duplicate rows across paginated pages.
+        """
+        shared_time = datetime(2026, 1, 1, tzinfo=UTC)
+        first = await _create_item(session, name="first", created_at=shared_time)
+        second = await _create_item(session, name="second", created_at=shared_time)
+        third = await _create_item(session, name="third", created_at=shared_time)
+
+        result = await PaginationItemManager.list(session)
+
+        # All share created_at, so the id DESC tie-breaker drives the order
+        # (highest/newest id first).
+        assert [item.id for item in result] == [third.id, second.id, first.id]
+        assert [item.name for item in result] == ["third", "second", "first"]

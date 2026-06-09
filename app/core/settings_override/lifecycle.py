@@ -63,7 +63,11 @@ async def publish_snapshot(
     :param settings_cls: The Pydantic settings class being snapshotted.
     :type settings_cls: type[BaseYamlSettings]
     """
-    snapshot = await build_snapshot(session, settings_cls)
+    # Resolve the wrapped (YAML/env) instance so nested-field overrides merge
+    # onto current parent values; ``_resolve`` bypasses the snapshot so the
+    # base is never a previously-merged copy.
+    base_settings = proxy._resolve()  # noqa: SLF001
+    snapshot = await build_snapshot(session, settings_cls, base_settings)
     proxy._set_snapshot(snapshot)  # noqa: SLF001
 
 

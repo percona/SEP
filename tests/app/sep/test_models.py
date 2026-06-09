@@ -18,8 +18,36 @@
 import pytest
 from pydantic import ValidationError
 
+from app.sep.models import AppState, AppStateBase, AppStateWrite
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.models import ArchivesCreate
+
+
+class TestAppStateModel:
+    """Test suite for the AppState model and its companions."""
+
+    def test_base_enabled_defaults_to_false(self):
+        """The shared base column-default for ``enabled`` is ``False``."""
+        assert AppStateBase(app_key="snippets").enabled is False
+
+    def test_base_requires_app_key(self):
+        """``app_key`` has no default — omitting it fails validation."""
+        with pytest.raises(ValidationError):
+            AppStateBase()
+
+    def test_base_rejects_empty_app_key(self):
+        """``app_key`` is a ``NonEmptyStr`` — an empty string is rejected."""
+        with pytest.raises(ValidationError):
+            AppStateBase(app_key="")
+
+    def test_table_model_enabled_defaults_to_false(self):
+        """The table model inherits the ``enabled=False`` column default."""
+        assert AppState(app_key="snippets").enabled is False
+
+    def test_write_model_requires_enabled(self):
+        """The write payload requires ``enabled`` — it has no default."""
+        with pytest.raises(ValidationError):
+            AppStateWrite()
 
 
 class TestArchivesCreateModel:

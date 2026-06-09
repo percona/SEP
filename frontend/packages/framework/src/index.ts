@@ -138,6 +138,8 @@ export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/
 
 export { resolvePath } from './utils/resolvePath';
 
+export { downloadBlob } from './utils/downloadBlob';
+
 export {
   SNIPPETS_PLUGINS_API_BASE,
   SNIPPET_PLUGIN_PER_SNIPPET_BASE,

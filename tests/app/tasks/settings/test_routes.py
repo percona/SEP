@@ -206,3 +206,193 @@ class TestTasksSettingsApi:
         """A non-admin user is rejected with 403."""
         response = non_admin_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsNestedOverrides:
+    """Cover ``__``-delimited nested overrides on ``TasksSettings`` parents."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_proxy_snapshot(self) -> Iterator[None]:
+        """Clear the global proxy snapshot after each nested test."""
+        yield
+        tasks_settings._set_snapshot({})
+
+    async def test_patch_nested_nomad_timeout(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A nested ``NOMAD__TIMEOUT`` override persists and reflects in the proxy."""
+        override_timeout = 30
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD__TIMEOUT": override_timeout},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        # The response echoes the canonical (case-corrected) key.
+        assert body[0]["key"] == "NOMAD__timeout"
+        assert body[0]["value"] == override_timeout
+        assert tasks_settings.NOMAD.timeout == override_timeout
+
+    async def test_patch_nested_security_header_bool(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A nested case-insensitive boolean leaf override applies."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert tasks_settings.SECURITY_HEADERS.x_frame_options_deny is False
+
+    async def test_patch_multi_level_security_header(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A multi-level override instantiates the nested intermediate model."""
+        max_age = 31536000
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE": max_age},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        sts = tasks_settings.SECURITY_HEADERS.strict_transport_security
+        assert sts is not None
+        assert sts.max_age == max_age
+
+    async def test_patch_whole_parent_nomad_rejected(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Replacing the whole NESTED_ONLY ``NOMAD`` parent is rejected."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD": {"timeout": 30}},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert "not_overridable" in types
+
+    async def test_delete_nested_nomad_timeout(
+        self,
+        admin_test_client: TestClient,
+        session: AsyncSession,
+    ) -> None:
+        """Deleting a nested override removes its row and returns 204."""
+        admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD__TIMEOUT": 30},
+        )
+        response = admin_test_client.delete(
+            "/admin/settings/TasksSettings/NOMAD__TIMEOUT"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+        )
+        assert rows == []
+
+    async def test_delete_whole_parent_nomad_rejected(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """DELETE on the whole NESTED_ONLY ``NOMAD`` parent returns 422."""
+        response = admin_test_client.delete("/admin/settings/TasksSettings/NOMAD")
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert "not_overridable" in types
+
+    async def test_list_marks_security_headers_overridden(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A nested-only override marks the parent ``has_override`` in LIST."""
+        admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
+        )
+        groups = admin_test_client.get("/admin/settings/").json()["groups"]
+        settings = groups[0]["settings"]
+        security_headers = next(s for s in settings if s["key"] == "SECURITY_HEADERS")
+        assert security_headers["has_override"] is True
+
+    async def test_get_multi_level_nested_before_override_returns_200(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """GET on a multi-level key whose intermediate is ``None`` returns 200, not 500."""
+        # ``STRICT_TRANSPORT_SECURITY`` defaults to ``None``; reading a leaf
+        # under it must not raise.
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings"
+            "/SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["value"] is None
+
+    async def test_case_insensitive_keys_collapse_to_one_row(
+        self,
+        admin_test_client: TestClient,
+        session: AsyncSession,
+    ) -> None:
+        """Mixed-case spellings of the same nested key map to a single override row."""
+        admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"security_headers__x_frame_options_deny": False},
+        )
+        # An uppercase DELETE removes the row created by the lowercase PATCH.
+        response = admin_test_client.delete(
+            "/admin/settings/TasksSettings/SECURITY_HEADERS__X_FRAME_OPTIONS_DENY"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+        )
+        assert rows == []
+
+    async def test_delete_nested_under_non_overridable_parent_rejected(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """DELETE of a nested key under a non-nested-overridable parent returns 422.
+
+        ``DATABASE`` is not promoted to ``nested_overridable_field``, so
+        ``DATABASE__HOST`` must be rejected with the same ``not_overridable`` 422
+        the PATCH path returns -- not silently accepted with 204.
+        """
+        response = admin_test_client.delete(
+            "/admin/settings/TasksSettings/DATABASE__HOST"
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert "not_overridable" in types
+
+    async def test_patch_nested_under_non_overridable_parent_rejected(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """PATCH of a nested key under a non-nested-overridable parent returns 422.
+
+        Documents the DELETE/PATCH parity asserted above: both reject
+        ``DATABASE__HOST`` with ``not_overridable``.
+        """
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"DATABASE__HOST": "db.example"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert "not_overridable" in types
+
+    async def test_get_intermediate_parent_reports_has_override(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A multi-level override marks the intermediate sub-model ``has_override`` too.
+
+        Patching ``SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE`` must make
+        a GET of the intermediate ``SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY``
+        report ``has_override=True`` -- not only the top-level ``SECURITY_HEADERS``
+        parent.
+        """
+        admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE": 31536000},
+        )
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings/SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["has_override"] is True

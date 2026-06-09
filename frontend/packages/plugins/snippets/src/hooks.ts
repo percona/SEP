@@ -18,6 +18,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, ApiError, type PluginSchema } from '@sep/api';
 import {
+  downloadBlob,
   SNIPPETS_PLUGINS_API_BASE,
   snippetPluginApprovalPath,
   snippetPluginDownloadPath,
@@ -145,14 +146,7 @@ export function useSnippetDownload(filename: string | undefined) {
       const { data } = await apiClient.get<Blob>(snippetPluginDownloadPath(filename), {
         responseType: 'blob',
       });
-      const url = URL.createObjectURL(data);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      downloadBlob(data, filename);
       return data;
     },
   });

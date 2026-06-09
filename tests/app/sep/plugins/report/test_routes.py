@@ -15,7 +15,6 @@
 
 """Define tests for the app.sep.plugins.report.routes module."""
 
-from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -29,7 +28,7 @@ from app.sep.plugins.report.deps import (
     require_pmm_api,
     require_upload_configured,
 )
-from app.sep.plugins.report.models import ReportData, ReportMetadata
+from tests.app.sep.plugins.report.conftest import make_report
 
 _REPORT_INDEX_CONTEXT = {
     "user": "test-user",
@@ -49,20 +48,6 @@ _REPORT_INDEX_CONTEXT_NO_PMM = {
     "pmm_configured": False,
     "sections": _REPORT_INDEX_CONTEXT["sections"],
 }
-
-
-def _make_report(**overrides) -> ReportData:
-    """Build a minimal ``ReportData`` with sensible defaults."""
-    defaults = {
-        "metadata": ReportMetadata(
-            title="Weekly Health Report",
-            generated_at=datetime(2026, 3, 31, 12, 0, 0, tzinfo=UTC),
-            report_week="2026 - Week 14",
-            report_interval="now-7d to now",
-        ),
-    }
-    defaults.update(overrides)
-    return ReportData(**defaults)
 
 
 @pytest.fixture
@@ -135,7 +120,7 @@ class TestReportGenerate:
     @pytest.mark.usefixtures("_mock_report_index_context")
     def test_returns_200_with_html_report(self, test_client, mock_pmm_api):
         """Assert a generated report renders as HTML."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -150,7 +135,7 @@ class TestReportGenerate:
     @pytest.mark.usefixtures("_mock_report_index_context")
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
         """Assert default since/until/full/refresh values are forwarded."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -167,7 +152,7 @@ class TestReportGenerate:
     @pytest.mark.usefixtures("_mock_report_index_context")
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom form parameters are forwarded to generate_report."""
-        report = _make_report(full=True, refresh=True)
+        report = make_report(full=True, refresh=True)
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -192,7 +177,7 @@ class TestReportGenerate:
     @pytest.mark.usefixtures("_mock_report_index_context")
     def test_report_title_in_response(self, test_client, mock_pmm_api):
         """Assert the report title appears in the rendered HTML."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -205,7 +190,7 @@ class TestReportGenerate:
     @pytest.mark.usefixtures("_mock_report_index_context")
     def test_result_page_contains_pdf_download_form(self, test_client, mock_pmm_api):
         """Assert the result page includes a form that posts to the PDF route."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -254,7 +239,7 @@ class TestReportGenerateJSON:
 
     def test_returns_200_with_json(self, test_client, mock_pmm_api):
         """Assert the JSON endpoint returns 200 with application/json."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -267,7 +252,7 @@ class TestReportGenerateJSON:
 
     def test_response_contains_report_data(self, test_client, mock_pmm_api):
         """Assert the JSON body includes expected top-level keys."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -288,7 +273,7 @@ class TestReportGenerateJSON:
 
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
         """Assert default query parameters are forwarded."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -305,7 +290,7 @@ class TestReportGenerateJSON:
 
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom query parameters are forwarded to generate_report."""
-        report = _make_report(full=True, refresh=True)
+        report = make_report(full=True, refresh=True)
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -329,7 +314,7 @@ class TestReportGenerateJSON:
 
     def test_filters_valid_sections(self, test_client, mock_pmm_api):
         """Assert only valid section names are forwarded."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -344,8 +329,8 @@ class TestReportGenerateJSON:
         assert kwargs["sections"] == ["advisors", "storage"]
 
     def test_ignores_all_invalid_sections(self, test_client, mock_pmm_api):
-        """Assert sections list becomes empty when all names are invalid."""
-        report = _make_report()
+        """Assert all-invalid section names fall back to full report (``None``)."""
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -357,11 +342,11 @@ class TestReportGenerateJSON:
             )
 
         _, kwargs = mock_gen.call_args
-        assert kwargs["sections"] == []
+        assert kwargs["sections"] is None
 
     def test_metadata_in_json_response(self, test_client, mock_pmm_api):
         """Assert report metadata is present in the JSON response."""
-        report = _make_report()
+        report = make_report()
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -375,7 +360,7 @@ class TestReportGenerateJSON:
 
     def test_full_flag_reflected_in_json(self, test_client, mock_pmm_api):
         """Assert the full flag value appears in the JSON body."""
-        report = _make_report(full=True)
+        report = make_report(full=True)
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -416,7 +401,7 @@ class TestReportGeneratePDF:
 
     def test_returns_200_with_pdf(self, test_client, mock_pmm_api):
         """Assert a generated report is returned as a PDF download."""
-        report = _make_report()
+        report = make_report()
         pdf_bytes = b"%PDF-1.4 fake content"
         with (
             patch(
@@ -438,7 +423,7 @@ class TestReportGeneratePDF:
 
     def test_content_disposition_header(self, test_client, mock_pmm_api):
         """Assert Content-Disposition header contains the expected filename."""
-        report = _make_report()
+        report = make_report()
         with (
             patch(
                 "app.sep.plugins.report.routes.generate_report",
@@ -459,7 +444,7 @@ class TestReportGeneratePDF:
 
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
         """Assert default since/until/full/refresh values are forwarded."""
-        report = _make_report()
+        report = make_report()
         with (
             patch(
                 "app.sep.plugins.report.routes.generate_report",
@@ -482,7 +467,7 @@ class TestReportGeneratePDF:
 
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom form parameters are forwarded to generate_report."""
-        report = _make_report(full=True, refresh=True)
+        report = make_report(full=True, refresh=True)
         with (
             patch(
                 "app.sep.plugins.report.routes.generate_report",
@@ -546,7 +531,7 @@ class TestReportUpload:
 
     def test_returns_200_with_json(self, test_client, mock_pmm_api):
         """Assert a successful upload returns 200 with JSON."""
-        report = _make_report()
+        report = make_report()
         upload_result = {"status": "ok", "id": "12345"}
         with (
             patch(
@@ -572,7 +557,7 @@ class TestReportUpload:
 
     def test_passes_default_parameters(self, test_client, mock_pmm_api):
         """Assert default form parameters are forwarded."""
-        report = _make_report()
+        report = make_report()
         with (
             patch(
                 "app.sep.plugins.report.routes.generate_report",
@@ -600,7 +585,7 @@ class TestReportUpload:
 
     def test_passes_custom_parameters(self, test_client, mock_pmm_api):
         """Assert custom form parameters are forwarded to generate_report."""
-        report = _make_report(full=True, refresh=True)
+        report = make_report(full=True, refresh=True)
         with (
             patch(
                 "app.sep.plugins.report.routes.generate_report",
@@ -651,7 +636,7 @@ class TestReportUpload:
 
     def test_returns_500_on_upload_error(self, test_client, mock_pmm_api):
         """Assert 500 when the upload service raises an exception."""
-        report = _make_report()
+        report = make_report()
         with (
             patch(
                 "app.sep.plugins.report.routes.generate_report",
