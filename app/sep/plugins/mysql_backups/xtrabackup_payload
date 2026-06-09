@@ -93,15 +93,6 @@ DEFAULT_CFG_DIR = Path(
 )
 DEFAULT_CFG = DEFAULT_CFG_DIR / "backup_config.yml"
 DIR_ENCRYPT_CFG_PATH = DEFAULT_CFG_DIR / "dir_encrypt.yml"
-DEFAULT_GRACEFUL_EXIT_FILE = os.getenv(
-    "PERCONA_BACKUP_GRACEFUL_EXIT_FILE",
-    str(
-        Path(CURRENT_USER_HOME_DIR)
-        / ".config"
-        / "percona"
-        / "BACKUP_DRIVER_GRACEFUL_EXIT"
-    ),
-)
 DEFAULT_LOGGING_DIR = os.getenv(
     "PERCONA_BACKUP_DEFAULT_LOGGING_DIR",
     str(Path(CURRENT_USER_HOME_DIR) / ".local" / "percona" / "logs" / "backup"),
@@ -113,19 +104,13 @@ LOGGING_FORMAT_DEBUG = (
     "%(asctime)s PID<%(process)d> %(levelname)s:%(lineno)d:%(alias)s%(message)s"
 )
 LOGGING_LEVEL = logging.INFO
-LOGGING_NAME = {
-    "X": "xtrabackup.log"
-}
 MD5SUM_FILE = "md5sum"
 SSH_ARGS = "-o PasswordAuthentication=no -o StrictHostKeyChecking=no"
 # Status codes
 STATUS_CRITICAL = 2
 STATUS_OK = 0
 STATUS_WARNING = 1
-STATUS_UNKNOWN = 3
 UPLOADME_FILE = ".uploadme"
-UPLOAD_POLL_INTERVAL = 5 * 60
-VALID_POLICIES = ["mysql", "mongodb", "postgresql"]
 XTRABACKUP_INFO = "xtrabackup_info"
 XTRABACKUP_CHECKPOINTS = "xtrabackup_checkpoints"
 
@@ -1778,8 +1763,7 @@ class S3UploadProvider:
             resp = self.s3.get_public_access_block(Bucket=self.bucket_name)
             public_block = resp.get("PublicAccessBlockConfiguration", {})
             if not all(public_block.get(k, True) for k in public_block):
-                msg = "Unsafe S3 bucket: public access is allowed!"
-                raise BackupError(msg)
+                raise BackupError("Unsafe S3 bucket: public access is allowed!")
         except ClientError as e:
             self.logger.warning("Could not check S3 bucket safety: %s", e)
         self.logger.info("OK S3 bucket looks to be safe or safety check skipped.")
