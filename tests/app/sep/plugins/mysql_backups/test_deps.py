@@ -445,6 +445,46 @@ class TestParseBackupTaskDataUploadQuiet:
 
 
 @pytest.mark.parametrize(
+    ("all_servers", "expected"),
+    [
+        ({"UPLOAD_QUIET": True}, True),
+        ({"UPLOAD_QUIET": False}, False),
+        ({}, None),
+    ],
+)
+def test_parse_backup_task_data_upload_quiet(
+    all_servers: dict, expected: bool | None
+) -> None:
+    """Round-trip upload_quiet from persisted YAML on the edit form path."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1",
+                                "HOST": "10.0.0.1",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.XTRABACKUP.value,
+                                "UPLOAD": ["s3"],
+                            }
+                        ],
+                        "ALL_SERVERS": all_servers,
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["upload_quiet"] == expected
+
+
+@pytest.mark.parametrize(
     ("upload_providers", "all_servers", "expected_result"),
     [
         (

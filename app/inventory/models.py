@@ -793,3 +793,43 @@ class ServiceSystemObservationWrite(ServiceSystemObservationBase):
         index=True,
         ondelete="CASCADE",
     )
+
+
+class HostSystemObservationResponse(BaseSQLModel, HostSystemObservationBase):
+    """Define the response model for host system observation data.
+
+    :param id: The primary key of the observation record.
+    :type id: int | None
+    :param created_at: When the record was created.
+    :type created_at: UTCDatetime
+    :param updated_at: When the record was last updated.
+    :type updated_at: UTCDatetime | None
+    :param node_id: The unique identifier of the observed node.
+    :type node_id: int
+    :param os_version: The observed operating system version.
+    :type os_version: str | None
+    :param installed_packages: Snapshot of installed packages.
+    :type installed_packages: list[dict[str, Any]] | None
+    :param config: Snapshot of host configuration.
+    :type config: dict[str, Any] | None
+    :param observed_at: When this observation was collected.
+    :type observed_at: UTCDatetime
+    """
+
+
+class ServiceSystemObservationResponse(BaseSQLModel, ServiceSystemObservationBase):
+    """Define the response model for service system observation data.
+
+    :param id: The primary key of the observation record.
+    :type id: int | None
+    :param created_at: When the record was created.
+    :type created_at: UTCDatetime
+    :param updated_at: When the record was last updated.
+    :type updated_at: UTCDatetime | None
+    :param service_id: The unique identifier of the observed service.
+    :type service_id: int
+    :param db_engine_version: The observed database engine version.
+    :type db_engine_version: NonEmptyStr
+    :param observed_at: When this observation was collected.
+    :type observed_at: UTCDatetime
+    """
