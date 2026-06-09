@@ -534,9 +534,8 @@ async def get_default_context(
     try:
         states = await AppStateManager.all_states(session)
     except SQLAlchemyError:
-        # Keep the page (including the error pages, which build this context
-        # from a fresh session) renderable when the DB is unreachable: degrade
-        # to showing every app rather than failing the whole response.
+        # Error pages rebuild this context from a fresh session; keep them
+        # renderable when the DB is down.
         logger.warning(
             "Could not read app state; rendering all apps in the sidebar.",
             exc_info=True,
@@ -1077,11 +1076,11 @@ async def get_tasks_index_context(
     inventories = await inventory_api.get("/summary/")
     # Derive from the already-filtered plugin list so a disabled Task Manager
     # does not leave the homepage rendering links into 503-returning routes.
-    plugins = (default_context or {}).get("plugins", [])
+    plugins = default_context.get("plugins", [])
     is_task_manager_enabled = any(
         p.name == "Task Manager" and p.sidebar for p in plugins
     )
-    context = default_context or {}
+    context = default_context
     context.update(
         {
             **inventories,

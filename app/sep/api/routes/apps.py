@@ -69,7 +69,7 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     return [
         AppKeyResponse(
             app_key=(key := plugin.module_name.split(".")[-1]),
-            enabled=True if key in PROTECTED_APP_KEYS else states.get(key, True),
+            enabled=key in PROTECTED_APP_KEYS or states.get(key, True),
             sidebar=plugin.sidebar,
             uri_path=str(plugin.uri_path),
         )

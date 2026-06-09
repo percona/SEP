@@ -102,7 +102,7 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
         AppInfoResponse(
             app_key=(key := plugin.module_name.split(".")[-1]),
             name=plugin.name,
-            enabled=True if key in PROTECTED_APP_KEYS else states.get(key, True),
+            enabled=key in PROTECTED_APP_KEYS or states.get(key, True),
             toggleable=key not in PROTECTED_APP_KEYS,
             uri_path=str(plugin.uri_path),
             css_class=plugin.css_class,
