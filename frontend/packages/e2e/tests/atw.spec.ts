@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 const PLUGIN_ROUTE = '/atw';
 
@@ -111,6 +112,10 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {
