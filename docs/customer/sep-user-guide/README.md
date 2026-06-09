@@ -235,7 +235,7 @@ Manager (`exec-artifact` / `exec-python-artifact`).
 The report aggregates advisors, alerts, backups, disk usage, uptime, and inventory from PMM
 and renders an HTML/PDF document, which can optionally be uploaded to ServiceNow.
 
-**What it runs:** no command on a database host — it uses the PMM API and generates the PDF  
+**What it runs:** no command on a database host — it uses the PMM API and generates the PDF
 locally.
 
 **Root requirements:** No
@@ -252,4 +252,3 @@ Nomad client — for example `~/.my.cnf` / `~/.mylogin.cnf` for MySQL tools and 
 file for PBM — rather than from SEP itself.
 - **History and logs.** Every dispatched task records its status, logs, and any artifacts, so
 you can review past runs and download their output from SEP.
-
