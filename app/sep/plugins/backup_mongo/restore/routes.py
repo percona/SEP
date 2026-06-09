@@ -32,6 +32,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -308,11 +309,15 @@ async def restores_detail(
     ).as_template_list()
 
     try:
-        response = await inventory_api.get(
-            "/services/",
-            params={"service_type": ServiceTypeEnum.MONGODB, "limit": 0},
+        context["services"] = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                "/services/",
+                params={
+                    "service_type": ServiceTypeEnum.MONGODB,
+                    **pagination.model_dump(),
+                },
+            )
         )
-        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

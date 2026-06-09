@@ -339,6 +339,10 @@ async def test_get_children_entities(entity_type, mock_remote_api, created_servi
     if entity_type == SyncInventoryEntityTypeEnum.SERVICE:
         created_entity = created_service
         mock_remote_api.get.side_effect = [created_service.model_dump()]
+    elif entity_type == SyncInventoryEntityTypeEnum.INVENTORY:
+        mock_remote_api.get.side_effect = [
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
     await syncer.get_children_entities(entity_type, created_entity)
 
 
@@ -534,7 +538,7 @@ async def test_delete_node(
     ]
 
     await syncer.delete_node(created_node)
-    mock_remote_api.delete.assert_awaited_once_with(f"/{created_node.id}")
+    mock_remote_api.delete.assert_awaited_once_with(f"/nodes/{created_node.id}")
     mock_remote_api.delete.reset_mock()
     await syncer.delete_service(created_service)
     mock_remote_api.delete.assert_awaited_once_with(f"/services/{created_service.id}")
@@ -560,6 +564,9 @@ async def test_sync_inventory(session: AsyncSession, mock_remote_api):
         inventory_api=mock_remote_api,
         sync_instance=sync_instance,
     )
+    mock_remote_api.get.side_effect = [
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+    ]
 
     await syncer.sync_inventory()
 

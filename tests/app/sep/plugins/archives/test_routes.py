@@ -23,6 +23,7 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -437,7 +438,12 @@ def test_archives_detail(
         "hostname": "mock_nomad_host_name",
     }
     created_task.data = mock_data
-    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     mock_task_api_dep.get.side_effect = [
         {"127.0.0.1": "localhost"},  # for /hosts/ (dependency)
         {
@@ -470,7 +476,12 @@ def test_archives_detail(
     mock_task_api_dep.get.assert_any_await(f"/stats/{created_task.name}")
     mock_task_api_dep.get.assert_any_await("/hosts/")
     mock_inventory_api_dep.get.assert_any_await(
-        "/services/", params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0}
+        "/services/",
+        params={
+            "service_type": ServiceTypeEnum.MYSQL,
+            "offset": 0,
+            "limit": MAX_PAGINATION_LIMIT,
+        },
     )
 
 
@@ -505,7 +516,12 @@ def test_archives_detail_bulk_insert_checked(
         "hostname": "mock_nomad_host_name",
     }
     created_task.data = mock_data
-    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     mock_task_api_dep.get.side_effect = [
         {"127.0.0.1": "localhost"},
         {"items": [], "total": 0, "offset": 0, "limit": 50},
@@ -552,7 +568,12 @@ def test_archives_detail_with_remote_destination(
         "hostname": "mock_nomad_host_name",
     }
     created_task.data = mock_data
-    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     mock_task_api_dep.get.side_effect = [
         {"127.0.0.1": "localhost"},
         {"items": [], "total": 0, "offset": 0, "limit": 50},

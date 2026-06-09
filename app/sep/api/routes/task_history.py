@@ -24,8 +24,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.sep.api.task_history_merge import (
     fetch_merged_task_history,
     normalize_task_history_names,
@@ -39,10 +39,9 @@ router = APIRouter()
 @router.get("/")
 async def list_merged_task_history(
     tasks_api: TaskAPI,
+    pagination: PaginationDep,
     task_names: Annotated[list[str], Query(min_length=1)],
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0, le=200),
 ) -> PaginatedResponse[TaskHistoryResponse]:
     """Return merged execution history for one or more task names.
 
@@ -57,10 +56,8 @@ async def list_merged_task_history(
     :type task_names: list[str]
     :param task_status: Optional exact status filter forwarded upstream.
     :type task_status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based offset into the merged, sorted result.
-    :type offset: int
-    :param limit: Page size applied after the global merge sort.
-    :type limit: int
+    :param pagination: Validated offset/limit query parameters.
+    :type pagination: Pagination
     :return: Merged paginated task history across all requested names.
     :rtype: PaginatedResponse[TaskHistoryResponse]
     :raises HTTPException: When every supplied task name is empty after trimming.
@@ -74,6 +71,5 @@ async def list_merged_task_history(
         tasks_api,
         task_names,
         status=task_status,
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
     )
