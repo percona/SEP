@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 const PLUGIN_ROUTE = '/inventory/nodes';
 
@@ -54,6 +55,10 @@ async function mockInventoryApis(page: Page) {
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {

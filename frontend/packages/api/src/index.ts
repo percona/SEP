@@ -106,5 +106,7 @@ export {
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
   useDashboardStats,
+  useEnabledApps,
+  ENABLED_APPS_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats } from './hooks';
+export type { AlertConfig, DashboardStats, EnabledApp } from './hooks';

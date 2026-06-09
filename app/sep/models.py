@@ -27,7 +27,7 @@ from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
-from app.core.db.models import BaseUUIDSQLModel
+from app.core.db.models import BaseSQLModel, BaseUUIDSQLModel
 from app.core.utils.fields import NonEmptyStr
 
 
@@ -267,3 +267,52 @@ class SyncItemWrite(SyncItemBase):
         instance.
     :type sync_instance_id: UUID4
     """
+
+
+class AppStateBase(SQLModel):
+    """Define the shared fields for :class:`AppState`.
+
+    :param app_key: The plugin's module key (the last dotted segment of its
+        ``module_name``). Unique and indexed for per-request lookups.
+    :type app_key: NonEmptyStr
+    :param enabled: Whether the app is currently enabled. The column default is
+        ``False``; the startup seed sets explicit values from ``settings.yaml``.
+    :type enabled: bool
+    """
+
+    app_key: NonEmptyStr = SQLField(unique=True, index=True)
+    enabled: bool = False
+
+
+class AppState(BaseSQLModel, AppStateBase, table=True):
+    """Represent the per-app runtime enable/disable state.
+
+    One row per non-protected plugin in ``settings.yaml SEP.PLUGINS``. Seeded on
+    startup via :func:`app.sep.db.seed.init_sep_db` with ``enabled=plugin.enabled``
+    from each YAML entry, and toggled via the admin REST endpoint at
+    ``PUT /api/admin/apps/{app_key}/state``.
+
+    Protected apps (currently ``inventory``) are never seeded and have no row;
+    the request guard skips injection for them and the toggle endpoint rejects
+    them. A missing row for a configured app is treated as ``enabled=True`` by
+    the guard (a configured plugin is active until explicitly disabled); rows
+    for apps no longer in ``SEP.PLUGINS`` are cleaned up on the next startup
+    seed.
+
+    :param id: The auto-incremented primary key.
+    :type id: int | None
+    :param app_key: The plugin's module key. Unique and indexed.
+    :type app_key: NonEmptyStr
+    :param enabled: Whether the app is currently enabled.
+    :type enabled: bool
+    """
+
+
+class AppStateWrite(SQLModel):
+    """Define the write payload for the app-state toggle endpoint.
+
+    :param enabled: The desired enabled state.
+    :type enabled: bool
+    """
+
+    enabled: bool
