@@ -18,7 +18,7 @@
 from starlette import status
 from starlette.testclient import TestClient
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import HostSystemObservation, Node, Service, SourceEnum
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
@@ -42,6 +42,21 @@ class TestListNodes:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_rejects_limit_zero(self, test_client: TestClient) -> None:
+        """Return 422 when limit is zero."""
+        response = test_client.get("/nodes/", params={"limit": 0})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_rejects_limit_above_cap(self, test_client: TestClient) -> None:
+        """Return 422 when limit exceeds the global cap."""
+        response = test_client.get("/nodes/", params={"limit": 201})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_rejects_negative_limit(self, test_client: TestClient) -> None:
+        """Return 422 when limit is negative."""
+        response = test_client.get("/nodes/", params={"limit": -1})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_list_nodes_multiple(self, test_client: TestClient) -> None:
         """Return a list of nodes with services loaded."""

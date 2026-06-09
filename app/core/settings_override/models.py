@@ -31,11 +31,10 @@ from app.core.db.sql_types import AutoJSON
 class SettingClassEnum(StrEnum):
     """Enumerate settings classes that may have HOT override rows.
 
-    Only classes whose proxy is actually wired in this ticket are listed:
-    ``SEPSettings``, ``TasksSettings``, ``SnippetsSettings`` and
-    ``MessagesSettings``. ``Settings``, ``InventorySettings``,
-    ``AlertSettings`` and ``AnonymizerSettings`` are intentionally NOT here
-    -- wrapping them is deferred to follow-up tickets.
+    The wired classes are ``SEPSettings``, ``TasksSettings``,
+    ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings`` and
+    ``AlertSettings``. ``InventorySettings`` and ``AnonymizerSettings`` are
+    intentionally NOT here -- wrapping them is deferred to follow-up tickets.
 
     To wire a new settings class:
 
@@ -55,6 +54,8 @@ class SettingClassEnum(StrEnum):
     TASKS_SETTINGS = "TasksSettings"
     SNIPPETS_SETTINGS = "SnippetsSettings"
     MESSAGES_SETTINGS = "MessagesSettings"
+    SETTINGS = "Settings"
+    ALERT_SETTINGS = "AlertSettings"
 
 
 class SettingOverride(BaseSQLModel, table=True):

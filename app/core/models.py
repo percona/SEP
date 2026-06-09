@@ -16,14 +16,18 @@
 """Define core models for all apps."""
 
 from collections.abc import Callable
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.core.utils import to_uppercase, transform_dict_keys
 from app.core.utils.strings import lower_if_string
 
-T = TypeVar("T")
+__all__ = [
+    "BaseCaseInsensitiveModel",
+    "BaseLowercaseModel",
+    "BaseTransformFieldsModel",
+]
 
 
 class BaseTransformFieldsModel(BaseModel):
@@ -98,22 +102,3 @@ class BaseLowercaseModel(BaseTransformFieldsModel):
 
     TRANSFORM_CALLABLE: ClassVar[Callable[[Any], Any]] = lower_if_string
     TRANSFORM_DEEP: ClassVar[bool] = True
-
-
-class PaginatedResponse(BaseModel, Generic[T]):
-    """Represent a paginated response envelope.
-
-    :param items: The items returned for the current page.
-    :type items: list[T]
-    :param total: The total number of matching records across all pages.
-    :type total: int
-    :param offset: The zero-based starting offset used for this page.
-    :type offset: int
-    :param limit: The maximum number of items requested for this page.
-    :type limit: int
-    """
-
-    items: list[T]
-    total: int
-    offset: int
-    limit: int
