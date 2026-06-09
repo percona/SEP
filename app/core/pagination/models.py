@@ -65,23 +65,28 @@ def _coerce_dict_page(
     raw: Any,
     pagination: Pagination,
     page_size: int,
-) -> dict[str, Any]:
-    """Normalize a raw upstream payload into a paginated dict envelope."""
+) -> tuple[dict[str, Any], bool]:
+    """Normalize a raw upstream payload into a paginated dict envelope.
+
+    :return: Envelope plus whether ``total`` came from upstream (not synthesized).
+    :rtype: tuple[dict[str, Any], bool]
+    """
     if isinstance(raw, list):
         envelope: dict[str, Any] = {"items": raw}
     elif isinstance(raw, dict):
         envelope = dict(raw)
     else:
         envelope = {}
+    total_authoritative = "total" in envelope
     if "items" not in envelope:
         envelope["items"] = []
     if "offset" not in envelope:
         envelope["offset"] = pagination.offset
     if "limit" not in envelope:
         envelope["limit"] = pagination.limit
-    if "total" not in envelope:
+    if not total_authoritative:
         envelope["total"] = pagination.offset + len(envelope["items"]) + page_size
-    return envelope
+    return envelope, total_authoritative
 
 
 class Pagination(BaseModel):
@@ -175,6 +180,7 @@ async def fetch_all_items(
     get_page: Callable[[Pagination], Awaitable[PaginatedResponse[T]]],
     *,
     page_size: PositiveInt = MAX_PAGINATION_LIMIT,
+    stop_on_short_page: bool | Callable[[], bool] = False,
 ) -> list[T]:
     """Fetch every item by walking paginated upstream responses.
 
@@ -182,6 +188,11 @@ async def fetch_all_items(
     :type get_page: Callable[[Pagination], Awaitable[PaginatedResponse[T]]]
     :param page_size: ``limit`` used for each upstream request.
     :type page_size: PositiveInt
+    :param stop_on_short_page: When ``False`` (default), rely on ``page.total``
+        and stop once ``offset >= page.total``. When ``True``, or a callable
+        returning ``True`` (no upstream ``total`` fallback), also stop when a
+        page returns fewer or more items than ``page_size``.
+    :type stop_on_short_page: bool | Callable[[], bool]
     :return: All items across every page, in upstream order.
     :rtype: list[T]
     """
@@ -194,7 +205,10 @@ async def fetch_all_items(
         all_items.extend(page.items)
         page_item_count = len(page.items)
         offset += page_item_count
-        if page_item_count != page_size:
+        use_short_page_stop = (
+            stop_on_short_page() if callable(stop_on_short_page) else stop_on_short_page
+        )
+        if use_short_page_stop and page_item_count != page_size:
             break
         if offset >= page.total:
             break
@@ -216,11 +230,21 @@ async def fetch_all_dict_items(
     :return: All ``items`` across every page, in upstream order.
     :rtype: list[Any]
     """
+    total_authoritative: bool | None = None
 
     async def get_page(pagination: Pagination) -> PaginatedResponse[Any]:
+        nonlocal total_authoritative
         raw = await fetch_page(pagination)
-        envelope = _coerce_dict_page(raw, pagination, page_size)
+        envelope, page_total_authoritative = _coerce_dict_page(
+            raw, pagination, page_size
+        )
+        if total_authoritative is None:
+            total_authoritative = page_total_authoritative
         page = run_pydantic_type_validator(PaginatedDictPage, envelope)
         return PaginatedResponse.model_validate(page)
 
-    return await fetch_all_items(get_page, page_size=page_size)
+    return await fetch_all_items(
+        get_page,
+        page_size=page_size,
+        stop_on_short_page=lambda: total_authoritative is False,
+    )

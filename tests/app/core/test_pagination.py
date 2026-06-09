@@ -158,8 +158,35 @@ class TestFetchAllItems:
         )
 
     @pytest.mark.asyncio
-    async def test_fetch_all_items_stops_on_partial_page_despite_total(self) -> None:
-        """Stop when a page returns fewer items than page_size even if total is larger."""
+    async def test_fetch_all_items_continues_on_short_page_when_total_is_authoritative(
+        self,
+    ) -> None:
+        """Keep walking when upstream returns a short page but total says more remain."""
+        pages = {
+            0: PaginatedResponse[int](
+                items=[0],
+                total=3,
+                offset=0,
+                limit=PAGE_SIZE,
+            ),
+            1: PaginatedResponse[int](
+                items=[1, 2],
+                total=3,
+                offset=1,
+                limit=PAGE_SIZE,
+            ),
+        }
+
+        async def get_page(pagination: Pagination) -> PaginatedResponse[int]:
+            return pages[pagination.offset]
+
+        assert await fetch_all_items(get_page, page_size=PAGE_SIZE) == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_items_stops_on_non_full_page_without_authoritative_total(
+        self,
+    ) -> None:
+        """Stop when a page is not full and caller opts into the no-total fallback path."""
 
         async def get_page(_pagination: Pagination) -> PaginatedResponse[int]:
             return PaginatedResponse[int](
@@ -169,7 +196,9 @@ class TestFetchAllItems:
                 limit=PAGE_SIZE,
             )
 
-        assert await fetch_all_items(get_page, page_size=PAGE_SIZE) == [0]
+        assert await fetch_all_items(
+            get_page, page_size=PAGE_SIZE, stop_on_short_page=True
+        ) == [0]
 
     @pytest.mark.asyncio
     async def test_fetch_all_items_empty(self) -> None:
