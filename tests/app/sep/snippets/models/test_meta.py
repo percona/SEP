@@ -15,8 +15,10 @@
 
 """Tests for SnippetMetaParameter model validators and computed properties."""
 
+from datetime import datetime, UTC
+
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.sep.snippets.forms import (
     CheckboxInputElement,
@@ -27,6 +29,7 @@ from app.sep.snippets.forms import (
     TextInputHTMLElement,
 )
 from app.sep.snippets.models.meta import (
+    serialize_cli_value,
     SnippetMetaParameter,
     SnippetMetaParameterType,
 )
@@ -72,6 +75,97 @@ class TestSetDefaultStep:
         """Verify BOOL type does not get a default step value."""
         param = SnippetMetaParameter(name="flag", type=SnippetMetaParameterType.BOOL)
         assert param.step is None
+
+    def test_datetime_type_has_no_step(self):
+        """Verify DATETIME type does not get a default step value."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME
+        )
+        assert param.step is None
+
+
+class TestDatetimeTypeResolution:
+    """Test DATETIME snippet parameter type resolution."""
+
+    def test_yaml_datetime_string_resolves_to_datetime_enum(self):
+        """Verify type: datetime in YAML resolves via name-based enum lookup."""
+        param = SnippetMetaParameter(name="start", type="datetime")
+        assert param.py_type == SnippetMetaParameterType.DATETIME
+
+    def test_datetime_enum_member_value_is_datetime_type(self):
+        """Verify DATETIME enum member maps to datetime.datetime for validation."""
+        assert SnippetMetaParameterType.DATETIME.value is datetime
+
+
+class TestSerializeCliValue:
+    """Test per-type CLI value serialization."""
+
+    def test_datetime_serializes_with_t_separator_no_microseconds(self):
+        """Verify datetime values render as YYYY-MM-DDTHH:MM:SS without microseconds."""
+        value = datetime(2024, 6, 10, 14, 30, 45, 123456, tzinfo=UTC)
+        assert serialize_cli_value(value) == "2024-06-10T14:30:45"
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("hello", "hello"),
+            (42, "42"),
+            (True, "True"),
+        ],
+    )
+    def test_non_datetime_values_use_str(self, value, expected):
+        """Verify non-datetime values still use str() unchanged."""
+        assert serialize_cli_value(value) == expected
+
+
+class TestDatetimeValidation:
+    """Test DATETIME parameter validation and error reporting."""
+
+    def test_optional_empty_string_coerces_to_none(self):
+        """Verify optional datetime params accept empty form input as None."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        assert adapter.validate_python("") is None
+
+    def test_valid_iso_datetime_string_accepted(self):
+        """Verify ISO-8601 datetime strings validate for DATETIME params."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        result = adapter.validate_python("2024-06-10T14:30:00")
+        assert isinstance(result, datetime)
+
+    def test_datetime_without_seconds_accepted(self):
+        """Verify datetime-local input without seconds parses successfully."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        result = adapter.validate_python("2024-06-10T14:30")
+        assert (result.year, result.month, result.day, result.hour, result.minute) == (
+            2024,
+            6,
+            10,
+            14,
+            30,
+        )
+
+    def test_malformed_datetime_produces_parameter_error_message(self):
+        """Verify malformed datetime input yields a readable parameter error."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        with pytest.raises(ValidationError) as exc_info:
+            adapter.validate_python("not-a-datetime")
+        errors = SnippetMetaParameter.convert_validation_errors(
+            exc_info.value, {"name": "start"}
+        )
+        assert any("Parameter error" in e for e in errors)
+        assert any("start" in e for e in errors)
 
 
 class TestValidateArgFormat:
@@ -151,6 +245,13 @@ class TestSetDefaultTypeIfUnknown:
         """Verify valid type values are preserved."""
         param = SnippetMetaParameter(name="field", type=SnippetMetaParameterType.INT)
         assert param.py_type == SnippetMetaParameterType.INT
+
+    def test_datetime_type_preserved(self):
+        """Verify DATETIME type value is preserved."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME
+        )
+        assert param.py_type == SnippetMetaParameterType.DATETIME
 
 
 class TestCoerceToType:
@@ -318,6 +419,15 @@ class TestValidationType:
         )
         vtype = param.validation_type
         assert hasattr(vtype, "__args__")
+
+    def test_optional_datetime_returns_union_with_empty_str_to_none(self):
+        """Verify optional DATETIME param returns datetime | EmptyStrToNone."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        vtype = param.validation_type
+        assert hasattr(vtype, "__args__")
+        assert datetime in vtype.__args__
 
 
 class TestToValidationField:
