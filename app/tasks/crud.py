@@ -620,8 +620,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         :param source: Optional step filter; when set, only chunks for the given
             source are yielded.
         :type source: str | None
-        :return: An async generator yielding matching ``TaskHistoryLog`` chunk
-            rows, oldest first.
+        :yield: Matching ``TaskHistoryLog`` chunk rows, oldest first.
         :rtype: AsyncGenerator[TaskHistoryLog, None]
         """
         query = select(TaskHistoryLog).where(
@@ -633,6 +632,84 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             col(TaskHistoryLog.source),
             col(TaskHistoryLog.stream),
             col(TaskHistoryLog.start_offset),
+        ).execution_options(yield_per=50)
+        result = await session.stream(query)
+        async for row in result.scalars():
+            yield row
+
+    @classmethod
+    async def list_stream_keys(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        source: str | None = None,
+    ) -> list[tuple[str, TaskLogType]]:
+        """Return distinct ``(source, stream)`` pairs that have chunk rows.
+
+        Pairs are ordered by ``(source, stream)`` for deterministic tail scans.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :type session: AsyncSession
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :type task_history_id: int
+        :param source: Optional step filter; when set, only pairs for the given
+            source are returned.
+        :type source: str | None
+        :return: Distinct ``(source, stream)`` tuples present in the chunk store.
+        :rtype: list[tuple[str, TaskLogType]]
+        """
+        query = (
+            select(col(TaskHistoryLog.source), col(TaskHistoryLog.stream))
+            .where(col(TaskHistoryLog.task_history_id) == task_history_id)
+            .distinct()
+            .order_by(col(TaskHistoryLog.source), col(TaskHistoryLog.stream))
+        )
+        if source is not None:
+            query = query.where(col(TaskHistoryLog.source) == source)
+        result = await cls._exec(session, query)
+        return list(result.all())
+
+    @classmethod
+    async def iter_chunks_reverse(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        source: str | None = None,
+        stream: TaskLogType | None = None,
+    ) -> AsyncGenerator[TaskHistoryLog, None]:
+        """Yield chunk rows newest-first within each ``(source, stream)`` group.
+
+        Ordering is ``(source, stream, start_offset DESC)`` so callers can scan
+        backward from the log tail without loading the full history forward.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :type session: AsyncSession
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :type task_history_id: int
+        :param source: Optional step filter; when set, only chunks for the given
+            source are yielded.
+        :type source: str | None
+        :param stream: Optional stream filter; when set, only chunks for the
+            given stream are yielded.
+        :type stream: TaskLogType | None
+        :yield: Matching ``TaskHistoryLog`` chunk rows, newest first per stream.
+        :rtype: AsyncGenerator[TaskHistoryLog, None]
+        """
+        query = select(TaskHistoryLog).where(
+            col(TaskHistoryLog.task_history_id) == task_history_id,
+        )
+        if source is not None:
+            query = query.where(col(TaskHistoryLog.source) == source)
+        if stream is not None:
+            query = query.where(col(TaskHistoryLog.stream) == stream)
+        query = query.order_by(
+            col(TaskHistoryLog.source),
+            col(TaskHistoryLog.stream),
+            col(TaskHistoryLog.start_offset).desc(),
         ).execution_options(yield_per=50)
         result = await session.stream(query)
         async for row in result.scalars():
