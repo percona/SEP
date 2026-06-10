@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.exceptions import HTTPBadGatewayException
+from app.core.pagination import fetch_all_dict_items
 from app.sep.api.host_resolution import address_to_name_index
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.deps import InventoryAPI, TaskAPI
@@ -87,9 +88,13 @@ async def list_hosts(
         raise HTTPBadGatewayException(detail=str(detail)) from exc
 
     try:
-        inventory_response = await inventory_api.get("/", params={"limit": 0})
+        nodes = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                "/nodes/", params=pagination.model_dump()
+            )
+        )
         display_names = address_to_name_index(
-            (node["name"], node["address"]) for node in inventory_response["items"]
+            (node["name"], node["address"]) for node in nodes
         )
     except (HTTPException, TypeError, KeyError, OSError):
         display_names = {}

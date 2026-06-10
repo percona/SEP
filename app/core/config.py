@@ -60,6 +60,9 @@ from app.core.middleware.security_headers import (
 )
 from app.core.models import BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field
 from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
     LogLevel,
@@ -70,7 +73,6 @@ from app.core.utils.fields import (
     TimedeltaSeconds,
     URL,
 )
-from app.core.utils.lazy import LazyProxy
 from app.core.utils.openapi import generate_tag_prefixed_unique_id
 
 LOGGING_CONFIG = {
@@ -377,7 +379,7 @@ class Settings(BaseYamlSettings):
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
-    PMM: PMMSettings = PMMSettings()
+    PMM: PMMSettings = hot_field(PMMSettings())
     SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
     SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
@@ -465,6 +467,18 @@ class Settings(BaseYamlSettings):
         )
         return await self._CLIENT_REGISTRY.get(cls, **kwargs)
 
+    async def invalidate_client(self, endpoint: str) -> None:
+        """Evict every cached remote-API client served from ``endpoint``.
+
+        Thin wrapper over :meth:`ClientRegistry.invalidate` used by override
+        rebind callbacks to drop clients (e.g. PMM) whose connection settings
+        changed at runtime, so the next request reconstructs a fresh client.
+
+        :param endpoint: The endpoint URL whose cached clients to evict.
+        :type endpoint: str
+        """
+        await self._CLIENT_REGISTRY.invalidate(endpoint)
+
     async def close_client_registry(self) -> None:
         """Close the client registry and all its managed clients."""
         await self._CLIENT_REGISTRY.close_all()
@@ -477,7 +491,9 @@ def _create_settings() -> Settings:
     return s
 
 
-settings: Settings = LazyProxy(_create_settings)
+settings: Settings = OverridableSettingsProxy(
+    _create_settings, setting_class=SettingClassEnum.SETTINGS
+)
 logger = logging.getLogger(__name__)
 
 
