@@ -35,6 +35,7 @@ __all__ = [
     "is_hot_reloadable",
     "is_nested_overridable_parent",
     "iter_class_fields",
+    "iter_nested_leaf_keys",
     "materialize_fingerprint",
     "materialize_override_value",
     "materialize_template",
@@ -975,6 +976,64 @@ def resolve_nested_field_metadata(
         is_secret=_field_contains_secret(leaf_info),
         is_complex=_field_is_complex(leaf_info.annotation),
     )
+
+
+def iter_nested_leaf_keys(
+    settings_cls: type[BaseModel], parent_field_name: str
+) -> Iterator[tuple[str, tuple[str, ...]]]:
+    """Yield ``(canonical_key, segment_chain)`` for each nested leaf under a parent.
+
+    Walk the parent submodel's ``model_fields`` recursively, descending into
+    Pydantic submodels via :func:`annotation_pydantic_class` (which unwraps
+    ``X | None``). A field whose annotation is not a Pydantic model -- a scalar,
+    ``list[...]`` or ``set[...]`` -- is a leaf, so collection-typed fields stay a
+    single leaf (their items are not expanded). Segments are the canonical
+    attribute names from ``model_fields``, so each yielded key matches the form
+    :func:`resolve_nested_field` and :func:`override_keys_for_rows` produce, and
+    ``"__".join(chain) == key`` holds by construction.
+
+    Yield nothing when ``parent_field_name`` is unknown or is not a Pydantic
+    submodel (e.g. a scalar HOT field), letting the caller fall back to a single
+    top-level entry.
+
+    :param settings_cls: The settings class declaring ``parent_field_name``.
+    :type settings_cls: type[BaseModel]
+    :param parent_field_name: The top-level field whose leaves to enumerate.
+    :type parent_field_name: str
+    :return: An iterator of ``(canonical_key, segment_chain)`` pairs, one per
+        nested leaf.
+    :rtype: Iterator[tuple[str, tuple[str, ...]]]
+    """
+    parent_info = settings_cls.model_fields.get(parent_field_name)
+    if parent_info is None:
+        return
+    submodel = annotation_pydantic_class(parent_info.annotation)
+    if submodel is None:
+        return
+    yield from _iter_leaf_chains(submodel, (parent_field_name,))
+
+
+def _iter_leaf_chains(
+    model_cls: type[BaseModel], prefix: tuple[str, ...]
+) -> Iterator[tuple[str, tuple[str, ...]]]:
+    """Recursively yield ``(key, chain)`` for every leaf reachable from ``model_cls``.
+
+    :param model_cls: The Pydantic model whose fields to walk.
+    :type model_cls: type[BaseModel]
+    :param prefix: The canonical segment chain accumulated from the parent down
+        to (but excluding) ``model_cls``'s own fields.
+    :type prefix: tuple[str, ...]
+    :return: An iterator of ``(canonical_key, segment_chain)`` pairs, one per
+        leaf reachable from ``model_cls``.
+    :rtype: Iterator[tuple[str, tuple[str, ...]]]
+    """
+    for name, info in model_cls.model_fields.items():
+        chain = (*prefix, name)
+        child = annotation_pydantic_class(info.annotation)
+        if child is None:
+            yield "__".join(chain), chain
+        else:
+            yield from _iter_leaf_chains(child, chain)
 
 
 def _resolve_default(field_info: FieldInfo) -> Any:

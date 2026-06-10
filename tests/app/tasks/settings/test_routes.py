@@ -330,18 +330,43 @@ class TestTasksSettingsNestedOverrides:
         types = {entry["type"] for entry in response.json()["detail"]}
         assert "not_overridable" in types
 
-    async def test_list_marks_security_headers_overridden(
+    async def test_list_marks_overridden_security_header_leaf(
         self, admin_test_client: TestClient
     ) -> None:
-        """A nested-only override marks the parent ``has_override`` in LIST."""
+        """A nested override marks only its canonical leaf ``has_override`` in LIST."""
         admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
         )
-        groups = admin_test_client.get("/admin/settings/").json()["groups"]
-        settings = groups[0]["settings"]
-        security_headers = next(s for s in settings if s["key"] == "SECURITY_HEADERS")
-        assert security_headers["has_override"] is True
+        settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+            "settings"
+        ]
+        by_key = {s["key"]: s for s in settings}
+        assert "SECURITY_HEADERS" not in by_key
+        assert by_key["SECURITY_HEADERS__x_frame_options_deny"]["has_override"] is True
+        sibling = by_key["SECURITY_HEADERS__x_content_type_options_nosniff"]
+        assert sibling["has_override"] is False
+
+    async def test_list_expands_security_headers_two_level_leaf(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """LIST surfaces the two-level HSTS leaf with its canonical ``key_path``.
+
+        The intermediate ``strict_transport_security`` defaults to ``None``, so
+        the leaf's ``value`` resolves to ``None`` without raising.
+        """
+        settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+            "settings"
+        ]
+        by_key = {s["key"]: s for s in settings}
+        leaf = by_key["SECURITY_HEADERS__strict_transport_security__max_age"]
+        assert leaf["key_path"] == [
+            "SECURITY_HEADERS",
+            "strict_transport_security",
+            "max_age",
+        ]
+        assert "__".join(leaf["key_path"]) == leaf["key"]
+        assert leaf["value"] is None
 
     async def test_get_multi_level_nested_before_override_returns_200(
         self, admin_test_client: TestClient
@@ -427,6 +452,36 @@ class TestTasksSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["has_override"] is True
+
+    async def test_detail_two_level_leaf_carries_key_path(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A two-level DETAIL response carries its canonical lowercase ``key_path``."""
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings"
+            "/SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["key_path"] == [
+            "SECURITY_HEADERS",
+            "strict_transport_security",
+            "max_age",
+        ]
+        assert "__".join(body["key_path"]) == body["key"]
+
+    async def test_patch_security_header_echoes_key_path(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A nested PATCH echoes the leaf's canonical lowercase ``key_path`` chain."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        echoed = response.json()[0]
+        assert echoed["key_path"] == ["SECURITY_HEADERS", "x_frame_options_deny"]
+        assert "__".join(echoed["key_path"]) == echoed["key"]
 
 
 @pytest.mark.asyncio

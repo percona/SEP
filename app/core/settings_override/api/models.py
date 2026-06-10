@@ -37,6 +37,16 @@ class SettingResponse(BaseModel):
     :type setting_class: SettingClassEnum
     :param key: The field name on the settings class.
     :type key: str
+    :param key_path: The canonical segment chain such that
+        ``"__".join(key_path) == key``. A top-level field carries a
+        single-element list (``["MAX_CONNECTIONS"]``); a nested leaf carries its
+        full chain (``["SESSION", "MAX_AGE"]``, or ``["SECURITY_HEADERS",
+        "strict_transport_security", "max_age"]``). Always populated by the
+        server; the ``default_factory`` only keeps the field optional in the
+        schema so the addition is backwards-compatible. Lets the frontend build
+        parent/child grouping from explicit structure instead of splitting
+        ``key`` on ``__``.
+    :type key_path: list[str]
     :param value: The current value visible through the proxy, dumped to a
         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
         redacted to ``"**********"``.
@@ -67,6 +77,7 @@ class SettingResponse(BaseModel):
 
     setting_class: SettingClassEnum
     key: str
+    key_path: list[str] = Field(default_factory=list)
     value: Any
     default_value: Any
     type: str
