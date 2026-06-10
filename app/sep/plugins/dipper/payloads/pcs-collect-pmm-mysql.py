@@ -224,33 +224,48 @@ skipgroup.add_argument(
 
 # HA options
 hagroup = parser.add_argument_group("High Availability")
-haex = hagroup.add_mutually_exclusive_group()
-haex.add_argument(
-    "--pxc",
-    dest="pxc",
-    help="Collect PXC-related graphs; Must provide cluster name",
-    metavar="CLUSTER_NAME",
+hagroup.add_argument(
+    "--ha",
+    choices=["pxc", "gr", "async"],
+    help="Collect HA-related graphs (mutually exclusive)",
 )
-haex.add_argument(
-    "--gr",
-    dest="gr",
-    help="Collect Group-Replication graphs; Must provide replica set name",
-    metavar="REPLICA_SET",
-)
-haex.add_argument(
-    "--async",
-    dest="haasync",
-    help="Collect Async-Replication graphs; Must provide replica set name",
-    metavar="REPLICA_SET",
+hagroup.add_argument(
+    "--ha-name",
+    dest="ha_name",
+    metavar="NAME",
+    help="Cluster or replica-set name (required for --ha pxc or gr)",
 )
 
 # DBaaS options
 dbaasgroup = parser.add_argument_group("DBaaS Options")
-dbaasex = dbaasgroup.add_mutually_exclusive_group()
-dbaasex.add_argument("--rds", help="Amazon RDS MySQL", action="store_true")
-dbaasex.add_argument("--aurora", help="Amazon RDS Aurora", action="store_true")
+dbaasgroup.add_argument(
+    "--dbaas",
+    choices=["rds", "aurora"],
+    help="Collect DBaaS-related graphs (mutually exclusive)",
+)
 
 args = parser.parse_args()
+
+# Derive legacy HA/DBaaS attrs for downstream collection blocks
+args.pxc = args.gr = None
+args.haasync = None
+args.rds = args.aurora = False
+
+if args.ha:
+    if args.ha in ("pxc", "gr"):
+        if not args.ha_name:
+            parser.error("--ha-name is required when --ha is pxc or gr")
+        if args.ha == "pxc":
+            args.pxc = args.ha_name
+        else:
+            args.gr = args.ha_name
+    elif args.ha == "async":
+        args.haasync = True
+
+if args.dbaas == "rds":
+    args.rds = True
+elif args.dbaas == "aurora":
+    args.aurora = True
 
 VERIFY_SSL = not args.insecure  # noqa: S501
 
