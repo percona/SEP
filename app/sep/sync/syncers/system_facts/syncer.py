@@ -268,10 +268,16 @@ class SystemFactsSyncer(BaseTaskSyncer):
                 created_node.id,
             )
             data = {}
-        if host_facts := (data.get("host") or {}):
+        if not isinstance(data, dict):
+            data = {}
+        host_facts = data.get("host")
+        if isinstance(host_facts, dict) and host_facts:
             self._host_facts_cache[created_node.id] = host_facts
-        for address, fact in (data.get("services") or {}).items():
-            self._service_facts_cache[address] = fact
+        services = data.get("services")
+        if isinstance(services, dict):
+            for address, fact in services.items():
+                if isinstance(fact, dict):
+                    self._service_facts_cache[address] = fact
         return created_node
 
     def _build_host_observation(
@@ -353,7 +359,11 @@ class SystemFactsSyncer(BaseTaskSyncer):
                 created_service.id,
             )
             return {}
-        return (data.get("services") or {}).get(created_service.address) or {}
+        services = data.get("services") if isinstance(data, dict) else None
+        if not isinstance(services, dict):
+            return {}
+        fact = services.get(created_service.address)
+        return fact if isinstance(fact, dict) else {}
 
     async def fetch_service(
         self, created_service: CreatedService

@@ -286,6 +286,26 @@ class TestFetchNode:
         assert not mock_syncer._host_facts_cache
         assert not mock_syncer._service_facts_cache
 
+    @pytest.mark.asyncio
+    async def test_fetch_node_wrong_shape_output_skips_cleanly(
+        self, mock_syncer, created_node, mocker
+    ):
+        """Valid JSON with non-dict host/services degrades to empty caches, no crash."""
+        mocker.patch.object(
+            SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {NODE_NAME: NODE_ADDRESS}
+        mocker.patch.object(
+            SystemFactsSyncer, "wait_for_task_output", new_callable=AsyncMock
+        ).return_value = TaskRunResult(
+            1, json.dumps({"host": "oops", "services": ["not-a-dict"]})
+        )
+
+        updated = await mock_syncer.fetch_node(created_node)
+
+        assert updated is not None
+        assert not mock_syncer._host_facts_cache
+        assert not mock_syncer._service_facts_cache
+
 
 class TestPerformNodeSync:
     """Test upserting host observations and recursing into services."""
