@@ -44,6 +44,7 @@ def test_backup_task_write_accepts_minimal_payload() -> None:
         hostname="pg-host",
         service_id=1,
         backup_dir=SAMPLE_BACKUP_DIR,
+        stanza="sep-test",
     )
 
     assert body.task_name == "pg-task"
@@ -114,10 +115,37 @@ def test_backup_task_write_accepts_pgbackrest_backup_type() -> None:
         hostname="pg-host",
         service_id=1,
         backup_dir=SAMPLE_BACKUP_DIR,
+        stanza="sep-test",
         pgbackrest_backup_type=PgBackRestBackupType.DIFF,
     )
 
     assert body.pgbackrest_backup_type is PgBackRestBackupType.DIFF
+
+
+def test_backup_task_write_strips_stanza_whitespace() -> None:
+    """Stanza trims surrounding whitespace."""
+    body = BackupTaskWrite(
+        task_name="pg-task",
+        hostname="pg-host",
+        service_id=1,
+        backup_dir=SAMPLE_BACKUP_DIR,
+        stanza="  sep-test  ",
+    )
+
+    assert body.stanza == "sep-test"
+
+
+@pytest.mark.parametrize("invalid_stanza", ["../sep", "sep/test", "sep.test", "_sep"])
+def test_backup_task_write_rejects_unsafe_stanza(invalid_stanza: str) -> None:
+    """Stanza only allows [A-Za-z0-9][A-Za-z0-9_-]*."""
+    with pytest.raises(ValidationError):
+        BackupTaskWrite(
+            task_name="pg-task",
+            hostname="pg-host",
+            service_id=1,
+            backup_dir=SAMPLE_BACKUP_DIR,
+            stanza=invalid_stanza,
+        )
 
 
 def test_backup_task_write_rejects_unknown_pgbackrest_backup_type() -> None:

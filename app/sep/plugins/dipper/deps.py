@@ -16,6 +16,7 @@
 """Dependencies for the Dipper plugin."""
 
 import logging
+from collections.abc import Iterable
 from typing import Annotated, Any
 
 from fastapi import Depends, Header, Request
@@ -32,12 +33,14 @@ from app.core.exceptions import (
 from app.core.pagination import fetch_all_dict_items
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
+from app.core.utils.iterators import unique_everseen
 from app.inventory.models import ServiceTypeEnum
 from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.artifact_constants import (
     ARTIFACT_DOWNLOAD_SALT,
     ARTIFACT_TYPE_DIPPER,
 )
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.deps import (
     CreatedServiceDep,
     ExecutorHosts,
@@ -372,6 +375,75 @@ def get_pmm_form_defaults(
     defaults["node"] = node_name
     defaults["service"] = service_name
     return defaults
+
+
+async def get_pmm_api() -> PMMRemoteAPI | None:
+    """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
+
+    Mirrors ``app.sep.plugins.report.deps.get_pmm_api`` so the Dipper form-schema
+    endpoint can query the configured PMM server's inventory on demand.
+
+    :return: The PMM API client, or ``None`` if the endpoint or API key is missing.
+    :rtype: PMMRemoteAPI | None
+    """
+    if not settings.PMM.endpoint or not settings.PMM.api_key:
+        return None
+    return await settings.get_remote_api(
+        PMMRemoteAPI,
+        endpoint=settings.PMM.endpoint,
+        api_key=settings.PMM.api_key,
+        verify_ssl=settings.PMM.verify_ssl,
+    )
+
+
+PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
+
+
+def _dedupe_nonempty(names: Iterable[str]) -> list[str]:
+    """Return non-blank names, deduplicated, preserving first-seen order.
+
+    Guards :class:`~app.sep.plugins.framework.schema.Choice` (whose ``value`` and
+    ``label`` are ``NonEmptyStr``) against blank entries and avoids duplicate
+    dropdown options.
+
+    :param names: The raw names to clean.
+    :type names: Iterable[str]
+    :return: The cleaned, de-duplicated list of names.
+    :rtype: list[str]
+    """
+    stripped_names = ((name or "").strip() for name in names)
+    return list(unique_everseen(name for name in stripped_names if name))
+
+
+async def fetch_pmm_node_service_names(
+    pmm_api: PMMRemoteAPI | None,
+) -> tuple[list[str], list[str]]:
+    """Return ``(node_names, service_names)`` from the configured PMM server.
+
+    Best-effort: returns ``([], [])`` when PMM is unconfigured (``pmm_api`` is
+    ``None``) or unreachable, so the caller can fall back to free-text inputs
+    without failing the form-schema request.
+
+    :param pmm_api: The PMM API client, or ``None`` if PMM is not configured.
+    :type pmm_api: PMMRemoteAPI | None
+    :return: A tuple of cleaned node names and service names.
+    :rtype: tuple[list[str], list[str]]
+    """
+    if pmm_api is None:
+        return [], []
+    try:
+        nodes = await pmm_api.get_nodes()
+        services = await pmm_api.get_services()
+    except Exception:  # noqa: BLE001 — PMM being down must never fail the form
+        logger.warning(
+            "PMM node/service fetch failed; falling back to free-text inputs",
+            exc_info=True,
+        )
+        return [], []
+    return (
+        _dedupe_nonempty(node.name for node in nodes),
+        _dedupe_nonempty(service.name for service in services),
+    )
 
 
 async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
