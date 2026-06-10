@@ -39,6 +39,7 @@ import subprocess
 import sys
 from configparser import Error as ConfigParserError, RawConfigParser
 from datetime import datetime, UTC
+from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
@@ -50,8 +51,19 @@ HOST_FIELDS = ("os_version", "installed_packages", "config")
 DB_CONNECT_TIMEOUT = 10
 #: Seconds to wait for a package-manager query to complete.
 PKG_QUERY_TIMEOUT = 60
-#: Default port per engine when a service address omits one.
-DEFAULT_PORTS = {"mysql": 3306, "postgresql": 5432, "mongodb": 27017}
+class DefaultPort(IntEnum):
+    """Represent the default listening port per database engine.
+
+    Used when a service address omits an explicit port.
+
+    :cvar MYSQL: The default MySQL port.
+    :cvar POSTGRESQL: The default PostgreSQL port.
+    :cvar MONGODB: The default MongoDB port.
+    """
+
+    MYSQL = 3306
+    POSTGRESQL = 5432
+    MONGODB = 27017
 
 
 def _now_iso() -> str:
@@ -63,16 +75,35 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def parse_host_port(host_entry: str, default_port: int = 3306) -> tuple[str, int]:
+def parse_host_port(
+        host_entry: str,
+        default_port: int = DefaultPort.MYSQL
+    ) -> tuple[str, int]:
     """Split a ``host[:port]`` entry into host and port components.
 
-    :param host_entry: The address in ``host`` or ``host:port`` form.
+    Handles IPv4/hostname (``host``/``host:port``) and IPv6 forms: bracketed
+    ``[2001:db8::1]:5432`` (and bare ``[2001:db8::1]``), and bare ``2001:db8::1``
+    (more than one colon, no port) which is returned as the host with the default
+    port rather than mis-split on the final colon.
+
+    :param host_entry: The address in ``host``, ``host:port``, or IPv6 form.
     :type host_entry: str
     :param default_port: The port to use when none is present. Defaults to 3306.
     :type default_port: int
     :return: A tuple of ``(host, port)``.
     :rtype: tuple[str, int]
     """
+    if host_entry.startswith("[") and "]" in host_entry:
+        host, _, rest = host_entry[1:].partition("]")
+        if rest.startswith(":"):
+            try:
+                return host, int(rest[1:])
+            except ValueError:
+                return host, default_port
+        return host, default_port
+    if host_entry.count(":") > 1:
+        # Bare IPv6 literal without a port; the final colon is not a separator.
+        return host_entry, default_port
     if ":" in host_entry:
         host, _, port = host_entry.rpartition(":")
         try:
@@ -220,10 +251,13 @@ def _mysql_creds(address: str) -> dict[str, str]:
             "user": (items.get("user") or "").strip('"'),
             "password": (items.get("password") or "").strip('"'),
             "host": (items.get("host") or "").strip('"'),
-            "port": items.get("port", "3306"),
+            "port": (items.get("port") or str(DefaultPort.MYSQL.value)).strip('"'),
         }
 
-    target_host, target_port = parse_host_port(address, default_port=3306)
+    target_host, target_port = parse_host_port(
+        address,
+        default_port=DefaultPort.MYSQL
+    )
     for section in parser.sections():
         data = _creds(section)
         if data["host"] == target_host and int(data["port"]) == target_port:
@@ -244,7 +278,7 @@ def _collect_mysql_version(address: str) -> str | None:
     import pymysql
 
     creds = _mysql_creds(address)
-    host, port = parse_host_port(address, default_port=DEFAULT_PORTS["mysql"])
+    host, port = parse_host_port(address, default_port=DefaultPort.MYSQL)
     with pymysql.connect(
         host=host,
         port=port,
@@ -270,7 +304,7 @@ def _collect_postgresql_version(address: str) -> str | None:
     """
     import psycopg
 
-    host, port = parse_host_port(address, default_port=DEFAULT_PORTS["postgresql"])
+    host, port = parse_host_port(address, default_port=DefaultPort.POSTGRESQL)
     conninfo: dict[str, Any] = {
         "host": host,
         "port": port,
@@ -302,7 +336,7 @@ def _collect_mongodb_version(address: str) -> str | None:
     if uri := (os.environ.get("SEP_MONGO_URI") or os.environ.get("MONGO_URI")):
         client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=timeout_ms)
     else:
-        host, port = parse_host_port(address, default_port=DEFAULT_PORTS["mongodb"])
+        host, port = parse_host_port(address, default_port=DefaultPort.MONGODB)
         client = pymongo.MongoClient(
             host=host, port=port, serverSelectionTimeoutMS=timeout_ms
         )

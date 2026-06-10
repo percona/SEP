@@ -26,6 +26,7 @@ from app.sep.sync.syncers.system_facts.payload import (
     collect_os_version,
     collect_service_version,
     main,
+    parse_host_port,
 )
 
 MODULE = "app.sep.sync.syncers.system_facts.payload"
@@ -96,6 +97,43 @@ class TestHostFacts:
         assert facts["installed_packages"] == [{"name": "glibc", "version": "2.35"}]
         assert facts["config"] == {"kernel": "5.15.0"}
         assert "collected_at" in facts
+
+
+class TestParseHostPort:
+    """Test host/port splitting across IPv4, hostname, and IPv6 forms."""
+
+    def test_host_and_port(self):
+        """A plain ``host:port`` splits on the colon."""
+        assert parse_host_port("10.0.0.5:3306") == ("10.0.0.5", 3306)
+
+    def test_host_only_uses_default_port(self):
+        """A bare host falls back to the default port."""
+        assert parse_host_port("db.internal", default_port=5432) == (
+            "db.internal",
+            5432,
+        )
+
+    def test_non_numeric_port_falls_back(self):
+        """A non-numeric port yields the original entry and the default port."""
+        assert parse_host_port("host:abc", default_port=3306) == ("host:abc", 3306)
+
+    def test_bracketed_ipv6_with_port(self):
+        """A bracketed IPv6 literal keeps the address and parses the trailing port."""
+        assert parse_host_port("[2001:db8::1]:5432") == ("2001:db8::1", 5432)
+
+    def test_bracketed_ipv6_without_port(self):
+        """A bracketed IPv6 literal with no port uses the default port."""
+        assert parse_host_port("[2001:db8::1]", default_port=27017) == (
+            "2001:db8::1",
+            27017,
+        )
+
+    def test_bare_ipv6_not_mis_split(self):
+        """A bare IPv6 literal is not split on its final colon."""
+        assert parse_host_port("2001:db8::1", default_port=3306) == (
+            "2001:db8::1",
+            3306,
+        )
 
 
 class TestServiceVersion:
