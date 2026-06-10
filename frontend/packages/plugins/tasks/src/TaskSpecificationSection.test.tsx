@@ -43,6 +43,7 @@ describe('TaskSpecificationSection', () => {
       updated_at: null,
       created_by: null,
       last_updated_by: null,
+      anonymized_entities: [],
     };
 
     render(<TaskSpecificationSection task={task} />);
