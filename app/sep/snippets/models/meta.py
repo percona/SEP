@@ -20,9 +20,12 @@ __all__ = [
     "SnippetMetaParameterChoice",
     "SnippetMetaParameterType",
     "SnippetMetaParametersValidationResult",
+    "serialize_cli_value",
 ]
 
 import logging
+from collections.abc import Callable
+from datetime import datetime
 from enum import Enum, StrEnum
 from functools import cached_property
 from string import Template
@@ -75,6 +78,27 @@ class SnippetMetaParameterType(EnumFieldMixin, Enum):
     INT = int
     FLOAT = float
     BOOL = bool
+    DATETIME = datetime
+
+
+_CLI_VALUE_SERIALIZERS: dict[type, Callable[[Any], str]] = {
+    datetime: lambda value: value.strftime("%Y-%m-%dT%H:%M:%S"),
+}
+
+
+def serialize_cli_value(value: Any) -> str:
+    """Serialize a validated parameter value for command-line argument substitution.
+
+    Datetime values use an ISO-8601 ``T``-separated form without microseconds.
+    All other types fall back to ``str(value)``.
+
+    :param value: The validated parameter value to serialize.
+    :type value: Any
+    :return: The command-line string representation of ``value``.
+    :rtype: str
+    """
+    serializer = _CLI_VALUE_SERIALIZERS.get(type(value))
+    return serializer(value) if serializer else str(value)
 
 
 class SnippetMetaParametersValidationResult(NamedTuple):
