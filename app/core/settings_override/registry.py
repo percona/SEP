@@ -51,7 +51,7 @@ __all__ = [
 
 import functools
 import typing
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from string import Template
@@ -700,9 +700,13 @@ def resolve_nested_value(
 ) -> tuple[FieldInfo, Any]:
     """Return the leaf field metadata and current value for a nested key.
 
-    Walks the proxy attribute chain segment by segment using the resolver's
-    canonical (case-corrected) names, so the returned value reflects the merged
-    snapshot copy when an override is active and the YAML/env value otherwise.
+    Walks the chain segment by segment using the resolver's canonical
+    (case-corrected) names, so the returned value reflects the merged snapshot
+    copy when an override is active and the YAML/env value otherwise. Each
+    segment is read as a :class:`~collections.abc.Mapping` key when the current
+    node is a mapping -- a materializer-fingerprint override stores a plain dict
+    rather than a live model -- and as an attribute otherwise. A missing or
+    ``None`` intermediate yields ``None`` rather than raising.
 
     :param settings_cls: The Pydantic settings class the key belongs to.
     :type settings_cls: type[BaseModel]
@@ -721,9 +725,10 @@ def resolve_nested_value(
     chain, leaf_info = resolved
     current = proxy
     for segment in chain:
-        # Optional intermediate may be None before any override; short-circuit
-        # instead of raising.
-        current = getattr(current, segment, None)
+        if isinstance(current, Mapping):
+            current = current.get(segment)
+        else:
+            current = getattr(current, segment, None)
     return leaf_info, current
 
 

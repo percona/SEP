@@ -483,6 +483,32 @@ class TestTasksSettingsNestedOverrides:
         assert echoed["key_path"] == ["SECURITY_HEADERS", "x_frame_options_deny"]
         assert "__".join(echoed["key_path"]) == echoed["key"]
 
+    async def test_list_resolves_nomad_leaf_values_under_whole_override(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A whole-NOMAD override still yields real leaf values in LIST, not null.
+
+        ``NOMAD`` is a materializer field whose override snapshot is a JSON
+        fingerprint ``dict``; leaf-value resolution must descend the dict rather
+        than ``getattr`` returning ``None`` for every leaf.
+        """
+        try:
+            admin_test_client.patch(
+                "/admin/settings/TasksSettings",
+                json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+            )
+            settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+                "settings"
+            ]
+            by_key = {s["key"]: s for s in settings}
+            assert "nomad-override" in by_key["NOMAD__endpoint"]["value"]
+            assert by_key["NOMAD__timeout"]["value"] is not None
+            assert (
+                by_key["NOMAD__check_cert_expiry_interval__every"]["value"] is not None
+            )
+        finally:
+            tasks_settings._set_snapshot({})
+
 
 @pytest.mark.asyncio
 class TestTasksSettingsInlineRebind:
