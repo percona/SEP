@@ -33,7 +33,9 @@ from app.core.settings_override.registry import (
     iter_nested_leaf_keys,
     nested_overridable_field,
     not_overridable_field,
+    ReloadClassification,
     resolve_nested_field,
+    resolve_nested_field_metadata,
 )
 from app.sep.config import SEPSettings, SessionOptions
 from app.tasks.config import TasksSettings
@@ -297,3 +299,18 @@ def test_iter_nested_leaf_keys_descends_synthetic_submodel() -> None:
         "NESTED__LOCKED_SUB__VALUE",
     }
     assert leaves["NESTED__LOCKED_SUB__VALUE"] == ("NESTED", "LOCKED_SUB", "VALUE")
+
+
+def test_resolve_nested_field_metadata_reflects_chain_not_overridable() -> None:
+    """A leaf under a ``not_overridable_field`` intermediate reports NOT_OVERRIDABLE.
+
+    The enumerated-leaf reload classification must match the chain check that
+    gates PATCH/DELETE, so a leaf is never advertised as editable when an
+    intermediate in its chain is locked.
+    """
+    open_leaf = resolve_nested_field_metadata(_Outer, "NESTED__BARE")
+    locked_leaf = resolve_nested_field_metadata(_Outer, "NESTED__LOCKED_SUB__VALUE")
+    assert open_leaf is not None
+    assert locked_leaf is not None
+    assert open_leaf.reload is ReloadClassification.HOT
+    assert locked_leaf.reload is ReloadClassification.NOT_OVERRIDABLE

@@ -952,8 +952,10 @@ def resolve_nested_field_metadata(
     (annotation, default, description, secret/complex flags) is taken from the
     leaf field. The reported ``reload`` is ``HOT`` for an override-eligible
     leaf (the default under a nested-overridable parent) and
-    ``NOT_OVERRIDABLE`` only when the leaf is explicitly
-    :func:`not_overridable_field`-marked.
+    ``NOT_OVERRIDABLE`` when the leaf **or any intermediate in its chain** is
+    explicitly :func:`not_overridable_field`-marked -- the same chain check that
+    gates PATCH/DELETE, so the reported classification matches what an override
+    would actually be allowed to do.
 
     :param settings_cls: The top-level Pydantic settings class.
     :type settings_cls: type[BaseModel]
@@ -969,7 +971,7 @@ def resolve_nested_field_metadata(
     _chain, leaf_info = resolved
     reload = (
         ReloadClassification.NOT_OVERRIDABLE
-        if is_explicit_not_overridable(leaf_info)
+        if chain_has_explicit_not_overridable(settings_cls, key)
         else ReloadClassification.HOT
     )
     return FieldMetadata(
