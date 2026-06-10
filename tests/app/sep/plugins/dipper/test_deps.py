@@ -15,14 +15,18 @@
 
 """Tests for ``build_dipper_meta_from_args`` and related helpers in dipper deps."""
 
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.core.exceptions import HTTPBadRequestException
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.inventory import CreatedService
 from app.sep.plugins.dipper.deps import (
     build_dipper_meta_from_args,
+    fetch_pmm_node_service_names,
+    get_pmm_api,
     resolve_executor_host_for_service,
 )
 from app.sep.snippets.config import SnippetSudoOption
@@ -175,3 +179,82 @@ class TestResolveExecutorHostForService:
         )
         executor_hosts = {"mvc-lab-db3": "10.0.0.7"}
         assert resolve_executor_host_for_service(executor_hosts, service) is None
+
+
+class TestGetPmmApi:
+    """Tests for the Dipper-local ``get_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_endpoint_missing(self):
+        """Return ``None`` when the PMM endpoint is not configured."""
+        with patch("app.sep.plugins.dipper.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = "secret"
+            assert await get_pmm_api() is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_api_key_missing(self):
+        """Return ``None`` when the PMM API key is not configured."""
+        with patch("app.sep.plugins.dipper.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = None
+            assert await get_pmm_api() is None
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured(self):
+        """Return a ``PMMRemoteAPI`` when PMM is configured."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.plugins.dipper.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret",
+            verify_ssl=True,
+        )
+
+
+def _named(*names: str) -> list[SimpleNamespace]:
+    """Build a list of objects exposing a ``name`` attribute."""
+    return [SimpleNamespace(name=name) for name in names]
+
+
+class TestFetchPmmNodeServiceNames:
+    """Tests for ``fetch_pmm_node_service_names``."""
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_client_is_none(self):
+        """Return empty lists when PMM is not configured (client is ``None``)."""
+        assert await fetch_pmm_node_service_names(None) == ([], [])
+
+    @pytest.mark.asyncio
+    async def test_swallows_client_errors_into_empty_lists(self):
+        """Return empty lists when the PMM client raises (unreachable PMM)."""
+        client = AsyncMock(spec=PMMRemoteAPI)
+        client.get_nodes.side_effect = RuntimeError("connection refused")
+        assert await fetch_pmm_node_service_names(client) == ([], [])
+
+    @pytest.mark.asyncio
+    async def test_extracts_node_and_service_names(self):
+        """Return node and service names on the happy path."""
+        client = AsyncMock(spec=PMMRemoteAPI)
+        client.get_nodes.return_value = _named("node-a", "node-b")
+        client.get_services.return_value = _named("svc-1", "svc-2")
+        nodes, services = await fetch_pmm_node_service_names(client)
+        assert nodes == ["node-a", "node-b"]
+        assert services == ["svc-1", "svc-2"]
+
+    @pytest.mark.asyncio
+    async def test_filters_blank_and_dedupes_preserving_order(self):
+        """Drop empty/whitespace names and dedupe while preserving first-seen order."""
+        client = AsyncMock(spec=PMMRemoteAPI)
+        client.get_nodes.return_value = _named("node-a", "", "  ", "node-a", "node-b")
+        client.get_services.return_value = _named("svc-1", "svc-1", "")
+        nodes, services = await fetch_pmm_node_service_names(client)
+        assert nodes == ["node-a", "node-b"]
+        assert services == ["svc-1"]
