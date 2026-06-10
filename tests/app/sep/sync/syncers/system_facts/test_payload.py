@@ -16,11 +16,13 @@
 """Test the app.sep.sync.syncers.system_facts.payload module."""
 
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from app.sep.sync.syncers.system_facts import payload as payload_module
 from app.sep.sync.syncers.system_facts.payload import (
+    _mysql_creds,
     collect_host_facts,
     collect_installed_packages,
     collect_os_version,
@@ -134,6 +136,35 @@ class TestParseHostPort:
             "2001:db8::1",
             3306,
         )
+
+
+class TestMysqlCreds:
+    """Test MySQL credential resolution from ``~/.mylogin.cnf``."""
+
+    @staticmethod
+    def _inject_myloginpath(monkeypatch, content: str) -> None:
+        """Install a fake ``myloginpath`` module returning ``content``."""
+        fake = MagicMock()
+        fake.read.return_value = content
+        monkeypatch.setitem(sys.modules, "myloginpath", fake)
+
+    def test_garbled_port_section_skipped(self, monkeypatch):
+        """A section with a non-numeric port is skipped, not fatal."""
+        self._inject_myloginpath(
+            monkeypatch,
+            "[bad]\nuser=wrong\nhost=10.0.0.5\nport=not-a-number\n"
+            "[client]\nuser=root\npassword=secret\nhost=10.0.0.5\nport=3306\n",
+        )
+        creds = _mysql_creds("10.0.0.5:3306")
+        assert creds["user"] == "root"
+
+    def test_garbled_port_no_client_returns_empty(self, monkeypatch):
+        """A garbled-port section with no client fallback yields empty creds."""
+        self._inject_myloginpath(
+            monkeypatch,
+            "[bad]\nuser=wrong\nhost=10.0.0.5\nport=not-a-number\n",
+        )
+        assert _mysql_creds("10.0.0.5:3306") == {}
 
 
 class TestServiceVersion:
@@ -252,3 +283,73 @@ class TestMain:
 
         out = json.loads(capsys.readouterr().out)
         assert out["host"] is None
+
+    def test_main_missing_config_file_yields_empty(self, tmp_path, monkeypatch, capsys):
+        """A missing config file degrades to an empty snapshot, not a crash."""
+        missing = tmp_path / "does-not-exist.json"
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(missing)])
+
+        main()
+
+        out = json.loads(capsys.readouterr().out)
+        assert out == {"host": None, "services": {}}
+
+    def test_main_invalid_json_yields_empty(self, tmp_path, monkeypatch, capsys):
+        """Unparseable config JSON degrades to an empty snapshot, not a crash."""
+        config = tmp_path / "config.json"
+        config.write_text("{not valid json")
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
+
+        main()
+
+        out = json.loads(capsys.readouterr().out)
+        assert out == {"host": None, "services": {}}
+
+    def test_main_non_object_config_yields_empty(self, tmp_path, monkeypatch, capsys):
+        """A config that is valid JSON but not an object degrades to empty."""
+        config = tmp_path / "config.json"
+        config.write_text("[1, 2, 3]")
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
+
+        main()
+
+        out = json.loads(capsys.readouterr().out)
+        assert out == {"host": None, "services": {}}
+
+    def test_main_services_wrong_shape_skipped(
+        self, tmp_path, monkeypatch, mocker, capsys
+    ):
+        """A non-list ``services`` value is ignored rather than iterated."""
+        config = _write_config(tmp_path, {"collect_host": False, "services": "nope"})
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
+        collector = mocker.patch(f"{MODULE}.collect_service_version")
+
+        main()
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["services"] == {}
+        collector.assert_not_called()
+
+    def test_main_non_dict_service_entry_skipped(
+        self, tmp_path, monkeypatch, mocker, capsys
+    ):
+        """Non-dict entries in ``services`` are skipped; valid ones still probed."""
+        config = _write_config(
+            tmp_path,
+            {
+                "collect_host": False,
+                "services": [
+                    "garbage",
+                    None,
+                    {"address": "10.0.0.5:3306", "type": "mysql"},
+                ],
+            },
+        )
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
+        mocker.patch(f"{MODULE}.collect_service_version", return_value="8.0.35")
+
+        main()
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["services"]["10.0.0.5:3306"]["db_engine_version"] == "8.0.35"
+        assert len(out["services"]) == 1

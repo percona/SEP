@@ -260,7 +260,11 @@ def _mysql_creds(address: str) -> dict[str, str]:
     )
     for section in parser.sections():
         data = _creds(section)
-        if data["host"] == target_host and int(data["port"]) == target_port:
+        try:
+            section_port = int(data["port"])
+        except (TypeError, ValueError):
+            continue
+        if data["host"] == target_host and section_port == target_port:
             return data
     if parser.has_section("client"):
         return _creds("client")
@@ -389,7 +393,14 @@ def main() -> None:
         type=Path,
     )
     args = parser.parse_args()
-    config = json.loads(args.config.read_text(encoding="utf-8"))
+    try:
+        config = json.loads(args.config.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as err:
+        print(f"Cannot read config file: {err}", file=sys.stderr)
+        config = {}
+    if not isinstance(config, dict):
+        print("Config is not a JSON object; treating as empty.", file=sys.stderr)
+        config = {}
 
     result: dict[str, Any] = {"host": None, "services": {}}
 
@@ -398,7 +409,12 @@ def main() -> None:
         if any(facts.get(field) for field in HOST_FIELDS):
             result["host"] = facts
 
-    for service in config.get("services", []):
+    services = config.get("services", [])
+    if not isinstance(services, list):
+        services = []
+    for service in services:
+        if not isinstance(service, dict):
+            continue
         address = service.get("address")
         service_type = service.get("type")
         if not address:
