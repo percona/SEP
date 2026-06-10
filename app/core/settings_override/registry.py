@@ -1023,7 +1023,7 @@ def iter_nested_leaf_keys(
 def _iter_leaf_chains(
     model_cls: type[BaseModel], prefix: tuple[str, ...]
 ) -> Iterator[tuple[str, tuple[str, ...]]]:
-    """Recursively yield ``(key, chain)`` for every leaf reachable from ``model_cls``.
+    """Yield ``(key, chain)`` for every leaf reachable from ``model_cls``, recursing into submodels.
 
     :param model_cls: The Pydantic model whose fields to walk.
     :type model_cls: type[BaseModel]

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Unit tests for the field-introspection helpers in ``registry.py``."""
+"""Unit tests for the field-introspection helpers in ``registry.py`` and the response builder ``_settings_response_from_field`` in ``api.routes``."""
 
 from datetime import timedelta
 from typing import ClassVar

@@ -31,7 +31,7 @@ from app.core.settings_override.registry import ReloadClassification
 
 
 class SettingResponse(BaseModel):
-    """A single setting's metadata and current value.
+    """Represent a single setting's metadata and current value.
 
     :param setting_class: The settings class the field belongs to.
     :type setting_class: SettingClassEnum
