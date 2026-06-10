@@ -107,7 +107,7 @@ class TestInventoryGateway:
         response = test_client.get("/api/plugins/inventory/nodes/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [{"id": 1, "name": "n"}]
-        mock_inventory_api_dep.get.assert_awaited_once_with("/", params={})
+        mock_inventory_api_dep.get.assert_awaited_once_with("/nodes/", params={})
 
     def test_list_forwards_query_params_to_inventory(
         self, test_client, mock_inventory_api_dep
@@ -120,7 +120,7 @@ class TestInventoryGateway:
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_awaited_once_with(
-            "/",
+            "/nodes/",
             params={"limit": "10"},
         )
 
@@ -132,7 +132,7 @@ class TestInventoryGateway:
     def test_create_service_forwards_to_node_services(
         self, test_client, mock_inventory_api_dep
     ):
-        """Ensure POST ``/api/plugins/inventory/services/`` maps to ``/{node_id}/services/`` on inventory."""
+        """Ensure POST ``/api/plugins/inventory/services/`` maps to ``/nodes/{node_id}/services/`` on inventory."""
         mock_inventory_api_dep.post.return_value = {"id": 2, "name": "svc"}
         response = test_client.post(
             "/api/plugins/inventory/services/",
@@ -145,7 +145,7 @@ class TestInventoryGateway:
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.post.assert_awaited_once()
         call_args = mock_inventory_api_dep.post.await_args
-        assert call_args[0][0] == f"/{_CREATE_SERVICE_TEST_NODE_ID}/services/"
+        assert call_args[0][0] == f"/nodes/{_CREATE_SERVICE_TEST_NODE_ID}/services/"
         assert call_args[1]["json"]["node_id"] == _CREATE_SERVICE_TEST_NODE_ID
 
     def test_create_service_invalid_node_id_returns_422(
@@ -204,12 +204,12 @@ class TestInventoryGateway:
         response = test_client.delete("/api/plugins/inventory/nodes/3")
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert response.content == b""
-        mock_inventory_api_dep.delete.assert_awaited_once_with("/3")
+        mock_inventory_api_dep.delete.assert_awaited_once_with("/nodes/3")
 
     @pytest.mark.parametrize(
         ("entity", "item_id", "inventory_path"),
         [
-            ("nodes", 3, "/3"),
+            ("nodes", 3, "/nodes/3"),
             ("services", 9, "/services/9"),
             ("schemas", 11, "/schemas/11"),
             ("tables", 42, "/tables/42"),
@@ -234,7 +234,7 @@ class TestInventoryGateway:
     @pytest.mark.parametrize(
         ("entity", "item_id", "inventory_path"),
         [
-            ("nodes", 3, "/3"),
+            ("nodes", 3, "/nodes/3"),
             ("services", 9, "/services/9"),
             ("schemas", 11, "/schemas/11"),
             ("tables", 42, "/tables/42"),

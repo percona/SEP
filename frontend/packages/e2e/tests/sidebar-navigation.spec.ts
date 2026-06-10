@@ -70,6 +70,21 @@ const SCHEMA_DISPLAY_NAMES: Record<string, string> = {
   archives: 'Archives',
 };
 
+const ENABLED_APPS = [
+  'tasks',
+  'snippets',
+  'atw',
+  'checksums',
+  'alerts',
+  'alert_troubleshooting',
+  'mysql_backups',
+  'backup_mongo',
+  'backup_pg',
+  'archives',
+  'dipper',
+  'report',
+];
+
 async function mockAuthenticatedApis(page: Page): Promise<void> {
   await page.route('**/api/**', (route) => {
     const { pathname } = new URL(route.request().url());
@@ -124,6 +139,21 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ items: [], total: 0, offset: 0, limit: 5 }),
+      });
+    }
+
+    if (pathname.endsWith('/apps/')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          ENABLED_APPS.map((app_key) => ({
+            app_key,
+            enabled: true,
+            sidebar: true,
+            uri_path: `/${app_key}`,
+          })),
+        ),
       });
     }
 

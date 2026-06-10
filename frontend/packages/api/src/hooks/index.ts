@@ -32,3 +32,23 @@ export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
 export type { AlertConfig } from './useAlertConfig';
 export { useDashboardStats } from './useDashboardStats';
 export type { DashboardStats } from './useDashboardStats';
+export {
+  useSettingsList,
+  usePatchSetting,
+  useResetSetting,
+  settingErrorMessage,
+  SETTINGS_QUERY_KEY,
+  REDACTED_SECRET,
+} from './useSettings';
+export type {
+  SettingClass,
+  ReloadClassification,
+  SettingResponse,
+  SettingClassGroup,
+  SettingsListResponse,
+  SettingsPatch,
+  PatchSettingVars,
+  ResetSettingVars,
+} from './useSettings';
+export { useEnabledApps, ENABLED_APPS_QUERY_KEY } from './useEnabledApps';
+export type { EnabledApp } from './useEnabledApps';

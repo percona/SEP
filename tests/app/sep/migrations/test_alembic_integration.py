@@ -28,12 +28,27 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.exc import IntegrityError
 
 from app.sep.config import sep_settings
 from app.sep.plugins.alerts.models import AlertBackup
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+
+# The add_setting_override_table revision on the SEP track, before SETTINGS /
+# ALERT_SETTINGS were added to the setting_class CHECK constraint.
+_SEP_PRE_ENUM_REVISION = "ed97b99eef38"
+
+
+def _insert_override(conn, setting_class: str) -> None:
+    """Insert a minimal ``settingoverride`` row with the given setting_class."""
+    conn.exec_driver_sql(
+        "INSERT INTO settingoverride "
+        "(created_at, setting_class, key, value, is_active) "
+        "VALUES ('2026-01-01 00:00:00', ?, 'X', 'true', 1)",
+        (setting_class,),
+    )
 
 
 @pytest.fixture
@@ -138,3 +153,35 @@ def test_alembic_downgrade_alerts_to_base_drops_table(sep_alembic_config):
     alerts_heads = {rev.revision for rev in script.get_revisions("alerts@heads")}
     assert not (alerts_heads & stamped)
     assert sep_main_heads & stamped
+
+
+def test_setting_class_enum_accepts_new_members_after_upgrade(sep_alembic_config):
+    """After ``upgrade heads``, SETTINGS and ALERT_SETTINGS rows are accepted."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+
+    new_members = ("SETTINGS", "ALERT_SETTINGS")
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            for member in new_members:
+                _insert_override(conn, member)
+            count = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM settingoverride"
+            ).scalar()
+        assert count == len(new_members)
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_enum_rejects_new_members_before_upgrade(sep_alembic_config):
+    """At the pre-enum revision, a SETTINGS row violates the CHECK constraint."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_PRE_ENUM_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            _insert_override(conn, "SETTINGS")
+    finally:
+        engine.dispose()

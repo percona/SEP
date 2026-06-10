@@ -30,8 +30,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.core.utils.date_time import make_datetime_utc
@@ -39,7 +39,7 @@ from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
-from app.tasks.deps import get_executor, get_session
+from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
@@ -589,6 +589,114 @@ async def test_stream_logs_finished_reads_chunks_from_taskhistory_log(
     response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
     assert response.status_code == status.HTTP_200_OK
     assert "chunk store output" in response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_honors_tail_query(
+    test_client, session, created_task_with_history
+):
+    """Assert the finished branch honours ``?tail=`` on the logs endpoint."""
+    payload = "".join(f"line{i}\n" for i in range(20)).encode()
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        force_flush=True,
+        producer_offset_after=len(payload),
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/?tail=5")
+    assert response.status_code == status.HTTP_200_OK
+    assert "line15" in response.text
+    assert "line19" in response.text
+    assert "line14" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_without_tail_returns_full_stream(
+    test_client, session, created_task_with_history
+):
+    """Assert omitting ``tail`` returns the full log stream (backwards compatible)."""
+    payload = "".join(f"line{i}\n" for i in range(10)).encode()
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        force_flush=True,
+        producer_offset_after=len(payload),
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    assert response.status_code == status.HTTP_200_OK
+    assert "line0" in response.text
+    assert "line9" in response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_tail_covers_entire_log_when_large_enough(
+    test_client, session, created_task_with_history
+):
+    """Assert ``tail`` equal to line count returns the same content as no tail."""
+    line_count = 10
+    payload = "".join(f"line{i}\n" for i in range(line_count)).encode()
+    await TaskHistoryLogWriter.append(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        force_flush=True,
+        producer_offset_after=len(payload),
+    )
+
+    full_response = test_client.get(f"/history/{created_task_with_history.id}/logs/")
+    tail_response = test_client.get(
+        f"/history/{created_task_with_history.id}/logs/?tail={line_count}"
+    )
+
+    assert full_response.status_code == status.HTTP_200_OK
+    assert tail_response.status_code == status.HTTP_200_OK
+    assert full_response.text == tail_response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_finished_legacy_honors_tail_query(
+    test_client, session, created_task_with_history
+):
+    """Assert ``?tail=`` applies on the legacy blob fallback route path."""
+    legacy = {
+        "run-script": {
+            "stdout": "line0\nline1\nline2\nline3\n",
+            "stderr": "",
+        }
+    }
+    encoded = base64.b64encode(gzip.compress(json_lib.dumps(legacy).encode())).decode()
+    created_task_with_history.execution_request.tracking["task_logs"] = encoded
+    await TaskHistoryManager.save(
+        session,
+        created_task_with_history,
+        flag_modified_fields=["execution_request"],
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/?tail=2")
+    assert response.status_code == status.HTTP_200_OK
+    assert "line2" in response.text
+    assert "line3" in response.text
+    assert "line0" not in response.text
+    assert "line1" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_tail_invalid_returns_422(
+    test_client, created_task_with_history
+):
+    """Assert non-positive ``tail`` values are rejected at validation time."""
+    response = test_client.get(f"/history/{created_task_with_history.id}/logs/?tail=0")
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 @pytest.mark.asyncio
@@ -2405,7 +2513,7 @@ class TestSyncTaskHistoryRealSession:
 
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
-        tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+        tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
 
         try:
             with patch(

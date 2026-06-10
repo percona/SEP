@@ -71,6 +71,7 @@ def backup_create() -> BackupCreate:
         hostname="localhost",
         service_id=1,
         backup_type=BackupType.PGBACKREST,
+        stanza="sep-test",
     )
 
 

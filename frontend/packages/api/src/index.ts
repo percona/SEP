@@ -106,5 +106,23 @@ export {
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
   useDashboardStats,
+  useSettingsList,
+  usePatchSetting,
+  useResetSetting,
+  settingErrorMessage,
+  SETTINGS_QUERY_KEY,
+  REDACTED_SECRET,
+  useEnabledApps,
+  ENABLED_APPS_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats } from './hooks';
+export type { AlertConfig, DashboardStats, EnabledApp } from './hooks';
+export type {
+  SettingClass,
+  ReloadClassification,
+  SettingResponse,
+  SettingClassGroup,
+  SettingsListResponse,
+  SettingsPatch,
+  PatchSettingVars,
+  ResetSettingVars,
+} from './hooks';

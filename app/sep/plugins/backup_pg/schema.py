@@ -73,6 +73,16 @@ backup_pg_schema = PluginSchema(
         FormSection(
             title="pgBackRest",
             fields=[
+                StringField(
+                    name="stanza",
+                    label="Stanza",
+                    required=True,
+                    description=(
+                        "pgBackRest stanza name as defined in pgbackrest.conf on the "
+                        "host (e.g. ``sep-test``). Passed verbatim as ``--stanza`` to "
+                        "every pgbackrest invocation."
+                    ),
+                ),
                 ChoiceField(
                     name="pgbackrest_backup_type",
                     label="pgBackRest Backup Type",

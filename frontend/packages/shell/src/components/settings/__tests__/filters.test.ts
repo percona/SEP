@@ -1,0 +1,81 @@
+/**
+ * Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import { describe, expect, it } from 'vitest';
+import type { SettingClassGroup } from '@sep/api';
+
+import { DEFAULT_SETTINGS_FILTERS, filterSettingsGroups } from '../filters';
+import { makeSetting } from './fixtures';
+
+const groups: SettingClassGroup[] = [
+  {
+    setting_class: 'SEPSettings',
+    settings: [
+      makeSetting({ key: 'SYNC_REFRESH_TIME', reload: 'hot', has_override: true }),
+      makeSetting({ key: 'STATIC_DIR', reload: 'not_overridable', has_override: false }),
+    ],
+  },
+  {
+    setting_class: 'TasksSettings',
+    settings: [makeSetting({ setting_class: 'TasksSettings', key: 'STALENESS_THRESHOLD_SECONDS' })],
+  },
+];
+
+describe('filterSettingsGroups', () => {
+  it('returns all groups with default filters', () => {
+    const result = filterSettingsGroups(groups, DEFAULT_SETTINGS_FILTERS);
+    expect(result).toHaveLength(2);
+  });
+
+  it('filters by key substring, case-insensitively', () => {
+    const result = filterSettingsGroups(groups, { ...DEFAULT_SETTINGS_FILTERS, search: 'sync' });
+    expect(result).toHaveLength(1);
+    expect(result[0].settings.map((s) => s.key)).toEqual(['SYNC_REFRESH_TIME']);
+  });
+
+  it('filters by setting class', () => {
+    const result = filterSettingsGroups(groups, {
+      ...DEFAULT_SETTINGS_FILTERS,
+      settingClass: 'TasksSettings',
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].setting_class).toBe('TasksSettings');
+  });
+
+  it('filters by reload classification', () => {
+    const result = filterSettingsGroups(groups, {
+      ...DEFAULT_SETTINGS_FILTERS,
+      reload: 'not_overridable',
+    });
+    expect(result.flatMap((g) => g.settings.map((s) => s.key))).toEqual(['STATIC_DIR']);
+  });
+
+  it('filters by override presence', () => {
+    const present = filterSettingsGroups(groups, { ...DEFAULT_SETTINGS_FILTERS, override: 'yes' });
+    expect(present.flatMap((g) => g.settings.map((s) => s.key))).toEqual(['SYNC_REFRESH_TIME']);
+    const absent = filterSettingsGroups(groups, { ...DEFAULT_SETTINGS_FILTERS, override: 'no' });
+    expect(absent.flatMap((g) => g.settings.map((s) => s.key))).not.toContain('SYNC_REFRESH_TIME');
+  });
+
+  it('drops groups whose settings all filter out', () => {
+    const result = filterSettingsGroups(groups, {
+      ...DEFAULT_SETTINGS_FILTERS,
+      search: 'nonexistent',
+    });
+    expect(result).toHaveLength(0);
+  });
+});

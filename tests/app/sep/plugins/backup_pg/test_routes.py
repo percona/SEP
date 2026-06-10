@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException, status
 
+from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     clear_connectivity_caches,
@@ -207,7 +208,11 @@ def test_backups_detail_handles_inventory_error(
     assert response.status_code == status.HTTP_200_OK
     mock_inventory_api_dep.get.assert_any_call(
         "/services/",
-        params={"service_type": ServiceTypeEnum.POSTGRESQL, "limit": 0},
+        params={
+            "service_type": ServiceTypeEnum.POSTGRESQL,
+            "offset": 0,
+            "limit": MAX_PAGINATION_LIMIT,
+        },
     )
 
 
@@ -276,7 +281,7 @@ def test_pg_backups_detail_uses_own_delete_route(
 ):
     """Test pg_backups_detail uses its own delete route.
 
-    Regression for SEP-1207: pg_backups_detail must use pg_backups_delete,
+    Regression guard: pg_backups_detail must use pg_backups_delete,
     not mysql_backups_delete, so the page renders even when mysql_backups
     plugin is disabled.
     """
@@ -312,7 +317,7 @@ def test_pg_backups_detail_uses_own_delete_route(
 def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
     """Test the index page links periodic tasks to its own detail route.
 
-    Regression for SEP-1207: the periodic-task rows on the PG backups index
+    Regression guard: the periodic-task rows on the PG backups index
     page must link to pg_backups_detail, not mysql_backups_detail, so the page
     renders even when the mysql_backups plugin is disabled.
     """
@@ -361,7 +366,7 @@ def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
 def test_jinja_routes_marked_deprecated_in_openapi(test_client):
     """Each migrated Jinja route is marked ``deprecated`` in the OpenAPI schema.
 
-    Regression for SEP-1063: the React ``backup_pg`` plugin replaces these
+    Regression guard: the React ``backup_pg`` plugin replaces these
     routes; the OpenAPI marker tells API consumers to stop integrating against
     them while they remain mounted through Wave 3.
     """
