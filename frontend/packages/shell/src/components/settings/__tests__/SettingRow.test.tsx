@@ -103,6 +103,26 @@ describe('SettingRow', () => {
     await waitFor(() => expect(deleted).toHaveBeenCalled());
   });
 
+  it('shows Reset for not_overridable rows when an override is present', async () => {
+    const deleted = vi.fn();
+    server.use(
+      http.delete('http://localhost/api/sep/admin/settings/SEPSettings/STATIC_DIR', () => {
+        deleted();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderRow(
+      makeSetting({
+        key: 'STATIC_DIR',
+        reload: 'not_overridable',
+        has_override: true,
+      }),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reset to default' }));
+    await waitFor(() => expect(deleted).toHaveBeenCalled());
+  });
+
   it('hides Reset when no override is present', () => {
     renderRow(
       makeSetting({ key: 'SYNC_REFRESH_TIME', type: 'int', value: 5, has_override: false }),

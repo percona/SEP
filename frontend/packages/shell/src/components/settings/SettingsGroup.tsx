@@ -20,8 +20,8 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import Typography from '@mui/material/Typography';
 import type { SettingResponse } from '@sep/api';
 
 import SettingRow from './SettingRow';
@@ -49,15 +49,9 @@ export default function SettingsGroup({
         </Stack>
       </AccordionSummary>
       <AccordionDetails>
-        {settings.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
-            No settings match the current filters.
-          </Typography>
-        ) : (
-          settings.map((setting) => (
-            <SettingRow key={`${setting.setting_class}.${setting.key}`} setting={setting} />
-          ))
-        )}
+        {settings.map((setting) => (
+          <SettingRow key={`${setting.setting_class}.${setting.key}`} setting={setting} />
+        ))}
       </AccordionDetails>
     </Accordion>
   );

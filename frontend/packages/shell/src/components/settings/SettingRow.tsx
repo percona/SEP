@@ -67,7 +67,7 @@ export default function SettingRow({ setting }: SettingRowProps) {
   const editable = isEditable(setting);
   const fieldError = settingErrorMessage(patch.error, setting.key);
   const canSave = isSaveable(setting, edit) && !patch.isPending;
-  const showReset = setting.reload === 'hot' && setting.has_override;
+  const showReset = setting.has_override;
 
   const handleChange = (value: EditValue) => {
     setEdit(value);
@@ -199,11 +199,22 @@ export default function SettingRow({ setting }: SettingRowProps) {
         )}
       </Grid>
 
-      {setting.has_override && setting.reload !== 'hot' ? (
+      {!editable && showReset ? (
         <Grid size={12}>
-          <Box>
+          <Stack direction="row" spacing={1} alignItems="center">
             <Chip size="small" variant="outlined" label="override present" />
-          </Box>
+            <Box>
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                disabled={reset.isPending}
+                onClick={handleReset}
+              >
+                Reset to default
+              </Button>
+            </Box>
+          </Stack>
         </Grid>
       ) : null}
     </Grid>
