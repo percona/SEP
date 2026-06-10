@@ -1541,7 +1541,7 @@ class RsyncUploadProvider:
         self.alias = settings.get("ALIAS", host)
         self.rsync_dir = settings.get("RSYNC_PATH")
         self.backup_type = settings.get("BACKUP_TYPE")
-        self.upload_quiet: bool = settings.get("UPLOAD_QUIET", False)
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         if self.rsync_dir is None:
             msg = "RSYNC_PATH is not set."
             raise BackupError(msg)
@@ -1610,7 +1610,7 @@ class S3UploadProvider:
         self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
-        self.upload_quiet: bool = settings.get("UPLOAD_QUIET", False)
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         self.logging_dir = Path(settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR))
 
         if self.s3_bucket is None:
@@ -1735,7 +1735,7 @@ class GSUploadProvider:
         self.alias = settings.get("ALIAS", host)
         self.gs_bucket = settings.get("GS_BUCKET")
         self.backup_type = settings.get('BACKUP_TYPE')
-        self.upload_quiet: bool = settings.get("UPLOAD_QUIET", False)
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         if self.gs_bucket is None:
             msg = 'GS_BUCKET is not set.'
             raise BackupError(msg)
