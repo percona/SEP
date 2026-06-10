@@ -93,23 +93,33 @@
 #     label: Skip security checks
 #     description: Skip collection of security checks.
 #     type: bool
-#   - name: pxc
-#     label: PXC cluster name
-#     description: Collect PXC graphs; provide cluster name (mutually exclusive with GR/async).
-#   - name: gr
-#     label: Group Replication set
-#     description: Collect Group Replication graphs; provide replica set name (mutually exclusive with PXC/async).
-#   - name: async
-#     label: Async replication set
-#     description: Collect Async Replication graphs; provide replica set name (mutually exclusive with PXC/GR).
-#   - name: rds
-#     label: Amazon RDS MySQL
-#     description: Collect Amazon RDS MySQL graphs.
-#     type: bool
-#   - name: aurora
-#     label: Amazon Aurora MySQL
-#     description: Collect Amazon RDS Aurora MySQL graphs.
-#     type: bool
+#   - name: ha
+#     label: High Availability mode
+#     description: Collect HA-related graphs (mutually exclusive).
+#     group: High Availability
+#     choices:
+#       - value: pxc
+#         label: PXC
+#       - value: gr
+#         label: Group Replication
+#       - value: async
+#         label: Async Replication
+#     arg_format: "--ha ${value}"
+#   - name: ha-name
+#     label: Cluster / replica-set name
+#     description: Required for PXC and Group Replication; ignored for Async or when no HA mode is selected.
+#     group: High Availability
+#     arg_format: "--ha-name ${value}"
+#   - name: dbaas
+#     label: DBaaS mode
+#     description: Collect DBaaS-related graphs (mutually exclusive).
+#     group: DBaaS Options
+#     choices:
+#       - value: rds
+#         label: Amazon RDS MySQL
+#       - value: aurora
+#         label: Amazon Aurora MySQL
+#     arg_format: "--dbaas ${value}"
 # ---
 
 from __future__ import annotations
