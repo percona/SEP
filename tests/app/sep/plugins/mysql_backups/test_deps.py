@@ -15,7 +15,6 @@
 
 """Define tests for the app.sep.plugins.mysql_backups.deps module."""
 
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -241,9 +240,7 @@ def test_get_backups_task_info():
         ),
     ],
 )
-def test_parse_backup_task_data(
-    all_servers: dict[str, Any], expected_alt_host: str | None
-):
+def test_parse_backup_task_data(all_servers: dict, expected_alt_host: str | None):
     """Round-trip the binlog alt host from persisted YAML on the edit form path."""
     fake_task_dict = {
         "name": "test_task",
@@ -281,7 +278,7 @@ def test_parse_backup_task_data(
 class TestParseBackupTaskDataXtrabackupQuiet:
     """Tests for XTRABACKUP_QUIET round-trip through ``parse_backup_task_data``."""
 
-    def _make_task_dict(self, all_servers: dict[str, Any]) -> dict[str, Any]:
+    def _make_task_dict(self, all_servers: dict) -> dict:
         return {
             "name": "test_task",
             "data": {
@@ -316,7 +313,7 @@ class TestParseBackupTaskDataXtrabackupQuiet:
         ],
     )
     def test_xtrabackup_quiet_round_trips(
-        self, all_servers: dict[str, Any], expected: bool | None
+        self, all_servers: dict, expected: bool | None
     ):
         """XTRABACKUP_QUIET round-trips from persisted YAML to the edit-form dict."""
         result = parse_backup_task_data(self._make_task_dict(all_servers))
@@ -358,130 +355,6 @@ class TestParseBackupTaskDataXtrabackupQuiet:
         )
         assert result["xtrabackup_quiet"] is True
         assert result["binlog_prefix"] == "bp"
-
-
-class TestParseBackupTaskDataUploadQuiet:
-    """Tests for UPLOAD_QUIET round-trip through ``parse_backup_task_data``."""
-
-    def _make_task_dict(self, all_servers: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "name": "test_task",
-            "data": {
-                "meta": {
-                    "target": "host.example.com",
-                    "config": yaml.dump(
-                        {
-                            "SERVER_LIST": [
-                                {
-                                    "ALIAS": "db1",
-                                    "HOST": "10.0.0.1",
-                                    "PORT": 3306,
-                                    "BACKUP_TYPE": BackupType.XTRABACKUP.value,
-                                    "UPLOAD": ["s3"],
-                                }
-                            ],
-                            "ALL_SERVERS": all_servers,
-                        }
-                    ),
-                }
-            },
-        }
-
-    @pytest.mark.parametrize(
-        ("all_servers", "expected"),
-        [
-            ({"UPLOAD_QUIET": True}, True),
-            ({"UPLOAD_QUIET": False}, False),
-            # Absent key: legacy tasks pre-date the field; form must render unchecked.
-            ({}, None),
-            # YAML null value behaves identically to absent key.
-            ({"UPLOAD_QUIET": None}, None),
-        ],
-    )
-    def test_upload_quiet_round_trips(
-        self, all_servers: dict[str, Any], expected: bool | None
-    ):
-        """UPLOAD_QUIET round-trips from persisted YAML to the edit-form dict."""
-        result = parse_backup_task_data(self._make_task_dict(all_servers))
-        assert result["upload_quiet"] == expected
-
-    def test_missing_all_servers_section_returns_none(self):
-        """When ``ALL_SERVERS`` is absent, ``upload_quiet`` is ``None``.
-
-        Guards the legacy-task path where the config YAML pre-dates the
-        ``ALL_SERVERS`` section entirely.
-        """
-        task_dict = {
-            "name": "legacy_task",
-            "data": {
-                "meta": {
-                    "target": "host.example.com",
-                    "config": yaml.dump(
-                        {
-                            "SERVER_LIST": [
-                                {
-                                    "ALIAS": "db1",
-                                    "HOST": "10.0.0.1",
-                                    "PORT": 3306,
-                                    "BACKUP_TYPE": BackupType.XTRABACKUP.value,
-                                    "UPLOAD": ["s3"],
-                                }
-                            ]
-                        }
-                    ),
-                }
-            },
-        }
-        result = parse_backup_task_data(task_dict)
-        assert result["upload_quiet"] is None
-
-    def test_other_fields_are_unaffected(self):
-        """Adding upload_quiet must not clobber adjacent fields in the result."""
-        result = parse_backup_task_data(
-            self._make_task_dict({"UPLOAD_QUIET": True, "BINLOG_PREFIX": "bp"})
-        )
-        assert result["upload_quiet"] is True
-        assert result["binlog_prefix"] == "bp"
-
-
-@pytest.mark.parametrize(
-    ("all_servers", "expected"),
-    [
-        ({"UPLOAD_QUIET": True}, True),
-        ({"UPLOAD_QUIET": False}, False),
-        ({}, None),
-    ],
-)
-def test_parse_backup_task_data_upload_quiet(
-    all_servers: dict, expected: bool | None
-) -> None:
-    """Round-trip upload_quiet from persisted YAML on the edit form path."""
-    fake_task_dict = {
-        "name": "test_task",
-        "data": {
-            "meta": {
-                "target": "host.example.com",
-                "config": yaml.dump(
-                    {
-                        "SERVER_LIST": [
-                            {
-                                "ALIAS": "db1",
-                                "HOST": "10.0.0.1",
-                                "PORT": 3306,
-                                "BACKUP_TYPE": BackupType.XTRABACKUP.value,
-                                "UPLOAD": ["s3"],
-                            }
-                        ],
-                        "ALL_SERVERS": all_servers,
-                    }
-                ),
-            }
-        },
-    }
-
-    result = parse_backup_task_data(fake_task_dict)
-
-    assert result["upload_quiet"] == expected
 
 
 @pytest.mark.parametrize(
@@ -538,8 +411,8 @@ def test_parse_backup_task_data_upload_quiet(
 )
 def test_parse_backup_task_data_storage_targets(
     upload_providers: list[str],
-    all_servers: dict[str, Any],
-    expected_result: dict[str, Any],
+    all_servers: dict,
+    expected_result: dict,
 ):
     """Round-trip S3/GSUTIL/RSYNC storage-target keys from persisted YAML on the edit form path."""
     fake_task_dict = {
@@ -612,7 +485,7 @@ def test_parse_backup_task_data_without_all_servers():
     ],
 )
 def test_parse_backup_task_data_mydumper_verbose(
-    all_servers: dict[str, Any], expected_verbose: int | None
+    all_servers: dict, expected_verbose: int | None
 ):
     """Round-trip the mydumper verbose level from persisted YAML on the edit form path.
 

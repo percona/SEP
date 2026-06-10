@@ -220,7 +220,6 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     )
     result["mydumper_verbose"] = all_servers_config.get("MYDUMPER_VERBOSE")
     result["xtrabackup_quiet"] = all_servers_config.get("XTRABACKUP_QUIET")
-    result["upload_quiet"] = all_servers_config.get("UPLOAD_QUIET")
 
     for key, value in all_servers_config.items():
         if key.lower() not in result:

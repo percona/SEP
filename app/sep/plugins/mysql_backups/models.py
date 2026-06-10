@@ -146,7 +146,6 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     s3_bucket: NonEmptyStr | EmptyStrToNone = None
     s3_storage_class: NonEmptyStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
-    upload_quiet: bool = False
     awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone = None
     gs_bucket: NonEmptyStr | EmptyStrToNone = None
     rsync_path: NonEmptyStr | EmptyStrToNone = None
@@ -255,8 +254,6 @@ class BackupCreate(BackupConfigAll, ConditionalRulesModel):
     :type s3_storage_class: NonEmptyStr | EmptyStrToNone
     :param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.
     :type skip_s3_safety_check: bool
-    :param upload_quiet: Whether to suppress per-file upload log entries. Errors are always logged.
-    :type upload_quiet: bool
     :param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).
         Example: "ChecksumAlgorithm=CRC32C".
     :type awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone
