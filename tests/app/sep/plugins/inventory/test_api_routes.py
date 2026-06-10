@@ -645,15 +645,28 @@ class TestInventorySystemObservation:
     """
 
     @pytest.mark.parametrize(
-        ("url", "inventory_path"),
+        ("url", "inventory_path", "payload"),
         [
             (
                 "/api/plugins/inventory/nodes/3/system-observation",
-                "/3/system-observation",
+                "/nodes/3/system-observation",
+                {
+                    # Host observation shape (SEP-1299/1301): os_version,
+                    # installed_packages, config; no db_engine_version.
+                    "os_version": "Ubuntu 22.04",
+                    "installed_packages": {"openssl": "3.0.2"},
+                    "config": {"max_connections": 100},
+                    "observed_at": "2026-06-01T12:00:00Z",
+                },
             ),
             (
                 "/api/plugins/inventory/services/9/system-observation",
                 "/services/9/system-observation",
+                {
+                    # Service observation shape: db_engine_version only.
+                    "db_engine_version": "8.0.36",
+                    "observed_at": "2026-06-01T12:00:00Z",
+                },
             ),
         ],
     )
@@ -663,15 +676,9 @@ class TestInventorySystemObservation:
         mock_inventory_api_dep,
         url: str,
         inventory_path: str,
+        payload: dict,
     ):
         """Ensure a present observation proxies through with HTTP 200 and forwards the sub-resource path."""
-        payload = {
-            "os_version": "Ubuntu 22.04",
-            "db_engine_version": "8.0.36",
-            "installed_packages": {"openssl": "3.0.2"},
-            "config": {"max_connections": 100},
-            "observed_at": "2026-06-01T12:00:00Z",
-        }
         mock_inventory_api_dep.get.return_value = payload
         response = test_client.get(url)
         assert response.status_code == status.HTTP_200_OK

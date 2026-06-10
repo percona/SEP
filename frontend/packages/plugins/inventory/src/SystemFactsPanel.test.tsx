@@ -34,11 +34,12 @@ function makeWrapper() {
 describe('SystemFactsPanel', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('renders the collected facts when an observation is present', async () => {
+  it('renders the host facts when a node observation is present', async () => {
+    // Host observation shape (SEP-1299/1301): os_version / installed_packages
+    // / config, no db_engine_version.
     vi.spyOn(apiClient, 'get').mockResolvedValue({
       data: {
         os_version: 'Ubuntu 22.04',
-        db_engine_version: '8.0.36',
         installed_packages: { openssl: '3.0.2' },
         config: { max_connections: 100 },
         observed_at: '2026-06-01T12:00:00Z',
@@ -48,12 +49,33 @@ describe('SystemFactsPanel', () => {
     render(<SystemFactsPanel entity="nodes" id={3} />, { wrapper: makeWrapper() });
 
     expect(await screen.findByText('Ubuntu 22.04')).toBeInTheDocument();
-    expect(screen.getByText('8.0.36')).toBeInTheDocument();
     // JSON blobs are pretty-printed; assert a representative fragment.
     expect(screen.getByText(/openssl/)).toBeInTheDocument();
     expect(screen.getByText(/max_connections/)).toBeInTheDocument();
     expect(screen.getByText(/Observed at/)).toBeInTheDocument();
+    // The node panel must not surface the service-only field.
+    expect(screen.queryByText('Database engine version')).not.toBeInTheDocument();
     // The empty-state copy must not appear when facts are present.
+    expect(screen.queryByText(/No system facts collected yet/)).not.toBeInTheDocument();
+  });
+
+  it('renders the service facts when a service observation is present', async () => {
+    // Service observation shape (SEP-1299/1301): db_engine_version only.
+    vi.spyOn(apiClient, 'get').mockResolvedValue({
+      data: {
+        db_engine_version: '8.0.36',
+        observed_at: '2026-06-01T12:00:00Z',
+      },
+    });
+
+    render(<SystemFactsPanel entity="services" id={9} />, { wrapper: makeWrapper() });
+
+    expect(await screen.findByText('8.0.36')).toBeInTheDocument();
+    expect(screen.getByText(/Observed at/)).toBeInTheDocument();
+    // The service panel must not surface host-only fields.
+    expect(screen.queryByText('OS version')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installed packages')).not.toBeInTheDocument();
+    expect(screen.queryByText('Config')).not.toBeInTheDocument();
     expect(screen.queryByText(/No system facts collected yet/)).not.toBeInTheDocument();
   });
 

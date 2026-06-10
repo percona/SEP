@@ -139,17 +139,19 @@ export function SystemFactsPanel({
         System Facts
       </Typography>
       <Card variant="outlined">
-        <CardContent>{renderBody({ data, isLoading, isError })}</CardContent>
+        <CardContent>{renderBody({ entity, data, isLoading, isError })}</CardContent>
       </Card>
     </Box>
   );
 }
 
 function renderBody({
+  entity,
   data,
   isLoading,
   isError,
 }: {
+  entity: SystemObservationEntity;
   data: SystemObservation | null | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -180,12 +182,21 @@ function renderBody({
 
   const observedAt = formatObservedAt(data.observed_at);
 
+  // Host and service observations carry disjoint field sets (SEP-1299/1301):
+  // a node has os_version / installed_packages / config, a service has
+  // db_engine_version. Render only the fields the entity actually owns so a
+  // page never shows a field that can never be populated.
   return (
     <Stack spacing={2}>
-      <ScalarFact label="OS version" value={data.os_version} />
-      <ScalarFact label="Database engine version" value={data.db_engine_version} />
-      <JsonFact label="Installed packages" value={data.installed_packages} />
-      <JsonFact label="Config" value={data.config} />
+      {entity === 'nodes' ? (
+        <>
+          <ScalarFact label="OS version" value={data.os_version} />
+          <JsonFact label="Installed packages" value={data.installed_packages} />
+          <JsonFact label="Config" value={data.config} />
+        </>
+      ) : (
+        <ScalarFact label="Database engine version" value={data.db_engine_version} />
+      )}
       {observedAt ? (
         <Typography variant="caption" color="text.secondary">
           Observed at {observedAt}
