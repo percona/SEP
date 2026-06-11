@@ -35,7 +35,6 @@ from app.inventory.models import (
 )
 from app.sep.inventory import CreatedNode, CreatedService, Node, Service
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.sync.exceptions import ExecutorHostNotFoundError
 from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
 
 logger = logging.getLogger(__name__)
@@ -87,6 +86,9 @@ class SystemFactsSyncer(BaseTaskSyncer):
     )
     _host_facts_cache: dict[int, dict[str, Any]] = {}
     _service_facts_cache: dict[int, dict[str, Any]] = {}
+    #: Service ids probed by a ``fetch_node`` batch; lets ``fetch_service`` skip a
+    #: batch-failed service instead of re-running a standalone task for it.
+    _batch_attempted_services: set[int] = set()
 
     @property
     def payload_path(self) -> Path:
@@ -196,36 +198,12 @@ class SystemFactsSyncer(BaseTaskSyncer):
         :raises ExecutorHostNotFoundError: If ``strict_executor_matching`` is enabled and
             no executor host matches the node's name or address.
         """
+        # Co-location must reflect the *selected* target, not any matching host, so facts
+        # from a forced/fallback executor aren't misattributed to the node.
         available_hosts = await self.get_available_hosts()
-
-        def _is_colocated(target: str) -> bool:
-            """Report whether ``target`` is the node itself (by name or address)."""
-            return target == name or available_hosts.get(target) == host
-
-        if self.force_executor_host:
-            # Co-location must reflect the *selected* target -- not any matching host --
-            # so host facts gathered on a forced executor are never misattributed.
-            return self.force_executor_host, _is_colocated(self.force_executor_host)
-        if name and name in available_hosts:
-            return name, True
-        for target, address in available_hosts.items():
-            if address == host:
-                return target, True
-        if self.strict_executor_matching:
-            raise ExecutorHostNotFoundError(name, host, available_hosts)
-        if not available_hosts:
-            raise ValueError(
-                "No executor hosts available from /hosts/; cannot determine task target."
-            )
-        if self.default_executor_host and self.default_executor_host in available_hosts:
-            return self.default_executor_host, False
-        if self.default_executor_host:
-            logger.warning(
-                "default_executor_host %r not in available hosts %s; using first available",
-                self.default_executor_host,
-                list(available_hosts),
-            )
-        return next(iter(available_hosts)), False
+        target = await self.get_task_target(host, name)
+        is_colocated = target == name or available_hosts.get(target) == host
+        return target, is_colocated
 
     async def perform_inventory_sync(self) -> None:
         """Synchronize system facts for every inventory node."""
@@ -282,6 +260,8 @@ class SystemFactsSyncer(BaseTaskSyncer):
                 service = service_by_address.get(address)
                 if service is not None and isinstance(fact, dict):
                     self._service_facts_cache[service.id] = fact
+        # Mark probed services (even versionless ones) so fetch_service won't re-collect.
+        self._batch_attempted_services.update(service.id for service in services)
         return created_node
 
     def _build_host_observation(
@@ -327,10 +307,17 @@ class SystemFactsSyncer(BaseTaskSyncer):
             logger.info(
                 "Upserting host system observation for node %s", created_node.id
             )
-            await self.inventory_api.put(
-                f"/nodes/{created_node.id}/system-observation",
-                json=observation.model_dump(mode="json", exclude_none=True),
-            )
+            try:
+                await self.inventory_api.put(
+                    f"/nodes/{created_node.id}/system-observation",
+                    json=observation.model_dump(mode="json", exclude_none=True),
+                )
+            except Exception:  # noqa: BLE001 - best-effort; must not block service syncs
+                logger.warning(
+                    "Failed to upsert host system observation for node %s",
+                    created_node.id,
+                    exc_info=True,
+                )
         for service in created_node.services:
             await self.sync_service(service)
 
@@ -374,8 +361,11 @@ class SystemFactsSyncer(BaseTaskSyncer):
     ) -> SystemFactsService | None:
         """Resolve the engine version for a service.
 
-        Uses the ``fetch_node`` cache when present (the scheduled-sync path). On a cache
-        miss (a standalone per-service sync), falls back to collecting just this service.
+        Uses the ``fetch_node`` cache when present (the scheduled-sync path). A standalone
+        per-service sync (the service was never primed by a ``fetch_node`` batch) falls
+        back to collecting just this service. A service that *was* batch-primed but whose
+        version failed is skipped rather than re-collected, so a node with K dead services
+        issues one task run, not ``1 + K``.
 
         :param created_service: The service to fetch facts for.
         :type created_service: CreatedService
@@ -383,8 +373,11 @@ class SystemFactsSyncer(BaseTaskSyncer):
             (the service is then skipped, never written with an empty version).
         :rtype: SystemFactsService | None
         """
+        primed = created_service.id in self._batch_attempted_services
+        self._batch_attempted_services.discard(created_service.id)
         fact = self._service_facts_cache.pop(created_service.id, None)
-        if not fact or not fact.get("db_engine_version"):
+        if (not fact or not fact.get("db_engine_version")) and not primed:
+            # Never primed by a batch run -> standalone per-service sync, collect directly.
             fact = await self._collect_single_service(created_service)
         if not fact or not fact.get("db_engine_version"):
             return None
@@ -422,23 +415,6 @@ class SystemFactsSyncer(BaseTaskSyncer):
             f"/services/{created_service.id}/system-observation",
             json=observation.model_dump(mode="json", exclude_none=True),
         )
-
-    @classmethod
-    def can_sync_node(cls, node: CreatedNode) -> bool:
-        """Determine if a node is collectable.
-
-        Host facts (``os_version``/``installed_packages``/``config``) are node-level and
-        independent of the services on the node, so eligibility is *not* gated on a DB
-        engine: a co-located proxy-only node still yields a ``HostSystemObservation``.
-        Nodes that are neither co-located nor running a DB engine are short-circuited in
-        ``fetch_node`` (no task run), so admitting them here is cheap.
-
-        :param node: The node to check.
-        :type node: CreatedNode
-        :return: ``True`` if node-level sync is enabled.
-        :rtype: bool
-        """
-        return super().can_sync_node(node)
 
     @classmethod
     def can_sync_service(cls, service: CreatedService) -> bool:

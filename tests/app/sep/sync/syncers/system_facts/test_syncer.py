@@ -485,6 +485,45 @@ class TestFetchService:
         ).return_value = TaskRunResult(1, "not-json")
         assert await mock_syncer.fetch_service(created_service) is None
 
+    @pytest.mark.asyncio
+    async def test_fetch_service_batch_primed_failure_skips_standalone_run(
+        self, mock_syncer, created_service, mocker
+    ):
+        """A batch-attempted service with no version is skipped, not re-collected.
+
+        ``fetch_node`` marks every probed service as batch-attempted. One that failed in
+        the batch (no cached version) must resolve to ``None`` without dispatching a fresh
+        per-service task -- otherwise a node with K dead services issues ``1 + K`` runs.
+        """
+        mock_syncer._batch_attempted_services.add(created_service.id)
+        collect = mocker.patch.object(
+            SystemFactsSyncer, "_collect_single_service", new_callable=AsyncMock
+        )
+
+        assert await mock_syncer.fetch_service(created_service) is None
+        collect.assert_not_awaited()
+        # The marker is consumed so a later standalone sync is free to collect.
+        assert created_service.id not in mock_syncer._batch_attempted_services
+
+    @pytest.mark.asyncio
+    async def test_fetch_service_unprimed_collects_single_service(
+        self, mock_syncer, created_service, mocker
+    ):
+        """A service never primed by a batch run falls back to standalone collection."""
+        collect = mocker.patch.object(
+            SystemFactsSyncer, "_collect_single_service", new_callable=AsyncMock
+        )
+        collect.return_value = {
+            "db_engine_version": MYSQL_VERSION,
+            "collected_at": COLLECTED_AT,
+        }
+
+        svc = await mock_syncer.fetch_service(created_service)
+
+        collect.assert_awaited_once_with(created_service)
+        assert isinstance(svc, SystemFactsService)
+        assert svc.db_engine_version == MYSQL_VERSION
+
 
 class TestPerformServiceSync:
     """Test upserting service observations."""
