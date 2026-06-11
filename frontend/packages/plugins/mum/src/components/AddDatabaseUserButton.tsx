@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { apiClient } from '@sep/api';
 import {
   Box,
@@ -13,6 +13,8 @@ import {
 import { BuiltinRolesSelector } from './BuiltinRolesSelector';
 import type { RoleRow } from '../MumRoleList';
 import type { ButtonProps } from '@mui/material';
+import { useTaskStream } from '../useTaskStream';
+import type { TaskStreamState } from '../useTaskStream';
 
 const DEFAULT_DB = 'admin';
 
@@ -45,9 +47,25 @@ export function AddDatabaseUserButton({
   const [password, setPassword] = useState('');
   const [roles, setRoles] = useState<RoleValue[]>([]);
   const [rolesDb, setRolesDb] = useState(DEFAULT_DB);
+  const [streamState, setStreamState] = useState<TaskStreamState>({ status: 'idle' });
+
+  const onStateChange = useCallback((s: TaskStreamState) => {
+    setStreamState(s);
+    if (s.status === 'success') {
+      setOpen(false);
+      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
+      resetForm();
+    } else if (s.status === 'error') {
+      setError(s.message);
+      setLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username, roles, rolesDb, selectedTarget, onSuccess]);
+
+  const { stream } = useTaskStream({ onStateChange });
 
   const resetForm = () => {
-    setUsername(''); setPassword(''); setRoles([]); setRolesDb(DEFAULT_DB); setError(null);
+    setUsername(''); setPassword(''); setRoles([]); setRolesDb(DEFAULT_DB); setError(null); setStreamState({ status: 'idle' });
   };
 
   const handleOpen = () => { resetForm(); setOpen(true); };
@@ -61,7 +79,7 @@ export function AddDatabaseUserButton({
     setError(null);
     try {
       // [MUM-REPLACE] begin — dispatch create-user task via SEP internal endpoint
-      await apiClient.post('/mum/ui/create-user', {
+      const resp = await apiClient.post('/plugins/mum/ui/create-user', {
         target: selectedTarget,
         username,
         password,
@@ -69,13 +87,11 @@ export function AddDatabaseUserButton({
         db: rolesDb || DEFAULT_DB,
       });
       // [MUM-REPLACE] end
-      setOpen(false);
-      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
-      resetForm();
+      const historyId = (resp.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
+      stream(historyId?.['id'] as string);
     } catch (e) {
       const err = e as { response?: { data?: { detail?: string } }; message?: string };
       setError(err?.response?.data?.detail ?? err?.message ?? 'Failed to create user');
-    } finally {
       setLoading(false);
     }
   };
@@ -105,7 +121,14 @@ export function AddDatabaseUserButton({
             helperText="Database where roles apply (default admin)"
             fullWidth
           />
-          {error && <Typography color="error" variant="body2">{error}</Typography>}
+          {streamState.status === 'running' && (
+            <Typography variant="body2" color="text.secondary">Creating user…</Typography>
+          )}
+          {error && (
+            <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {error}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose} disabled={loading}>Cancel</Button>

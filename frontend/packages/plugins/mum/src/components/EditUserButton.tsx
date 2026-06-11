@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { apiClient } from '@sep/api';
 import {
   Button,
@@ -13,6 +13,8 @@ import { BuiltinRolesSelector } from './BuiltinRolesSelector';
 import type { UserRow } from '../MumUserList';
 import type { RoleRow } from '../MumRoleList';
 import type { ButtonProps } from '@mui/material';
+import { useTaskStream } from '../useTaskStream';
+import type { TaskStreamState } from '../useTaskStream';
 
 const DEFAULT_DB = 'admin';
 
@@ -61,6 +63,21 @@ export function EditUserButton({
   const [password, setPassword] = useState('');
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [rolesDb, setRolesDb] = useState(DEFAULT_DB);
+  const [streamState, setStreamState] = useState<TaskStreamState>({ status: 'idle' });
+
+  const onStateChange = useCallback((s: TaskStreamState) => {
+    setStreamState(s);
+    if (s.status === 'success') {
+      setOpen(false);
+      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
+    } else if (s.status === 'error') {
+      setError(s.message);
+      setLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username, roles, rolesDb, selectedTarget, onSuccess]);
+
+  const { stream } = useTaskStream({ onStateChange });
 
   const initialValues = useMemo(() => ({
     usernameValue: String(row?.['user'] ?? row?.['username'] ?? ''),
@@ -89,14 +106,13 @@ export function EditUserButton({
       const body: Record<string, unknown> = { target: selectedTarget, username, db: rolesDb || DEFAULT_DB, roles };
       if (password) body['password'] = password;
       // [MUM-REPLACE] begin — dispatch update-user task via SEP internal endpoint
-      await apiClient.post('/mum/ui/update-user', body);
+      const resp = await apiClient.post('/plugins/mum/ui/update-user', body);
       // [MUM-REPLACE] end
-      setOpen(false);
-      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
+      const historyId = (resp.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
+      stream(historyId?.['id'] as string);
     } catch (e) {
       const err = e as { response?: { data?: { detail?: string } }; message?: string };
       setError(err?.response?.data?.detail ?? err?.message ?? 'Failed to update user');
-    } finally {
       setLoading(false);
     }
   };
@@ -132,7 +148,14 @@ export function EditUserButton({
             helperText="Database where roles apply (default admin)"
             fullWidth
           />
-          {error && <Typography color="error" variant="body2">{error}</Typography>}
+          {streamState.status === 'running' && (
+            <Typography variant="body2" color="text.secondary">Saving…</Typography>
+          )}
+          {error && (
+            <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {error}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDialog} disabled={loading}>Cancel</Button>

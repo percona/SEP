@@ -5,6 +5,7 @@ import { RoleFormDialog } from './RoleFormDialog';
 import type { RoleRow } from '../MumRoleList';
 import type { PrivilegeForm } from './RoleFormDialog';
 import type { ButtonProps } from '@mui/material';
+import { useTaskStream } from '../useTaskStream';
 
 interface EditRoleButtonProps {
   row: RoleRow;
@@ -46,6 +47,7 @@ const parseInheritedRoles = (rawRoles: unknown): Array<{ role: string; db: strin
 
 export function EditRoleButton({ row, selectedTarget, rolesData = [], onSuccess, buttonProps = {} }: EditRoleButtonProps) {
   const [open, setOpen] = useState(false);
+  const { streamAndWait } = useTaskStream();
 
   const initialValues = useMemo(() => ({
     role: String(row?.['role'] ?? ''),
@@ -57,8 +59,10 @@ export function EditRoleButton({ row, selectedTarget, rolesData = [], onSuccess,
   const handleSubmit = async ({ role, db, privileges, inheritedRoles }: { role: string; db: string; privileges: unknown; inheritedRoles: unknown }) => {
     if (!selectedTarget) throw new Error('Select an executor host first.');
     // [MUM-REPLACE] begin — dispatch update-role task via SEP internal endpoint
-    await apiClient.post('/mum/ui/update-role', { target: selectedTarget, role, db, privileges, inheritedRoles });
+    const resp = await apiClient.post('/plugins/mum/ui/update-role', { target: selectedTarget, role, db, privileges, inheritedRoles });
     // [MUM-REPLACE] end
+    const historyId = (resp.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
+    await streamAndWait(historyId?.['id'] as string);
     setOpen(false);
     onSuccess?.({ role, db, target: selectedTarget });
   };

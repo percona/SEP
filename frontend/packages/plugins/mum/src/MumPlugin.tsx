@@ -26,27 +26,12 @@ import type { UserRow } from './MumUserList';
 import type { RoleRow } from './MumRoleList';
 
 interface ExecutorHost {
+  /** Executor node name used as the dispatch target */
+  id: string;
+  /** Human-readable label (inventory display name when available) */
   name: string;
   address: string;
 }
-
-const normalizeExecutorHosts = (rawHosts: unknown): ExecutorHost[] => {
-  if (!Array.isArray(rawHosts)) return [];
-  return rawHosts
-    .map((host) => {
-      if (typeof host === 'string') return { name: host, address: '' };
-      if (host && typeof host === 'object') {
-        const h = host as Record<string, unknown>;
-        const name = String(
-          h['name'] || h['Name'] || h['hostname'] || h['Hostname'] || h['id'] || h['address'] || h['Address'] || '',
-        );
-        if (!name) return null;
-        return { name, address: String(h['address'] || h['Address'] || h['ip'] || h['IP'] || '') };
-      }
-      return null;
-    })
-    .filter((x): x is ExecutorHost => x !== null);
-};
 
 export function MumPlugin() {
   const [error, setError] = useState<string | null>(null);
@@ -88,10 +73,8 @@ export function MumPlugin() {
   useEffect(() => {
     const loadOptions = async () => {
       try {
-        // [MUM-REPLACE] begin — fetch executor hosts from SEP internal endpoint
-        const resp = await apiClient.get('/mum/ui/options');
-        setExecutorHosts(normalizeExecutorHosts((resp.data as Record<string, unknown>)?.['executor_hosts']));
-        // [MUM-REPLACE] end
+        const resp = await apiClient.get<{ id: string; name: string; address: string }[]>('/sep/hosts/');
+        setExecutorHosts(resp.data.map((h) => ({ id: h.id, name: h.name, address: h.address })));
       } catch (_) {
         // swallow
       }
@@ -313,7 +296,7 @@ export function MumPlugin() {
       setRolesData([]);
       try {
         // [MUM-REPLACE] begin — dispatch list-roles task via SEP internal endpoint, then stream logs
-        const response = await apiClient.post('/mum/ui/list-roles', { target });
+        const response = await apiClient.post('/plugins/mum/ui/list-roles', { target });
         const rolesHistoryData = (response.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
         streamListRoles(rolesHistoryData?.['id'] as string);
         // [MUM-REPLACE] end
@@ -339,7 +322,7 @@ export function MumPlugin() {
       listRoles(target);
       try {
         // [MUM-REPLACE] begin — dispatch list-users task via SEP internal endpoint, then stream logs
-        const response = await apiClient.post('/mum/ui/list-users', { target });
+        const response = await apiClient.post('/plugins/mum/ui/list-users', { target });
         const historyData = (response.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
         streamListUsers(historyData?.['id'] as string);
         // [MUM-REPLACE] end
@@ -408,10 +391,8 @@ export function MumPlugin() {
             <select value={selectedTarget} onChange={(e) => setSelectedTarget(e.target.value)}>
               <option value="">Select a host</option>
               {executorHosts.map((host) => (
-                <option key={host.name} value={host.name}>
-                  {host.address && host.address !== host.name
-                    ? `${host.name} (${host.address})`
-                    : host.name}
+                <option key={host.id} value={host.id}>
+                  {host.name !== host.id ? `${host.name} (${host.id})` : host.id}
                 </option>
               ))}
             </select>
