@@ -17,7 +17,7 @@
 
 import shlex
 from datetime import datetime, UTC
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import status
@@ -146,15 +146,10 @@ class TestChecksumsListEndpoint:
         """Ensure the list endpoint returns task data."""
         task = build_checksum_task()
         mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                {"items": [task], "total": 1, "offset": 0, "limit": 50},
-                {
-                    "items": [{"status": TaskHistoryStatusEnum.SUCCESS.value}],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
-                },
-            ]
+            return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={task["name"]: TaskHistoryStatusEnum.SUCCESS.value}
         )
 
         response = test_client.get("/api/plugins/checksums/")
@@ -166,6 +161,9 @@ class TestChecksumsListEndpoint:
         assert data[0]["name"] == task["name"]
         assert data[0]["service_type"] == ServiceTypeEnum.MYSQL.value
         assert data[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": [task["name"]]}
+        )
 
     def test_checksums_list_returns_empty_array(self, test_client, mock_task_api_dep):
         """Ensure the list endpoint returns an empty array when no tasks exist."""
@@ -198,15 +196,10 @@ class TestChecksumsListEndpoint:
         """Ensure the status filter is propagated correctly."""
         task = build_checksum_task()
         mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                {"items": [task], "total": 1, "offset": 0, "limit": 50},
-                {
-                    "items": [{"status": TaskHistoryStatusEnum.RUNNING.value}],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
-                },
-            ]
+            return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={task["name"]: TaskHistoryStatusEnum.RUNNING.value}
         )
 
         response = test_client.get(
@@ -221,10 +214,12 @@ class TestChecksumsListEndpoint:
         data = response.json()
         assert len(data) == 1
         assert data[0]["status"] == TaskHistoryStatusEnum.RUNNING.value
-        assert mock_task_api_dep.get.call_args_list == [
-            call("/", params={"owner": TaskOwner.CHECKSUMS.value}),
-            call(f"/{task['name']}/history/"),
-        ]
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/", params={"owner": TaskOwner.CHECKSUMS.value}
+        )
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": [task["name"]]}
+        )
 
     def test_checksums_list_returns_422_for_invalid_service_type(
         self, test_client, mock_task_api_dep
@@ -256,15 +251,10 @@ class TestChecksumsListEndpoint:
         """Ensure tasks with a status that does not match the filter are omitted."""
         task = build_checksum_task()
         mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                {"items": [task], "total": 1, "offset": 0, "limit": 50},
-                {
-                    "items": [{"status": TaskHistoryStatusEnum.FAILED.value}],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
-                },
-            ]
+            return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={task["name"]: TaskHistoryStatusEnum.FAILED.value}
         )
 
         response = test_client.get(
