@@ -207,6 +207,46 @@ class TestUpdateAppState:
         assert response.json() == {"app_key": "snippets", "enabled": False}
         assert await AppStateManager.is_enabled(override_session, "snippets") is False
 
+    async def test_concurrent_first_toggle_returns_idempotent_200(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A concurrent first toggle returns idempotent 200, never a 400.
+
+        Simulates the TOCTOU race on a configured-but-not-yet-seeded plugin: a
+        concurrent winner has already committed the ``snippets`` row, but this
+        request's ``get_or_create`` existence check ran before that commit.
+        ``AppStateManager.first`` is patched to return ``None`` on its first
+        invocation (the existence check) and delegate afterwards (the refetch).
+        """
+        override_session.add(AppState(app_key="snippets", enabled=True))
+        await override_session.commit()
+
+        original_first = AppStateManager.first.__func__
+        calls = {"count": 0}
+
+        async def first_returns_none_then_delegates(cls, *args, **kwargs):  # noqa: ANN
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return None
+            return await original_first(cls, *args, **kwargs)
+
+        monkeypatch.setattr(
+            AppStateManager,
+            "first",
+            classmethod(first_returns_none_then_delegates),
+        )
+
+        response = api_admin_client.put(
+            "/api/admin/apps/snippets/state", json={"enabled": False}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"app_key": "snippets", "enabled": False}
+        assert await AppStateManager.is_enabled(override_session, "snippets") is False
+
     async def test_protected_app_returns_409(
         self, api_admin_client: TestClient
     ) -> None:

@@ -35,6 +35,8 @@ MATCHING_ITEM_TOTAL = 3
 SELECT_RELATED_PAGE_LIMIT = 2
 INVALID_PAGINATION_VALUE = -1
 UNPAGINATED_ITEM_TOTAL = 55
+# first() is invoked twice on the conflict path: existence check, then refetch.
+CONFLICT_PATH_FIRST_CALLS = 2
 
 
 class PaginationParent(BaseSQLModel, table=True):
@@ -77,6 +79,21 @@ class PaginationItemByNameManager(BaseSQLModelManager):
 
     Model = PaginationItem
     ordering = [col(PaginationItem.name)]
+
+
+class UniqueKeyModel(BaseSQLModel, table=True):
+    """Test model with a unique key used for ``get_or_create`` race checks."""
+
+    __tablename__ = "test_unique_key"
+
+    key: str = SQLField(unique=True, index=True)
+    label: str = "default"
+
+
+class UniqueKeyManager(BaseSQLModelManager):
+    """Manager for the unique-keyed test model."""
+
+    Model = UniqueKeyModel
 
 
 @pytest_asyncio.fixture(name="session")
@@ -362,3 +379,94 @@ class TestBaseSQLModelManagerPagination:
         # (highest/newest id first).
         assert [item.id for item in result] == [third.id, second.id, first.id]
         assert [item.name for item in result] == ["third", "second", "first"]
+
+
+class TestGetOrCreate:
+    """Test ``BaseSQLModelManager.get_or_create`` including the conflict path."""
+
+    @pytest.mark.asyncio
+    async def test_creates_new_row(self, session: AsyncSession) -> None:
+        """A fresh key inserts the row, reports ``created=True``, and fills defaults."""
+        instance, created = await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="first"),
+            filter_include={"key"},
+        )
+
+        assert created is True
+        assert instance.id is not None
+        assert instance.key == "alpha"
+        assert instance.label == "first"
+        # Python-side default_factory (created_at) must be materialized on insert.
+        assert instance.created_at is not None
+        assert instance.updated_at is None
+        assert await UniqueKeyManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_returns_existing_row_without_duplicating(
+        self, session: AsyncSession
+    ) -> None:
+        """An existing key short-circuits to the stored row with ``created=False``."""
+        first_instance, first_created = await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="beta", label="original"),
+            filter_include={"key"},
+        )
+        assert first_created is True
+
+        second_instance, second_created = await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="beta", label="ignored"),
+            filter_include={"key"},
+        )
+
+        assert second_created is False
+        assert second_instance.id == first_instance.id
+        assert second_instance.label == "original"
+        assert await UniqueKeyManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_conflict_refetches_winning_row_without_raising(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A row created after the ``first()`` check no longer 400s; it refetches.
+
+        Simulates the TOCTOU race: a concurrent winner has already committed the
+        row, but this call's existence check ran before that commit. ``first()``
+        is patched to return ``None`` on its first invocation (the existence
+        check) and delegate afterwards (the refetch), forcing the upsert branch
+        to hit the duplicate and resolve idempotently.
+        """
+        winner = await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="gamma", label="winner"),
+            filter_include={"key"},
+        )
+        winner_instance = winner[0]
+
+        original_first = UniqueKeyManager.first.__func__
+        calls = {"count": 0}
+
+        async def first_returns_none_then_delegates(cls, *args, **kwargs):  # noqa: ANN
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return None
+            return await original_first(cls, *args, **kwargs)
+
+        monkeypatch.setattr(
+            UniqueKeyManager,
+            "first",
+            classmethod(first_returns_none_then_delegates),
+        )
+
+        instance, created = await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="gamma", label="loser"),
+            filter_include={"key"},
+        )
+
+        assert created is False
+        assert instance.id == winner_instance.id
+        assert instance.label == "winner"
+        assert calls["count"] == CONFLICT_PATH_FIRST_CALLS
+        assert await UniqueKeyManager.count(session) == 1
