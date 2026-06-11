@@ -32,6 +32,7 @@ from app.sep.plugins.framework.connectivity import (
     maybe_record_connectivity_warning,
     record_connectivity_warning,
 )
+from app.sep.plugins.framework.deps import make_task_dep
 from app.sep.plugins.framework.rules import (
     absent,
     all_,
@@ -59,7 +60,11 @@ from app.sep.plugins.framework.rules import (
     truthy,
     xor_,
 )
-from app.sep.plugins.framework.task_status import extract_latest_task_status
+from app.sep.plugins.framework.task_status import (
+    batch_get_latest_statuses,
+    extract_latest_task_status,
+    get_task_latest_status,
+)
 
 __all__ = [
     "CardinalityRule",
@@ -83,6 +88,7 @@ __all__ = [
     "any_present",
     "any_truthy",
     "apply_conditional_rules",
+    "batch_get_latest_statuses",
     "build_derived_payload",
     "build_predecessor_payload",
     "cascade_create_predecessors",
@@ -94,6 +100,8 @@ __all__ = [
     "evaluate_conditional_rules",
     "extract_latest_task_status",
     "falsy",
+    "get_task_latest_status",
+    "make_task_dep",
     "maybe_record_connectivity_warning",
     "none_present",
     "not_",

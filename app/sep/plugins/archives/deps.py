@@ -15,7 +15,6 @@
 
 """Define dependencies for the Archives plugin."""
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -35,7 +34,6 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
@@ -47,6 +45,7 @@ from app.sep.plugins.archives.models import (
     PurgeConfig,
     PurgeConfigAll,
 )
+from app.sep.plugins.framework import batch_get_latest_statuses, make_task_dep
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -56,7 +55,6 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
-_STATUS_FETCH_CONCURRENCY = 10
 
 
 async def _resolve_source_tables(
@@ -345,55 +343,9 @@ ArchivesApiGeneratedTask = Annotated[
 ]
 
 
-async def get_archives_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Archives plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Archives plugin. If the task does not exist or is not
-    owned by Archives, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Archiver.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.ARCHIVER)
-
+get_archives_task = make_task_dep(TaskOwner.ARCHIVER)
 
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
-
-
-def _extract_latest_task_status(
-    histories: list[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
-    for history in histories:
-        if (status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(status)
-    return None
-
-
-async def get_archives_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for an archive task.
-
-    :param task_name: The name of the archive task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return _extract_latest_task_status(response["items"])
 
 
 def build_archives_api_task_response(
@@ -428,19 +380,10 @@ async def get_archives_api_task_responses(
     """
     response = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
     tasks = [Task.model_validate(task) for task in response.get("items", [])]
-    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
-
-    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
-        async with sem:
-            return await get_archives_task_status(task.name, tasks_api)
-
-    task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
+    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
     return [
-        build_archives_api_task_response(
-            task,
-            status=task_status,
-        )
-        for task, task_status in zip(tasks, task_statuses, strict=True)
+        build_archives_api_task_response(task, status=statuses.get(task.name))
+        for task in tasks
     ]
 
 

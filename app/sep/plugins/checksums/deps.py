@@ -34,7 +34,6 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
@@ -46,7 +45,11 @@ from app.sep.plugins.checksums.models import (
     ChecksumTaskResponse,
     ChecksumTaskWrite,
 )
-from app.sep.plugins.framework import ConnectivityWarning, extract_latest_task_status
+from app.sep.plugins.framework import (
+    batch_get_latest_statuses,
+    ConnectivityWarning,
+    make_task_dep,
+)
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -384,26 +387,7 @@ async def build_checksum_task(
     )
 
 
-async def get_checksums_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Checksums plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Checksums plugin. If the task does not exist or is not
-    owned by Checksums, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Checksums.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.CHECKSUMS)
-
+get_checksums_task = make_task_dep(TaskOwner.CHECKSUMS)
 
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
 
@@ -443,23 +427,6 @@ async def get_checksums_task_names_by_status(
         for history in histories
         if history.get("task", {}).get("owner") == TaskOwner.CHECKSUMS.value
     }
-
-
-async def get_checksums_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for a checksum task.
-
-    :param task_name: The name of the checksum task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return extract_latest_task_status(response["items"])
 
 
 def build_checksums_api_task_response(
@@ -522,16 +489,14 @@ async def get_checksums_api_task_responses(
     params = {"owner": TaskOwner.CHECKSUMS.value}
     response = await tasks_api.get("/", params=params)
     tasks = [Task.model_validate(task) for task in response["items"]]
-    task_status_pairs = [
-        (task, await get_checksums_task_status(task.name, tasks_api)) for task in tasks
-    ]
+    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
 
     return [
         build_checksums_api_task_response(
-            task, status=task_status, username_mapping=username_mapping
+            task, status=statuses.get(task.name), username_mapping=username_mapping
         )
-        for task, task_status in task_status_pairs
-        if status is None or task_status == status
+        for task in tasks
+        if status is None or statuses.get(task.name) == status
     ]
 
 

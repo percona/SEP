@@ -15,11 +15,9 @@
 
 """Define dependencies for the Alters plugin."""
 
-import asyncio
 import json
 import logging
 import shlex
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -42,7 +40,6 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
@@ -55,7 +52,11 @@ from app.sep.plugins.alters.models import (
     AltersTaskWrite,
 )
 from app.sep.plugins.alters.schema import alters_schema
-from app.sep.plugins.framework import ConnectivityWarning
+from app.sep.plugins.framework import (
+    batch_get_latest_statuses,
+    ConnectivityWarning,
+    make_task_dep,
+)
 from app.sep.plugins.framework.cascade import (
     build_derived_payload,
     build_predecessor_payload,
@@ -74,8 +75,6 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-_STATUS_FETCH_CONCURRENCY = 10
 
 DEFAULT_RECURSION_DSN_TABLE = "D=percona,t=dsns"
 
@@ -283,26 +282,7 @@ async def build_alters_task(
     return _assemble_alters_payload(service, schema_name, table_name, body)
 
 
-async def get_alters_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Alters plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Alters plugin. If the task does not exist or is not
-    owned by Alters, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Alters.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.ALTERS)
-
+get_alters_task = make_task_dep(TaskOwner.ALTERS)
 
 AltersTask = Annotated[Task, Depends(get_alters_task)]
 
@@ -981,40 +961,6 @@ async def get_deletable_alters_parent_task(
 DeletableAltersParent = Annotated[Task, Depends(get_deletable_alters_parent_task)]
 
 
-def _extract_latest_task_status(
-    histories: Iterable[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
-    for history in histories:
-        if (status := history.get("status")) is not None:
-            try:
-                return TaskHistoryStatusEnum(status)
-            except ValueError:
-                logger.warning(
-                    "Unknown task history status %r; treating as None",
-                    status,
-                )
-                return None
-    return None
-
-
-async def get_alters_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for an alters task.
-
-    :param task_name: The name of the alters task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return _extract_latest_task_status(response["items"])
-
-
 def _command_line_from_meta(meta: dict[str, Any]) -> str | None:
     """Return the full pt-osc invocation for detail display.
 
@@ -1122,22 +1068,18 @@ async def get_alters_api_task_responses(
         for item in response["items"]
         if is_alters_parent_task(task := Task.model_validate(item))
     ]
-    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
-
-    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
-        async with sem:
-            return await get_alters_task_status(task.name, tasks_api)
-
-    statuses = await asyncio.gather(*(_bounded_status(task) for task in parent_tasks))
+    statuses = await batch_get_latest_statuses(
+        tasks_api, [task.name for task in parent_tasks]
+    )
 
     return [
         build_alters_api_task_response(
             task,
-            status=task_status,
+            status=statuses.get(task.name),
             username_mapping=username_mapping,
         )
-        for task, task_status in zip(parent_tasks, statuses, strict=True)
-        if status is None or task_status == status
+        for task in parent_tasks
+        if status is None or statuses.get(task.name) == status
     ]
 
 
