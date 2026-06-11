@@ -31,7 +31,10 @@ process_config_file() {
         # Parse for HAProxy native include directives (supported since 2.4)
         while IFS= read -r line; do
             line="$(echo "$line" | sed 's/^ *//;s/ *$//')"
-            [[ $line =~ ^[[:space:]]*# ]] && continue
+            # Strip inline comments and skip empty/comment-only lines.
+            line="${line%%#*}"
+            line="$(echo "$line" | sed 's/^ *//;s/ *$//')"
+            [[ -z $line ]] && continue
             if [[ $line =~ ^include[[:space:]]+(.+) ]]; then
                 included_glob="${BASH_REMATCH[1]}"
                 if [[ $included_glob == *\$\(* || $included_glob == *\`* ]]; then

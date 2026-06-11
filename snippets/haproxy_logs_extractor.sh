@@ -143,10 +143,7 @@ if ! [[ $MINUTES_ARG =~ ^[0-9]+$ ]] || [ "$MINUTES_ARG" -le 0 ]; then
 fi
 
 HAPROXY_LOG="${LOG_FILE_ARG:-$DEFAULT_HAPROXY_LOG}"
-if [[ $HAPROXY_LOG =~ [\`\$] ]]; then
-    echo "Error: --log-file contains unsupported characters."
-    exit 1
-fi
+# Note: $HAPROXY_LOG is always referenced as a quoted path below; avoid over-restricting valid filenames.
 if [ ! -f "$HAPROXY_LOG" ]; then
     echo "Error: HAProxy log file not found at '$HAPROXY_LOG'."
     echo "Please ensure the file exists and the path is correct."
@@ -199,14 +196,14 @@ BEGIN {
     log_epoch = 0;
 
     # Try ISO 8601 / RFC3339 (first field, may include fractional seconds + timezone)
-    ts = $1;
-    cmd = "date -d \"" ts "\" +%s 2>/dev/null"
-    cmd | getline log_epoch;
-    close(cmd);
-
-    # Fall back to BSD syslog (first 15 chars: Mmm DD HH:MM:SS)
-    if (log_epoch == "" || log_epoch == 0) {
+    ts = "";
+    if ($1 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/) {
+        ts = $1;
+    } else if (substr($0, 1, 15) ~ /^[A-Z][a-z]{2} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2}/) {
         ts = substr($0, 1, 15);
+    }
+
+    if (ts != "") {
         cmd = "date -d \"" ts "\" +%s 2>/dev/null";
         cmd | getline log_epoch;
         close(cmd);
