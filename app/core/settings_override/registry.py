@@ -35,6 +35,7 @@ __all__ = [
     "is_hot_reloadable",
     "is_nested_overridable_parent",
     "iter_class_fields",
+    "iter_nested_leaf_keys",
     "materialize_fingerprint",
     "materialize_override_value",
     "materialize_template",
@@ -50,7 +51,7 @@ __all__ = [
 
 import functools
 import typing
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from string import Template
@@ -699,9 +700,13 @@ def resolve_nested_value(
 ) -> tuple[FieldInfo, Any]:
     """Return the leaf field metadata and current value for a nested key.
 
-    Walks the proxy attribute chain segment by segment using the resolver's
-    canonical (case-corrected) names, so the returned value reflects the merged
-    snapshot copy when an override is active and the YAML/env value otherwise.
+    Walks the chain segment by segment using the resolver's canonical
+    (case-corrected) names, so the returned value reflects the merged snapshot
+    copy when an override is active and the YAML/env value otherwise. Each
+    segment is read as a :class:`~collections.abc.Mapping` key when the current
+    node is a mapping -- a materializer-fingerprint override stores a plain dict
+    rather than a live model -- and as an attribute otherwise. A missing or
+    ``None`` intermediate yields ``None`` rather than raising.
 
     :param settings_cls: The Pydantic settings class the key belongs to.
     :type settings_cls: type[BaseModel]
@@ -720,9 +725,10 @@ def resolve_nested_value(
     chain, leaf_info = resolved
     current = proxy
     for segment in chain:
-        # Optional intermediate may be None before any override; short-circuit
-        # instead of raising.
-        current = getattr(current, segment, None)
+        if isinstance(current, Mapping):
+            current = current.get(segment)
+        else:
+            current = getattr(current, segment, None)
     return leaf_info, current
 
 
@@ -946,8 +952,10 @@ def resolve_nested_field_metadata(
     (annotation, default, description, secret/complex flags) is taken from the
     leaf field. The reported ``reload`` is ``HOT`` for an override-eligible
     leaf (the default under a nested-overridable parent) and
-    ``NOT_OVERRIDABLE`` only when the leaf is explicitly
-    :func:`not_overridable_field`-marked.
+    ``NOT_OVERRIDABLE`` when the leaf **or any intermediate in its chain** is
+    explicitly :func:`not_overridable_field`-marked -- the same chain check that
+    gates PATCH/DELETE, so the reported classification matches what an override
+    would actually be allowed to do.
 
     :param settings_cls: The top-level Pydantic settings class.
     :type settings_cls: type[BaseModel]
@@ -963,7 +971,7 @@ def resolve_nested_field_metadata(
     _chain, leaf_info = resolved
     reload = (
         ReloadClassification.NOT_OVERRIDABLE
-        if is_explicit_not_overridable(leaf_info)
+        if chain_has_explicit_not_overridable(settings_cls, key)
         else ReloadClassification.HOT
     )
     return FieldMetadata(
@@ -975,6 +983,62 @@ def resolve_nested_field_metadata(
         is_secret=_field_contains_secret(leaf_info),
         is_complex=_field_is_complex(leaf_info.annotation),
     )
+
+
+def iter_nested_leaf_keys(
+    settings_cls: type[BaseModel], parent_field_name: str
+) -> Iterator[tuple[str, tuple[str, ...]]]:
+    """Yield ``(canonical_key, segment_chain)`` for each nested leaf under a parent.
+
+    Walk the parent submodel's ``model_fields`` recursively, descending into
+    Pydantic submodels via :func:`annotation_pydantic_class` (which unwraps
+    ``X | None``). A field whose annotation is not a Pydantic model -- a scalar,
+    ``list[...]`` or ``set[...]`` -- is a leaf, so collection-typed fields stay a
+    single leaf (their items are not expanded). Segments are the canonical
+    attribute names from ``model_fields``, so each yielded key matches the form
+    :func:`resolve_nested_field` and :func:`override_keys_for_rows` produce, and
+    ``"__".join(chain) == key`` holds by construction.
+
+    Yield nothing when ``parent_field_name`` is unknown or is not a Pydantic
+    submodel (e.g. a scalar HOT field), letting the caller fall back to a single
+    top-level entry.
+
+    :param settings_cls: The settings class declaring ``parent_field_name``.
+    :type settings_cls: type[BaseModel]
+    :param parent_field_name: The top-level field whose leaves to enumerate.
+    :type parent_field_name: str
+    :yield: A ``(canonical_key, segment_chain)`` pair for one nested leaf.
+    :rtype: Iterator[tuple[str, tuple[str, ...]]]
+    """
+    parent_info = settings_cls.model_fields.get(parent_field_name)
+    if parent_info is None:
+        return
+    submodel = annotation_pydantic_class(parent_info.annotation)
+    if submodel is None:
+        return
+    yield from _iter_leaf_chains(submodel, (parent_field_name,))
+
+
+def _iter_leaf_chains(
+    model_cls: type[BaseModel], prefix: tuple[str, ...]
+) -> Iterator[tuple[str, tuple[str, ...]]]:
+    """Yield ``(key, chain)`` for every leaf reachable from ``model_cls``, recursing into submodels.
+
+    :param model_cls: The Pydantic model whose fields to walk.
+    :type model_cls: type[BaseModel]
+    :param prefix: The canonical segment chain accumulated from the parent down
+        to (but excluding) ``model_cls``'s own fields.
+    :type prefix: tuple[str, ...]
+    :yield: A ``(key, chain)`` pair for one leaf reachable from ``model_cls``.
+    :rtype: Iterator[tuple[str, tuple[str, ...]]]
+    """
+    for name, info in model_cls.model_fields.items():
+        chain = (*prefix, name)
+        child = annotation_pydantic_class(info.annotation)
+        if child is None:
+            yield "__".join(chain), chain
+        else:
+            yield from _iter_leaf_chains(child, chain)
 
 
 def _resolve_default(field_info: FieldInfo) -> Any:

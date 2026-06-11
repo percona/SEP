@@ -7840,6 +7840,8 @@ export interface components {
       setting_class: components['schemas']['SettingClassEnum'];
       /** Key */
       key: string;
+      /** Key Path */
+      key_path?: string[];
       /** Value */
       value: unknown;
       /** Default Value */
