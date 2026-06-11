@@ -71,9 +71,8 @@ async def backup_pg_api_list(
 ) -> PaginatedResponse[BackupTaskResponse]:
     """List pgBackRest backup tasks.
 
-    ``limit`` is capped because each listed task triggers a follow-up
-    history fetch in :func:`get_backup_pg_api_task_responses`; an
-    unbounded ``limit`` would amplify fan-out to the Tasks API.
+    ``limit`` is capped to keep the page size bounded; latest statuses for the
+    page are resolved in a single batched round-trip to the Tasks API.
     """
     return await get_backup_pg_api_task_responses(
         tasks_api,

@@ -63,6 +63,8 @@ async def get_task_latest_status(
     :return: The latest known task status, or ``None`` if no history exists.
     :rtype: TaskHistoryStatusEnum | None
     :raises ValueError: If the latest status is outside ``TaskHistoryStatusEnum``.
+    :raises HTTPException: Propagated from ``tasks_api.get()`` on an upstream
+        error response; callers that must tolerate it guard the call site.
     """
     response = await tasks_api.get(f"/{task_name}/history/", params=params)
     return extract_latest_task_status(response["items"])
@@ -85,6 +87,9 @@ async def batch_get_latest_statuses(
     :type names: Sequence[str]
     :return: A mapping from each requested name to its latest status or ``None``.
     :rtype: dict[str, TaskHistoryStatusEnum | None]
+    :raises ValueError: If the batch response carries a status outside
+        ``TaskHistoryStatusEnum`` (the enum coercion runs outside the
+        per-chunk failure guard).
     """
     if not names:
         return {}
