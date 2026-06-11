@@ -179,8 +179,8 @@ END_EPOCH=$((INPUT_EPOCH + (MINUTES_ARG * 60)))
 # Filter the log file using awk.
 #
 # HAProxy syslog lines start with one of two timestamp formats:
-#   ISO 8601:   first 19 chars  "2023-10-27T15:30:00"
-#   BSD syslog: first 15 chars  "Oct 27 15:30:00"
+#   ISO 8601 / RFC3339: first field, e.g. "2023-10-27T15:30:00.123456+00:00"
+#   BSD syslog:          first 15 chars, e.g. "Oct 27 15:30:00"
 #
 # We try ISO first; if date(1) cannot parse it we fall back to BSD.
 # Lines with no recognisable timestamp (continuation / stack-trace lines)
