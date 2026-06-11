@@ -463,7 +463,9 @@ class TestGetOrCreate:
         original_first = UniqueKeyManager.first.__func__
         calls = {"count": 0}
 
-        async def first_returns_none_then_delegates(cls, *args, **kwargs):  # noqa: ANN
+        async def first_returns_none_then_delegates(
+            cls: type[UniqueKeyManager], *args: object, **kwargs: object
+        ) -> UniqueKeyModel | None:
             calls["count"] += 1
             if calls["count"] == 1:
                 return None
@@ -523,7 +525,9 @@ class TestGetOrCreate:
         original_first = UniqueKeyUUIDManager.first.__func__
         calls = {"count": 0}
 
-        async def first_returns_none_then_delegates(cls, *args, **kwargs):  # noqa: ANN
+        async def first_returns_none_then_delegates(
+            cls: type[UniqueKeyUUIDManager], *args: object, **kwargs: object
+        ) -> UniqueKeyUUIDModel | None:
             calls["count"] += 1
             if calls["count"] == 1:
                 return None
@@ -580,7 +584,9 @@ class TestGetOrCreate:
         original_first = UniqueKeyManager.first.__func__
         calls = {"count": 0}
 
-        async def first_returns_none_then_delegates(cls, *args, **kwargs):  # noqa: ANN
+        async def first_returns_none_then_delegates(
+            cls: type[UniqueKeyManager], *args: object, **kwargs: object
+        ) -> UniqueKeyModel | None:
             calls["count"] += 1
             if calls["count"] == 1:
                 return None

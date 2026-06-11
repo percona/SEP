@@ -803,11 +803,16 @@ class BaseManager:
         :type instance_create: B
         :param filter_include: The set of fields of `instance_create` to be included in
             the search filter. Use None (default) for all fields.
+        :type filter_include: set[str] | None
         :param extra_fields: Additional fields to be set on the created instance.
         :type extra_fields: Any
         :return: The existing or newly created instance of `cls.Model`, and a bool
             specifying whether a new instance was created.
         :rtype: tuple[T, bool]
+        :raises HTTPBadRequestException: If a ``DatabaseError`` occurs during the
+            insert commit.
+        :raises RuntimeError: If the post-conflict refetch matches no row, meaning
+            ``filter_include`` reaches outside a unique constraint.
         """
         existent_instance = await cls.first(
             session, **instance_create.model_dump(include=filter_include)
@@ -836,8 +841,14 @@ class BaseManager:
         statement = idempotent_insert(session.get_bind().name, cls.Model).values(
             **values
         )
-        result = await cls._exec(session, statement)
-        await session.commit()
+        try:
+            result = await cls._exec(session, statement)
+            await session.commit()
+        except DatabaseError:
+            logger.exception(
+                "DatabaseError in get_or_create for %s", cls.Model.__name__
+            )
+            raise HTTPBadRequestException from None
         created = result.rowcount == 1
         # The row is guaranteed to exist now (ours or the concurrent winner's). A core
         # insert does not populate the constructed instance's PK, so we must refetch.

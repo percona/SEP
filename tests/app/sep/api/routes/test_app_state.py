@@ -227,7 +227,9 @@ class TestUpdateAppState:
         original_first = AppStateManager.first.__func__
         calls = {"count": 0}
 
-        async def first_returns_none_then_delegates(cls, *args, **kwargs):  # noqa: ANN
+        async def first_returns_none_then_delegates(
+            cls: type[AppStateManager], *args: object, **kwargs: object
+        ) -> AppState | None:
             calls["count"] += 1
             if calls["count"] == 1:
                 return None
