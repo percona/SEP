@@ -9,7 +9,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { BuiltinRolesSelector } from './BuiltinRolesSelector';
+import { UserRolesEditor } from './UserRolesEditor';
+import type { RoleEntry } from './UserRolesEditor';
 import type { UserRow } from '../MumUserList';
 import type { RoleRow } from '../MumRoleList';
 import type { ButtonProps } from '@mui/material';
@@ -18,20 +19,18 @@ import type { TaskStreamState } from '../useTaskStream';
 
 const DEFAULT_DB = 'admin';
 
-type RoleItem = string | { role: string; db: string };
-
-const parseRoles = (roles: unknown): RoleItem[] => {
+const parseRoles = (roles: unknown, defaultDb = DEFAULT_DB): RoleEntry[] => {
   if (!Array.isArray(roles)) return [];
-  return roles
-    .map((role) => {
-      if (typeof role === 'string') return role;
-      if (role && typeof role === 'object') {
-        const r = role as Record<string, unknown>;
-        if (r['role'] || r['name']) return { role: String(r['role'] ?? r['name']), db: String(r['db'] ?? '') };
-      }
-      return null;
-    })
-    .filter((r): r is RoleItem => r !== null);
+  return (roles as unknown[]).flatMap((item) => {
+    if (typeof item === 'string' && item) return [{ role: item, db: defaultDb }];
+    if (item && typeof item === 'object') {
+      const r = item as Record<string, unknown>;
+      const role = String(r['role'] ?? r['name'] ?? '');
+      if (!role) return [];
+      return [{ role, db: String(r['db'] ?? defaultDb) }];
+    }
+    return [];
+  });
 };
 
 interface EditUserButtonProps {
@@ -39,7 +38,7 @@ interface EditUserButtonProps {
   selectedTarget: string;
   builtinRoles: string[];
   rolesData?: RoleRow[];
-  onSuccess?: (meta: { username: string; roles: unknown[]; db: string; target: string }) => void;
+  onSuccess?: (meta: { username: string; roles: RoleEntry[]; db: string; target: string }) => void;
   buttonProps?: Partial<ButtonProps>;
 }
 
@@ -61,36 +60,40 @@ export function EditUserButton({
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [roles, setRoles] = useState<RoleItem[]>([]);
-  const [rolesDb, setRolesDb] = useState(DEFAULT_DB);
+  const [roles, setRoles] = useState<RoleEntry[]>([]);
+  const [userDb, setUserDb] = useState(DEFAULT_DB);
   const [streamState, setStreamState] = useState<TaskStreamState>({ status: 'idle' });
 
   const onStateChange = useCallback((s: TaskStreamState) => {
     setStreamState(s);
     if (s.status === 'success') {
       setOpen(false);
-      onSuccess?.({ username, roles, db: rolesDb || DEFAULT_DB, target: selectedTarget });
+      onSuccess?.({ username, roles, db: userDb || DEFAULT_DB, target: selectedTarget });
     } else if (s.status === 'error') {
       setError(s.message);
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [username, roles, rolesDb, selectedTarget, onSuccess]);
+  }, [username, roles, userDb, selectedTarget, onSuccess]);
 
   const { stream } = useTaskStream({ onStateChange });
 
-  const initialValues = useMemo(() => ({
-    usernameValue: String(row?.['user'] ?? row?.['username'] ?? ''),
-    rolesValue: parseRoles(row?.['roles']),
-    dbValue: String(row?.['db'] ?? DEFAULT_DB),
-  }), [row]);
+  const initialValues = useMemo(() => {
+    const db = String(row?.['db'] ?? DEFAULT_DB);
+    return {
+      usernameValue: String(row?.['user'] ?? row?.['username'] ?? ''),
+      rolesValue: parseRoles(row?.['roles'], db),
+      dbValue: db,
+    };
+  }, [row]);
 
   const openDialog = () => {
     setUsername(initialValues.usernameValue);
     setRoles(initialValues.rolesValue);
-    setRolesDb(initialValues.dbValue);
+    setUserDb(initialValues.dbValue);
     setPassword('');
     setError(null);
+    setStreamState({ status: 'idle' });
     setOpen(true);
   };
 
@@ -103,11 +106,14 @@ export function EditUserButton({
     setLoading(true);
     setError(null);
     try {
-      const body: Record<string, unknown> = { target: selectedTarget, username, db: rolesDb || DEFAULT_DB, roles };
+      const body: Record<string, unknown> = {
+        target: selectedTarget,
+        username,
+        db: userDb || DEFAULT_DB,
+        roles,
+      };
       if (password) body['password'] = password;
-      // [MUM-REPLACE] begin — dispatch update-user task via SEP internal endpoint
       const resp = await apiClient.post('/plugins/mum/ui/update-user', body);
-      // [MUM-REPLACE] end
       const historyId = (resp.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
       stream(historyId?.['id'] as string);
     } catch (e) {
@@ -116,6 +122,8 @@ export function EditUserButton({
       setLoading(false);
     }
   };
+
+  const running = streamState.status === 'running' || loading;
 
   return (
     <>
@@ -129,24 +137,17 @@ export function EditUserButton({
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
+            disabled={running}
             helperText="Leave blank to keep existing password"
             fullWidth
           />
-          <BuiltinRolesSelector
+          <UserRolesEditor
             builtinRoles={builtinRoles}
             customRoles={customRoles}
             value={roles}
-            onChange={(v) => setRoles(v as RoleItem[])}
-            disabled={loading}
-          />
-          <TextField
-            label="Role database"
-            value={rolesDb}
-            onChange={(e) => setRolesDb(e.target.value)}
-            disabled={loading}
-            helperText="Database where roles apply (default admin)"
-            fullWidth
+            onChange={setRoles}
+            defaultDb={userDb}
+            disabled={running}
           />
           {streamState.status === 'running' && (
             <Typography variant="body2" color="text.secondary">Saving…</Typography>
@@ -158,9 +159,9 @@ export function EditUserButton({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDialog} disabled={loading}>Cancel</Button>
-          <Button onClick={handleSubmit} variant="contained" color="success" disabled={loading}>
-            {loading ? 'Saving…' : 'Save'}
+          <Button onClick={closeDialog} disabled={running}>Cancel</Button>
+          <Button onClick={handleSubmit} variant="contained" color="success" disabled={running}>
+            {running ? 'Saving…' : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>
