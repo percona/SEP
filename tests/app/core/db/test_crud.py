@@ -27,6 +27,7 @@ from sqlmodel.pool import StaticPool
 
 from app.core.db import BaseSQLModel
 from app.core.db.crud import BaseSQLModelManager
+from app.core.db.models import BaseUUIDSQLModel
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, PaginatedResponse, Pagination
 from app.core.utils import json_serializer
@@ -94,6 +95,21 @@ class UniqueKeyManager(BaseSQLModelManager):
     """Manager for the unique-keyed test model."""
 
     Model = UniqueKeyModel
+
+
+class UniqueKeyUUIDModel(BaseUUIDSQLModel, table=True):
+    """UUID-PK test model used for the ``get_or_create`` PK-preserved branch."""
+
+    __tablename__ = "test_unique_key_uuid"
+
+    key: str = SQLField(unique=True, index=True)
+    label: str = "default"
+
+
+class UniqueKeyUUIDManager(BaseSQLModelManager):
+    """Manager for the UUID-keyed test model."""
+
+    Model = UniqueKeyUUIDModel
 
 
 @pytest_asyncio.fixture(name="session")
@@ -469,4 +485,117 @@ class TestGetOrCreate:
         assert instance.id == winner_instance.id
         assert instance.label == "winner"
         assert calls["count"] == CONFLICT_PATH_FIRST_CALLS
+        assert await UniqueKeyManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_creates_uuid_keyed_row(self, session: AsyncSession) -> None:
+        """A UUID-PK model keeps its factory-assigned PK on the upsert path."""
+        instance, created = await UniqueKeyUUIDManager.get_or_create(
+            session,
+            UniqueKeyUUIDModel(key="alpha", label="first"),
+            filter_include={"key"},
+        )
+
+        assert created is True
+        # default_factory(uuid4) supplies a non-null PK; the upsert must preserve it
+        # (the values.pop branch only fires for None autoincrement PKs).
+        assert instance.id is not None
+        assert instance.key == "alpha"
+        assert instance.created_at is not None
+        assert await UniqueKeyUUIDManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_uuid_conflict_refetches_winning_row_without_raising(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A UUID-keyed conflict resolves idempotently despite differing PKs.
+
+        Two racers generate distinct UUID PKs but share the unique business key, so
+        the conflict fires on ``key`` (not the PK). The loser must refetch the
+        winner's row and report ``created=False``.
+        """
+        winner_instance, _ = await UniqueKeyUUIDManager.get_or_create(
+            session,
+            UniqueKeyUUIDModel(key="gamma", label="winner"),
+            filter_include={"key"},
+        )
+
+        original_first = UniqueKeyUUIDManager.first.__func__
+        calls = {"count": 0}
+
+        async def first_returns_none_then_delegates(cls, *args, **kwargs):  # noqa: ANN
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return None
+            return await original_first(cls, *args, **kwargs)
+
+        monkeypatch.setattr(
+            UniqueKeyUUIDManager,
+            "first",
+            classmethod(first_returns_none_then_delegates),
+        )
+
+        instance, created = await UniqueKeyUUIDManager.get_or_create(
+            session,
+            UniqueKeyUUIDModel(key="gamma", label="loser"),
+            filter_include={"key"},
+        )
+
+        assert created is False
+        assert instance.id == winner_instance.id
+        assert instance.label == "winner"
+        assert await UniqueKeyUUIDManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_applies_extra_fields_on_insert(self, session: AsyncSession) -> None:
+        """``extra_fields`` are written to the upserted row, not dropped."""
+        instance, created = await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="delta"),
+            filter_include={"key"},
+            label="from-extra-fields",
+        )
+
+        assert created is True
+        assert instance.label == "from-extra-fields"
+        refetched = await UniqueKeyManager.first(session, key="delta")
+        assert refetched.label == "from-extra-fields"
+
+    @pytest.mark.asyncio
+    async def test_conflict_with_filter_outside_unique_constraint_raises(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A refetch that cannot match the winning row fails loud, not silently.
+
+        When ``filter_include`` covers a column outside the unique constraint that
+        differs between racers (here ``label``), the loser's refetch finds no row.
+        The helper must raise a descriptive error at the source rather than return
+        ``(None, False)`` and defer a confusing crash to the caller.
+        """
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="epsilon", label="winner"),
+        )
+
+        original_first = UniqueKeyManager.first.__func__
+        calls = {"count": 0}
+
+        async def first_returns_none_then_delegates(cls, *args, **kwargs):  # noqa: ANN
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return None
+            return await original_first(cls, *args, **kwargs)
+
+        monkeypatch.setattr(
+            UniqueKeyManager,
+            "first",
+            classmethod(first_returns_none_then_delegates),
+        )
+
+        with pytest.raises(RuntimeError, match="unique conflict"):
+            await UniqueKeyManager.get_or_create(
+                session,
+                UniqueKeyModel(key="epsilon", label="loser"),
+            )
+
         assert await UniqueKeyManager.count(session) == 1
