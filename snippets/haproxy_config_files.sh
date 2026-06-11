@@ -37,11 +37,7 @@ process_config_file() {
             [[ -z $line ]] && continue
             if [[ $line =~ ^include[[:space:]]+(.+) ]]; then
                 included_glob="${BASH_REMATCH[1]}"
-                # HAProxy `include` supports glob patterns; avoid unquoted expansion and
-                # reject any shell metacharacters to prevent command injection from config contents.
-                if [[ $included_glob == *'$'* || $included_glob == *'`'* || $included_glob == *'"'* || $included_glob == *"'"* ]]; then
-                    continue
-                fi
+                # HAProxy `include` supports glob patterns; expand the glob without evaluating it as shell code.
                 while IFS= read -r included_file; do
                     process_config_file "$included_file"
                 done < <(compgen -G "$included_glob" || true)
