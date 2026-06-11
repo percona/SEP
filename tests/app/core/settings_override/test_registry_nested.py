@@ -21,16 +21,21 @@ from datetime import timedelta
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.settings_override.registry import (
     _clear_cached_properties,
     _resolve_field_in_model,
+    canonical_override_key,
     chain_has_explicit_not_overridable,
     coerce_nested_field_value,
     is_hot_reloadable,
     is_nested_overridable_parent,
+    iter_nested_leaf_keys,
     nested_overridable_field,
     not_overridable_field,
+    ReloadClassification,
     resolve_nested_field,
+    resolve_nested_field_metadata,
 )
 from app.sep.config import SEPSettings, SessionOptions
 from app.tasks.config import TasksSettings
@@ -82,8 +87,6 @@ def test_resolve_field_in_model_uppercase_alias_match() -> None:
     ``SecurityHeadersOptions`` is a ``BaseCaseInsensitiveModel`` whose
     attribute names are lowercase but whose aliases are uppercase.
     """
-    from app.core.middleware.security_headers import SecurityHeadersOptions
-
     resolved = _resolve_field_in_model(SecurityHeadersOptions, "X_FRAME_OPTIONS_DENY")
     assert resolved is not None
     canonical, _ = resolved
@@ -92,8 +95,6 @@ def test_resolve_field_in_model_uppercase_alias_match() -> None:
 
 def test_resolve_field_in_model_lowercase_fallback() -> None:
     """A lowercase segment resolves to the lowercase canonical attribute name."""
-    from app.core.middleware.security_headers import SecurityHeadersOptions
-
     resolved = _resolve_field_in_model(SecurityHeadersOptions, "x_frame_options_deny")
     assert resolved is not None
     canonical, _ = resolved
@@ -242,3 +243,74 @@ def test_is_nested_overridable_parent_false_for_plain_field() -> None:
 def test_is_nested_overridable_parent_false_for_missing_field() -> None:
     """An unknown field is not nested-overridable."""
     assert is_nested_overridable_parent(_Outer, "DOES_NOT_EXIST") is False
+
+
+def test_iter_nested_leaf_keys_session_yields_all_leaves() -> None:
+    """``SESSION`` enumerates its five leaves with canonical uppercase chains."""
+    leaves = dict(iter_nested_leaf_keys(SEPSettings, "SESSION"))
+    assert set(leaves) == {
+        "SESSION__COOKIE_NAME",
+        "SESSION__MAX_AGE",
+        "SESSION__SAMESITE",
+        "SESSION__SECURE",
+        "SESSION__PATH",
+    }
+    for key, chain in leaves.items():
+        assert "__".join(chain) == key
+        assert canonical_override_key(SEPSettings, key) == key
+
+
+def test_iter_nested_leaf_keys_security_headers_descends_two_levels() -> None:
+    """``SECURITY_HEADERS`` enumerates lowercase-child leaves, descending two levels."""
+    leaves = dict(iter_nested_leaf_keys(TasksSettings, "SECURITY_HEADERS"))
+    assert set(leaves) == {
+        "SECURITY_HEADERS__x_frame_options_deny",
+        "SECURITY_HEADERS__x_content_type_options_nosniff",
+        "SECURITY_HEADERS__referrer_policy_same_origin",
+        "SECURITY_HEADERS__content_security_policy_strict",
+        "SECURITY_HEADERS__content_security_policy_exclude_paths",
+        "SECURITY_HEADERS__strict_transport_security__max_age",
+        "SECURITY_HEADERS__strict_transport_security__include_sub_domains",
+        "SECURITY_HEADERS__strict_transport_security__preload",
+        "SECURITY_HEADERS__permissions_policy__allow_self",
+        "SECURITY_HEADERS__permissions_policy__allow_all",
+    }
+    for key, chain in leaves.items():
+        assert "__".join(chain) == key
+        assert canonical_override_key(TasksSettings, key) == key
+
+
+def test_iter_nested_leaf_keys_scalar_field_yields_nothing() -> None:
+    """A scalar (non-submodel) field enumerates to no leaves."""
+    assert list(iter_nested_leaf_keys(_Outer, "PLAIN")) == []
+
+
+def test_iter_nested_leaf_keys_unknown_parent_yields_nothing() -> None:
+    """An unknown parent field name enumerates to no leaves."""
+    assert list(iter_nested_leaf_keys(_Outer, "DOES_NOT_EXIST")) == []
+
+
+def test_iter_nested_leaf_keys_descends_synthetic_submodel() -> None:
+    """Recursion descends through a nested submodel to its grandchild leaf."""
+    leaves = dict(iter_nested_leaf_keys(_Outer, "NESTED"))
+    assert set(leaves) == {
+        "NESTED__BARE",
+        "NESTED__LOCKED",
+        "NESTED__LOCKED_SUB__VALUE",
+    }
+    assert leaves["NESTED__LOCKED_SUB__VALUE"] == ("NESTED", "LOCKED_SUB", "VALUE")
+
+
+def test_resolve_nested_field_metadata_reflects_chain_not_overridable() -> None:
+    """A leaf under a ``not_overridable_field`` intermediate reports NOT_OVERRIDABLE.
+
+    The enumerated-leaf reload classification must match the chain check that
+    gates PATCH/DELETE, so a leaf is never advertised as editable when an
+    intermediate in its chain is locked.
+    """
+    open_leaf = resolve_nested_field_metadata(_Outer, "NESTED__BARE")
+    locked_leaf = resolve_nested_field_metadata(_Outer, "NESTED__LOCKED_SUB__VALUE")
+    assert open_leaf is not None
+    assert locked_leaf is not None
+    assert open_leaf.reload is ReloadClassification.HOT
+    assert locked_leaf.reload is ReloadClassification.NOT_OVERRIDABLE
