@@ -1007,8 +1007,7 @@ def iter_nested_leaf_keys(
     :type settings_cls: type[BaseModel]
     :param parent_field_name: The top-level field whose leaves to enumerate.
     :type parent_field_name: str
-    :return: An iterator of ``(canonical_key, segment_chain)`` pairs, one per
-        nested leaf.
+    :yield: A ``(canonical_key, segment_chain)`` pair for one nested leaf.
     :rtype: Iterator[tuple[str, tuple[str, ...]]]
     """
     parent_info = settings_cls.model_fields.get(parent_field_name)
@@ -1030,8 +1029,7 @@ def _iter_leaf_chains(
     :param prefix: The canonical segment chain accumulated from the parent down
         to (but excluding) ``model_cls``'s own fields.
     :type prefix: tuple[str, ...]
-    :return: An iterator of ``(canonical_key, segment_chain)`` pairs, one per
-        leaf reachable from ``model_cls``.
+    :yield: A ``(key, chain)`` pair for one leaf reachable from ``model_cls``.
     :rtype: Iterator[tuple[str, tuple[str, ...]]]
     """
     for name, info in model_cls.model_fields.items():
