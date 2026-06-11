@@ -220,7 +220,7 @@ def collect_installed_packages() -> list[dict[str, str]] | None:
     else:
         return None
     try:
-        proc = subprocess.run(  # noqa: S603 - fixed argv, no shell, no user input
+        proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
