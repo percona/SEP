@@ -9,8 +9,6 @@
 # parameters: []
 # ---
 
-set -e
-
 # Track processed files to avoid infinite loops
 declare -A PROCESSED_FILES
 
@@ -30,10 +28,12 @@ process_config_file() {
         echo "----------------------"
         # Parse for HAProxy native include directives (supported since 2.4)
         while IFS= read -r line; do
-            line="$(echo "$line" | sed 's/^ *//;s/ *$//')"
+            line="${line#"${line%%[! ]*}"}"
+            line="${line%"${line##*[! ]}"}"
             # Strip inline comments and skip empty/comment-only lines.
             line="${line%%#*}"
-            line="$(echo "$line" | sed 's/^ *//;s/ *$//')"
+            line="${line#"${line%%[! ]*}"}"
+            line="${line%"${line##*[! ]}"}"
             [[ -z $line ]] && continue
             if [[ $line =~ ^include[[:space:]]+(.+) ]]; then
                 included_glob="${BASH_REMATCH[1]}"
