@@ -86,7 +86,7 @@ class SystemFactsSyncer(BaseTaskSyncer):
         }
     )
     _host_facts_cache: dict[int, dict[str, Any]] = {}
-    _service_facts_cache: dict[str, dict[str, Any]] = {}
+    _service_facts_cache: dict[int, dict[str, Any]] = {}
 
     @property
     def payload_path(self) -> Path:
@@ -273,11 +273,15 @@ class SystemFactsSyncer(BaseTaskSyncer):
         host_facts = data.get("host")
         if isinstance(host_facts, dict) and host_facts:
             self._host_facts_cache[created_node.id] = host_facts
-        services = data.get("services")
-        if isinstance(services, dict):
-            for address, fact in services.items():
-                if isinstance(fact, dict):
-                    self._service_facts_cache[address] = fact
+        collected = data.get("services")
+        if isinstance(collected, dict):
+            # The payload keys facts by address; cache them by the unique service id so a
+            # later sibling or failed collection cannot read another service's fact.
+            service_by_address = {service.address: service for service in services}
+            for address, fact in collected.items():
+                service = service_by_address.get(address)
+                if service is not None and isinstance(fact, dict):
+                    self._service_facts_cache[service.id] = fact
         return created_node
 
     def _build_host_observation(
@@ -379,7 +383,7 @@ class SystemFactsSyncer(BaseTaskSyncer):
             (the service is then skipped, never written with an empty version).
         :rtype: SystemFactsService | None
         """
-        fact = self._service_facts_cache.get(created_service.address)
+        fact = self._service_facts_cache.pop(created_service.id, None)
         if not fact or not fact.get("db_engine_version"):
             fact = await self._collect_single_service(created_service)
         if not fact or not fact.get("db_engine_version"):

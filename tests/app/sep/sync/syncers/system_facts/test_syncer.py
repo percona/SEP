@@ -176,9 +176,7 @@ class TestFetchNode:
             mock_syncer._host_facts_cache[created_node.id]["os_version"] == OS_VERSION
         )
         assert (
-            mock_syncer._service_facts_cache[created_service.address][
-                "db_engine_version"
-            ]
+            mock_syncer._service_facts_cache[created_service.id]["db_engine_version"]
             == MYSQL_VERSION
         )
 
@@ -213,7 +211,7 @@ class TestFetchNode:
         assert updated is not None  # must NOT skip the whole node
         assert json.loads(wait.await_args.kwargs["config"])["collect_host"] is False
         assert created_node.id not in mock_syncer._host_facts_cache
-        assert created_service.address in mock_syncer._service_facts_cache
+        assert created_service.id in mock_syncer._service_facts_cache
 
     @pytest.mark.asyncio
     async def test_fetch_node_colocated_proxy_only_collects_host(
@@ -373,7 +371,7 @@ class TestFetchService:
         self, mock_syncer, created_service
     ):
         """The cached engine version is surfaced on the carrier."""
-        mock_syncer._service_facts_cache[created_service.address] = {
+        mock_syncer._service_facts_cache[created_service.id] = {
             "db_engine_version": MYSQL_VERSION,
             "collected_at": COLLECTED_AT,
         }
@@ -381,6 +379,46 @@ class TestFetchService:
         assert isinstance(svc, SystemFactsService)
         assert svc.db_engine_version == MYSQL_VERSION
         assert svc.collected_at == COLLECTED_AT
+
+    @pytest.mark.asyncio
+    async def test_fetch_service_consumes_cache_entry(
+        self, mock_syncer, created_service
+    ):
+        """A cache hit is popped so a later failed collection cannot resurface it."""
+        mock_syncer._service_facts_cache[created_service.id] = {
+            "db_engine_version": MYSQL_VERSION,
+            "collected_at": COLLECTED_AT,
+        }
+        await mock_syncer.fetch_service(created_service)
+        assert created_service.id not in mock_syncer._service_facts_cache
+
+    @pytest.mark.asyncio
+    async def test_fetch_service_stale_address_not_reused(
+        self, mock_syncer, created_node, created_service, mocker
+    ):
+        """A sibling sharing an address never reads another service's cached fact.
+
+        Service A's fact is cached by A's id. Service B shares A's address but has its own
+        id; its fallback collection yields nothing, so B must resolve to ``None`` rather
+        than reusing A's version.
+        """
+        service_b = _make_service(
+            ServiceTypeEnum.MYSQL, MYSQL_PORT, created_node, created_service.id + 1
+        )
+        mock_syncer._service_facts_cache[created_service.id] = {
+            "db_engine_version": MYSQL_VERSION,
+            "collected_at": COLLECTED_AT,
+        }
+        mocker.patch.object(
+            SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {NODE_NAME: NODE_ADDRESS}
+        mocker.patch.object(
+            SystemFactsSyncer, "wait_for_task_output", new_callable=AsyncMock
+        ).return_value = TaskRunResult(1, json.dumps({"host": None, "services": {}}))
+
+        assert await mock_syncer.fetch_service(service_b) is None
+        # Service A's fact stays untouched (B never popped it).
+        assert created_service.id in mock_syncer._service_facts_cache
 
     @pytest.mark.asyncio
     async def test_fetch_service_cache_miss_collects_single_service(

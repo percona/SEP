@@ -15,25 +15,25 @@
 
 """Define the payload for system facts Sync tasks.
 
-This standalone script runs on the executor host via the ``run-python`` task. It
-collects best-effort host facts (OS version, installed packages, EOL-relevant config)
-when co-located with the node, and the database engine version for each requested
-service, emitting a single JSON document to stdout::
+Standalone script run on the executor host via the ``run-python`` task. Collects
+best-effort host facts (OS version, installed packages, EOL-relevant config) when
+co-located with the node, plus the database engine version per requested service, and
+emits one JSON document to stdout::
 
     {"host": {...} | null, "services": {"<address>": {"db_engine_version", "collected_at"}}}
 
-Every collection step is best-effort: a failure to read a host fact or reach a single
-service is logged to stderr and that key is omitted -- the script never raises and always
-exits cleanly so a partial collection still produces a usable snapshot.
-
-Database drivers (``pymysql``, ``psycopg``, ``pymongo``) and ``myloginpath`` are imported
-lazily inside their collectors so the module imports without them present.
+Each step is best-effort: a failed host fact or unreachable service is logged to stderr
+and its key omitted; the script never raises, so a partial collection still yields a
+usable snapshot. Database drivers (``pymysql``, ``psycopg``, ``pymongo``) and
+``myloginpath`` are imported lazily so the module imports without them present.
 """
 
 import argparse
 import json
+import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -42,6 +42,43 @@ from datetime import datetime, UTC
 from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlsplit
+
+#: Diagnostics logger with its own stderr handler (propagation off) so log lines never
+#: mix into the JSON result document carried on stdout.
+logger = logging.getLogger("system_facts.payload")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+if not logger.handlers:
+    _stderr_handler = logging.StreamHandler(sys.stderr)
+    _stderr_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(_stderr_handler)
+
+#: ``scheme://user[:password]@`` userinfo prefix of a connection URI.
+_URI_USERINFO_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)[^/\s@]+@")
+#: Sensitive ``key=value`` URI query params (``authMechanismProperties`` may carry an
+#: AWS session token; ``password`` may appear as a query param, not just userinfo).
+_URI_QUERY_SECRET_RE = re.compile(
+    r"(?i)\b(?P<key>password|passwd|authmechanismproperties)=(?P<val>[^&\s\"']+)"
+)
+
+
+def _redact_secrets(text: str) -> str:
+    """Mask credentials embedded in connection-string URIs within ``text``.
+
+    Replace the ``user:password@`` userinfo of any ``scheme://...@`` URI with ``***@``,
+    and mask the value of sensitive query params (``password``/``passwd`` and
+    ``authMechanismProperties``), so driver exceptions that echo a connection string
+    cannot leak credentials to stderr (and onward to task/application logs).
+
+    :param text: The text that may contain a connection URI.
+    :type text: str
+    :return: The text with any URI userinfo and sensitive query values masked.
+    :rtype: str
+    """
+    text = _URI_USERINFO_RE.sub(r"\g<scheme>***@", text)
+    return _URI_QUERY_SECRET_RE.sub(r"\g<key>=***", text)
+
 
 #: Path to the OS release file (module-level so tests can redirect it).
 OS_RELEASE_PATH = Path("/etc/os-release")
@@ -191,10 +228,10 @@ def collect_installed_packages() -> list[dict[str, str]] | None:
             check=False,
         )
     except (OSError, subprocess.SubprocessError) as err:
-        print(f"Failed to query installed packages: {err}", file=sys.stderr)
+        logger.warning("Failed to query installed packages: %s", _redact_secrets(str(err)))
         return None
     if proc.returncode != 0:
-        print(f"Package query exited with {proc.returncode}", file=sys.stderr)
+        logger.warning("Package query exited with %s", proc.returncode)
         return None
     packages = []
     for line in proc.stdout.splitlines():
@@ -251,7 +288,7 @@ def _mysql_creds(address: str) -> dict[str, str]:
     try:
         content = myloginpath.read()
     except (OSError, TypeError) as err:
-        print(f"Cannot read login path file: {err}", file=sys.stderr)
+        logger.warning("Cannot read login path file: %s", _redact_secrets(str(err)))
         return {}
     if not isinstance(content, str):
         return {}
@@ -259,7 +296,7 @@ def _mysql_creds(address: str) -> dict[str, str]:
     try:
         parser.read_string(content, source=".mylogin.cnf")
     except ConfigParserError as err:
-        print(f"Failed to parse login path file: {err}", file=sys.stderr)
+        logger.warning("Failed to parse login path file: %s", _redact_secrets(str(err)))
         return {}
 
     def _creds(section: str) -> dict[str, str]:
@@ -340,11 +377,64 @@ def _collect_postgresql_version(address: str) -> str | None:
     return row[0] if row else None
 
 
+#: URI query options forwarded as MongoDB auth/credential kwargs. Limited to auth-relevant
+#: keys so list-valued options (e.g. read-preference tags) are never splatted into
+#: ``MongoClient``; verification-disabling options (``tlsAllowInvalidCertificates``,
+#: ``tlsInsecure``) are deliberately excluded so a stray URI cannot downgrade TLS.
+_MONGO_AUTH_OPTION_KEYS = frozenset(
+    {
+        "authsource",
+        "authmechanism",
+        "authmechanismproperties",
+        "tls",
+        "ssl",
+        "tlscafile",
+        "tlscertificatekeyfile",
+    }
+)
+
+
+def _mongo_connect_params(address: str) -> tuple[tuple[str, ...], dict[str, Any]]:
+    """Build the positional/keyword arguments for a MongoDB client connection.
+
+    A connection URI in ``SEP_MONGO_URI``/``MONGO_URI`` supplies *credentials and auth
+    options only* -- the host and port always come from the requested service ``address``
+    so that, in a multi-instance inventory, each service is probed at its own address
+    rather than every service hitting the URI's host. A ``mongodb+srv://`` URI cannot be
+    repointed to a fixed host/port (its target is DNS-derived), so it is used verbatim.
+
+    :param address: The service address in ``host[:port]`` form.
+    :type address: str
+    :return: A ``(args, kwargs)`` pair to pass to ``pymongo.MongoClient``.
+    :rtype: tuple[tuple[str, ...], dict[str, Any]]
+    """
+    host, port = parse_host_port(address, default_port=DefaultPort.MONGODB)
+    uri = os.environ.get("SEP_MONGO_URI") or os.environ.get("MONGO_URI")
+    if not uri:
+        return (), {"host": host, "port": port}
+    split = urlsplit(uri)
+    if split.scheme == "mongodb+srv":
+        # SRV target is DNS-derived, not repointable. Use it only when its host matches
+        # the requested service; otherwise it is a different cluster -- connect plainly.
+        if split.hostname == host:
+            return (uri,), {}
+        return (), {"host": host, "port": port}
+    kwargs: dict[str, Any] = {"host": host, "port": port}
+    if split.username:
+        kwargs["username"] = unquote(split.username)
+    if split.password:
+        kwargs["password"] = unquote(split.password)
+    for key, values in parse_qs(split.query).items():
+        if key.lower() in _MONGO_AUTH_OPTION_KEYS and values:
+            kwargs[key] = values[0]
+    return (), kwargs
+
+
 def _collect_mongodb_version(address: str) -> str | None:
     """Connect to a MongoDB service and return its engine version.
 
-    Uses a connection URI from ``SEP_MONGO_URI``/``MONGO_URI`` when set, otherwise the
-    service host and port directly.
+    Connects to the requested ``address``; a ``SEP_MONGO_URI``/``MONGO_URI`` env var, when
+    set, supplies credentials and auth options (see :func:`_mongo_connect_params`).
 
     :param address: The service address in ``host[:port]`` form.
     :type address: str
@@ -353,14 +443,10 @@ def _collect_mongodb_version(address: str) -> str | None:
     """
     import pymongo
 
-    timeout_ms = DB_CONNECT_TIMEOUT * 1000
-    if uri := (os.environ.get("SEP_MONGO_URI") or os.environ.get("MONGO_URI")):
-        client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=timeout_ms)
-    else:
-        host, port = parse_host_port(address, default_port=DefaultPort.MONGODB)
-        client = pymongo.MongoClient(
-            host=host, port=port, serverSelectionTimeoutMS=timeout_ms
-        )
+    args, kwargs = _mongo_connect_params(address)
+    client = pymongo.MongoClient(
+        *args, serverSelectionTimeoutMS=DB_CONNECT_TIMEOUT * 1000, **kwargs
+    )
     try:
         info = client.admin.command("buildInfo")
     finally:
@@ -394,9 +480,11 @@ def collect_service_version(address: str, service_type: str | None) -> str | Non
     try:
         return collectors[engine](address)
     except Exception as err:  # noqa: BLE001 - best-effort collection, never fatal
-        print(
-            f"Failed to collect version for {address} ({service_type}): {err}",
-            file=sys.stderr,
+        logger.warning(
+            "Failed to collect version for %s (%s): %s",
+            address,
+            service_type,
+            _redact_secrets(str(err)),
         )
     return None
 
@@ -417,10 +505,10 @@ def main() -> None:
     try:
         config = json.loads(args.config.read_text(encoding="utf-8"))
     except (OSError, ValueError) as err:
-        print(f"Cannot read config file: {err}", file=sys.stderr)
+        logger.warning("Cannot read config file: %s", _redact_secrets(str(err)))
         config = {}
     if not isinstance(config, dict):
-        print("Config is not a JSON object; treating as empty.", file=sys.stderr)
+        logger.warning("Config is not a JSON object; treating as empty.")
         config = {}
 
     result: dict[str, Any] = {"host": None, "services": {}}

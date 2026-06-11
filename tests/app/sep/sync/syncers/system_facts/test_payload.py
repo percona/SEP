@@ -26,6 +26,7 @@ from app.sep.sync.syncers.system_facts.payload import (
     _collect_mysql_version,
     _collect_postgresql_version,
     _mysql_creds,
+    _redact_secrets,
     collect_host_facts,
     collect_installed_packages,
     collect_os_version,
@@ -289,6 +290,76 @@ class TestServiceVersion:
         """A service entry with an address but no type is not probed."""
         assert collect_service_version(MYSQL_ADDRESS, None) is None
 
+    def test_collector_error_redacts_uri_credentials(self, mocker, caplog):
+        """A collector error echoing a connection URI never logs the password."""
+        uri = "mongodb://admin:s3cret@host:27017/db"
+        mocker.patch(
+            f"{MODULE}._collect_mongodb_version",
+            side_effect=RuntimeError(f"auth failed for {uri}"),
+        )
+        # The payload logger does not propagate to root, so attach caplog's handler
+        # directly to capture its records.
+        payload_module.logger.addHandler(caplog.handler)
+        try:
+            assert collect_service_version(MONGO_ADDRESS, "mongodb") is None
+        finally:
+            payload_module.logger.removeHandler(caplog.handler)
+        assert "s3cret" not in caplog.text
+        assert "mongodb://***@host:27017/db" in caplog.text
+
+
+class TestRedactSecrets:
+    """Test the connection-URI credential scrubber."""
+
+    def test_masks_user_and_password(self):
+        """A ``user:password@`` userinfo is replaced with ``***@``."""
+        result = _redact_secrets("conn mongodb://admin:s3cret@host:27017 failed")
+        assert "s3cret" not in result
+        assert "admin" not in result
+        assert "mongodb://***@host:27017" in result
+
+    def test_masks_user_only(self):
+        """A ``user@`` userinfo with no password is still masked."""
+        assert _redact_secrets("postgresql://bob@db:5432") == "postgresql://***@db:5432"
+
+    def test_masks_srv_scheme(self):
+        """The ``mongodb+srv://`` scheme is recognised and masked."""
+        assert (
+            _redact_secrets("mongodb+srv://u:p@cluster/")
+            == "mongodb+srv://***@cluster/"
+        )
+
+    def test_leaves_bare_address_unchanged(self):
+        """A bare ``host:port`` with no scheme or userinfo is untouched."""
+        assert (
+            _redact_secrets("cannot reach 10.0.0.5:27017")
+            == "cannot reach 10.0.0.5:27017"
+        )
+
+    def test_leaves_plain_text_unchanged(self):
+        """Text with no URI is returned verbatim."""
+        assert _redact_secrets("connection timed out") == "connection timed out"
+
+    def test_masks_password_query_param(self):
+        """A ``password=`` query-string value is masked."""
+        result = _redact_secrets("mongodb://host/?password=s3cret&authSource=admin")
+        assert "s3cret" not in result
+        assert "password=***" in result
+        assert "authSource=admin" in result
+
+    def test_masks_auth_mechanism_properties(self):
+        """``authMechanismProperties`` (may carry an AWS session token) is masked."""
+        result = _redact_secrets(
+            "mongodb://host/?authMechanismProperties=AWS_SESSION_TOKEN:tok123"
+        )
+        assert "tok123" not in result
+        assert "authMechanismProperties=***" in result
+
+    def test_query_secret_masking_is_case_insensitive(self):
+        """The query-param key match ignores case."""
+        result = _redact_secrets("mongodb://host/?PassWord=s3cret")
+        assert "s3cret" not in result
+
 
 class TestMysqlVersionCollector:
     """Test the MySQL version collector's connect/query/row handling."""
@@ -380,13 +451,94 @@ class TestMongodbVersionCollector:
         kwargs = pymongo.MongoClient.call_args.kwargs
         assert (kwargs["host"], kwargs["port"]) == ("10.0.0.5", 27017)
 
-    def test_uses_uri_env_when_set(self, monkeypatch):
-        """A ``SEP_MONGO_URI`` env var is used in place of host/port."""
+    def test_uri_supplies_creds_but_connects_to_requested_address(self, monkeypatch):
+        """A non-SRV URI supplies credentials; host/port come from the requested address.
+
+        The URI's own host (``uri-host``) must be ignored so each service is probed at its
+        own address rather than every service hitting the URI's host.
+        """
         pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
-        monkeypatch.setenv("SEP_MONGO_URI", "mongodb://user@host:27017/")
+        monkeypatch.setenv(
+            "SEP_MONGO_URI", "mongodb://admin:s3cret@uri-host:27017/?authSource=admin"
+        )
         _collect_mongodb_version(MONGO_ADDRESS)
-        assert pymongo.MongoClient.call_args.args[0] == "mongodb://user@host:27017/"
+        kwargs = pymongo.MongoClient.call_args.kwargs
+        assert (kwargs["host"], kwargs["port"]) == ("10.0.0.5", 27017)
+        assert kwargs["username"] == "admin"
+        assert kwargs["password"] == "s3cret"
+        assert kwargs["authSource"] == "admin"
+        assert pymongo.MongoClient.call_args.args == ()
+
+    def test_uri_credentials_are_percent_decoded(self, monkeypatch):
+        """Percent-encoded credentials in the URI are decoded before connecting."""
+        pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
+        monkeypatch.setenv("SEP_MONGO_URI", "mongodb://user%40corp:p%40ss@uri-host/")
+        _collect_mongodb_version(MONGO_ADDRESS)
+        kwargs = pymongo.MongoClient.call_args.kwargs
+        assert kwargs["username"] == "user@corp"
+        assert kwargs["password"] == "p@ss"
+
+    def test_srv_uri_used_verbatim_when_host_matches(self, monkeypatch):
+        """An SRV URI whose host matches the requested address is used verbatim."""
+        pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
+        srv_uri = "mongodb+srv://u:p@cluster.example.net/"
+        monkeypatch.setenv("SEP_MONGO_URI", srv_uri)
+        _collect_mongodb_version("cluster.example.net:27017")
+        assert pymongo.MongoClient.call_args.args[0] == srv_uri
         assert pymongo.MongoClient.call_args.kwargs.get("host") is None
+
+    def test_srv_uri_host_mismatch_connects_plainly(self, monkeypatch):
+        """An SRV URI for a different host is ignored: connect plainly, no URI creds.
+
+        The URI targets a different cluster, so reusing it would misattribute that
+        cluster's version to this service.
+        """
+        pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
+        monkeypatch.setenv("SEP_MONGO_URI", "mongodb+srv://u:p@cluster.example.net/")
+        _collect_mongodb_version("other-host:27017")
+        kwargs = pymongo.MongoClient.call_args.kwargs
+        assert (kwargs["host"], kwargs["port"]) == ("other-host", 27017)
+        assert "username" not in kwargs
+        assert "password" not in kwargs
+        assert pymongo.MongoClient.call_args.args == ()
+
+    def test_tls_allow_invalid_certificates_not_forwarded(self, monkeypatch):
+        """A ``tlsAllowInvalidCertificates`` URI option is dropped, not forwarded.
+
+        Forwarding it would disable certificate verification. Safe TLS options
+        (``tlsCAFile``) are still carried over.
+        """
+        pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
+        monkeypatch.setenv(
+            "SEP_MONGO_URI",
+            "mongodb://admin:s3cret@uri-host:27017/"
+            "?tlsAllowInvalidCertificates=true&tlsCAFile=/etc/ca.pem",
+        )
+        _collect_mongodb_version(MONGO_ADDRESS)
+        kwargs = pymongo.MongoClient.call_args.kwargs
+        assert "tlsAllowInvalidCertificates" not in kwargs
+        assert kwargs["tlsCAFile"] == "/etc/ca.pem"
+
+    def test_multi_service_probes_each_own_address(self, monkeypatch):
+        """With one shared URI, distinct services are each probed at their own port."""
+        pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
+        monkeypatch.setenv("SEP_MONGO_URI", "mongodb://admin:s3cret@uri-host:27017/")
+        _collect_mongodb_version("10.0.0.5:27017")
+        _collect_mongodb_version("10.0.0.5:27018")
+        ports = [call.kwargs["port"] for call in pymongo.MongoClient.call_args_list]
+        assert ports == [27017, 27018]
+
+    def test_non_auth_uri_options_are_not_forwarded(self, monkeypatch):
+        """Non-auth URI options (e.g. readPreferenceTags) are not splatted as kwargs."""
+        pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
+        monkeypatch.setenv(
+            "SEP_MONGO_URI",
+            "mongodb://admin:s3cret@uri-host:27017/?readPreferenceTags=dc:ny&authSource=admin",
+        )
+        _collect_mongodb_version(MONGO_ADDRESS)
+        kwargs = pymongo.MongoClient.call_args.kwargs
+        assert "readPreferenceTags" not in kwargs
+        assert kwargs["authSource"] == "admin"
 
 
 class TestMain:
