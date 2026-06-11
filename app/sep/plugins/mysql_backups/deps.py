@@ -15,7 +15,6 @@
 
 """Define dependencies for the Backups plugin."""
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -36,12 +35,12 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.framework import batch_get_latest_statuses, make_task_dep
 from app.sep.plugins.mysql_backups.models import (
     BackupConfig,
     BackupConfigAll,
@@ -232,26 +231,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 
-async def get_backups_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Backups plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Backups plugin. If the task does not exist or is not
-    owned by Backups, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Backups.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUPS)
-
+get_backups_task = make_task_dep(TaskOwner.BACKUPS)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
@@ -308,54 +288,6 @@ def build_mysql_backups_api_task_response(
     )
 
 
-def _extract_latest_task_status(
-    histories: list[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload.
-
-    The Tasks history endpoint does not accept an ``order_by`` query-string
-    override; ``get_backups_task_status`` requests ``limit=1`` and relies on
-    ``BaseSQLModelManager``'s default ordering (``created_at DESC`` for
-    ``BaseSQLModel`` subclasses, see ``app/core/db/crud.py``) so the first
-    item is the newest run.
-    """
-    for history in histories:
-        if (raw_status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(raw_status)
-    return None
-
-
-async def get_backups_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for a backups task.
-
-    The Tasks history endpoint does not accept a query-string ``order_by``
-    override, so this call relies on
-    ``BaseSQLModelManager._get_ordering`` (``app/core/db/crud.py``) returning
-    rows by ``created_at DESC`` for ``BaseSQLModel`` subclasses. Only
-    ``limit=1`` and ``offset=0`` are passed; if the manager default ever
-    flips, this call site silently returns the wrong status — covered
-    indirectly by the existing ``get_backups_task_status`` tests.
-
-    :param task_name: The task name.
-    :type task_name: str
-    :param tasks_api: The Tasks API client.
-    :type tasks_api: TaskAPI
-    :return: The latest known status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(
-        f"/{task_name}/history/",
-        params={"limit": 1, "offset": 0},
-    )
-    return _extract_latest_task_status(response["items"])
-
-
-_STATUS_FETCH_CONCURRENCY = 10
-
-
 async def get_mysql_backups_api_task_responses(
     tasks_api: TaskAPI,
     *,
@@ -364,9 +296,8 @@ async def get_mysql_backups_api_task_responses(
 ) -> PaginatedResponse[BackupResponse]:
     """Retrieve a paginated page of backup task responses for the JSON API.
 
-    Concurrency for per-task history fetches is bounded by
-    :data:`_STATUS_FETCH_CONCURRENCY` so a large page cannot fan-out into
-    an unbounded burst of HTTPS calls to the Tasks API.
+    Latest statuses for the page are resolved in a single batched round-trip to
+    the Tasks API rather than one history call per task.
 
     The ``status`` filter is applied client-side after the page is fetched
     (the Tasks API does not yet expose a server-side latest-status filter).
@@ -390,17 +321,11 @@ async def get_mysql_backups_api_task_responses(
         params={"owner": TaskOwner.BACKUPS.value, **pagination.model_dump()},
     )
     tasks = [Task.model_validate(task) for task in response["items"]]
-    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
-
-    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
-        async with sem:
-            return await get_backups_task_status(task.name, tasks_api)
-
-    task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
+    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
     responses = [
-        build_mysql_backups_api_task_response(task, status=task_status)
-        for task, task_status in zip(tasks, task_statuses, strict=True)
-        if status is None or task_status == status
+        build_mysql_backups_api_task_response(task, status=statuses.get(task.name))
+        for task in tasks
+        if status is None or statuses.get(task.name) == status
     ]
     total = (
         len(responses) if status is not None else response.get("total", len(responses))

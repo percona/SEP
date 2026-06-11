@@ -27,7 +27,6 @@ from app.sep.inventory import CreatedTable
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.deps import (
     _build_archives_payload,
-    _extract_latest_task_status,
     _resolve_destination_host_and_db,
     _resolve_destination_tables,
     _resolve_source_tables,
@@ -325,46 +324,16 @@ class TestBuildArchivesApiTaskPayload:
         assert result.data["meta"]["_pmm_node_name"] == created_service.node.name
 
 
-class TestExtractLatestTaskStatus:
-    """Test _extract_latest_task_status across all history list shapes."""
-
-    def test_empty_list_returns_none(self):
-        """Empty history list yields None."""
-        assert _extract_latest_task_status([]) is None
-
-    def test_single_entry_with_status_returns_enum(self):
-        """Single entry with a valid status string returns the matching enum."""
-        result = _extract_latest_task_status([{"status": "success"}])
-        assert result == TaskHistoryStatusEnum.SUCCESS
-
-    def test_first_entry_with_status_is_returned(self):
-        """First entry's status wins when multiple entries are present."""
-        result = _extract_latest_task_status(
-            [{"status": "running"}, {"status": "success"}]
-        )
-        assert result == TaskHistoryStatusEnum.RUNNING
-
-    def test_first_entry_none_status_falls_through_to_second(self):
-        """Entry with status=None is skipped; next entry's status is returned."""
-        result = _extract_latest_task_status([{"status": None}, {"status": "failed"}])
-        assert result == TaskHistoryStatusEnum.FAILED
-
-    def test_all_none_statuses_returns_none(self):
-        """All entries lacking a non-None status yield None."""
-        assert _extract_latest_task_status([{"status": None}, {}]) is None
-
-
 @pytest.mark.asyncio
 async def test_get_archives_api_task_responses_fetches_task_statuses(mock_remote_api):
-    """List responses include per-task latest history statuses."""
+    """List responses include per-task statuses from the batch endpoint."""
     task_one = TaskFactory.build(name="archive-1", owner=TaskOwner.ARCHIVER)
     task_two = TaskFactory.build(name="archive-2", owner=TaskOwner.ARCHIVER)
     mock_remote_api.get = AsyncMock(
-        side_effect=[
-            {"items": [task_one.model_dump(), task_two.model_dump()]},
-            {"items": [{"status": "success"}]},
-            {"items": [{"status": "failed"}]},
-        ]
+        return_value={"items": [task_one.model_dump(), task_two.model_dump()]}
+    )
+    mock_remote_api.post = AsyncMock(
+        return_value={"archive-1": "success", "archive-2": "failed"}
     )
 
     responses = await get_archives_api_task_responses(mock_remote_api)
@@ -374,12 +343,12 @@ async def test_get_archives_api_task_responses_fetches_task_statuses(mock_remote
         TaskHistoryStatusEnum.SUCCESS,
         TaskHistoryStatusEnum.FAILED,
     ]
-    assert mock_remote_api.get.await_args_list[0].args == ("/",)
-    assert mock_remote_api.get.await_args_list[0].kwargs == {
-        "params": {"owner": TaskOwner.ARCHIVER.value}
-    }
-    history_paths = {call.args[0] for call in mock_remote_api.get.await_args_list[1:]}
-    assert history_paths == {"/archive-1/history/", "/archive-2/history/"}
+    mock_remote_api.get.assert_awaited_once_with(
+        "/", params={"owner": TaskOwner.ARCHIVER.value}
+    )
+    mock_remote_api.post.assert_awaited_once_with(
+        "/history/latest", json={"names": ["archive-1", "archive-2"]}
+    )
 
 
 class TestGetArchivesTaskInfo:

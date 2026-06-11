@@ -155,6 +155,9 @@ class TestBackupPgApiList:
         """List returns 200 with paginated items."""
         parent = build_backup_task("pg-backup-a")
         mock_task_api_dep.get = AsyncMock(return_value={"items": [parent], "total": 1})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"pg-backup-a": TaskHistoryStatusEnum.SUCCESS.value}
+        )
 
         response = test_client.get(f"{API_BASE}/")
 
@@ -165,6 +168,7 @@ class TestBackupPgApiList:
         assert body["limit"] == DEFAULT_PAGINATION_LIMIT
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "pg-backup-a"
+        assert body["items"][0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
         mock_task_api_dep.get.assert_any_await(
             "/",
             params={
@@ -172,6 +176,9 @@ class TestBackupPgApiList:
                 "offset": 0,
                 "limit": DEFAULT_PAGINATION_LIMIT,
             },
+        )
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": ["pg-backup-a"]}
         )
 
     def test_list_returns_empty_page(self, test_client, mock_task_api_dep) -> None:
@@ -193,6 +200,7 @@ class TestBackupPgApiList:
         mock_task_api_dep.get = AsyncMock(
             return_value={"items": [task_b], "total": THREE_PARENT_FIXTURE_TOTAL}
         )
+        mock_task_api_dep.post = AsyncMock(return_value={"pg-backup-b": None})
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
 
@@ -217,29 +225,22 @@ class TestBackupPgApiList:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    def test_list_tolerates_history_fetch_failure(
+    def test_list_tolerates_batch_status_fetch_failure(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """Return 200 when one history fetch fails after the task list."""
+        """Return 200 with null statuses when the batch status fetch fails."""
         task_a = build_backup_task("pg-backup-a")
         task_b = build_backup_task("pg-backup-b")
-
-        async def _mock_get(path: str, **kwargs: Any) -> Any:
-            if path == "/":
-                return {"items": [task_a, task_b], "total": 2}
-            if path == "/pg-backup-a/history/":
-                return {"items": [{"status": "success"}]}
-            if path == "/pg-backup-b/history/":
-                raise HTTPNotFoundException
-            raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
-
-        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+        mock_task_api_dep.get = AsyncMock(
+            return_value={"items": [task_a, task_b], "total": 2}
+        )
+        mock_task_api_dep.post = AsyncMock(side_effect=HTTPNotFoundException)
 
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
         by_name = {item["name"]: item for item in response.json()["items"]}
-        assert by_name["pg-backup-a"]["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        assert by_name["pg-backup-a"]["status"] is None
         assert by_name["pg-backup-b"]["status"] is None
 
 

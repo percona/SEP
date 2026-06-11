@@ -24,7 +24,6 @@ from fastapi import HTTPException, status
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.plugins.alters.deps import (
     _build_dsn_with_service,
-    _extract_latest_task_status,
     alters_executor_matches_service_host,
     alters_satellite_task_names,
     build_alters_api_task_response,
@@ -749,21 +748,9 @@ async def test_cascade_update_pairs_predecessor_names_with_specs(mocker):
         alters_schema.predecessors = original_predecessors
 
 
-def test_extract_latest_task_status_unknown_status_returns_none() -> None:
-    """Unrecognised Tasks API status strings degrade to None instead of 500."""
-    assert _extract_latest_task_status([{"status": "future_status"}]) is None
-
-
-def test_extract_latest_task_status_known_status_returns_enum() -> None:
-    """Recognised status strings map to TaskHistoryStatusEnum."""
-    assert _extract_latest_task_status([{"status": "success"}]) == (
-        TaskHistoryStatusEnum.SUCCESS
-    )
-
-
 @pytest.mark.asyncio
-async def test_get_alters_api_task_responses_fetches_statuses_in_parallel(mocker):
-    """List endpoint gathers latest history per parent task, not serial awaits."""
+async def test_get_alters_api_task_responses_resolves_statuses_via_batch():
+    """List endpoint resolves parent statuses via the batch endpoint."""
     tasks_api = AsyncMock(spec=RemoteAPI)
     parent = TaskFactory.build(
         name="parent-alter",
@@ -790,22 +777,23 @@ async def test_get_alters_api_task_responses_fetches_statuses_in_parallel(mocker
             "limit": 50,
         }
     )
-    status_mock = mocker.patch(
-        "app.sep.plugins.alters.deps.get_alters_task_status",
-        new=AsyncMock(return_value=TaskHistoryStatusEnum.SUCCESS),
+    tasks_api.post = AsyncMock(
+        return_value={"parent-alter": TaskHistoryStatusEnum.SUCCESS.value}
     )
 
     results = await get_alters_api_task_responses(tasks_api)
 
     assert len(results) == 1
     assert results[0].name == "parent-alter"
-    assert status_mock.await_count == 1
-    status_mock.assert_awaited_once_with("parent-alter", tasks_api)
+    assert results[0].status == TaskHistoryStatusEnum.SUCCESS
+    tasks_api.post.assert_awaited_once_with(
+        "/history/latest", json={"names": ["parent-alter"]}
+    )
 
 
 @pytest.mark.asyncio
-async def test_get_alters_api_task_responses_filters_by_status(mocker):
-    """Optional status filter applies after parallel history fetches."""
+async def test_get_alters_api_task_responses_filters_by_status():
+    """Optional status filter applies after the batch status fetch."""
     tasks_api = AsyncMock(spec=RemoteAPI)
     parent_a = TaskFactory.build(
         name="alter-a",
@@ -828,19 +816,11 @@ async def test_get_alters_api_task_responses_filters_by_status(mocker):
             "limit": 50,
         }
     )
-
-    async def _status(
-        task_name: str, _tasks_api: RemoteAPI
-    ) -> TaskHistoryStatusEnum | None:
-        return (
-            TaskHistoryStatusEnum.SUCCESS
-            if task_name == "alter-a"
-            else TaskHistoryStatusEnum.FAILED
-        )
-
-    mocker.patch(
-        "app.sep.plugins.alters.deps.get_alters_task_status",
-        side_effect=_status,
+    tasks_api.post = AsyncMock(
+        return_value={
+            "alter-a": TaskHistoryStatusEnum.SUCCESS.value,
+            "alter-b": TaskHistoryStatusEnum.FAILED.value,
+        }
     )
 
     results = await get_alters_api_task_responses(
