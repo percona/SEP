@@ -39,6 +39,7 @@ from sqlmodel import col, select, SQLModel, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import BaseSQLModel
+from app.core.db.utils import idempotent_insert
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
@@ -787,6 +788,13 @@ class BaseManager:
         in `instance_create` and (optionally) specified in `filter_include`. If such an
         instance exists, it returns it. Otherwise, it creates and saves a new one.
 
+        The creation step is conflict-tolerant: it uses a dialect-aware idempotent
+        insert (``INSERT ... ON CONFLICT DO NOTHING`` / ``INSERT IGNORE``) so that two
+        calls racing to create the same row do not surface a duplicate-key error. The
+        losing call no-ops on the insert and refetches the winning row with
+        ``created=False``. ``created`` is ``True`` only for the call whose insert
+        actually landed.
+
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :type session: AsyncSession
@@ -806,7 +814,37 @@ class BaseManager:
         )
         if existent_instance:
             return existent_instance, False
-        return await cls.create(session, instance_create, **extra_fields), True
+
+        # Managers that override create() carry domain guards/side-effects (e.g.
+        # SyncItemManager raises if a matching item is already in progress). The
+        # conflict-tolerant fast path below bypasses create() entirely, so it must
+        # only apply when create() is the inherited base implementation.
+        if cls.create.__func__ is not BaseManager.create.__func__:
+            return await cls.create(session, instance_create, **extra_fields), True
+
+        # Conflict-tolerant create: a concurrent first-insert no-ops instead of raising
+        # a duplicate-key error that ``save()`` would surface as HTTP 400/409.
+        instance = cls._construct_instance(instance_create, **extra_fields)
+        pk_name = inspect(cls.Model).primary_key[0].name
+        values = {
+            column.name: getattr(instance, column.name)
+            for column in cls.Model.__table__.columns
+        }
+        if values.get(pk_name) is None:
+            # Let the database assign the autoincrement primary key.
+            values.pop(pk_name)
+        statement = idempotent_insert(session.get_bind().name, cls.Model).values(
+            **values
+        )
+        result = await cls._exec(session, statement)
+        await session.commit()
+        created = result.rowcount == 1
+        # The row is guaranteed to exist now (ours or the concurrent winner's). A core
+        # insert does not populate the constructed instance's PK, so we must refetch.
+        row = await cls.first(
+            session, **instance_create.model_dump(include=filter_include)
+        )
+        return row, created
 
     @classmethod
     async def update(
