@@ -39,6 +39,13 @@ NODE_ADDRESS = "10.0.0.5"
 COLLECTED_AT = "2026-06-01T12:00:00+00:00"
 # observed_at as serialized by pydantic model_dump(mode="json") (UTC -> trailing "Z").
 COLLECTED_AT_JSON = "2026-06-01T12:00:00Z"
+MYSQL_PORT = 3306
+MYSQL_VERSION = "8.0.35"
+OS_VERSION = "Ubuntu 22.04"
+INSTALLED_PACKAGES = [{"name": "glibc", "version": "2.35"}]
+HOST_CONFIG = {"kernel": "5.15.0"}
+EXECUTOR_NAME = "executor-1"
+EXECUTOR_ADDRESS = "10.0.0.99"
 
 
 def _make_service(
@@ -67,7 +74,7 @@ def created_node() -> CreatedNode:
     node.id = MOCK_CREATED_NODE_ID
     node.name = NODE_NAME
     node.address = NODE_ADDRESS
-    node.services = [_make_service(ServiceTypeEnum.MYSQL, 3306, node, 1)]
+    node.services = [_make_service(ServiceTypeEnum.MYSQL, MYSQL_PORT, node, 1)]
     return node
 
 
@@ -107,7 +114,7 @@ class TestConfigAndCanSync:
     )
     def test_can_sync_service(self, created_node, service_type, expected):
         """Only DB engine services are collected for facts."""
-        service = _make_service(service_type, 3306, created_node, 1)
+        service = _make_service(service_type, MYSQL_PORT, created_node, 1)
         assert SystemFactsSyncer.can_sync_service(service) is expected
 
     def test_can_sync_node_true_with_db_service(self, created_node):
@@ -121,7 +128,7 @@ class TestConfigAndCanSync:
         the services on the node, so node eligibility must not be gated on a DB engine.
         """
         created_node.services = [
-            _make_service(ServiceTypeEnum.HAPROXY, 3306, created_node, 1)
+            _make_service(ServiceTypeEnum.HAPROXY, MYSQL_PORT, created_node, 1)
         ]
         assert SystemFactsSyncer.can_sync_node(created_node) is True
 
@@ -145,14 +152,14 @@ class TestFetchNode:
             json.dumps(
                 {
                     "host": {
-                        "os_version": "Ubuntu 22.04",
-                        "installed_packages": [{"name": "glibc", "version": "2.35"}],
-                        "config": {"kernel": "5.15.0"},
+                        "os_version": OS_VERSION,
+                        "installed_packages": INSTALLED_PACKAGES,
+                        "config": HOST_CONFIG,
                         "collected_at": COLLECTED_AT,
                     },
                     "services": {
                         created_service.address: {
-                            "db_engine_version": "8.0.35",
+                            "db_engine_version": MYSQL_VERSION,
                             "collected_at": COLLECTED_AT,
                         }
                     },
@@ -166,14 +173,13 @@ class TestFetchNode:
         # collect_host True is sent to the payload for a co-located node.
         assert json.loads(wait.await_args.kwargs["config"])["collect_host"] is True
         assert (
-            mock_syncer._host_facts_cache[created_node.id]["os_version"]
-            == "Ubuntu 22.04"
+            mock_syncer._host_facts_cache[created_node.id]["os_version"] == OS_VERSION
         )
         assert (
             mock_syncer._service_facts_cache[created_service.address][
                 "db_engine_version"
             ]
-            == "8.0.35"
+            == MYSQL_VERSION
         )
 
     @pytest.mark.asyncio
@@ -181,10 +187,10 @@ class TestFetchNode:
         self, mock_syncer, created_node, created_service, mocker
     ):
         """A node with no co-located executor collects service facts only."""
-        mock_syncer.default_executor_host = "executor-1"
+        mock_syncer.default_executor_host = EXECUTOR_NAME
         mocker.patch.object(
             SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"executor-1": "10.0.0.99"}
+        ).return_value = {EXECUTOR_NAME: EXECUTOR_ADDRESS}
         wait = mocker.patch.object(
             SystemFactsSyncer, "wait_for_task_output", new_callable=AsyncMock
         )
@@ -195,7 +201,7 @@ class TestFetchNode:
                     "host": None,
                     "services": {
                         created_service.address: {
-                            "db_engine_version": "8.0.35",
+                            "db_engine_version": MYSQL_VERSION,
                             "collected_at": COLLECTED_AT,
                         }
                     },
@@ -215,7 +221,7 @@ class TestFetchNode:
     ):
         """A co-located node with no DB service still collects host facts."""
         created_node.services = [
-            _make_service(ServiceTypeEnum.HAPROXY, 3306, created_node, 1)
+            _make_service(ServiceTypeEnum.HAPROXY, MYSQL_PORT, created_node, 1)
         ]
         mocker.patch.object(
             SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
@@ -228,7 +234,7 @@ class TestFetchNode:
             json.dumps(
                 {
                     "host": {
-                        "os_version": "Ubuntu 22.04",
+                        "os_version": OS_VERSION,
                         "collected_at": COLLECTED_AT,
                     },
                     "services": {},
@@ -243,7 +249,7 @@ class TestFetchNode:
         assert cfg["collect_host"] is True
         assert cfg["services"] == []  # no DB engine services to probe
         assert mock_syncer._host_facts_cache[created_node.id]["os_version"] == (
-            "Ubuntu 22.04"
+            OS_VERSION
         )
 
     @pytest.mark.asyncio
@@ -252,12 +258,12 @@ class TestFetchNode:
     ):
         """A non-co-located node with no DB service runs no task at all."""
         created_node.services = [
-            _make_service(ServiceTypeEnum.HAPROXY, 3306, created_node, 1)
+            _make_service(ServiceTypeEnum.HAPROXY, MYSQL_PORT, created_node, 1)
         ]
-        mock_syncer.default_executor_host = "executor-1"
+        mock_syncer.default_executor_host = EXECUTOR_NAME
         mocker.patch.object(
             SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"executor-1": "10.0.0.99"}
+        ).return_value = {EXECUTOR_NAME: EXECUTOR_ADDRESS}
         wait = mocker.patch.object(
             SystemFactsSyncer, "wait_for_task_output", new_callable=AsyncMock
         )
@@ -316,9 +322,9 @@ class TestPerformNodeSync:
     ):
         """Co-located host facts are PUT to the system-observation endpoint."""
         mock_syncer._host_facts_cache[created_node.id] = {
-            "os_version": "Ubuntu 22.04",
-            "installed_packages": [{"name": "glibc", "version": "2.35"}],
-            "config": {"kernel": "5.15.0"},
+            "os_version": OS_VERSION,
+            "installed_packages": INSTALLED_PACKAGES,
+            "config": HOST_CONFIG,
             "collected_at": COLLECTED_AT,
         }
         sync_service = mocker.patch.object(
@@ -330,7 +336,7 @@ class TestPerformNodeSync:
         url = mock_remote_api.put.await_args.args[0]
         body = mock_remote_api.put.await_args.kwargs["json"]
         assert url == f"/nodes/{created_node.id}/system-observation"
-        assert body["os_version"] == "Ubuntu 22.04"
+        assert body["os_version"] == OS_VERSION
         assert body["observed_at"] == COLLECTED_AT_JSON
         sync_service.assert_awaited_once_with(created_node.services[0])
 
@@ -368,12 +374,12 @@ class TestFetchService:
     ):
         """The cached engine version is surfaced on the carrier."""
         mock_syncer._service_facts_cache[created_service.address] = {
-            "db_engine_version": "8.0.35",
+            "db_engine_version": MYSQL_VERSION,
             "collected_at": COLLECTED_AT,
         }
         svc = await mock_syncer.fetch_service(created_service)
         assert isinstance(svc, SystemFactsService)
-        assert svc.db_engine_version == "8.0.35"
+        assert svc.db_engine_version == MYSQL_VERSION
         assert svc.collected_at == COLLECTED_AT
 
     @pytest.mark.asyncio
@@ -399,7 +405,7 @@ class TestFetchService:
                     "host": None,
                     "services": {
                         created_service.address: {
-                            "db_engine_version": "8.0.35",
+                            "db_engine_version": MYSQL_VERSION,
                             "collected_at": COLLECTED_AT,
                         }
                     },
@@ -409,7 +415,7 @@ class TestFetchService:
         svc = await mock_syncer.fetch_service(created_service)
 
         assert isinstance(svc, SystemFactsService)
-        assert svc.db_engine_version == "8.0.35"
+        assert svc.db_engine_version == MYSQL_VERSION
         wait.assert_awaited_once()
         # A standalone service collection never collects host facts.
         assert json.loads(wait.await_args.kwargs["config"])["collect_host"] is False
@@ -453,7 +459,7 @@ class TestPerformServiceSync:
         updated = SystemFactsService.model_validate(
             created_service.model_dump(exclude={"node", "schemas"})
         )
-        updated.db_engine_version = "8.0.35"
+        updated.db_engine_version = MYSQL_VERSION
         updated.collected_at = COLLECTED_AT
 
         await mock_syncer.perform_service_sync(created_service, updated)
@@ -462,7 +468,7 @@ class TestPerformServiceSync:
         url = mock_remote_api.put.await_args.args[0]
         body = mock_remote_api.put.await_args.kwargs["json"]
         assert url == f"/services/{created_service.id}/system-observation"
-        assert body["db_engine_version"] == "8.0.35"
+        assert body["db_engine_version"] == MYSQL_VERSION
         assert body["observed_at"] == COLLECTED_AT_JSON
 
     @pytest.mark.asyncio
@@ -473,7 +479,7 @@ class TestPerformServiceSync:
         updated = SystemFactsService.model_validate(
             created_service.model_dump(exclude={"node", "schemas"})
         )
-        updated.db_engine_version = "8.0.35"
+        updated.db_engine_version = MYSQL_VERSION
         updated.collected_at = COLLECTED_AT
 
         expected_put_calls = 2
@@ -512,14 +518,14 @@ class TestResolveTaskTarget:
     @pytest.mark.asyncio
     async def test_fallback_not_colocated(self, mock_syncer, mocker):
         """A default-executor fallback (RDS) is not co-located."""
-        mock_syncer.default_executor_host = "executor-1"
+        mock_syncer.default_executor_host = EXECUTOR_NAME
         mocker.patch.object(
             SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"executor-1": "10.0.0.99"}
+        ).return_value = {EXECUTOR_NAME: EXECUTOR_ADDRESS}
         target, colocated = await mock_syncer.resolve_task_target(
             NODE_ADDRESS, NODE_NAME
         )
-        assert (target, colocated) == ("executor-1", False)
+        assert (target, colocated) == (EXECUTOR_NAME, False)
 
     @pytest.mark.asyncio
     async def test_force_executor_not_matching_node_is_not_colocated(
@@ -566,6 +572,29 @@ class TestResolveTaskTarget:
             NODE_ADDRESS, NODE_NAME
         )
         assert (target, colocated) == ("executor-2", True)
+
+    @pytest.mark.asyncio
+    async def test_no_available_hosts_raises_value_error(self, mock_syncer, mocker):
+        """An empty ``/hosts/`` response cannot yield a target and raises."""
+        mocker.patch.object(
+            SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {}
+        with pytest.raises(ValueError, match="No executor hosts available"):
+            await mock_syncer.resolve_task_target(NODE_ADDRESS, NODE_NAME)
+
+    @pytest.mark.asyncio
+    async def test_default_executor_not_in_hosts_falls_back_to_first(
+        self, mock_syncer, mocker
+    ):
+        """A configured default executor absent from the host list falls back."""
+        mock_syncer.default_executor_host = "ghost-executor"
+        mocker.patch.object(
+            SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {EXECUTOR_NAME: EXECUTOR_ADDRESS}
+        target, colocated = await mock_syncer.resolve_task_target(
+            NODE_ADDRESS, NODE_NAME
+        )
+        assert (target, colocated) == (EXECUTOR_NAME, False)
 
 
 class TestPerformInventorySync:

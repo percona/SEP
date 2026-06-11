@@ -39,7 +39,7 @@ import subprocess
 import sys
 from configparser import Error as ConfigParserError, RawConfigParser
 from datetime import datetime, UTC
-from enum import IntEnum
+from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +64,23 @@ class DefaultPort(IntEnum):
     MYSQL = 3306
     POSTGRESQL = 5432
     MONGODB = 27017
+
+
+class ServiceType(str, Enum):
+    """Represent the database engine types whose versions are collected.
+
+    Values mirror ``app.inventory.models.ServiceTypeEnum`` so a service ``type`` sent
+    in the task config round-trips here. This is redeclared locally because the payload
+    is a standalone script and must import without the application package.
+
+    :cvar MYSQL: The MySQL engine type.
+    :cvar POSTGRESQL: The PostgreSQL engine type.
+    :cvar MONGODB: The MongoDB engine type.
+    """
+
+    MYSQL = "mysql"
+    POSTGRESQL = "postgresql"
+    MONGODB = "mongodb"
 
 
 def _now_iso() -> str:
@@ -351,27 +368,31 @@ def _collect_mongodb_version(address: str) -> str | None:
     return info.get("version")
 
 
-def collect_service_version(address: str, service_type: str) -> str | None:
+def collect_service_version(address: str, service_type: str | None) -> str | None:
     """Collect the database engine version for a service, best-effort.
 
-    Dispatches to the per-engine collector by service type. Any failure (missing creds,
-    unavailable driver, unreachable host) is logged and yields ``None`` so siblings and
-    host facts are unaffected.
+    Dispatches to the per-engine collector by service type. An unknown or missing type
+    is skipped; any collector failure (missing creds, unavailable driver, unreachable
+    host) is logged and yields ``None`` so siblings and host facts are unaffected.
 
     :param address: The service address in ``host[:port]`` form.
     :type address: str
-    :param service_type: The engine type (``mysql``/``postgresql``/``mongodb``).
-    :type service_type: str
+    :param service_type: The engine type; one of :class:`ServiceType`'s values.
+    :type service_type: str | None
     :return: The engine version string, or ``None``.
     :rtype: str | None
     """
     try:
-        if service_type == "mysql":
-            return _collect_mysql_version(address)
-        if service_type == "postgresql":
-            return _collect_postgresql_version(address)
-        if service_type == "mongodb":
-            return _collect_mongodb_version(address)
+        engine = ServiceType(service_type)
+    except ValueError:
+        return None
+    collectors = {
+        ServiceType.MYSQL: _collect_mysql_version,
+        ServiceType.POSTGRESQL: _collect_postgresql_version,
+        ServiceType.MONGODB: _collect_mongodb_version,
+    }
+    try:
+        return collectors[engine](address)
     except Exception as err:  # noqa: BLE001 - best-effort collection, never fatal
         print(
             f"Failed to collect version for {address} ({service_type}): {err}",

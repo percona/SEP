@@ -22,6 +22,9 @@ from unittest.mock import MagicMock
 
 from app.sep.sync.syncers.system_facts import payload as payload_module
 from app.sep.sync.syncers.system_facts.payload import (
+    _collect_mongodb_version,
+    _collect_mysql_version,
+    _collect_postgresql_version,
     _mysql_creds,
     collect_host_facts,
     collect_installed_packages,
@@ -29,6 +32,7 @@ from app.sep.sync.syncers.system_facts.payload import (
     collect_service_version,
     main,
     parse_host_port,
+    ServiceType,
 )
 
 MODULE = "app.sep.sync.syncers.system_facts.payload"
@@ -39,6 +43,12 @@ OS_RELEASE = (
     'PRETTY_NAME="Ubuntu 22.04.3 LTS"\n'
     "ID=ubuntu\n"
 )
+MYSQL_ADDRESS = "10.0.0.5:3306"
+MYSQL_VERSION = "8.0.35"
+PG_ADDRESS = "10.0.0.5:5432"
+PG_VERSION = "15.4"
+MONGO_ADDRESS = "10.0.0.5:27017"
+MONGO_VERSION = "7.0.2"
 
 
 def _write_config(tmp_path: Path, config: dict) -> Path:
@@ -64,6 +74,48 @@ class TestHostFacts:
             payload_module, "OS_RELEASE_PATH", tmp_path / "does-not-exist"
         )
         assert collect_os_version() is None
+
+    def test_collect_os_version_falls_back_to_name_and_version(
+        self, tmp_path, monkeypatch
+    ):
+        """Without PRETTY_NAME, NAME + VERSION_ID are joined."""
+        os_release = tmp_path / "os-release"
+        os_release.write_text('NAME="Debian GNU/Linux"\nVERSION_ID="12"\n')
+        monkeypatch.setattr(payload_module, "OS_RELEASE_PATH", os_release)
+        assert collect_os_version() == "Debian GNU/Linux 12"
+
+    def test_collect_os_version_name_only(self, tmp_path, monkeypatch):
+        """With only NAME present, the bare name is returned."""
+        os_release = tmp_path / "os-release"
+        os_release.write_text('NAME="Alpine Linux"\n')
+        monkeypatch.setattr(payload_module, "OS_RELEASE_PATH", os_release)
+        assert collect_os_version() == "Alpine Linux"
+
+    def test_collect_installed_packages_dpkg(self, mocker):
+        """Packages are parsed from the dpkg-query output when rpm is absent."""
+        mocker.patch(
+            f"{MODULE}.shutil.which",
+            side_effect=lambda b: "/usr/bin/dpkg-query" if b == "dpkg-query" else None,
+        )
+        mocker.patch(
+            f"{MODULE}.subprocess.run",
+            return_value=MagicMock(returncode=0, stdout="libc6\t2.36-9\nbash\t5.2\n"),
+        )
+        packages = collect_installed_packages()
+        assert {"name": "libc6", "version": "2.36-9"} in packages
+        assert {"name": "bash", "version": "5.2"} in packages
+
+    def test_collect_installed_packages_nonzero_returncode_returns_none(self, mocker):
+        """A failing package-manager query yields None, not partial output."""
+        mocker.patch(
+            f"{MODULE}.shutil.which",
+            side_effect=lambda b: "/usr/bin/rpm" if b == "rpm" else None,
+        )
+        mocker.patch(
+            f"{MODULE}.subprocess.run",
+            return_value=MagicMock(returncode=1, stdout=""),
+        )
+        assert collect_installed_packages() is None
 
     def test_collect_installed_packages_rpm(self, mocker):
         """Packages are parsed from the rpm query output."""
@@ -106,7 +158,7 @@ class TestParseHostPort:
 
     def test_host_and_port(self):
         """A plain ``host:port`` splits on the colon."""
-        assert parse_host_port("10.0.0.5:3306") == ("10.0.0.5", 3306)
+        assert parse_host_port(MYSQL_ADDRESS) == ("10.0.0.5", 3306)
 
     def test_host_only_uses_default_port(self):
         """A bare host falls back to the default port."""
@@ -137,6 +189,14 @@ class TestParseHostPort:
             3306,
         )
 
+    def test_trailing_colon_empty_port_falls_back(self):
+        """A trailing colon (empty port) yields the original entry and default port."""
+        assert parse_host_port("host:", default_port=3306) == ("host:", 3306)
+
+    def test_empty_string_uses_default_port(self):
+        """An empty address yields an empty host and the default port, not a crash."""
+        assert parse_host_port("", default_port=5432) == ("", 5432)
+
 
 class TestMysqlCreds:
     """Test MySQL credential resolution from ``~/.mylogin.cnf``."""
@@ -155,7 +215,7 @@ class TestMysqlCreds:
             "[bad]\nuser=wrong\nhost=10.0.0.5\nport=not-a-number\n"
             "[client]\nuser=root\npassword=secret\nhost=10.0.0.5\nport=3306\n",
         )
-        creds = _mysql_creds("10.0.0.5:3306")
+        creds = _mysql_creds(MYSQL_ADDRESS)
         assert creds["user"] == "root"
 
     def test_garbled_port_no_client_returns_empty(self, monkeypatch):
@@ -164,7 +224,32 @@ class TestMysqlCreds:
             monkeypatch,
             "[bad]\nuser=wrong\nhost=10.0.0.5\nport=not-a-number\n",
         )
-        assert _mysql_creds("10.0.0.5:3306") == {}
+        assert _mysql_creds(MYSQL_ADDRESS) == {}
+
+    def test_matching_host_and_port_section_wins(self, monkeypatch):
+        """The section whose host and port match the target address is selected."""
+        self._inject_myloginpath(
+            monkeypatch,
+            "[other]\nuser=nope\nhost=10.0.0.9\nport=3306\n"
+            "[prod]\nuser=appuser\npassword=pw\nhost=10.0.0.5\nport=3306\n"
+            "[client]\nuser=root\npassword=secret\nhost=10.0.0.5\nport=3306\n",
+        )
+        creds = _mysql_creds(MYSQL_ADDRESS)
+        assert creds["user"] == "appuser"
+        assert creds["password"] == "pw"
+
+    def test_no_explicit_port_matches_default(self, monkeypatch):
+        """An address without a port matches a section on the engine default port."""
+        self._inject_myloginpath(
+            monkeypatch,
+            "[prod]\nuser=appuser\npassword=pw\nhost=10.0.0.5\nport=3306\n",
+        )
+        assert _mysql_creds("10.0.0.5")["user"] == "appuser"
+
+    def test_non_string_content_returns_empty(self, monkeypatch):
+        """A login-path file that does not decode to a string yields empty creds."""
+        self._inject_myloginpath(monkeypatch, content=None)
+        assert _mysql_creds(MYSQL_ADDRESS) == {}
 
 
 class TestServiceVersion:
@@ -172,18 +257,22 @@ class TestServiceVersion:
 
     def test_dispatch_mysql(self, mocker):
         """A MySQL service routes to the MySQL collector."""
-        mocker.patch(f"{MODULE}._collect_mysql_version", return_value="8.0.35")
-        assert collect_service_version("10.0.0.5:3306", "mysql") == "8.0.35"
+        mocker.patch(f"{MODULE}._collect_mysql_version", return_value=MYSQL_VERSION)
+        assert (
+            collect_service_version(MYSQL_ADDRESS, ServiceType.MYSQL) == MYSQL_VERSION
+        )
 
     def test_dispatch_postgresql(self, mocker):
         """A PostgreSQL service routes to the PostgreSQL collector."""
-        mocker.patch(f"{MODULE}._collect_postgresql_version", return_value="15.4")
-        assert collect_service_version("10.0.0.5:5432", "postgresql") == "15.4"
+        mocker.patch(f"{MODULE}._collect_postgresql_version", return_value=PG_VERSION)
+        assert collect_service_version(PG_ADDRESS, ServiceType.POSTGRESQL) == PG_VERSION
 
     def test_dispatch_mongodb(self, mocker):
         """A MongoDB service routes to the MongoDB collector."""
-        mocker.patch(f"{MODULE}._collect_mongodb_version", return_value="7.0.2")
-        assert collect_service_version("10.0.0.5:27017", "mongodb") == "7.0.2"
+        mocker.patch(f"{MODULE}._collect_mongodb_version", return_value=MONGO_VERSION)
+        assert (
+            collect_service_version(MONGO_ADDRESS, ServiceType.MONGODB) == MONGO_VERSION
+        )
 
     def test_unknown_type_returns_none(self):
         """An unsupported service type is not probed."""
@@ -194,7 +283,110 @@ class TestServiceVersion:
         mocker.patch(
             f"{MODULE}._collect_mysql_version", side_effect=RuntimeError("no creds")
         )
-        assert collect_service_version("10.0.0.5:3306", "mysql") is None
+        assert collect_service_version(MYSQL_ADDRESS, "mysql") is None
+
+    def test_missing_type_with_address_returns_none(self):
+        """A service entry with an address but no type is not probed."""
+        assert collect_service_version(MYSQL_ADDRESS, None) is None
+
+
+class TestMysqlVersionCollector:
+    """Test the MySQL version collector's connect/query/row handling."""
+
+    @staticmethod
+    def _inject(monkeypatch, fetchone_result):
+        """Install a fake ``pymysql`` whose cursor returns ``fetchone_result``."""
+        # Empty creds: a login-path file that parses to no sections.
+        myloginpath = MagicMock()
+        myloginpath.read.return_value = ""
+        monkeypatch.setitem(sys.modules, "myloginpath", myloginpath)
+        pymysql = MagicMock()
+        connection = pymysql.connect.return_value.__enter__.return_value
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = fetchone_result
+        monkeypatch.setitem(sys.modules, "pymysql", pymysql)
+        return pymysql
+
+    def test_version_extracted_from_row(self, monkeypatch):
+        """The first column of the result row is returned as the version."""
+        self._inject(monkeypatch, (MYSQL_VERSION,))
+        assert _collect_mysql_version(MYSQL_ADDRESS) == MYSQL_VERSION
+
+    def test_empty_result_returns_none(self, monkeypatch):
+        """A query returning no row yields None rather than indexing into nothing."""
+        self._inject(monkeypatch, None)
+        assert _collect_mysql_version(MYSQL_ADDRESS) is None
+
+
+class TestPostgresqlVersionCollector:
+    """Test the PostgreSQL version collector's connect/query/row handling."""
+
+    @staticmethod
+    def _inject(monkeypatch, fetchone_result):
+        """Install a fake ``psycopg`` whose cursor returns ``fetchone_result``."""
+        psycopg = MagicMock()
+        connection = psycopg.connect.return_value.__enter__.return_value
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = fetchone_result
+        monkeypatch.setitem(sys.modules, "psycopg", psycopg)
+        return psycopg
+
+    def test_version_extracted_from_row(self, monkeypatch):
+        """The first column of the ``SHOW server_version`` row is returned."""
+        self._inject(monkeypatch, (PG_VERSION,))
+        assert _collect_postgresql_version(PG_ADDRESS) == PG_VERSION
+
+    def test_empty_result_returns_none(self, monkeypatch):
+        """A query returning no row yields None, not an index error."""
+        self._inject(monkeypatch, None)
+        assert _collect_postgresql_version(PG_ADDRESS) is None
+
+    def test_pguser_env_passed_to_conninfo(self, monkeypatch):
+        """A ``PGUSER`` in the environment is forwarded as the connection user."""
+        psycopg = self._inject(monkeypatch, (PG_VERSION,))
+        monkeypatch.setenv("PGUSER", "inspector")
+        assert _collect_postgresql_version(PG_ADDRESS) == PG_VERSION
+        assert psycopg.connect.call_args.kwargs["user"] == "inspector"
+
+
+class TestMongodbVersionCollector:
+    """Test the MongoDB version collector's client/buildInfo handling."""
+
+    @staticmethod
+    def _inject(monkeypatch, build_info):
+        """Install a fake ``pymongo`` whose ``buildInfo`` returns ``build_info``."""
+        monkeypatch.delenv("SEP_MONGO_URI", raising=False)
+        monkeypatch.delenv("MONGO_URI", raising=False)
+        pymongo = MagicMock()
+        client = pymongo.MongoClient.return_value
+        client.admin.command.return_value = build_info
+        monkeypatch.setitem(sys.modules, "pymongo", pymongo)
+        return pymongo
+
+    def test_version_extracted_from_build_info(self, monkeypatch):
+        """The ``version`` field of ``buildInfo`` is returned."""
+        self._inject(monkeypatch, {"version": MONGO_VERSION})
+        assert _collect_mongodb_version(MONGO_ADDRESS) == MONGO_VERSION
+
+    def test_missing_version_field_returns_none(self, monkeypatch):
+        """A ``buildInfo`` lacking a version field yields None."""
+        self._inject(monkeypatch, {})
+        assert _collect_mongodb_version(MONGO_ADDRESS) is None
+
+    def test_connects_via_host_and_port_without_uri(self, monkeypatch):
+        """With no URI env var, the client is built from the parsed host and port."""
+        pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
+        _collect_mongodb_version(MONGO_ADDRESS)
+        kwargs = pymongo.MongoClient.call_args.kwargs
+        assert (kwargs["host"], kwargs["port"]) == ("10.0.0.5", 27017)
+
+    def test_uses_uri_env_when_set(self, monkeypatch):
+        """A ``SEP_MONGO_URI`` env var is used in place of host/port."""
+        pymongo = self._inject(monkeypatch, {"version": MONGO_VERSION})
+        monkeypatch.setenv("SEP_MONGO_URI", "mongodb://user@host:27017/")
+        _collect_mongodb_version(MONGO_ADDRESS)
+        assert pymongo.MongoClient.call_args.args[0] == "mongodb://user@host:27017/"
+        assert pymongo.MongoClient.call_args.kwargs.get("host") is None
 
 
 class TestMain:
@@ -208,7 +400,7 @@ class TestMain:
             tmp_path,
             {
                 "collect_host": True,
-                "services": [{"address": "10.0.0.5:3306", "type": "mysql"}],
+                "services": [{"address": MYSQL_ADDRESS, "type": "mysql"}],
             },
         )
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
@@ -216,14 +408,14 @@ class TestMain:
             f"{MODULE}.collect_host_facts",
             return_value={"os_version": "Ubuntu 22.04", "collected_at": "t"},
         )
-        mocker.patch(f"{MODULE}.collect_service_version", return_value="8.0.35")
+        mocker.patch(f"{MODULE}.collect_service_version", return_value=MYSQL_VERSION)
 
         main()
 
         out = json.loads(capsys.readouterr().out)
         assert out["host"]["os_version"] == "Ubuntu 22.04"
-        assert out["services"]["10.0.0.5:3306"]["db_engine_version"] == "8.0.35"
-        assert "collected_at" in out["services"]["10.0.0.5:3306"]
+        assert out["services"][MYSQL_ADDRESS]["db_engine_version"] == MYSQL_VERSION
+        assert "collected_at" in out["services"][MYSQL_ADDRESS]
 
     def test_main_collect_host_false(self, tmp_path, monkeypatch, mocker, capsys):
         """collect_host=False yields a null host but still probes services."""
@@ -231,19 +423,19 @@ class TestMain:
             tmp_path,
             {
                 "collect_host": False,
-                "services": [{"address": "10.0.0.5:5432", "type": "postgresql"}],
+                "services": [{"address": PG_ADDRESS, "type": "postgresql"}],
             },
         )
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
         host = mocker.patch(f"{MODULE}.collect_host_facts")
-        mocker.patch(f"{MODULE}.collect_service_version", return_value="15.4")
+        mocker.patch(f"{MODULE}.collect_service_version", return_value=PG_VERSION)
 
         main()
 
         out = json.loads(capsys.readouterr().out)
         assert out["host"] is None
         host.assert_not_called()
-        assert out["services"]["10.0.0.5:5432"]["db_engine_version"] == "15.4"
+        assert out["services"][PG_ADDRESS]["db_engine_version"] == PG_VERSION
 
     def test_main_service_failure_omitted(self, tmp_path, monkeypatch, mocker, capsys):
         """A service with no obtainable version is omitted; main still exits cleanly."""
@@ -252,7 +444,7 @@ class TestMain:
             {
                 "collect_host": False,
                 "services": [
-                    {"address": "10.0.0.5:3306", "type": "mysql"},
+                    {"address": MYSQL_ADDRESS, "type": "mysql"},
                     {"address": "10.0.0.9:5432", "type": "postgresql"},
                 ],
             },
@@ -260,15 +452,15 @@ class TestMain:
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
         mocker.patch(
             f"{MODULE}.collect_service_version",
-            side_effect=lambda address, _type: "8.0.35"
-            if address == "10.0.0.5:3306"
+            side_effect=lambda address, _type: MYSQL_VERSION
+            if address == MYSQL_ADDRESS
             else None,
         )
 
         main()
 
         out = json.loads(capsys.readouterr().out)
-        assert "10.0.0.5:3306" in out["services"]
+        assert MYSQL_ADDRESS in out["services"]
         assert "10.0.0.9:5432" not in out["services"]
 
     def test_main_empty_host_facts_yields_null_host(
@@ -341,15 +533,15 @@ class TestMain:
                 "services": [
                     "garbage",
                     None,
-                    {"address": "10.0.0.5:3306", "type": "mysql"},
+                    {"address": MYSQL_ADDRESS, "type": "mysql"},
                 ],
             },
         )
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
-        mocker.patch(f"{MODULE}.collect_service_version", return_value="8.0.35")
+        mocker.patch(f"{MODULE}.collect_service_version", return_value=MYSQL_VERSION)
 
         main()
 
         out = json.loads(capsys.readouterr().out)
-        assert out["services"]["10.0.0.5:3306"]["db_engine_version"] == "8.0.35"
+        assert out["services"][MYSQL_ADDRESS]["db_engine_version"] == MYSQL_VERSION
         assert len(out["services"]) == 1
