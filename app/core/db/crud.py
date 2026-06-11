@@ -844,6 +844,15 @@ class BaseManager:
         row = await cls.first(
             session, **instance_create.model_dump(include=filter_include)
         )
+        if row is None:
+            # A miss means filter_include reaches outside the unique constraint, so
+            # the refetch can't see the winning row. Fail loud instead of returning
+            # (None, False) and deferring a confusing crash to the caller.
+            raise RuntimeError(
+                f"{cls.Model.__name__}.get_or_create resolved a unique conflict but "
+                f"no row matched filter_include={filter_include!r}; filter_include "
+                f"must be a subset of a unique constraint."
+            )
         return row, created
 
     @classmethod
