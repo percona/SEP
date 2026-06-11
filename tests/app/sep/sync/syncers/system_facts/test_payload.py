@@ -169,8 +169,8 @@ class TestParseHostPort:
         )
 
     def test_non_numeric_port_falls_back(self):
-        """A non-numeric port yields the original entry and the default port."""
-        assert parse_host_port("host:abc", default_port=3306) == ("host:abc", 3306)
+        """A non-numeric port yields the cleaned host and the default port."""
+        assert parse_host_port("host:abc", default_port=3306) == ("host", 3306)
 
     def test_bracketed_ipv6_with_port(self):
         """A bracketed IPv6 literal keeps the address and parses the trailing port."""
@@ -191,8 +191,8 @@ class TestParseHostPort:
         )
 
     def test_trailing_colon_empty_port_falls_back(self):
-        """A trailing colon (empty port) yields the original entry and default port."""
-        assert parse_host_port("host:", default_port=3306) == ("host:", 3306)
+        """A trailing colon (empty port) yields the cleaned host and default port."""
+        assert parse_host_port("host:", default_port=3306) == ("host", 3306)
 
     def test_empty_string_uses_default_port(self):
         """An empty address yields an empty host and the default port, not a crash."""

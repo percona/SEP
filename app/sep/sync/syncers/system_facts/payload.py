@@ -163,7 +163,7 @@ def parse_host_port(
         try:
             return host, int(port)
         except ValueError:
-            return host_entry, default_port
+            return host, default_port
     return host_entry, default_port
 
 
