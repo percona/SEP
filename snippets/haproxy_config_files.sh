@@ -34,13 +34,16 @@ process_config_file() {
             [[ $line =~ ^[[:space:]]*# ]] && continue
             if [[ $line =~ ^include[[:space:]]+(.+) ]]; then
                 included_glob="${BASH_REMATCH[1]}"
-                if [[ $included_glob == *'$('* || $included_glob == *'`'* ]]; then
+                if [[ $included_glob == *\$\(* || $included_glob == *\`* ]]; then
                     continue
                 fi
-                included_glob=$(eval echo "$included_glob")
+                nullglob_was_set=false
+                shopt -q nullglob && nullglob_was_set=true
+                shopt -s nullglob
                 for included_file in $included_glob; do
                     process_config_file "$included_file"
                 done
+                $nullglob_was_set || shopt -u nullglob
             fi
         done < "$file"
     fi
@@ -85,7 +88,7 @@ done
 
 echo
 echo "=== HAProxy Version ==="
-if command -v haproxy &>/dev/null; then
+if command -v haproxy &> /dev/null; then
     haproxy -v
 else
     echo "haproxy binary not found in PATH"
@@ -93,8 +96,8 @@ fi
 
 echo
 echo "=== HAProxy Service Status ==="
-if command -v systemctl &>/dev/null; then
-    systemctl status haproxy --no-pager 2>/dev/null || echo "haproxy service not found or not running"
+if command -v systemctl &> /dev/null; then
+    systemctl status haproxy --no-pager 2> /dev/null || echo "haproxy service not found or not running"
 else
     echo "systemctl not available"
 fi

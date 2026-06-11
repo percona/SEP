@@ -143,7 +143,7 @@ if ! [[ $MINUTES_ARG =~ ^[0-9]+$ ]] || [ "$MINUTES_ARG" -le 0 ]; then
 fi
 
 HAPROXY_LOG="${LOG_FILE_ARG:-$DEFAULT_HAPROXY_LOG}"
-if [[ "$HAPROXY_LOG" =~ [\`\$] ]]; then
+if [[ $HAPROXY_LOG =~ [\`\$] ]]; then
     echo "Error: --log-file contains unsupported characters."
     exit 1
 fi
@@ -159,15 +159,14 @@ if [ ! -r "$HAPROXY_LOG" ]; then
     exit 1
 fi
 
-if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2>/dev/null); then
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
     echo "Error: Could not parse the provided time format: \"$TIME_ARG\""
     echo 'Please ensure the time is in a valid format, e.g., "YYYY-MM-DD HH:MM:SS"'
     exit 1
 fi
 
 case "$OUTPUT_MODE" in
-    stdout)
-        ;;
+    stdout) ;;
     file)
         OUTPUT_FILE="haproxy_logs_${INPUT_EPOCH}.log"
         ;;
@@ -191,7 +190,8 @@ END_EPOCH=$((INPUT_EPOCH + (MINUTES_ARG * 60)))
 # leave log_epoch unchanged (0), so they do not alter print_flag.
 # They are printed when print_flag is already set, preserving multi-line entries.
 
-AWK_CMD="awk -v start_e=\"$START_EPOCH\" -v end_e=\"$END_EPOCH\" '
+_filter_log() {
+    awk -v start_e="$START_EPOCH" -v end_e="$END_EPOCH" '
 BEGIN {
     print_flag = 0;
 }
@@ -200,19 +200,19 @@ BEGIN {
 
     # Try ISO 8601 / RFC3339 (first field, may include fractional seconds + timezone)
     ts = $1;
-    cmd = "date -d \"" ts "\" +%s 2>/dev/null";
+    cmd = "date -d \"" ts "\" +%s 2>/dev/null"
     cmd | getline log_epoch;
     close(cmd);
 
     # Fall back to BSD syslog (first 15 chars: Mmm DD HH:MM:SS)
-    if (log_epoch == \"\" || log_epoch == 0) {
-        ts = substr(\$0, 1, 15);
-        cmd = \"date -d \\\"\" ts \"\\\" +%s 2>/dev/null\";
+    if (log_epoch == "" || log_epoch == 0) {
+        ts = substr($0, 1, 15);
+        cmd = "date -d \"" ts "\" +%s 2>/dev/null";
         cmd | getline log_epoch;
         close(cmd);
     }
 
-    if (log_epoch != \"\" && log_epoch != 0) {
+    if (log_epoch != "" && log_epoch != 0) {
         if (log_epoch >= start_e && log_epoch <= end_e) {
             print_flag = 1;
         } else if (log_epoch > end_e && print_flag == 1) {
@@ -226,11 +226,12 @@ BEGIN {
     if (print_flag == 1) {
         print;
     }
-}' \"$HAPROXY_LOG\""
+}' "$HAPROXY_LOG"
+}
 
 if [[ $OUTPUT_MODE == "file" ]]; then
-    eval "$AWK_CMD > \"$OUTPUT_FILE\""
+    _filter_log > "$OUTPUT_FILE"
     echo "Output written to $OUTPUT_FILE"
 else
-    eval "$AWK_CMD"
+    _filter_log
 fi
