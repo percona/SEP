@@ -31,8 +31,10 @@ The layout objects (:class:`SectionLayout`, :class:`FormLayout`,
 derivation functions, not annotation metadata.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import auto, StrEnum
+from types import MappingProxyType
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.rules import (
@@ -289,6 +291,10 @@ class FormRules:
         an empty tuple.
     """
 
-    sections: dict[str, SectionRules] = field(default_factory=dict)
+    sections: Mapping[str, SectionRules] = field(default_factory=dict)
     fail_when: tuple[FailRule, ...] = ()
     cardinality_rules: tuple[CardinalityRule, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Freeze ``sections`` so the shared default cannot leak across models."""
+        object.__setattr__(self, "sections", MappingProxyType(dict(self.sections)))

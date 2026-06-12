@@ -74,6 +74,7 @@ __all__ = [
     "build_runtime_schema",
     "derive_form_sections",
     "derive_plugin_schema",
+    "resolve_base",
 ]
 
 _REF_TYPES = (ServiceRef, SchemaRef, TableRef, HostRef)
@@ -100,7 +101,7 @@ class _FieldSpec:
     index: int
 
 
-def _resolve_base(annotation: Any) -> tuple[Any, bool]:
+def resolve_base(annotation: Any) -> tuple[Any, bool]:
     """Return ``(base, is_list)`` after stripping ``Annotated`` / ``| None`` / list.
 
     ``Annotated`` wrappers, ``None``/``EmptyStrToNone`` union members, and a
@@ -332,7 +333,7 @@ def _build_base_field(
             )
         return _build_ref_field(ref, ui, common)
 
-    base, is_list = _resolve_base(field_info.annotation)
+    base, is_list = resolve_base(field_info.annotation)
     choices = _find_marker(metadata, (Choices,))
     if ui.widget is FieldWidget.MULTI_CHOICE and not is_list:
         raise ValueError(

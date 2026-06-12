@@ -31,7 +31,7 @@ from typing import Any, get_origin, Literal
 
 from pydantic_core import PydanticUndefined
 
-from app.sep.plugins.framework.form_dsl.derivation import _resolve_base
+from app.sep.plugins.framework.form_dsl.derivation import resolve_base
 from app.sep.plugins.framework.schema import BaseField, PluginSchema
 
 __all__ = ["check_form_conformance"]
@@ -57,7 +57,7 @@ def _natural_kind(annotation: Any) -> str | None:
     :param annotation: A model field's annotation.
     :return: The natural field-kind string, or ``None`` when not inferable.
     """
-    base, is_list = _resolve_base(annotation)
+    base, is_list = resolve_base(annotation)
     if is_list:
         return "multi_choice"
     if (isinstance(base, type) and issubclass(base, Enum)) or get_origin(
