@@ -164,10 +164,15 @@ export function SchemaListView({
           enableSorting: col.sortable ?? true,
           Cell: ({ cell, row }) => {
             const value = cell.getValue();
-            return (
-              renderListColumn?.({ columnKey: col.key, value, row: row.original }) ??
-              formatCellValue(value, col.format)
-            );
+            const overridden = renderListColumn?.({
+              columnKey: col.key,
+              value,
+              row: row.original,
+            });
+            // `undefined` is the "no override" sentinel (override absent, or it
+            // declined this column); `null` is honored so an override can
+            // intentionally render an empty cell.
+            return overridden === undefined ? formatCellValue(value, col.format) : overridden;
           },
         };
       }),
