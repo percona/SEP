@@ -287,8 +287,31 @@
       },
       "Choice": {
         "additionalProperties": false,
-        "description": "Represent one option in a choice or multi-choice field.\n\n:param label: The human-readable label displayed for the choice.\n:type label: NonEmptyStr\n:param value: The value submitted when the choice is selected.\n:type value: NonEmptyStr",
+        "description": "Represent one option in a choice or multi-choice field.\n\n:param label: The human-readable label displayed for the choice.\n:type label: NonEmptyStr\n:param value: The value submitted when the choice is selected.\n:type value: NonEmptyStr\n:param disabled: Whether the option is rendered non-selectable. Optional,\n    defaulting to ``None`` (selectable). Typed ``bool | None`` so the\n    discovery endpoint's ``exclude_none`` posture drops it from the wire\n    until a plugin opts in, keeping the addition byte-compatible with\n    existing schemas. UI hint only — enforcing rejection of a disabled\n    value is the consuming app's responsibility.\n:type disabled: bool | None\n:param disabled_reason: Optional explanatory text surfaced (for example,\n    in a tooltip) when the option is disabled. Defaults to ``None``.\n:type disabled_reason: NonEmptyStr | None",
         "properties": {
+          "disabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1682,8 +1705,19 @@
       },
       "SchemaField": {
         "additionalProperties": false,
-        "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr",
+        "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr\n:param allow_custom: Whether the renderer offers free-text (free-solo)\n    entry in addition to the cascaded inventory options. Optional,\n    defaulting to ``None`` (options only). Typed ``bool | None`` so the\n    discovery endpoint's ``exclude_none`` posture drops it from the wire\n    until a plugin opts in, keeping the addition byte-compatible with\n    existing schemas. The flag only surfaces the capability; the\n    free-solo widget that consumes it ships with the consuming plugin.\n:type allow_custom: bool | None",
         "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
           "default": {
             "anyOf": [
               {},
@@ -1886,8 +1920,19 @@
       },
       "ServiceField": {
         "additionalProperties": false,
-        "description": "Represent an inventory service selector field.\n\n:param field_type: The discriminator literal; always ``\"service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"service\"]\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:type service_types: list[ServiceTypeEnum]",
+        "description": "Represent an inventory service selector field.\n\n:param field_type: The discriminator literal; always ``\"service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"service\"]\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:type service_types: list[ServiceTypeEnum]\n:param allow_custom: Whether the renderer offers free-text (free-solo)\n    entry in addition to the inventory options. Optional, defaulting to\n    ``None`` (options only). Typed ``bool | None`` so the discovery\n    endpoint's ``exclude_none`` posture drops it from the wire until a\n    plugin opts in, keeping the addition byte-compatible with existing\n    schemas. The flag only surfaces the capability; the free-solo widget\n    that consumes it ships with the consuming plugin.\n:type allow_custom: bool | None",
         "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
           "default": {
             "anyOf": [
               {},
@@ -2127,8 +2172,19 @@
       },
       "TableField": {
         "additionalProperties": false,
-        "description": "Represent an inventory table selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``SchemaField``); the React renderer\ncascades table options from the selected schema. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"table\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"table\"]\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:type depends_on: NonEmptyStr",
+        "description": "Represent an inventory table selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``SchemaField``); the React renderer\ncascades table options from the selected schema. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"table\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"table\"]\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:type depends_on: NonEmptyStr\n:param allow_custom: Whether the renderer offers free-text (free-solo)\n    entry in addition to the cascaded inventory options. Optional,\n    defaulting to ``None`` (options only). Typed ``bool | None`` so the\n    discovery endpoint's ``exclude_none`` posture drops it from the wire\n    until a plugin opts in, keeping the addition byte-compatible with\n    existing schemas. The flag only surfaces the capability; the\n    free-solo widget that consumes it ships with the consuming plugin.\n:type allow_custom: bool | None",
         "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
           "default": {
             "anyOf": [
               {},

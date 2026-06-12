@@ -17,11 +17,15 @@
 
 import { Controller, useFormContext } from 'react-hook-form';
 import Box from '@mui/material/Box';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import MenuItem from '@mui/material/MenuItem';
-import { RadioGroup } from '@percona/percona-ui';
+import MuiRadioGroup from '@mui/material/RadioGroup';
+import Radio from '@mui/material/Radio';
+import { LabeledContent, RadioGroup } from '@percona/percona-ui';
 import { SchemaSelectShell } from '../SchemaSelectShell';
 import type { ChoiceField as ChoiceFieldType } from '../types';
 import { buildValidationRules } from '../utils/validationMapper';
+import { renderChoiceLabel } from './choiceLabel';
 
 interface ChoiceFieldProps {
   field: ChoiceFieldType;
@@ -33,8 +37,40 @@ const RADIO_THRESHOLD = 3;
 export function ChoiceField({ field }: ChoiceFieldProps) {
   const { control } = useFormContext();
   const rules = buildValidationRules(field);
+  const hasDisabledChoice = field.choices.some((choice) => choice.disabled);
 
   if (field.choices.length > 0 && field.choices.length <= RADIO_THRESHOLD) {
+    // The percona-ui RadioGroup keys its options by `label`, so a
+    // Tooltip-wrapped (ReactNode) label would collide to the same React key
+    // across multiple disabled options. Only the disabled-aware path needs
+    // ReactNode labels, so render that branch with MUI primitives keyed by
+    // `value`; the common path stays on the shared percona-ui RadioGroup
+    // unchanged.
+    if (hasDisabledChoice) {
+      return (
+        <LabeledContent label={field.label} isRequired={field.required} caption={field.description}>
+          <Controller
+            name={field.name}
+            control={control}
+            rules={rules}
+            render={({ field: rhfField }) => (
+              <MuiRadioGroup row {...rhfField}>
+                {field.choices.map((choice) => (
+                  <FormControlLabel
+                    key={choice.value}
+                    value={choice.value}
+                    disabled={choice.disabled}
+                    control={<Radio />}
+                    label={renderChoiceLabel(choice)}
+                  />
+                ))}
+              </MuiRadioGroup>
+            )}
+          />
+        </LabeledContent>
+      );
+    }
+
     return (
       <RadioGroup
         name={field.name}
@@ -75,8 +111,8 @@ export function ChoiceField({ field }: ChoiceFieldProps) {
           }}
         >
           {field.choices.map((choice) => (
-            <MenuItem key={choice.value} value={choice.value}>
-              {choice.label}
+            <MenuItem key={choice.value} value={choice.value} disabled={choice.disabled}>
+              {renderChoiceLabel(choice)}
             </MenuItem>
           ))}
         </SchemaSelectShell>

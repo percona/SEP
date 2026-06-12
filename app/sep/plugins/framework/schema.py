@@ -98,10 +98,22 @@ class Choice(SchemaBaseModel):
     :type label: NonEmptyStr
     :param value: The value submitted when the choice is selected.
     :type value: NonEmptyStr
+    :param disabled: Whether the option is rendered non-selectable. Optional,
+        defaulting to ``None`` (selectable). Typed ``bool | None`` so the
+        discovery endpoint's ``exclude_none`` posture drops it from the wire
+        until a plugin opts in, keeping the addition byte-compatible with
+        existing schemas. UI hint only — enforcing rejection of a disabled
+        value is the consuming app's responsibility.
+    :type disabled: bool | None
+    :param disabled_reason: Optional explanatory text surfaced (for example,
+        in a tooltip) when the option is disabled. Defaults to ``None``.
+    :type disabled_reason: NonEmptyStr | None
     """
 
     label: NonEmptyStr
     value: NonEmptyStr
+    disabled: bool | None = None
+    disabled_reason: NonEmptyStr | None = None
 
 
 class ColumnFormat(EnumFieldMixin, StrEnum):
@@ -414,12 +426,21 @@ class SchemaField(BaseField):
     :param depends_on: The name of the field whose value drives the list of
         available schemas.
     :type depends_on: NonEmptyStr
+    :param allow_custom: Whether the renderer offers free-text (free-solo)
+        entry in addition to the cascaded inventory options. Optional,
+        defaulting to ``None`` (options only). Typed ``bool | None`` so the
+        discovery endpoint's ``exclude_none`` posture drops it from the wire
+        until a plugin opts in, keeping the addition byte-compatible with
+        existing schemas. The flag only surfaces the capability; the
+        free-solo widget that consumes it ships with the consuming plugin.
+    :type allow_custom: bool | None
     """
 
     field_type: Literal["schema"] = Field(
         "schema", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr
+    allow_custom: bool | None = None
 
 
 class ServiceField(BaseField):
@@ -431,12 +452,21 @@ class ServiceField(BaseField):
     :param service_types: The list of service types the selector should offer
         (for example, ``[ServiceTypeEnum.MYSQL]``).
     :type service_types: list[ServiceTypeEnum]
+    :param allow_custom: Whether the renderer offers free-text (free-solo)
+        entry in addition to the inventory options. Optional, defaulting to
+        ``None`` (options only). Typed ``bool | None`` so the discovery
+        endpoint's ``exclude_none`` posture drops it from the wire until a
+        plugin opts in, keeping the addition byte-compatible with existing
+        schemas. The flag only surfaces the capability; the free-solo widget
+        that consumes it ships with the consuming plugin.
+    :type allow_custom: bool | None
     """
 
     field_type: Literal["service"] = Field(
         "service", alias="type", serialization_alias="type"
     )
     service_types: list[ServiceTypeEnum]
+    allow_custom: bool | None = None
 
 
 class TableField(BaseField):
@@ -453,12 +483,21 @@ class TableField(BaseField):
     :param depends_on: The name of the field whose value drives the list of
         available tables.
     :type depends_on: NonEmptyStr
+    :param allow_custom: Whether the renderer offers free-text (free-solo)
+        entry in addition to the cascaded inventory options. Optional,
+        defaulting to ``None`` (options only). Typed ``bool | None`` so the
+        discovery endpoint's ``exclude_none`` posture drops it from the wire
+        until a plugin opts in, keeping the addition byte-compatible with
+        existing schemas. The flag only surfaces the capability; the
+        free-solo widget that consumes it ships with the consuming plugin.
+    :type allow_custom: bool | None
     """
 
     field_type: Literal["table"] = Field(
         "table", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr
+    allow_custom: bool | None = None
 
 
 class ScriptPreviewField(BaseField):
