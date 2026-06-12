@@ -15,6 +15,7 @@
 
 """Provide shared building blocks for schema-driven plugins."""
 
+from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.cascade import (
     build_derived_payload,
     build_predecessor_payload,
@@ -71,6 +72,7 @@ from app.sep.plugins.framework.task_status import (
 )
 
 __all__ = [
+    "BaseApp",
     "CardinalityRule",
     "CascadeFailure",
     "CascadeResult",

@@ -29,6 +29,7 @@ from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppState, AppStateBase
+from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings
 
 _alerts_plugin_enabled = any(
@@ -109,9 +110,9 @@ async def init_sep_db() -> None:
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
         configured = [
-            (key, plugin.enabled)
-            for plugin in sep_settings.PLUGINS
-            if (key := plugin.module_name.split(".")[-1]) not in PROTECTED_APP_KEYS
+            (app.key, app.enabled)
+            for app in get_app_registry()
+            if app.key not in PROTECTED_APP_KEYS
         ]
         configured_keys = {key for key, _ in configured}
         existing_keys = set(await AppStateManager.all_states(session))
