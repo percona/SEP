@@ -49,6 +49,43 @@ function failOnTasksCall() {
   return directCall;
 }
 
+/** Build a minimal {@link ApiError}-shaped object; the fn reads only status + data. */
+function apiError(status: number, data?: unknown): ApiError {
+  return { status, data } as ApiError;
+}
+
+describe('settingErrorMessage', () => {
+  const KEY = 'STALENESS_THRESHOLD_SECONDS';
+  const entry = (msg: string) => ({ loc: ['body', KEY, 'greater_than'], msg });
+
+  it('returns null for a non-422 error', () => {
+    expect(settingErrorMessage(apiError(500, { detail: [entry('x')] }), KEY)).toBeNull();
+  });
+
+  it('returns null when the 422 body has no detail', () => {
+    expect(settingErrorMessage(apiError(422, {}), KEY)).toBeNull();
+  });
+
+  it('returns null when detail is not an array', () => {
+    expect(settingErrorMessage(apiError(422, { detail: 'nope' }), KEY)).toBeNull();
+  });
+
+  it('returns null when no detail entry references the key', () => {
+    const other = { loc: ['body', 'OTHER_KEY'], msg: 'other' };
+    expect(settingErrorMessage(apiError(422, { detail: [other] }), KEY)).toBeNull();
+  });
+
+  it('joins all messages whose loc references the key', () => {
+    const body = { detail: [entry('too small'), entry('also bad')] };
+    expect(settingErrorMessage(apiError(422, body), KEY)).toBe('too small; also bad');
+  });
+
+  it('returns null for a null/undefined error', () => {
+    expect(settingErrorMessage(null, KEY)).toBeNull();
+    expect(settingErrorMessage(undefined, KEY)).toBeNull();
+  });
+});
+
 describe('useSettingsList', () => {
   it('fetches every group from the single SEP endpoint, no direct Tasks call', async () => {
     const directCall = failOnTasksCall();
@@ -60,6 +97,32 @@ describe('useSettingsList', () => {
     const classes = result.current.data?.map((g) => g.setting_class);
     expect(classes).toEqual(['SEPSettings', 'SnippetsSettings', 'TasksSettings']);
     expect(directCall).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a gateway error (502) so the page can render a failed state', async () => {
+    server.use(http.get(SEP_URL, () => new HttpResponse(null, { status: 502 })));
+
+    const { result } = renderHook(() => useSettingsList(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error?.status).toBe(502);
+  });
+
+  it('does not fetch when disabled (non-admin viewer)', async () => {
+    const fetched = vi.fn();
+    server.use(
+      http.get(SEP_URL, () => {
+        fetched();
+        return HttpResponse.json(combinedListResponse);
+      }),
+    );
+
+    const { result } = renderHook(() => useSettingsList({ enabled: false }), {
+      wrapper: makeWrapper(),
+    });
+
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(result.current.isSuccess).toBe(false);
+    expect(fetched).not.toHaveBeenCalled();
   });
 });
 
@@ -159,5 +222,23 @@ describe('useResetSetting', () => {
 
     expect(deleted).toHaveBeenCalled();
     expect(directCall).not.toHaveBeenCalled();
+  });
+
+  it('DELETEs a local class through its own SEP path', async () => {
+    const deleted = vi.fn();
+    server.use(
+      http.delete('http://localhost/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME', () => {
+        deleted();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    const { result } = renderHook(() => useResetSetting(), { wrapper: makeWrapper() });
+    await result.current.mutateAsync({
+      settingClass: 'SEPSettings',
+      key: 'SYNC_REFRESH_TIME',
+    });
+
+    expect(deleted).toHaveBeenCalled();
   });
 });

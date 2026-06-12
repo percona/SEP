@@ -215,6 +215,20 @@ class TestListAggregation:
         response = admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
+    def test_upstream_omits_tasks_group_fails_closed_502(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A valid upstream payload that omits the Tasks group fails closed with 502.
+
+        The fetch succeeds and validates, but ``_remote_list_group`` finds no
+        ``TasksSettings`` group to splice in -- the LIST must not silently drop
+        the remote group, so it 502s rather than returning three groups.
+        """
+        mock_tasks.get.return_value = {"groups": []}
+        response = admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "TasksSettings" in response.json()["detail"]
+
 
 class TestDispatch:
     """DETAIL / PATCH / DELETE dispatch to the Tasks API for the remote class."""
@@ -318,6 +332,32 @@ class TestDispatch:
         mock_tasks.patch.assert_not_awaited()
         mock_tasks.get.assert_not_awaited()
 
+    def test_detail_passes_through_upstream_400(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A non-404 upstream client error (400) is also preserved, not masked."""
+        mock_tasks.get.side_effect = HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="bad request"
+        )
+        response = admin_client.get(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"detail": "bad request"}
+
+    def test_unknown_class_is_not_proxied(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A valid enum class that is neither local nor remote 404s, never proxied.
+
+        ``Settings`` is a real :class:`SettingClassEnum` member but is not
+        registered on the SEP router (local or remote), so ``_resolve`` 404s it
+        before any dispatch -- the remote branch must not swallow an unknown class.
+        """
+        response = admin_client.get(f"/api/sep/admin/settings/Settings/{TASKS_KEY}")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_tasks.get.assert_not_awaited()
+
 
 class TestAuthParity:
     """The remote paths inherit the same admin + Bearer gates as the local ones."""
@@ -351,3 +391,186 @@ class TestAuthParity:
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         mock_tasks.delete.assert_not_awaited()
+
+    def test_non_admin_list_forbidden(
+        self, non_admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A non-admin LIST is rejected before any remote group is fetched."""
+        response = non_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_tasks.get.assert_not_awaited()
+
+    def test_non_admin_patch_forbidden(
+        self, non_admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A non-admin PATCH is rejected before the proxy runs."""
+        response = non_admin_client.patch(
+            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_tasks.patch.assert_not_awaited()
+
+    def test_non_admin_delete_forbidden(
+        self, non_admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A non-admin DELETE is rejected before the proxy runs."""
+        response = non_admin_client.delete(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_tasks.delete.assert_not_awaited()
+
+    def test_cookie_only_list_allowed(
+        self, cookie_admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A cookie-only admin can LIST: the Bearer gate covers mutations only.
+
+        The safe ``GET`` carries no ``mutation_deps``, so the absent Bearer must
+        not block a read -- guards against over-gating the list behind the
+        unsafe-method Bearer requirement.
+        """
+        mock_tasks.get.return_value = _tasks_list()
+        response = cookie_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        classes = [g["setting_class"] for g in response.json()["groups"]]
+        assert "TasksSettings" in classes
+
+
+class TestProxyErrorSplit:
+    """DETAIL / PATCH / DELETE route upstream failures through the 4xx/5xx split.
+
+    Existing tests cover the split only on the LIST path (``_remote_list_group``);
+    these drive the shared ``_proxy_settings_request`` dispatcher, where an
+    upstream server error (>= 500) or connection ``OSError`` becomes a 502 while
+    a client error (< 500) is re-raised unchanged.
+    """
+
+    def test_detail_upstream_5xx_becomes_502(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """An upstream 5xx on a DETAIL read fails the proxy with 502."""
+        mock_tasks.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="tasks down"
+        )
+        response = admin_client.get(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "tasks down"}
+
+    def test_detail_upstream_oserror_becomes_502(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A connection-level failure on a DETAIL read becomes a 502."""
+        mock_tasks.get.side_effect = OSError("conn refused")
+        response = admin_client.get(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "conn refused"}
+
+    def test_patch_upstream_5xx_becomes_502(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """An upstream 5xx on a PATCH fails the proxy with 502."""
+        mock_tasks.patch.side_effect = HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="boom"
+        )
+        response = admin_client.patch(
+            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "boom"}
+
+    def test_patch_upstream_oserror_becomes_502(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A connection-level failure on a PATCH becomes a 502."""
+        mock_tasks.patch.side_effect = OSError("conn refused")
+        response = admin_client.patch(
+            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "conn refused"}
+
+    def test_delete_upstream_5xx_becomes_502(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """An upstream 5xx on a DELETE fails the proxy with 502."""
+        mock_tasks.delete.side_effect = HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="boom"
+        )
+        response = admin_client.delete(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "boom"}
+
+    def test_delete_upstream_oserror_becomes_502(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A connection-level failure on a DELETE becomes a 502."""
+        mock_tasks.delete.side_effect = OSError("conn refused")
+        response = admin_client.delete(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "conn refused"}
+
+    def test_delete_passes_through_upstream_409(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """An upstream 409 (NOT_OVERRIDABLE) on DELETE keeps its status + detail.
+
+        DELETE is the only verb that can surface a NOT_OVERRIDABLE 409 from the
+        Tasks app; the proxy must preserve it (< 500) rather than mask it as 502
+        so the UI shows the real reason the reset was refused.
+        """
+        mock_tasks.delete.side_effect = HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="cannot be overridden"
+        )
+        response = admin_client.delete(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json() == {"detail": "cannot be overridden"}
+
+
+class TestProxyResponseValidation:
+    """Upstream contract drift surfaces as 500 (a real bug), not 502 or a crash.
+
+    A 502 means "the upstream is unavailable"; a malformed-but-200 response is a
+    contract violation between co-deployed services, so it must surface as a 500
+    rather than be mistaken for an availability blip.
+    """
+
+    def test_detail_shape_drift_returns_500(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A DETAIL payload that fails ``SettingResponse`` validation is a 500."""
+        mock_tasks.get.return_value = {"bad": "x"}
+        response = admin_client.get(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    def test_patch_non_list_payload_returns_500(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A PATCH response that is not a list (here ``None``) surfaces as 500."""
+        mock_tasks.patch.return_value = None
+        response = admin_client.patch(
+            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+        )
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        mock_tasks.patch.assert_awaited_once()
+
+    def test_patch_item_shape_drift_returns_500(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """A PATCH list whose items fail validation surfaces as 500."""
+        mock_tasks.patch.return_value = [{"bad": "x"}]
+        response = admin_client.patch(
+            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+        )
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
