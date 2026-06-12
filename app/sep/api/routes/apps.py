@@ -26,9 +26,9 @@ the admin listing at ``/api/admin/apps/``.
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
+from app.sep.plugins.framework.registry import get_app_registry
 
 router = APIRouter(tags=["apps"])
 
@@ -44,12 +44,18 @@ class AppKeyResponse(BaseModel):
     :type sidebar: bool
     :param uri_path: The plugin's mount URI path.
     :type uri_path: str
+    :param display_name: The human-facing label for the app.
+    :type display_name: str
+    :param custom_ui: Whether the app ships a bespoke React UI.
+    :type custom_ui: bool
     """
 
     app_key: str
     enabled: bool
     sidebar: bool
     uri_path: str
+    display_name: str
+    custom_ui: bool
 
 
 @router.get("/")
@@ -68,10 +74,12 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     states = await AppStateManager.all_states(session)
     return [
         AppKeyResponse(
-            app_key=(key := plugin.module_name.split(".")[-1]),
-            enabled=key in PROTECTED_APP_KEYS or states.get(key, True),
-            sidebar=plugin.sidebar,
-            uri_path=str(plugin.uri_path),
+            app_key=app.key,
+            enabled=app.key in PROTECTED_APP_KEYS or states.get(app.key, True),
+            sidebar=app.sidebar,
+            uri_path=app.uri_path,
+            display_name=app.display_name,
+            custom_ui=app.custom_ui,
         )
-        for plugin in sep_settings.PLUGINS
+        for app in get_app_registry()
     ]
