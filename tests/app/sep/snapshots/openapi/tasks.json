@@ -2787,7 +2787,7 @@
     },
     "/api/plugins/tasks/schema": {
       "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.\n:rtype: PluginSchema",
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
         "operationId": "tasks_get_schema_api_plugins_tasks_schema_get",
         "responses": {
           "200": {

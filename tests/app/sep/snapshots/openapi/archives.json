@@ -3087,7 +3087,7 @@
     },
     "/api/plugins/archives/schema": {
       "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.\n:rtype: PluginSchema",
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
         "operationId": "archives_get_schema_api_plugins_archives_schema_get",
         "responses": {
           "200": {
