@@ -40,7 +40,11 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.framework import batch_get_latest_statuses, make_task_dep
+from app.sep.plugins.framework import (
+    build_default_task_response,
+    build_task_list_responses,
+    make_task_dep,
+)
 from app.sep.plugins.mysql_backups.models import (
     BackupConfig,
     BackupConfigAll,
@@ -280,11 +284,14 @@ def build_mysql_backups_api_task_response(
     if task.data:
         meta = task.data.get("meta") or {}
         hostname = meta.get("target")
-    return BackupResponse(
-        **task.model_dump(),
-        backup_type=_extract_backup_type_from_task(task),
-        hostname=hostname,
-        status=status,
+    return build_default_task_response(
+        BackupResponse,
+        task,
+        status,
+        extras={
+            "backup_type": _extract_backup_type_from_task(task),
+            "hostname": hostname,
+        },
     )
 
 
@@ -316,21 +323,13 @@ async def get_mysql_backups_api_task_responses(
     :return: Paginated backup task responses matching the filter.
     :rtype: PaginatedResponse[BackupResponse]
     """
-    response = await tasks_api.get(
-        "/",
-        params={"owner": TaskOwner.BACKUPS.value, **pagination.model_dump()},
+    return await build_task_list_responses(
+        tasks_api,
+        owner=TaskOwner.BACKUPS.value,
+        response_builder=build_mysql_backups_api_task_response,
+        pagination=pagination,
+        status_filter=status,
     )
-    tasks = [Task.model_validate(task) for task in response["items"]]
-    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
-    responses = [
-        build_mysql_backups_api_task_response(task, status=statuses.get(task.name))
-        for task in tasks
-        if status is None or statuses.get(task.name) == status
-    ]
-    total = (
-        len(responses) if status is not None else response.get("total", len(responses))
-    )
-    return PaginatedResponse.from_pagination(responses, total, pagination)
 
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:

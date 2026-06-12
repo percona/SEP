@@ -16,7 +16,6 @@
 """Tests for AppState seeding in :func:`app.sep.db.seed.init_sep_db`."""
 
 from collections.abc import AsyncIterator
-from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -26,17 +25,24 @@ from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from app.sep.config import Plugin
 from app.sep.crud import AppStateManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppState
+from app.sep.plugins.framework.registry import get_app_registry
 
 
-def _plugin(key: str, *, enabled: bool = True) -> MagicMock:
-    """Build a minimal Plugin stand-in carrying ``module_name`` and ``enabled``."""
-    plugin = MagicMock()
-    plugin.module_name = f"app.sep.plugins.{key}"
-    plugin.enabled = enabled
-    return plugin
+def _plugin(key: str, *, enabled: bool = True) -> Plugin:
+    """Build a ``Plugin`` activation entry for ``key``."""
+    return Plugin(module_name=key, enabled=enabled)
+
+
+@pytest.fixture(autouse=True)
+def _clear_registry_cache() -> None:
+    """Rebuild the registry from each test's patched ``PLUGINS``."""
+    get_app_registry.cache_clear()
+    yield
+    get_app_registry.cache_clear()
 
 
 @pytest_asyncio.fixture(name="seed_maker")
