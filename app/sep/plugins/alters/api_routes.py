@@ -31,9 +31,7 @@ from app.core.exceptions import HTTPInternalServerErrorException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     get_username_mapping,
-    HasNoConflictedRunningTasks,
     InventoryAPI,
-    IsApiAuthenticated,
     TaskAPI,
 )
 from app.sep.plugins.alters.deps import (
@@ -62,8 +60,8 @@ from app.sep.plugins.framework import (
     get_task_latest_status,
     maybe_record_connectivity_warning,
 )
-from app.sep.plugins.framework.api import schema_endpoint
-from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
+from app.sep.plugins.framework.api import derive_execute_route, schema_endpoint
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -211,27 +209,14 @@ async def alters_api_update(
     )
 
 
-@router.post(
-    "/{task_name}/execute",
-    status_code=http_status.HTTP_201_CREATED,
-    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
+derive_execute_route(
+    router,
+    name="alters_api_execute",
+    description="Execute an alters task (parent, dry-run, or pre-checks).",
+    task_dep=AltersTask,
+    write_model=AltersExecuteWrite,
+    response_model=AltersExecutionResponse,
 )
-async def alters_api_execute(
-    task: AltersTask,
-    body: AltersExecuteWrite,
-    tasks_api: TaskAPI,
-) -> AltersExecutionResponse:
-    """Execute an alters task (parent, dry-run, or pre-checks)."""
-    logger.info("Executing alters task %r", task.name)
-    created = await tasks_api.post(
-        f"/execute/{task.name}",
-        json=body.model_dump(exclude_none=True),
-    )
-    task_history = TaskHistoryResponse.model_validate(created)
-    return AltersExecutionResponse(
-        task_name=task.name,
-        task_id=task_history.id,
-    )
 
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
