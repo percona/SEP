@@ -15,6 +15,7 @@
 
 """Provide shared building blocks for schema-driven plugins."""
 
+from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.cascade import (
     build_derived_payload,
     build_predecessor_payload,
@@ -33,6 +34,10 @@ from app.sep.plugins.framework.connectivity import (
     record_connectivity_warning,
 )
 from app.sep.plugins.framework.deps import make_task_dep
+from app.sep.plugins.framework.responses import (
+    build_default_task_response,
+    build_task_list_responses,
+)
 from app.sep.plugins.framework.rules import (
     absent,
     all_,
@@ -67,6 +72,7 @@ from app.sep.plugins.framework.task_status import (
 )
 
 __all__ = [
+    "BaseApp",
     "CardinalityRule",
     "CascadeFailure",
     "CascadeResult",
@@ -89,8 +95,10 @@ __all__ = [
     "any_truthy",
     "apply_conditional_rules",
     "batch_get_latest_statuses",
+    "build_default_task_response",
     "build_derived_payload",
     "build_predecessor_payload",
+    "build_task_list_responses",
     "cascade_create_predecessors",
     "cascade_create_tasks",
     "cascade_delete_predecessors",

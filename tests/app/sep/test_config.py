@@ -155,3 +155,24 @@ class TestPluginModuleNameDeprecation:
             plugin = Plugin(name="Backups", module_name=sibling_value)
         assert plugin.module_name == expected_module
         mock_logger.warning.assert_not_called()
+
+
+class TestPluginNameOptional:
+    """Test the MODULE_NAME-only ``Plugin`` shrink (``name`` optional)."""
+
+    def test_plugin_constructs_without_name(self) -> None:
+        """A MODULE_NAME-only entry validates with ``name`` absent."""
+        plugin = Plugin(module_name="checksums")
+        assert plugin.name is None
+
+    def test_name_absent_leaves_derived_metadata_empty(self) -> None:
+        """Without a name, ``uri_path``/``css_class`` stay empty for the registry."""
+        plugin = Plugin(module_name="checksums")
+        assert plugin.uri_path == ""
+        assert plugin.css_class == ""
+
+    def test_name_still_seeds_derived_metadata(self) -> None:
+        """A supplied name keeps driving the slugified defaults."""
+        plugin = Plugin(name="Snippet Manager", module_name="snippets")
+        assert plugin.uri_path == "/snippet-manager"
+        assert plugin.css_class == "snippet-manager"

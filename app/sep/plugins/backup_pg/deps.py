@@ -53,7 +53,8 @@ from app.sep.plugins.backup_pg.models import (
     BackupType,
 )
 from app.sep.plugins.framework import (
-    batch_get_latest_statuses,
+    build_default_task_response,
+    build_task_list_responses,
     get_task_latest_status,
     make_task_dep,
 )
@@ -221,11 +222,11 @@ def build_backup_pg_api_task_response(
     if server_config is None:
         server_config = _parse_first_server_config(task)
     backup_type = str(server_config.get("BACKUP_TYPE", ""))
-    return BackupTaskResponse(
-        **task.model_dump(),
-        hostname=meta.get("target"),
-        status=status,
-        backup_type=backup_type,
+    return build_default_task_response(
+        BackupTaskResponse,
+        task,
+        status,
+        extras={"hostname": meta.get("target"), "backup_type": backup_type},
     )
 
 
@@ -257,19 +258,13 @@ async def get_backup_pg_api_task_responses(
     :return: Paginated backup task responses matching the filter.
     :rtype: PaginatedResponse[BackupTaskResponse]
     """
-    response = await tasks_api.get(
-        "/",
-        params={"owner": TaskOwner.BACKUP_PG.value, **pagination.model_dump()},
+    return await build_task_list_responses(
+        tasks_api,
+        owner=TaskOwner.BACKUP_PG.value,
+        response_builder=build_backup_pg_api_task_response,
+        pagination=pagination,
+        status_filter=status,
     )
-    tasks = [Task.model_validate(item) for item in response["items"]]
-    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
-    items = [
-        build_backup_pg_api_task_response(task, status=statuses.get(task.name))
-        for task in tasks
-        if status is None or statuses.get(task.name) == status
-    ]
-    total = len(items) if status is not None else response.get("total", len(items))
-    return PaginatedResponse.from_pagination(items, total, pagination)
 
 
 async def build_backup_pg_api_detail_response(
