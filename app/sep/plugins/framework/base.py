@@ -61,7 +61,7 @@ class BaseApp(BaseModel):
 
     key: str = ""
     name: str
-    display_name: str = ""
+    display_name: str
     uri_path: str
     css_class: str = ""
     sidebar: bool = True
