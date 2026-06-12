@@ -45,7 +45,11 @@ from app.sep.plugins.archives.models import (
     PurgeConfig,
     PurgeConfigAll,
 )
-from app.sep.plugins.framework import batch_get_latest_statuses, make_task_dep
+from app.sep.plugins.framework import (
+    build_default_task_response,
+    build_task_list_responses,
+    make_task_dep,
+)
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -361,10 +365,11 @@ def build_archives_api_task_response(
     :return: A validated archive task API response object.
     :rtype: ArchivesTaskResponse
     """
-    return ArchivesTaskResponse(
-        **task.model_dump(),
-        service_type=ServiceTypeEnum.MYSQL,
-        status=status,
+    return build_default_task_response(
+        ArchivesTaskResponse,
+        task,
+        status,
+        extras={"service_type": ServiceTypeEnum.MYSQL},
     )
 
 
@@ -378,13 +383,11 @@ async def get_archives_api_task_responses(
     :return: The archive task responses enriched with service_type and status.
     :rtype: list[ArchivesTaskResponse]
     """
-    response = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
-    tasks = [Task.model_validate(task) for task in response.get("items", [])]
-    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
-    return [
-        build_archives_api_task_response(task, status=statuses.get(task.name))
-        for task in tasks
-    ]
+    return await build_task_list_responses(
+        tasks_api,
+        owner=TaskOwner.ARCHIVER.value,
+        response_builder=build_archives_api_task_response,
+    )
 
 
 def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:

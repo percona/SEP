@@ -52,6 +52,7 @@ from app.sep.plugins.backup_mongo.models import (
 from app.sep.plugins.backup_mongo.schema import BACKUP_MONGO_DERIVED
 from app.sep.plugins.framework import (
     batch_get_latest_statuses,
+    build_default_task_response,
     extract_latest_task_status,
     get_task_latest_status,
     make_task_dep,
@@ -319,11 +320,14 @@ def build_backup_mongo_api_task_response(
     """
     data = task.data
     meta = data.get("meta") or {}
-    return BackupTaskResponse(
-        **task.model_dump(),
-        hostname=meta.get("target"),
-        status=status,
-        backup_type=str(data.get("backup_type", "")),
+    return build_default_task_response(
+        BackupTaskResponse,
+        task,
+        status,
+        extras={
+            "hostname": meta.get("target"),
+            "backup_type": str(data.get("backup_type", "")),
+        },
     )
 
 

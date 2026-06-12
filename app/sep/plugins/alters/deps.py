@@ -15,9 +15,11 @@
 
 """Define dependencies for the Alters plugin."""
 
+import copy
 import json
 import logging
 import shlex
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -53,7 +55,8 @@ from app.sep.plugins.alters.models import (
 )
 from app.sep.plugins.alters.schema import alters_schema
 from app.sep.plugins.framework import (
-    batch_get_latest_statuses,
+    build_default_task_response,
+    build_task_list_responses,
     ConnectivityWarning,
     make_task_dep,
 )
@@ -1017,22 +1020,24 @@ def build_alters_api_task_response(
     :rtype: AltersTaskResponse
     """
     mapping = username_mapping or {}
-    payload = task.model_dump()
-    created_by = payload.get("created_by")
-    payload["created_by"] = mapping.get(created_by, created_by)
-    last_updated_by = payload.get("last_updated_by")
-    payload["last_updated_by"] = mapping.get(last_updated_by, last_updated_by)
-    meta = payload.get("data", {}).get("meta")
+    data = copy.deepcopy(task.data)
+    meta = data.get("meta") if isinstance(data, dict) else None
     if isinstance(meta, dict):
         command_line = _command_line_from_meta(meta)
         if command_line is not None:
             meta["_command_line"] = command_line
-    return AltersTaskResponse(
-        **payload,
-        service_type=ServiceTypeEnum.MYSQL,
-        status=status,
-        connectivity_warning=connectivity_warning,
-        pre_checks_auto_fire_warning=pre_checks_auto_fire_warning,
+    return build_default_task_response(
+        AltersTaskResponse,
+        task,
+        status,
+        extras={
+            "created_by": mapping.get(task.created_by, task.created_by),
+            "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
+            "data": data,
+            "service_type": ServiceTypeEnum.MYSQL,
+            "connectivity_warning": connectivity_warning,
+            "pre_checks_auto_fire_warning": pre_checks_auto_fire_warning,
+        },
     )
 
 
@@ -1061,26 +1066,15 @@ async def get_alters_api_task_responses(
     if service_type is not None and service_type != ServiceTypeEnum.MYSQL:
         return []
 
-    params = {"owner": TaskOwner.ALTERS.value}
-    response = await tasks_api.get("/", params=params)
-    parent_tasks = [
-        task
-        for item in response["items"]
-        if is_alters_parent_task(task := Task.model_validate(item))
-    ]
-    statuses = await batch_get_latest_statuses(
-        tasks_api, [task.name for task in parent_tasks]
+    return await build_task_list_responses(
+        tasks_api,
+        owner=TaskOwner.ALTERS.value,
+        response_builder=partial(
+            build_alters_api_task_response, username_mapping=username_mapping
+        ),
+        status_filter=status,
+        task_filter=is_alters_parent_task,
     )
-
-    return [
-        build_alters_api_task_response(
-            task,
-            status=statuses.get(task.name),
-            username_mapping=username_mapping,
-        )
-        for task in parent_tasks
-        if status is None or statuses.get(task.name) == status
-    ]
 
 
 async def get_alters_index_context(
