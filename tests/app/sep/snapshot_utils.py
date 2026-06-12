@@ -23,12 +23,13 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
-from app.core.utils.openapi import _SCHEMA_REF_PREFIX, generate_tag_prefixed_unique_id
+from app.core.utils.openapi import generate_tag_prefixed_unique_id
 from app.sep.api.router import api_router
 from app.sep.config import sep_settings
 
 SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
 PLUGIN_PREFIX = "/api/plugins"
+SCHEMA_REF_PREFIX = "#/components/schemas/"
 UPDATE = os.environ.get("SEP_UPDATE_SNAPSHOTS") not in (None, "", "0", "false", "False")
 
 
@@ -60,8 +61,8 @@ def collect_schema_refs(node: Any, found: set[str]) -> None:
     """
     if isinstance(node, dict):
         ref = node.get("$ref")
-        if isinstance(ref, str) and ref.startswith(_SCHEMA_REF_PREFIX):
-            found.add(ref[len(_SCHEMA_REF_PREFIX) :])
+        if isinstance(ref, str) and ref.startswith(SCHEMA_REF_PREFIX):
+            found.add(ref[len(SCHEMA_REF_PREFIX) :])
         for value in node.values():
             collect_schema_refs(value, found)
     elif isinstance(node, list):
