@@ -17,7 +17,7 @@
 
 import logging
 from collections.abc import Mapping
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeAlias
 
 from fastapi import Depends
 from fastapi.exceptions import HTTPException
@@ -27,7 +27,7 @@ from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPServiceUnavailableException,
 )
-from app.core.pagination.deps import make_pagination_dep
+from app.core.pagination import make_pagination_dep, Pagination
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 from app.sep.deps import DefaultContext, SessionDep
 from app.sep.plugins.alerts.config import alerts_pmm_config
@@ -40,7 +40,10 @@ logger = logging.getLogger(__name__)
 PAGERDUTY_CONTACT_POINT_NAME = "SEP PagerDuty"
 
 BACKUPS_LIMIT_MAX = 100
-AlertsBackupsPaginationDep = make_pagination_dep(max_limit=BACKUPS_LIMIT_MAX)
+_alerts_backups_pagination_dep = make_pagination_dep(max_limit=BACKUPS_LIMIT_MAX)
+AlertsBackupsPaginationDep: TypeAlias = Annotated[
+    Pagination, Depends(_alerts_backups_pagination_dep)
+]
 
 
 def find_pagerduty_contact_point(

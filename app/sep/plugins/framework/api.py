@@ -36,7 +36,7 @@ from typing import Annotated, Any, cast, TypeVar
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
-from app.core.pagination import PaginatedResponse
+from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.sep.deps import IsApiAuthenticated, TaskAPI
 from app.sep.plugins.framework.responses import (
     build_task_list_responses,
@@ -314,7 +314,7 @@ def derive_crud_routes(
     create_payload: Callable[..., Awaitable[TaskWrite]],
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None = None,
     detail_path_param: str = "task_name",
-    pagination_dep: Any | None = None,
+    pagination_dep: PaginationDependency | None = None,
     update_handler: Callable[..., Awaitable[Any]] | None = None,
     delete_handler: Callable[..., Awaitable[Any]] | None = None,
 ) -> APIRouter:
@@ -366,10 +366,10 @@ def derive_crud_routes(
         must equal ``get_task``'s inner path parameter (``make_task_dep`` uses
         ``task_name``).
     :type detail_path_param: str
-    :param pagination_dep: A ``make_pagination_dep(...)`` result. When given,
-        the list route takes that pagination dependency and returns a
+    :param pagination_dep: A ``make_pagination_dep(...)`` dependency callable.
+        When given, the list route takes that dependency (wrapped in
+        ``Annotated[Pagination, Depends(...)]``) and returns a
         ``PaginatedResponse``; when ``None`` the list returns a plain list.
-    :type pagination_dep: Any | None
     :param update_handler: A fully-formed update handler; when given, a
         ``PUT /{detail_path_param}`` route is registered using it. The helper
         applies only ``IsApiAuthenticated`` and ``response_model_by_alias`` — any
@@ -433,9 +433,10 @@ def derive_crud_routes(
             dependencies=[IsApiAuthenticated],
         )
     else:
+        paginated_param = Annotated[Pagination, Depends(pagination_dep)]
 
         async def _list_paginated(
-            tasks_api: TaskAPI, pagination: pagination_dep
+            tasks_api: TaskAPI, pagination: paginated_param
         ) -> PaginatedResponse:
             responses = await build_task_list_responses(
                 tasks_api,
