@@ -153,7 +153,12 @@ class TestSepSettingsList:
     async def test_lists_hot_and_not_overridable_entries(
         self, api_admin_client: TestClient
     ) -> None:
-        """A SEPSettings group exposes HOT, NESTED_ONLY and NOT_OVERRIDABLE fields."""
+        """A SEPSettings group exposes HOT and NOT_OVERRIDABLE entries.
+
+        NESTED_ONLY parents (``SESSION`` / ``SESSION_REFRESH``) are expanded into
+        their per-leaf entries, each classified ``HOT``, so the LIST projection no
+        longer carries a ``NESTED_ONLY`` parent summary.
+        """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -165,7 +170,6 @@ class TestSepSettingsList:
         reloads = {entry["reload"] for entry in sep_entry["settings"]}
         assert reloads == {
             ReloadClassification.HOT.value,
-            ReloadClassification.NESTED_ONLY.value,
             ReloadClassification.NOT_OVERRIDABLE.value,
         }
 
@@ -178,6 +182,51 @@ class TestSepSettingsList:
             response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
         )
         assert sep_setting["has_override"] is False
+
+    async def test_session_parent_expanded_into_leaves(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """``SESSION`` is replaced by one editable entry per leaf, no summary entry."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        sep_settings_group = next(
+            group
+            for group in response.json()["groups"]
+            if group["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+        )
+        keys = {entry["key"] for entry in sep_settings_group["settings"]}
+        assert "SESSION" not in keys
+        expected_leaves = {
+            "SESSION__COOKIE_NAME",
+            "SESSION__MAX_AGE",
+            "SESSION__SAMESITE",
+            "SESSION__SECURE",
+            "SESSION__PATH",
+        }
+        assert expected_leaves <= keys
+        for entry in sep_settings_group["settings"]:
+            if entry["key"] in expected_leaves:
+                assert entry["is_complex"] is False
+                assert entry["reload"] == ReloadClassification.HOT.value
+                assert "__".join(entry["key_path"]) == entry["key"]
+
+    async def test_scalar_hot_field_kept_single(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """A scalar HOT field stays one entry — expansion must not drop it.
+
+        ``SnippetsSettings.PREVIEW_MAX_CHARS`` is a nested-overridable parent
+        (HOT) with no submodel, so the enumerator yields nothing; the entry must
+        survive as a single non-complex row.
+        """
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        entry = _find_setting(
+            response.json(),
+            SettingClassEnum.SNIPPETS_SETTINGS.value,
+            "PREVIEW_MAX_CHARS",
+        )
+        assert entry["is_complex"] is False
+        assert entry["reload"] == ReloadClassification.HOT.value
+        assert entry["key_path"] == ["PREVIEW_MAX_CHARS"]
 
 
 @pytest.mark.asyncio
@@ -197,6 +246,28 @@ class TestSepSettingsGet:
         assert body["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
         assert body["reload"] == ReloadClassification.HOT.value
         assert body["has_override"] is False
+
+    async def test_top_level_field_carries_single_element_key_path(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """A top-level DETAIL response carries a single-element ``key_path``."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["key_path"] == ["SYNC_REFRESH_TIME"]
+
+    async def test_nested_leaf_detail_carries_key_path(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """A nested-leaf DETAIL response carries its canonical ``key_path`` chain."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["key_path"] == ["SESSION", "MAX_AGE"]
+        assert "__".join(body["key_path"]) == body["key"]
 
     async def test_unknown_class_returns_422(
         self, api_admin_client: TestClient
@@ -570,6 +641,19 @@ class TestSepSettingsNestedOverrides:
         )
         assert leaf.json()["value"] == "strict"
 
+    async def test_patch_nested_echoes_key_path(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """A nested PATCH echoes the leaf's canonical ``key_path`` chain."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SESSION__SAMESITE": "strict"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        echoed = response.json()[0]
+        assert echoed["key_path"] == ["SESSION", "SAMESITE"]
+        assert "__".join(echoed["key_path"]) == echoed["key"]
+
     async def test_patch_nested_coerces_int_to_timedelta(
         self, api_admin_client: TestClient
     ) -> None:
@@ -670,19 +754,23 @@ class TestSepSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
-    async def test_list_marks_parent_overridden_when_only_nested_rows_exist(
+    async def test_list_marks_overridden_leaf_independently_of_siblings(
         self, api_admin_client: TestClient
     ) -> None:
-        """The LIST ``has_override`` flag mirrors the runtime nested-row filter."""
+        """Each leaf carries its own ``has_override``; a sibling stays ``False``."""
         api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SESSION__SAMESITE": "strict"},
         )
         list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
-        session_entry = _find_setting(
-            list_payload, SettingClassEnum.SEP_SETTINGS.value, "SESSION"
+        overridden = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, "SESSION__SAMESITE"
         )
-        assert session_entry["has_override"] is True
+        sibling = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, "SESSION__MAX_AGE"
+        )
+        assert overridden["has_override"] is True
+        assert sibling["has_override"] is False
 
 
 @pytest.mark.asyncio

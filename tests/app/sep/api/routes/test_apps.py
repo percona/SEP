@@ -91,7 +91,23 @@ class TestListAppsForNavigation:
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         assert len(payload) == len(sep_settings.PLUGINS)
-        assert set(payload[0]) == {"app_key", "enabled", "sidebar", "uri_path"}
+        assert set(payload[0]) == {
+            "app_key",
+            "enabled",
+            "sidebar",
+            "uri_path",
+            "display_name",
+            "custom_ui",
+        }
+
+    async def test_additive_fields_carry_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Every entry carries ``display_name`` and a ``custom_ui`` flag (False for legacy)."""
+        response = api_user_client.get("/api/apps/")
+        for entry in response.json():
+            assert entry["display_name"]
+            assert entry["custom_ui"] is False
 
     async def test_inventory_reported_enabled(
         self, api_user_client: TestClient

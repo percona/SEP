@@ -28,7 +28,6 @@ cannot be toggled (toggle returns 409) and are reported with
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import (
     PROTECTED_APP_KEYS,
@@ -36,6 +35,7 @@ from app.sep.deps import (
     ToggleableAppKeyDep,
 )
 from app.sep.models import AppState, AppStateBase, AppStateWrite
+from app.sep.plugins.framework.registry import get_app_registry
 
 router = APIRouter(tags=["admin", "apps"])
 
@@ -100,16 +100,16 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
     states = await AppStateManager.all_states(session)
     return [
         AppInfoResponse(
-            app_key=(key := plugin.module_name.split(".")[-1]),
-            name=plugin.name,
-            enabled=key in PROTECTED_APP_KEYS or states.get(key, True),
-            toggleable=key not in PROTECTED_APP_KEYS,
-            uri_path=str(plugin.uri_path),
-            css_class=plugin.css_class,
-            sidebar=plugin.sidebar,
-            has_api_router=plugin.api_router_path is not None,
+            app_key=app.key,
+            name=app.name,
+            enabled=app.key in PROTECTED_APP_KEYS or states.get(app.key, True),
+            toggleable=app.key not in PROTECTED_APP_KEYS,
+            uri_path=app.uri_path,
+            css_class=app.css_class,
+            sidebar=app.sidebar,
+            has_api_router=app.api_router is not None,
         )
-        for plugin in sep_settings.PLUGINS
+        for app in get_app_registry()
     ]
 
 

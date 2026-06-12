@@ -15,22 +15,18 @@
 
 """Define tests for the app.sep.plugins.backup_pg.deps module."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 import yaml
 
-from app.core.exceptions import HTTPNotFoundException
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.backup_pg.deps import (
     build_backup_task_payload,
-    get_backups_task,
     get_backups_task_info,
     parse_backup_task_data,
 )
 from app.sep.plugins.backup_pg.models import BackupCreate, BackupType
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 
 @pytest.mark.asyncio
@@ -144,40 +140,6 @@ async def test_build_backup_task_payload_preserves_raw_backup_type(
     server_config = cfg["SERVER_LIST"][0]
 
     assert server_config["BACKUP_TYPE"] == "INVALID_BACKUP_TYPE"
-
-
-@pytest.mark.asyncio
-async def test_get_backups_task(mocker):
-    """Test get_backups_task calls get_task_by_name and returns the correct Task."""
-    fake_task = Task(
-        name="test_task",
-        owner=TaskOwner.BACKUP_PG,
-        data={"task": "fake-task"},
-    )
-    get_task_by_name = mocker.patch(
-        "app.sep.plugins.backup_pg.deps.get_task_by_name",
-        return_value=fake_task,
-    )
-
-    tasks_api = AsyncMock()
-    result = await get_backups_task("test_task_name", tasks_api)
-
-    get_task_by_name.assert_called_once_with(
-        tasks_api, "test_task_name", TaskOwner.BACKUP_PG
-    )
-    assert result == fake_task
-
-
-@pytest.mark.asyncio
-async def test_get_backups_task_raises_http_exception(mocker):
-    """Test get_backups_task propagates task-not-found errors."""
-    mocker.patch(
-        "app.sep.plugins.backup_pg.deps.get_task_by_name",
-        side_effect=HTTPNotFoundException(),
-    )
-
-    with pytest.raises(HTTPNotFoundException):
-        await get_backups_task("missing-task", AsyncMock())
 
 
 def test_get_backups_task_info():

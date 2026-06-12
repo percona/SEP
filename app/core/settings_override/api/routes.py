@@ -55,6 +55,7 @@ from app.core.settings_override.registry import (
     is_hot_reloadable,
     is_nested_overridable_parent,
     iter_class_fields,
+    iter_nested_leaf_keys,
     materialize_override_value,
     override_keys_for_rows,
     ReloadClassification,
@@ -95,12 +96,16 @@ def _settings_response_from_field(
         field_info, current_value = resolve_nested_value(
             settings_cls=settings_cls, proxy=proxy, key=field_meta.key
         )
+        resolved = resolve_nested_field(settings_cls, field_meta.key)
+        key_path = list(resolved[0]) if resolved else [field_meta.key]
     else:
         field_info = settings_cls.model_fields[field_meta.key]
         current_value = getattr(proxy, field_meta.key)
+        key_path = [field_meta.key]
     return SettingResponse(
         setting_class=setting_class,
         key=field_meta.key,
+        key_path=key_path,
         value=dump_field_value(field_info, current_value),
         default_value=dump_field_value(field_info, field_meta.default),
         type=_format_annotation(field_meta.annotation),
@@ -110,6 +115,67 @@ def _settings_response_from_field(
         is_complex=field_meta.is_complex,
         has_override=has_override,
     )
+
+
+def _field_responses(
+    *,
+    setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
+    field_meta: FieldMetadata,
+    override_keys: set[str],
+) -> list[SettingResponse]:
+    """Return one response for a plain field, or one per leaf for a nested parent.
+
+    A nested-overridable parent is expanded into one response per enumerated leaf
+    (each leaf's metadata resolved via :func:`resolve_nested_field_metadata`),
+    replacing the parent's single summary entry. A scalar field -- including a
+    scalar HOT field, which is a nested-overridable parent but yields no leaves --
+    keeps its single entry.
+
+    :param setting_class: The settings class identifier (enum member).
+    :type setting_class: SettingClassEnum
+    :param settings_cls: The Pydantic settings class declaring ``field_meta``.
+    :type settings_cls: type[BaseYamlSettings]
+    :param proxy: The proxy whose attribute access yields current values.
+    :type proxy: OverridableSettingsProxy
+    :param field_meta: The introspected metadata for the top-level field.
+    :type field_meta: FieldMetadata
+    :param override_keys: The canonical keys (and prefixes) carrying an override.
+    :type override_keys: set[str]
+    :return: One or more responses for the field.
+    :rtype: list[SettingResponse]
+    """
+    leaves = (
+        list(iter_nested_leaf_keys(settings_cls, field_meta.key))
+        if is_nested_overridable_parent(settings_cls, field_meta.key)
+        else []
+    )
+    if not leaves:
+        return [
+            _settings_response_from_field(
+                setting_class=setting_class,
+                settings_cls=settings_cls,
+                proxy=proxy,
+                field_meta=field_meta,
+                has_override=field_meta.key in override_keys,
+            )
+        ]
+    responses = []
+    for leaf_key, _chain in leaves:
+        leaf_meta = resolve_nested_field_metadata(settings_cls, leaf_key)
+        if leaf_meta is None:
+            continue
+        responses.append(
+            _settings_response_from_field(
+                setting_class=setting_class,
+                settings_cls=settings_cls,
+                proxy=proxy,
+                field_meta=leaf_meta,
+                has_override=leaf_key in override_keys,
+            )
+        )
+    return responses
 
 
 def _format_annotation(annotation: Any) -> str:
@@ -427,14 +493,15 @@ def build_settings_router(
             )
             override_keys = override_keys_for_rows(settings_cls, rows)
             settings_list = [
-                _settings_response_from_field(
+                response
+                for field_meta in iter_class_fields(settings_cls)
+                for response in _field_responses(
                     setting_class=setting_class,
                     settings_cls=settings_cls,
                     proxy=proxy,
                     field_meta=field_meta,
-                    has_override=field_meta.key in override_keys,
+                    override_keys=override_keys,
                 )
-                for field_meta in iter_class_fields(settings_cls)
             ]
             groups.append(
                 SettingClassGroup(setting_class=setting_class, settings=settings_list)

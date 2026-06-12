@@ -36,11 +36,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.backup_mongo.deps import (
-    _fetch_latest_task_statuses_for_names,
-    _gathered_task_status,
-    extract_latest_task_status,
-)
+from app.sep.plugins.backup_mongo.deps import _gathered_task_status
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
     PbmForceResyncPayloadModel,
@@ -56,6 +52,11 @@ from app.sep.plugins.backup_mongo.restore.models import (
     RestoreTaskLegModel,
     RestoreTaskResponse,
     RestoreTaskWrite,
+)
+from app.sep.plugins.framework import (
+    batch_get_latest_statuses,
+    extract_latest_task_status,
+    get_task_latest_status,
 )
 from app.sep.plugins.framework.cascade import (
     cascade_create_independent_tasks,
@@ -606,23 +607,6 @@ async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
     return null_parents + self_parents
 
 
-async def get_restore_mongo_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for a restore task.
-
-    :param task_name: The name of the restore task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return extract_latest_task_status(response["items"])
-
-
 def build_restore_mongo_api_task_response(
     task: Task,
     *,
@@ -675,7 +659,7 @@ async def get_restore_mongo_api_task_responses(
 
     if status is None:
         page_parents = pagination.slice(parents)
-        status_map = await _fetch_latest_task_statuses_for_names(
+        status_map = await batch_get_latest_statuses(
             tasks_api,
             [task.name for task in page_parents],
         )
@@ -688,7 +672,7 @@ async def get_restore_mongo_api_task_responses(
         ]
         return PaginatedResponse.from_pagination(items, len(parents), pagination)
 
-    status_map = await _fetch_latest_task_statuses_for_names(
+    status_map = await batch_get_latest_statuses(
         tasks_api,
         [task.name for task in parents],
     )
@@ -741,7 +725,7 @@ async def build_restore_mongo_api_detail_response(
     backup_type = _backup_type_from_parent(task)
     child_names = restore_child_task_names(task.name, backup_type)
     gather_results = await asyncio.gather(
-        get_restore_mongo_task_status(task.name, tasks_api),
+        get_task_latest_status(tasks_api, task.name),
         *(_fetch_restore_child_detail(name, tasks_api) for name in child_names),
         return_exceptions=True,
     )
