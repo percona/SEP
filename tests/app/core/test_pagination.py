@@ -16,7 +16,6 @@
 """Define tests for app.core.pagination."""
 
 import inspect
-from typing import get_args
 
 import pytest
 from pydantic import ValidationError
@@ -240,8 +239,7 @@ class TestMakePaginationDep:
     def test_clamps_default_limit_to_max_limit(self) -> None:
         """Default limit must not exceed the factory cap."""
         custom_cap = 10
-        alias = make_pagination_dep(max_limit=custom_cap)
-        dep = get_args(alias)[1].dependency
+        dep = make_pagination_dep(max_limit=custom_cap)
         limit_default = inspect.signature(dep).parameters["limit"].default.default
         assert limit_default == custom_cap
 
