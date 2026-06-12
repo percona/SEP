@@ -15,43 +15,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
 import BlockIcon from '@mui/icons-material/Block';
-import { useNavigate } from 'react-router-dom';
+import CenteredSplash from '../components/CenteredSplash';
 
 /**
  * Splash shown by `AppDisabledGuard` in place of a disabled app's route.
  *
  * Generic by design: it surfaces neither the disable reason nor the admin
  * contact (deferred to a future ticket once the backend exposes that
- * metadata). Styling mirrors `NotFoundPage`.
+ * metadata). Built on the shared `CenteredSplash` layout, like `NotFoundPage`.
  */
 export default function AppDisabledPage() {
-  const navigate = useNavigate();
-
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        py: 10,
-        textAlign: 'center',
-      }}
-    >
-      <BlockIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-      <Typography variant="h6" gutterBottom>
-        This feature is currently disabled.
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Contact an administrator to re-enable it.
-      </Typography>
-      <Button variant="contained" onClick={() => navigate('/')}>
-        Back to Dashboard
-      </Button>
-    </Box>
+    <CenteredSplash
+      icon={<BlockIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />}
+      title="This feature is currently disabled."
+      body="Contact an administrator to re-enable it."
+    />
   );
 }

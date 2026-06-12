@@ -69,11 +69,13 @@ describe('AppDisabledGuard', () => {
     expect(screen.queryByText(SPLASH)).not.toBeInTheDocument();
   });
 
-  it('renders the wrapped route optimistically while loading', () => {
-    // Query unresolved → `data` is undefined → fail-open.
-    useEnabledApps.mockReturnValue({ data: undefined });
+  it('shows a spinner during the cold initial load instead of mounting the route', () => {
+    // No cached data yet → hold a spinner so the disabled-URL outcome is
+    // deterministic rather than racing the optimistic plugin mount.
+    useEnabledApps.mockReturnValue({ data: undefined, isLoading: true });
     renderGuard();
-    expect(screen.getByTestId('child')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.queryByTestId('child')).not.toBeInTheDocument();
     expect(screen.queryByText(SPLASH)).not.toBeInTheDocument();
   });
 
