@@ -3824,7 +3824,7 @@
     },
     "/api/plugins/backup_mongo/restores/schema": {
       "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.\n:rtype: PluginSchema",
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
         "operationId": "backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get",
         "responses": {
           "200": {
@@ -4027,7 +4027,7 @@
     },
     "/api/plugins/backup_mongo/schema": {
       "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.\n:rtype: PluginSchema",
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
         "operationId": "backup_mongo_get_schema_api_plugins_backup_mongo_schema_get",
         "responses": {
           "200": {
