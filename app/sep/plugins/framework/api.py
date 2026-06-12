@@ -395,6 +395,7 @@ def derive_crud_routes(
     detail_path = f"/{{{detail_path_param}}}"
 
     if pagination_dep is None:
+
         async def _list(tasks_api: TaskAPI) -> list[BaseModel]:
             responses = await build_task_list_responses(
                 tasks_api,
