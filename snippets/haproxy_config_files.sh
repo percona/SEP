@@ -9,6 +9,8 @@
 # parameters: []
 # ---
 
+set -e
+
 # Track processed files to avoid infinite loops
 declare -A PROCESSED_FILES
 
