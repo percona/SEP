@@ -140,7 +140,8 @@ async def build_task_list_responses(
     status, selects the ones matching ``status_filter``, and builds a response
     per selection. Unpaginated calls return a ``list``; supplying ``pagination``
     returns a ``PaginatedResponse`` whose ``total`` is the filtered current-page
-    count when ``status_filter`` is active and the upstream total otherwise.
+    count when a client-side filter (``status_filter`` or ``task_filter``) is
+    active and the upstream total otherwise.
 
     :param tasks_api: The Tasks API client used for the list and status lookups.
     :type tasks_api: TaskAPI
@@ -175,7 +176,6 @@ async def build_task_list_responses(
 
     if pagination is None:
         return items
-    total = (
-        len(items) if status_filter is not None else response.get("total", len(items))
-    )
+    client_side_filtered = status_filter is not None or task_filter is not None
+    total = len(items) if client_side_filtered else response.get("total", len(items))
     return PaginatedResponse.from_pagination(items, total, pagination)

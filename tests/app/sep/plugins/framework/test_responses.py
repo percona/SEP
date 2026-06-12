@@ -180,6 +180,27 @@ class TestBuildTaskListResponses:
         )
 
     @pytest.mark.asyncio
+    async def test_paginated_task_filter_total_is_current_page_count(self) -> None:
+        """Set total to the filtered current-page count when task_filter drops rows."""
+        pagination = Pagination(offset=0, limit=10)
+        tasks_api = _mock_tasks_api(
+            items=_items("task-a", "task-b"),
+            statuses={"task-a": "success", "task-b": "success"},
+            total=5,
+        )
+
+        result = await build_task_list_responses(
+            tasks_api,
+            owner=TaskOwner.ARCHIVER.value,
+            response_builder=_build_response,
+            pagination=pagination,
+            task_filter=lambda task: task.name != "task-b",
+        )
+
+        assert result.total == 1
+        assert [r.name for r in result.items] == ["task-a"]
+
+    @pytest.mark.asyncio
     async def test_empty_items_returns_empty_list_without_post(self) -> None:
         """Return ``[]`` and issue no batch-status POST when there are no items."""
         tasks_api = _mock_tasks_api(items=[], statuses={})
