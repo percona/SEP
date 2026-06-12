@@ -24,6 +24,27 @@ import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import type { ListColumn, ListView } from '@sep/api';
 import { SEP_TABLE_CLASS } from '../../constants';
 
+/** Argument bag handed to a {@link RenderListColumnOverride}. */
+export interface RenderListColumnArgs {
+  /** The matched column's `key`. */
+  columnKey: string;
+  /** The raw cell value for this column. */
+  value: unknown;
+  /** The full row record. */
+  row: Record<string, unknown>;
+}
+
+/**
+ * Per-cell list column override for {@link SchemaListView}.
+ *
+ * Called for every non-`actions` cell. Return custom UI to render that cell, or
+ * return `undefined` to fall back to the framework's `formatCellValue`. Keying
+ * is the override's own concern: branch on `args.columnKey` and return
+ * `undefined` for columns it does not handle. The `actions` column (bespoke
+ * row-delete control) is never routed through this override.
+ */
+export type RenderListColumnOverride = (args: RenderListColumnArgs) => ReactNode;
+
 interface SchemaListViewProps {
   listView: ListView;
   data: Record<string, unknown>[];
@@ -33,6 +54,12 @@ interface SchemaListViewProps {
   onDeleteRow?: (row: Record<string, unknown>) => void;
   /** Row id currently being deleted (disables that row's button). */
   deletingRowId?: string | null;
+  /**
+   * Optional per-cell override for non-`actions` columns. Returns custom UI for
+   * a cell or `undefined` to fall back to `formatCellValue`. See
+   * {@link RenderListColumnOverride}.
+   */
+  renderListColumn?: RenderListColumnOverride;
 }
 
 function formatCellValue(value: unknown, format: ListColumn['format']): ReactNode {
@@ -96,6 +123,7 @@ export function SchemaListView({
   onRowClick,
   onDeleteRow,
   deletingRowId,
+  renderListColumn,
 }: SchemaListViewProps) {
   const columns = useMemo<MRT_ColumnDef<Record<string, unknown>>[]>(
     () =>
@@ -134,10 +162,16 @@ export function SchemaListView({
           accessorKey: col.key,
           header: col.label,
           enableSorting: col.sortable ?? true,
-          Cell: ({ cell }) => formatCellValue(cell.getValue(), col.format),
+          Cell: ({ cell, row }) => {
+            const value = cell.getValue();
+            return (
+              renderListColumn?.({ columnKey: col.key, value, row: row.original }) ??
+              formatCellValue(value, col.format)
+            );
+          },
         };
       }),
-    [deletingRowId, listView.columns, onDeleteRow],
+    [deletingRowId, listView.columns, onDeleteRow, renderListColumn],
   );
 
   return (

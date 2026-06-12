@@ -32,7 +32,7 @@ import {
   usePluginTasks,
   type PluginSchema,
 } from '@sep/api';
-import { SchemaListView } from '../SchemaListView';
+import { SchemaListView, type RenderListColumnOverride } from '../SchemaListView';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
 interface PluginListPageProps {
@@ -55,6 +55,8 @@ interface PluginListPageProps {
   rowClickHref?: (row: Record<string, unknown>) => string;
   /** When true, list views that declare an ``actions`` column show row delete controls. */
   allowListEntityDelete?: boolean;
+  /** Optional per-cell override for non-``actions`` columns (falls back to ``formatCellValue``). */
+  renderListColumn?: RenderListColumnOverride;
 }
 
 export function PluginListPage({
@@ -68,6 +70,7 @@ export function PluginListPage({
   entityNameOverride,
   rowClickHref,
   allowListEntityDelete = false,
+  renderListColumn,
 }: PluginListPageProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
@@ -236,6 +239,7 @@ export function PluginListPage({
         }
         onDeleteRow={onDeleteRow}
         deletingRowId={deleteEntity.isPending ? deleteEntity.variables : null}
+        renderListColumn={renderListColumn}
       />
     </Box>
   );

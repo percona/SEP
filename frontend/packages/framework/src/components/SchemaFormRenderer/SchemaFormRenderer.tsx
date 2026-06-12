@@ -42,7 +42,7 @@ import { useCardinalityRules } from './hooks/useCardinalityRules';
 import { useFailRules } from './hooks/useFailRules';
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard';
 import { coerceFormValues } from './utils/validationMapper';
-import type { FormSection, PluginField } from './types';
+import type { FormSection, PluginField, RenderFieldOverride } from './types';
 
 function fieldDefault(field: PluginField): unknown {
   switch (field.type) {
@@ -69,7 +69,13 @@ function flattenFields(sections: FormSection[]): PluginField[] {
   return sections.flatMap((s) => s.fields);
 }
 
-const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { field: PluginField }) {
+const ConditionalFieldSlot = memo(function ConditionalFieldSlot({
+  field,
+  renderField,
+}: {
+  field: PluginField;
+  renderField?: RenderFieldOverride;
+}) {
   const { isHidden, isRequired } = useConditionalField(field);
 
   if (isHidden) {
@@ -83,9 +89,15 @@ const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { fie
   const resolvedField =
     Boolean(field.required) !== isRequired ? { ...field, required: isRequired } : field;
 
+  // The override receives the gate-resolved field and a renderDefault() escape
+  // hatch. It runs only after the isHidden short-circuit, so a gated-off field
+  // never reaches the override. An override that returns nullish (e.g. for a
+  // field it does not handle) falls back to the framework default.
+  const renderDefault = () => <FieldRenderer field={resolvedField} />;
+
   return (
     <Box sx={{ mb: 2 }}>
-      <FieldRenderer field={resolvedField} />
+      {renderField?.({ field: resolvedField, renderDefault }) ?? renderDefault()}
     </Box>
   );
 });
@@ -94,12 +106,14 @@ interface SectionRendererProps {
   section: FormSection;
   idx: number;
   violations: Array<{ message: string }>;
+  renderField?: RenderFieldOverride;
 }
 
 const SectionRenderer = memo(function SectionRenderer({
   section,
   idx,
   violations,
+  renderField,
 }: SectionRendererProps) {
   const { isHidden } = useConditionalSection(section);
 
@@ -120,7 +134,7 @@ const SectionRenderer = memo(function SectionRenderer({
         </Alert>
       ))}
       {section.fields.map((field) => (
-        <ConditionalFieldSlot key={field.name} field={field} />
+        <ConditionalFieldSlot key={field.name} field={field} renderField={renderField} />
       ))}
     </>
   );
@@ -171,6 +185,13 @@ export interface SchemaFormRendererProps {
   submitError?: string | null;
   /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
   capabilities?: PluginCapabilities;
+  /**
+   * Optional per-field widget override. Applied after the conditional gate
+   * decides visibility / required-ness; receives the gate-resolved field and a
+   * `renderDefault()` callback. Overrides must write through react-hook-form.
+   * See {@link RenderFieldOverride}.
+   */
+  renderField?: RenderFieldOverride;
 }
 
 /**
@@ -222,6 +243,7 @@ function SchemaFormBody({
   loading = false,
   submitError,
   capabilities,
+  renderField,
 }: SchemaFormRendererProps) {
   const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
   const isGuarded = useUnsavedChangesGuard(submitError);
@@ -286,6 +308,7 @@ function SchemaFormBody({
             section={section}
             idx={idx}
             violations={violationsBySection.get(section) ?? []}
+            renderField={renderField}
           />
         ))}
 
@@ -314,6 +337,7 @@ function SchemaFormBody({
                 section={section}
                 idx={idx}
                 violations={violationsBySection.get(section) ?? []}
+                renderField={renderField}
               />
             ))}
           </Box>
