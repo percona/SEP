@@ -40,7 +40,6 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     create_restore_task_group,
     delete_restore_task_group,
     get_restore_mongo_api_task_responses,
-    get_restore_mongo_task_status,
     get_restores_task,
     RestoreParentTask,
     RestoreTaskGroupFromBody,
@@ -55,6 +54,7 @@ from app.sep.plugins.backup_mongo.restore.models import (
     RestoreTaskResponse,
 )
 from app.sep.plugins.backup_mongo.restore.schema import restore_mongo_schema
+from app.sep.plugins.framework import get_task_latest_status
 from app.sep.plugins.framework.api import schema_endpoint
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
@@ -137,7 +137,7 @@ async def restore_mongo_api_update(
         form,
         inventory_api,
     )
-    task_status = await get_restore_mongo_task_status(updated_task.name, tasks_api)
+    task_status = await get_task_latest_status(tasks_api, updated_task.name)
     return build_restore_mongo_api_task_response(updated_task, status=task_status)
 
 

@@ -29,11 +29,8 @@ nothing more specific claims either prefix. A future
 ``app/main.py`` would silently shadow this router.
 """
 
-from collections.abc import Iterable
-
 from fastapi import APIRouter, Depends
 
-from app.core.utils import import_var
 from app.sep.api.routes.app_state import router as app_state_router
 from app.sep.api.routes.apps import router as apps_router
 from app.sep.api.routes.dashboard import router as dashboard_router
@@ -43,7 +40,6 @@ from app.sep.api.routes.services import router as services_router
 from app.sep.api.routes.settings import router as settings_router
 from app.sep.api.routes.task_history import router as task_history_router
 from app.sep.api.routes.task_stats import router as task_stats_router
-from app.sep.config import Plugin, sep_settings
 from app.sep.deps import (
     IsApiAdmin,
     IsApiAuthenticated,
@@ -51,44 +47,43 @@ from app.sep.deps import (
     require_app_enabled,
     RequireBearerForUnsafeMethods,
 )
+from app.sep.plugins.framework.registry import AppRegistry, get_app_registry
 
 
-def build_plugins_router(plugins: Iterable[Plugin]) -> APIRouter:
-    """Build the ``/plugins`` sub-router by iterating ``plugins``.
+def build_plugins_router(registry: AppRegistry) -> APIRouter:
+    """Build the ``/plugins`` sub-router by iterating the app registry.
 
     Mirror the Jinja UI mount loop in ``app/sep/main.py`` so future
     runtime enable/disable guards can be applied symmetrically at both
     mount points.
 
-    :param plugins: Iterable of ``Plugin`` settings entries.
-    :type plugins: Iterable[Plugin]
-    :return: An ``APIRouter`` mounted at ``/plugins`` with each plugin whose
-        ``api_router_path`` is set included at ``/{key}`` with ``tags=[key]``.
+    :param registry: The app registry, in activation order.
+    :type registry: AppRegistry
+    :return: An ``APIRouter`` mounted at ``/plugins`` with each app whose
+        ``api_router`` is set included at ``/{key}`` with ``tags=[key]``.
     :rtype: APIRouter
     """
     plugins_router = APIRouter(
         prefix="/plugins", dependencies=[RequireBearerForUnsafeMethods]
     )
-    for plugin in plugins:
-        if not plugin.api_router_path:
+    for app in registry:
+        if app.api_router is None:
             continue
-        key = plugin.module_name.split(".")[-1]
-        plugin_api_router = import_var(plugin.api_router_path)
-        if not isinstance(plugin_api_router, APIRouter):
-            raise TypeError(
-                f"Plugin '{key}': '{plugin.api_router_path}' must resolve to an"
-                f" APIRouter, got {type(plugin_api_router).__name__}"
-            )
         plugin_deps = (
-            [] if key in PROTECTED_APP_KEYS else [Depends(require_app_enabled(key))]
+            []
+            if app.key in PROTECTED_APP_KEYS
+            else [Depends(require_app_enabled(app.key))]
         )
         plugins_router.include_router(
-            plugin_api_router, prefix=f"/{key}", tags=[key], dependencies=plugin_deps
+            app.api_router,
+            prefix=f"/{app.key}",
+            tags=[app.key],
+            dependencies=plugin_deps,
         )
     return plugins_router
 
 
-plugins_router = build_plugins_router(sep_settings.PLUGINS)
+plugins_router = build_plugins_router(get_app_registry())
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
 api_router.include_router(plugins_router)

@@ -43,7 +43,7 @@ from app.core.settings_override.lifecycle import (
     settings_override_refresher,
 )
 from app.core.settings_override.models import SettingClassEnum
-from app.core.utils import import_var, run_pydantic_type_validator
+from app.core.utils import run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
@@ -69,6 +69,7 @@ from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
+from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
@@ -305,16 +306,16 @@ sep_app.add_middleware(messages.MessagesMiddleware)
 
 
 imported_plugins = set()
-for plugin in sep_settings.PLUGINS:
-    router = import_var(plugin.router_path)
-    plugin_key = plugin.module_name.split(".")[-1]
+for app in get_app_registry():
+    if app.jinja_router is None:
+        continue
     plugin_deps = (
-        []
-        if plugin_key in PROTECTED_APP_KEYS
-        else [Depends(require_app_enabled(plugin_key))]
+        [] if app.key in PROTECTED_APP_KEYS else [Depends(require_app_enabled(app.key))]
     )
-    sep_app.include_router(router, prefix=plugin.uri_path, dependencies=plugin_deps)
-    imported_plugins.add(plugin_key)
+    sep_app.include_router(
+        app.jinja_router, prefix=app.uri_path, dependencies=plugin_deps
+    )
+    imported_plugins.add(app.key)
 
 _TASK_INFRA_PLUGINS = frozenset(
     {
