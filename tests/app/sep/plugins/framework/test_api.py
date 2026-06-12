@@ -1422,7 +1422,7 @@ class TestDeriveCrudRoutesList:
         assert [item["name"] for item in body] == ["t1", "t2"]
         assert body[0]["displayLabel"] == "T1"
         assert "display_label" not in body[0]
-        assert body[0]["status"] == TaskHistoryStatusEnum.SUCCESS
+        assert body[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert body[1]["status"] is None
 
     def test_list_empty_returns_empty_list_without_batch(
@@ -1524,7 +1524,7 @@ class TestDeriveCrudRoutesDetail:
         body = response.json()
         assert body["name"] == "t1"
         assert body["displayLabel"] == "T1"
-        assert body["status"] == TaskHistoryStatusEnum.SUCCESS
+        assert body["status"] == TaskHistoryStatusEnum.SUCCESS.value
 
     def test_detail_404_on_owner_mismatch(self, regular_user: CasdoorUser) -> None:
         """Assert detail 404s when the resolved task's owner mismatches."""

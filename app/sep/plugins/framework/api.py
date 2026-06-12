@@ -410,6 +410,9 @@ def derive_crud_routes(
     :type delete_handler: Callable[..., Awaitable[Any]] | None
     :return: A plugin ``APIRouter`` carrying the schema + CRUD routes.
     :rtype: APIRouter
+    :raises TypeError: If ``response_builder`` or ``create_response_builder``
+        does not declare a return-type annotation that is a
+        :class:`pydantic.BaseModel` subclass.
     """
     list_detail_model = _resolve_response_model(
         response_builder, helper="derive_crud_routes", param="response_builder"
