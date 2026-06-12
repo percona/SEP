@@ -20,11 +20,12 @@ Mounted at ``/api/plugins/mysql_backups/`` via ``plugins_router`` in
 """
 
 import logging
+from typing import Annotated, TypeAlias
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi import status as http_status
 
-from app.core.pagination import PaginatedResponse
+from app.core.pagination import PaginatedResponse, Pagination
 from app.core.pagination.deps import make_pagination_dep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
@@ -55,9 +56,12 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=mysql_backups_schema)
 
 MYSQL_BACKUPS_MAX_PAGINATION_LIMIT = 50
-MySQLBackupsPaginationDep = make_pagination_dep(
+_mysql_backups_pagination_dep = make_pagination_dep(
     max_limit=MYSQL_BACKUPS_MAX_PAGINATION_LIMIT
 )
+MySQLBackupsPaginationDep: TypeAlias = Annotated[
+    Pagination, Depends(_mysql_backups_pagination_dep)
+]
 
 
 @router.get("/")

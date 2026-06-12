@@ -17,7 +17,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from collections.abc import Callable
+from typing import Annotated, TypeAlias
 
 from fastapi import Depends, Query
 
@@ -40,27 +41,31 @@ def pagination_dep(
     """Parse and validate offset/limit query parameters for list endpoints.
 
     :param offset: The zero-based starting offset for the query results.
-    :type offset: int
     :param limit: The maximum number of records to return.
-    :type limit: int
     :return: A validated pagination window.
-    :rtype: Pagination
     """
     return Pagination(offset=offset, limit=limit)
 
 
 PaginationDep = Annotated[Pagination, Depends(pagination_dep)]
 
+PaginationDependency: TypeAlias = Callable[..., Pagination]
+
 
 def make_pagination_dep(
     max_limit: int = MAX_PAGINATION_LIMIT,
-) -> Any:
-    """Return a FastAPI dependency type alias with a custom ``limit`` upper bound.
+) -> PaginationDependency:
+    """Create a pagination dependency callable with a custom ``limit`` upper bound.
+
+    Returns the bare dependency callable rather than a wrapped
+    ``Annotated[Pagination, Depends(...)]`` alias: only the callable is actually
+    parametrized by ``max_limit``, and a callable carries an honest static type,
+    whereas a call-produced ``Annotated`` value can only be typed ``Any``. Callers
+    form the route dependency by wrapping the result in a module-scope
+    ``Annotated[Pagination, Depends(...)]`` alias.
 
     :param max_limit: Maximum allowed value for the ``limit`` query parameter.
-    :type max_limit: int
-    :return: An annotated dependency type that parses offset/limit query parameters.
-    :rtype: Any
+    :return: A dependency callable yielding a validated pagination window.
     :raises ValueError: If ``max_limit`` exceeds ``MAX_PAGINATION_LIMIT``.
     """
     if max_limit > MAX_PAGINATION_LIMIT:
@@ -75,4 +80,4 @@ def make_pagination_dep(
     ) -> Pagination:
         return Pagination(offset=offset, limit=limit)
 
-    return Annotated[Pagination, Depends(_pagination_dep)]
+    return _pagination_dep

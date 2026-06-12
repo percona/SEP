@@ -15,7 +15,12 @@
 
 """Shared offset/limit pagination models, helpers, and FastAPI dependencies."""
 
-from app.core.pagination.deps import make_pagination_dep, pagination_dep, PaginationDep
+from app.core.pagination.deps import (
+    make_pagination_dep,
+    pagination_dep,
+    PaginationDep,
+    PaginationDependency,
+)
 from app.core.pagination.models import (
     DEFAULT_PAGINATION_LIMIT,
     DEFAULT_PAGINATION_OFFSET,
@@ -35,6 +40,7 @@ __all__ = [
     "PaginatedResponse",
     "Pagination",
     "PaginationDep",
+    "PaginationDependency",
     "fetch_all_dict_items",
     "fetch_all_items",
     "make_pagination_dep",
