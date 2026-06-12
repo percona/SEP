@@ -160,6 +160,24 @@ class TestArchivesApiList:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
+    def test_list_degrades_to_null_status_when_batch_status_errors(
+        self, test_client, mock_tasks_api_dep
+    ):
+        """GET /api/plugins/archives/ stays 200 with null statuses on batch error."""
+        task = build_archive_task()
+        mock_tasks_api_dep.get.return_value = {
+            "items": [task],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
+        mock_tasks_api_dep.post.side_effect = RuntimeError("batch status upstream down")
+        response = test_client.get("/api/plugins/archives/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["status"] is None
+
 
 # ── Detail ────────────────────────────────────────────────────────────────────
 
