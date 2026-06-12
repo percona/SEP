@@ -222,6 +222,12 @@ async def _remote_detail(
     :type key: str
     :return: The validated response for the field.
     :rtype: SettingResponse
+    :raises HTTPException: Re-raised unchanged for an upstream client error
+        (status < 500).
+    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+        or a connection-level ``OSError``.
+    :raises ValidationError: If the upstream response does not match
+        :class:`SettingResponse`.
     """
     payload = await _proxy_settings_request(
         remote_api, "get", f"{base_path}/{setting_class.value}/{key}"
@@ -247,6 +253,12 @@ async def _remote_patch(
     :type body: SettingsPatch
     :return: One validated :class:`SettingResponse` per applied key.
     :rtype: list[SettingResponse]
+    :raises HTTPException: Re-raised unchanged for an upstream client error
+        (status < 500), e.g. the upstream per-field ``422``.
+    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+        or a connection-level ``OSError``.
+    :raises ValidationError: If an upstream item does not match
+        :class:`SettingResponse`.
     """
     payload = await _proxy_settings_request(
         remote_api,
@@ -273,6 +285,10 @@ async def _remote_delete(
     :type setting_class: SettingClassEnum
     :param key: The field name whose override to revert.
     :type key: str
+    :raises HTTPException: Re-raised unchanged for an upstream client error
+        (status < 500), e.g. a ``409`` on a NOT_OVERRIDABLE field.
+    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+        or a connection-level ``OSError``.
     """
     await _proxy_settings_request(
         remote_api, "delete", f"{base_path}/{setting_class.value}/{key}"
