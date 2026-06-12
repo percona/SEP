@@ -1,0 +1,222 @@
+{
+  "display_name": "Synthetic",
+  "fail_when": [
+    {
+      "error_fields": [
+        "a_yaml"
+      ],
+      "fail_when": {
+        "truthy": "a_yaml"
+      }
+    }
+  ],
+  "forms": [
+    {
+      "cardinality_rules": [
+        {
+          "fields": [
+            "a_string",
+            "a_int"
+          ],
+          "max": 1
+        }
+      ],
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fail_when": [
+        {
+          "error_fields": [
+            "a_bool"
+          ],
+          "fail_when": {
+            "truthy": "a_bool"
+          }
+        }
+      ],
+      "fields": [
+        {
+          "default": "",
+          "label": "String",
+          "name": "a_string",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Int",
+          "name": "a_int",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Float",
+          "name": "a_float",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "default": false,
+          "label": "Bool",
+          "name": "a_bool",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "When",
+          "name": "a_datetime",
+          "required": false,
+          "type": "datetime"
+        },
+        {
+          "default": "",
+          "label": "Notes",
+          "name": "a_textarea",
+          "required": false,
+          "type": "textarea"
+        },
+        {
+          "default": "",
+          "label": "Config",
+          "name": "a_yaml",
+          "required": false,
+          "type": "yaml"
+        },
+        {
+          "choices": [
+            {
+              "label": "Purge Only",
+              "value": "0"
+            },
+            {
+              "label": "Swap & Drop",
+              "value": "1"
+            },
+            {
+              "label": "Swap Archive & Drop",
+              "value": "2"
+            }
+          ],
+          "default": 0,
+          "label": "Archive Type",
+          "name": "a_int_choice",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "s3",
+              "value": "s3"
+            },
+            {
+              "label": "rsync",
+              "value": "rsync"
+            }
+          ],
+          "default": "s3",
+          "label": "Provider",
+          "name": "a_enum_choice",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "s3",
+              "value": "s3"
+            },
+            {
+              "label": "rsync",
+              "value": "rsync"
+            }
+          ],
+          "label": "Providers",
+          "name": "a_multi",
+          "required": true,
+          "type": "multi_choice"
+        },
+        {
+          "label": "Service",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        },
+        {
+          "depends_on": "service_id",
+          "label": "Schema",
+          "name": "schema_id",
+          "required": false,
+          "type": "schema"
+        },
+        {
+          "depends_on": "schema_id",
+          "label": "Table",
+          "name": "table_id",
+          "required": false,
+          "type": "table"
+        },
+        {
+          "allow_custom": true,
+          "label": "Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "allow_custom": true,
+          "label": "Free Service",
+          "name": "free_service",
+          "required": true,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Main"
+    },
+    {
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
+        {
+          "default": "",
+          "forbidden": [
+            {
+              "when": {
+                "truthy": "a_string"
+              }
+            }
+          ],
+          "label": "Gated",
+          "name": "gated_field",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "forbidden": [
+        {
+          "when": {
+            "truthy": "a_string"
+          }
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Gated"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "synthetic"
+}
