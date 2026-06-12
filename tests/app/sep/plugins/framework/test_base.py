@@ -35,6 +35,11 @@ class TestBaseAppDisplayName:
         )
         assert app.display_name == "Snippet Manager"
 
+    def test_display_name_none_falls_back_to_name(self) -> None:
+        """A ``None`` ``display_name`` falls back to ``name``."""
+        app = BaseApp(name="Snippet Manager", display_name=None, uri_path="/snippets")
+        assert app.display_name == "Snippet Manager"
+
 
 class TestBaseAppArbitraryTypes:
     """Tests for carrying live router objects."""

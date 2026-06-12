@@ -15,7 +15,7 @@
 
 """Define ``BaseApp``, the uniform registry entry for a mounted SEP app."""
 
-from typing import Self
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -37,7 +37,7 @@ class BaseApp(BaseModel):
     :param name: The app's internal name.
     :type name: str
     :param display_name: The human-facing label; defaults to ``name`` when absent.
-    :type display_name: str | None
+    :type display_name: str
     :param uri_path: The Jinja mount prefix and sidebar link target.
     :type uri_path: str
     :param css_class: The sidebar CSS class.
@@ -61,7 +61,7 @@ class BaseApp(BaseModel):
 
     key: str = ""
     name: str
-    display_name: str | None = None
+    display_name: str = ""
     uri_path: str
     css_class: str = ""
     sidebar: bool = True
@@ -71,13 +71,17 @@ class BaseApp(BaseModel):
     jinja_router: APIRouter | None = None
     app_schema: PluginSchema | None = Field(default=None, alias="schema")
 
-    @model_validator(mode="after")
-    def _default_display_name(self) -> Self:
-        """Set ``display_name`` to ``name`` when it was not supplied.
+    @model_validator(mode="before")
+    @classmethod
+    def _default_display_name(cls, data: Any) -> Any:
+        """Set ``display_name`` to ``name`` when it was not supplied."""
+        if not isinstance(data, dict):
+            return data
 
-        :return: The validated app with ``display_name`` populated.
-        :rtype: Self
-        """
-        if self.display_name is None:
-            self.display_name = self.name
-        return self
+        if data.get("display_name") is not None:
+            return data
+
+        name = data.get("name")
+        if not isinstance(name, str):
+            return data
+        return {**data, "display_name": name}
