@@ -19,6 +19,7 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.schema import archives_schema
 
 
@@ -35,7 +36,12 @@ class TestArchivesSchemaStructure:
         assert caps.stats is True
 
     def test_field_names_are_snake_case(self):
-        """All field names must match the Write-model attribute names (snake_case)."""
+        """All field names must match the Write-model attribute names (snake_case).
+
+        ``alert_on_fail`` is intentionally absent: it is rendered by the
+        capability-driven control (``capabilities.alert_on_fail``), not as an
+        explicit form field, so the form shows exactly one alert-on-fail toggle.
+        """
         all_names = {
             field.name for section in archives_schema.forms for field in section.fields
         }
@@ -66,9 +72,54 @@ class TestArchivesSchemaStructure:
             "dest_port",
             "dest_db_id",
             "dest_db_name",
-            "alert_on_fail",
         }
         assert expected.issubset(all_names), f"Missing fields: {expected - all_names}"
+        # The duplicate explicit alert-on-fail form field was removed; the
+        # capability control (capabilities.alert_on_fail) is the single source.
+        assert "alert_on_fail" not in all_names
+
+    def test_no_explicit_alert_on_fail_form_field(self):
+        """Only the capability-driven alert-on-fail control renders (no duplicate).
+
+        The schema declares ``capabilities.alert_on_fail=True`` (auto-rendered by
+        SchemaFormRenderer); an explicit ``alert_on_fail`` BoolField would render
+        a second, duplicate control. Assert the explicit field is gone while the
+        capability stays on.
+        """
+        form_field_names = [
+            field.name for section in archives_schema.forms for field in section.fields
+        ]
+        assert "alert_on_fail" not in form_field_names
+        assert archives_schema.capabilities is not None
+        assert archives_schema.capabilities.alert_on_fail is True
+
+    def test_advanced_section_collapsed_by_default(self):
+        """Rarely-used knobs live in a collapsible 'Advanced' section, collapsed.
+
+        WHERE stays in the visible Options section so the common filter is not
+        hidden behind the toggle.
+        """
+        advanced = next(
+            (s for s in archives_schema.forms if s.title == "Advanced"), None
+        )
+        assert advanced is not None, "Expected an 'Advanced' form section"
+        assert advanced.collapsible is True
+        assert advanced.collapsed_by_default is True
+        advanced_names = {f.name for f in advanced.fields}
+        assert advanced_names == {
+            "use_index",
+            "extra_args",
+            "limit",
+            "sleep",
+            "disable_binlog",
+            "disable_bulk_insert",
+            "delete_data",
+        }
+        # WHERE must remain visible (not tucked into Advanced).
+        assert "where" not in advanced_names
+        options = next((s for s in archives_schema.forms if s.title == "Options"), None)
+        assert options is not None
+        assert "where" in {f.name for f in options.fields}
 
     def test_delete_data_label_and_description(self):
         """Assert delete_data is labelled to disambiguate purge-vs-archive."""
@@ -117,6 +168,54 @@ class TestArchivesSchemaFieldGates:
         assert swp_field.requires is not None
         assert len(swp_field.requires) == 1
         assert swp_field.requires[0].when.to_dict() == {"equals": {"swap_drop": 2}}
+
+    def test_swp_table_suffix_hidden_unless_swap_archive_drop(self):
+        """swp_table_suffix is hidden (forbidden) unless swap_drop == 2.
+
+        A requires gate governs required-ness, not visibility; without an
+        explicit forbidden gate the field renders for every archive type. Only
+        Purge Only is selectable in the current scope, so the gate
+        (swap_drop != SWAP_ARCHIVE_DROP) keeps the field from ever rendering.
+        """
+        swp_field = next(
+            f
+            for section in archives_schema.forms
+            for f in section.fields
+            if f.name == "swp_table_suffix"
+        )
+        assert swp_field.forbidden is not None
+        gates = [g.when.to_dict() for g in swp_field.forbidden]
+        assert {
+            "not_equals": {"swap_drop": SwapDropEnum.SWAP_ARCHIVE_DROP.value}
+        } in gates
+
+    def test_where_required_for_purge_only(self):
+        """WHERE is required for Purge Only (swap_drop == 0) and not hidden.
+
+        The requires gate (swap_drop != SWAP_DROP) fires for PURGE_ONLY, so WHERE
+        is mandatory; the only forbidden gate targets SWAP_DROP, so WHERE is
+        never hidden for Purge Only. There is no forbidden-for-Purge-Only gate.
+        """
+        where_field = next(
+            f
+            for section in archives_schema.forms
+            for f in section.fields
+            if f.name == "where"
+        )
+        assert where_field.requires is not None
+        requires_gates = [g.when.to_dict() for g in where_field.requires]
+        # requires fires when swap_drop != SWAP_DROP (1) -> true for PURGE_ONLY (0).
+        assert {
+            "not_equals": {"swap_drop": SwapDropEnum.SWAP_DROP.value}
+        } in requires_gates
+        forbidden_gates = [g.when.to_dict() for g in (where_field.forbidden or [])]
+        # forbidden targets only SWAP_DROP; never PURGE_ONLY.
+        assert {
+            "equals": {"swap_drop": SwapDropEnum.SWAP_DROP.value}
+        } in forbidden_gates
+        assert {
+            "equals": {"swap_drop": SwapDropEnum.PURGE_ONLY.value}
+        } not in forbidden_gates
 
     def test_where_requires_when_not_swap_drop(self):
         """where.requires fires when swap_drop != 1 (SWAP_DROP)."""
