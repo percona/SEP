@@ -41,11 +41,8 @@ def pagination_dep(
     """Parse and validate offset/limit query parameters for list endpoints.
 
     :param offset: The zero-based starting offset for the query results.
-    :type offset: int
     :param limit: The maximum number of records to return.
-    :type limit: int
     :return: A validated pagination window.
-    :rtype: Pagination
     """
     return Pagination(offset=offset, limit=limit)
 
@@ -68,7 +65,6 @@ def make_pagination_dep(
     ``Annotated[Pagination, Depends(...)]`` alias.
 
     :param max_limit: Maximum allowed value for the ``limit`` query parameter.
-    :type max_limit: int
     :return: A dependency callable yielding a validated pagination window.
     :raises ValueError: If ``max_limit`` exceeds ``MAX_PAGINATION_LIMIT``.
     """

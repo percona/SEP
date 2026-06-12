@@ -3404,7 +3404,7 @@
     },
     "/api/plugins/mysql_backups/schema": {
       "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.\n:rtype: PluginSchema",
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
         "operationId": "mysql_backups_get_schema_api_plugins_mysql_backups_schema_get",
         "responses": {
           "200": {

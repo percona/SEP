@@ -86,9 +86,7 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
     FastAPI's dependency cache deduplicates it per request.
 
     :param router: The plugin's ``APIRouter``.
-    :type router: APIRouter
     :param plugin_schema: The plugin's fully-validated schema instance.
-    :type plugin_schema: PluginSchema
     :raises ValueError: If ``router`` already exposes a ``GET /schema`` route.
     """
     router_prefix = getattr(router, "prefix", "") or ""
@@ -114,7 +112,6 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
         """Return the plugin schema captured at registration time.
 
         :return: The plugin schema instance.
-        :rtype: PluginSchema
         """
         return plugin_schema
 
@@ -137,13 +134,9 @@ def _resolve_response_model(
     :param provider: A callable annotated with its return type. The
         callable may declare arbitrary parameters (typically resolved by
         FastAPI's dependency injection via ``Depends(...)``).
-    :type provider: Callable[..., BaseModel]
     :param helper: The public helper name, used to frame error messages.
-    :type helper: str
     :param param: The offending parameter name, used to frame error messages.
-    :type param: str
     :return: The class declared as the provider's return annotation.
-    :rtype: type[BaseModel]
     :raises TypeError: If the annotation is missing, isn't a class, or
         isn't a :class:`pydantic.BaseModel` subclass.
     """
@@ -181,7 +174,6 @@ def _reject_async_builders(**builders: Callable[..., BaseModel] | None) -> None:
 
     :param builders: Builder callables keyed by their parameter name; ``None``
         entries (an omitted optional builder) are skipped.
-    :type builders: Callable[..., BaseModel] | None
     :raises TypeError: If any supplied builder is a coroutine function.
     """
     for label, builder in builders.items():
@@ -251,13 +243,11 @@ def capabilities_endpoint(
       may toggle without a redeploy.
 
     :param router: The plugin's ``APIRouter``.
-    :type router: APIRouter
     :param capabilities_provider: A callable returning a
         :class:`pydantic.BaseModel` instance. The return-type annotation
         is used as the route's ``response_model``. The callable's
         parameters (if any) are passed through to FastAPI for dependency
         resolution.
-    :type capabilities_provider: Callable[..., BaseModel]
     :raises TypeError: If ``capabilities_provider``'s return annotation
         is missing, is not a class, or is not a
         :class:`pydantic.BaseModel` subclass. Raised at registration
@@ -346,26 +336,19 @@ def derive_crud_routes(
         )
 
     :param plugin_schema: The plugin's fully-validated schema instance.
-    :type plugin_schema: PluginSchema
     :param task_owner: The task owner the list route filters by.
-    :type task_owner: TaskOwner
     :param get_task: The raw ``make_task_dep(owner)`` callable resolving a task
         by name; its inner path parameter must equal ``detail_path_param``.
-    :type get_task: Callable[..., Awaitable[Task]]
     :param response_builder: Builds the list/detail response model from a task
         and optional status; its return annotation supplies the response model.
-    :type response_builder: TaskResponseBuilder[ListDetailResponseT]
     :param create_payload: The raw create-payload builder dependency (declares
         the request ``Body()`` model that drives the create ``422``).
-    :type create_payload: Callable[..., Awaitable[TaskWrite]]
     :param create_response_builder: Builds the create response from a task;
         its return annotation supplies the create response model. Defaults to
         reusing ``response_builder`` (and its model).
-    :type create_response_builder: TaskResponseBuilder[CreateResponseT] | None
     :param detail_path_param: The detail/update/delete path-parameter name;
         must equal ``get_task``'s inner path parameter (``make_task_dep`` uses
         ``task_name``).
-    :type detail_path_param: str
     :param pagination_dep: A ``make_pagination_dep(...)`` dependency callable.
         When given, the list route takes that dependency (wrapped in
         ``Annotated[Pagination, Depends(...)]``) and returns a
@@ -378,14 +361,11 @@ def derive_crud_routes(
         ``Annotated[None, Depends(HasNoConflictedRunningTasks)]``), since the
         handler is passed as a bare callable and carries no decorator-level
         dependencies into the helper.
-    :type update_handler: Callable[..., Awaitable[Any]] | None
     :param delete_handler: A fully-formed delete handler; when given, a
         ``DELETE /{detail_path_param}`` route is registered using it, with
         ``status_code=204``. As with ``update_handler``, any extra route guard
         must be declared as one of the handler's own signature dependencies.
-    :type delete_handler: Callable[..., Awaitable[Any]] | None
     :return: A plugin ``APIRouter`` carrying the schema + CRUD routes.
-    :rtype: APIRouter
     :raises TypeError: If ``response_builder`` or ``create_response_builder``
         is an ``async def`` callable (the derived handlers invoke it
         synchronously), or does not declare a return-type annotation that is a

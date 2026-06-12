@@ -186,7 +186,6 @@ def _register_login_placeholder(app: FastAPI) -> None:
         """Return a placeholder payload so ``request.url_for('login')`` resolves.
 
         :return: A fixed success payload.
-        :rtype: dict[str, bool]
         """
         return {"ok": True}
 
@@ -200,12 +199,9 @@ def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAP
     the real ``sep_app``.
 
     :param plugin_router: The plugin's ``APIRouter`` (already carrying its routes).
-    :type plugin_router: APIRouter
     :param plugin_prefix: The prefix under which the plugin router is mounted
         on the shared plugins router (for example ``/test-schema-endpoint``).
-    :type plugin_prefix: str
     :return: A ``FastAPI`` application instance with the composed router tree.
-    :rtype: FastAPI
     """
     plugins_router = APIRouter(prefix="/plugins")
     plugins_router.include_router(plugin_router, prefix=plugin_prefix)
@@ -221,12 +217,9 @@ def _build_composed_app(schema: PluginSchema, plugin_prefix: str) -> FastAPI:
     """Build a fresh FastAPI app exposing ``schema_endpoint`` over a schema.
 
     :param schema: The plugin schema the helper registers on the plugin router.
-    :type schema: PluginSchema
     :param plugin_prefix: The prefix under which the plugin router is mounted
         on the shared plugins router (for example ``/test-schema-endpoint``).
-    :type plugin_prefix: str
     :return: A ``FastAPI`` application instance with the composed router tree.
-    :rtype: FastAPI
     """
     plugin_router = APIRouter()
     schema_endpoint(plugin_router, schema)
