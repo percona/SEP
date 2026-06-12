@@ -1,0 +1,44 @@
+{
+  "description": "Discover and execute pre-approved support snippets against registered executor hosts.",
+  "display_name": "Snippet Manager",
+  "forms": [],
+  "list_view": {
+    "columns": [
+      {
+        "key": "filename",
+        "label": "Filename",
+        "sortable": true
+      },
+      {
+        "key": "title",
+        "label": "Title",
+        "sortable": true
+      },
+      {
+        "key": "description",
+        "label": "Description",
+        "sortable": false
+      },
+      {
+        "format": "status",
+        "key": "isApproved",
+        "label": "Approved",
+        "sortable": false
+      },
+      {
+        "key": "reason",
+        "label": "Reason",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "createdAt",
+        "label": "Added",
+        "sortable": false
+      }
+    ],
+    "default_sort": "filename",
+    "overview_hidden_fields": []
+  },
+  "name": "snippets"
+}

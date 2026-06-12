@@ -1,0 +1,270 @@
+{
+  "description": "Browse curated troubleshooting snippets by issue category and launch execution through the snippets API flow.",
+  "detail_view": {
+    "sections": []
+  },
+  "display_name": "Collect Diagnostic Data",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fail_when": [
+        {
+          "error_fields": [
+            "parent_category"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "truthy": "category"
+              },
+              {
+                "falsy": "parent_category"
+              }
+            ]
+          },
+          "message": "parent_category is required when category is set."
+        },
+        {
+          "error_fields": [
+            "category"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "equals": {
+                  "parent_category": "CRASHES"
+                }
+              },
+              {
+                "truthy": "category"
+              },
+              {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "category": "SERVER_CRASHED_RESTART_SUCCESSFUL"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "SERVER_CRASHED_RESTART_NOT_SUCCESSFUL"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "message": "category must belong to \"Crashes\"."
+        },
+        {
+          "error_fields": [
+            "category"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "equals": {
+                  "parent_category": "PERFORMANCE_ISSUES"
+                }
+              },
+              {
+                "truthy": "category"
+              },
+              {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "category": "OVERALL_SLOWNESS"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "QUERY_TUNING_OPTIMIZATION"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "NOT_RESPONDING"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "WRITES_ARE_BLOCKED"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "PERFORMANCE_OTHER"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "TEMPORARY_STALLS"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "message": "category must belong to \"Performance Issues\"."
+        },
+        {
+          "error_fields": [
+            "category"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "equals": {
+                  "parent_category": "REPLICATION_HA"
+                }
+              },
+              {
+                "truthy": "category"
+              },
+              {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "category": "NATIVE_ASYNC_REPLICATION"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "MULTI_SOURCE_REPLICATION"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "GALERA"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "category": "GROUP_REPLICATION"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "message": "category must belong to \"Replication High / Availability\"."
+        }
+      ],
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "Crashes",
+              "value": "CRASHES"
+            },
+            {
+              "label": "Performance Issues",
+              "value": "PERFORMANCE_ISSUES"
+            },
+            {
+              "label": "Replication High / Availability",
+              "value": "REPLICATION_HA"
+            }
+          ],
+          "label": "Subcategory 1",
+          "name": "parent_category",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "Server crashed - Restart Successful",
+              "value": "SERVER_CRASHED_RESTART_SUCCESSFUL"
+            },
+            {
+              "label": "Server crashed - Restart not Successful",
+              "value": "SERVER_CRASHED_RESTART_NOT_SUCCESSFUL"
+            },
+            {
+              "label": "Overall Slowness",
+              "value": "OVERALL_SLOWNESS"
+            },
+            {
+              "label": "Query Tuning / Optimization",
+              "value": "QUERY_TUNING_OPTIMIZATION"
+            },
+            {
+              "label": "Not Responding",
+              "value": "NOT_RESPONDING"
+            },
+            {
+              "label": "Writes are Blocked",
+              "value": "WRITES_ARE_BLOCKED"
+            },
+            {
+              "label": "Other",
+              "value": "PERFORMANCE_OTHER"
+            },
+            {
+              "label": "Temporary Stalls",
+              "value": "TEMPORARY_STALLS"
+            },
+            {
+              "label": "Native Asynchronous Replication",
+              "value": "NATIVE_ASYNC_REPLICATION"
+            },
+            {
+              "label": "Multi-Source replication",
+              "value": "MULTI_SOURCE_REPLICATION"
+            },
+            {
+              "label": "Galera",
+              "value": "GALERA"
+            },
+            {
+              "label": "Group Replication",
+              "value": "GROUP_REPLICATION"
+            }
+          ],
+          "label": "Subcategory 2",
+          "name": "category",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Category Browser"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "category_root",
+        "label": "Category",
+        "sortable": true
+      },
+      {
+        "key": "parent_category_label",
+        "label": "Subcategory 1",
+        "sortable": true
+      },
+      {
+        "key": "category_label",
+        "label": "Subcategory 2",
+        "sortable": true
+      },
+      {
+        "key": "snippet_count",
+        "label": "Snippets",
+        "sortable": true
+      }
+    ],
+    "default_sort": "category_root",
+    "overview_hidden_fields": []
+  },
+  "name": "atw"
+}
