@@ -31,24 +31,27 @@ import functools
 import inspect
 import typing
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any, cast, TypeVar
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
 from app.core.pagination import PaginatedResponse
 from app.sep.deps import IsApiAuthenticated, TaskAPI
-from app.sep.plugins.framework.schema import PluginSchema
-from app.sep.plugins.framework.task_status import (
-    batch_get_latest_statuses,
-    get_task_latest_status,
+from app.sep.plugins.framework.responses import (
+    build_task_list_responses,
+    TaskResponseBuilder,
 )
+from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.task_status import get_task_latest_status
 from app.tasks.models import Task, TaskOwner, TaskWrite
 
 __all__ = ["capabilities_endpoint", "derive_crud_routes", "schema_endpoint"]
 
 
 CapabilitiesT = TypeVar("CapabilitiesT", bound=BaseModel)
+ListDetailResponseT = TypeVar("ListDetailResponseT", bound=BaseModel)
+CreateResponseT = TypeVar("CreateResponseT", bound=BaseModel)
 
 
 def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
@@ -307,9 +310,9 @@ def derive_crud_routes(
     *,
     task_owner: TaskOwner,
     get_task: Callable[..., Awaitable[Task]],
-    response_builder: Callable[..., BaseModel],
+    response_builder: TaskResponseBuilder[ListDetailResponseT],
     create_payload: Callable[..., Awaitable[TaskWrite]],
-    create_response_builder: Callable[..., BaseModel] | None = None,
+    create_response_builder: TaskResponseBuilder[CreateResponseT] | None = None,
     detail_path_param: str = "task_name",
     pagination_dep: Any | None = None,
     update_handler: Callable[..., Awaitable[Any]] | None = None,
@@ -317,69 +320,18 @@ def derive_crud_routes(
 ) -> APIRouter:
     """Build a plugin router with the standard schema + CRUD routes.
 
-    Compose a schema-driven, task-backed plugin's JSON router from a
-    :class:`~app.sep.plugins.framework.schema.PluginSchema` plus a handful of
-    plugin-specific callables, so a plugin declares its routes in ~20 lines
-    instead of hand-writing each decorated handler. The helper registers the
-    ``GET /schema`` route (via :func:`schema_endpoint`) and the standard CRUD
-    routes, applying the ``IsApiAuthenticated`` / ``response_model_by_alias`` /
-    status-code conventions once in the framework rather than per plugin.
+    Register ``GET /schema`` plus standard task-plugin CRUD routes:
+    owner-filtered list (``GET /``), detail (``GET /{detail_path_param}``),
+    create (``POST /`` with ``201``), and optional update/delete overrides
+    (``PUT`` / ``DELETE`` on ``/{detail_path_param}``; delete uses ``204``).
+    All derived routes use ``IsApiAuthenticated`` and
+    ``response_model_by_alias=True``.
 
-    Routes always registered:
-
-    - ``GET /`` — list. Returns ``list[<response model>]`` by default, or
-      ``PaginatedResponse[<response model>]`` when ``pagination_dep`` is given.
-    - ``GET /{detail_path_param}`` — detail.
-    - ``POST /`` — create, ``status_code=201``.
-
-    Routes registered only when an override handler is supplied:
-
-    - ``PUT /{detail_path_param}`` — update (when ``update_handler`` is given).
-    - ``DELETE /{detail_path_param}`` — delete, ``status_code=204`` (when
-      ``delete_handler`` is given).
-
-    The list / detail / create handler bodies **compose** the shared framework
-    helpers (:func:`~app.sep.plugins.framework.deps.make_task_dep`'s result via
-    ``get_task``,
-    :func:`~app.sep.plugins.framework.task_status.batch_get_latest_statuses`,
-    :func:`~app.sep.plugins.framework.task_status.get_task_latest_status`)
-    rather than re-implementing them. Per-plugin dependencies (``get_task``,
-    ``create_payload``, ``pagination_dep``) are wired into the dynamically-built
-    handlers as ``Annotated[..., Depends(...)]`` parameter annotations; FastAPI
-    discovers the ``{detail_path_param}`` path parameter by walking ``get_task``'s
-    signature and the create ``422`` by walking ``create_payload``'s ``Body()``
-    parameter. No handler ``__signature__`` / ``__annotations__`` mutation is
-    performed, and there is no ``get_type_hints`` handler-body assertion — invalid
-    input yields a clean Pydantic ``422`` at request time.
-
-    **First-registered-wins (and the greedy-detail caveat).** Starlette matches
-    routes in registration order, so a route added **after** the
-    ``derive_crud_routes(...)`` call can never shadow a derived one. Plugins
-    safely augment the returned router with an execute route (a distinct
-    ``POST /{name}/execute`` — different method and sub-path), cascade routes, or
-    an ``include_router`` mounted under a sub-prefix. **The derived detail route
-    ``GET /{detail_path_param}`` is greedy**, however: it captures any single
-    path segment at the collection root, so a *static* collection-root ``GET``
-    added afterwards (e.g. a ``capabilities_endpoint``'s ``GET /capabilities``)
-    is shadowed — the detail route matches first and treats ``capabilities`` as a
-    task name. A plugin needing both CRUD and a collection-root static ``GET``
-    must register that ``GET`` before the parametrized detail route — which this
-    helper owns — so it should hand-write its router (or mount the extra route
-    under a distinct sub-prefix) rather than adopt the bare helper.
-
-    **Opt-in criteria.** Adopt this helper for the standard task-plugin shape
-    (owner-filtered list, ``make_task_dep`` detail, bare create). A plugin whose
-    list needs filters beyond the owner filter, whose create flow is custom,
-    whose detail dependency uses a non-``task_name`` path parameter, or which
-    needs a collection-root static ``GET`` (e.g. capabilities) alongside CRUD
-    should hand-write those routes (composing the shared framework helpers
-    directly) instead of widening this helper.
-
-    **OpenAPI no-op guarantee.** The derived routes pin faithful status codes
-    (``201`` / ``204``), ``response_model_by_alias=True``, and the configurable
-    ``detail_path_param``, so a plugin migrating from an equivalent hand-written
-    router yields a no-op ``/openapi.json`` diff (modulo shared docstrings this
-    helper introduces).
+    The derived detail route is greedy: ``GET /{detail_path_param}`` captures
+    any single collection-root path segment. If a plugin also needs a static
+    collection-root ``GET`` route (for example ``GET /capabilities``), prefer
+    a hand-written router (or mount that static route under a sub-prefix)
+    instead of this helper.
 
     .. code-block:: python
 
@@ -402,14 +354,14 @@ def derive_crud_routes(
     :type get_task: Callable[..., Awaitable[Task]]
     :param response_builder: Builds the list/detail response model from a task
         and optional status; its return annotation supplies the response model.
-    :type response_builder: Callable[..., BaseModel]
+    :type response_builder: TaskResponseBuilder[ListDetailResponseT]
     :param create_payload: The raw create-payload builder dependency (declares
         the request ``Body()`` model that drives the create ``422``).
     :type create_payload: Callable[..., Awaitable[TaskWrite]]
     :param create_response_builder: Builds the create response from a task;
         its return annotation supplies the create response model. Defaults to
         reusing ``response_builder`` (and its model).
-    :type create_response_builder: Callable[..., BaseModel] | None
+    :type create_response_builder: TaskResponseBuilder[CreateResponseT] | None
     :param detail_path_param: The detail/update/delete path-parameter name;
         must equal ``get_task``'s inner path parameter (``make_task_dep`` uses
         ``task_name``).
@@ -465,14 +417,12 @@ def derive_crud_routes(
     if pagination_dep is None:
 
         async def _list(tasks_api: TaskAPI) -> list[BaseModel]:
-            response = await tasks_api.get("/", params={"owner": task_owner.value})
-            tasks = [Task.model_validate(item) for item in response.get("items", [])]
-            statuses = await batch_get_latest_statuses(
-                tasks_api, [task.name for task in tasks]
+            responses = await build_task_list_responses(
+                tasks_api,
+                owner=task_owner.value,
+                response_builder=response_builder,
             )
-            return [
-                response_builder(task, status=statuses.get(task.name)) for task in tasks
-            ]
+            return cast(list[BaseModel], responses)
 
         router.add_api_route(
             "/",
@@ -487,19 +437,13 @@ def derive_crud_routes(
         async def _list_paginated(
             tasks_api: TaskAPI, pagination: pagination_dep
         ) -> PaginatedResponse:
-            response = await tasks_api.get(
-                "/",
-                params={"owner": task_owner.value, **pagination.model_dump()},
+            responses = await build_task_list_responses(
+                tasks_api,
+                owner=task_owner.value,
+                response_builder=response_builder,
+                pagination=pagination,
             )
-            tasks = [Task.model_validate(item) for item in response.get("items", [])]
-            statuses = await batch_get_latest_statuses(
-                tasks_api, [task.name for task in tasks]
-            )
-            responses = [
-                response_builder(task, status=statuses.get(task.name)) for task in tasks
-            ]
-            total = response.get("total", len(responses))
-            return PaginatedResponse.from_pagination(responses, total, pagination)
+            return cast(PaginatedResponse, responses)
 
         router.add_api_route(
             "/",
