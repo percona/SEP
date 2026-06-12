@@ -501,7 +501,7 @@ def get_toggleable_app_key(app_key: str) -> str:
     # so a top-level import here would cycle.
     from app.sep.plugins.framework.registry import get_app_registry
 
-    if app_key not in set(get_app_registry().keys()):
+    if get_app_registry().get(app_key) is None:
         raise HTTPNotFoundException(detail="App not found")
     return app_key
 
