@@ -39,8 +39,12 @@ from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
 
 logger = logging.getLogger(__name__)
 
-#: Host-level fact fields; at least one must be set to write a host observation.
-HOST_OBSERVATION_FIELDS = ("os_version", "installed_packages", "config")
+#: Host-level fact fields; at least one must be set to write a host observation. Derived
+#: from the write model so the model stays the single source of truth as fields change.
+HOST_OBSERVATION_FIELDS = frozenset(HostSystemObservationWrite.model_fields) - {
+    "node_id",
+    "observed_at",
+}
 
 
 class SystemFactsService(Service):
@@ -98,15 +102,6 @@ class SystemFactsSyncer(BaseTaskSyncer):
         :rtype: Path
         """
         return Path(__file__).parent / "payload.py"
-
-    @staticmethod
-    def _utcnow() -> datetime:
-        """Return the current UTC time.
-
-        :return: The current time in UTC.
-        :rtype: datetime
-        """
-        return datetime.now(UTC)
 
     def build_script_config(
         self,
@@ -285,7 +280,7 @@ class SystemFactsSyncer(BaseTaskSyncer):
         if not fields:
             return None
         return HostSystemObservationWrite(
-            observed_at=host_facts.get("collected_at") or self._utcnow(),
+            observed_at=host_facts.get("collected_at") or datetime.now(UTC),
             **fields,
         )
 
@@ -406,7 +401,7 @@ class SystemFactsSyncer(BaseTaskSyncer):
         collected_at = getattr(updated_service, "collected_at", None)
         observation = ServiceSystemObservationWrite(
             db_engine_version=db_engine_version,
-            observed_at=collected_at or self._utcnow(),
+            observed_at=collected_at or datetime.now(UTC),
         )
         logger.info(
             "Upserting service system observation for service %s", created_service.id

@@ -92,10 +92,6 @@ class DefaultPort(IntEnum):
     """Represent the default listening port per database engine.
 
     Used when a service address omits an explicit port.
-
-    :cvar MYSQL: The default MySQL port.
-    :cvar POSTGRESQL: The default PostgreSQL port.
-    :cvar MONGODB: The default MongoDB port.
     """
 
     MYSQL = 3306
@@ -109,10 +105,6 @@ class ServiceType(str, Enum):
     Values mirror ``app.inventory.models.ServiceTypeEnum`` so a service ``type`` sent
     in the task config round-trips here. This is redeclared locally because the payload
     is a standalone script and must import without the application package.
-
-    :cvar MYSQL: The MySQL engine type.
-    :cvar POSTGRESQL: The PostgreSQL engine type.
-    :cvar MONGODB: The MongoDB engine type.
     """
 
     MYSQL = "mysql"
@@ -177,7 +169,7 @@ def _read_os_release() -> dict[str, str]:
         content = OS_RELEASE_PATH.read_text(encoding="utf-8")
     except OSError:
         return {}
-    data: dict[str, str] = {}
+    data = {}
     for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -265,7 +257,7 @@ def collect_host_facts() -> dict[str, Any]:
     :return: A mapping always carrying ``collected_at`` plus any gathered host fields.
     :rtype: dict[str, Any]
     """
-    facts: dict[str, Any] = {"collected_at": _now_iso()}
+    facts = {"collected_at": _now_iso()}
     if os_version := collect_os_version():
         facts["os_version"] = os_version
     if packages := collect_installed_packages():
@@ -363,7 +355,7 @@ def _collect_postgresql_version(address: str) -> str | None:
     import psycopg
 
     host, port = parse_host_port(address, default_port=DefaultPort.POSTGRESQL)
-    conninfo: dict[str, Any] = {
+    conninfo = {
         "host": host,
         "port": port,
         "dbname": os.environ.get("PGDATABASE", "postgres"),
@@ -419,7 +411,7 @@ def _mongo_connect_params(address: str) -> tuple[tuple[str, ...], dict[str, Any]
         if split.hostname == host:
             return (uri,), {}
         return (), {"host": host, "port": port}
-    kwargs: dict[str, Any] = {"host": host, "port": port}
+    kwargs = {"host": host, "port": port}
     if split.username:
         kwargs["username"] = unquote(split.username)
     if split.password:
@@ -511,7 +503,7 @@ def main() -> None:
         logger.warning("Config is not a JSON object; treating as empty.")
         config = {}
 
-    result: dict[str, Any] = {"host": None, "services": {}}
+    result = {"host": None, "services": {}}
 
     if config.get("collect_host"):
         facts = collect_host_facts()

@@ -16,7 +16,7 @@
 """Test the app.sep.sync.syncers.system_facts.syncer module."""
 
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 
@@ -681,15 +681,17 @@ class TestPerformInventorySync:
     async def test_perform_inventory_sync_invokes_sync_node(
         self, mock_syncer, created_node, mocker
     ):
-        """Every inventory node is handed to sync_node."""
+        """Every inventory node is handed to sync_node (loop fans out to all nodes)."""
+        second_node = CreatedNodeFactory.build()
+        second_node.id = MOCK_CREATED_NODE_ID + 1
         mocker.patch.object(
             SystemFactsSyncer,
             "get_inventory_nodes",
             new_callable=AsyncMock,
-            return_value=[created_node],
+            return_value=[created_node, second_node],
         )
         sync_node = mocker.patch.object(
             SystemFactsSyncer, "sync_node", new_callable=AsyncMock
         )
         await mock_syncer.perform_inventory_sync()
-        sync_node.assert_awaited_once_with(created_node)
+        assert sync_node.await_args_list == [call(created_node), call(second_node)]
