@@ -1103,7 +1103,7 @@ _SYNTHETIC_SCHEMA = PluginSchema(
 
 
 class _SyntheticTaskResponse(BaseModel):
-    """List/detail response model for the synthetic CRUD plugin.
+    """Represent the list/detail response for the synthetic CRUD plugin.
 
     ``display_label`` carries a wire alias so the tests can prove the derived
     routes serialise with ``response_model_by_alias=True``.
@@ -1117,14 +1117,14 @@ class _SyntheticTaskResponse(BaseModel):
 
 
 class _SyntheticCreateResponse(BaseModel):
-    """Distinct create response model proving create may carry its own model."""
+    """Represent a distinct create response, proving create may carry its own model."""
 
     name: str
     created: bool = True
 
 
 class _SyntheticCreate(BaseModel):
-    """Request body model for the synthetic create route."""
+    """Represent the request body for the synthetic create route."""
 
     name: str
 
@@ -1402,6 +1402,32 @@ class TestDeriveCrudRoutesComposition:
 
         assert "/{name}" in paths
         assert "/{task_name}" not in paths
+
+    def test_async_response_builder_raises_type_error(self) -> None:
+        """Assert an ``async def`` response builder is rejected at registration.
+
+        The derived handlers invoke ``response_builder`` synchronously, so an
+        async builder would yield an un-awaited coroutine that response
+        serialisation cannot handle. The guard mirrors ``capabilities_endpoint``
+        and fails fast at construction instead of at first request.
+        """
+
+        async def _async_builder(
+            task: Task, status: TaskHistoryStatusEnum | None = None
+        ) -> _SyntheticTaskResponse:
+            return _build_synthetic_response(task, status)
+
+        with pytest.raises(TypeError, match="sync callable"):
+            _crud_router(response_builder=_async_builder)
+
+    def test_async_create_response_builder_raises_type_error(self) -> None:
+        """Assert an ``async def`` create response builder is rejected too."""
+
+        async def _async_create_builder(task: Task) -> _SyntheticCreateResponse:
+            return _build_synthetic_create_response(task)
+
+        with pytest.raises(TypeError, match="sync callable"):
+            _crud_router(create_response_builder=_async_create_builder)
 
 
 class TestDeriveCrudRoutesList:

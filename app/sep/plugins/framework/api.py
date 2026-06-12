@@ -157,7 +157,7 @@ def _resolve_response_model(
     if annotation is None:
         raise TypeError(
             f"{helper}: {param} must declare a return type annotation that is "
-            "a pydantic.BaseModel subclass (e.g. `def builder() -> MyModel: ...`)"
+            f"a pydantic.BaseModel subclass (e.g. `def {param}() -> MyModel: ...`)"
         )
     if not inspect.isclass(annotation) or not issubclass(annotation, BaseModel):
         raise TypeError(
@@ -165,6 +165,30 @@ def _resolve_response_model(
             f"pydantic.BaseModel subclass; got {annotation!r}"
         )
     return annotation
+
+
+def _reject_async_builders(**builders: Callable[..., BaseModel] | None) -> None:
+    """Raise ``TypeError`` if any named builder is an ``async def`` callable.
+
+    :func:`derive_crud_routes`'s handlers invoke the response builders
+    synchronously, so an ``async def`` builder would yield an un-awaited
+    coroutine that ``response_model`` serialisation cannot handle. Reject it at
+    registration — mirroring :func:`capabilities_endpoint`'s sync-only guard —
+    rather than letting it surface as an opaque failure on the first request.
+
+    :param builders: Builder callables keyed by their parameter name; ``None``
+        entries (an omitted optional builder) are skipped.
+    :type builders: Callable[..., BaseModel] | None
+    :raises TypeError: If any supplied builder is a coroutine function.
+    """
+    for label, builder in builders.items():
+        if builder is not None and inspect.iscoroutinefunction(builder):
+            raise TypeError(
+                f"derive_crud_routes: {label} must be a sync callable; the "
+                "derived handlers invoke it synchronously, so an async builder "
+                "would yield an un-awaited coroutine that response_model "
+                "serialisation cannot handle."
+            )
 
 
 def capabilities_endpoint(
@@ -411,9 +435,15 @@ def derive_crud_routes(
     :return: A plugin ``APIRouter`` carrying the schema + CRUD routes.
     :rtype: APIRouter
     :raises TypeError: If ``response_builder`` or ``create_response_builder``
-        does not declare a return-type annotation that is a
+        is an ``async def`` callable (the derived handlers invoke it
+        synchronously), or does not declare a return-type annotation that is a
         :class:`pydantic.BaseModel` subclass.
     """
+    _reject_async_builders(
+        response_builder=response_builder,
+        create_response_builder=create_response_builder,
+    )
+
     list_detail_model = _resolve_response_model(
         response_builder, helper="derive_crud_routes", param="response_builder"
     )
