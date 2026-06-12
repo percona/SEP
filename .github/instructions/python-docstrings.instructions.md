@@ -20,15 +20,15 @@ The first word of every function, method, **and class** docstring must be a base
 
 Use `` ``None`` ``, not `` `None` `` or `"None"`. Single backticks render as italics; plain double-quotes as English — only double backticks produce a code mark.
 
-## Parameter coverage and pairing
+## Parameter coverage; type directives are optional
 
 When a docstring exists, every parameter other than `self`/`cls` needs a `:param:` block. A summary + `:return:` with no `:param:` entries is **incomplete** — route handlers documenting only the return value while leaving `session`, `request`, and dep-injected aliases undocumented are the predominant failure mode.
 
-Every `:return:` MUST have a matching `:rtype:`. Flag a missing `:type X:` only when the type is **not** obvious from the signature (`Any`, generic `TypeVar`, `dict[str, Any]` whose runtime shape matters).
+The signature's annotation is the source of truth for types, so `:type:` / `:rtype:` are **optional** — default to omitting them, and do **not** flag a `:param:` / `:return:` for lacking one. Add a type directive only when the documented type should intentionally differ from, clarify, or compensate for the annotation (an `Any` whose real contract is narrower, a noisy `Callable[...]` alias better stated in prose, a postponed / `TYPE_CHECKING` import the docs build can't resolve). When a type directive *is* present, it must use the right tag: `:type:` belongs to `:param:` only; `:cvar:` / `:ivar:` use `:vartype:`; an `:rtype:` accompanies a `:return:`.
 
 ## Pydantic / SQLModel fields
 
-Model fields are constructor parameters — document with `:param:` / `:type:`, NOT `:cvar:` / `:vartype:`. Applies to every `BaseModel` / `SQLModel` subclass. Only `ClassVar`-annotated fields use `:cvar:` + `:vartype:`; `:type:` is reserved for `:param:`.
+Model fields are constructor parameters — document with `:param:`, NOT `:cvar:`. The field annotation supplies the type, so a `:type:` is optional. Applies to every `BaseModel` / `SQLModel` subclass. Only `ClassVar`-annotated fields use `:cvar:`; `:type:` is reserved for `:param:`, and a class variable that documents its type uses `:vartype:`.
 
 ## `:raises:` reflects what actually propagates
 
