@@ -18,6 +18,7 @@
 import logging
 import shlex
 from collections.abc import Iterable
+from functools import partial
 from typing import Annotated, Any
 
 from fastapi import Depends, Form
@@ -46,7 +47,8 @@ from app.sep.plugins.checksums.models import (
     ChecksumTaskWrite,
 )
 from app.sep.plugins.framework import (
-    batch_get_latest_statuses,
+    build_default_task_response,
+    build_task_list_responses,
     ConnectivityWarning,
     make_task_dep,
 )
@@ -451,16 +453,16 @@ def build_checksums_api_task_response(
     :rtype: ChecksumTaskResponse
     """
     mapping = username_mapping or {}
-    task_data = task.model_dump()
-    created_by = task_data.get("created_by")
-    task_data["created_by"] = mapping.get(created_by, created_by)
-    last_updated_by = task_data.get("last_updated_by")
-    task_data["last_updated_by"] = mapping.get(last_updated_by, last_updated_by)
-    return ChecksumTaskResponse(
-        **task_data,
-        service_type=ServiceTypeEnum.MYSQL,
-        status=status,
-        connectivity_warning=connectivity_warning,
+    return build_default_task_response(
+        ChecksumTaskResponse,
+        task,
+        status,
+        extras={
+            "created_by": mapping.get(task.created_by, task.created_by),
+            "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
+            "service_type": ServiceTypeEnum.MYSQL,
+            "connectivity_warning": connectivity_warning,
+        },
     )
 
 
@@ -486,18 +488,14 @@ async def get_checksums_api_task_responses(
     if service_type is not None and service_type != ServiceTypeEnum.MYSQL:
         return []
 
-    params = {"owner": TaskOwner.CHECKSUMS.value}
-    response = await tasks_api.get("/", params=params)
-    tasks = [Task.model_validate(task) for task in response["items"]]
-    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
-
-    return [
-        build_checksums_api_task_response(
-            task, status=statuses.get(task.name), username_mapping=username_mapping
-        )
-        for task in tasks
-        if status is None or statuses.get(task.name) == status
-    ]
+    return await build_task_list_responses(
+        tasks_api,
+        owner=TaskOwner.CHECKSUMS.value,
+        response_builder=partial(
+            build_checksums_api_task_response, username_mapping=username_mapping
+        ),
+        status_filter=status,
+    )
 
 
 def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
