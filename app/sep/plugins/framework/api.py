@@ -30,23 +30,28 @@ wiring, or status-code conventions:
 import functools
 import inspect
 import typing
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any, cast, TypeVar
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, params, status
 from pydantic import BaseModel
 
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
-from app.sep.deps import IsApiAuthenticated, TaskAPI
+from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
 from app.sep.plugins.framework.responses import (
     build_task_list_responses,
     TaskResponseBuilder,
 )
 from app.sep.plugins.framework.schema import PluginSchema
 from app.sep.plugins.framework.task_status import get_task_latest_status
-from app.tasks.models import Task, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryResponse, TaskOwner, TaskWrite
 
-__all__ = ["capabilities_endpoint", "derive_crud_routes", "schema_endpoint"]
+__all__ = [
+    "capabilities_endpoint",
+    "derive_crud_routes",
+    "derive_execute_route",
+    "schema_endpoint",
+]
 
 
 CapabilitiesT = TypeVar("CapabilitiesT", bound=BaseModel)
@@ -490,3 +495,118 @@ def derive_crud_routes(
         )
 
     return router
+
+
+def derive_execute_route(
+    router: APIRouter,
+    *,
+    task_dep: Any,
+    write_model: type[BaseModel],
+    response_model: type[BaseModel],
+    name: str | None = None,
+    description: str = "",
+    extra_deps: Sequence[params.Depends] = (),
+) -> None:
+    """Register the standard ``POST /{task_name}/execute`` route on ``router``.
+
+    Consolidate the execute handler shared verbatim across the task plugins:
+    resolve the task, POST ``/execute/{task.name}`` to the Tasks API with the
+    request body's non-``None`` fields, validate the upstream reply as a
+    :class:`~app.tasks.models.TaskHistoryResponse`, and return
+    ``response_model(task_name=..., task_id=...)``. The route pins
+    ``status_code=201`` and the standard guard set
+    ``[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps]``.
+
+    The generated handler annotates its ``task`` parameter with ``task_dep``
+    (the plugin's ``Annotated[Task, Depends(get_*_task)]`` alias, whose inner
+    getter declares the ``task_name`` path parameter) and its ``body``
+    parameter with ``write_model`` (so FastAPI parses and documents the JSON
+    body from that annotation).
+
+    ``name`` and ``description`` default to the inner handler's own
+    ``__name__`` / docstring (FastAPI's own fallback), yielding a generic
+    ``execute`` operation for a new plugin. Pass them explicitly to reproduce
+    an existing route's ``operationId`` / ``summary`` (from ``name``) and
+    ``description`` (from the docstring) byte-for-byte when migrating a
+    hand-written handler onto this helper.
+
+    .. code-block:: python
+
+        from app.sep.plugins.framework.api import derive_execute_route
+
+        derive_execute_route(
+            router,
+            name="checksums_api_execute",
+            description="Execute a checksum task.",
+            task_dep=ChecksumsTask,
+            write_model=ChecksumExecuteWrite,
+            response_model=ChecksumExecutionResponse,
+        )
+
+    :param router: The plugin's ``APIRouter``.
+    :param task_dep: The plugin's ``Annotated[Task, Depends(get_*_task)]``
+        dependency alias; its inner getter resolves the task by name (and owns
+        the ``task_name`` path parameter and the 404-on-mismatch behaviour).
+    :param write_model: The execute request body model; its annotation drives
+        the requestBody schema and the body-validation ``422``.
+    :param response_model: The execute response model, constructed with
+        ``task_name`` and ``task_id`` keyword arguments.
+    :param name: The route name; drives the OpenAPI ``operationId`` and
+        ``summary``. ``None`` falls back to the inner handler's ``__name__``.
+    :param description: The OpenAPI operation ``description``; ``""`` falls back
+        to the inner handler's docstring.
+    :param extra_deps: Extra route dependencies appended to the standard guard
+        set, never replacing it.
+    :raises TypeError: If ``write_model`` or ``response_model`` is not a
+        :class:`pydantic.BaseModel` subclass. Raised at registration time.
+    :raises ValueError: If ``router`` already exposes a
+        ``POST /{task_name}/execute`` route.
+    """
+    for model, param in (
+        (write_model, "write_model"),
+        (response_model, "response_model"),
+    ):
+        if not (inspect.isclass(model) and issubclass(model, BaseModel)):
+            raise TypeError(
+                f"derive_execute_route: {param} must be a pydantic.BaseModel "
+                f"subclass; got {model!r}"
+            )
+
+    router_prefix = getattr(router, "prefix", "") or ""
+    expected_path = f"{router_prefix}/{{task_name}}/execute"
+    for existing in router.routes:
+        existing_methods = set(getattr(existing, "methods", None) or ())
+        if (
+            getattr(existing, "path", None) == expected_path
+            and "POST" in existing_methods
+        ):
+            raise ValueError(
+                "derive_execute_route: router already has a POST "
+                "/{task_name}/execute route; call this helper at most once per "
+                "plugin router"
+            )
+
+    async def execute(
+        task: task_dep,
+        body: write_model,
+        tasks_api: TaskAPI,
+    ) -> BaseModel:
+        """Resolve, dispatch, and wrap a standard task execution."""
+        created = await tasks_api.post(
+            f"/execute/{task.name}",
+            json=body.model_dump(exclude_none=True),
+        )
+        task_history = TaskHistoryResponse.model_validate(created)
+        return response_model(task_name=task.name, task_id=task_history.id)
+
+    router.add_api_route(
+        "/{task_name}/execute",
+        execute,
+        methods=["POST"],
+        name=name,
+        description=description,
+        status_code=status.HTTP_201_CREATED,
+        response_model=response_model,
+        response_model_by_alias=True,
+        dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps],
+    )
