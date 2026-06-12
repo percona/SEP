@@ -38,7 +38,6 @@ class TaskResponseBuilder(Protocol[R]):
 
     def __call__(self, task: Task, *, status: TaskHistoryStatusEnum | None = None) -> R:
         """Build the response model for ``task`` and its latest ``status``."""
-        ...
 
 
 def build_default_task_response(
