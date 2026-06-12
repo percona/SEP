@@ -30,12 +30,12 @@ process_config_file() {
         echo "----------------------"
         # Parse for HAProxy native include directives (supported since 2.4)
         while IFS= read -r line; do
-            line="${line#"${line%%[! ]*}"}"
-            line="${line%"${line##*[! ]}"}"
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
             # Strip inline comments and skip empty/comment-only lines.
             line="${line%%#*}"
-            line="${line#"${line%%[! ]*}"}"
-            line="${line%"${line##*[! ]}"}"
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
             [[ -z $line ]] && continue
             if [[ $line =~ ^include[[:space:]]+(.+) ]]; then
                 included_glob="${BASH_REMATCH[1]}"
