@@ -13,20 +13,41 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the plugin discovery endpoint helpers (``/schema`` and ``/capabilities``)."""
+"""Define tests for the plugin route helpers in ``framework.api``.
+
+Covers the ``/schema`` and ``/capabilities`` discovery endpoints plus the
+``derive_crud_routes`` CRUD route factory.
+"""
 
 from dataclasses import dataclass
+from typing import Annotated
+from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import APIRouter, FastAPI, status
+from fastapi import APIRouter, Body, Depends, FastAPI, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.exceptions import HTTPConflictException
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import make_pagination_dep
+from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
-from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
-from app.sep.plugins.framework.api import capabilities_endpoint, schema_endpoint
+from app.sep.deps import (
+    get_api_authenticated_user,
+    get_task_by_name,
+    get_tasks_api,
+    IsApiAuthenticated,
+    TaskAPI,
+)
+from app.sep.plugins.framework.api import (
+    capabilities_endpoint,
+    derive_crud_routes,
+    schema_endpoint,
+)
+from app.sep.plugins.framework.deps import make_task_dep
 from app.sep.plugins.framework.rules import (
     CardinalityRule,
     F,
@@ -61,6 +82,8 @@ from app.sep.plugins.framework.schema import (
     TextAreaField,
     YamlField,
 )
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from tests.app.factories import TaskFactory
 
 _TEST_SCHEMA = PluginSchema(
     name="test-schema-endpoint",
@@ -168,13 +191,34 @@ def _register_login_placeholder(app: FastAPI) -> None:
         return {"ok": True}
 
 
-def _build_composed_app(schema: PluginSchema, plugin_prefix: str) -> FastAPI:
-    """Build a fresh FastAPI app whose composition mirrors production.
+def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAPI:
+    """Mount ``plugin_router`` under the production-shape router tree.
 
     Mirror ``app/sep/api/router.py`` exactly: plugin router → plugins router
     (``/plugins``) → api router (``/api`` with ``IsApiAuthenticated``) →
     ``FastAPI``. Return a fresh instance on every call so tests never touch
     the real ``sep_app``.
+
+    :param plugin_router: The plugin's ``APIRouter`` (already carrying its routes).
+    :type plugin_router: APIRouter
+    :param plugin_prefix: The prefix under which the plugin router is mounted
+        on the shared plugins router (for example ``/test-schema-endpoint``).
+    :type plugin_prefix: str
+    :return: A ``FastAPI`` application instance with the composed router tree.
+    :rtype: FastAPI
+    """
+    plugins_router = APIRouter(prefix="/plugins")
+    plugins_router.include_router(plugin_router, prefix=plugin_prefix)
+    api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
+    api_router.include_router(plugins_router)
+    app = FastAPI()
+    app.include_router(api_router)
+    _register_login_placeholder(app)
+    return app
+
+
+def _build_composed_app(schema: PluginSchema, plugin_prefix: str) -> FastAPI:
+    """Build a fresh FastAPI app exposing ``schema_endpoint`` over a schema.
 
     :param schema: The plugin schema the helper registers on the plugin router.
     :type schema: PluginSchema
@@ -186,14 +230,7 @@ def _build_composed_app(schema: PluginSchema, plugin_prefix: str) -> FastAPI:
     """
     plugin_router = APIRouter()
     schema_endpoint(plugin_router, schema)
-    plugins_router = APIRouter(prefix="/plugins")
-    plugins_router.include_router(plugin_router, prefix=plugin_prefix)
-    api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(plugins_router)
-    app = FastAPI()
-    app.include_router(api_router)
-    _register_login_placeholder(app)
-    return app
+    return _mount_plugin_router(plugin_router, plugin_prefix)
 
 
 @pytest.fixture
@@ -385,10 +422,10 @@ class TestSchemaEndpointAuthenticated:
     def test_openapi_documents_detail_view(self, authed_client: TestClient) -> None:
         """Assert OpenAPI surfaces ``PluginSchema.detail_view`` + DetailView models.
 
-        Regression guard for SEP-1114: ``detail_view`` must remain visible to
-        the generated TypeScript client. If the field is renamed or dropped
-        without updating the frontend codegen, this test fails before the
-        generated types go stale.
+        Regression guard: ``detail_view`` must remain visible to the generated
+        TypeScript client. If the field is renamed or dropped without updating
+        the frontend codegen, this test fails before the generated types go
+        stale.
         """
         openapi = authed_client.get("/openapi.json").json()
 
@@ -660,14 +697,7 @@ def _build_capabilities_app(
     """Build a production-shape composed app exposing ``GET /capabilities``."""
     plugin_router = APIRouter()
     capabilities_endpoint(plugin_router, capabilities_provider=provider)
-    plugins_router = APIRouter(prefix="/plugins")
-    plugins_router.include_router(plugin_router, prefix=plugin_prefix)
-    api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(plugins_router)
-    app = FastAPI()
-    app.include_router(api_router)
-    _register_login_placeholder(app)
-    return app
+    return _mount_plugin_router(plugin_router, plugin_prefix)
 
 
 class TestCapabilitiesEndpointRegistration:
@@ -810,9 +840,9 @@ class TestCapabilitiesEndpointRegistration:
 
         Calling an async function from the sync handler would return a
         coroutine object, which response_model serialisation cannot
-        handle. Async / DB-backed providers are explicitly out of scope
-        for SEP-1133; the guard prevents the silent-500-at-first-request
-        footgun and keeps the contract fail-fast.
+        handle. Async / DB-backed providers are explicitly out of scope;
+        the guard prevents the silent-500-at-first-request footgun and
+        keeps the contract fail-fast.
         """
 
         async def provider() -> _DummyCapabilities:
@@ -1031,7 +1061,6 @@ class TestCapabilitiesEndpointRuntime:
         params (settings, session, current user) on the provider rather
         than reading module globals.
         """
-        from fastapi import Depends
 
         def provide_flag() -> bool:
             return True
@@ -1049,3 +1078,672 @@ class TestCapabilitiesEndpointRuntime:
         response = client.get("/api/plugins/test-capabilities-endpoint/capabilities")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"flag": True}
+
+
+# ── derive_crud_routes() helper ─────────────────────────────────────────
+
+
+_SYNTHETIC_OWNER = TaskOwner.ARCHIVER
+_CRUD_PREFIX = "/test-derive-crud"
+_CRUD_BASE_URL = f"/api/plugins{_CRUD_PREFIX}"
+
+_PAGE_OFFSET = 5
+_PAGE_LIMIT = 2
+_PAGE_TOTAL = 10
+
+
+_SYNTHETIC_SCHEMA = PluginSchema(
+    name="test-derive-crud",
+    display_name="Test Derive CRUD",
+    forms=[
+        FormSection(title="Options", fields=[BoolField(name="flag", label="Flag")]),
+    ],
+    list_view=ListView(columns=[Column(key="id", label="ID")]),
+)
+
+
+class _SyntheticTaskResponse(BaseModel):
+    """List/detail response model for the synthetic CRUD plugin.
+
+    ``display_label`` carries a wire alias so the tests can prove the derived
+    routes serialise with ``response_model_by_alias=True``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    display_label: str = Field(alias="displayLabel")
+    status: TaskHistoryStatusEnum | None = None
+
+
+class _SyntheticCreateResponse(BaseModel):
+    """Distinct create response model proving create may carry its own model."""
+
+    name: str
+    created: bool = True
+
+
+class _SyntheticCreate(BaseModel):
+    """Request body model for the synthetic create route."""
+
+    name: str
+
+
+def _build_synthetic_response(
+    task: Task, status: TaskHistoryStatusEnum | None = None
+) -> _SyntheticTaskResponse:
+    """Build the synthetic list/detail response for ``task``."""
+    return _SyntheticTaskResponse(
+        name=task.name, display_label=task.name.upper(), status=status
+    )
+
+
+def _build_synthetic_create_response(task: Task) -> _SyntheticCreateResponse:
+    """Build the distinct synthetic create response for ``task``."""
+    return _SyntheticCreateResponse(name=task.name)
+
+
+async def _build_synthetic_payload(
+    form: Annotated[_SyntheticCreate, Body()],
+) -> TaskWrite:
+    """Build a ``TaskWrite`` from the synthetic create body (drives the 422)."""
+    return TaskWrite(name=form.name, data={})
+
+
+async def _get_task_by_alt_param(name: str, tasks_api: TaskAPI) -> Task:
+    """Resolve a task whose detail path parameter is ``name`` (not ``task_name``)."""
+    return await get_task_by_name(tasks_api, name, _SYNTHETIC_OWNER)
+
+
+async def _synthetic_update_handler(
+    task_name: str, tasks_api: TaskAPI
+) -> _SyntheticTaskResponse:
+    """Override update handler: resolve the task and echo it back."""
+    task = await get_task_by_name(tasks_api, task_name, _SYNTHETIC_OWNER)
+    return _build_synthetic_response(task, status=None)
+
+
+async def _synthetic_delete_handler(task_name: str, tasks_api: TaskAPI) -> None:
+    """Override delete handler: resolve the task and delete it upstream."""
+    task = await get_task_by_name(tasks_api, task_name, _SYNTHETIC_OWNER)
+    await tasks_api.delete(f"/{task.name}")
+
+
+def _task_dict(name: str, owner: TaskOwner = _SYNTHETIC_OWNER) -> dict:
+    """Return a JSON-serialisable ``Task`` payload for the mock Tasks API."""
+    return TaskFactory.build(name=name, owner=owner.value, data={}).model_dump(
+        mode="json"
+    )
+
+
+async def _fake_tasks_get(
+    path: str,
+    *,
+    list_items: list[dict],
+    list_total: int | None,
+    detail_task: dict | None,
+    history_items: list[dict],
+    history_error: Exception | None,
+) -> dict:
+    """Route a fake Tasks-API ``GET`` by path for the in-memory backend."""
+    if path == "/":
+        envelope = {"items": list_items}
+        if list_total is not None:
+            envelope["total"] = list_total
+        return envelope
+    if path.endswith("/history/"):
+        if history_error is not None:
+            raise history_error
+        return {"items": history_items}
+    return detail_task if detail_task is not None else {}
+
+
+async def _fake_tasks_post(
+    path: str,
+    json: dict | None,
+    *,
+    latest_statuses: dict[str, str | None],
+    created_task: dict | None,
+    batch_error: Exception | None,
+    create_error: Exception | None,
+) -> dict:
+    """Route a fake Tasks-API ``POST`` by path for the in-memory backend."""
+    if path == "/history/latest":
+        if batch_error is not None:
+            raise batch_error
+        names = (json or {}).get("names", [])
+        return {name: latest_statuses.get(name) for name in names}
+    if create_error is not None:
+        raise create_error
+    return created_task if created_task is not None else {}
+
+
+def _make_tasks_api(
+    *,
+    list_items: list[dict] | None = None,
+    list_total: int | None = None,
+    detail_task: dict | None = None,
+    history_items: list[dict] | None = None,
+    latest_statuses: dict[str, str | None] | None = None,
+    created_task: dict | None = None,
+    history_error: Exception | None = None,
+    batch_error: Exception | None = None,
+    create_error: Exception | None = None,
+) -> AsyncMock:
+    """Build an ``AsyncMock(spec=RemoteAPI)`` routing Tasks-API calls in memory."""
+    api = AsyncMock(spec=RemoteAPI)
+
+    async def _get(path: str, params: dict | None = None) -> dict:
+        return await _fake_tasks_get(
+            path,
+            list_items=list_items or [],
+            list_total=list_total,
+            detail_task=detail_task,
+            history_items=history_items or [],
+            history_error=history_error,
+        )
+
+    async def _post(path: str, json: dict | None = None) -> dict:
+        return await _fake_tasks_post(
+            path,
+            json,
+            latest_statuses=latest_statuses or {},
+            created_task=created_task,
+            batch_error=batch_error,
+            create_error=create_error,
+        )
+
+    async def _delete(path: str) -> None:
+        return None
+
+    api.get.side_effect = _get
+    api.post.side_effect = _post
+    api.delete.side_effect = _delete
+    return api
+
+
+def _crud_router(**overrides: object) -> APIRouter:
+    """Build a ``derive_crud_routes`` router with sane synthetic defaults."""
+    kwargs = {
+        "task_owner": _SYNTHETIC_OWNER,
+        "get_task": make_task_dep(_SYNTHETIC_OWNER),
+        "response_builder": _build_synthetic_response,
+        "create_payload": _build_synthetic_payload,
+    }
+    kwargs.update(overrides)
+    return derive_crud_routes(_SYNTHETIC_SCHEMA, **kwargs)
+
+
+def _authed_crud_client(
+    router: APIRouter, tasks_api: AsyncMock, user: CasdoorUser
+) -> TestClient:
+    """Mount ``router`` in a production-shape app with auth + Tasks-API overrides."""
+    app = _mount_plugin_router(router, _CRUD_PREFIX)
+    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    app.dependency_overrides[get_tasks_api] = lambda: tasks_api
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _api_routes(router: APIRouter) -> list[APIRoute]:
+    """Return the concrete ``APIRoute`` objects registered on ``router``."""
+    return [r for r in router.routes if isinstance(r, APIRoute)]
+
+
+def _route_for(router: APIRouter, path: str, method: str) -> APIRoute:
+    """Return the single ``APIRoute`` on ``router`` matching ``path`` + ``method``."""
+    [route] = [r for r in _api_routes(router) if r.path == path and method in r.methods]
+    return route
+
+
+class TestDeriveCrudRoutesComposition:
+    """Inspect the returned router in isolation, without HTTP."""
+
+    def test_registers_schema_and_core_routes(self) -> None:
+        """Assert the router carries ``/schema`` plus list / detail / create."""
+        router = _crud_router()
+        registered = {(r.path, frozenset(r.methods)) for r in _api_routes(router)}
+
+        assert ("/schema", frozenset({"GET"})) in registered
+        assert ("/", frozenset({"GET"})) in registered
+        assert ("/{task_name}", frozenset({"GET"})) in registered
+        assert ("/", frozenset({"POST"})) in registered
+
+    def test_no_update_or_delete_route_by_default(self) -> None:
+        """Assert no ``PUT`` / ``DELETE`` route is registered without overrides."""
+        router = _crud_router()
+        methods = {m for r in _api_routes(router) for m in r.methods}
+
+        assert "PUT" not in methods
+        assert "DELETE" not in methods
+
+    def test_update_route_only_when_handler_passed(self) -> None:
+        """Assert a ``PUT /{task_name}`` route appears only with an update handler."""
+        router = _crud_router(update_handler=_synthetic_update_handler)
+        route = _route_for(router, "/{task_name}", "PUT")
+
+        assert route.methods == {"PUT"}
+
+    def test_delete_route_only_when_handler_passed(self) -> None:
+        """Assert a ``DELETE /{task_name}`` route appears only with a delete handler."""
+        router = _crud_router(delete_handler=_synthetic_delete_handler)
+        route = _route_for(router, "/{task_name}", "DELETE")
+
+        assert route.methods == {"DELETE"}
+
+    def test_create_route_pins_201(self) -> None:
+        """Assert the create route sets ``status_code=201``."""
+        route = _route_for(_crud_router(), "/", "POST")
+
+        assert route.status_code == status.HTTP_201_CREATED
+
+    def test_delete_route_pins_204(self) -> None:
+        """Assert the delete route sets ``status_code=204``."""
+        router = _crud_router(delete_handler=_synthetic_delete_handler)
+        route = _route_for(router, "/{task_name}", "DELETE")
+
+        assert route.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_derived_routes_declare_api_authenticated(self) -> None:
+        """Assert every derived route redeclares ``IsApiAuthenticated``."""
+        router = _crud_router(
+            update_handler=_synthetic_update_handler,
+            delete_handler=_synthetic_delete_handler,
+        )
+
+        for route in _api_routes(router):
+            callables = {d.dependency for d in route.dependencies}
+            assert get_api_authenticated_user in callables, route.path
+
+    def test_derived_routes_emit_by_alias(self) -> None:
+        """Assert list / detail / create pin ``response_model_by_alias=True``."""
+        router = _crud_router()
+
+        for path, method in (("/", "GET"), ("/{task_name}", "GET"), ("/", "POST")):
+            assert _route_for(router, path, method).response_model_by_alias is True
+
+    def test_list_response_model_is_list_of_builder_model(self) -> None:
+        """Assert the list route's response model is ``list[<builder model>]``."""
+        route = _route_for(_crud_router(), "/", "GET")
+
+        assert route.response_model == list[_SyntheticTaskResponse]
+
+    def test_detail_response_model_is_builder_model(self) -> None:
+        """Assert the detail route's response model is the builder's model."""
+        route = _route_for(_crud_router(), "/{task_name}", "GET")
+
+        assert route.response_model is _SyntheticTaskResponse
+
+    def test_create_response_model_defaults_to_builder_model(self) -> None:
+        """Assert create reuses the list/detail model when no create builder is given."""
+        route = _route_for(_crud_router(), "/", "POST")
+
+        assert route.response_model is _SyntheticTaskResponse
+
+    def test_create_response_model_distinct_when_create_builder_passed(self) -> None:
+        """Assert a create builder gives create its own distinct response model."""
+        router = _crud_router(create_response_builder=_build_synthetic_create_response)
+        create_route = _route_for(router, "/", "POST")
+        list_route = _route_for(router, "/", "GET")
+
+        assert create_route.response_model is _SyntheticCreateResponse
+        assert list_route.response_model == list[_SyntheticTaskResponse]
+
+    def test_paginated_list_response_model_is_paginated(self) -> None:
+        """Assert a pagination dep switches the list model to ``PaginatedResponse``."""
+        router = _crud_router(pagination_dep=make_pagination_dep(max_limit=50))
+        route = _route_for(router, "/", "GET")
+
+        assert route.response_model == PaginatedResponse[_SyntheticTaskResponse]
+
+    def test_configurable_detail_path_param_changes_route_path(self) -> None:
+        """Assert ``detail_path_param`` renames the detail/create-sibling path."""
+        router = _crud_router(get_task=_get_task_by_alt_param, detail_path_param="name")
+        paths = {r.path for r in _api_routes(router)}
+
+        assert "/{name}" in paths
+        assert "/{task_name}" not in paths
+
+
+class TestDeriveCrudRoutesList:
+    """Exercise the non-paginated ``GET /`` list route over HTTP."""
+
+    def test_list_200_with_alias_and_status(self, regular_user: CasdoorUser) -> None:
+        """Assert list returns 200, alias-mapped keys, and batched statuses."""
+        tasks_api = _make_tasks_api(
+            list_items=[_task_dict("t1"), _task_dict("t2")],
+            latest_statuses={"t1": TaskHistoryStatusEnum.SUCCESS.value, "t2": None},
+        )
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert [item["name"] for item in body] == ["t1", "t2"]
+        assert body[0]["displayLabel"] == "T1"
+        assert "display_label" not in body[0]
+        assert body[0]["status"] == TaskHistoryStatusEnum.SUCCESS
+        assert body[1]["status"] is None
+
+    def test_list_empty_returns_empty_list_without_batch(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert an empty upstream page yields ``[]`` and skips the batch call."""
+        tasks_api = _make_tasks_api(list_items=[])
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+        tasks_api.post.assert_not_awaited()
+
+    def test_list_degrades_to_none_when_batch_chunk_fails(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a failed batch-status call degrades rows to ``status=None``."""
+        tasks_api = _make_tasks_api(
+            list_items=[_task_dict("t1")],
+            batch_error=RuntimeError("batch endpoint down"),
+        )
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body[0]["name"] == "t1"
+        assert body[0]["status"] is None
+
+
+class TestDeriveCrudRoutesPaginatedList:
+    """Exercise the paginated ``GET /`` list route over HTTP."""
+
+    def test_paginated_list_200_forwards_offset_limit(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert paginated list returns the envelope and forwards offset/limit."""
+        tasks_api = _make_tasks_api(
+            list_items=[_task_dict("t1"), _task_dict("t2")],
+            list_total=_PAGE_TOTAL,
+            latest_statuses={
+                "t1": TaskHistoryStatusEnum.SUCCESS.value,
+                "t2": TaskHistoryStatusEnum.FAILED.value,
+            },
+        )
+        router = _crud_router(pagination_dep=make_pagination_dep(max_limit=50))
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.get(
+            f"{_CRUD_BASE_URL}/",
+            params={"offset": _PAGE_OFFSET, "limit": _PAGE_LIMIT},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == _PAGE_TOTAL
+        assert body["offset"] == _PAGE_OFFSET
+        assert body["limit"] == _PAGE_LIMIT
+        assert [item["name"] for item in body["items"]] == ["t1", "t2"]
+        forwarded = tasks_api.get.await_args.kwargs["params"]
+        assert forwarded["offset"] == _PAGE_OFFSET
+        assert forwarded["limit"] == _PAGE_LIMIT
+
+    def test_paginated_list_total_falls_back_to_page_length(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``total`` falls back to the page length when upstream omits it."""
+        items = [_task_dict("t1"), _task_dict("t2")]
+        tasks_api = _make_tasks_api(
+            list_items=items,
+            latest_statuses={"t1": None, "t2": None},
+        )
+        router = _crud_router(pagination_dep=make_pagination_dep(max_limit=50))
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["total"] == len(items)
+
+
+class TestDeriveCrudRoutesDetail:
+    """Exercise the ``GET /{task_name}`` detail route over HTTP."""
+
+    def test_detail_200(self, regular_user: CasdoorUser) -> None:
+        """Assert detail returns 200 with the resolved task and latest status."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"),
+            history_items=[{"status": TaskHistoryStatusEnum.SUCCESS.value}],
+        )
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["name"] == "t1"
+        assert body["displayLabel"] == "T1"
+        assert body["status"] == TaskHistoryStatusEnum.SUCCESS
+
+    def test_detail_404_on_owner_mismatch(self, regular_user: CasdoorUser) -> None:
+        """Assert detail 404s when the resolved task's owner mismatches."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1", owner=TaskOwner.BACKUPS),
+        )
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_detail_propagates_history_error(self, regular_user: CasdoorUser) -> None:
+        """Assert an upstream history error surfaces, not swallowed to None."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"),
+            history_error=HTTPConflictException(),
+        )
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+
+class TestDeriveCrudRoutesCreate:
+    """Exercise the ``POST /`` create route over HTTP."""
+
+    def test_create_201(self, regular_user: CasdoorUser) -> None:
+        """Assert a valid body returns 201 and posts the built payload upstream."""
+        tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["name"] == "new-task"
+        assert tasks_api.post.await_args.args[0] == "/"
+
+    def test_create_422_on_invalid_body(self, regular_user: CasdoorUser) -> None:
+        """Assert an invalid body 422s before the handler body posts anything."""
+        tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        tasks_api.post.assert_not_awaited()
+
+    def test_create_uses_distinct_response_model(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a create builder produces its own response model on the wire."""
+        tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
+        router = _crud_router(create_response_builder=_build_synthetic_create_response)
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert body == {"name": "new-task", "created": True}
+        assert "displayLabel" not in body
+
+    def test_create_propagates_upstream_error(self, regular_user: CasdoorUser) -> None:
+        """Assert an upstream create error surfaces rather than being swallowed."""
+        tasks_api = _make_tasks_api(create_error=HTTPConflictException())
+        client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+
+class TestDeriveCrudRoutesUpdate:
+    """Exercise the override-driven ``PUT /{task_name}`` update route."""
+
+    def test_update_200(self, regular_user: CasdoorUser) -> None:
+        """Assert the update override drives a 200 with conventions applied."""
+        tasks_api = _make_tasks_api(detail_task=_task_dict("t1"))
+        router = _crud_router(update_handler=_synthetic_update_handler)
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.put(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["displayLabel"] == "T1"
+
+    def test_update_404_on_owner_mismatch(self, regular_user: CasdoorUser) -> None:
+        """Assert the update override 404s when the task owner mismatches."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1", owner=TaskOwner.BACKUPS)
+        )
+        router = _crud_router(update_handler=_synthetic_update_handler)
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.put(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestDeriveCrudRoutesDelete:
+    """Exercise the override-driven ``DELETE /{task_name}`` delete route."""
+
+    def test_delete_204(self, regular_user: CasdoorUser) -> None:
+        """Assert the delete override returns 204 with no body and deletes upstream."""
+        tasks_api = _make_tasks_api(detail_task=_task_dict("t1"))
+        router = _crud_router(delete_handler=_synthetic_delete_handler)
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.delete(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert response.content == b""
+        tasks_api.delete.assert_awaited_once_with("/t1")
+
+    def test_delete_404_on_owner_mismatch(self, regular_user: CasdoorUser) -> None:
+        """Assert the delete override 404s when the task owner mismatches."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1", owner=TaskOwner.BACKUPS)
+        )
+        router = _crud_router(delete_handler=_synthetic_delete_handler)
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.delete(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestDeriveCrudRoutesConfigurablePathParam:
+    """Exercise a non-default ``detail_path_param`` over HTTP."""
+
+    def test_detail_resolves_with_custom_path_param(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``detail_path_param='name'`` resolves the detail route correctly."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"),
+            history_items=[{"status": TaskHistoryStatusEnum.SUCCESS.value}],
+        )
+        router = _crud_router(get_task=_get_task_by_alt_param, detail_path_param="name")
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["name"] == "t1"
+
+
+class TestDeriveCrudRoutesUnauthenticated:
+    """Assert every derived route returns JSON 401 without an auth override."""
+
+    @pytest.fixture
+    def unauthed_crud_client(self) -> TestClient:
+        """Yield an unauthed client (Tasks-API stubbed, no auth override)."""
+        tasks_api = _make_tasks_api(
+            list_items=[], detail_task=_task_dict("t1"), created_task=_task_dict("t1")
+        )
+        app = _mount_plugin_router(_crud_router(), _CRUD_PREFIX)
+        app.dependency_overrides[get_tasks_api] = lambda: tasks_api
+        return TestClient(app, raise_server_exceptions=False)
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("get", "/"),
+            ("get", "/t1"),
+            ("post", "/"),
+            ("get", "/schema"),
+        ],
+    )
+    def test_route_returns_401_json(
+        self, unauthed_crud_client: TestClient, method: str, path: str
+    ) -> None:
+        """Assert each derived route returns a JSON 401 when unauthenticated."""
+        response = unauthed_crud_client.request(
+            method, f"{_CRUD_BASE_URL}{path}", follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.headers["content-type"].startswith("application/json")
+
+
+class TestDeriveCrudRoutesOpenApi:
+    """Assert the synthetic app's OpenAPI carries the no-op-preserving shape."""
+
+    @pytest.fixture
+    def openapi_spec(self, regular_user: CasdoorUser) -> dict:
+        """Return the generated OpenAPI for a fully-featured synthetic CRUD app."""
+        tasks_api = _make_tasks_api()
+        router = _crud_router(
+            create_response_builder=_build_synthetic_create_response,
+            update_handler=_synthetic_update_handler,
+            delete_handler=_synthetic_delete_handler,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+        return client.get("/openapi.json").json()
+
+    def test_create_documents_201(self, openapi_spec: dict) -> None:
+        """Assert the create operation documents a 201 response."""
+        operation = openapi_spec["paths"][f"{_CRUD_BASE_URL}/"]["post"]
+
+        assert "201" in operation["responses"]
+
+    def test_delete_documents_204_under_task_name_path(
+        self, openapi_spec: dict
+    ) -> None:
+        """Assert delete documents 204 and the path keeps the ``task_name`` param."""
+        path_item = openapi_spec["paths"][f"{_CRUD_BASE_URL}/{{task_name}}"]
+
+        assert "204" in path_item["delete"]["responses"]
+
+    def test_list_response_serialises_by_alias(self, openapi_spec: dict) -> None:
+        """Assert the list/detail response component exposes the aliased wire key."""
+        component = next(
+            v
+            for k, v in openapi_spec["components"]["schemas"].items()
+            if k.endswith("_SyntheticTaskResponse")
+        )
+
+        assert "displayLabel" in component["properties"]
+        assert "display_label" not in component["properties"]
