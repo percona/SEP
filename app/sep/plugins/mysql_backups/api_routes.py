@@ -20,11 +20,12 @@ Mounted at ``/api/plugins/mysql_backups/`` via ``plugins_router`` in
 """
 
 import logging
+from typing import Annotated, TypeAlias
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi import status as http_status
 
-from app.core.pagination import PaginatedResponse
+from app.core.pagination import PaginatedResponse, Pagination
 from app.core.pagination.deps import make_pagination_dep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
@@ -32,12 +33,12 @@ from app.sep.deps import (
     IsApiAuthenticated,
     TaskAPI,
 )
+from app.sep.plugins.framework import get_task_latest_status
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.mysql_backups.deps import (
     BackupsTask,
     build_backup_task_payload_from_model,
     build_mysql_backups_api_task_response,
-    get_backups_task_status,
     get_mysql_backups_api_task_responses,
 )
 from app.sep.plugins.mysql_backups.models import (
@@ -55,9 +56,12 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=mysql_backups_schema)
 
 MYSQL_BACKUPS_MAX_PAGINATION_LIMIT = 50
-MySQLBackupsPaginationDep = make_pagination_dep(
+_mysql_backups_pagination_dep = make_pagination_dep(
     max_limit=MYSQL_BACKUPS_MAX_PAGINATION_LIMIT
 )
+MySQLBackupsPaginationDep: TypeAlias = Annotated[
+    Pagination, Depends(_mysql_backups_pagination_dep)
+]
 
 
 @router.get("/")
@@ -68,9 +72,8 @@ async def mysql_backups_api_list(
 ) -> PaginatedResponse[BackupResponse]:
     """List MySQL backup tasks.
 
-    ``limit`` is capped because each listed task triggers a follow-up history
-    fetch in ``get_mysql_backups_api_task_responses``; an unbounded ``limit``
-    would amplify fan-out to the Tasks API.
+    ``limit`` is capped to keep the page size bounded; latest statuses for the
+    page are resolved in a single batched round-trip to the Tasks API.
     """
     return await get_mysql_backups_api_task_responses(
         tasks_api,
@@ -85,7 +88,9 @@ async def mysql_backups_api_detail(
     tasks_api: TaskAPI,
 ) -> BackupResponse:
     """Retrieve a single MySQL backup task."""
-    task_status = await get_backups_task_status(task.name, tasks_api)
+    task_status = await get_task_latest_status(
+        tasks_api, task.name, params={"limit": 1, "offset": 0}
+    )
     return build_mysql_backups_api_task_response(task, status=task_status)
 
 

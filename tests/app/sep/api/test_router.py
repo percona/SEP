@@ -33,6 +33,7 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
+from app.sep.plugins.framework.registry import build_app_registry
 
 
 class TestApiRouterComposition:
@@ -383,7 +384,7 @@ class TestApiRouterConfigDrivenLoop:
             module_name="checksums",
             api_router_path="app.sep.plugins.checksums.api_routes.router",
         )
-        router = build_plugins_router([plugin])
+        router = build_plugins_router(build_app_registry([plugin]))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
         assert any(p.startswith("/plugins/checksums/") for p in paths)
 
@@ -394,12 +395,12 @@ class TestApiRouterConfigDrivenLoop:
             module_name="inventory",
             api_router_path=None,
         )
-        router = build_plugins_router([plugin])
+        router = build_plugins_router(build_app_registry([plugin]))
         assert router.routes == []
 
     def test_empty_plugins_iterable_produces_empty_router(self) -> None:
         """Assert no plugins → no plugin routes (only the prefix)."""
-        router = build_plugins_router([])
+        router = build_plugins_router(build_app_registry([]))
         assert router.prefix == "/plugins"
         assert router.routes == []
 
@@ -410,7 +411,7 @@ class TestApiRouterConfigDrivenLoop:
             module_name="dipper",
             api_router_path="app.sep.plugins.dipper.api_routes.router",
         )
-        router = build_plugins_router([plugin])
+        router = build_plugins_router(build_app_registry([plugin]))
         tagged = [
             r.tags for r in router.routes if hasattr(r, "path") and "dipper" in r.path
         ]
@@ -439,7 +440,7 @@ class TestApiRouterConfigDrivenLoop:
             api_router_path="app.sep.plugins.snippets.api_routes.does_not_exist",
         )
         with pytest.raises(AttributeError):
-            build_plugins_router([plugin])
+            build_plugins_router(build_app_registry([plugin]))
 
     def test_colon_syntax_in_api_router_path_is_rejected(self) -> None:
         """Assert colon-style ``module:attr`` paths are rejected.
@@ -453,7 +454,7 @@ class TestApiRouterConfigDrivenLoop:
             api_router_path="app.sep.plugins.checksums.api_routes:router",
         )
         with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
-            build_plugins_router([plugin])
+            build_plugins_router(build_app_registry([plugin]))
 
     def test_plugin_omitting_api_router_path_auto_derives_for_known_module(
         self,
@@ -525,7 +526,7 @@ class TestApiRouterConfigDrivenLoop:
                 css_class="dipper",
             ),
         ]
-        router = build_plugins_router(plugins)
+        router = build_plugins_router(build_app_registry(plugins))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
         assert any(p.startswith("/plugins/snippets/") for p in paths)
         assert any(p.startswith("/plugins/checksums/") for p in paths)
@@ -543,7 +544,7 @@ class TestApiRouterConfigDrivenLoop:
             module_name="app.sep.plugins.checksums",
             api_router_path="",
         )
-        router = build_plugins_router([plugin])
+        router = build_plugins_router(build_app_registry([plugin]))
         assert router.routes == []
 
     def test_build_plugins_router_raises_type_error_for_non_router(self) -> None:
@@ -559,7 +560,7 @@ class TestApiRouterConfigDrivenLoop:
             api_router_path="app.sep.config.Plugin",
         )
         with pytest.raises(TypeError, match="checksums"):
-            build_plugins_router([plugin])
+            build_plugins_router(build_app_registry([plugin]))
 
     def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
         """Assert an explicit ``api_router_path`` with a non-importable module raises ``ValidationError``.

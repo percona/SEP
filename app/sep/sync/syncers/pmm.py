@@ -177,7 +177,7 @@ class PMMSyncer(BaseSyncer):
                 logger.debug("Creating new node: %r", node)
                 created_node = CreatedNode.model_validate(
                     await self.inventory_api.post(
-                        "/",
+                        "/nodes/",
                         json=node.model_dump(exclude={"services"}),
                     ),
                 )
@@ -244,7 +244,7 @@ class PMMSyncer(BaseSyncer):
                 logger.info("Creating new service: %r", service)
                 created_service = CreatedService.model_validate(
                     await self.inventory_api.post(
-                        f"/{created_node.id}/services/",
+                        f"/nodes/{created_node.id}/services/",
                         json=service.model_dump(exclude={"node_id"}),
                     ),
                 )

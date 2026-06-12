@@ -41,7 +41,6 @@ from app.sep.plugins.checksums.deps import (
     ChecksumsTask,
     get_checksums_api_task_responses,
     get_checksums_task,
-    get_checksums_task_status,
     UnprotectedChecksumsTask,
 )
 from app.sep.plugins.checksums.models import (
@@ -51,7 +50,10 @@ from app.sep.plugins.checksums.models import (
     ChecksumTaskWrite,
 )
 from app.sep.plugins.checksums.schema import checksums_schema
-from app.sep.plugins.framework import maybe_record_connectivity_warning
+from app.sep.plugins.framework import (
+    get_task_latest_status,
+    maybe_record_connectivity_warning,
+)
 from app.sep.plugins.framework.api import schema_endpoint
 from app.tasks.models import Task, TaskHistoryResponse, TaskHistoryStatusEnum
 
@@ -61,7 +63,7 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=checksums_schema)
 
 
-@router.get("/", response_model=list[ChecksumTaskResponse])
+@router.get("/")
 async def checksums_api_list(
     tasks_api: TaskAPI,
     service_type: ServiceTypeEnum | None = None,
@@ -77,14 +79,14 @@ async def checksums_api_list(
     )
 
 
-@router.get("/{task_name}", response_model=ChecksumTaskResponse)
+@router.get("/{task_name}")
 async def checksums_api_detail(
     task_name: str,
     tasks_api: TaskAPI,
 ) -> ChecksumTaskResponse:
     """Retrieve a single checksum task."""
     task = await get_checksums_task(task_name, tasks_api)
-    task_status = await get_checksums_task_status(task.name, tasks_api)
+    task_status = await get_task_latest_status(tasks_api, task.name)
     username_mapping = await get_username_mapping()
     return build_checksums_api_task_response(
         task, status=task_status, username_mapping=username_mapping
@@ -93,7 +95,6 @@ async def checksums_api_detail(
 
 @router.post(
     "/",
-    response_model=ChecksumTaskResponse,
     status_code=http_status.HTTP_201_CREATED,
 )
 async def checksums_api_create(
@@ -133,7 +134,6 @@ async def checksums_api_create(
 
 @router.put(
     "/{task_name}",
-    response_model=ChecksumTaskResponse,
     dependencies=[HasNoConflictedRunningTasks],
 )
 async def checksums_api_update(
@@ -158,7 +158,7 @@ async def checksums_api_update(
     username_mapping = await get_username_mapping()
     updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
     updated_task = Task.model_validate(updated)
-    task_status = await get_checksums_task_status(updated_task.name, tasks_api)
+    task_status = await get_task_latest_status(tasks_api, updated_task.name)
     connectivity_warning = await maybe_record_connectivity_warning(
         tasks_api,
         updated_task.data.get("meta", {}),
@@ -174,7 +174,6 @@ async def checksums_api_update(
 
 @router.post(
     "/{task_name}/execute",
-    response_model=ChecksumExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
 )

@@ -1,0 +1,302 @@
+{
+  "components": {
+    "schemas": {
+      "Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post": {
+        "properties": {
+          "full": {
+            "default": true,
+            "title": "Full",
+            "type": "boolean"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          },
+          "since": {
+            "default": "now-7d",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "default": "now",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "title": "Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post",
+        "type": "object"
+      },
+      "Body_report_report_upload_api_api_plugins_report_upload_post": {
+        "properties": {
+          "full": {
+            "default": true,
+            "title": "Full",
+            "type": "boolean"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          },
+          "since": {
+            "default": "now-7d",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "default": "now",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "title": "Body_report_report_upload_api_api_plugins_report_upload_post",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "paths": {
+    "/api/plugins/report/config": {
+      "get": {
+        "description": "Return upload configuration status.\n\n:return: JSON with ``upload_disabled_reasons`` — empty list means upload is ready.\n:rtype: JSONResponse",
+        "operationId": "report_report_config_api_plugins_report_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Report Config",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/plugins/report/generate/json": {
+      "get": {
+        "description": "Generate a report and return as JSON.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:param sections: Optional list of sections to include.\n:type sections: list[str] | None\n:return: JSON response with the full report data.\n:rtype: JSONResponse",
+        "operationId": "report_report_generate_json_api_api_plugins_report_generate_json_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "default": "now-7d",
+              "title": "Since",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "default": "now",
+              "title": "Until",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "full",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Full",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sections",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sections"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Generate Json Api",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/plugins/report/generate/pdf": {
+      "post": {
+        "description": "Generate a report and return it as a downloadable PDF.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: PDF file response.\n:rtype: Response",
+        "operationId": "report_report_generate_pdf_api_api_plugins_report_generate_pdf_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Generate Pdf Api",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/plugins/report/upload": {
+      "post": {
+        "description": "Generate a report, convert to PDF, and upload to ServiceNow.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: JSON response with the upload result.\n:rtype: JSONResponse",
+        "operationId": "report_report_upload_api_api_plugins_report_upload_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_report_report_upload_api_api_plugins_report_upload_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Upload Api",
+        "tags": [
+          "report"
+        ]
+      }
+    }
+  }
+}

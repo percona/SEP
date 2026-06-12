@@ -69,6 +69,7 @@ from app.sep.deps import (
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppState, SyncInventoryEntityTypeEnum
+from app.sep.plugins.framework.registry import build_app_registry
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
@@ -547,7 +548,7 @@ class TestGetCreatedNode:
 
         result = await get_created_node(mock_api, node.id)
         assert isinstance(result, CreatedNode)
-        mock_api.get.assert_called_once_with(f"/{node.id}")
+        mock_api.get.assert_called_once_with(f"/nodes/{node.id}")
 
 
 class TestGetCreatedSchema:
@@ -1049,7 +1050,7 @@ class TestGetExecutorHostsContext:
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "db-replica"
         mock_inventory_api.get.assert_called_once_with(
-            "/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
+            "/nodes/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
         )
 
     @pytest.mark.asyncio
@@ -1349,11 +1350,13 @@ class TestGetToggleableAppKey:
     ) -> None:
         """A configured, non-protected key resolves to itself."""
         monkeypatch.setattr(
-            "app.sep.deps.sep_settings.PLUGINS",
-            [
-                Plugin(name="Inventory", module_name="inventory"),
-                Plugin(name="Snippet Manager", module_name="snippets"),
-            ],
+            "app.sep.plugins.framework.registry.get_app_registry",
+            lambda: build_app_registry(
+                [
+                    Plugin(name="Inventory", module_name="inventory"),
+                    Plugin(name="Snippet Manager", module_name="snippets"),
+                ]
+            ),
         )
         assert get_toggleable_app_key("snippets") == "snippets"
 
@@ -1367,8 +1370,10 @@ class TestGetToggleableAppKey:
     ) -> None:
         """An unconfigured key raises 404."""
         monkeypatch.setattr(
-            "app.sep.deps.sep_settings.PLUGINS",
-            [Plugin(name="Snippet Manager", module_name="snippets")],
+            "app.sep.plugins.framework.registry.get_app_registry",
+            lambda: build_app_registry(
+                [Plugin(name="Snippet Manager", module_name="snippets")]
+            ),
         )
         with pytest.raises(HTTPNotFoundException):
             get_toggleable_app_key("unknown")
@@ -1397,15 +1402,17 @@ class TestGetDefaultContextPluginFiltering:
         await session.commit()
 
         with (
-            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch(
+                "app.sep.plugins.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
             patch("app.sep.deps.settings"),
         ):
-            mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(
                 dummy_request, regular_user, None, session
             )
 
-        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        keys = {p.key for p in context["plugins"]}
         assert keys == {"inventory", "snippets"}
 
     @pytest.mark.asyncio
@@ -1418,15 +1425,17 @@ class TestGetDefaultContextPluginFiltering:
         await session.commit()
 
         with (
-            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch(
+                "app.sep.plugins.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
             patch("app.sep.deps.settings"),
         ):
-            mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(
                 dummy_request, regular_user, None, session
             )
 
-        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        keys = {p.key for p in context["plugins"]}
         assert "inventory" in keys
 
     @pytest.mark.asyncio
@@ -1436,15 +1445,17 @@ class TestGetDefaultContextPluginFiltering:
     ) -> None:
         """A configured plugin with no DB row is shown (missing -> enabled)."""
         with (
-            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch(
+                "app.sep.plugins.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
             patch("app.sep.deps.settings"),
         ):
-            mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(
                 dummy_request, regular_user, None, session
             )
 
-        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        keys = {p.key for p in context["plugins"]}
         assert keys == {"inventory", "snippets", "checksums"}
 
     @pytest.mark.asyncio
@@ -1454,7 +1465,10 @@ class TestGetDefaultContextPluginFiltering:
     ) -> None:
         """A DB read failure shows every app so the page (and error pages) render."""
         with (
-            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch(
+                "app.sep.plugins.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
             patch("app.sep.deps.settings"),
             patch.object(
                 AppStateManager,
@@ -1462,10 +1476,9 @@ class TestGetDefaultContextPluginFiltering:
                 side_effect=SQLAlchemyError("db down"),
             ),
         ):
-            mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(
                 dummy_request, regular_user, None, session
             )
 
-        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        keys = {p.key for p in context["plugins"]}
         assert keys == {"inventory", "snippets", "checksums"}

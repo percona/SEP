@@ -24,9 +24,11 @@ from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
-from app.inventory.crud import NodeManager, ServiceManager
+from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
 from app.inventory.models import (
+    HostSystemObservationResponse,
+    HostSystemObservationWrite,
     Node,
     NodeResponse,
     NodeWrite,
@@ -39,7 +41,7 @@ from app.inventory.models import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["nodes"])
+router = APIRouter(prefix="/nodes", tags=["nodes"])
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
@@ -106,6 +108,31 @@ async def delete_node(session: SessionDep, node: NodeDep) -> None:
     """Delete Node."""
     logger.debug("Deleting node %s", node.id)
     await NodeManager.delete(session, node)
+
+
+@router.get("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def retrieve_host_system_observation(
+    session: SessionDep,
+    node: NodeDep,
+) -> HostSystemObservationResponse:
+    """Retrieve host system observation for a node."""
+    return await HostSystemObservationManager.get_or_404(session, node_id=node.id)
+
+
+@router.put("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def upsert_host_system_observation(
+    session: SessionDep,
+    node: NodeDep,
+    data: HostSystemObservationWrite,
+) -> HostSystemObservationResponse:
+    """Upsert host system observation for a node."""
+    data.node_id = node.id
+    obs, created = await HostSystemObservationManager.get_or_create(
+        session, data, filter_include={"node_id"}
+    )
+    if not created:
+        obs = await HostSystemObservationManager.update(session, obs, data)
+    return obs
 
 
 @router.get("/{node_id}/services/", dependencies=[IsAuthenticatedDep])

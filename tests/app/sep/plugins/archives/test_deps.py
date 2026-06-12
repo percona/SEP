@@ -20,13 +20,13 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPNotFoundException, HTTPUnprocessableEntityException
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedTable
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.deps import (
-    _extract_latest_task_status,
+    _build_archives_payload,
     _resolve_destination_host_and_db,
     _resolve_destination_tables,
     _resolve_source_tables,
@@ -48,6 +48,7 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import (
+    CreatedSchemaFactory,
     CreatedServiceFactory,
     CreatedTableFactory,
     MOCK_CREATED_SCHEMA_ID,
@@ -65,6 +66,9 @@ def dest_table() -> CreatedTable:
     """Return a fake destination Table."""
     dest_table = CreatedTableFactory.build()
     dest_table.id = MOCK_DESTINATION_TABLE_ID
+    # Pin a distinct name so the self-archive guard never fires on a random
+    # collision with the source table's factory-generated name.
+    dest_table.name = "dest_table_distinct"
     return dest_table
 
 
@@ -320,46 +324,16 @@ class TestBuildArchivesApiTaskPayload:
         assert result.data["meta"]["_pmm_node_name"] == created_service.node.name
 
 
-class TestExtractLatestTaskStatus:
-    """Test _extract_latest_task_status across all history list shapes."""
-
-    def test_empty_list_returns_none(self):
-        """Empty history list yields None."""
-        assert _extract_latest_task_status([]) is None
-
-    def test_single_entry_with_status_returns_enum(self):
-        """Single entry with a valid status string returns the matching enum."""
-        result = _extract_latest_task_status([{"status": "success"}])
-        assert result == TaskHistoryStatusEnum.SUCCESS
-
-    def test_first_entry_with_status_is_returned(self):
-        """First entry's status wins when multiple entries are present."""
-        result = _extract_latest_task_status(
-            [{"status": "running"}, {"status": "success"}]
-        )
-        assert result == TaskHistoryStatusEnum.RUNNING
-
-    def test_first_entry_none_status_falls_through_to_second(self):
-        """Entry with status=None is skipped; next entry's status is returned."""
-        result = _extract_latest_task_status([{"status": None}, {"status": "failed"}])
-        assert result == TaskHistoryStatusEnum.FAILED
-
-    def test_all_none_statuses_returns_none(self):
-        """All entries lacking a non-None status yield None."""
-        assert _extract_latest_task_status([{"status": None}, {}]) is None
-
-
 @pytest.mark.asyncio
 async def test_get_archives_api_task_responses_fetches_task_statuses(mock_remote_api):
-    """List responses include per-task latest history statuses."""
+    """List responses include per-task statuses from the batch endpoint."""
     task_one = TaskFactory.build(name="archive-1", owner=TaskOwner.ARCHIVER)
     task_two = TaskFactory.build(name="archive-2", owner=TaskOwner.ARCHIVER)
     mock_remote_api.get = AsyncMock(
-        side_effect=[
-            {"items": [task_one.model_dump(), task_two.model_dump()]},
-            {"items": [{"status": "success"}]},
-            {"items": [{"status": "failed"}]},
-        ]
+        return_value={"items": [task_one.model_dump(), task_two.model_dump()]}
+    )
+    mock_remote_api.post = AsyncMock(
+        return_value={"archive-1": "success", "archive-2": "failed"}
     )
 
     responses = await get_archives_api_task_responses(mock_remote_api)
@@ -369,12 +343,12 @@ async def test_get_archives_api_task_responses_fetches_task_statuses(mock_remote
         TaskHistoryStatusEnum.SUCCESS,
         TaskHistoryStatusEnum.FAILED,
     ]
-    assert mock_remote_api.get.await_args_list[0].args == ("/",)
-    assert mock_remote_api.get.await_args_list[0].kwargs == {
-        "params": {"owner": TaskOwner.ARCHIVER.value}
-    }
-    history_paths = {call.args[0] for call in mock_remote_api.get.await_args_list[1:]}
-    assert history_paths == {"/archive-1/history/", "/archive-2/history/"}
+    mock_remote_api.get.assert_awaited_once_with(
+        "/", params={"owner": TaskOwner.ARCHIVER.value}
+    )
+    mock_remote_api.post.assert_awaited_once_with(
+        "/history/latest", json={"names": ["archive-1", "archive-2"]}
+    )
 
 
 class TestGetArchivesTaskInfo:
@@ -956,3 +930,416 @@ class TestResolveDestinationHostAndDb:
         assert result == {}
         assert "dest_host" not in result
         mock_remote_api.get.assert_not_called()
+
+
+class TestBuildArchivesPayloadSelfArchiveGuard:
+    """Tests for the post-resolution self-archive guard in ``_build_archives_payload``."""
+
+    @pytest.mark.asyncio
+    async def test_dest_db_id_resolves_to_same_schema_raises(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Case 1: dest_db_id resolves to source schema name on the same service+table."""
+        dest_table_same_name = CreatedTableFactory.build()
+        dest_table_same_name.id = MOCK_DESTINATION_TABLE_ID
+        dest_table_same_name.name = created_table.name
+
+        form = ArchivesCreate(
+            alias="self-archive-case1",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=MOCK_DESTINATION_TABLE_ID,
+            dest_table_name="",
+            dest_file=None,
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_db_id=MOCK_CREATED_SCHEMA_ID,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+                dest_table_same_name.model_dump(),
+                created_service.model_dump(),
+                created_schema.model_dump(),
+            ]
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await _build_archives_payload(form, mock_remote_api)
+
+    @pytest.mark.asyncio
+    async def test_whitespace_dest_host_and_db_same_table_raises(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Case 2: whitespace dest_host + dest_db_name strip to empty, same table name."""
+        form = ArchivesCreate(
+            alias="self-archive-case2",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=None,
+            dest_table_name=created_table.name,
+            dest_file=None,
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host="   ",
+            dest_port=None,
+            dest_db_name="   ",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await _build_archives_payload(form, mock_remote_api)
+
+    @pytest.mark.asyncio
+    async def test_whitespace_dest_service_and_db_name_same_table_raises(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Case 2b: dest_service_id same + whitespace dest_db_name + same table name."""
+        dest_table_same_name = CreatedTableFactory.build()
+        dest_table_same_name.id = MOCK_DESTINATION_TABLE_ID
+        dest_table_same_name.name = created_table.name
+
+        form = ArchivesCreate(
+            alias="self-archive-case2b",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=MOCK_DESTINATION_TABLE_ID,
+            dest_table_name="",
+            dest_file=None,
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_db_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="   ",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+                dest_table_same_name.model_dump(),
+                created_service.model_dump(),
+            ]
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await _build_archives_payload(form, mock_remote_api)
+
+    @pytest.mark.asyncio
+    async def test_different_dest_host_not_rejected(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Different dest_host: same table name is fine — genuinely different archive."""
+        form = ArchivesCreate(
+            alias="cross-host-archive",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=None,
+            dest_table_name=created_table.name,
+            dest_file=None,
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host="other.host",
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+
+        result = await _build_archives_payload(form, mock_remote_api)
+
+        assert isinstance(result, TaskWrite)
+
+    @pytest.mark.asyncio
+    async def test_dest_db_id_resolves_to_different_schema_not_rejected(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """dest_db_id resolves to a different schema name: no self-archive."""
+        different_schema = CreatedSchemaFactory.build()
+        different_schema.name = created_schema.name + "_archive"
+
+        dest_table_same_name = CreatedTableFactory.build()
+        dest_table_same_name.id = MOCK_DESTINATION_TABLE_ID
+        dest_table_same_name.name = created_table.name
+
+        form = ArchivesCreate(
+            alias="cross-schema-archive",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=MOCK_DESTINATION_TABLE_ID,
+            dest_table_name="",
+            dest_file=None,
+            dest_service_id=MOCK_CREATED_SERVICE_ID,
+            dest_db_id=MOCK_CREATED_SCHEMA_ID,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+                dest_table_same_name.model_dump(),
+                created_service.model_dump(),
+                different_schema.model_dump(),
+            ]
+        )
+
+        result = await _build_archives_payload(form, mock_remote_api)
+
+        assert isinstance(result, TaskWrite)
+
+    @pytest.mark.asyncio
+    async def test_file_destination_skips_self_archive_check(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """File destination: no table comparison, never a self-archive."""
+        form = ArchivesCreate(
+            alias="file-archive",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=None,
+            dest_table_name="",
+            dest_file="/tmp/archive.csv",
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+
+        result = await _build_archives_payload(form, mock_remote_api)
+
+        assert isinstance(result, TaskWrite)
+
+    @pytest.mark.asyncio
+    async def test_same_host_different_port_not_rejected(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Same hostname but different port: two distinct MySQL instances, not a self-archive."""
+        created_service.port = DEFAULT_MYSQL_PORT
+
+        form = ArchivesCreate(
+            alias="cross-port-archive",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=None,
+            dest_table_name=created_table.name,
+            dest_file=None,
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host=created_service.node.address,
+            dest_port=DEFAULT_MYSQL_PORT + 1,
+            dest_db_name=created_schema.name,
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+
+        result = await _build_archives_payload(form, mock_remote_api)
+
+        assert isinstance(result, TaskWrite)
+
+    @pytest.mark.asyncio
+    async def test_source_by_id_manual_dest_table_name_raises(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Source resolved by inventory ID, dest table as manual name: guard still fires."""
+        form = ArchivesCreate(
+            alias="self-archive-id-src-name-dst",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=None,
+            dest_table_name=created_table.name,
+            dest_file=None,
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await _build_archives_payload(form, mock_remote_api)
+
+    @pytest.mark.asyncio
+    async def test_manual_source_names_dest_table_id_raises(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Source as manual names, dest table resolved by inventory ID: guard still fires."""
+        dest_table_same_name = CreatedTableFactory.build()
+        dest_table_same_name.id = MOCK_DESTINATION_TABLE_ID
+        dest_table_same_name.name = created_table.name
+
+        form = ArchivesCreate(
+            alias="self-archive-name-src-id-dst",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=None,
+            source_table_id=None,
+            source_db_name=created_schema.name,
+            source_table_name=created_table.name,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=MOCK_DESTINATION_TABLE_ID,
+            dest_table_name="",
+            dest_file=None,
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                dest_table_same_name.model_dump(),
+            ]
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await _build_archives_payload(form, mock_remote_api)
+
+    @pytest.mark.asyncio
+    async def test_mixed_case_table_name_not_rejected(
+        self, created_service, created_schema, created_table, mock_remote_api
+    ):
+        """Mixed-case dest_table_name is distinct on case-sensitive servers.
+
+        The guard uses exact match (like Validator 1b), so ``foo``/``FOO`` is accepted.
+        """
+        created_table.name = "archive_tbl"
+
+        form = ArchivesCreate(
+            alias="mixed-case-dest-table",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=MOCK_CREATED_SCHEMA_ID,
+            source_table_id=MOCK_CREATED_TABLE_ID,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=None,
+            dest_table_name=created_table.name.upper(),
+            dest_file=None,
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+
+        result = await _build_archives_payload(form, mock_remote_api)
+
+        assert isinstance(result, TaskWrite)
+
+    @pytest.mark.asyncio
+    async def test_source_query_path_skips_self_archive_check(
+        self, created_service, mock_remote_api
+    ):
+        """source_query path: no source table resolved, check is skipped."""
+        dest_table_obj = CreatedTableFactory.build()
+        dest_table_obj.id = MOCK_DESTINATION_TABLE_ID
+
+        form = ArchivesCreate(
+            alias="source-query-archive",
+            hostname="localhost",
+            service_id=MOCK_CREATED_SERVICE_ID,
+            source_db_id=None,
+            source_table_id=None,
+            source_db_name="",
+            source_table_name="",
+            source_query="SELECT id FROM foo WHERE id > 1",
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=MOCK_DESTINATION_TABLE_ID,
+            dest_table_name="",
+            dest_file=None,
+            dest_service_id=None,
+            dest_db_id=None,
+            dest_host=None,
+            dest_port=None,
+            dest_db_name="",
+        )
+        mock_remote_api.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                dest_table_obj.model_dump(),
+            ]
+        )
+
+        result = await _build_archives_payload(form, mock_remote_api)
+
+        assert isinstance(result, TaskWrite)
