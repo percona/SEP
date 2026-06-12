@@ -24,7 +24,7 @@ from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.archives.schema import archives_schema
-from app.sep.plugins.framework import ConnectivityWarning
+from app.sep.plugins.framework import derive_create_response_model
 from app.sep.plugins.framework.rules import (
     apply_conditional_rules,
     ConditionalRulesModel,
@@ -349,15 +349,15 @@ class ArchivesTaskResponse(BaseModel):
     status: TaskHistoryStatusEnum | None = None
 
 
-class ArchivesCreateResponse(ArchivesTaskResponse):
-    """Represent the response body for ``POST /api/plugins/archives/``.
-
-    Extends :class:`ArchivesTaskResponse` with a connectivity-warning field
-    surfaced when the post-creation database probe fails or is skipped.
-
-    :param connectivity_warning: ``None`` when the probe passes, was opted
-        out, or the task meta lacks connectivity keys; populated otherwise.
-    :type connectivity_warning: ConnectivityWarning | None
-    """
-
-    connectivity_warning: ConnectivityWarning | None = None
+ArchivesCreateResponse = derive_create_response_model(
+    ArchivesTaskResponse,
+    name="ArchivesCreateResponse",
+    doc=(
+        "Represent the response body for ``POST /api/plugins/archives/``.\n\n"
+        "Extends :class:`ArchivesTaskResponse` with a connectivity-warning field\n"
+        "surfaced when the post-creation database probe fails or is skipped.\n\n"
+        ":param connectivity_warning: ``None`` when the probe passes, was opted\n"
+        "    out, or the task meta lacks connectivity keys; populated otherwise.\n"
+        ":type connectivity_warning: ConnectivityWarning | None"
+    ),
+)

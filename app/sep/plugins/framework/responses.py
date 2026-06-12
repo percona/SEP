@@ -16,12 +16,13 @@
 """Provide the shared JSON-API list pipeline and default task response builder."""
 
 from collections.abc import Callable, Mapping
-from typing import Any, overload, Protocol, TypeVar
+from typing import Any, cast, overload, Protocol, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from app.core.pagination import PaginatedResponse, Pagination
 from app.sep.deps import TaskAPI
+from app.sep.plugins.framework.connectivity import ConnectivityWarning
 from app.sep.plugins.framework.task_status import batch_get_latest_statuses
 from app.tasks.models import Task, TaskHistoryStatusEnum
 
@@ -71,6 +72,39 @@ def build_default_task_response(
     if extras:
         payload.update(extras)
     return response_model(**payload)
+
+
+def derive_create_response_model(
+    response_model: type[R],
+    *,
+    name: str,
+    doc: str | None = None,
+    extra_fields: Mapping[str, tuple[type, Any]] | None = None,
+) -> type[R]:
+    """Derive an ``<App>CreateResponse`` subclass of ``response_model``.
+
+    Return a subclass carrying every field of ``response_model`` plus
+    ``connectivity_warning: ConnectivityWarning | None = None`` and any
+    cascade-contributed warning fields in ``extra_fields``.
+    ``connectivity_warning`` is applied last, so an ``extra_fields`` entry can
+    never override it.
+
+    :param response_model: The base response model whose fields the derived
+        model inherits.
+    :param name: The derived model's class name; fixes the OpenAPI component
+        title instead of a mangled dynamic-model name.
+    :param doc: The derived model's docstring, surfaced as the OpenAPI
+        component description; ``None`` leaves the component undescribed.
+    :param extra_fields: Cascade-contributed ``name -> (type, default)`` fields
+        merged in beneath ``connectivity_warning``.
+    :return: A ``response_model`` subclass that adds ``connectivity_warning``.
+    """
+    fields = dict(extra_fields or {})
+    fields["connectivity_warning"] = (ConnectivityWarning | None, None)
+    return cast(
+        type[R],
+        create_model(name, __base__=response_model, __doc__=doc, **fields),
+    )
 
 
 def _owner_list_params(owner: str, pagination: Pagination | None) -> dict[str, Any]:
