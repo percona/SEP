@@ -15,7 +15,7 @@
 
 """Provide the shared JSON-API list pipeline and default task response builder."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from typing import Any, overload, Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -81,24 +81,6 @@ def _owner_list_params(owner: str, pagination: Pagination | None) -> dict[str, A
     return params
 
 
-async def _enrich_statuses(
-    tasks_api: TaskAPI, tasks: Sequence[Task]
-) -> dict[str, TaskHistoryStatusEnum | None]:
-    """Resolve each task's latest history status as a discrete pipeline step.
-
-    Isolated as its own step rather than inlined into the assembly so the
-    pipeline's enrichment phase stays composable with sibling enrichment steps.
-
-    :param tasks_api: The Tasks API client used for the batch lookup.
-    :type tasks_api: TaskAPI
-    :param tasks: The tasks to resolve latest statuses for.
-    :type tasks: Sequence[Task]
-    :return: A mapping from each task name to its latest status or ``None``.
-    :rtype: dict[str, TaskHistoryStatusEnum | None]
-    """
-    return await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
-
-
 @overload
 async def build_task_list_responses(
     tasks_api: TaskAPI,
@@ -162,15 +144,11 @@ async def build_task_list_responses(
     if task_filter is not None:
         tasks = [task for task in tasks if task_filter(task)]
 
-    statuses = await _enrich_statuses(tasks_api, tasks)
-
-    selected = [
-        task
+    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
+    items = [
+        response_builder(task, status=statuses.get(task.name))
         for task in tasks
         if status_filter is None or statuses.get(task.name) == status_filter
-    ]
-    items = [
-        response_builder(task, status=statuses.get(task.name)) for task in selected
     ]
 
     if pagination is None:
