@@ -152,8 +152,15 @@ def _remote_wiring(
     :return: A ``(setting_class -> base_path)`` map and the dependency annotation
         to use on the handlers (the no-op ``None`` dependency when unset).
     :rtype: tuple[dict[SettingClassEnum, str], Any]
+    :raises ValueError: If ``remote_classes`` is non-empty but ``remote_api_dep``
+        is ``None``, so the misconfiguration fails fast at router construction
+        instead of as a runtime ``500`` when a handler calls ``None.get(...)``.
     """
     remote_lookup = dict(remote_classes or {})
+    if remote_lookup and remote_api_dep is None:
+        raise ValueError(
+            "remote_api_dep is required when remote_classes is non-empty.",
+        )
     remote_dep = remote_api_dep if remote_api_dep is not None else _no_remote_dep
     return remote_lookup, remote_dep
 
