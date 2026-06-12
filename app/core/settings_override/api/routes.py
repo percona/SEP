@@ -18,19 +18,21 @@
 __all__ = ["build_settings_router"]
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, params, Request, status
+from fastapi import APIRouter, Depends, HTTPException, params, Request, status
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseYamlSettings
 from app.core.exceptions import (
+    HTTPBadGatewayException,
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.requests.remote_api import RemoteAPI
 from app.core.settings_override.api.models import (
     SettingClassGroup,
     SettingResponse,
@@ -65,6 +67,209 @@ from app.core.settings_override.registry import (
 )
 
 ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
+
+#: One ``(SettingClassEnum, remote_base_path)`` pair per settings class whose
+#: storage lives in another sub-app and must be proxied server-side rather than
+#: read from a local config singleton. ``remote_base_path`` is the path the
+#: remote sub-app mounts its settings router at (e.g. ``"/admin/settings"``),
+#: relative to the injected ``RemoteAPI`` client's base URL.
+RemoteClassEntry = tuple[SettingClassEnum, str]
+
+
+async def _no_remote_api() -> None:
+    """Return ``None`` as the remote-API dependency when no remote classes wire one.
+
+    The settings router always declares a ``remote_api`` dependency so the LIST /
+    DETAIL / PATCH / DELETE handlers share a single signature. Callers that pass
+    no ``remote_classes`` (e.g. the Tasks sub-app's local-only router) get this
+    no-op, keeping their behaviour identical to before remote support existed.
+
+    :return: Always ``None``.
+    :rtype: None
+    """
+    return
+
+
+#: Default ``remote_api`` annotation when a router wires no remote classes:
+#: resolves to ``None`` so the shared handler signature stays valid.
+_no_remote_dep = Annotated[None, Depends(_no_remote_api)]
+
+
+async def _proxy_settings_request(
+    remote_api: RemoteAPI,
+    method: str,
+    path: str,
+    **kwargs: Any,
+) -> Any:
+    """Dispatch one settings request to a remote sub-app, preserving client errors.
+
+    Upstream **client** errors (HTTP < 500: ``400`` / ``404`` / ``409`` / ``422``)
+    are re-raised unchanged so their status and ``detail`` survive the proxy --
+    the React settings UI reads the upstream ``422`` ``detail`` to render inline
+    per-field validation messages, which a blanket ``502`` would erase. Upstream
+    **availability** failures (HTTP >= 500, or an ``OSError`` connection failure)
+    become :class:`~app.core.exceptions.HTTPBadGatewayException` (``502``),
+    matching the other SEP proxy routes.
+
+    :param remote_api: The async client for the owning sub-app, already
+        authenticated (the SEP wiring forwards the caller's Bearer token).
+    :type remote_api: RemoteAPI
+    :param method: The :class:`RemoteAPI` verb to call (``"get"`` / ``"patch"`` /
+        ``"delete"``).
+    :type method: str
+    :param path: The remote path to request, relative to the client's base URL.
+    :type path: str
+    :param kwargs: Extra keyword arguments forwarded to the verb (e.g. ``json``).
+    :type kwargs: Any
+    :return: The parsed JSON payload, or ``None`` on an upstream ``204``.
+    :rtype: Any
+    :raises HTTPException: Re-raised unchanged for an upstream client error
+        (status < 500).
+    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+        or a connection-level ``OSError``.
+    """
+    try:
+        return await getattr(remote_api, method)(path, **kwargs)
+    except HTTPException as exc:
+        if exc.status_code < status.HTTP_500_INTERNAL_SERVER_ERROR:
+            raise
+        raise HTTPBadGatewayException(detail=str(exc.detail)) from exc
+    except OSError as exc:
+        raise HTTPBadGatewayException(detail=str(exc)) from exc
+
+
+def _remote_wiring(
+    remote_classes: list[RemoteClassEntry] | None,
+    remote_api_dep: Any,
+) -> tuple[dict[SettingClassEnum, str], Any]:
+    """Resolve the remote-class lookup and the handler's ``remote_api`` annotation.
+
+    :param remote_classes: The configured ``(enum, base_path)`` pairs, or ``None``.
+    :type remote_classes: list[RemoteClassEntry] | None
+    :param remote_api_dep: The ``Annotated[RemoteAPI, Depends(...)]`` alias, or
+        ``None`` when no remote classes are wired.
+    :type remote_api_dep: Any
+    :return: A ``(setting_class -> base_path)`` map and the dependency annotation
+        to use on the handlers (the no-op ``None`` dependency when unset).
+    :rtype: tuple[dict[SettingClassEnum, str], Any]
+    """
+    remote_lookup = dict(remote_classes or {})
+    remote_dep = remote_api_dep if remote_api_dep is not None else _no_remote_dep
+    return remote_lookup, remote_dep
+
+
+async def _remote_list_group(
+    remote_api: RemoteAPI,
+    setting_class: SettingClassEnum,
+    base_path: str,
+) -> SettingClassGroup:
+    """Fetch and validate one remote settings class's group for the LIST.
+
+    The remote fetch is fail-closed: any upstream failure (HTTP error or
+    connection ``OSError``) becomes a ``502`` so the LIST does not silently omit
+    the remote group. The remote ``GET {base_path}/`` returns a full
+    :class:`SettingsListResponse`; validation happens *outside* the
+    ``502``-mapping ``try`` so an upstream shape mismatch surfaces as a ``500``
+    (a genuine contract bug) rather than being masked as a ``502``.
+
+    :param remote_api: The authenticated client for the owning sub-app.
+    :type remote_api: RemoteAPI
+    :param setting_class: The remote class whose group to extract.
+    :type setting_class: SettingClassEnum
+    :param base_path: The remote settings router's mount path.
+    :type base_path: str
+    :return: The validated group for ``setting_class``.
+    :rtype: SettingClassGroup
+    :raises HTTPBadGatewayException: If the upstream call fails, or the upstream
+        response omits ``setting_class``.
+    """
+    try:
+        payload = await remote_api.get(f"{base_path}/")
+    except (HTTPException, OSError) as exc:
+        detail = getattr(exc, "detail", str(exc))
+        raise HTTPBadGatewayException(detail=str(detail)) from exc
+    remote = SettingsListResponse.model_validate(payload)
+    group = next((g for g in remote.groups if g.setting_class == setting_class), None)
+    if group is None:
+        raise HTTPBadGatewayException(
+            detail=f"Upstream did not return settings class {setting_class.value!r}.",
+        )
+    return group
+
+
+async def _remote_detail(
+    remote_api: RemoteAPI,
+    base_path: str,
+    setting_class: SettingClassEnum,
+    key: str,
+) -> SettingResponse:
+    """Proxy a DETAIL read for a remote settings class and validate the response.
+
+    :param remote_api: The authenticated client for the owning sub-app.
+    :type remote_api: RemoteAPI
+    :param base_path: The remote settings router's mount path.
+    :type base_path: str
+    :param setting_class: The remote class the field belongs to.
+    :type setting_class: SettingClassEnum
+    :param key: The field name to read.
+    :type key: str
+    :return: The validated response for the field.
+    :rtype: SettingResponse
+    """
+    payload = await _proxy_settings_request(
+        remote_api, "get", f"{base_path}/{setting_class.value}/{key}"
+    )
+    return SettingResponse.model_validate(payload)
+
+
+async def _remote_patch(
+    remote_api: RemoteAPI,
+    base_path: str,
+    setting_class: SettingClassEnum,
+    body: SettingsPatch,
+) -> list[SettingResponse]:
+    """Proxy a PATCH batch for a remote settings class and validate the response.
+
+    :param remote_api: The authenticated client for the owning sub-app.
+    :type remote_api: RemoteAPI
+    :param base_path: The remote settings router's mount path.
+    :type base_path: str
+    :param setting_class: The remote class the override targets.
+    :type setting_class: SettingClassEnum
+    :param body: The batch of ``{key: value, ...}`` overrides to forward.
+    :type body: SettingsPatch
+    :return: One validated :class:`SettingResponse` per applied key.
+    :rtype: list[SettingResponse]
+    """
+    payload = await _proxy_settings_request(
+        remote_api,
+        "patch",
+        f"{base_path}/{setting_class.value}",
+        json=body.model_dump(mode="json"),
+    )
+    return [SettingResponse.model_validate(item) for item in payload]
+
+
+async def _remote_delete(
+    remote_api: RemoteAPI,
+    base_path: str,
+    setting_class: SettingClassEnum,
+    key: str,
+) -> None:
+    """Proxy a DELETE for a remote settings class.
+
+    :param remote_api: The authenticated client for the owning sub-app.
+    :type remote_api: RemoteAPI
+    :param base_path: The remote settings router's mount path.
+    :type base_path: str
+    :param setting_class: The remote class the field belongs to.
+    :type setting_class: SettingClassEnum
+    :param key: The field name whose override to revert.
+    :type key: str
+    """
+    await _proxy_settings_request(
+        remote_api, "delete", f"{base_path}/{setting_class.value}/{key}"
+    )
 
 
 def _settings_response_from_field(
@@ -412,12 +617,14 @@ async def _fire_inline_rebind_callbacks(
     )
 
 
-def build_settings_router(
+def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + local/remote dispatch
     *,
     classes: list[ClassEntry],
     session_dep: Any,
     admin_dep: params.Depends,
     mutation_deps: list[params.Depends] | None = None,
+    remote_classes: list[RemoteClassEntry] | None = None,
+    remote_api_dep: Any = None,
 ) -> APIRouter:
     """Build an :class:`APIRouter` exposing the settings CRUD endpoints.
 
@@ -450,12 +657,27 @@ def build_settings_router(
         mutate settings; the Tasks wiring leaves this empty because its
         admin dependency is bearer-only via ``OAuth2PasswordBearer``.
     :type mutation_deps: list[params.Depends] | None
+    :param remote_classes: Optional ``(SettingClassEnum, remote_base_path)`` pairs
+        for settings classes whose storage lives in another sub-app. Such a class
+        has no local config singleton or override table; the LIST handler appends
+        its group by proxying ``GET {remote_base_path}/`` server-side, and the
+        DETAIL / PATCH / DELETE handlers dispatch on ``setting_class`` to the
+        remote sub-app via ``remote_api_dep``. Defaults to no remote classes, in
+        which case the router is purely local and behaves exactly as before.
+    :type remote_classes: list[RemoteClassEntry] | None
+    :param remote_api_dep: An ``Annotated[RemoteAPI, Depends(...)]`` type alias
+        for the client used to reach the remote sub-app (e.g. ``app.sep.deps.TaskAPI``,
+        which forwards the caller's Bearer token). Required when ``remote_classes``
+        is non-empty; ignored otherwise. Used as the parameter annotation on each
+        handler so FastAPI resolves the client per-request.
+    :type remote_api_dep: Any
     :return: A configured :class:`APIRouter` ready to mount under a sub-app's
         ``/settings`` prefix.
     :rtype: APIRouter
     """
     router = APIRouter(dependencies=[admin_dep])
     class_lookup = {member: (cls, proxy) for member, cls, proxy in classes}
+    remote_lookup, remote_dep = _remote_wiring(remote_classes, remote_api_dep)
 
     def _resolve(
         setting_class: SettingClassEnum,
@@ -478,11 +700,22 @@ def build_settings_router(
         return entry
 
     @router.get("/")
-    async def list_settings(session: session_dep) -> SettingsListResponse:  # type: ignore[valid-type]
+    async def list_settings(
+        session: session_dep,  # type: ignore[valid-type]
+        remote_api: remote_dep,  # type: ignore[valid-type]
+    ) -> SettingsListResponse:
         """List every exposed settings class with current values and metadata.
+
+        Local classes are read from their config singletons; remote classes
+        (``remote_classes``) are fetched server-side from their owning sub-app
+        and appended in declaration order. A failed remote fetch fails the whole
+        request with ``502`` -- the LIST never silently drops a remote group.
 
         :param session: The sub-app's database session.
         :type session: AsyncSession
+        :param remote_api: The client for remote settings classes (``None`` when
+            the router wires none).
+        :type remote_api: RemoteAPI | None
         :return: Grouped responses, one group per configured settings class.
         :rtype: SettingsListResponse
         """
@@ -506,6 +739,10 @@ def build_settings_router(
             groups.append(
                 SettingClassGroup(setting_class=setting_class, settings=settings_list)
             )
+        for setting_class, base_path in remote_lookup.items():
+            groups.append(
+                await _remote_list_group(remote_api, setting_class, base_path)
+            )
         return SettingsListResponse(groups=groups)
 
     @router.get("/{setting_class}/{key}")
@@ -513,6 +750,7 @@ def build_settings_router(
         setting_class: SettingClassEnum,
         key: str,
         session: session_dep,  # type: ignore[valid-type]
+        remote_api: remote_dep,  # type: ignore[valid-type]
     ) -> SettingResponse:
         """Return one field's metadata and current value.
 
@@ -522,11 +760,18 @@ def build_settings_router(
         :type key: str
         :param session: The sub-app's database session.
         :type session: AsyncSession
+        :param remote_api: The client for remote settings classes (``None`` when
+            the router wires none).
+        :type remote_api: RemoteAPI | None
         :return: The structured response for the field.
         :rtype: SettingResponse
         :raises HTTPNotFoundException: If the class isn't exposed or the key
             doesn't exist on the class.
         """
+        if setting_class in remote_lookup:
+            return await _remote_detail(
+                remote_api, remote_lookup[setting_class], setting_class, key
+            )
         settings_cls, proxy = _resolve(setting_class)
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
@@ -548,16 +793,21 @@ def build_settings_router(
         setting_class: SettingClassEnum,
         body: SettingsPatch,
         session: session_dep,  # type: ignore[valid-type]
+        remote_api: remote_dep,  # type: ignore[valid-type]
     ) -> list[SettingResponse]:
         """Apply a batch of overrides for one settings class atomically.
 
-        Phase A validates every key in ``body`` (existence on the class, HOT
-        classification, type/constraint coercion) and collects per-key errors.
-        If any key fails, the whole batch is rejected with a structured 422
-        and nothing is written. Phase B persists every valid entry in a single
-        transaction, refreshes the proxy snapshot once, then fires the rebind
-        callbacks for any changed keys so a HOT target rebinds without waiting
-        for the next background refresh cycle.
+        For a remote class the batch is forwarded to the owning sub-app, which
+        owns the validation and persistence; the upstream's per-field ``422``
+        (and its ``detail``) is preserved so the UI can render inline messages.
+
+        For a local class: Phase A validates every key in ``body`` (existence on
+        the class, HOT classification, type/constraint coercion) and collects
+        per-key errors. If any key fails, the whole batch is rejected with a
+        structured 422 and nothing is written. Phase B persists every valid entry
+        in a single transaction, refreshes the proxy snapshot once, then fires
+        the rebind callbacks for any changed keys so a HOT target rebinds without
+        waiting for the next background refresh cycle.
 
         :param request: The incoming request; its ``app.state`` carries the
             sub-app's rebind-callback registry.
@@ -568,12 +818,19 @@ def build_settings_router(
         :type body: SettingsPatch
         :param session: The sub-app's database session.
         :type session: AsyncSession
+        :param remote_api: The client for remote settings classes (``None`` when
+            the router wires none).
+        :type remote_api: RemoteAPI | None
         :return: One :class:`SettingResponse` per applied key, in input order.
         :rtype: list[SettingResponse]
         :raises HTTPNotFoundException: If the class isn't exposed.
         :raises HTTPUnprocessableEntityException: If any key fails validation;
             no rows are written.
         """
+        if setting_class in remote_lookup:
+            return await _remote_patch(
+                remote_api, remote_lookup[setting_class], setting_class, body
+            )
         settings_cls, proxy = _resolve(setting_class)
         to_apply = _validate_patch_body(settings_cls=settings_cls, body=body)
         await _persist_overrides(
@@ -606,12 +863,17 @@ def build_settings_router(
         setting_class: SettingClassEnum,
         key: str,
         session: session_dep,  # type: ignore[valid-type]
+        remote_api: remote_dep,  # type: ignore[valid-type]
     ) -> None:
         """Revert one override row to the field's declared default.
 
-        Idempotent: deleting a (class, key) pair that has no override row
-        succeeds with 204. Attempting to delete a NOT_OVERRIDABLE field
-        responds 409 -- the field cannot have an override row in the first
+        For a remote class the DELETE is forwarded to the owning sub-app, which
+        owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
+        ``detail`` are preserved through the proxy.
+
+        For a local class: idempotent -- deleting a (class, key) pair that has no
+        override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
+        field responds 409 -- the field cannot have an override row in the first
         place, so the operator's intent is unsatisfiable.
 
         After republishing the snapshot, fires the rebind callbacks for the
@@ -627,6 +889,9 @@ def build_settings_router(
         :type key: str
         :param session: The sub-app's database session.
         :type session: AsyncSession
+        :param remote_api: The client for remote settings classes (``None`` when
+            the router wires none).
+        :type remote_api: RemoteAPI | None
         :raises HTTPNotFoundException: If the class isn't exposed or the key
             doesn't exist on the class.
         :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
@@ -634,6 +899,11 @@ def build_settings_router(
             ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
             target an individual ``parent__leaf`` instead).
         """
+        if setting_class in remote_lookup:
+            await _remote_delete(
+                remote_api, remote_lookup[setting_class], setting_class, key
+            )
+            return
         settings_cls, proxy = _resolve(setting_class)
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)

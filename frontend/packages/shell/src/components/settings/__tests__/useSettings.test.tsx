@@ -32,23 +32,39 @@ import { makeWrapper, sepListResponse, tasksListResponse } from './fixtures';
 const SEP_URL = 'http://localhost/api/sep/admin/settings/';
 const TASKS_URL = 'http://localhost/api/tasks/admin/settings/';
 
+/** All groups now arrive in one SEP response (TasksSettings proxied server-side). */
+const combinedListResponse = {
+  groups: [...sepListResponse.groups, ...tasksListResponse.groups],
+};
+
+/** Fail any test that calls the Tasks sub-app directly (API-First Rule 1). */
+function failOnTasksCall() {
+  const directCall = vi.fn();
+  server.use(
+    http.all(`${TASKS_URL}*`, () => {
+      directCall();
+      return new HttpResponse(null, { status: 500 });
+    }),
+  );
+  return directCall;
+}
+
 describe('useSettingsList', () => {
-  it('fans out to both endpoints and merges groups by class', async () => {
-    server.use(
-      http.get(SEP_URL, () => HttpResponse.json(sepListResponse)),
-      http.get(TASKS_URL, () => HttpResponse.json(tasksListResponse)),
-    );
+  it('fetches every group from the single SEP endpoint, no direct Tasks call', async () => {
+    const directCall = failOnTasksCall();
+    server.use(http.get(SEP_URL, () => HttpResponse.json(combinedListResponse)));
 
     const { result } = renderHook(() => useSettingsList(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     const classes = result.current.data?.map((g) => g.setting_class);
     expect(classes).toEqual(['SEPSettings', 'SnippetsSettings', 'TasksSettings']);
+    expect(directCall).not.toHaveBeenCalled();
   });
 });
 
 describe('usePatchSetting', () => {
-  it('PATCHes the owning endpoint and resolves on success', async () => {
+  it('PATCHes a local class through the SEP endpoint', async () => {
     const patched = vi.fn();
     server.use(
       http.patch('http://localhost/api/sep/admin/settings/SEPSettings', async ({ request }) => {
@@ -67,9 +83,30 @@ describe('usePatchSetting', () => {
     expect(patched).toHaveBeenCalledWith({ SYNC_REFRESH_TIME: 9 });
   });
 
-  it('surfaces the 422 body so settingErrorMessage can read it', async () => {
+  it('PATCHes TasksSettings through the SEP endpoint, not /api/tasks', async () => {
+    const directCall = failOnTasksCall();
+    const patched = vi.fn();
     server.use(
-      http.patch('http://localhost/api/tasks/admin/settings/TasksSettings', () =>
+      http.patch('http://localhost/api/sep/admin/settings/TasksSettings', async ({ request }) => {
+        patched(await request.json());
+        return HttpResponse.json([{ ...tasksListResponse.groups[0].settings[0], value: 7200 }]);
+      }),
+    );
+
+    const { result } = renderHook(() => usePatchSetting(), { wrapper: makeWrapper() });
+    await result.current.mutateAsync({
+      settingClass: 'TasksSettings',
+      key: 'STALENESS_THRESHOLD_SECONDS',
+      value: 7200,
+    });
+
+    expect(patched).toHaveBeenCalledWith({ STALENESS_THRESHOLD_SECONDS: 7200 });
+    expect(directCall).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the proxied 422 body so settingErrorMessage can read it', async () => {
+    server.use(
+      http.patch('http://localhost/api/sep/admin/settings/TasksSettings', () =>
         HttpResponse.json(
           {
             detail: [
@@ -101,11 +138,12 @@ describe('usePatchSetting', () => {
 });
 
 describe('useResetSetting', () => {
-  it('DELETEs the per-key override endpoint', async () => {
+  it('DELETEs TasksSettings through the SEP endpoint, not /api/tasks', async () => {
+    const directCall = failOnTasksCall();
     const deleted = vi.fn();
     server.use(
       http.delete(
-        'http://localhost/api/tasks/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS',
+        'http://localhost/api/sep/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS',
         () => {
           deleted();
           return new HttpResponse(null, { status: 204 });
@@ -120,5 +158,6 @@ describe('useResetSetting', () => {
     });
 
     expect(deleted).toHaveBeenCalled();
+    expect(directCall).not.toHaveBeenCalled();
   });
 });

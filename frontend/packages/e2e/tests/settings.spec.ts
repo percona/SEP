@@ -21,6 +21,11 @@
  * Runs against the shell dev server with a fully mocked backend (no real API).
  * The settings endpoints are backed by a small in-memory store so save and
  * reset round-trips reflect on the next list refetch.
+ *
+ * SEP-1330: every settings group — including TasksSettings — is reached through
+ * the single SEP gateway `/api/sep/admin/settings`. SEP proxies the Tasks group
+ * server-side, so the frontend must never call `/api/tasks/admin/settings/*`
+ * (API-First Rule 1). `installRule1Guard` fails the test if it ever does.
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -54,8 +59,22 @@ function makeSetting(over: Record<string, unknown>) {
 }
 
 /**
+ * Fail the running test if the browser ever calls the Tasks sub-app's settings
+ * API directly. SEP-1330 routes the Tasks group through the SEP gateway, so any
+ * such call is an API-First Rule 1 regression.
+ */
+async function installRule1Guard(page: Page): Promise<void> {
+  await page.route('**/api/tasks/admin/settings/**', (route) => {
+    expect(route.request().url(), 'frontend must not call /api/tasks/* directly').toBe('unreached');
+    return route.fulfill({ status: 500, body: '' });
+  });
+}
+
+/**
  * Install auth + settings route mocks. The settings store is mutable so a PATCH
- * or DELETE is visible on the subsequent GET.
+ * or DELETE is visible on the subsequent GET. SEP serves SEPSettings locally and
+ * the proxied TasksSettings group in one `/api/sep/admin/settings` response, and
+ * mutations for both classes go to `/api/sep`.
  */
 async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<void> {
   const store = {
@@ -64,7 +83,7 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
     stalenessOverride: true,
   };
 
-  const sepList = () => ({
+  const settingsList = () => ({
     groups: [
       {
         setting_class: 'SEPSettings',
@@ -78,11 +97,6 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
           }),
         ],
       },
-    ],
-  });
-
-  const tasksList = () => ({
-    groups: [
       {
         setting_class: 'TasksSettings',
         settings: [
@@ -120,10 +134,7 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
     }
 
     if (pathname === '/api/sep/admin/settings/') {
-      return json(sepList());
-    }
-    if (pathname === '/api/tasks/admin/settings/') {
-      return json(tasksList());
+      return json(settingsList());
     }
     if (method === 'PATCH' && pathname === '/api/sep/admin/settings/SEPSettings') {
       const body = route.request().postDataJSON() as Record<string, number>;
@@ -133,7 +144,7 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
     }
     if (
       method === 'DELETE' &&
-      pathname === '/api/tasks/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS'
+      pathname === '/api/sep/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS'
     ) {
       store.stalenessOverride = false;
       return route.fulfill({ status: 204, body: '' });
@@ -141,6 +152,10 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
 
     return json([]);
   });
+
+  // Registered last so it takes precedence over the broad `**/api/**` handler
+  // for the Tasks settings path: any direct call here fails the test.
+  await installRule1Guard(page);
 }
 
 test.describe('Settings page smoke', () => {
