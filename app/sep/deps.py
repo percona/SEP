@@ -497,10 +497,11 @@ def get_toggleable_app_key(app_key: str) -> str:
         raise HTTPConflictException(
             detail=f"App '{app_key}' is protected and cannot be disabled.",
         )
-    configured_keys = {
-        plugin.module_name.split(".")[-1] for plugin in sep_settings.PLUGINS
-    }
-    if app_key not in configured_keys:
+    # Deferred: the framework package __init__ imports back into this module,
+    # so a top-level import here would cycle.
+    from app.sep.plugins.framework.registry import get_app_registry
+
+    if app_key not in set(get_app_registry().keys()):
         raise HTTPNotFoundException(detail="App not found")
     return app_key
 
@@ -543,11 +544,14 @@ async def get_default_context(
             exc_info=True,
         )
         states = {}
+    # Deferred: the framework package __init__ imports back into this module,
+    # so a top-level import here would cycle.
+    from app.sep.plugins.framework.registry import get_app_registry
+
     plugins = [
-        plugin
-        for plugin in sep_settings.PLUGINS
-        if (key := plugin.module_name.split(".")[-1]) in PROTECTED_APP_KEYS
-        or states.get(key, True)
+        app
+        for app in get_app_registry()
+        if app.key in PROTECTED_APP_KEYS or states.get(app.key, True)
     ]
     return {
         "user": user,

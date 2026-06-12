@@ -1,0 +1,83 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define ``BaseApp``, the uniform registry entry for a mounted SEP app."""
+
+from typing import Self
+
+from fastapi import APIRouter
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.sep.plugins.framework.schema import PluginSchema
+
+
+class BaseApp(BaseModel):
+    """Represent a mounted SEP app as a uniform registry entry.
+
+    Authored directly by a declarative app (``app = BaseApp(...)``) or
+    synthesized by :func:`app.sep.plugins.framework.registry.build_app_registry`
+    from a legacy ``Plugin`` settings entry, so legacy and definition-based apps
+    share one shape. ``key`` and ``enabled`` are activation-list facts stamped by
+    the registry rather than author-set; ``display_name`` defaults to ``name``.
+
+    :param key: The module basename; stamped by the registry.
+    :type key: str
+    :param name: The app's internal name.
+    :type name: str
+    :param display_name: The human-facing label; defaults to ``name`` when absent.
+    :type display_name: str | None
+    :param uri_path: The Jinja mount prefix and sidebar link target.
+    :type uri_path: str
+    :param css_class: The sidebar CSS class.
+    :type css_class: str
+    :param sidebar: Whether the app appears in the sidebar.
+    :type sidebar: bool
+    :param enabled: The seed-time enabled default; stamped by the registry.
+    :type enabled: bool
+    :param custom_ui: Whether the app ships a bespoke React UI.
+    :type custom_ui: bool
+    :param api_router: The plugin's JSON ``APIRouter``, when it exposes one.
+    :type api_router: APIRouter | None
+    :param jinja_router: The plugin's Jinja ``APIRouter``.
+    :type jinja_router: APIRouter | None
+    :param app_schema: The plugin's schema definition, aliased ``schema`` for
+        authoring; ``None`` for legacy-wrapped apps.
+    :type app_schema: PluginSchema | None
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+
+    key: str = ""
+    name: str
+    display_name: str | None = None
+    uri_path: str
+    css_class: str = ""
+    sidebar: bool = True
+    enabled: bool = True
+    custom_ui: bool = False
+    api_router: APIRouter | None = None
+    jinja_router: APIRouter | None = None
+    app_schema: PluginSchema | None = Field(default=None, alias="schema")
+
+    @model_validator(mode="after")
+    def _default_display_name(self) -> Self:
+        """Set ``display_name`` to ``name`` when it was not supplied.
+
+        :return: The validated app with ``display_name`` populated.
+        :rtype: Self
+        """
+        if self.display_name is None:
+            self.display_name = self.name
+        return self
