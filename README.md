@@ -230,10 +230,12 @@
 | app/sep/snippets/models/snippet.py                                                                              |      365 |       18 |     95% |273, 276-277, 378, 381, 630-642, 723-725, 799-801, 881 |
 | app/sep/snippets/utils.py                                                                                       |       32 |        0 |    100% |           |
 | app/sep/sync/exceptions.py                                                                                      |       25 |        0 |    100% |           |
-| app/sep/sync/models.py                                                                                          |      348 |       50 |     86% |77-85, 100, 120, 268-270, 331, 391-392, 539, 571, 587, 613, 711, 725, 745-746, 826, 840, 862-863, 944, 957, 981-983, 1088-1089, 1164, 1308-1310, 1319, 1364-1365, 1368, 1374-1376, 1381-1387, 1391 |
+| app/sep/sync/models.py                                                                                          |      367 |       45 |     88% |80-89, 124, 272-274, 335, 395-396, 543, 575, 591, 611-617, 715, 729, 749-750, 830, 844, 866-867, 948, 961, 985-987, 1092-1093, 1168, 1312-1313, 1412, 1415, 1423, 1434, 1438 |
 | app/sep/sync/syncers/mysql/payload.py                                                                           |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
-| app/sep/sync/syncers/mysql/syncer.py                                                                            |      243 |       10 |     96% |114, 368, 624, 646, 664, 753-762 |
-| app/sep/sync/syncers/pmm.py                                                                                     |       93 |       21 |     77% |83-87, 107-110, 121, 176-184, 232, 236-252, 291-294, 344 |
+| app/sep/sync/syncers/mysql/syncer.py                                                                            |      222 |        9 |     96% |112, 579, 601, 619, 708-717 |
+| app/sep/sync/syncers/pmm.py                                                                                     |       93 |       22 |     76% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 291-294, 344 |
+| app/sep/sync/syncers/system\_facts/payload.py                                                                   |      235 |       19 |     92% |147-148, 176, 222-224, 231, 244-251, 282-284, 290-292, 316, 522, 533 |
+| app/sep/sync/syncers/system\_facts/syncer.py                                                                    |      118 |        7 |     94% |104, 169-170, 245, 310-311, 350 |
 | app/sep/tasks.py                                                                                                |       31 |        0 |    100% |           |
 | app/sep/utils/decorators.py                                                                                     |       10 |        0 |    100% |           |
 | app/sep/utils/forms.py                                                                                          |       20 |        0 |    100% |           |
@@ -288,14 +290,14 @@
 | app/tasks/migrations/versions/2026\_05\_18\_2014-fafdb0445092\_add\_setting\_override\_table.py                 |       18 |        4 |     78% |     81-86 |
 | app/tasks/migrations/versions/2026\_05\_20\_1500-7d1232c0e3ce\_coerce\_alters\_recursion\_method\_host.py       |       37 |       15 |     59% |     75-91 |
 | app/tasks/migrations/versions/2026\_06\_02\_1512-6d4cfd37bd3a\_extend\_setting\_class\_enum\_settings\_alert.py |       13 |        3 |     77% |     68-73 |
-| app/tasks/models.py                                                                                             |      299 |        3 |     99% |607, 1056-1057 |
+| app/tasks/models.py                                                                                             |      299 |        3 |     99% |607, 1053-1054 |
 | app/tasks/periodic/crud.py                                                                                      |       26 |        0 |    100% |           |
 | app/tasks/periodic/deps.py                                                                                      |       11 |        0 |    100% |           |
 | app/tasks/periodic/models.py                                                                                    |      103 |        5 |     95% |196, 231, 285, 301, 370 |
 | app/tasks/periodic/routes.py                                                                                    |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                             |      227 |       38 |     83% |139-143, 200, 221-228, 260, 316-317, 323, 367-368, 393-394, 434-435, 454, 594, 618, 631-645, 666-679, 695-696 |
 | app/tasks/settings/routes.py                                                                                    |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **19299** | **2399** | **88%** |           |
+| **TOTAL**                                                                                                       | **19650** | **2420** | **88%** |           |
 
 
 ## Setup coverage badge
