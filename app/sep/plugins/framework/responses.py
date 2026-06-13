@@ -79,7 +79,7 @@ def derive_create_response_model(
     *,
     name: str,
     doc: str | None = None,
-    extra_fields: Mapping[str, tuple[type, Any]] | None = None,
+    extra_fields: Mapping[str, tuple[Any, Any]] | None = None,
 ) -> type[R]:
     """Derive an ``<App>CreateResponse`` subclass of ``response_model``.
 
