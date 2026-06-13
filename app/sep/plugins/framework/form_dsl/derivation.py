@@ -85,7 +85,7 @@ _SIMPLE_SCALAR_FIELDS: dict[type, type[BaseField]] = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _FieldSpec:
     """Pair a derived field with its section placement and declaration order.
 

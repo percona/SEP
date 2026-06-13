@@ -75,7 +75,7 @@ class FieldWidget(StrEnum):
     MULTI_CHOICE = auto()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Ui:
     """Carry a field's presentation metadata; never validation semantics.
 
@@ -110,7 +110,7 @@ class Ui:
     widget: FieldWidget | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ServiceRef:
     """Mark a field as an inventory service selector.
 
@@ -128,7 +128,7 @@ class ServiceRef:
         object.__setattr__(self, "service_types", tuple(self.service_types))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SchemaRef:
     """Mark a field as an inventory database-schema selector.
 
@@ -141,7 +141,7 @@ class SchemaRef:
     allow_custom: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TableRef:
     """Mark a field as an inventory table selector.
 
@@ -154,7 +154,7 @@ class TableRef:
     allow_custom: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HostRef:
     """Mark a field as an executor-target (Nomad / Celery) selector.
 
@@ -165,7 +165,7 @@ class HostRef:
     allow_custom: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Choices:
     """Provide explicit ``(value, label)`` options for a choice field.
 
@@ -187,7 +187,7 @@ class Choices:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Requires:
     """Gate a field as required when ``when`` matches (a self-scoped requires gate).
 
@@ -200,7 +200,7 @@ class Requires:
     message: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Forbidden:
     """Gate a field as forbidden when ``when`` matches (a self-scoped forbidden gate).
 
@@ -213,7 +213,7 @@ class Forbidden:
     message: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SectionLayout:
     """Declare one section's presentation in a :class:`FormLayout`.
 
@@ -246,7 +246,7 @@ class SectionLayout:
             object.__setattr__(self, "forbidden", tuple(self.forbidden))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FormLayout:
     """Declare the ordered sections of a plugin's create form.
 
@@ -261,7 +261,7 @@ class FormLayout:
         object.__setattr__(self, "sections", tuple(self.sections))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SectionRules:
     """Hold the conditional rules scoped to one form section.
 
@@ -275,7 +275,7 @@ class SectionRules:
     cardinality_rules: tuple[CardinalityRule, ...] = ()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FormRules:
     """Hold the section-scoped and plugin-scoped conditional rules of a model.
 
