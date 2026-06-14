@@ -51,7 +51,13 @@ from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandl
 from typing_extensions import TypedDict
 
 from app.core.utils import run_pydantic_type_validator, shorten_text
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.core.utils.date_time import make_datetime_utc
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    EnumFieldMixin,
+    NonEmptyStr,
+    UTCDatetime,
+)
 from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
@@ -78,18 +84,19 @@ class SnippetMetaParameterType(EnumFieldMixin, Enum):
     INT = int
     FLOAT = float
     BOOL = bool
-    DATETIME = datetime
+    DATETIME = UTCDatetime
 
 
 _CLI_VALUE_SERIALIZERS: dict[type, Callable[[Any], str]] = {
-    datetime: lambda value: value.strftime("%Y-%m-%dT%H:%M:%S"),
+    datetime: lambda value: make_datetime_utc(value).strftime("%Y-%m-%dT%H:%M:%S"),
 }
 
 
 def serialize_cli_value(value: Any) -> str:
     """Serialize a validated parameter value for command-line argument substitution.
 
-    Datetime values use an ISO-8601 ``T``-separated form without microseconds.
+    Datetime values are normalized to UTC before formatting as an ISO-8601
+    ``T``-separated form without microseconds.
     All other types fall back to ``str(value)``.
 
     :param value: The validated parameter value to serialize.

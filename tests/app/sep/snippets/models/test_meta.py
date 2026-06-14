@@ -15,11 +15,12 @@
 
 """Tests for SnippetMetaParameter model validators and computed properties."""
 
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from app.core.utils.fields import UTCDatetime
 from app.sep.snippets.forms import (
     CheckboxInputElement,
     NumberInputElement,
@@ -92,9 +93,9 @@ class TestDatetimeTypeResolution:
         param = SnippetMetaParameter(name="start", type="datetime")
         assert param.py_type == SnippetMetaParameterType.DATETIME
 
-    def test_datetime_enum_member_value_is_datetime_type(self):
-        """Verify DATETIME enum member maps to datetime.datetime for validation."""
-        assert SnippetMetaParameterType.DATETIME.value is datetime
+    def test_datetime_enum_member_value_is_utc_datetime_type(self):
+        """Verify DATETIME enum member maps to UTCDatetime for validation."""
+        assert SnippetMetaParameterType.DATETIME.value is UTCDatetime
 
 
 class TestSerializeCliValue:
@@ -104,6 +105,11 @@ class TestSerializeCliValue:
         """Verify datetime values render as YYYY-MM-DDTHH:MM:SS without microseconds."""
         value = datetime(2024, 6, 10, 14, 30, 45, 123456, tzinfo=UTC)
         assert serialize_cli_value(value) == "2024-06-10T14:30:45"
+
+    def test_tz_aware_datetime_serializes_as_utc_wall_clock(self):
+        """Verify non-UTC offsets convert to UTC before CLI formatting."""
+        value = datetime(2024, 6, 10, 14, 30, 0, tzinfo=timezone(timedelta(hours=5)))
+        assert serialize_cli_value(value) == "2024-06-10T09:30:00"
 
     @pytest.mark.parametrize(
         ("value", "expected"),
@@ -137,6 +143,17 @@ class TestDatetimeValidation:
         adapter = TypeAdapter(param.validation_type)
         result = adapter.validate_python("2024-06-10T14:30:00")
         assert isinstance(result, datetime)
+        assert result.tzinfo == UTC
+
+    def test_tz_aware_iso_input_validates_and_serializes_as_utc(self):
+        """Verify offset ISO input normalizes to UTC at validation and serialization."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        result = adapter.validate_python("2024-06-10T14:30:00+05:00")
+        assert result.tzinfo == UTC
+        assert serialize_cli_value(result) == "2024-06-10T09:30:00"
 
     def test_datetime_without_seconds_accepted(self):
         """Verify datetime-local input without seconds parses successfully."""
@@ -421,13 +438,13 @@ class TestValidationType:
         assert hasattr(vtype, "__args__")
 
     def test_optional_datetime_returns_union_with_empty_str_to_none(self):
-        """Verify optional DATETIME param returns datetime | EmptyStrToNone."""
+        """Verify optional DATETIME param returns UTCDatetime | EmptyStrToNone."""
         param = SnippetMetaParameter(
             name="start", type=SnippetMetaParameterType.DATETIME, required=False
         )
         vtype = param.validation_type
         assert hasattr(vtype, "__args__")
-        assert datetime in vtype.__args__
+        assert UTCDatetime in vtype.__args__
 
 
 class TestToValidationField:
