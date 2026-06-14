@@ -376,6 +376,31 @@ class TestToArgsString:
 
         assert "2024-06-10T14:30:00" in args
 
+    def test_positional_datetime_serializes_as_string(self):
+        """Verify positional datetime params use serialize_cli_value, not raw objects."""
+        snippet = self._snippet_with_parameters(
+            [
+                {
+                    "name": "timestamp",
+                    "type": "datetime",
+                    "positional": True,
+                    "required": True,
+                }
+            ]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "timestamp": "2024-06-10T14:30:00",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert args == "2024-06-10T14:30:00"
+        assert "2024-06-10 14:30:00" not in args
+
 
 class TestValidatedParameters:
     """Test the validated_parameters cached property."""

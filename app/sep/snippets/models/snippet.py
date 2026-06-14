@@ -373,7 +373,7 @@ class BaseSnippetArgs(BaseModel):
         """
         field_name, metadata = cls.get_field_metadata(field_identifier)
         if metadata.get("positional"):
-            return [value]
+            return [serialize_cli_value(value)]
         arg_template_mapping = {"value": shlex.quote(serialize_cli_value(value))}
         if (is_flag := metadata.get("is_flag")) and not value:
             return []

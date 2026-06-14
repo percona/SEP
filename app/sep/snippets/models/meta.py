@@ -64,6 +64,7 @@ from app.core.utils.pydantic import (
 )
 from app.sep.snippets.forms import (
     CheckboxInputElement,
+    DateTimeInputElement,
     FormFieldElement,
     NumberInputElement,
     SelectElement,
@@ -347,6 +348,8 @@ class SnippetMetaParameter(BaseModel):
             SnippetMetaParameterType.FLOAT,
         ]:
             return NumberInputElement
+        if self.py_type == SnippetMetaParameterType.DATETIME:
+            return DateTimeInputElement
         if self.html_elem == TextInputHTMLElement.TEXTAREA:
             return TextareaElement
         return TextInputElement

@@ -23,6 +23,7 @@ from pydantic import TypeAdapter, ValidationError
 from app.core.utils.fields import UTCDatetime
 from app.sep.snippets.forms import (
     CheckboxInputElement,
+    DateTimeInputElement,
     NumberInputElement,
     SelectElement,
     TextareaElement,
@@ -352,6 +353,13 @@ class TestFormFieldElementCls:
         param = SnippetMetaParameter(name="ratio", type=SnippetMetaParameterType.FLOAT)
         assert param.form_field_element_cls is NumberInputElement
 
+    def test_datetime_type_returns_datetime_input(self):
+        """Verify DATETIME type returns DateTimeInputElement."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME
+        )
+        assert param.form_field_element_cls is DateTimeInputElement
+
     def test_str_type_returns_text_input(self):
         """Verify STR type returns TextInputElement by default."""
         param = SnippetMetaParameter(name="name", type=SnippetMetaParameterType.STR)
@@ -484,6 +492,17 @@ class TestToFormField:
         )
         form_field = param.to_form_field()
         assert isinstance(form_field, NumberInputElement)
+
+    def test_datetime_to_form_field_returns_datetime_input(self):
+        """Verify to_form_field returns DateTimeInputElement for DATETIME params."""
+        param = SnippetMetaParameter(
+            name="start",
+            type=SnippetMetaParameterType.DATETIME,
+            label="Start time (UTC)",
+        )
+        form_field = param.to_form_field()
+        assert isinstance(form_field, DateTimeInputElement)
+        assert 'type="datetime-local"' in form_field.to_html()
 
     def test_select_element_for_choices(self):
         """Verify to_form_field returns SelectElement when choices are present."""
