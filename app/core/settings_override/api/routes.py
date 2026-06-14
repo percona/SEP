@@ -67,6 +67,47 @@ from app.core.settings_override.registry import (
 ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
 
 
+async def _collect_class_setting_responses(
+    *,
+    session: AsyncSession,
+    setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
+) -> list[SettingResponse]:
+    """Return every LIST-projection entry for one wired settings class.
+
+    Loads active override rows, expands nested-overridable parents into their
+    leaf keys via :func:`_field_responses`, and dumps each value through
+    :func:`dump_field_value` so the key set matches ``GET /settings/``.
+
+    :param session: The sub-app's database session.
+    :type session: AsyncSession
+    :param setting_class: The settings class identifier (enum member).
+    :type setting_class: SettingClassEnum
+    :param settings_cls: The Pydantic settings class to introspect.
+    :type settings_cls: type[BaseYamlSettings]
+    :param proxy: The proxy whose attribute access yields current values.
+    :type proxy: OverridableSettingsProxy
+    :return: One :class:`SettingResponse` per LIST row for the class.
+    :rtype: list[SettingResponse]
+    """
+    rows = await SettingsOverrideManager.list(
+        session, setting_class=setting_class, is_active=True
+    )
+    override_keys = override_keys_for_rows(settings_cls, rows)
+    return [
+        response
+        for field_meta in iter_class_fields(settings_cls)
+        for response in _field_responses(
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            proxy=proxy,
+            field_meta=field_meta,
+            override_keys=override_keys,
+        )
+    ]
+
+
 def _settings_response_from_field(
     *,
     setting_class: SettingClassEnum,
@@ -488,21 +529,12 @@ def build_settings_router(
         """
         groups = []
         for setting_class, settings_cls, proxy in classes:
-            rows = await SettingsOverrideManager.list(
-                session, setting_class=setting_class, is_active=True
+            settings_list = await _collect_class_setting_responses(
+                session=session,
+                setting_class=setting_class,
+                settings_cls=settings_cls,
+                proxy=proxy,
             )
-            override_keys = override_keys_for_rows(settings_cls, rows)
-            settings_list = [
-                response
-                for field_meta in iter_class_fields(settings_cls)
-                for response in _field_responses(
-                    setting_class=setting_class,
-                    settings_cls=settings_cls,
-                    proxy=proxy,
-                    field_meta=field_meta,
-                    override_keys=override_keys,
-                )
-            ]
             groups.append(
                 SettingClassGroup(setting_class=setting_class, settings=settings_list)
             )

@@ -15,21 +15,24 @@
 
 """Compose the SEP sub-app's settings REST API."""
 
-__all__ = ["router"]
+__all__ = ["SEP_ADMIN_SETTINGS_CLASSES", "router"]
 
 from app.core.settings_override.api import build_settings_router
+from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import IsApiAdmin, RequireBearerForUnsafeMethods, SessionDep
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
+SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
+    (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
+    (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
+    (SettingClassEnum.MESSAGES_SETTINGS, MessagesSettings, messages_settings),
+]
+
 router = build_settings_router(
-    classes=[
-        (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
-        (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
-        (SettingClassEnum.MESSAGES_SETTINGS, MessagesSettings, messages_settings),
-    ],
+    classes=SEP_ADMIN_SETTINGS_CLASSES,
     session_dep=SessionDep,
     admin_dep=IsApiAdmin,
     mutation_deps=[RequireBearerForUnsafeMethods],

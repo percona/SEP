@@ -20,9 +20,11 @@ __all__ = [
     "SettingResponse",
     "SettingsListResponse",
     "SettingsPatch",
+    "build_settings_class_values",
     "build_settings_router",
 ]
 
+from app.core.settings_override.api.export import build_settings_class_values
 from app.core.settings_override.api.models import (
     SettingClassGroup,
     SettingResponse,
