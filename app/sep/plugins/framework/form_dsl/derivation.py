@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from types import UnionType
-from typing import Any, get_args, get_origin, Literal, Union
+from typing import Any, get_args, get_origin, Literal, TYPE_CHECKING, Union
 
 import annotated_types
 from pydantic.fields import FieldInfo
@@ -70,6 +70,9 @@ from app.sep.plugins.framework.schema import (
     YamlField,
 )
 
+if TYPE_CHECKING:
+    from app.sep.plugins.framework.form_dsl.model import AppFormModel
+
 __all__ = [
     "build_runtime_schema",
     "derive_form_sections",
@@ -89,10 +92,10 @@ _SIMPLE_SCALAR_FIELDS: dict[type, type[BaseField]] = {
 class _FieldSpec:
     """Pair a derived field with its section placement and declaration order.
 
-    :ivar base_field: The derived schema field.
-    :ivar section: The layout-section key from :attr:`Ui.section`.
-    :ivar order: The within-section sort key from :attr:`Ui.order`.
-    :ivar index: The declaration index, used as a stable tiebreaker.
+    :param base_field: The derived schema field.
+    :param section: The layout-section key from :attr:`Ui.section`.
+    :param order: The within-section sort key from :attr:`Ui.order`.
+    :param index: The declaration index, used as a stable tiebreaker.
     """
 
     base_field: BaseField
@@ -406,7 +409,7 @@ def _build_scalar_field(
     return field_class(**common)
 
 
-def _derive_field_specs(model: type) -> list[_FieldSpec]:
+def _derive_field_specs(model: type["AppFormModel"]) -> list[_FieldSpec]:
     """Return one :class:`_FieldSpec` per model field, in declaration order."""
     specs = []
     for index, (name, field_info) in enumerate(model.model_fields.items()):
@@ -423,7 +426,7 @@ def _derive_field_specs(model: type) -> list[_FieldSpec]:
     return specs
 
 
-def _gate_only_fields(model: type) -> list[BaseField]:
+def _gate_only_fields(model: type["AppFormModel"]) -> list[BaseField]:
     """Return one minimal field per model field, carrying only name and gates.
 
     The runtime rule plan needs only field names and their ``requires`` /
@@ -451,7 +454,9 @@ def _gate_only_fields(model: type) -> list[BaseField]:
     return fields
 
 
-def derive_form_sections(model: type, layout: FormLayout) -> list[FormSection]:
+def derive_form_sections(
+    model: type["AppFormModel"], layout: FormLayout
+) -> list[FormSection]:
     """Return the form sections derived from ``model`` grouped by ``layout``.
 
     Fields are grouped by :attr:`Ui.section`, ordered within a section by
@@ -507,7 +512,7 @@ def derive_form_sections(model: type, layout: FormLayout) -> list[FormSection]:
 
 
 def derive_plugin_schema(
-    model: type,
+    model: type["AppFormModel"],
     layout: FormLayout,
     *,
     name: str,
@@ -558,7 +563,7 @@ def derive_plugin_schema(
     )
 
 
-def build_runtime_schema(model: type) -> PluginSchema:
+def build_runtime_schema(model: type["AppFormModel"]) -> PluginSchema:
     """Return a single-section ``PluginSchema`` for runtime rule-plan extraction.
 
     Section-scoped and plugin-scoped rules are hoisted to plugin scope because

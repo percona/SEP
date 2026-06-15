@@ -27,12 +27,15 @@ golden byte-compare's responsibility.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, get_origin, Literal
+from typing import Any, get_origin, Literal, TYPE_CHECKING
 
 from pydantic_core import PydanticUndefined
 
 from app.sep.plugins.framework.form_dsl.derivation import resolve_base
 from app.sep.plugins.framework.schema import BaseField, PluginSchema
+
+if TYPE_CHECKING:
+    from app.sep.plugins.framework.form_dsl.model import AppFormModel
 
 __all__ = ["check_form_conformance"]
 
@@ -94,7 +97,7 @@ def _schema_form_fields(
 
 
 def check_form_conformance(
-    model: type, schema: PluginSchema, *, entity_name: str | None = None
+    model: type["AppFormModel"], schema: PluginSchema, *, entity_name: str | None = None
 ) -> list[str]:
     """Return human-readable disagreements between ``model`` and ``schema``.
 

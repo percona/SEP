@@ -181,7 +181,7 @@ class Choices:
     options: tuple[tuple[object, str], ...]
 
     def __post_init__(self) -> None:
-        """Normalise options to a tuple of pairs so the marker stays hashable."""
+        """Normalize options to a tuple of pairs so the marker stays hashable."""
         object.__setattr__(
             self, "options", tuple((value, label) for value, label in self.options)
         )
