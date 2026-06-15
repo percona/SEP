@@ -16,7 +16,7 @@
  */
 
 /**
- * React Query hooks for the runtime Settings admin API (SEP-983 / SEP-1330).
+ * React Query hooks for the runtime Settings admin API.
  *
  * Every settings group is reached through the single SEP gateway endpoint
  * `/api/sep/admin/settings`. SEP serves its own classes (SEPSettings,

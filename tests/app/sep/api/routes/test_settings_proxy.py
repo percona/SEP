@@ -39,6 +39,7 @@ from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
+from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
 from app.sep.deps import (
@@ -168,7 +169,7 @@ class TestListAggregation:
         assert {"SEPSettings", "SnippetsSettings", "MessagesSettings"}.issubset(
             set(classes)
         )
-        assert classes[-1] == "TasksSettings"
+        assert classes[-1] == SettingClassEnum.TASKS_SETTINGS.value
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
     def test_empty_tasks_group_still_renders(
@@ -243,7 +244,7 @@ class TestDispatch:
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["setting_class"] == "TasksSettings"
+        assert body["setting_class"] == SettingClassEnum.TASKS_SETTINGS.value
         assert body["key"] == TASKS_KEY
         mock_tasks.get.assert_awaited_once_with(
             f"{REMOTE_BASE}/TasksSettings/{TASKS_KEY}"

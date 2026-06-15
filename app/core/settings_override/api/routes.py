@@ -246,28 +246,6 @@ async def _remote_patch(
     return [SettingResponse.model_validate(item) for item in payload]
 
 
-async def _remote_delete(
-    remote_api: RemoteAPI,
-    base_path: str,
-    setting_class: SettingClassEnum,
-    key: str,
-) -> None:
-    """Proxy a DELETE for a remote settings class.
-
-    :param remote_api: The authenticated client for the owning sub-app.
-    :param base_path: The remote settings router's mount path.
-    :param setting_class: The remote class the field belongs to.
-    :param key: The field name whose override to revert.
-    :raises HTTPException: Re-raised unchanged for an upstream client error
-        (status < 500), e.g. a ``409`` on a NOT_OVERRIDABLE field.
-    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
-        or a connection-level ``OSError``.
-    """
-    await _proxy_settings_request(
-        remote_api, "delete", f"{base_path}/{setting_class.value}/{key}"
-    )
-
-
 def _settings_response_from_field(
     *,
     setting_class: SettingClassEnum,
@@ -840,10 +818,13 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         :raises HTTPUnprocessableEntityException: If ``key`` names a
             ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
             target an individual ``parent__leaf`` instead).
+        :raises HTTPBadGatewayException: For a remote class, when the owning
+            sub-app returns a server error (status >= 500) or is unreachable.
         """
         if setting_class in remote_lookup:
-            await _remote_delete(
-                remote_api, remote_lookup[setting_class], setting_class, key
+            base_path = remote_lookup[setting_class]
+            await _proxy_settings_request(
+                remote_api, "delete", f"{base_path}/{setting_class.value}/{key}"
             )
             return
         settings_cls, proxy = _resolve(setting_class)
