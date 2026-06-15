@@ -349,3 +349,14 @@ class TestSepConfigExportTasksFanOut:
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert "groups" in response.json()["detail"]
+
+    async def test_tasks_missing_tasks_settings_group_returns_502(
+        self,
+        api_admin_client: TestClient,
+        mock_tasks_api: AsyncMock,
+    ) -> None:
+        """Return ``502`` when Tasks LIST has ``groups`` but no ``TasksSettings`` entry."""
+        mock_tasks_api.get.return_value = {"groups": []}
+        response = api_admin_client.get(EXPORT_URL)
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert SettingClassEnum.TASKS_SETTINGS.value in response.json()["detail"]

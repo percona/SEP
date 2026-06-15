@@ -84,7 +84,7 @@ async def export_config(
     Aggregates the three SEP-wired settings classes locally and fans out to
     ``GET /admin/settings/`` on the Tasks API for ``TasksSettings``. Values
     use the same dump path as the settings LIST endpoints. On upstream failure,
-    re-raise as :class:`~app.core.exceptions.HTTPBadGatewayException`` — no
+    re-raise as :class:`~app.core.exceptions.HTTPBadGatewayException` — no
     partial export.
 
     :param session: The active database session for SEP override queries.
@@ -95,7 +95,8 @@ async def export_config(
     :rtype: Response
     :raises HTTPBadGatewayException: If the Tasks settings LIST call fails
         with an ``HTTPException`` (e.g. an upstream non-2xx response), an
-        ``OSError`` (e.g. a connection failure), or an unexpected payload shape.
+        ``OSError`` (e.g. a connection failure), an unexpected payload shape,
+        or a missing ``TasksSettings`` group.
     """
     payload: dict[str, dict[str, Any]] = {}
 
@@ -119,10 +120,12 @@ async def export_config(
         )
 
     tasks_groups = _tasks_settings_groups(tasks_payload)
-    payload[SettingClassEnum.TASKS_SETTINGS.value] = tasks_groups.get(
-        SettingClassEnum.TASKS_SETTINGS.value,
-        {},
-    )
+    tasks_key = SettingClassEnum.TASKS_SETTINGS.value
+    if tasks_key not in tasks_groups:
+        raise HTTPBadGatewayException(
+            detail=f"Tasks settings LIST response missing {tasks_key!r} group.",
+        )
+    payload[tasks_key] = tasks_groups[tasks_key]
 
     yaml_body = yaml.safe_dump(
         payload,
