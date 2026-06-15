@@ -33,13 +33,15 @@ import typing
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any, cast, TypeVar
 
-from fastapi import APIRouter, Depends, params, status
+from fastapi import APIRouter, Depends, params, Query, status
 from pydantic import BaseModel
 
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
+from app.sep.plugins.framework.connectivity import maybe_record_connectivity_warning
 from app.sep.plugins.framework.responses import (
     build_task_list_responses,
+    derive_create_response_model,
     TaskResponseBuilder,
 )
 from app.sep.plugins.framework.schema import PluginSchema
@@ -191,6 +193,21 @@ def _reject_async_builders(**builders: Callable[..., BaseModel] | None) -> None:
             )
 
 
+def _create_response_name(plugin_schema: PluginSchema) -> str:
+    """Return the ``<App>CreateResponse`` OpenAPI component name for the schema.
+
+    Treat both ``-`` and ``_`` in ``plugin_schema.name`` as word boundaries
+    (``PluginSchema.name`` permits hyphens), capitalise each word, and append
+    ``CreateResponse`` — so ``"mysql_backups"`` yields
+    ``MysqlBackupsCreateResponse``.
+
+    :param plugin_schema: The plugin schema whose ``name`` seeds the title.
+    :return: The derived ``<App>CreateResponse`` component name.
+    """
+    parts = plugin_schema.name.replace("-", "_").split("_")
+    return "".join(part.capitalize() for part in parts) + "CreateResponse"
+
+
 def capabilities_endpoint(
     router: APIRouter,
     capabilities_provider: Callable[..., CapabilitiesT],
@@ -300,6 +317,109 @@ def capabilities_endpoint(
     )
 
 
+def _register_create_route(
+    router: APIRouter,
+    *,
+    plugin_schema: PluginSchema,
+    response_builder: TaskResponseBuilder[ListDetailResponseT],
+    create_payload: Callable[..., Awaitable[TaskWrite]],
+    create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
+    list_detail_model: type[ListDetailResponseT],
+    connectivity_check: bool,
+) -> None:
+    """Register the standard ``POST /`` create route (``201``) on ``router``.
+
+    With ``connectivity_check`` off, the handler builds the create response
+    directly. With it on, the handler gains a ``check_connectivity`` query
+    parameter, runs the post-creation connectivity probe, and attaches the
+    resulting ``connectivity_warning`` — auto-deriving the create model via
+    :func:`derive_create_response_model` when no explicit
+    ``create_response_builder`` is given. An explicit builder's model wins, but
+    with ``connectivity_check`` on it must itself declare ``connectivity_warning``
+    so the probe result has somewhere to land.
+
+    :param router: The plugin router to register the create route on.
+    :param plugin_schema: The plugin schema seeding the auto-derived model name.
+    :param response_builder: The list/detail builder, reused for the base create
+        response when no explicit create builder is given.
+    :param create_payload: The create-payload dependency declaring the body.
+    :param create_response_builder: An explicit create-response builder whose
+        model wins when supplied.
+    :param list_detail_model: The list/detail response model used as the
+        auto-derive base.
+    :param connectivity_check: Whether to add the connectivity probe and the
+        ``check_connectivity`` query parameter.
+    :raises TypeError: If ``connectivity_check`` is on and an explicit
+        ``create_response_builder`` is given whose model omits a
+        ``connectivity_warning`` field.
+    """
+    if create_response_builder is not None:
+        create_model = _resolve_response_model(
+            create_response_builder,
+            helper="derive_crud_routes",
+            param="create_response_builder",
+        )
+        if (
+            connectivity_check
+            and "connectivity_warning" not in create_model.model_fields
+        ):
+            raise TypeError(
+                "derive_crud_routes: create_response_builder's model must declare a "
+                "connectivity_warning field when connectivity_check=True; build it "
+                "via derive_create_response_model so the probe result is attached "
+                "rather than silently dropped."
+            )
+    elif connectivity_check:
+        create_model = derive_create_response_model(
+            list_detail_model, name=_create_response_name(plugin_schema)
+        )
+    else:
+        create_model = list_detail_model
+
+    if not connectivity_check:
+
+        async def _create(
+            tasks_api: TaskAPI,
+            task_write: Annotated[TaskWrite, Depends(create_payload)],
+        ) -> BaseModel:
+            created = await tasks_api.post("/", json=task_write.model_dump())
+            task = Task.model_validate(created)
+            if create_response_builder is not None:
+                return create_response_builder(task)
+            return response_builder(task, status=None)
+    else:
+
+        async def _create(
+            tasks_api: TaskAPI,
+            task_write: Annotated[TaskWrite, Depends(create_payload)],
+            *,
+            check_connectivity: Annotated[bool, Query()] = True,
+        ) -> BaseModel:
+            created = await tasks_api.post("/", json=task_write.model_dump())
+            task = Task.model_validate(created)
+            warning = await maybe_record_connectivity_warning(
+                tasks_api,
+                task.data.get("meta", {}),
+                check_connectivity=check_connectivity,
+            )
+            if create_response_builder is not None:
+                return create_response_builder(task).model_copy(
+                    update={"connectivity_warning": warning}
+                )
+            base = response_builder(task, status=None)
+            return create_model(**base.model_dump(), connectivity_warning=warning)
+
+    router.add_api_route(
+        "/",
+        _create,
+        methods=["POST"],
+        status_code=status.HTTP_201_CREATED,
+        response_model=create_model,
+        response_model_by_alias=True,
+        dependencies=[IsApiAuthenticated],
+    )
+
+
 def derive_crud_routes(
     plugin_schema: PluginSchema,
     *,
@@ -308,6 +428,7 @@ def derive_crud_routes(
     response_builder: TaskResponseBuilder[ListDetailResponseT],
     create_payload: Callable[..., Awaitable[TaskWrite]],
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None = None,
+    connectivity_check: bool = False,
     detail_path_param: str = "task_name",
     pagination_dep: PaginationDependency | None = None,
     update_handler: Callable[..., Awaitable[Any]] | None = None,
@@ -320,7 +441,9 @@ def derive_crud_routes(
     create (``POST /`` with ``201``), and optional update/delete overrides
     (``PUT`` / ``DELETE`` on ``/{detail_path_param}``; delete uses ``204``).
     All derived routes use ``IsApiAuthenticated`` and
-    ``response_model_by_alias=True``.
+    ``response_model_by_alias=True``. Enabling ``connectivity_check`` extends
+    the create route with a post-creation connectivity probe and a
+    ``connectivity_warning`` on its response.
 
     The derived detail route is greedy: ``GET /{detail_path_param}`` captures
     any single collection-root path segment. If a plugin also needs a static
@@ -351,6 +474,13 @@ def derive_crud_routes(
     :param create_response_builder: Builds the create response from a task;
         its return annotation supplies the create response model. Defaults to
         reusing ``response_builder`` (and its model).
+    :param connectivity_check: When ``True``, the create route gains a
+        ``check_connectivity`` boolean query parameter (default ``True``), runs
+        the post-creation connectivity probe, and returns a create response
+        whose ``connectivity_warning`` is populated on probe failure. The create
+        response model becomes ``create_response_builder``'s model when given,
+        else an auto-derived ``<App>CreateResponse``. When ``False`` (default)
+        the create route is unchanged.
     :param detail_path_param: The detail/update/delete path-parameter name;
         must equal ``get_task``'s inner path parameter (``make_task_dep`` uses
         ``task_name``).
@@ -374,7 +504,9 @@ def derive_crud_routes(
     :raises TypeError: If ``response_builder`` or ``create_response_builder``
         is an ``async def`` callable (the derived handlers invoke it
         synchronously), or does not declare a return-type annotation that is a
-        :class:`pydantic.BaseModel` subclass.
+        :class:`pydantic.BaseModel` subclass; or if ``connectivity_check`` is on
+        and an explicit ``create_response_builder``'s model omits a
+        ``connectivity_warning`` field.
     """
     _reject_async_builders(
         response_builder=response_builder,
@@ -383,15 +515,6 @@ def derive_crud_routes(
 
     list_detail_model = _resolve_response_model(
         response_builder, helper="derive_crud_routes", param="response_builder"
-    )
-    create_model = (
-        _resolve_response_model(
-            create_response_builder,
-            helper="derive_crud_routes",
-            param="create_response_builder",
-        )
-        if create_response_builder is not None
-        else list_detail_model
     )
 
     router = APIRouter()
@@ -455,24 +578,14 @@ def derive_crud_routes(
         dependencies=[IsApiAuthenticated],
     )
 
-    async def _create(
-        tasks_api: TaskAPI,
-        task_write: Annotated[TaskWrite, Depends(create_payload)],
-    ) -> BaseModel:
-        created = await tasks_api.post("/", json=task_write.model_dump())
-        task = Task.model_validate(created)
-        if create_response_builder is not None:
-            return create_response_builder(task)
-        return response_builder(task, status=None)
-
-    router.add_api_route(
-        "/",
-        _create,
-        methods=["POST"],
-        status_code=status.HTTP_201_CREATED,
-        response_model=create_model,
-        response_model_by_alias=True,
-        dependencies=[IsApiAuthenticated],
+    _register_create_route(
+        router,
+        plugin_schema=plugin_schema,
+        response_builder=response_builder,
+        create_payload=create_payload,
+        create_response_builder=create_response_builder,
+        list_detail_model=list_detail_model,
+        connectivity_check=connectivity_check,
     )
 
     if update_handler is not None:
