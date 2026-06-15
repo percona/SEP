@@ -15,8 +15,9 @@
 
 """Define tests for the plugin route helpers in ``framework.api``.
 
-Covers the ``/schema`` and ``/capabilities`` discovery endpoints plus the
-``derive_crud_routes`` CRUD route factory.
+Covers the ``/schema`` and ``/capabilities`` discovery endpoints, the
+``derive_crud_routes`` CRUD route factory, and the ``derive_execute_route``
+execute-route factory.
 """
 
 from dataclasses import dataclass
@@ -35,16 +36,24 @@ from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
+from app.sep.connectivity import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+)
 from app.sep.deps import (
+    check_for_conflicted_running_tasks,
     get_api_authenticated_user,
     get_task_by_name,
     get_tasks_api,
     IsApiAuthenticated,
     TaskAPI,
 )
+from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.api import (
     capabilities_endpoint,
     derive_crud_routes,
+    derive_execute_route,
     schema_endpoint,
 )
 from app.sep.plugins.framework.deps import make_task_dep
@@ -1618,6 +1627,247 @@ class TestDeriveCrudRoutesCreate:
         assert response.status_code == status.HTTP_409_CONFLICT
 
 
+_CONNECTIVITY_META = {
+    "target": "node-1",
+    CONNECTIVITY_META_HOST_KEY: "db-host",
+    CONNECTIVITY_META_PORT_KEY: 3306,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY: "mysql",
+}
+
+
+def _task_dict_with_meta(name: str, meta: dict) -> dict:
+    """Return a created-task payload whose ``data.meta`` carries ``meta``."""
+    return TaskFactory.build(
+        name=name, owner=_SYNTHETIC_OWNER.value, data={"meta": meta}
+    ).model_dump(mode="json")
+
+
+def _patch_probe(mocker, result: ConnectivityWarning | None) -> AsyncMock:
+    """Patch the network probe boundary, leaving the real guard helper intact."""
+    return mocker.patch(
+        "app.sep.plugins.framework.connectivity.record_connectivity_warning",
+        new_callable=AsyncMock,
+        return_value=result,
+    )
+
+
+class _SyntheticConnectivityCreateResponse(BaseModel):
+    """Represent an explicit create response that already declares the warning."""
+
+    name: str
+    connectivity_warning: ConnectivityWarning | None = None
+
+
+def _build_synthetic_connectivity_create_response(
+    task: Task,
+) -> _SyntheticConnectivityCreateResponse:
+    """Build an explicit create response that declares ``connectivity_warning``."""
+    return _SyntheticConnectivityCreateResponse(name=task.name)
+
+
+class TestDeriveCrudRoutesConnectivity:
+    """Exercise the ``connectivity_check`` create-route option over HTTP."""
+
+    def test_probe_failure_populates_connectivity_warning(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Surface the probe warning on the create response when the probe fails."""
+        warning = ConnectivityWarning(
+            target="node-1", service_type="mysql", message="unreachable"
+        )
+        probe = _patch_probe(mocker, warning)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] == {
+            "target": "node-1",
+            "service_type": "mysql",
+            "message": "unreachable",
+        }
+        probe.assert_awaited_once()
+
+    def test_probe_success_yields_null_connectivity_warning(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Return a ``null`` warning when the probe succeeds."""
+        probe = _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] is None
+        probe.assert_awaited_once()
+
+    def test_opt_out_query_skips_probe(self, regular_user: CasdoorUser, mocker) -> None:
+        """Skip the probe and null the warning when ``?check_connectivity=false``."""
+        probe = _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(
+            f"{_CRUD_BASE_URL}/?check_connectivity=false", json={"name": "new-task"}
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] is None
+        probe.assert_not_awaited()
+
+    def test_meta_without_connectivity_keys_skips_probe(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Short-circuit to ``null`` when the task meta lacks connectivity keys."""
+        probe = _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(created_task=_task_dict_with_meta("new-task", {}))
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] is None
+        probe.assert_not_awaited()
+
+    def test_invalid_body_422_before_probe_or_create(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Reject an invalid body with 422 before any upstream create or probe."""
+        probe = _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        tasks_api.post.assert_not_awaited()
+        probe.assert_not_awaited()
+
+    def test_upstream_create_error_propagates(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Propagate an upstream create error instead of swallowing it."""
+        _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(create_error=HTTPConflictException())
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_off_path_create_route_keeps_unchanged_model(self) -> None:
+        """Keep the default (off) create route's response model unchanged."""
+        route = _route_for(_crud_router(), "/", "POST")
+
+        assert route.response_model is _SyntheticTaskResponse
+
+    def test_off_path_openapi_omits_check_connectivity_param(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Keep the default create route free of the ``check_connectivity`` param."""
+        client = _authed_crud_client(_crud_router(), _make_tasks_api(), regular_user)
+        spec = client.get("/openapi.json").json()
+
+        params = spec["paths"][f"{_CRUD_BASE_URL}/"]["post"].get("parameters", [])
+        assert all(param["name"] != "check_connectivity" for param in params)
+
+    def test_on_path_openapi_documents_check_connectivity_query_param(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Document one boolean ``check_connectivity`` query param defaulting true."""
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), _make_tasks_api(), regular_user
+        )
+        spec = client.get("/openapi.json").json()
+
+        params = spec["paths"][f"{_CRUD_BASE_URL}/"]["post"].get("parameters", [])
+        check_params = [p for p in params if p["name"] == "check_connectivity"]
+        assert len(check_params) == 1
+        [param] = check_params
+        assert param["in"] == "query"
+        assert param["required"] is False
+        assert param["schema"]["type"] == "boolean"
+        assert param["schema"]["default"] is True
+
+    def test_on_path_openapi_names_derived_create_component(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Name the auto-derived create component ``TestDeriveCrudCreateResponse``."""
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), _make_tasks_api(), regular_user
+        )
+        spec = client.get("/openapi.json").json()
+
+        component = spec["components"]["schemas"]["TestDeriveCrudCreateResponse"]
+        assert "connectivity_warning" in component["properties"]
+
+    def test_explicit_create_builder_model_wins_with_connectivity_check(self) -> None:
+        """Let an explicit create builder's model win even with ``connectivity_check``."""
+        router = _crud_router(
+            connectivity_check=True,
+            create_response_builder=_build_synthetic_connectivity_create_response,
+        )
+        route = _route_for(router, "/", "POST")
+
+        assert route.response_model is _SyntheticConnectivityCreateResponse
+
+    def test_explicit_builder_surfaces_warning_via_model_copy(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Attach the probe warning to an explicit builder that declares the field."""
+        warning = ConnectivityWarning(
+            target="node-1", service_type="mysql", message="unreachable"
+        )
+        _patch_probe(mocker, warning)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        router = _crud_router(
+            connectivity_check=True,
+            create_response_builder=_build_synthetic_connectivity_create_response,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] == {
+            "target": "node-1",
+            "service_type": "mysql",
+            "message": "unreachable",
+        }
+
+    def test_explicit_builder_without_warning_field_rejected(self) -> None:
+        """Reject an explicit builder whose model omits ``connectivity_warning``."""
+        with pytest.raises(TypeError, match="connectivity_warning"):
+            _crud_router(
+                connectivity_check=True,
+                create_response_builder=_build_synthetic_create_response,
+            )
+
+
 class TestDeriveCrudRoutesUpdate:
     """Exercise the override-driven ``PUT /{task_name}`` update route."""
 
@@ -1766,3 +2016,275 @@ class TestDeriveCrudRoutesOpenApi:
 
         assert "displayLabel" in component["properties"]
         assert "display_label" not in component["properties"]
+
+
+# ── derive_execute_route() helper ───────────────────────────────────────
+
+
+_EXECUTE_PREFIX = "/test-derive-execute"
+_EXECUTE_BASE_URL = f"/api/plugins{_EXECUTE_PREFIX}"
+_EXECUTE_TASK_ID = 77
+_SYNTHETIC_TASK_DEP = Annotated[Task, Depends(make_task_dep(_SYNTHETIC_OWNER))]
+
+
+class _SyntheticExecuteWrite(BaseModel):
+    """Represent the execute request body for the synthetic execute plugin."""
+
+    chain_on_failure: bool | None = None
+
+
+class _SyntheticExecutionResponse(BaseModel):
+    """Represent the execute response for the synthetic execute plugin."""
+
+    task_name: str
+    task_id: int | None = None
+
+
+def _marker_dep() -> None:
+    """Stand in for a caller-supplied ``extra_deps`` guard in tests."""
+
+
+def _execute_response_dict(task_id: int | None = _EXECUTE_TASK_ID) -> dict:
+    """Return a ``TaskHistoryResponse``-shaped upstream payload for execute tests."""
+    return {
+        "id": task_id,
+        "execution_request": {"task": "t1", "target": "host"},
+        "task": _task_dict("t1"),
+    }
+
+
+def _execute_router(**overrides: object) -> APIRouter:
+    """Register one ``derive_execute_route`` on a fresh router with synthetic defaults."""
+    router = APIRouter()
+    kwargs = {
+        "task_dep": _SYNTHETIC_TASK_DEP,
+        "write_model": _SyntheticExecuteWrite,
+        "response_model": _SyntheticExecutionResponse,
+    }
+    kwargs.update(overrides)
+    derive_execute_route(router, **kwargs)
+    return router
+
+
+def _authed_execute_client(
+    router: APIRouter, tasks_api: AsyncMock, user: CasdoorUser
+) -> TestClient:
+    """Mount ``router`` in a production-shape app with auth + Tasks-API overrides."""
+    app = _mount_plugin_router(router, _EXECUTE_PREFIX)
+    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    app.dependency_overrides[get_tasks_api] = lambda: tasks_api
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestDeriveExecuteRouteComposition:
+    """Inspect the registered execute route in isolation, without HTTP."""
+
+    def test_registers_post_execute_route(self) -> None:
+        """Assert the helper registers a single ``POST /{task_name}/execute`` route."""
+        route = _route_for(_execute_router(), "/{task_name}/execute", "POST")
+
+        assert route.methods == {"POST"}
+
+    def test_execute_route_pins_201(self) -> None:
+        """Assert the execute route sets ``status_code=201``."""
+        route = _route_for(_execute_router(), "/{task_name}/execute", "POST")
+
+        assert route.status_code == status.HTTP_201_CREATED
+
+    def test_execute_route_response_model_is_response_model(self) -> None:
+        """Assert the route's response model is the supplied ``response_model``."""
+        route = _route_for(_execute_router(), "/{task_name}/execute", "POST")
+
+        assert route.response_model is _SyntheticExecutionResponse
+
+    def test_route_declares_standard_guards(self) -> None:
+        """Assert the route declares ``IsApiAuthenticated`` + the conflict guard."""
+        route = _route_for(_execute_router(), "/{task_name}/execute", "POST")
+        callables = {d.dependency for d in route.dependencies}
+
+        assert get_api_authenticated_user in callables
+        assert check_for_conflicted_running_tasks in callables
+
+    def test_extra_deps_appended_to_standard_guards(self) -> None:
+        """Assert ``extra_deps`` is appended without dropping the standard guards."""
+        router = _execute_router(extra_deps=[Depends(_marker_dep)])
+        route = _route_for(router, "/{task_name}/execute", "POST")
+        callables = {d.dependency for d in route.dependencies}
+
+        assert get_api_authenticated_user in callables
+        assert check_for_conflicted_running_tasks in callables
+        assert _marker_dep in callables
+
+    def test_metadata_override_sets_route_name(self) -> None:
+        """Assert passing ``name`` overrides the route name (drives operationId)."""
+        router = _execute_router(name="custom_api_execute")
+        route = _route_for(router, "/{task_name}/execute", "POST")
+
+        assert route.name == "custom_api_execute"
+
+    def test_metadata_default_route_name_is_inner_handler(self) -> None:
+        """Assert the route name defaults to the inner ``execute`` handler name."""
+        route = _route_for(_execute_router(), "/{task_name}/execute", "POST")
+
+        assert route.name == "execute"
+
+    def test_second_call_raises_value_error(self) -> None:
+        """Assert registering a second execute route on the same router fails."""
+        router = _execute_router()
+
+        with pytest.raises(ValueError, match="derive_execute_route"):
+            derive_execute_route(
+                router,
+                task_dep=_SYNTHETIC_TASK_DEP,
+                write_model=_SyntheticExecuteWrite,
+                response_model=_SyntheticExecutionResponse,
+            )
+
+    def test_second_call_raises_value_error_on_prefixed_router(self) -> None:
+        """Assert the duplicate guard fires when the router carries a prefix."""
+        router = APIRouter(prefix="/plugin-prefix")
+        derive_execute_route(
+            router,
+            task_dep=_SYNTHETIC_TASK_DEP,
+            write_model=_SyntheticExecuteWrite,
+            response_model=_SyntheticExecutionResponse,
+        )
+
+        with pytest.raises(ValueError, match="derive_execute_route"):
+            derive_execute_route(
+                router,
+                task_dep=_SYNTHETIC_TASK_DEP,
+                write_model=_SyntheticExecuteWrite,
+                response_model=_SyntheticExecutionResponse,
+            )
+
+    def test_non_basemodel_write_model_raises_type_error(self) -> None:
+        """Assert a non-BaseModel ``write_model`` is rejected at registration."""
+        with pytest.raises(TypeError, match="BaseModel"):
+            _execute_router(write_model=object)
+
+    def test_non_basemodel_response_model_raises_type_error(self) -> None:
+        """Assert a non-BaseModel ``response_model`` is rejected at registration."""
+        with pytest.raises(TypeError, match="BaseModel"):
+            _execute_router(response_model=object)
+
+
+class TestDeriveExecuteRouteOverHttp:
+    """Exercise the registered execute route over real HTTP."""
+
+    def test_execute_201_forwards_body(self, regular_user: CasdoorUser) -> None:
+        """Assert a valid authed POST returns 201 and forwards the exclude-none body."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"),
+            history_items=[],
+            created_task=_execute_response_dict(),
+        )
+        client = _authed_execute_client(_execute_router(), tasks_api, regular_user)
+
+        response = client.post(
+            f"{_EXECUTE_BASE_URL}/t1/execute", json={"chain_on_failure": True}
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json() == {"task_name": "t1", "task_id": _EXECUTE_TASK_ID}
+        tasks_api.post.assert_awaited_once_with(
+            "/execute/t1", json={"chain_on_failure": True}
+        )
+
+    def test_execute_201_empty_body_forwards_empty_json(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert an empty body forwards ``json={}`` (all fields excluded as None)."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"),
+            history_items=[],
+            created_task=_execute_response_dict(),
+        )
+        client = _authed_execute_client(_execute_router(), tasks_api, regular_user)
+
+        response = client.post(f"{_EXECUTE_BASE_URL}/t1/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        tasks_api.post.assert_awaited_once_with("/execute/t1", json={})
+
+    def test_execute_404_for_unknown_task(self, regular_user: CasdoorUser) -> None:
+        """Assert an owner mismatch on the resolved task yields 404."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1", owner=TaskOwner.BACKUPS),
+            history_items=[],
+        )
+        client = _authed_execute_client(_execute_router(), tasks_api, regular_user)
+
+        response = client.post(f"{_EXECUTE_BASE_URL}/t1/execute", json={})
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_execute_409_when_task_already_running(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the conflict guard rejects a task with a running history with 409."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"),
+            history_items=[{"status": TaskHistoryStatusEnum.RUNNING.value}],
+        )
+        client = _authed_execute_client(_execute_router(), tasks_api, regular_user)
+
+        response = client.post(f"{_EXECUTE_BASE_URL}/t1/execute", json={})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        tasks_api.post.assert_not_awaited()
+
+    def test_execute_401_when_unauthenticated(self) -> None:
+        """Assert the execute route returns a JSON 401 without an auth override."""
+        tasks_api = _make_tasks_api(detail_task=_task_dict("t1"), history_items=[])
+        app = _mount_plugin_router(_execute_router(), _EXECUTE_PREFIX)
+        app.dependency_overrides[get_tasks_api] = lambda: tasks_api
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.post(
+            f"{_EXECUTE_BASE_URL}/t1/execute", json={}, follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.headers["content-type"].startswith("application/json")
+
+
+class TestDeriveExecuteRouteOpenApi:
+    """Assert the execute route's generated OpenAPI carries the expected shape."""
+
+    def _openapi_for(self, router: APIRouter, regular_user: CasdoorUser) -> dict:
+        """Return the generated OpenAPI for an app mounting ``router``."""
+        tasks_api = _make_tasks_api()
+        client = _authed_execute_client(router, tasks_api, regular_user)
+        return client.get("/openapi.json").json()
+
+    def test_request_body_schema_is_write_model(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the requestBody schema references the supplied ``write_model``."""
+        spec = self._openapi_for(_execute_router(), regular_user)
+        operation = spec["paths"][f"{_EXECUTE_BASE_URL}/{{task_name}}/execute"]["post"]
+        ref = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+
+        assert ref.endswith("_SyntheticExecuteWrite")
+
+    def test_metadata_override_sets_description(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a supplied ``description`` becomes the operation description."""
+        router = _execute_router(description="Execute the synthetic task.")
+        spec = self._openapi_for(router, regular_user)
+        operation = spec["paths"][f"{_EXECUTE_BASE_URL}/{{task_name}}/execute"]["post"]
+
+        assert operation["description"] == "Execute the synthetic task."
+
+    def test_metadata_default_description_is_closure_docstring(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the default description falls back to the inner handler docstring."""
+        spec = self._openapi_for(_execute_router(), regular_user)
+        operation = spec["paths"][f"{_EXECUTE_BASE_URL}/{{task_name}}/execute"]["post"]
+
+        assert operation["description"] == (
+            "Resolve, dispatch, and wrap a standard task execution."
+        )

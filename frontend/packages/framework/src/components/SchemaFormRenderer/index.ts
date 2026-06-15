@@ -17,6 +17,7 @@
 
 export { SchemaFormRenderer } from './SchemaFormRenderer';
 export type { SchemaFormRendererProps } from './SchemaFormRenderer';
+export type { RenderFieldArgs, RenderFieldOverride } from './types';
 export { FieldRenderer } from './fields';
 export { useCascadingField } from './hooks/useCascadingField';
 export { useConditionalField } from './hooks/useConditionalField';
