@@ -376,6 +376,27 @@ class TestValidatedParameters:
         assert len(result.errors) > 0
         assert any("nope" in e for e in result.errors)
 
+    def test_visibility_condition_referencing_invalid_declared_param(self):
+        """A reference to a declared-but-invalid sibling is not 'unknown'.
+
+        The sibling fails its own validation, but because it is still declared in
+        the meta the reference must not be misreported as an unknown parameter.
+        """
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "list", "type": "str", "min_length": 0},
+                    {"name": "start", "type": "str", "visible_when_not": "list"},
+                ]
+            },
+        )
+        result = snippet.validated_parameters
+        assert len(result.errors) > 0
+        assert not any("unknown parameter" in e for e in result.errors)
+
 
 class TestCanExecute:
     """Test the can_execute property."""

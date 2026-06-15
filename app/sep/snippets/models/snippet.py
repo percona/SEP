@@ -735,7 +735,15 @@ class BaseSnippet(BaseModel):
                 errors.extend(
                     SnippetMetaParameter.convert_validation_errors(exc, param)
                 )
-        errors.extend(BaseSnippet._validate_visibility_references(valid_parameters))
+        declared = {
+            name
+            for param in parameters
+            if (name := param.get("name") if isinstance(param, dict) else None)
+            is not None
+        }
+        errors.extend(
+            BaseSnippet._validate_visibility_references(valid_parameters, declared)
+        )
         return SnippetMetaParametersValidationResult(
             parameters=valid_parameters, errors=errors
         )
@@ -743,6 +751,7 @@ class BaseSnippet(BaseModel):
     @staticmethod
     def _validate_visibility_references(
         parameters: list[SnippetMetaParameter],
+        declared: set[str],
     ) -> list[str]:
         """Validate that visibility conditions reference declared parameters.
 
@@ -751,12 +760,18 @@ class BaseSnippet(BaseModel):
         parameters are surfaced as errors consistent with the per-parameter
         validation output.
 
+        The declared-name set is derived best-effort from the raw parameter
+        declarations so that a sibling which is declared but fails its own
+        validation is not misreported as an "unknown parameter" reference.
+
         :param parameters: The successfully validated snippet parameters.
         :type parameters: list[SnippetMetaParameter]
+        :param declared: The set of parameter names declared in the snippet meta,
+            including those whose own validation failed.
+        :type declared: set[str]
         :return: A list of error messages for unknown references.
         :rtype: list[str]
         """
-        declared = {param.name for param in parameters}
         errors = []
         for param in parameters:
             for attr in ("visible_when", "visible_when_not"):
