@@ -1432,6 +1432,39 @@ class TestDeriveCrudRoutesComposition:
             _crud_router(create_response_builder=_async_create_builder)
 
 
+class TestDeriveCrudRoutesCreateSkip:
+    """Cover the read-only path where ``create_payload`` is omitted."""
+
+    def test_no_create_route_when_create_payload_none(self) -> None:
+        """Assert ``create_payload=None`` registers no ``POST /`` route."""
+        router = _crud_router(create_payload=None)
+        methods = {(r.path, m) for r in _api_routes(router) for m in r.methods}
+
+        assert ("/", "POST") not in methods
+
+    def test_schema_list_detail_unaffected_when_create_payload_none(self) -> None:
+        """Assert schema / list / detail still register without a create route."""
+        router = _crud_router(create_payload=None)
+        registered = {(r.path, frozenset(r.methods)) for r in _api_routes(router)}
+
+        assert ("/schema", frozenset({"GET"})) in registered
+        assert ("/", frozenset({"GET"})) in registered
+        assert ("/{task_name}", frozenset({"GET"})) in registered
+
+    def test_connectivity_check_without_create_payload_raises(self) -> None:
+        """Assert ``connectivity_check=True`` with no create payload fails fast."""
+        with pytest.raises(ValueError, match="connectivity_check"):
+            _crud_router(create_payload=None, connectivity_check=True)
+
+    def test_create_response_builder_without_create_payload_raises(self) -> None:
+        """Assert a create response builder with no create payload fails fast."""
+        with pytest.raises(ValueError, match="create_response_builder"):
+            _crud_router(
+                create_payload=None,
+                create_response_builder=_build_synthetic_create_response,
+            )
+
+
 class TestDeriveCrudRoutesList:
     """Exercise the non-paginated ``GET /`` list route over HTTP."""
 

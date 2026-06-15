@@ -19,6 +19,7 @@ from app.sep.plugins.framework.form_dsl.conformance import check_form_conformanc
 from app.sep.plugins.framework.form_dsl.derivation import (
     derive_form_sections,
     derive_plugin_schema,
+    find_ref_marker,
 )
 from app.sep.plugins.framework.form_dsl.markers import (
     Choices,
@@ -55,4 +56,5 @@ __all__ = [
     "check_form_conformance",
     "derive_form_sections",
     "derive_plugin_schema",
+    "find_ref_marker",
 ]
