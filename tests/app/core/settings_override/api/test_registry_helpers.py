@@ -22,7 +22,10 @@ import pytest
 from pydantic import BaseModel, Field, PositiveInt, SecretStr, ValidationError
 
 from app.core.config import BaseYamlSettings
-from app.core.settings_override.api.routes import _settings_response_from_field
+from app.core.settings_override.api.routes import (
+    _remote_wiring,
+    _settings_response_from_field,
+)
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
@@ -230,3 +233,17 @@ def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
     assert response.value == "**********"
     assert response.is_secret is True
     assert response.key_path == ["GROUP", "TOKEN"]
+
+
+def test_remote_wiring_requires_dep_when_remote_classes_present() -> None:
+    """Configuring ``remote_classes`` without ``remote_api_dep`` fails fast."""
+    remote_classes = [(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")]
+    with pytest.raises(ValueError, match="remote_api_dep is required"):
+        _remote_wiring(remote_classes, None)
+
+
+def test_remote_wiring_allows_no_dep_when_no_remote_classes() -> None:
+    """An empty/absent ``remote_classes`` keeps the no-op dependency, no raise."""
+    remote_lookup, remote_dep = _remote_wiring(None, None)
+    assert remote_lookup == {}
+    assert remote_dep is not None
