@@ -48,7 +48,8 @@ def _tasks_settings_groups(payload: dict[str, Any]) -> dict[str, dict[str, Any]]
     :return: One ``{key: value}`` mapping per ``setting_class`` group in the
         payload.
     :rtype: dict[str, dict[str, Any]]
-    :raises HTTPBadGatewayException: If ``payload`` is missing a ``groups`` list.
+    :raises HTTPBadGatewayException: If ``payload`` is missing a ``groups`` list
+        or any setting entry lacks a ``key`` or ``value``.
     """
     groups = payload.get("groups")
     if not isinstance(groups, list):
@@ -63,11 +64,23 @@ def _tasks_settings_groups(payload: dict[str, Any]) -> dict[str, dict[str, Any]]
         settings = group.get("settings")
         if not isinstance(setting_class, str) or not isinstance(settings, list):
             continue
-        export[setting_class] = {
-            entry["key"]: entry["value"]
-            for entry in settings
-            if isinstance(entry, dict) and isinstance(entry.get("key"), str)
-        }
+        class_block: dict[str, Any] = {}
+        for entry in settings:
+            if not isinstance(entry, dict):
+                raise HTTPBadGatewayException(
+                    detail="Tasks settings LIST entry is not an object.",
+                )
+            key = entry.get("key")
+            if not isinstance(key, str):
+                raise HTTPBadGatewayException(
+                    detail="Tasks settings LIST entry missing 'key'.",
+                )
+            if "value" not in entry:
+                raise HTTPBadGatewayException(
+                    detail=f"Tasks settings LIST entry missing 'value' for key {key!r}.",
+                )
+            class_block[key] = entry["value"]
+        export[setting_class] = class_block
     return export
 
 

@@ -360,3 +360,21 @@ class TestSepConfigExportTasksFanOut:
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert SettingClassEnum.TASKS_SETTINGS.value in response.json()["detail"]
+
+    async def test_tasks_setting_entry_missing_value_returns_502(
+        self,
+        api_admin_client: TestClient,
+        mock_tasks_api: AsyncMock,
+    ) -> None:
+        """Return ``502`` when a Tasks LIST setting entry omits ``value``."""
+        mock_tasks_api.get.return_value = {
+            "groups": [
+                {
+                    "setting_class": SettingClassEnum.TASKS_SETTINGS.value,
+                    "settings": [{"key": "STALENESS_THRESHOLD_SECONDS"}],
+                }
+            ]
+        }
+        response = api_admin_client.get(EXPORT_URL)
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "value" in response.json()["detail"]
