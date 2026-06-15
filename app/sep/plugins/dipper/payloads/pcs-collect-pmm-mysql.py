@@ -108,7 +108,7 @@
 #         label: Async Replication
 #     arg_format: "--ha ${value}"
 #     visible_when_not: list
-#   - name: ha-name
+#   - name: ha_name
 #     label: Cluster / replica-set name
 #     description: Required for PXC and Group Replication; ignored for Async or when no HA mode is selected.
 #     group: High Availability

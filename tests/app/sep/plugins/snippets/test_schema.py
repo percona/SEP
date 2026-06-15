@@ -283,3 +283,36 @@ class TestVisibilityGates:
             )
         )
         assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
+
+
+@pytest.mark.asyncio
+async def test_build_snippet_schema_with_gated_field_validates(create_snippet):
+    """A gated, identifier-safe parameter builds a valid PluginSchema.
+
+    Regression guard: ``build_snippet_schema`` constructs a ``PluginSchema``,
+    whose validator folds each gated field's own name into the gate's reference
+    set and rejects hyphenated names. This exercises that full construction so a
+    gate that produces an invalid schema fails here rather than as a 500 at
+    request time.
+    """
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {"name": "list", "type": "bool", "label": "List services"},
+            {
+                "name": "start",
+                "type": "str",
+                "label": "Start",
+                "visible_when_not": "list",
+            },
+        ],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+
+    schema = build_snippet_schema(snippet)
+
+    parameters_section = next(s for s in schema.forms if s.title == "Parameters")
+    start_field = next(f for f in parameters_section.fields if f.name == "start")
+    assert start_field.forbidden[0].when.to_dict() == {"truthy": "list"}

@@ -477,3 +477,17 @@ class TestVisibilityCondition:
         """An empty referenced parameter name is rejected."""
         with pytest.raises(ValidationError):
             SnippetMetaParameter(name="start", visible_when_not={"parameter": ""})
+
+    def test_hyphenated_gated_name_raises(self):
+        """A gated parameter whose own name has a hyphen is rejected.
+
+        The framework conditional-rules engine folds the field's own name into
+        the gate's reference set and rejects hyphenated names, so reject early.
+        """
+        with pytest.raises(ValidationError, match="valid Python identifier"):
+            SnippetMetaParameter(name="ha-name", visible_when_not="list")
+
+    def test_hyphenated_referenced_parameter_raises(self):
+        """A condition referencing a hyphenated sibling name is rejected."""
+        with pytest.raises(ValidationError, match="valid Python identifier"):
+            SnippetMetaParameter(name="start", visible_when_not="list-mode")

@@ -257,9 +257,11 @@ class SnippetMetaParameter(BaseModel):
         :return: The validated :class:`SnippetMetaParameter` instance.
         :rtype: SnippetMetaParameter
         :raises ValueError: If both conditions are declared, a condition
-            references the parameter itself, or a condition is combined with
+            references the parameter itself, a condition is combined with
             ``required=True`` (a hidden field is dropped client-side and would
-            then fail server-side required validation).
+            then fail server-side required validation), or a gated parameter's
+            name or referenced sibling is not a valid Python identifier (the
+            framework conditional-rules engine rejects hyphenated names).
         """
         if self.visible_when is not None and self.visible_when_not is not None:
             raise ValueError("declare only one of 'visible_when' or 'visible_when_not'")
@@ -273,6 +275,17 @@ class SnippetMetaParameter(BaseModel):
         if self.required:
             raise ValueError(
                 "a required parameter cannot declare a visibility condition"
+            )
+        if not self.name.isidentifier():
+            raise ValueError(
+                f"a parameter declaring a visibility condition must have a name "
+                f"that is a valid Python identifier (no hyphens); got {self.name!r}"
+            )
+        if not condition.parameter.isidentifier():
+            raise ValueError(
+                f"a visibility condition must reference a parameter whose name is "
+                f"a valid Python identifier (no hyphens); got "
+                f"{condition.parameter!r}"
             )
         return self
 
