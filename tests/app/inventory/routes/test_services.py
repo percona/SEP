@@ -15,12 +15,17 @@
 
 """Define tests for inventory service routes."""
 
+import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
+from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
+from app.inventory.crud import ServiceManager
 from app.inventory.models import Node, Schema, Service, ServiceSystemObservation
 from tests.app.factories import (
+    NodeWriteFactory,
     SchemaWriteFactory,
     ServiceSystemObservationWriteFactory,
     ServiceWriteFactory,
@@ -159,6 +164,56 @@ class TestUpdateService:
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid node_id: 9999"
+
+    def test_update_service_omitting_node_id_preserves_parent(
+        self, test_client: TestClient, service: Service, node: Node
+    ) -> None:
+        """Apply a partial update that omits node_id, leaving the parent unchanged.
+
+        A second node must exist: the omitted FK previously resolved to ``None``,
+        and the parent pre-check drops ``None`` filters and matched every node, so
+        with more than one node it raised ``MultipleResultsFound`` (HTTP 500).
+        """
+        second = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert second.status_code == status.HTTP_201_CREATED
+        body = ServiceWriteFactory.build().model_dump(mode="json", exclude={"node_id"})
+        body["name"] = "renamed-service"
+        assert "node_id" not in body
+        response = test_client.put(f"/services/{service.id}", json=body)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed-service"
+        assert data["node_id"] == node.id
+
+    def test_update_service_change_node_id_to_valid_parent(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Reparent a service to another existing node and return 200."""
+        new_node = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert new_node.status_code == status.HTTP_201_CREATED
+        new_node_id = new_node.json()["id"]
+        payload = ServiceWriteFactory.build(node_id=new_node_id)
+        response = test_client.put(
+            f"/services/{service.id}",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["node_id"] == new_node_id
+
+    def test_update_service_explicit_null_node_id_rejected(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Reject an explicit null node_id (the FK column is non-nullable)."""
+        body = ServiceWriteFactory.build().model_dump(mode="json")
+        body["node_id"] = None
+        response = test_client.put(f"/services/{service.id}", json=body)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid node_id: None"
 
 
 class TestDeleteService:
@@ -476,3 +531,17 @@ class TestUpsertServiceSystemObservation:
             f"/services/{service.id}/system-observation", json=data
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+@pytest.mark.asyncio
+async def test_dangling_fk_rejected_by_database(session: AsyncSession) -> None:
+    """Reject a dangling parent FK at the database layer.
+
+    ``create`` injects the FK from a path-validated parent and runs no parent
+    pre-check, so this exercises the SQLite foreign-key constraint directly
+    (``PRAGMA foreign_keys = ON`` is enabled on the inventory test engine). The
+    DB ``IntegrityError`` surfaces as ``HTTPBadRequestException`` because
+    ``BaseSQLModelManager.save`` translates database errors on commit.
+    """
+    with pytest.raises(HTTPBadRequestException):
+        await ServiceManager.create(session, ServiceWriteFactory.build(), node_id=9999)
