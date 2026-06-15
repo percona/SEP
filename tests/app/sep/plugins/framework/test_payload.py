@@ -249,23 +249,6 @@ class TestAssembleEnvelopeGuards:
                 owner=TaskOwner.CHECKSUMS,
             )
 
-    def test_unknown_spec_type_raises(self) -> None:
-        """Raise ``TypeError`` for a spec the envelope arms do not handle."""
-        service = _service(
-            address="db-host",
-            service_type=ServiceTypeEnum.MYSQL,
-            name="svc-1",
-            port=3306,
-        )
-
-        with pytest.raises(TypeError, match="spec"):
-            assemble_envelope(
-                object(),
-                ResolvedEntities(service=service, entities={}),
-                name="task-1",
-                owner=TaskOwner.CHECKSUMS,
-            )
-
     def test_unresolvable_port_raises(self) -> None:
         """Raise when the service has no port and no default for its type."""
         service = _service(

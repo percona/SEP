@@ -27,7 +27,7 @@ byte-uniform with the canonical hand-written envelopes in
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, cast, Protocol
 
 from app.core.exceptions import HTTPBadRequestException
 from app.inventory.constants import DEFAULT_MYSQL_PORT, DEFAULT_POSTGRESQL_PORT
@@ -50,6 +50,7 @@ from app.sep.plugins.framework.form_dsl import (
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 __all__ = [
+    "EnvelopeSpec",
     "ResolvedEntities",
     "RunCommandSpec",
     "RunPythonSpec",
@@ -67,6 +68,21 @@ _DEFAULT_PORTS = {
     ServiceTypeEnum.MYSQL: DEFAULT_MYSQL_PORT,
     ServiceTypeEnum.POSTGRESQL: DEFAULT_POSTGRESQL_PORT,
 }
+
+
+class EnvelopeSpec(Protocol):
+    """Define the envelope contract implemented by task-verb specs."""
+
+    def to_envelope_data(
+        self, *, host: str, service_name: str, connectivity: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Return this spec as a Tasks API ``data`` envelope.
+
+        :param host: The executor target host.
+        :param service_name: The selected inventory service name.
+        :param connectivity: The shared connectivity metadata keys.
+        :return: The verb-specific ``TaskWrite.data`` payload.
+        """
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +103,13 @@ class RunCommandSpec:
     def to_envelope_data(
         self, *, host: str, service_name: str, connectivity: Mapping[str, Any]
     ) -> dict[str, Any]:
-        """Return this run-command spec as a Tasks API ``data`` envelope."""
+        """Return this run-command spec as a Tasks API ``data`` envelope.
+
+        :param host: The executor target host.
+        :param service_name: The selected inventory service name.
+        :param connectivity: The shared connectivity metadata keys.
+        :return: The run-command ``TaskWrite.data`` payload.
+        """
         return {
             "task": "run-command",
             "meta": {
@@ -120,7 +142,13 @@ class RunPythonSpec:
     def to_envelope_data(
         self, *, host: str, service_name: str, connectivity: Mapping[str, Any]
     ) -> dict[str, Any]:
-        """Return this run-python spec as a Tasks API ``data`` envelope."""
+        """Return this run-python spec as a Tasks API ``data`` envelope.
+
+        :param host: The executor target host.
+        :param service_name: The selected inventory service name.
+        :param connectivity: The shared connectivity metadata keys.
+        :return: The run-python ``TaskWrite.data`` payload.
+        """
         return {
             "task": "run-python",
             "meta": {
@@ -231,7 +259,7 @@ async def resolve_refs(
 
 
 def assemble_envelope(
-    spec: RunCommandSpec | RunPythonSpec,
+    spec: EnvelopeSpec,
     resolved: ResolvedEntities,
     *,
     name: str,
@@ -248,7 +276,8 @@ def assemble_envelope(
     the verb-specific keys (``command`` / ``args`` and any ``extra_meta`` for
     run-command; ``config`` / ``requirements`` / ``payload`` for run-python).
 
-    :param spec: The verb-specific spec produced by the app's spec builder.
+    :param spec: The verb-specific envelope contract produced by the app's spec
+        builder.
     :param resolved: The resolved inventory entities, whose service drives the
         connectivity meta and target.
     :param name: The task name.
@@ -258,8 +287,6 @@ def assemble_envelope(
     :raises ValueError: When no service was resolved (the connectivity meta has no
         source), or when the resolved service declares no port and no default port
         is registered for its type.
-    :raises TypeError: When ``spec`` is neither a ``RunCommandSpec`` nor a
-        ``RunPythonSpec``.
     """
     service = resolved.service
     if service is None:
@@ -282,15 +309,9 @@ def assemble_envelope(
         CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
     }
 
-    try:
-        data = spec.to_envelope_data(
-            host=host, service_name=service.name, connectivity=connectivity
-        )
-    except AttributeError as exc:
-        raise TypeError(
-            f"assemble_envelope: spec must be a RunCommandSpec or RunPythonSpec; "
-            f"got {type(spec).__name__}"
-        ) from exc
+    data = spec.to_envelope_data(
+        host=host, service_name=service.name, connectivity=connectivity
+    )
 
     return TaskWrite(
         name=name,

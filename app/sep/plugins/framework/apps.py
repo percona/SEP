@@ -49,10 +49,9 @@ from app.sep.plugins.framework.form_dsl import (
 )
 from app.sep.plugins.framework.payload import (
     assemble_envelope,
+    EnvelopeSpec,
     resolve_refs,
     ResolvedEntities,
-    RunCommandSpec,
-    RunPythonSpec,
 )
 from app.sep.plugins.framework.responses import (
     build_default_task_response,
@@ -70,9 +69,7 @@ from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
 
 __all__ = ["AppCapabilities", "Cascade", "TaskExecutionApp", "Views"]
 
-TaskSpecBuilder = Callable[
-    [AppFormModel, ResolvedEntities], RunCommandSpec | RunPythonSpec
-]
+TaskSpecBuilder = Callable[[AppFormModel, ResolvedEntities], EnvelopeSpec]
 
 
 class AppCapabilities(BaseModel):
@@ -168,9 +165,8 @@ class TaskExecutionApp(BaseApp):
     :param response_model: The list/detail response model. Required.
     :param views: The presentation bundle (layout, list/detail views, UI
         capabilities). Its ``layout`` is required when ``create_model`` is set.
-    :param task_spec_builder: A pure ``(form, resolved) -> RunCommandSpec |
-        RunPythonSpec`` builder for the three-phase create path. Defaults to
-        ``None``.
+    :param task_spec_builder: A pure ``(form, resolved) -> EnvelopeSpec`` builder
+        for the three-phase create path. Defaults to ``None``.
     :param payload_builder: A ``(form, inventory_api) -> TaskWrite`` dependency
         used directly as the create payload, bypassing the three-phase path.
         Required for a ``schema=`` app (no ``AppFormModel`` to introspect refs).

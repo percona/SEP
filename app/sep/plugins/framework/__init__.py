@@ -61,6 +61,7 @@ from app.sep.plugins.framework.form_dsl import (
 )
 from app.sep.plugins.framework.payload import (
     assemble_envelope,
+    EnvelopeSpec,
     resolve_refs,
     ResolvedEntities,
     RunCommandSpec,
@@ -115,6 +116,7 @@ __all__ = [
     "Choices",
     "ConditionalRulesModel",
     "ConnectivityWarning",
+    "EnvelopeSpec",
     "F",
     "FailRule",
     "FieldExpr",
