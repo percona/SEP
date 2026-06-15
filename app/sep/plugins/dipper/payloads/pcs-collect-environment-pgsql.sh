@@ -53,6 +53,7 @@ SKIPTARRESULT=0
 ## DB Globals
 PSQLBIN="/usr/bin/psql"
 DB_CLI_OPTIONS+=("-tA")
+DB_CLI_OPTIONS+=("--dbname=postgres")
 SQLINOUTPUT=0
 COLLECT_WALL_STATS=1
 PT_TOOLS=(pt-summary pt-pg-summary)
@@ -217,7 +218,9 @@ function check_pids {
 # Try to run a query and print error if it fails.
 function check_pgsql_connection {
     local result
-    result=$(/bin/su postgres -c "echo \"SELECT 1\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
+    # Run as the invoking (percona) user; no su escalation. Relies on percona being
+    # able to authenticate to PostgreSQL (peer/ident/trust or a configured role).
+    result=$(echo "SELECT 1" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null)
     if [[ ${result} != "1" ]]; then
         echo "Can't connect to psql using '${PSQLBIN} ${DB_CLI_OPTIONS[*]}'"
         echo "Please confirm connectivity."
@@ -256,8 +259,9 @@ function sql_to_file {
         echo '-----'${stat_query}'=====' > "${OUT_DIR}/${stat_file}"
     fi
 
-    # Script is executed as root. Use 'su' to run SQL under postgres user
-    /bin/su postgres -c "echo \"${stat_query}\" | \"${PSQLBIN}\" -d ${stat_database} \"${DB_CLI_OPTIONS[*]}\"" 1>> "${OUT_DIR}/${stat_file}"
+    # Run SQL directly as the invoking (percona) user; no su escalation.
+    # -d comes after DB_CLI_OPTIONS so the per-stat database overrides the default --dbname.
+    echo "${stat_query}" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" -d "${stat_database}" 1>> "${OUT_DIR}/${stat_file}"
 }
 
 ## Global Pre-flight Checks
@@ -293,7 +297,7 @@ check_pgsql_connection
 # to discover any global variables/settings from the DB which will be used later in the script.
 
 # get some PSQL variables we'll need
-variables_datadir=$(/bin/su postgres -c "echo \"SHOW data_directory\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
+variables_datadir=$(echo "SHOW data_directory" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null)
 
 ## Main
 
@@ -452,14 +456,8 @@ echo -n "Collecting PGSQL info... "
 # MAJOR_VERSION=$(/bin/su postgres -c "echo \"SELECT SUBSTRING(version() FROM '[0-9]+')\" | \"${PSQLBIN}\" \"${OPTIONS[*]}\" 2> /dev/null")
 # MINOR_VERSION=$(/bin/su postgres -c "echo \"SELECT RIGHT(SUBSTRING(version() FROM '\.[0-9]+'), -1)\" | \"${PSQLBIN}\" \"${OPTIONS[*]}\" 2> /dev/null")
 
-if [[ ${ISRDS} -eq 1 ]]; then
-    echo "Environment is RDS. Not collecting datadir sizes"
-elif [[ -d ${variables_datadir} ]]; then
-    du -sh "${variables_datadir}" >> "${OUT_DIR}/data_usage_raw"
-    echo "Done."
-else
-    echo "Can't find the datadir; Will skip collection raw data info."
-fi
+# Datadir-size collection removed: 'du -sh' on the PostgreSQL-owned data directory
+# requires root and fails when the script runs as the percona user.
 
 #############################
 # SQL beautified using https://codebeautify.org/sqlformatter
@@ -1194,7 +1192,7 @@ COPY ( SELECT * FROM pg_stat_database ) TO stdout WITH (FORMAT csv);
 sql_to_file 'pg_stat_database' "${sql}" statDatabase.csv "global"
 
 ## Stat Statements
-check=$(/bin/su postgres -c "echo \"SELECT COUNT(1) FROM pg_available_extensions WHERE name = 'pg_stat_statements'\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
+check=$(echo "SELECT COUNT(1) FROM pg_available_extensions WHERE name = 'pg_stat_statements'" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null)
 if [[ ${check} -eq 1 ]]; then
     sql="COPY (SELECT * FROM pg_stat_statements
   WHERE dbid = (SELECT datid FROM pg_stat_database where datname = current_database())
