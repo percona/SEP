@@ -150,7 +150,6 @@ class TestTransformPayload:
     async def test_propagates_validate_error(self, executor: ConcreteExecutor):
         """Assert transform_payload propagates a validate_job failure."""
         with (
-            patch.object(ConcreteExecutor, "parse_payload", AsyncMock(return_value={})),
             patch.object(
                 ConcreteExecutor,
                 "validate_job",
@@ -232,7 +231,7 @@ class TestStopTask:
         saved = await TaskHistoryManager.save(session, queue_item)
         # ``save`` re-defers ``task``/``execution_request``; eager-load them so
         # ``sync_task_history`` reads ``task.alert_on_fail`` without a lazy load
-        # (identity map holds only weak refs → ``Task`` else collectible). SEP-1017.
+        # (identity map holds only weak refs → ``Task`` else collectible).
         return await TaskHistoryManager.get_or_404(
             session,
             select_related=(TaskHistory.task,),
