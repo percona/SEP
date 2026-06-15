@@ -19,7 +19,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, FutureDatetime, StringConstraints
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
@@ -240,16 +240,15 @@ class BackupTaskDetailResponse(BackupTaskResponse):
 class BackupExecuteWrite(BaseModel):
     """Represent a JSON request body for executing a backup task.
 
-    :param eta: Optional datetime to schedule execution. Values in the past
-        are dropped by the execute route and the task runs immediately.
-    :type eta: datetime | None
+    :param eta: Optional datetime to schedule execution. Must be in the future;
+        a past value is rejected with a 422 validation error.
     :param chain_task_names: Optional list of task names to chain after.
     :type chain_task_names: list[str] | None
     :param chain_on_failure: Whether to run chained tasks even on failure.
     :type chain_on_failure: bool | None
     """
 
-    eta: datetime | None = None
+    eta: FutureDatetime | None = None
     chain_task_names: list[str] | None = None
     chain_on_failure: bool | None = None
 
