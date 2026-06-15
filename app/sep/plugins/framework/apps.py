@@ -13,9 +13,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define ``TaskExecutionApp``, the Layer 2 spine of the plugin framework.
+"""Define ``TaskExecutionApp`` as the declarative spine of the plugin framework.
 
-A ``TaskExecutionApp`` composes the Layer 1 route helpers
+A ``TaskExecutionApp`` composes route-derivation helpers
 (:func:`~app.sep.plugins.framework.api.derive_crud_routes`,
 :func:`~app.sep.plugins.framework.api.derive_execute_route`,
 :func:`~app.sep.plugins.framework.api.capabilities_endpoint`) and the model-first
