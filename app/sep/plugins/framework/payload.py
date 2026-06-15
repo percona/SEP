@@ -84,6 +84,22 @@ class RunCommandSpec:
     args: str
     extra_meta: Mapping[str, Any] = field(default_factory=dict)
 
+    def to_envelope_data(
+        self, *, host: str, service_name: str, connectivity: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Return this run-command spec as a Tasks API ``data`` envelope."""
+        return {
+            "task": "run-command",
+            "meta": {
+                "command": self.command,
+                "args": self.args,
+                "target": host,
+                "_service_name": service_name,
+                **self.extra_meta,
+                **connectivity,
+            },
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class RunPythonSpec:
@@ -100,6 +116,23 @@ class RunPythonSpec:
     requirements: str
     payload: str
     extra_meta: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_envelope_data(
+        self, *, host: str, service_name: str, connectivity: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Return this run-python spec as a Tasks API ``data`` envelope."""
+        return {
+            "task": "run-python",
+            "meta": {
+                "config": self.config,
+                "target": host,
+                "requirements": self.requirements,
+                "_service_name": service_name,
+                **self.extra_meta,
+                **connectivity,
+            },
+            "payload": self.payload,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,36 +282,15 @@ def assemble_envelope(
         CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
     }
 
-    if isinstance(spec, RunCommandSpec):
-        data = {
-            "task": "run-command",
-            "meta": {
-                "command": spec.command,
-                "args": spec.args,
-                "target": host,
-                "_service_name": service.name,
-                **spec.extra_meta,
-                **connectivity,
-            },
-        }
-    elif isinstance(spec, RunPythonSpec):
-        data = {
-            "task": "run-python",
-            "meta": {
-                "config": spec.config,
-                "target": host,
-                "requirements": spec.requirements,
-                "_service_name": service.name,
-                **spec.extra_meta,
-                **connectivity,
-            },
-            "payload": spec.payload,
-        }
-    else:
+    try:
+        data = spec.to_envelope_data(
+            host=host, service_name=service.name, connectivity=connectivity
+        )
+    except AttributeError as exc:
         raise TypeError(
             f"assemble_envelope: spec must be a RunCommandSpec or RunPythonSpec; "
             f"got {type(spec).__name__}"
-        )
+        ) from exc
 
     return TaskWrite(
         name=name,
